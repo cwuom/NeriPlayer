@@ -12,7 +12,6 @@ import com.google.devtools.ksp.symbol.KSAnnotation
 import com.google.devtools.ksp.symbol.KSClassDeclaration
 import com.google.devtools.ksp.symbol.KSDeclaration
 import com.google.devtools.ksp.symbol.KSPropertyDeclaration
-import com.google.devtools.ksp.validate
 import moe.ouom.neriplayer.ksp.annotations.AutoSetting
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingsCatalog
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingsSection
@@ -43,9 +42,6 @@ private class AutoSettingsProcessor(
             .filterIsInstance<KSClassDeclaration>()
             .toList()
 
-        val invalidSymbols = catalogSymbols.filterNot { it.validate() }
-        if (invalidSymbols.isNotEmpty()) return invalidSymbols
-
         val catalogs = catalogSymbols.map { it.toCatalogSpec() }
         if (catalogs.isEmpty()) {
             processed = true
@@ -75,7 +71,8 @@ private class AutoSettingsProcessor(
         if (switchSettingsMissingTitle.isNotEmpty()) {
             switchSettingsMissingTitle.forEach { setting ->
                 logger.error(
-                    "@AutoSetting ui=Switch must define autoSetting(titleRes = ...) for ${setting.key}",
+                    "@AutoSetting ui=Switch must define autoSetting/autoSwitchSetting titleRes for " +
+                        setting.sortKey,
                     catalog.declaration
                 )
             }
@@ -190,8 +187,20 @@ private fun validateCatalog(catalog: CatalogSpec, logger: KSPLogger): Boolean {
     }
 
     catalog.settings
+        .filter { it.key != null }
         .groupBy { it.key }
-        .forEach { (key, settings) -> reportDuplicate("key", key, settings) }
+        .forEach { (key, settings) -> reportDuplicate("key", key.orEmpty(), settings) }
+
+    catalog.settings
+        .filter { it.key == null && it.defaultExpression == null }
+        .forEach { setting ->
+            valid = false
+            logger.error(
+                "@AutoSetting key can be omitted only when the property value is AutoSettingSpec<T>: " +
+                    setting.propertyName,
+                catalog.declaration
+            )
+        }
 
     catalog.settings
         .groupBy { it.keyName }
@@ -236,13 +245,15 @@ private data class SectionSpec(
 
 private data class SettingSpec(
     val propertyName: String,
-    val key: String,
+    val key: String?,
+    val keyExpression: String,
     val valueType: SettingValueType,
     val defaultBoolean: Boolean,
     val defaultFloat: Float,
     val defaultInt: Int,
     val defaultLong: Long,
     val defaultString: String,
+    val defaultExpression: String?,
     val section: String,
     val order: Int,
     val ui: SettingUiType,
@@ -253,11 +264,12 @@ private data class SettingSpec(
     val repositoryName: String,
     val normalizerQualifiedName: String?
 ) {
-    val keyName: String = constantName.ifBlank { key.toConstantName() }
+    val keyName: String = constantName.ifBlank { (key ?: propertyName).toConstantName() }
     val valueName: String = repositoryName.ifBlank { propertyName }
     val flowName: String = "${valueName}Flow"
     val setterName: String = "set${valueName.replaceFirstChar { it.uppercaseChar() }}"
     val canGenerateAccessor: Boolean = access == SettingAccessMode.ReadWrite
+    val sortKey: String = key ?: propertyName
 }
 
 private fun KSClassDeclaration.toCatalogSpec(): CatalogSpec {
@@ -269,7 +281,7 @@ private fun KSClassDeclaration.toCatalogSpec(): CatalogSpec {
         .orEmpty()
         .ifBlank { "moe.ouom.neriplayer.data.settings" }
     val settings = collectSettingSpecs()
-        .sortedWith(compareBy<SettingSpec> { it.section }.thenBy { it.order }.thenBy { it.key })
+        .sortedWith(compareBy<SettingSpec> { it.section }.thenBy { it.order }.thenBy { it.sortKey })
         .toList()
     val sectionSpecs = collectSectionSpecs(settings)
     return CatalogSpec(
@@ -336,21 +348,38 @@ private fun KSClassDeclaration.sectionKeyHint(): String {
 private fun KSPropertyDeclaration.toSettingSpec(sectionHint: String? = null): SettingSpec? {
     val annotation = annotations.firstByName(AutoSetting::class.qualifiedName.orEmpty()) ?: return null
     val inferredSection = sectionHint ?: parentSectionName() ?: "general"
+    val sourceReference = sourceReference()
+    val settingSpecValueType = autoSettingSpecValueType()
+    val annotationKey = annotation.stringArgument("key").ifBlank { null }
+    val entryReference = sourceReference.takeIf {
+        hasAutoSettingEntryType() || settingSpecValueType != null
+    }
+    val valueType = settingSpecValueType
+        ?: annotation.enumArgumentOrNull<SettingValueType>("type")
+        ?: SettingValueType.Boolean
+    val annotationUi = annotation.enumArgumentOrNull<SettingUiType>("ui") ?: SettingUiType.None
+    val ui = if (annotationUi == SettingUiType.None && settingSpecValueType == SettingValueType.Boolean) {
+        SettingUiType.Switch
+    } else {
+        annotationUi
+    }
     return SettingSpec(
         propertyName = simpleName.asString(),
-        key = annotation.stringArgument("key"),
-        valueType = annotation.enumArgument("type", SettingValueType.Boolean),
+        key = annotationKey,
+        keyExpression = annotationKey?.toLiteral() ?: "$sourceReference.key",
+        valueType = valueType,
         defaultBoolean = annotation.booleanArgument("defaultBoolean"),
         defaultFloat = annotation.floatArgument("defaultFloat"),
         defaultInt = annotation.intArgument("defaultInt"),
         defaultLong = annotation.longArgument("defaultLong"),
         defaultString = annotation.stringArgument("defaultString"),
+        defaultExpression = settingSpecValueType?.let { "$sourceReference.defaultValue" },
         section = annotation.stringArgument("section").ifBlank { inferredSection },
         order = annotation.intArgument("order"),
-        ui = annotation.enumArgument("ui", SettingUiType.None),
+        ui = ui,
         access = annotation.enumArgument("access", SettingAccessMode.ReadWrite),
         constantName = annotation.stringArgument("constantName"),
-        entryReference = sourceReference().takeIf { hasAutoSettingEntryType() },
+        entryReference = entryReference,
         exportable = annotation.booleanArgument("exportable", defaultValue = true),
         repositoryName = annotation.stringArgument("repositoryName"),
         normalizerQualifiedName = annotation.classArgument("normalizer")
@@ -372,6 +401,24 @@ private fun KSPropertyDeclaration.hasAutoSettingEntryType(): Boolean {
 private fun KSPropertyDeclaration.hasAutoSettingsSectionEntryType(): Boolean {
     return type.resolve().declaration.qualifiedName?.asString() ==
         "moe.ouom.neriplayer.ksp.annotations.AutoSettingsSectionEntry"
+}
+
+private fun KSPropertyDeclaration.autoSettingSpecValueType(): SettingValueType? {
+    val resolvedType = type.resolve()
+    val qualifiedName = resolvedType.declaration.qualifiedName?.asString()
+    if (qualifiedName != "moe.ouom.neriplayer.ksp.annotations.AutoSettingSpec") {
+        return null
+    }
+
+    val typeArgument = resolvedType.arguments.firstOrNull()?.type?.resolve()
+    return when (typeArgument?.declaration?.qualifiedName?.asString()) {
+        "kotlin.Boolean" -> SettingValueType.Boolean
+        "kotlin.Float" -> SettingValueType.Float
+        "kotlin.Int" -> SettingValueType.Int
+        "kotlin.Long" -> SettingValueType.Long
+        "kotlin.String" -> SettingValueType.String
+        else -> null
+    }
 }
 
 private fun KSPropertyDeclaration.sourceReference(): String {
@@ -423,7 +470,7 @@ private fun buildKeysFile(packageName: String, settings: List<SettingSpec>): Str
         appendLine("object AutoSettingsKeys {")
         settings.forEach { setting ->
             appendLine(
-                "    val ${setting.keyName} = ${setting.valueType.preferenceKeyFactory()}(${setting.key.toLiteral()})"
+                "    val ${setting.keyName} = ${setting.valueType.preferenceKeyFactory()}(${setting.keyExpression})"
             )
         }
         appendLine("}")
@@ -589,7 +636,7 @@ private fun buildMetadataFile(
             settings.joinToString(separator = ",\n") { setting ->
                 "        AutoSettingInfo(" +
                     "key = AutoSettingsKeys.${setting.keyName}, " +
-                    "keyName = ${setting.key.toLiteral()}, " +
+                    "keyName = ${setting.keyExpression}, " +
                     "propertyName = ${setting.propertyName.toLiteral()}, " +
                     "section = ${setting.section.toLiteral()}, " +
                     "valueType = SettingValueType.${setting.valueType.name}, " +
@@ -652,7 +699,7 @@ private fun buildUiFile(packageName: String, settings: List<SettingSpec>): Strin
                 it.ui == SettingUiType.Switch &&
                 it.valueType == SettingValueType.Boolean
         }
-        .sortedWith(compareBy<SettingSpec> { it.section }.thenBy { it.order }.thenBy { it.key })
+        .sortedWith(compareBy<SettingSpec> { it.section }.thenBy { it.order }.thenBy { it.sortKey })
 
     return buildString {
         appendGeneratedHeader(packageName)
@@ -766,7 +813,7 @@ private fun buildUiFile(packageName: String, settings: List<SettingSpec>): Strin
                 appendLine("            AutoSettingsSwitchItem(")
                 appendLine("                checked = ${setting.valueName},")
                 appendLine("                titleRes = ${setting.titleResExpression()},")
-                appendLine("                fallbackTitle = ${setting.key.toLiteral()},")
+                appendLine("                fallbackTitle = ${setting.keyExpression},")
                 appendLine("                descriptionRes = ${setting.descriptionResExpression()},")
                 appendLine("                iconPainter = ${setting.iconPainterExpression()},")
                 appendLine("                icon = ${setting.iconExpression()},")
@@ -887,6 +934,7 @@ private fun SettingSpec.normalizeWriteExpression(valueExpression: String): Strin
 }
 
 private fun SettingSpec.defaultLiteral(): String {
+    defaultExpression?.let { return it }
     return when (valueType) {
         SettingValueType.Boolean -> defaultBoolean.toString()
         SettingValueType.Float -> "${defaultFloat}f"
@@ -902,12 +950,12 @@ private fun SettingSpec.iconPainterExpression(): String {
     } ?: "null"
 }
 
-private fun SettingSpec.iconExpression(): String {
-    return entryReference?.let { reference -> "$reference.icon" } ?: "AutoSettingIcon.None"
-}
-
 private fun SettingSpec.iconResExpression(): String {
     return entryReference?.let { reference -> "$reference.iconRes" } ?: "0"
+}
+
+private fun SettingSpec.iconExpression(): String {
+    return entryReference?.let { reference -> "$reference.icon" } ?: "AutoSettingIcon.None"
 }
 
 private fun SettingSpec.titleResExpression(): String {
@@ -980,8 +1028,12 @@ private inline fun <reified T : Enum<T>> KSAnnotation.enumArgument(
     name: String,
     defaultValue: T
 ): T {
+    return enumArgumentOrNull<T>(name) ?: defaultValue
+}
+
+private inline fun <reified T : Enum<T>> KSAnnotation.enumArgumentOrNull(name: String): T? {
     val rawName = argument(name)?.toString()?.substringAfterLast('.')
-    return enumValues<T>().firstOrNull { it.name == rawName } ?: defaultValue
+    return enumValues<T>().firstOrNull { it.name == rawName }
 }
 
 private fun KSAnnotation.classArgument(name: String): String? {

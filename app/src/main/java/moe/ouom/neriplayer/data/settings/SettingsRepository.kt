@@ -42,10 +42,20 @@ import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
+import moe.ouom.neriplayer.ksp.annotations.AutoSettingSpec
 import java.util.Locale
 
 class SettingsRepository(private val context: Context) {
     private val autoSettingsRepository = AutoSettingsRepository(context)
+    private val autoSettingSpecRepository = AutoSettingSpecRepository(context)
+
+    fun <T> settingFlow(setting: AutoSettingSpec<T>): Flow<T> {
+        return autoSettingSpecRepository.flow(setting)
+    }
+
+    suspend fun <T> setSetting(setting: AutoSettingSpec<T>, value: T) {
+        autoSettingSpecRepository.set(setting, value)
+    }
 
     val dynamicColorFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.DYNAMIC_COLOR] ?: true }

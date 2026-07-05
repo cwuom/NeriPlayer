@@ -178,6 +178,14 @@ class AutoSettingsGeneratedTest {
     }
 
     @Test
+    fun sourceFirstSettingSpecExposesDatastoreKeyAndDefaultValue() {
+        val setting = AutoSettingsSchema.general.hapticFeedbackEnabled
+
+        assertEquals("haptic_feedback_enabled", setting.preferencesKey.name)
+        assertEquals(true, setting.defaultValue)
+    }
+
+    @Test
     fun schemaKeepsOriginalIconSources() {
         assertEquals(
             AutoSettingIcon.AdsClick,

@@ -14,21 +14,24 @@ import moe.ouom.neriplayer.ksp.annotations.SettingUiType
 import moe.ouom.neriplayer.ksp.annotations.SettingValueType
 import moe.ouom.neriplayer.ksp.annotations.autoSetting
 import moe.ouom.neriplayer.ksp.annotations.autoSettingsSection
+import moe.ouom.neriplayer.ksp.annotations.autoSwitchSetting
 
-    /*
-     * 设置项统一登记表
-     *
-     * 新增 DataStore 设置时优先只改这里，KSP 会自动生成 SettingsKeys、备份白名单、
-     * AutoSettingsRepository、section 常量、section scope 和可复用元数据
-     *
-     * 放置规则：
-     * - 能被通用开关直接保存的 Boolean，用 ui = Switch 和默认 access
-     * - 有弹窗、Slider、平台可用性判断、多个设置互斥或额外持久化副作用的，用 ui = Custom
-     * - 启动快照、主题快照、播放快照、路径权限这类不能绕过业务 setter 的，用 access = KeyOnly
-     * - 分类用嵌套 object 表达，调用侧优先用 AutoSettingsScopes.display 这种 scope，不要再手写 "display"
-     * - 需要在旧代码保持原常量名的，用 constantName 固定生成名
-     * - 原本就是 drawable 的图标才写 iconRes，Material 图标用 icon 保留原 UI
-     */
+/*
+ * 设置项统一登记表
+ *
+ * 新增 DataStore 设置时优先只改这里，KSP 会自动生成 SettingsKeys、备份白名单、
+ * AutoSettingsRepository、section 常量、section scope 和可复用元数据
+ *
+ * 放置规则：
+ * - 能被通用开关直接保存的 Boolean，用 ui = Switch 和默认 access
+ * - 有弹窗、Slider、平台可用性判断、多个设置互斥或额外持久化副作用的，用 ui = Custom
+ * - 启动快照、主题快照、播放快照、路径权限这类不能绕过业务 setter 的，用 access = KeyOnly
+ * - 分类用嵌套 object 表达，调用侧优先用 AutoSettingsScopes.display 这种 scope，不要再手写 "display"
+ * - 需要在旧代码保持原常量名的，用 constantName 固定生成名
+ * - Material 图标用 icon，已有 drawable 资源用 iconRes
+ * - 简单开关可用 @AutoSetting(order = x) + autoSwitchSetting(...)，业务侧可直接
+ *   用 SettingsRepository.settingFlow/setSetting 读取这个源代码对象
+ */
 @AutoSettingsCatalog
 object AutoSettingsSchema {
     /*
@@ -79,13 +82,11 @@ object AutoSettingsSchema {
         val followSystemDark = Unit
 
         @AutoSetting(
-            key = "haptic_feedback_enabled",
-            type = SettingValueType.Boolean,
-            defaultBoolean = true,
-            order = 40,
-            ui = SettingUiType.Switch
+            order = 40
         )
-        val hapticFeedbackEnabled = autoSetting(
+        val hapticFeedbackEnabled = autoSwitchSetting(
+            key = "haptic_feedback_enabled",
+            defaultValue = true,
             titleRes = R.string.settings_haptic,
             descriptionRes = R.string.settings_haptic_desc,
             icon = AutoSettingIcon.AdsClick

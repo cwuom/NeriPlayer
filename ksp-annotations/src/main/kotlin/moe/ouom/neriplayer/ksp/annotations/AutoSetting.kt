@@ -12,8 +12,8 @@ annotation class AutoSettingsCatalog(
 @Target(AnnotationTarget.PROPERTY)
 @Retention(AnnotationRetention.SOURCE)
 annotation class AutoSetting(
-    val key: String,
-    val type: SettingValueType,
+    val key: String = "",
+    val type: SettingValueType = SettingValueType.Boolean,
     val defaultBoolean: Boolean = false,
     val defaultFloat: Float = 0f,
     val defaultInt: Int = 0,
@@ -45,7 +45,18 @@ data class AutoSettingEntry(
 
 data class AutoSettingsSectionEntry(
     val titleRes: Int = 0,
-    val descriptionRes: Int = 0
+    val descriptionRes: Int = 0,
+    val iconRes: Int = 0
+)
+
+data class AutoSettingSpec<T>(
+    val key: String,
+    val type: SettingValueType,
+    val defaultValue: T,
+    val titleRes: Int = 0,
+    val descriptionRes: Int = 0,
+    val iconRes: Int = 0,
+    val icon: AutoSettingIcon = AutoSettingIcon.None
 )
 
 fun autoSetting(
@@ -62,13 +73,128 @@ fun autoSetting(
     )
 }
 
+fun autoBooleanSetting(
+    key: String,
+    defaultValue: Boolean = false,
+    titleRes: Int = 0,
+    descriptionRes: Int = 0,
+    iconRes: Int = 0,
+    icon: AutoSettingIcon = AutoSettingIcon.None
+): AutoSettingSpec<Boolean> {
+    return AutoSettingSpec(
+        key = key,
+        type = SettingValueType.Boolean,
+        defaultValue = defaultValue,
+        titleRes = titleRes,
+        descriptionRes = descriptionRes,
+        iconRes = iconRes,
+        icon = icon
+    )
+}
+
+fun autoSwitchSetting(
+    key: String,
+    defaultValue: Boolean = false,
+    titleRes: Int = 0,
+    descriptionRes: Int = 0,
+    iconRes: Int = 0,
+    icon: AutoSettingIcon = AutoSettingIcon.None
+): AutoSettingSpec<Boolean> {
+    return autoBooleanSetting(
+        key = key,
+        defaultValue = defaultValue,
+        titleRes = titleRes,
+        descriptionRes = descriptionRes,
+        iconRes = iconRes,
+        icon = icon
+    )
+}
+
+fun autoFloatSetting(
+    key: String,
+    defaultValue: Float = 0f,
+    titleRes: Int = 0,
+    descriptionRes: Int = 0,
+    iconRes: Int = 0,
+    icon: AutoSettingIcon = AutoSettingIcon.None
+): AutoSettingSpec<Float> {
+    return AutoSettingSpec(
+        key = key,
+        type = SettingValueType.Float,
+        defaultValue = defaultValue,
+        titleRes = titleRes,
+        descriptionRes = descriptionRes,
+        iconRes = iconRes,
+        icon = icon
+    )
+}
+
+fun autoIntSetting(
+    key: String,
+    defaultValue: Int = 0,
+    titleRes: Int = 0,
+    descriptionRes: Int = 0,
+    iconRes: Int = 0,
+    icon: AutoSettingIcon = AutoSettingIcon.None
+): AutoSettingSpec<Int> {
+    return AutoSettingSpec(
+        key = key,
+        type = SettingValueType.Int,
+        defaultValue = defaultValue,
+        titleRes = titleRes,
+        descriptionRes = descriptionRes,
+        iconRes = iconRes,
+        icon = icon
+    )
+}
+
+fun autoLongSetting(
+    key: String,
+    defaultValue: Long = 0L,
+    titleRes: Int = 0,
+    descriptionRes: Int = 0,
+    iconRes: Int = 0,
+    icon: AutoSettingIcon = AutoSettingIcon.None
+): AutoSettingSpec<Long> {
+    return AutoSettingSpec(
+        key = key,
+        type = SettingValueType.Long,
+        defaultValue = defaultValue,
+        titleRes = titleRes,
+        descriptionRes = descriptionRes,
+        iconRes = iconRes,
+        icon = icon
+    )
+}
+
+fun autoStringSetting(
+    key: String,
+    defaultValue: String = "",
+    titleRes: Int = 0,
+    descriptionRes: Int = 0,
+    iconRes: Int = 0,
+    icon: AutoSettingIcon = AutoSettingIcon.None
+): AutoSettingSpec<String> {
+    return AutoSettingSpec(
+        key = key,
+        type = SettingValueType.String,
+        defaultValue = defaultValue,
+        titleRes = titleRes,
+        descriptionRes = descriptionRes,
+        iconRes = iconRes,
+        icon = icon
+    )
+}
+
 fun autoSettingsSection(
     titleRes: Int = 0,
-    descriptionRes: Int = 0
+    descriptionRes: Int = 0,
+    iconRes: Int = 0
 ): AutoSettingsSectionEntry {
     return AutoSettingsSectionEntry(
         titleRes = titleRes,
-        descriptionRes = descriptionRes
+        descriptionRes = descriptionRes,
+        iconRes = iconRes
     )
 }
 
