@@ -228,6 +228,9 @@ class SettingsRepository(private val context: Context) {
             normalizeDownloadFileNameTemplate(it[SettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE])
         }
 
+    val downloadMetadataPostProcessingEnabledFlow: Flow<Boolean> =
+        autoSettingsRepository.downloadMetadataPostProcessingEnabledFlow
+
     val backgroundImageBlurFlow: Flow<Float> =
         autoSettingsRepository.backgroundImageBlurFlow
 
@@ -663,6 +666,10 @@ class SettingsRepository(private val context: Context) {
         updateBootstrapSettingsSnapshot(context) {
             it.copy(downloadFileNameTemplate = normalized)
         }
+    }
+
+    suspend fun setDownloadMetadataPostProcessingEnabled(enabled: Boolean) {
+        autoSettingsRepository.setDownloadMetadataPostProcessingEnabled(enabled)
     }
 
     suspend fun setShowLyricTranslation(enabled: Boolean) {

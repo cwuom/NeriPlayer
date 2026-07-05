@@ -54,6 +54,7 @@ import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.hasActiveDownloadTasks
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
+import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 
 @Composable
@@ -109,6 +110,12 @@ private fun SettingsDownloadExpandedContent(
                 bottom = if (indentContent) 8.dp else 0.dp
             )
     ) {
+        AutoSettingSpecSwitchItem(
+            setting = AutoSettingsSchema.download.downloadMetadataPostProcessingEnabled
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
         if (visibleProgress != null || pendingTaskCount > 0) {
             ListItem(
                 leadingContent = {

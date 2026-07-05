@@ -26,8 +26,8 @@ internal object DownloadedAudioTagWriter {
         audio: ManagedDownloadStorage.StoredEntry,
         song: SongItem,
         sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?
-    ) = withContext(Dispatchers.IO) {
-        val descriptor = openWritableDescriptor(context, audio) ?: return@withContext
+    ): Boolean = withContext(Dispatchers.IO) {
+        val descriptor = openWritableDescriptor(context, audio) ?: return@withContext false
         descriptor.use { target ->
             val existingPropertyMap = loadExistingPropertyMap(target)
             val propertyMap = buildPropertyMap(
@@ -52,7 +52,7 @@ internal object DownloadedAudioTagWriter {
                     false
                 }
             } else {
-                false
+                true
             }
             val coverSaved = coverPicture?.let { picture ->
                 runCatching {
@@ -63,12 +63,19 @@ internal object DownloadedAudioTagWriter {
                 }
             } ?: true
 
-            if (propertySaved || coverSaved) {
+            val successful = propertySaved && coverSaved
+            if (successful) {
                 NPLogger.d(
                     TAG,
-                    "音频内嵌标签写入完成: file=${audio.name}, propertySaved=$propertySaved, coverSaved=$coverSaved"
+                    "音频内嵌标签写入完成: file=${audio.name}, propertyChanged=$propertyChanged, coverChanged=${coverPicture != null}"
+                )
+            } else {
+                NPLogger.w(
+                    TAG,
+                    "音频内嵌标签写入未完成: file=${audio.name}, propertySaved=$propertySaved, coverSaved=$coverSaved"
                 )
             }
+            successful
         }
     }
 

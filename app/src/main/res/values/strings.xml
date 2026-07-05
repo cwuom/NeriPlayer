@@ -166,7 +166,7 @@
     <string name="download_cancelled_status">已取消</string>
     <string name="download_queued_status">等待开始</string>
     <string name="download_waiting_queue_summary">其余任务正在排队，等待空闲下载槽</string>
-    <string name="download_finalizing">音频已写入，正在整理歌词和封面</string>
+    <string name="download_finalizing">音频已写入，正在整理歌词、封面和元信息</string>
     <string name="download_waiting_network_recovery">网络切换中，恢复后会自动继续</string>
 
     <!-- Search -->
@@ -1218,6 +1218,8 @@
     <string name="settings_download_file_name_format_desc">自定义下载歌曲保存到本地时的文件名格式</string>
     <string name="settings_download_file_name_format_supported" formatted="false">支持占位符：%artist% 、%title% 、%album% 、%source% 、%id% 、%audioId% 、%subAudioId%</string>
     <string name="settings_download_file_name_format_preview">预览：%1$s</string>
+    <string name="settings_download_metadata_post_processing">元信息后处理</string>
+    <string name="settings_download_metadata_post_processing_desc">下载完成后使用 TagLib 写入音频内嵌标签、歌词和封面；关闭后仍保存管理用元数据</string>
     <string name="settings_download_directory_default_label">应用私有目录</string>
     <string name="settings_download_directory_custom_label">自定义目录</string>
     <string name="settings_download_directory_internal_storage">内部存储</string>

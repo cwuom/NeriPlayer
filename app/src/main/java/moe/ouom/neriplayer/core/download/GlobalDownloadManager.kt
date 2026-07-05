@@ -46,6 +46,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -60,6 +61,8 @@ import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
+import moe.ouom.neriplayer.data.settings.autoSettingFlow
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONArray
@@ -80,6 +83,8 @@ object GlobalDownloadManager {
     private const val DOWNLOAD_CANCEL_SETTLE_TIMEOUT_MS = 5_000L
     private const val METADATA_WRITE_MAX_ATTEMPTS = 3
     private const val METADATA_WRITE_RETRY_DELAY_MS = 200L
+    private const val METADATA_POST_PROCESSING_MAX_ATTEMPTS = 3
+    private const val METADATA_POST_PROCESSING_RETRY_DELAY_MS = 350L
     internal const val PLAYBACK_METADATA_HYDRATION_DELAY_MS = 1_500L
     internal const val LOCAL_PLAYBACK_METADATA_HYDRATION_DELAY_MS = 4_000L
 
@@ -411,17 +416,28 @@ object GlobalDownloadManager {
             song = song,
             sidecarReferences = sidecarReferences
         )
-        scope.launch {
-            runCatching {
-                DownloadedAudioTagWriter.write(
-                    context = context,
-                    audio = resolvedStoredAudio,
-                    song = song,
-                    sidecarReferences = sidecarReferences
-                )
-            }.onFailure {
-                NPLogger.w(TAG, "异步写入音频内嵌标签失败: ${song.name}, ${it.message}")
-            }
+        if (
+            handleCancelledCompletedDownload(
+                context = context,
+                song = song,
+                songKey = songKey,
+                storedAudio = storedAudio,
+                sidecarReferences = sidecarReferences,
+                expectedAttemptId = expectedAttemptId
+            )
+        ) {
+            return
+        }
+        if (
+            !runDownloadedAudioMetadataPostProcessing(
+                context = context,
+                audio = resolvedStoredAudio,
+                song = song,
+                sidecarReferences = sidecarReferences,
+                expectedAttemptId = expectedAttemptId
+            )
+        ) {
+            return
         }
         if (
             handleCancelledCompletedDownload(
@@ -463,6 +479,71 @@ object GlobalDownloadManager {
             // 正常完成时前面已经做过 optimistic publish 和 snapshot 增量更新
             // 这里继续走轻量 reconcile，避免非私有目录每首歌都强制全量重扫
             scheduleCatalogReconcile(context, forceRefresh = false)
+        }
+    }
+
+    private suspend fun runDownloadedAudioMetadataPostProcessing(
+        context: Context,
+        audio: ManagedDownloadStorage.StoredEntry,
+        song: SongItem,
+        sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?,
+        expectedAttemptId: Long? = null
+    ): Boolean {
+        if (!isDownloadMetadataPostProcessingEnabled(context)) {
+            return true
+        }
+
+        val songKey = song.stableKey()
+        var lastError: Throwable? = null
+        repeat(METADATA_POST_PROCESSING_MAX_ATTEMPTS) { attempt ->
+            if (isSongCancelled(songKey)) {
+                return true
+            }
+            val writeResult = runCatching {
+                DownloadedAudioTagWriter.write(
+                    context = context,
+                    audio = audio,
+                    song = song,
+                    sidecarReferences = sidecarReferences
+                )
+            }
+            if (writeResult.getOrDefault(false)) {
+                return true
+            }
+            lastError = writeResult.exceptionOrNull()
+                ?: IllegalStateException("TagLib 未确认标签写入成功")
+            if (isSongCancelled(songKey)) {
+                return true
+            }
+            if (attempt < METADATA_POST_PROCESSING_MAX_ATTEMPTS - 1) {
+                NPLogger.w(
+                    TAG,
+                    "元信息后处理失败，准备重试(第${attempt + 1}次): ${audio.name} - ${lastError?.message}"
+                )
+                delay(METADATA_POST_PROCESSING_RETRY_DELAY_MS * (attempt + 1))
+            }
+        }
+
+        NPLogger.e(
+            TAG,
+            "元信息后处理最终失败: ${audio.name} - ${lastError?.message}",
+            lastError
+        )
+        updateTaskStatus(
+            songKey,
+            DownloadStatus.FAILED,
+            expectedAttemptId = expectedAttemptId
+        )
+        return false
+    }
+
+    private suspend fun isDownloadMetadataPostProcessingEnabled(context: Context): Boolean {
+        val setting = AutoSettingsSchema.download.downloadMetadataPostProcessingEnabled
+        return runCatching {
+            context.applicationContext.autoSettingFlow(setting).first()
+        }.getOrElse { error ->
+            NPLogger.w(TAG, "读取元信息后处理设置失败，按默认值处理: ${error.message}")
+            setting.defaultValue
         }
     }
 
@@ -1510,18 +1591,12 @@ object GlobalDownloadManager {
 
                     val existingAudio = findExistingDownloadedAudio(appContext, song)
                     if (existingAudio != null) {
-                        publishCompletedDownloadOptimistically(
+                        finalizeCompletedDownload(
                             context = appContext,
                             song = song,
-                            storedAudio = existingAudio
-                        )
-                        updateTaskStatus(
-                            songKey,
-                            DownloadStatus.COMPLETED,
+                            refreshCatalog = true,
                             expectedAttemptId = attemptId
                         )
-                        scheduleCompletedTaskRemoval(songKey, expectedAttemptId = attemptId)
-                        scheduleCatalogReconcile(appContext, forceRefresh = false)
                         return@withSongExecutionLock
                     }
 
@@ -1598,7 +1673,17 @@ object GlobalDownloadManager {
 
                     val existingAudio = findExistingDownloadedAudio(appContext, song)
                     if (existingAudio != null) {
-                        optimisticCompletedSongs += buildOptimisticDownloadedSong(song, existingAudio)
+                        if (isDownloadMetadataPostProcessingEnabled(appContext)) {
+                            val attemptId = prepareDownloadTask(song) ?: return@forEach
+                            finalizeCompletedDownload(
+                                context = appContext,
+                                song = song,
+                                refreshCatalog = false,
+                                expectedAttemptId = attemptId
+                            )
+                        } else {
+                            optimisticCompletedSongs += buildOptimisticDownloadedSong(song, existingAudio)
+                        }
                         return@forEach
                     }
 
@@ -1984,7 +2069,7 @@ object GlobalDownloadManager {
 
     fun resumeDownloadTask(context: Context, songKey: String) {
         val task = _downloadTasks.value.find { it.song.stableKey() == songKey } ?: return
-        if (task.status != DownloadStatus.CANCELLED) {
+        if (task.status != DownloadStatus.CANCELLED && task.status != DownloadStatus.FAILED) {
             return
         }
 

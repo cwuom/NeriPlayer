@@ -395,7 +395,8 @@ private fun DownloadTaskActionButton(
             }
         }
 
-        DownloadStatus.CANCELLED -> {
+        DownloadStatus.CANCELLED,
+        DownloadStatus.FAILED -> {
             IconButton(onClick = onResume) {
                 Icon(
                     Icons.Default.Refresh,

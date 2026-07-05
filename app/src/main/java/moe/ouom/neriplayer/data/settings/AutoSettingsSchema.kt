@@ -959,6 +959,15 @@ object AutoSettingsSchema {
             descriptionRes = R.string.settings_download_file_name_format_desc,
             icon = AutoSettingIcon.Download
         )
+
+        @AutoSetting(order = 40)
+        val downloadMetadataPostProcessingEnabled = autoSwitchSetting(
+            key = "download_metadata_post_processing_enabled",
+            defaultValue = true,
+            titleRes = R.string.settings_download_metadata_post_processing,
+            descriptionRes = R.string.settings_download_metadata_post_processing_desc,
+            icon = AutoSettingIcon.AutoAwesome
+        )
     }
 
     /*
