@@ -28,7 +28,9 @@ import android.annotation.SuppressLint
 import android.Manifest
 import android.content.ClipData
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -162,6 +164,7 @@ import moe.ouom.neriplayer.core.download.hasPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportResult
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
@@ -370,6 +373,7 @@ fun LocalPlaylistDetailScreen(
             var showSearch by remember { mutableStateOf(false) }
             var searchQuery by remember { mutableStateOf("") }
             var showDownloadManager by remember { mutableStateOf(false) }
+            var showLocalScanModeDialog by remember { mutableStateOf(false) }
             val searchFocusRequester = remember { FocusRequester() }
             val focusManager = LocalFocusManager.current
             val keyboardController = LocalSoftwareKeyboardController.current
@@ -431,32 +435,52 @@ fun LocalPlaylistDetailScreen(
                 }
             }
 
-            fun startDeviceAudioScan() {
-                detailSong = null
-                vm.scanDeviceSongs { result ->
-                    scope.launch {
-                        if (!result.completed) {
-                            snackbarHostState.showSnackbar(
-                                context.getString(R.string.local_playlist_scan_preserve_existing)
-                            )
-                            return@launch
-                        }
+            fun handleLocalAudioScanResult(result: LocalAudioImportResult) {
+                scope.launch {
+                    if (!result.completed) {
+                        snackbarHostState.showSnackbar(
+                            context.getString(R.string.local_playlist_scan_preserve_existing)
+                        )
+                        return@launch
+                    }
 
-                        if (result.failedCount > 0) {
-                            snackbarHostState.showSnackbar(
-                                context.resources.getQuantityString(
-                                    R.plurals.download_scan_failed,
-                                    result.failedCount,
-                                    result.failedCount
-                                )
+                    if (result.failedCount > 0) {
+                        snackbarHostState.showSnackbar(
+                            context.resources.getQuantityString(
+                                R.plurals.download_scan_failed,
+                                result.failedCount,
+                                result.failedCount
                             )
-                        }
+                        )
                     }
                 }
             }
 
+            fun startDeviceAudioScan() {
+                detailSong = null
+                vm.scanDeviceSongs(::handleLocalAudioScanResult)
+            }
+
+            fun startFolderAudioScan(folderUri: Uri) {
+                detailSong = null
+                vm.scanFolderSongs(folderUri, ::handleLocalAudioScanResult)
+            }
+
             fun dismissScanPreviewPage(cancelScan: Boolean = true) {
                 vm.clearScanPreview(cancelScan = cancelScan)
+            }
+
+            val folderScanLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.OpenDocumentTree()
+            ) { uri ->
+                uri ?: return@rememberLauncherForActivityResult
+                runCatching {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
+                startFolderAudioScan(uri)
             }
 
             val audioPermissionLauncher = rememberLauncherForActivityResult(
@@ -471,6 +495,38 @@ fun LocalPlaylistDetailScreen(
                         )
                     }
                 }
+            }
+
+            if (showLocalScanModeDialog) {
+                AlertDialog(
+                    onDismissRequest = { showLocalScanModeDialog = false },
+                    confirmButton = {
+                        HapticTextButton(
+                            onClick = {
+                                showLocalScanModeDialog = false
+                                folderScanLauncher.launch(null)
+                            }
+                        ) { Text(stringResource(R.string.local_playlist_scan_folder)) }
+                    },
+                    dismissButton = {
+                        HapticTextButton(
+                            onClick = {
+                                showLocalScanModeDialog = false
+                                val hasPermission = ContextCompat.checkSelfPermission(
+                                    context,
+                                    requiredAudioPermission
+                                ) == PackageManager.PERMISSION_GRANTED
+                                if (hasPermission) {
+                                    startDeviceAudioScan()
+                                } else {
+                                    audioPermissionLauncher.launch(requiredAudioPermission)
+                                }
+                            }
+                        ) { Text(stringResource(R.string.local_playlist_scan_global)) }
+                    },
+                    title = { Text(stringResource(R.string.local_playlist_scan_mode_title)) },
+                    text = { Text(stringResource(R.string.local_playlist_scan_mode_message)) }
+                )
             }
 
             // 可变列表：保持存储层顺序（正序），UI 用 asReversed() 倒序展示
@@ -909,15 +965,7 @@ fun LocalPlaylistDetailScreen(
                                 
                                 if (isLocalFilesPlaylist) {
                                     HapticIconButton(onClick = {
-                                        val hasPermission = ContextCompat.checkSelfPermission(
-                                            context,
-                                            requiredAudioPermission
-                                        ) == PackageManager.PERMISSION_GRANTED
-                                        if (hasPermission) {
-                                            startDeviceAudioScan()
-                                        } else {
-                                            audioPermissionLauncher.launch(requiredAudioPermission)
-                                        }
+                                        showLocalScanModeDialog = true
                                     }, enabled = !scanPreviewState.isScanning) {
                                         Icon(
                                             Icons.Outlined.LibraryMusic,

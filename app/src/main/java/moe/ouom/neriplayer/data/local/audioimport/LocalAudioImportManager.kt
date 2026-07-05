@@ -30,6 +30,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.system.Os
+import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -128,6 +129,27 @@ internal fun buildNearbySidecarCopyPlans(
 
 object LocalAudioImportManager {
     private const val TAG = "LocalAudioImport"
+    private val audioExtensions = setOf(
+        "aac",
+        "aif",
+        "aiff",
+        "alac",
+        "amr",
+        "ape",
+        "flac",
+        "m4a",
+        "m4b",
+        "m4p",
+        "mid",
+        "midi",
+        "mka",
+        "mp3",
+        "oga",
+        "ogg",
+        "opus",
+        "wav",
+        "wma"
+    )
     private val lyricExtensions = listOf("lrc", "txt")
     private val imageExtensions = listOf("jpg", "jpeg", "png", "webp")
     private val coverNames = listOf("cover", "folder", "front")
@@ -164,6 +186,59 @@ object LocalAudioImportManager {
         LocalAudioImportResult(
             songs = songs.distinctBy { it.identity() },
             failedCount = failedCount,
+            completed = true
+        )
+    }
+
+    suspend fun scanFolderSongs(context: Context, folderUri: Uri): LocalAudioImportResult = withContext(Dispatchers.IO) {
+        val root = DocumentFile.fromTreeUri(context, folderUri)
+        if (root == null || !root.canRead()) {
+            NPLogger.w(TAG, "scanFolderSongs skipped unreadable folder: $folderUri")
+            return@withContext LocalAudioImportResult(
+                songs = emptyList(),
+                failedCount = 1,
+                completed = false
+            )
+        }
+
+        val songs = mutableListOf<SongItem>()
+        var failed = 0
+        val pendingDirectories = ArrayDeque<DocumentFile>().apply { add(root) }
+
+        while (pendingDirectories.isNotEmpty()) {
+            coroutineContext.ensureActive()
+            val directory = pendingDirectories.removeFirst()
+            val children = runCatching { directory.listFiles() }
+                .onFailure {
+                    failed++
+                    NPLogger.w(TAG, "scanFolderSongs failed to list ${directory.uri}: ${it.message}")
+                }
+                .getOrNull()
+                ?: continue
+
+            for (child in children) {
+                coroutineContext.ensureActive()
+                when {
+                    child.isDirectory -> pendingDirectories.add(child)
+                    child.isFile && child.isSupportedAudioDocument() -> {
+                        val song = runCatching {
+                            LocalMediaSupport.toSongItem(LocalMediaSupport.inspect(context, child.uri))
+                        }.onFailure {
+                            failed++
+                            NPLogger.w(TAG, "scanFolderSongs skipped ${child.uri}: ${it.message}")
+                        }.getOrNull()
+
+                        if (song != null) {
+                            songs += song
+                        }
+                    }
+                }
+            }
+        }
+
+        LocalAudioImportResult(
+            songs = songs.distinctBy { it.identity() },
+            failedCount = failed,
             completed = true
         )
     }
@@ -761,5 +836,19 @@ object LocalAudioImportManager {
         return MessageDigest.getInstance("SHA-256")
             .digest(value.toByteArray())
             .joinToString("") { "%02x".format(it) }
+    }
+
+    private fun DocumentFile.isSupportedAudioDocument(): Boolean {
+        val mimeType = type?.lowercase()
+        if (mimeType?.startsWith("audio/") == true) {
+            return true
+        }
+
+        val extension = name
+            ?.substringAfterLast('.', "")
+            ?.lowercase()
+            ?.takeIf { it.isNotBlank() }
+            ?: return false
+        return extension in audioExtensions
     }
 }

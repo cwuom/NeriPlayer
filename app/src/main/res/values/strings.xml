@@ -1480,6 +1480,10 @@
     <string name="download_manager_title">下载管理</string>
     <string name="download_manager_subtitle">管理音乐下载和本地文件</string>
     <string name="download_scan_local">扫描本地音乐</string>
+    <string name="local_playlist_scan_mode_title">选择扫描方式</string>
+    <string name="local_playlist_scan_mode_message">授权文件夹只扫描你选择的文件夹及其子文件夹；全局扫描会读取设备音乐库。</string>
+    <string name="local_playlist_scan_folder">授权文件夹</string>
+    <string name="local_playlist_scan_global">全局扫描</string>
     <string name="local_playlist_scan_preserve_existing">扫描结果无效，已保留现有本地文件列表</string>
     <string name="local_playlist_scan_preview_title">预览本地文件</string>
     <string name="local_playlist_scan_preview_search">搜索本地文件</string>

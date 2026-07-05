@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.ui.viewmodel.playlist
 
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
@@ -100,6 +101,21 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     }
 
     fun scanDeviceSongs(onResult: (LocalAudioImportResult) -> Unit) {
+        startLocalAudioScan(onResult) {
+            LocalAudioImportManager.scanDeviceSongs(app)
+        }
+    }
+
+    fun scanFolderSongs(folderUri: Uri, onResult: (LocalAudioImportResult) -> Unit) {
+        startLocalAudioScan(onResult) {
+            LocalAudioImportManager.scanFolderSongs(app, folderUri)
+        }
+    }
+
+    private fun startLocalAudioScan(
+        onResult: (LocalAudioImportResult) -> Unit,
+        scanAction: suspend () -> LocalAudioImportResult
+    ) {
         if (_scanPreviewState.value.isScanning) {
             _scanPreviewState.value = _scanPreviewState.value.copy(visible = true)
             return
@@ -112,7 +128,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         lateinit var currentJob: Job
         currentJob = viewModelScope.launch {
             try {
-                val result = LocalAudioImportManager.scanDeviceSongs(app)
+                val result = scanAction()
                 if (!isActiveScanSession(sessionId, currentJob)) return@launch
                 _scanPreviewState.value = if (result.completed) {
                     val preparedSongs = prepareScannedSongs(result.songs)
