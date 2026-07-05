@@ -374,6 +374,78 @@ object LocalMediaSupport {
         )
     }
 
+    fun inspectForScan(context: Context, uri: Uri): LocalMediaDetails {
+        val resolved = resolveInspectableLocalMedia(
+            context = context,
+            uri = uri,
+            allowDescriptorFallback = false
+        )
+        val queried = resolved.queried
+        val file = resolved.file
+        val containerMetadata = file?.let(::parseContainerMetadata)
+        val tagLibMetadata = inspectTagLibMetadata(
+            context = context,
+            uri = resolved.playableUri,
+            file = file,
+            includeEmbeddedAssets = false
+        )
+        val title = pickReadableLocalTitle(
+            sourceUri = uri,
+            fallbackTitle = resolved.fallbackTitle,
+            tagLibMetadata?.title,
+            containerMetadata?.title,
+            queried.title
+        ) ?: resolved.fallbackTitle
+        val artist = tagLibMetadata?.artist
+            ?: containerMetadata?.artist?.takeIf { it.isNotBlank() }
+            ?: queried.artist?.takeIf { it.isNotBlank() }
+            ?: context.getString(R.string.music_unknown_artist)
+        val album = tagLibMetadata?.album
+            ?: containerMetadata?.album?.takeIf { it.isNotBlank() }
+            ?: queried.album?.takeIf { it.isNotBlank() }
+        val usesFallbackAlbum = album == null
+        val nearbyCover = findNearbyCover(file)
+
+        return LocalMediaDetails(
+            sourceUri = uri,
+            displayName = resolved.displayName,
+            title = title,
+            artist = artist,
+            album = album ?: context.getString(R.string.local_files),
+            usesFallbackAlbum = usesFallbackAlbum,
+            albumArtist = tagLibMetadata?.albumArtist ?: containerMetadata?.albumArtist,
+            composer = tagLibMetadata?.composer ?: containerMetadata?.composer,
+            genre = tagLibMetadata?.genre ?: containerMetadata?.genre,
+            year = tagLibMetadata?.year ?: containerMetadata?.year,
+            trackNumber = tagLibMetadata?.trackNumber ?: containerMetadata?.trackNumber,
+            discNumber = tagLibMetadata?.discNumber ?: containerMetadata?.discNumber,
+            durationMs = tagLibMetadata?.durationMs ?: queried.durationMs ?: 0L,
+            fileExtension = resolved.fileExtension,
+            mimeType = queried.mimeType,
+            audioMimeType = null,
+            bitrateKbps = tagLibMetadata?.bitrateKbps,
+            sampleRateHz = tagLibMetadata?.sampleRateHz,
+            channelCount = tagLibMetadata?.channelCount,
+            bitsPerSample = null,
+            sizeBytes = queried.sizeBytes ?: file?.length(),
+            lastModifiedMs = queried.lastModifiedMs ?: file?.lastModified(),
+            filePath = file?.absolutePath ?: queried.filePath,
+            coverUri = nearbyCover?.toURI()?.toString(),
+            coverSource = nearbyCover?.let {
+                context.getString(R.string.local_song_cover_external)
+            },
+            lyricContent = null,
+            lyricPath = null,
+            lyricSource = null,
+            originalTitle = title,
+            originalArtist = tagLibMetadata?.artist
+                ?: containerMetadata?.artist?.takeIf { it.isNotBlank() }
+                ?: queried.artist?.takeIf { it.isNotBlank() }
+                ?: artist,
+            embeddedCover = false
+        )
+    }
+
     fun inspect(context: Context, uri: Uri): LocalMediaDetails {
         val resolved = resolveInspectableLocalMedia(context, uri)
         val queried = resolved.queried
@@ -1013,11 +1085,12 @@ object LocalMediaSupport {
     private fun inspectTagLibMetadata(
         context: Context,
         uri: Uri,
-        file: File?
+        file: File?,
+        includeEmbeddedAssets: Boolean = true
     ): TagLibMetadata? {
         return openTagLibDescriptor(context, uri, file)?.use { descriptor ->
             val metadata = runCatching {
-                TagLib.getMetadata(descriptor.dup().detachFd(), true)
+                TagLib.getMetadata(descriptor.dup().detachFd(), includeEmbeddedAssets)
             }.getOrElse {
                 NPLogger.w(TAG, "TagLib metadata failed for $uri: ${it.message}")
                 null
@@ -1034,10 +1107,14 @@ object LocalMediaSupport {
             }
 
             val propertyMap = metadata?.propertyMap
-            val coverBytes = metadata?.pictures
-                ?.firstOrNull { it.pictureType.equals("Front Cover", ignoreCase = true) }
-                ?.data
-                ?: metadata?.pictures?.firstOrNull()?.data
+            val coverBytes = if (includeEmbeddedAssets) {
+                metadata?.pictures
+                    ?.firstOrNull { it.pictureType.equals("Front Cover", ignoreCase = true) }
+                    ?.data
+                    ?: metadata?.pictures?.firstOrNull()?.data
+            } else {
+                null
+            }
 
             TagLibMetadata(
                 title = propertyMap.readFirstValue("TITLE", "TRACKTITLE", "SUBTITLE"),
@@ -1053,11 +1130,15 @@ object LocalMediaSupport {
                 bitrateKbps = audioProperties?.bitrate?.takeIf { it > 0 },
                 sampleRateHz = audioProperties?.sampleRate?.takeIf { it > 0 },
                 channelCount = audioProperties?.channels?.takeIf { it > 0 },
-                lyrics = propertyMap.readFirstValue(
-                    "LYRICS",
-                    "UNSYNCEDLYRICS",
-                    "DESCRIPTION"
-                ),
+                lyrics = if (includeEmbeddedAssets) {
+                    propertyMap.readFirstValue(
+                        "LYRICS",
+                        "UNSYNCEDLYRICS",
+                        "DESCRIPTION"
+                    )
+                } else {
+                    null
+                },
                 coverBytes = coverBytes?.takeIf { it.isNotEmpty() }
             )
         }

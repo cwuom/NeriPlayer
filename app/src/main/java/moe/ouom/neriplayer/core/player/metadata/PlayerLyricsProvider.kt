@@ -32,6 +32,8 @@ import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicClient
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
 import moe.ouom.neriplayer.ui.component.LyricEntry
@@ -157,6 +159,26 @@ internal object PlayerLyricsProvider {
                 }
             }
         }
+    }
+
+    private fun loadOnDemandLocalLyrics(
+        application: Application,
+        song: SongItem
+    ): List<LyricEntry>? {
+        if (!song.isLocalSong()) {
+            return null
+        }
+
+        val localLyric = runCatching {
+            LocalMediaSupport.inspect(application, song)?.lyricContent
+        }.onFailure {
+            NPLogger.w("NERI-PlayerManager", "本地歌词懒加载失败: ${it.message}")
+        }.getOrNull()
+
+        return parseLocalLyricOverride(
+            rawLyric = localLyric,
+            logPrefix = "本地歌词解析失败"
+        )
     }
 
     suspend fun getNeteaseLyrics(
@@ -291,6 +313,7 @@ internal object PlayerLyricsProvider {
                 rawLyric = AudioDownloadManager.getLyricContent(application, song),
                 logPrefix = "本地歌词读取失败"
             )?.let { return@withContext it }
+            loadOnDemandLocalLyrics(application, song)?.let { return@withContext it }
 
             if (isYouTubeMusicSong(song)) {
                 return@withContext getYouTubeMusicLyrics(song, youtubeMusicClient, lrcLibClient, ytMusicLyricsCache)

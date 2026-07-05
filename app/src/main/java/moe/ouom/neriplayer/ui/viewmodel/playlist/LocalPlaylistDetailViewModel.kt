@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.ui.viewmodel.playlist
 
 import android.app.Application
 import android.net.Uri
+import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
@@ -44,6 +45,7 @@ import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.util.NPLogger
 
 data class LocalPlaylistDetailUiState(
     val playlist: LocalPlaylist? = null,
@@ -65,6 +67,10 @@ data class LocalScanPreviewState(
 
 @Suppress("unused")
 class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(application) {
+    private companion object {
+        const val TAG = "LocalPlaylistScanVM"
+    }
+
     private val app = application
     private val repo = LocalPlaylistRepository.getInstance(application)
 
@@ -123,15 +129,28 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
 
         scanJob?.cancel()
         val sessionId = ++scanSessionId
+        val scanStartedAt = SystemClock.elapsedRealtime()
         _scanPreviewState.value = LocalScanPreviewState(visible = true, isScanning = true)
+        NPLogger.d(TAG, "start scan session=$sessionId")
 
         lateinit var currentJob: Job
         currentJob = viewModelScope.launch {
             try {
                 val result = scanAction()
                 if (!isActiveScanSession(sessionId, currentJob)) return@launch
+                val scanElapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
+                NPLogger.d(
+                    TAG,
+                    "scan action finished: session=$sessionId, songs=${result.songs.size}, failed=${result.failedCount}, completed=${result.completed}, elapsed=${scanElapsedMs}ms"
+                )
                 _scanPreviewState.value = if (result.completed) {
+                    val prepareStartedAt = SystemClock.elapsedRealtime()
                     val preparedSongs = prepareScannedSongs(result.songs)
+                    val prepareElapsedMs = SystemClock.elapsedRealtime() - prepareStartedAt
+                    NPLogger.d(
+                        TAG,
+                        "prepareScannedSongs finished: session=$sessionId, input=${result.songs.size}, output=${preparedSongs.size}, elapsed=${prepareElapsedMs}ms"
+                    )
                     LocalScanPreviewState(
                         visible = true,
                         isScanning = false,
@@ -144,6 +163,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                 onResult(result)
             } catch (_: CancellationException) {
                 // 用户主动返回时直接取消，不再回调已经离开的界面
+                NPLogger.d(TAG, "scan cancelled: session=$sessionId")
             } finally {
                 if (scanJob === currentJob) {
                     scanJob = null
@@ -151,6 +171,10 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                 if (scanSessionId == sessionId && _scanPreviewState.value.isScanning) {
                     _scanPreviewState.value = _scanPreviewState.value.copy(isScanning = false)
                 }
+                NPLogger.d(
+                    TAG,
+                    "scan session finished: session=$sessionId, totalElapsed=${SystemClock.elapsedRealtime() - scanStartedAt}ms"
+                )
             }
         }
         scanJob = currentJob
