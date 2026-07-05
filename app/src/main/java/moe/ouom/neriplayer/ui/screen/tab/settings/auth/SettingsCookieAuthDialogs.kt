@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.BiliWebLoginActivity
 import moe.ouom.neriplayer.activity.YouTubeWebLoginActivity
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.InlineMessage
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
@@ -119,6 +120,7 @@ internal fun SettingsBiliAuthDialogs(
             }
             val defaultBrowserLogin: () -> Unit = {
                 onInlineMsgChange(null)
+                AppContainer.pauseYouTubeBackgroundWebWorkForForegroundLogin()
                 webLoginLauncher.launch(Intent(context, BiliWebLoginActivity::class.java))
             }
             defaultBrowserLogin

@@ -24,6 +24,7 @@ package moe.ouom.neriplayer
  */
 
 import android.app.Application
+import android.webkit.WebView
 import coil.Coil
 import coil.ImageLoader
 import coil.disk.DiskCache
@@ -52,17 +53,45 @@ class NeriPlayerApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        val runningInMainProcess = isMainProcess()
+        configureWebViewDataDirectoryIfNeeded(runningInMainProcess)
 
         // 初始化语言设置
         LanguageManager.init(this)
-        AnrWatchdog.capturePreviousAnrIfNeeded(this)
-        val enterSafeMode = SafeModeManager.shouldEnterSafeMode(this)
-        ExceptionHandler.init(this, installNativeCrashHandler = !enterSafeMode)
+        if (runningInMainProcess) {
+            AnrWatchdog.capturePreviousAnrIfNeeded(this)
+        }
+        val enterSafeMode = runningInMainProcess && SafeModeManager.shouldEnterSafeMode(this)
+        ExceptionHandler.init(
+            this,
+            installNativeCrashHandler = runningInMainProcess && !enterSafeMode
+        )
 
         if (enterSafeMode) {
             return
         }
+        if (!runningInMainProcess) {
+            return
+        }
         initializeNormalComponents()
+    }
+
+    private fun isMainProcess(): Boolean {
+        val currentProcessName = getProcessName()
+        val mainProcessName = applicationInfo.processName.ifBlank { packageName }
+        return currentProcessName == mainProcessName
+    }
+
+    private fun configureWebViewDataDirectoryIfNeeded(runningInMainProcess: Boolean) {
+        if (runningInMainProcess) {
+            return
+        }
+        val processName = getProcessName()
+        val suffix = processName
+            .substringAfter(':', missingDelimiterValue = processName)
+            .ifBlank { "webview" }
+            .replace(Regex("[^A-Za-z0-9_.-]"), "_")
+        WebView.setDataDirectorySuffix(suffix)
     }
 
     internal fun initializeNormalComponents() {

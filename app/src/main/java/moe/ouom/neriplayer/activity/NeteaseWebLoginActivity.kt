@@ -31,7 +31,9 @@ import android.os.Bundle
 import android.view.MenuItem
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -63,6 +65,7 @@ class NeteaseWebLoginActivity : ComponentActivity() {
 
     companion object {
         const val RESULT_COOKIE = "result_cookie_map_json"
+        private const val LOG_TAG = "NERI-NeteaseLogin"
         private const val TARGET_URL = "https://music.163.com/"
         private val ALLOWED_LOGIN_DOMAINS = setOf(
             "163.com",
@@ -134,7 +137,7 @@ class NeteaseWebLoginActivity : ComponentActivity() {
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
-                mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                 allowFileAccess = false
                 allowContentAccess = false
                 userAgentString = DESKTOP_UA
@@ -144,9 +147,13 @@ class NeteaseWebLoginActivity : ComponentActivity() {
                 builtInZoomControls = true
                 displayZoomControls = false
             }
-            webChromeClient = WebChromeClient()
+            CookieManager.getInstance().setAcceptCookie(true)
+            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+            webChromeClient = InnerChromeClient()
             webViewClient = InnerClient()
         }
+        // WebView 的 JS 定时器是进程级的，前台登录页先主动恢复一次更稳
+        webView.resumeTimers()
 
         root.addView(webView)
         root.addView(appBar)
@@ -178,6 +185,21 @@ class NeteaseWebLoginActivity : ComponentActivity() {
         initialCookies = readCookieMap()
         loginCompletionWatcher.start()
         webView.loadUrl(TARGET_URL)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (this::webView.isInitialized) {
+            webView.resumeTimers()
+            webView.onResume()
+        }
+    }
+
+    override fun onPause() {
+        if (this::webView.isInitialized) {
+            webView.onPause()
+        }
+        super.onPause()
     }
 
     override fun onDestroy() {
@@ -288,6 +310,52 @@ class NeteaseWebLoginActivity : ComponentActivity() {
                 loginCompletionWatcher.scheduleCheck()
             }
         }
+
+        override fun onReceivedError(
+            view: WebView?,
+            request: WebResourceRequest?,
+            error: WebResourceError?
+        ) {
+            super.onReceivedError(view, request, error)
+            if (shouldLogWebRequest(request)) {
+                NPLogger.w(
+                    LOG_TAG,
+                    "Web error main=${request?.isForMainFrame} " +
+                        "code=${error?.errorCode} desc=${error?.description} url=${request?.url}"
+                )
+            }
+        }
+
+        override fun onReceivedHttpError(
+            view: WebView?,
+            request: WebResourceRequest?,
+            errorResponse: WebResourceResponse?
+        ) {
+            super.onReceivedHttpError(view, request, errorResponse)
+            if (shouldLogWebRequest(request)) {
+                NPLogger.w(
+                    LOG_TAG,
+                    "HTTP error main=${request?.isForMainFrame} " +
+                        "status=${errorResponse?.statusCode} reason=${errorResponse?.reasonPhrase} " +
+                        "url=${request?.url}"
+                )
+            }
+        }
+    }
+
+    private inner class InnerChromeClient : WebChromeClient() {
+
+        override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+            val message = consoleMessage ?: return super.onConsoleMessage(consoleMessage)
+            val logMessage = "Console ${message.messageLevel()} " +
+                "${message.sourceId()}:${message.lineNumber()} ${message.message().compactForLog()}"
+            when (message.messageLevel()) {
+                ConsoleMessage.MessageLevel.ERROR -> NPLogger.e(LOG_TAG, logMessage)
+                ConsoleMessage.MessageLevel.WARNING -> NPLogger.w(LOG_TAG, logMessage)
+                else -> NPLogger.d(LOG_TAG, logMessage)
+            }
+            return super.onConsoleMessage(consoleMessage)
+        }
     }
 
     private fun maybeReturnIfLoggedIn(): Boolean {
@@ -309,12 +377,31 @@ class NeteaseWebLoginActivity : ComponentActivity() {
         return true
     }
 
+    private fun shouldLogWebRequest(request: WebResourceRequest?): Boolean {
+        val currentRequest = request ?: return false
+        if (currentRequest.isForMainFrame) {
+            return true
+        }
+        return hostMatchesAnyDomain(currentRequest.url.host, ALLOWED_LOGIN_DOMAINS)
+    }
+
+    private fun String.compactForLog(maxLength: Int = 400): String {
+        val compact = replace('\r', ' ')
+            .replace('\n', ' ')
+            .trim()
+        if (compact.length <= maxLength) {
+            return compact
+        }
+        return "${compact.take(maxLength)}..."
+    }
+
     private fun isAllowedLoginUri(uri: Uri?): Boolean {
         val resolvedUri = uri ?: return false
         if (resolvedUri.toString() == "about:blank") {
             return true
         }
-        if (!resolvedUri.scheme.equals("https", ignoreCase = true)) {
+        val scheme = resolvedUri.scheme.orEmpty()
+        if (!scheme.equals("https", ignoreCase = true) && !scheme.equals("http", ignoreCase = true)) {
             return false
         }
         return hostMatchesAnyDomain(resolvedUri.host, ALLOWED_LOGIN_DOMAINS)

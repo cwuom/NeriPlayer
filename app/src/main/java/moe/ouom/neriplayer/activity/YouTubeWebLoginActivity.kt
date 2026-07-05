@@ -222,6 +222,8 @@ class YouTubeWebLoginActivity : ComponentActivity() {
             webChromeClient = WebChromeClient()
             webViewClient = InnerClient()
         }
+        // WebView 的 JS 定时器是进程级的，前台登录页先主动恢复一次更稳
+        webView.resumeTimers()
 
         restorePersistedCookies()
         loginCompletionWatcher.start()
@@ -267,6 +269,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (this::webView.isInitialized) {
+            webView.resumeTimers()
             webView.onResume()
         }
     }

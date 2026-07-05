@@ -55,6 +55,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.activity.NeteaseQrLoginActivity
 import moe.ouom.neriplayer.activity.NeteaseWebLoginActivity
 import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.InlineMessage
@@ -146,7 +147,7 @@ internal fun SettingsNeteaseAuthDialogs(
                 contract = ActivityResultContracts.StartActivityForResult()
             ) { result ->
                 if (result.resultCode == android.app.Activity.RESULT_OK) {
-                    val json = result.data?.getStringExtra(NeteaseWebLoginActivity.RESULT_COOKIE) ?: "{}"
+                    val json = result.data?.getStringExtra(NeteaseQrLoginActivity.RESULT_COOKIE) ?: "{}"
                     vm.importCookiesFromMap(parseCookieMap(json))
                 } else {
                     onInlineMsgChange(context.getString(R.string.settings_cookie_cancelled))
@@ -154,7 +155,7 @@ internal fun SettingsNeteaseAuthDialogs(
             }
             val defaultBrowserLogin: () -> Unit = {
                 onInlineMsgChange(null)
-                webLoginLauncher.launch(Intent(context, NeteaseWebLoginActivity::class.java))
+                webLoginLauncher.launch(Intent(context, NeteaseQrLoginActivity::class.java))
             }
             defaultBrowserLogin
         }
@@ -208,7 +209,7 @@ internal fun SettingsNeteaseAuthDialogs(
                             )
                             Spacer(Modifier.height(12.dp))
                             MiuixSettingsButton(onClick = launchBrowserLogin) {
-                                Text(stringResource(R.string.login_start_browser))
+                                Text(stringResource(R.string.login_start_netease_qr))
                             }
                         }
 

@@ -95,8 +95,6 @@ class BiliWebLoginActivity : ComponentActivity() {
         NPLogger.d(LOG_TAG, "Bilibili login activity created")
         foregroundWebLoginToken = ForegroundWebLoginGuard.enter("bilibili")
         AppContainer.pauseYouTubeBackgroundWebWorkForForegroundLogin()
-        forceFreshWebContext()
-
         webView = WebView(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -116,6 +114,9 @@ class BiliWebLoginActivity : ComponentActivity() {
             webChromeClient = InnerChromeClient()
             webViewClient = InnerClient()
         }
+        // 后台 YouTube 预热 WebView 可能残留了全局定时器暂停状态，这里先抢回前台时钟
+        webView.resumeTimers()
+        forceFreshWebContext()
         setContentView(webView)
 
         loginCompletionWatcher.start()
@@ -141,6 +142,7 @@ class BiliWebLoginActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (this::webView.isInitialized) {
+            webView.resumeTimers()
             webView.onResume()
         }
     }

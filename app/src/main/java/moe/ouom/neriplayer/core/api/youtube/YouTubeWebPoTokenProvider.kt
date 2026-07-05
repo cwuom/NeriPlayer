@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.core.api.youtube
 import android.annotation.SuppressLint
 import android.content.Context
 import android.net.Uri
+import android.os.Looper
 import android.util.Base64
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
@@ -433,7 +434,6 @@ internal class YouTubeWebPoTokenProvider(
             activeWebView.resumeTimers()
         } else {
             activeWebView.onPause()
-            activeWebView.pauseTimers()
         }
     }
 
@@ -442,16 +442,25 @@ internal class YouTubeWebPoTokenProvider(
         val activeGuard = backgroundWebViewGuard
         webView = null
         backgroundWebViewGuard = null
-        activeWebView.post {
+        val destroyBlock = {
             runCatching {
                 removeYouTubeBackgroundWebViewGuard(activeGuard)
+                // pauseTimers 会冻住整个进程里的 WebView，这里销毁前先把全局时钟恢复回来
+                activeWebView.resumeTimers()
                 activeWebView.onPause()
-                activeWebView.pauseTimers()
                 activeWebView.stopLoading()
                 activeWebView.removeJavascriptInterface(JS_BRIDGE_NAME)
+                activeWebView.webChromeClient = null
+                activeWebView.webViewClient = WebViewClient()
                 activeWebView.loadUrl("about:blank")
                 activeWebView.destroy()
             }
+            Unit
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            destroyBlock()
+        } else {
+            activeWebView.post(destroyBlock)
         }
         synchronized(pendingBridgeResults) {
             pendingBridgeResults.values.forEach { deferred ->

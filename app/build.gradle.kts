@@ -226,6 +226,7 @@ dependencies {
     implementation(libs.newpipe.extractor)
     implementation(libs.okhttp)
     implementation(libs.lyricon.provider)
+    implementation(libs.zxing.core)
 
     implementation(project(":accompanist-lyrics-core"))
     implementation(project(":accompanist-lyrics-ui"))
