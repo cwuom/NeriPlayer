@@ -18,6 +18,8 @@ import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.ui.graphics.vector.ImageVector
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
+import moe.ouom.neriplayer.ksp.annotations.AutoSettingsSectionEntry
 
 internal enum class SettingsPage(
     val titleRes: Int,
@@ -25,14 +27,12 @@ internal enum class SettingsPage(
     val icon: ImageVector
 ) {
     General(
-        titleRes = R.string.settings_general,
-        descriptionRes = R.string.settings_general_desc,
-        icon = Icons.Outlined.Settings
+        AutoSettingsSchema.general.metadata,
+        Icons.Outlined.Settings
     ),
     Theme(
-        titleRes = R.string.settings_theme,
-        descriptionRes = R.string.settings_theme_desc,
-        icon = Icons.Outlined.Palette
+        AutoSettingsSchema.theme.metadata,
+        Icons.Outlined.Palette
     ),
     Accounts(
         titleRes = R.string.settings_login_platforms,
@@ -40,29 +40,24 @@ internal enum class SettingsPage(
         icon = Icons.Filled.AccountCircle
     ),
     Personalization(
-        titleRes = R.string.settings_personalization,
-        descriptionRes = R.string.settings_personalization_expand,
-        icon = Icons.Outlined.Tune
+        AutoSettingsSchema.personalization.metadata,
+        Icons.Outlined.Tune
     ),
     Motion(
-        titleRes = R.string.settings_motion,
-        descriptionRes = R.string.settings_motion_expand,
-        icon = Icons.Outlined.Bolt
+        AutoSettingsSchema.motion.metadata,
+        Icons.Outlined.Bolt
     ),
     Lyrics(
-        titleRes = R.string.settings_lyrics_offset,
-        descriptionRes = R.string.settings_lyrics_offset_expand,
-        icon = Icons.Outlined.Subtitles
+        AutoSettingsSchema.lyrics.metadata,
+        Icons.Outlined.Subtitles
     ),
     Network(
-        titleRes = R.string.settings_network,
-        descriptionRes = R.string.settings_network_expand,
-        icon = Icons.Outlined.Router
+        AutoSettingsSchema.network.metadata,
+        Icons.Outlined.Router
     ),
     Playback(
-        titleRes = R.string.settings_playback,
-        descriptionRes = R.string.settings_playback_expand,
-        icon = Icons.AutoMirrored.Outlined.PlaylistPlay
+        AutoSettingsSchema.playback.metadata,
+        Icons.AutoMirrored.Outlined.PlaylistPlay
     ),
     PlaybackSource(
         titleRes = R.string.settings_playback_source,
@@ -70,24 +65,20 @@ internal enum class SettingsPage(
         icon = Icons.Outlined.LibraryMusic
     ),
     AudioQuality(
-        titleRes = R.string.settings_audio_quality,
-        descriptionRes = R.string.settings_audio_quality_expand,
-        icon = Icons.Filled.Audiotrack
+        AutoSettingsSchema.audioQuality.metadata,
+        Icons.Filled.Audiotrack
     ),
     Storage(
-        titleRes = R.string.settings_storage_cache,
-        descriptionRes = R.string.settings_storage_expand,
-        icon = Icons.Outlined.Storage
+        AutoSettingsSchema.storage.metadata,
+        Icons.Outlined.Storage
     ),
     Downloads(
-        titleRes = R.string.settings_download_management,
-        descriptionRes = R.string.settings_download_expand,
-        icon = Icons.Outlined.Download
+        AutoSettingsSchema.download.metadata,
+        Icons.Outlined.Download
     ),
     Backup(
-        titleRes = R.string.settings_backup_restore,
-        descriptionRes = R.string.settings_backup_expand,
-        icon = Icons.Outlined.Sync
+        AutoSettingsSchema.backup.metadata,
+        Icons.Outlined.Sync
     ),
     ListenTogether(
         titleRes = R.string.listen_together_title,
@@ -98,6 +89,12 @@ internal enum class SettingsPage(
         titleRes = R.string.nav_about,
         descriptionRes = R.string.settings_about_desc,
         icon = Icons.Outlined.Info
+    );
+
+    constructor(section: AutoSettingsSectionEntry, fallbackIcon: ImageVector) : this(
+        titleRes = section.titleRes,
+        descriptionRes = section.descriptionRes,
+        icon = section.icon.toSettingsPageIcon(fallbackIcon)
     )
 }
 

@@ -2,12 +2,17 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.component
 
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.outlined.AdsClick
 import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.BlurOn
 import androidx.compose.material.icons.outlined.BluetoothAudio
+import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Brightness4
+import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Colorize
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Error
@@ -15,8 +20,12 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Subtitles
+import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material3.Icon
@@ -163,12 +172,16 @@ private fun autoSettingSpecIconPainter(iconRes: Int): Painter? {
 private fun autoSettingSpecIconVector(icon: AutoSettingIcon): ImageVector? {
     return when (icon) {
         AutoSettingIcon.None -> null
+        AutoSettingIcon.AccountCircle -> Icons.Filled.AccountCircle
         AutoSettingIcon.AdsClick -> Icons.Outlined.AdsClick
         AutoSettingIcon.Analytics -> Icons.Outlined.Analytics
+        AutoSettingIcon.Audiotrack -> Icons.Filled.Audiotrack
         AutoSettingIcon.AutoAwesome -> Icons.Outlined.AutoAwesome
         AutoSettingIcon.BlurOn -> Icons.Outlined.BlurOn
         AutoSettingIcon.BluetoothAudio -> Icons.Outlined.BluetoothAudio
+        AutoSettingIcon.Bolt -> Icons.Outlined.Bolt
         AutoSettingIcon.Brightness4 -> Icons.Outlined.Brightness4
+        AutoSettingIcon.Cloud -> Icons.Outlined.Cloud
         AutoSettingIcon.Colorize -> Icons.Outlined.Colorize
         AutoSettingIcon.Download -> Icons.Outlined.Download
         AutoSettingIcon.Error -> Icons.Outlined.Error
@@ -176,8 +189,13 @@ private fun autoSettingSpecIconVector(icon: AutoSettingIcon): ImageVector? {
         AutoSettingIcon.Info -> Icons.Outlined.Info
         AutoSettingIcon.Keyboard -> Icons.Outlined.Keyboard
         AutoSettingIcon.LibraryMusic -> Icons.Outlined.LibraryMusic
+        AutoSettingIcon.Palette -> Icons.Outlined.Palette
+        AutoSettingIcon.PlaylistPlay -> Icons.AutoMirrored.Outlined.PlaylistPlay
+        AutoSettingIcon.Router -> Icons.Outlined.Router
         AutoSettingIcon.Settings -> Icons.Outlined.Settings
+        AutoSettingIcon.Storage -> Icons.Outlined.Storage
         AutoSettingIcon.Subtitles -> Icons.Outlined.Subtitles
+        AutoSettingIcon.Sync -> Icons.Outlined.Sync
         AutoSettingIcon.Tune -> Icons.Outlined.Tune
         AutoSettingIcon.Wallpaper -> Icons.Outlined.Wallpaper
     }

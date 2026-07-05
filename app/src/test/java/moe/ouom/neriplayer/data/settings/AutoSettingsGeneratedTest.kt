@@ -108,6 +108,34 @@ class AutoSettingsGeneratedTest {
             R.string.settings_playback,
             AutoSettingsMetadata.section(AutoSettingsSections.playback)?.titleRes
         )
+        assertEquals(
+            R.string.settings_general,
+            AutoSettingsMetadata.requireSection(AutoSettingsSections.general).titleRes
+        )
+        assertEquals(
+            R.string.settings_general_desc,
+            AutoSettingsMetadata.requireSection(AutoSettingsSections.general).descriptionRes
+        )
+        assertEquals(
+            AutoSettingIcon.Settings,
+            AutoSettingsMetadata.requireSection(AutoSettingsSections.general).icon
+        )
+        assertEquals(
+            AutoSettingIcon.Palette,
+            AutoSettingsMetadata.requireSection(AutoSettingsSections.theme).icon
+        )
+        assertEquals(
+            AutoSettingIcon.Audiotrack,
+            AutoSettingsMetadata.requireSection(AutoSettingsSections.audioQuality).icon
+        )
+        assertEquals(
+            AutoSettingIcon.PlaylistPlay,
+            AutoSettingsMetadata.requireSection(AutoSettingsSections.playback).icon
+        )
+        assertEquals(
+            AutoSettingIcon.Sync,
+            AutoSettingsMetadata.requireSection(AutoSettingsSections.backup).icon
+        )
 
         val playbackFade = AutoSettingsMetadata.setting("playback_fade_in")
         assertEquals(SettingUiType.Custom, playbackFade?.ui)

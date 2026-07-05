@@ -45,8 +45,9 @@ object AutoSettingsSchema {
     )
     object general {
         val metadata = autoSettingsSection(
-            titleRes = R.string.settings_title,
-            descriptionRes = R.string.settings_restart_hint
+            titleRes = R.string.settings_general,
+            descriptionRes = R.string.settings_general_desc,
+            icon = AutoSettingIcon.Settings
         )
 
         @AutoSetting(
@@ -145,8 +146,9 @@ object AutoSettingsSchema {
     )
     object theme {
         val metadata = autoSettingsSection(
-            titleRes = R.string.settings_theme_color,
-            descriptionRes = R.string.settings_theme_color_desc
+            titleRes = R.string.settings_theme,
+            descriptionRes = R.string.settings_theme_desc,
+            icon = AutoSettingIcon.Palette
         )
 
         @AutoSetting(
@@ -201,7 +203,8 @@ object AutoSettingsSchema {
     object audioQuality {
         val metadata = autoSettingsSection(
             titleRes = R.string.settings_audio_quality,
-            descriptionRes = R.string.settings_audio_quality_expand
+            descriptionRes = R.string.settings_audio_quality_expand,
+            icon = AutoSettingIcon.Audiotrack
         )
 
         @AutoSetting(
@@ -256,7 +259,8 @@ object AutoSettingsSchema {
     object personalization {
         val metadata = autoSettingsSection(
             titleRes = R.string.settings_personalization,
-            descriptionRes = R.string.settings_personalization_expand
+            descriptionRes = R.string.settings_personalization_expand,
+            icon = AutoSettingIcon.Tune
         )
 
         @AutoSetting(
@@ -341,7 +345,8 @@ object AutoSettingsSchema {
     object display {
         val metadata = autoSettingsSection(
             titleRes = R.string.settings_display,
-            descriptionRes = R.string.settings_display_desc
+            descriptionRes = R.string.settings_display_desc,
+            icon = AutoSettingIcon.Info
         )
 
         @AutoSetting(
@@ -518,7 +523,8 @@ object AutoSettingsSchema {
     object motion {
         val metadata = autoSettingsSection(
             titleRes = R.string.settings_motion,
-            descriptionRes = R.string.settings_motion_expand
+            descriptionRes = R.string.settings_motion_expand,
+            icon = AutoSettingIcon.Bolt
         )
 
         @AutoSetting(
@@ -645,7 +651,8 @@ object AutoSettingsSchema {
     object lyrics {
         val metadata = autoSettingsSection(
             titleRes = R.string.settings_lyrics_offset,
-            descriptionRes = R.string.settings_lyrics_offset_expand
+            descriptionRes = R.string.settings_lyrics_offset_expand,
+            icon = AutoSettingIcon.Subtitles
         )
 
         @AutoSetting(
@@ -860,7 +867,8 @@ object AutoSettingsSchema {
     object network {
         val metadata = autoSettingsSection(
             titleRes = R.string.settings_network,
-            descriptionRes = R.string.settings_network_expand
+            descriptionRes = R.string.settings_network_expand,
+            icon = AutoSettingIcon.Router
         )
 
         @AutoSetting(
@@ -889,7 +897,8 @@ object AutoSettingsSchema {
     object download {
         val metadata = autoSettingsSection(
             titleRes = R.string.settings_download_management,
-            descriptionRes = R.string.settings_download_expand
+            descriptionRes = R.string.settings_download_expand,
+            icon = AutoSettingIcon.Download
         )
 
         @AutoSetting(
@@ -944,7 +953,8 @@ object AutoSettingsSchema {
     object storage {
         val metadata = autoSettingsSection(
             titleRes = R.string.settings_storage_cache,
-            descriptionRes = R.string.settings_storage_expand
+            descriptionRes = R.string.settings_storage_expand,
+            icon = AutoSettingIcon.Storage
         )
 
         @AutoSetting(
@@ -973,7 +983,8 @@ object AutoSettingsSchema {
     object backup {
         val metadata = autoSettingsSection(
             titleRes = R.string.settings_backup_restore,
-            descriptionRes = R.string.settings_backup_expand
+            descriptionRes = R.string.settings_backup_expand,
+            icon = AutoSettingIcon.Sync
         )
 
         @AutoSetting(
@@ -1002,7 +1013,8 @@ object AutoSettingsSchema {
     object playback {
         val metadata = autoSettingsSection(
             titleRes = R.string.settings_playback,
-            descriptionRes = R.string.settings_playback_expand
+            descriptionRes = R.string.settings_playback_expand,
+            icon = AutoSettingIcon.PlaylistPlay
         )
 
         @AutoSetting(

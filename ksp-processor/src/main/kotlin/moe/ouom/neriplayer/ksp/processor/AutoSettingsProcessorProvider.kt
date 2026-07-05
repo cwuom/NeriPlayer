@@ -592,6 +592,8 @@ private fun buildMetadataFile(
         appendLine("    val key: String,")
         appendLine("    val titleRes: Int,")
         appendLine("    val descriptionRes: Int,")
+        appendLine("    val iconRes: Int,")
+        appendLine("    val icon: AutoSettingIcon,")
         appendLine("    val order: Int")
         appendLine(")")
         appendLine()
@@ -625,6 +627,8 @@ private fun buildMetadataFile(
                     "key = ${section.key.toLiteral()}, " +
                     "titleRes = ${section.titleResExpression()}, " +
                     "descriptionRes = ${section.descriptionResExpression()}, " +
+                    "iconRes = ${section.iconResExpression()}, " +
+                    "icon = ${section.iconExpression()}, " +
                     "order = ${section.order}" +
                     ")"
             }
@@ -705,12 +709,17 @@ private fun buildUiFile(packageName: String, settings: List<SettingSpec>): Strin
         appendGeneratedHeader(packageName)
         appendLine("import androidx.compose.foundation.layout.size")
         appendLine("import androidx.compose.material.icons.Icons")
+        appendLine("import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay")
+        appendLine("import androidx.compose.material.icons.filled.AccountCircle")
+        appendLine("import androidx.compose.material.icons.filled.Audiotrack")
         appendLine("import androidx.compose.material.icons.outlined.AdsClick")
         appendLine("import androidx.compose.material.icons.outlined.Analytics")
         appendLine("import androidx.compose.material.icons.outlined.AutoAwesome")
         appendLine("import androidx.compose.material.icons.outlined.BlurOn")
         appendLine("import androidx.compose.material.icons.outlined.BluetoothAudio")
+        appendLine("import androidx.compose.material.icons.outlined.Bolt")
         appendLine("import androidx.compose.material.icons.outlined.Brightness4")
+        appendLine("import androidx.compose.material.icons.outlined.Cloud")
         appendLine("import androidx.compose.material.icons.outlined.Colorize")
         appendLine("import androidx.compose.material.icons.outlined.Download")
         appendLine("import androidx.compose.material.icons.outlined.Error")
@@ -718,8 +727,12 @@ private fun buildUiFile(packageName: String, settings: List<SettingSpec>): Strin
         appendLine("import androidx.compose.material.icons.outlined.Info")
         appendLine("import androidx.compose.material.icons.outlined.Keyboard")
         appendLine("import androidx.compose.material.icons.outlined.LibraryMusic")
+        appendLine("import androidx.compose.material.icons.outlined.Palette")
+        appendLine("import androidx.compose.material.icons.outlined.Router")
         appendLine("import androidx.compose.material.icons.outlined.Settings")
+        appendLine("import androidx.compose.material.icons.outlined.Storage")
         appendLine("import androidx.compose.material.icons.outlined.Subtitles")
+        appendLine("import androidx.compose.material.icons.outlined.Sync")
         appendLine("import androidx.compose.material.icons.outlined.Tune")
         appendLine("import androidx.compose.material.icons.outlined.Wallpaper")
         appendLine("import androidx.compose.material3.Icon")
@@ -835,12 +848,16 @@ private fun buildUiFile(packageName: String, settings: List<SettingSpec>): Strin
         appendLine("private fun autoSettingsIconVector(icon: AutoSettingIcon): ImageVector? {")
         appendLine("    return when (icon) {")
         appendLine("        AutoSettingIcon.None -> null")
+        appendLine("        AutoSettingIcon.AccountCircle -> Icons.Filled.AccountCircle")
         appendLine("        AutoSettingIcon.AdsClick -> Icons.Outlined.AdsClick")
         appendLine("        AutoSettingIcon.Analytics -> Icons.Outlined.Analytics")
+        appendLine("        AutoSettingIcon.Audiotrack -> Icons.Filled.Audiotrack")
         appendLine("        AutoSettingIcon.AutoAwesome -> Icons.Outlined.AutoAwesome")
         appendLine("        AutoSettingIcon.BlurOn -> Icons.Outlined.BlurOn")
         appendLine("        AutoSettingIcon.BluetoothAudio -> Icons.Outlined.BluetoothAudio")
+        appendLine("        AutoSettingIcon.Bolt -> Icons.Outlined.Bolt")
         appendLine("        AutoSettingIcon.Brightness4 -> Icons.Outlined.Brightness4")
+        appendLine("        AutoSettingIcon.Cloud -> Icons.Outlined.Cloud")
         appendLine("        AutoSettingIcon.Colorize -> Icons.Outlined.Colorize")
         appendLine("        AutoSettingIcon.Download -> Icons.Outlined.Download")
         appendLine("        AutoSettingIcon.Error -> Icons.Outlined.Error")
@@ -848,8 +865,13 @@ private fun buildUiFile(packageName: String, settings: List<SettingSpec>): Strin
         appendLine("        AutoSettingIcon.Info -> Icons.Outlined.Info")
         appendLine("        AutoSettingIcon.Keyboard -> Icons.Outlined.Keyboard")
         appendLine("        AutoSettingIcon.LibraryMusic -> Icons.Outlined.LibraryMusic")
+        appendLine("        AutoSettingIcon.Palette -> Icons.Outlined.Palette")
+        appendLine("        AutoSettingIcon.PlaylistPlay -> Icons.AutoMirrored.Outlined.PlaylistPlay")
+        appendLine("        AutoSettingIcon.Router -> Icons.Outlined.Router")
         appendLine("        AutoSettingIcon.Settings -> Icons.Outlined.Settings")
+        appendLine("        AutoSettingIcon.Storage -> Icons.Outlined.Storage")
         appendLine("        AutoSettingIcon.Subtitles -> Icons.Outlined.Subtitles")
+        appendLine("        AutoSettingIcon.Sync -> Icons.Outlined.Sync")
         appendLine("        AutoSettingIcon.Tune -> Icons.Outlined.Tune")
         appendLine("        AutoSettingIcon.Wallpaper -> Icons.Outlined.Wallpaper")
         appendLine("    }")
@@ -972,6 +994,14 @@ private fun SectionSpec.titleResExpression(): String {
 
 private fun SectionSpec.descriptionResExpression(): String {
     return entryReference?.let { reference -> "$reference.descriptionRes" } ?: "0"
+}
+
+private fun SectionSpec.iconResExpression(): String {
+    return entryReference?.let { reference -> "$reference.iconRes" } ?: "0"
+}
+
+private fun SectionSpec.iconExpression(): String {
+    return entryReference?.let { reference -> "$reference.icon" } ?: "AutoSettingIcon.None"
 }
 
 private fun SettingValueType.preferenceKeyFactory(): String {

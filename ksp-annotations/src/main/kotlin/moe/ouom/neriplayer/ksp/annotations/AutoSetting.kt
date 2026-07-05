@@ -46,7 +46,8 @@ data class AutoSettingEntry(
 data class AutoSettingsSectionEntry(
     val titleRes: Int = 0,
     val descriptionRes: Int = 0,
-    val iconRes: Int = 0
+    val iconRes: Int = 0,
+    val icon: AutoSettingIcon = AutoSettingIcon.None
 )
 
 data class AutoSettingSpec<T>(
@@ -189,23 +190,29 @@ fun autoStringSetting(
 fun autoSettingsSection(
     titleRes: Int = 0,
     descriptionRes: Int = 0,
-    iconRes: Int = 0
+    iconRes: Int = 0,
+    icon: AutoSettingIcon = AutoSettingIcon.None
 ): AutoSettingsSectionEntry {
     return AutoSettingsSectionEntry(
         titleRes = titleRes,
         descriptionRes = descriptionRes,
-        iconRes = iconRes
+        iconRes = iconRes,
+        icon = icon
     )
 }
 
 enum class AutoSettingIcon {
     None,
+    AccountCircle,
     AdsClick,
     Analytics,
+    Audiotrack,
     AutoAwesome,
     BlurOn,
     BluetoothAudio,
+    Bolt,
     Brightness4,
+    Cloud,
     Colorize,
     Download,
     Error,
@@ -213,8 +220,13 @@ enum class AutoSettingIcon {
     Info,
     Keyboard,
     LibraryMusic,
+    Palette,
+    PlaylistPlay,
+    Router,
     Settings,
+    Storage,
     Subtitles,
+    Sync,
     Tune,
     Wallpaper
 }
