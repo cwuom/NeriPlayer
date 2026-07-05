@@ -249,11 +249,14 @@ internal fun resolveDisplayedLocalPlaylistDetailState(
     uiState: LocalPlaylistDetailUiState,
     requestedPlaylistId: Long
 ): LocalPlaylistDetailUiState {
+    if (uiState.requestedPlaylistId != null && uiState.requestedPlaylistId != requestedPlaylistId) {
+        return LocalPlaylistDetailUiState(requestedPlaylistId = requestedPlaylistId)
+    }
     val playlist = uiState.playlist ?: return uiState
     return if (playlist.id == requestedPlaylistId) {
         uiState
     } else {
-        LocalPlaylistDetailUiState()
+        LocalPlaylistDetailUiState(requestedPlaylistId = requestedPlaylistId)
     }
 }
 

@@ -29,12 +29,27 @@ class LocalPlaylistDetailHeaderCoverPolicyTest {
     fun `resolveDisplayedLocalPlaylistDetailState hides stale playlist from previous route`() {
         val staleState = LocalPlaylistDetailUiState(
             playlist = LocalPlaylist(id = 1L, name = "old playlist"),
-            isResolved = true
+            isResolved = true,
+            requestedPlaylistId = 1L
         )
 
         assertEquals(
-            LocalPlaylistDetailUiState(),
+            LocalPlaylistDetailUiState(requestedPlaylistId = 2L),
             resolveDisplayedLocalPlaylistDetailState(staleState, requestedPlaylistId = 2L)
+        )
+    }
+
+    @Test
+    fun `resolveDisplayedLocalPlaylistDetailState hides stale deletion from previous route`() {
+        val staleDeletionState = LocalPlaylistDetailUiState(
+            playlist = null,
+            isResolved = true,
+            requestedPlaylistId = 1L
+        )
+
+        assertEquals(
+            LocalPlaylistDetailUiState(requestedPlaylistId = 2L),
+            resolveDisplayedLocalPlaylistDetailState(staleDeletionState, requestedPlaylistId = 2L)
         )
     }
 
@@ -42,7 +57,8 @@ class LocalPlaylistDetailHeaderCoverPolicyTest {
     fun `resolveDisplayedLocalPlaylistDetailState keeps deletion state for current route`() {
         val resolvedDeletionState = LocalPlaylistDetailUiState(
             playlist = null,
-            isResolved = true
+            isResolved = true,
+            requestedPlaylistId = 2L
         )
 
         assertEquals(
