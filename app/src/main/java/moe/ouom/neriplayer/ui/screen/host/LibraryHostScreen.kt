@@ -37,6 +37,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.Saver
@@ -104,15 +105,30 @@ fun LibraryHostScreen(
     var selected by rememberSaveable(stateSaver = librarySelectedItemSaver) {
         mutableStateOf(null)
     }
+    var skipDetailCloseAnimation by rememberSaveable { mutableStateOf(false) }
     // 保存当前选中的标签页类型，避免国际化切换后索引错位
     var selectedTab by rememberSaveable { mutableStateOf(LibraryTab.LOCAL) }
     val libraryStateHolder = rememberSaveableStateHolder()
+
     fun closeSelectedDetail() {
+        skipDetailCloseAnimation = false
         selected = when (val current = selected) {
             is LibrarySelectedItem.NeteaseArtistAlbum -> LibrarySelectedItem.NeteaseArtist(current.artist)
             else -> null
         }
     }
+
+    fun closeDeletedLocalPlaylist() {
+        skipDetailCloseAnimation = true
+        selected = null
+    }
+
+    LaunchedEffect(selected) {
+        if (selected != null) {
+            skipDetailCloseAnimation = false
+        }
+    }
+
     PredictiveBackHandler(enabled = selected != null) { progress ->
         try {
             progress.collect { }
@@ -158,7 +174,9 @@ fun LibraryHostScreen(
             targetState = selected,
             label = "library_host_switch",
             transitionSpec = {
-                if (initialState == null && targetState != null) {
+                if (targetState == null && skipDetailCloseAnimation) {
+                    fadeIn(animationSpec = tween(0)) togetherWith fadeOut(animationSpec = tween(0))
+                } else if (initialState == null && targetState != null) {
                     (slideInVertically(animationSpec = tween(220)) { it } + fadeIn()) togetherWith
                             (fadeOut(animationSpec = tween(160)))
                 } else {
@@ -181,6 +199,7 @@ fun LibraryHostScreen(
                         qqMusicListState = qqMusicListState,
                         offlineMode = offlineMode,
                         onLocalPlaylistClick = { playlist ->
+                            skipDetailCloseAnimation = false
                             selected = LibrarySelectedItem.Local(playlist.id)
                             AppContainer.playlistUsageRepo.recordOpen(
                                 id = playlist.id,
@@ -191,6 +210,7 @@ fun LibraryHostScreen(
                             )
                         },
                         onNeteasePlaylistClick = { playlist ->
+                            skipDetailCloseAnimation = false
                             selected = LibrarySelectedItem.Netease(playlist)
                             AppContainer.playlistUsageRepo.recordOpen(
                                 id = playlist.id,
@@ -201,6 +221,7 @@ fun LibraryHostScreen(
                             )
                         },
                         onNeteaseAlbumClick = { album ->
+                            skipDetailCloseAnimation = false
                             selected = LibrarySelectedItem.NeteaseAlbum(album)
                             AppContainer.playlistUsageRepo.recordOpen(
                                 id = album.id,
@@ -211,9 +232,11 @@ fun LibraryHostScreen(
                             )
                         },
                         onNeteaseArtistClick = { artist ->
+                            skipDetailCloseAnimation = false
                             selected = LibrarySelectedItem.NeteaseArtist(artist)
                         },
                         onYouTubeMusicPlaylistClick = { playlist ->
+                            skipDetailCloseAnimation = false
                             selected = LibrarySelectedItem.YouTubeMusic(playlist)
                             AppContainer.playlistUsageRepo.recordOpen(
                                 id = stableYouTubeMusicId(playlist.playlistId.ifBlank { playlist.browseId }),
@@ -226,6 +249,7 @@ fun LibraryHostScreen(
                             )
                         },
                         onBiliPlaylistClick = { playlist ->
+                            skipDetailCloseAnimation = false
                             selected = LibrarySelectedItem.Bili(playlist)
                             AppContainer.playlistUsageRepo.recordOpen(
                                 id = playlist.mediaId,
@@ -247,8 +271,8 @@ fun LibraryHostScreen(
                     is LibrarySelectedItem.Local -> {
                         LocalPlaylistDetailScreen(
                             playlistId = current.playlistId,
-                            onBack = { selected = null },
-                            onDeleted = { selected = null },
+                            onBack = { closeSelectedDetail() },
+                            onDeleted = { closeDeletedLocalPlaylist() },
                             onSongClick = onSongClick,
                             offlineMode = offlineMode
                         )

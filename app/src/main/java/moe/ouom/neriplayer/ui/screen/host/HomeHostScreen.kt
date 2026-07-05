@@ -35,6 +35,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.mapSaver
@@ -85,10 +86,28 @@ fun HomeHostScreen(
     var selected by rememberSaveable(stateSaver = homeSelectedItemSaver) {
         mutableStateOf(null)
     }
+    var skipDetailCloseAnimation by rememberSaveable { mutableStateOf(false) }
+
+    fun closeSelectedDetail() {
+        skipDetailCloseAnimation = false
+        selected = null
+    }
+
+    fun closeDeletedLocalPlaylist() {
+        skipDetailCloseAnimation = true
+        selected = null
+    }
+
+    LaunchedEffect(selected) {
+        if (selected != null) {
+            skipDetailCloseAnimation = false
+        }
+    }
+
     PredictiveBackHandler(enabled = selected != null) { progress ->
         try {
             progress.collect { }
-            selected = null
+            closeSelectedDetail()
         } catch (_: CancellationException) {
         }
     }
@@ -102,7 +121,9 @@ fun HomeHostScreen(
             targetState = selected,
             label = "home_host_switch",
             transitionSpec = {
-                if (initialState == null && targetState != null) {
+                if (targetState == null && skipDetailCloseAnimation) {
+                    fadeIn(animationSpec = tween(0)) togetherWith fadeOut(animationSpec = tween(0))
+                } else if (initialState == null && targetState != null) {
                     (slideInVertically(animationSpec = tween(220)) { it } + fadeIn()) togetherWith
                             (fadeOut(animationSpec = tween(160)))
                 } else {
@@ -120,6 +141,7 @@ fun HomeHostScreen(
                     offlineMode = offlineMode,
                     gridState = gridState,
                     onItemClick = { pl ->
+                        skipDetailCloseAnimation = false
                         AppContainer.playlistUsageRepo.recordOpen(
                             id = pl.id, name = pl.name, picUrl = pl.picUrl,
                             trackCount = pl.trackCount, source = "netease"
@@ -127,6 +149,7 @@ fun HomeHostScreen(
                         selected = HomeSelectedItem.Netease(pl)
                     },
                     onYouTubeMusicPlaylistClick = { pl ->
+                        skipDetailCloseAnimation = false
                         AppContainer.playlistUsageRepo.recordOpen(
                             id = stableYouTubeMusicId(pl.playlistId.ifBlank { pl.browseId }),
                             name = pl.title,
@@ -139,6 +162,7 @@ fun HomeHostScreen(
                         selected = HomeSelectedItem.YouTubeMusic(pl)
                     },
                     onOpenRecent = { entry ->
+                        skipDetailCloseAnimation = false
                         openRecent(entry) { next -> selected = next }
                     },
                     onSongClick = onSongClick    // 透传给 HomeScreen，点击推荐歌曲可直接播放
@@ -164,8 +188,8 @@ fun HomeHostScreen(
                     is HomeSelectedItem.Local -> {
                         LocalPlaylistDetailScreen(
                             playlistId = current.playlistId,
-                            onBack = { selected = null },
-                            onDeleted = { selected = null },
+                            onBack = { closeSelectedDetail() },
+                            onDeleted = { closeDeletedLocalPlaylist() },
                             onSongClick = onSongClick,
                             offlineMode = offlineMode
                         )

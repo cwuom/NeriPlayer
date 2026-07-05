@@ -272,6 +272,7 @@ fun LocalPlaylistDetailScreen(
 
     // 保存最新的歌单数据，用于在Screen销毁时更新使用记录
     var latestPlaylist by remember { mutableStateOf<moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist?>(null) }
+    var playlistDeleted by remember(playlistId) { mutableStateOf(false) }
     LaunchedEffect(uiState.playlist) {
         uiState.playlist?.let { latestPlaylist = it }
     }
@@ -279,6 +280,7 @@ fun LocalPlaylistDetailScreen(
     // 在Screen销毁时更新使用记录，确保返回主页时卡片显示最新信息
     DisposableEffect(Unit) {
         onDispose {
+            if (playlistDeleted) return@onDispose
             latestPlaylist?.let { playlist ->
                 AppContainer.playlistUsageRepo.updateInfo(
                     id = playlist.id,
@@ -298,11 +300,13 @@ fun LocalPlaylistDetailScreen(
     fun navigateAfterPlaylistDeleted() {
         if (deleteNavigationHandled) return
         deleteNavigationHandled = true
+        playlistDeleted = true
         onDeleted()
     }
 
     LaunchedEffect(isResolved, playlist, playlistId) {
         if (isResolved && playlist == null) {
+            playlistDeleted = true
             AppContainer.playlistUsageRepo.removeEntry(playlistId, "local")
             navigateAfterPlaylistDeleted()
         }
