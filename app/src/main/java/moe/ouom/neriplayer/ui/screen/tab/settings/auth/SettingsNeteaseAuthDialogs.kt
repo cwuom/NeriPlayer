@@ -193,7 +193,7 @@ internal fun SettingsNeteaseAuthDialogs(
 
                     MiuixSettingsSegmentedTabs(
                         labels = listOf(
-                            stringResource(R.string.login_browser),
+                            stringResource(R.string.login_qr),
                             stringResource(R.string.login_paste_cookie)
                         ),
                         selectedIndex = selectedTab,

@@ -333,7 +333,8 @@
     <!-- Login -->
     <string name="login_title">Login</string>
     <string name="login_third_party">Third-Party Platform Sign-In</string>
-    <string name="login_browser">QR Login</string>
+    <string name="login_browser">Browser Login</string>
+    <string name="login_qr">QR Login</string>
     <string name="login_start_browser">Login via Browser</string>
     <string name="login_start_netease_qr">Sign in with NetEase QR</string>
     <string name="login_success">Login Successful</string>

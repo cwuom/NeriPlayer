@@ -333,7 +333,8 @@
     <!-- Login -->
     <string name="login_title">登录</string>
     <string name="login_third_party">第三方平台登录</string>
-    <string name="login_browser">扫码登录</string>
+    <string name="login_browser">浏览器登录</string>
+    <string name="login_qr">扫码登录</string>
     <string name="login_start_browser">开始浏览器登录</string>
     <string name="login_start_netease_qr">扫码登录网易云</string>
     <string name="login_success">登录成功</string>

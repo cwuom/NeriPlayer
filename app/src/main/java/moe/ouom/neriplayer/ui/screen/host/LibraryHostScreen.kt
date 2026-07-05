@@ -35,7 +35,9 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Surface
+import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -94,6 +96,7 @@ sealed class LibrarySelectedItem : Parcelable {
     data class YouTubeMusic(val playlist: YouTubeMusicPlaylist) : LibrarySelectedItem()
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryHostScreen(
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
@@ -167,6 +170,7 @@ fun LibraryHostScreen(
     val qqMusicListState = rememberSaveable(saver = qqMusicListSaver) {
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
+    val topAppBarState = rememberTopAppBarState()
     val context = LocalContext.current
 
     Surface(color = Color.Transparent) {
@@ -179,6 +183,9 @@ fun LibraryHostScreen(
                 } else if (initialState == null && targetState != null) {
                     (slideInVertically(animationSpec = tween(220)) { it } + fadeIn()) togetherWith
                             (fadeOut(animationSpec = tween(160)))
+                } else if (targetState == null) {
+                    fadeIn(animationSpec = tween(160)) togetherWith
+                            (slideOutVertically(animationSpec = tween(240)) { it } + fadeOut())
                 } else {
                     (slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()) togetherWith
                             (slideOutVertically(animationSpec = tween(240)) { it } + fadeOut())
@@ -197,6 +204,7 @@ fun LibraryHostScreen(
                         youtubeMusicListState = youtubeMusicListState,
                         biliListState = biliListState,
                         qqMusicListState = qqMusicListState,
+                        topAppBarState = topAppBarState,
                         offlineMode = offlineMode,
                         onLocalPlaylistClick = { playlist ->
                             skipDetailCloseAnimation = false
