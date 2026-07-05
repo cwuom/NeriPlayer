@@ -85,18 +85,55 @@ Current positioning:
 
 ## Why it stands out
 
-- **No public cloud lock-in**: third-party login is only used to unlock
-  capabilities you already have on those platforms. Media, cache, playlists,
-  history, and settings stay on-device by default.
-- **Playback plus management**: streaming, cache, downloads, playlists, backup,
-  and GitHub/WebDAV sync form one continuous workflow instead of isolated tools.
-- **Lyrics go deep**: word-timed lyrics, translations, lyric editing, floating
-  lyrics, Lyricon, and external device lyrics all run on the same playback data path.
-- **Problems are easier to diagnose**: developer mode, regular logs, JVM/native
-  crash logs, and startup safe mode are all built in.
-- **Built to evolve**: the app is based on Compose + Media3 + manual DI, with
-  dedicated tests and debug probes around playback, downloads, sync, auth,
-  lyrics, and Listen Together.
+- **Local-first, with real offline behavior**:
+  `NetworkStatusMonitor` detects whether Android has a validated network, while
+  `offlineCachedImageRequest` disables remote image requests in offline mode and
+  falls back to local caches. Home, Explore, Now Playing, Lyrics, playlists, and
+  downloads all receive `offlineMode`, so local files, downloaded audio,
+  playback cache, cached covers, and local playlists remain usable without a network.
+- **Multi-source playback is not just a list of entry points**:
+  `PlayerManager` owns stream resolution, queues, and failure recovery. When a
+  NetEase track is unavailable, has no playable URL, or only returns a preview,
+  the player first tries a lower quality, then
+  `PlayerManagerNeteaseAutoSourceSwitch` scores Bilibili candidates by title,
+  artist, and duration. Playback errors can also refresh the current URL before
+  falling back to skip/stop behavior.
+- **High-performance GLSL/AGSL fluid background**:
+  the Now Playing dynamic background is rendered frame-by-frame by
+  `BgEffectPainter`, `RuntimeShader`, and `assets/hyper_background_effect.glsl`.
+  The shader uses `perlin()` and `gradientNoise()` for fluid grain/color motion
+  and reacts to `uMusicLevel / uBeat`; it is not just a Gaussian-blurred cover.
+- **Apple Music-style lyrics, backed by the playback pipeline**:
+  `AppleMusicLyric` and `AdvancedLyricsView` support word/character-timed
+  highlighting, translated lyrics, lyric offset, click-to-seek, depth blur,
+  edge fade, and a full-screen Lyrics page. Floating lyrics, Lyricon, Bluetooth
+  lyrics, and lyric editing reuse the same playback data path.
+- **Complete local music management**:
+  `LocalAudioImportManager` supports external share/open imports, authorized
+  folder scanning, device media-library scanning, common audio formats, nearby
+  `lrc/txt` lyrics, and `cover/folder/front` cover files.
+  `LocalPlaylistRepository` manages system local playlists, user playlists,
+  favorites, sorting, de-duplication, backup, and sync triggers.
+- **Sound controls are tied to the active audio session**:
+  `PlaybackEffectsController` applies speed, pitch, Android `Equalizer`, and
+  `LoudnessEnhancer` to the current Media3 audio session. Presets, manual bands,
+  and loudness gain are all available from Now Playing.
+- **Self-owned sync plus playback stats**:
+  NeriPlayer does not provide a public cloud library or developer-hosted user
+  data service. GitHub/WebDAV sync stores playlists, favorites, recent plays,
+  and playback stats in the user's own remote. `PlaybackStatsRepository` records
+  play count, total listen time, first/last played time, and daily buckets by
+  stable track identity, then participates in sync merging.
+- **Highly personalized, beyond theme colors**:
+  `AutoSettingsSchema` covers dynamic colors, seed colors, palette style,
+  UI scaling, custom backgrounds, lyric font size, lyric blur, the fluid Now
+  Playing background, Home card toggles, default start destination, and custom
+  song title/artist/cover metadata.
+- **ANR, crash logs, and safe mode form a diagnostics loop**:
+  `AnrWatchdog` reads Android `ApplicationExitInfo.REASON_ANR` and stores the
+  system ANR trace. `ExceptionHandler` and `NativeCrashHandler` record JVM and
+  native crashes. If the previous startup failed, `SafeModeManager` can skip full
+  app initialization and open safe mode for preview, copy, or export.
 
 ---
 
@@ -164,17 +201,27 @@ For release build and signing details, see
   as an external lyrics source.
 - 🧠 **Media3 playback core**:
   `PlayerManager` handles stream resolution, queue state, shuffle/repeat,
-  persistence, failure retry, YouTube prefetching, and platform-specific request policies.
+  persistence, failure retry, playback URL refresh, YouTube prefetching, and
+  platform-specific request policies.
 - 🔁 **NetEase auto source switch**:
   when a NetEase song is unavailable, has no playable URL, or only returns a
   preview clip, the player first tries lower quality and can then match a
   Bilibili fallback source by title, artist, and duration.
+- 🧯 **Playback failure fallback**:
+  playback errors first try refreshing the active playback URL. Bilibili stream
+  resolution retries missing DASH audio and can fall back to html5/mp4 progressive
+  streams; repeated failures skip or stop playback to avoid getting stuck.
 - 🎚️ **Playback sound controls**:
-  Now Playing includes speed, pitch, loudness enhancer, equalizer presets, and
-  manual EQ bands.
+  Now Playing includes speed, pitch, loudness enhancer, Android system equalizer
+  presets, and manual EQ bands.
 - 💾 **Configurable streaming cache**:
   audio cache uses `SimpleCache + LRU`, defaults to **1 GB**, and supports
   separate audio/image cache cleanup.
+- 🛰️ **Offline mode**:
+  automatically detects network availability, disables online Explore and remote
+  Home refreshes while offline, and uses cached images only for remote artwork.
+  Local files, downloaded audio, playback cache, playlists, recent plays, and
+  playback stats remain available.
 - ⬇️ **In-app downloads and management**:
   supports multi-platform audio downloads, task progress, cancel/retry, and
   local management with lyrics, covers, metadata, and audio tags.
@@ -191,7 +238,12 @@ For release build and signing details, see
   Music" can sync recognizable songs to NetEase Liked Songs.
 - ☁️ **GitHub / WebDAV sync**:
   optional sync for local playlists, favorite playlists, recent plays, playback
-  stats, and deletion records through `WorkManager`.
+  stats, and deletion records through `WorkManager`, stored in the user's own
+  remote.
+- 📊 **Playback stats**:
+  records play count, accumulated listen time, first/last played time, and daily
+  stat buckets by stable track identity. Stats are persisted locally and can be
+  synced when configured.
 - ♻️ **Backup and restore**:
   playlist JSON import/export, plus full config import/export for settings,
   language, platform auth, GitHub/WebDAV config, and Listen Together settings.
@@ -200,11 +252,13 @@ For release build and signing details, see
   permissions, invite links, deep links, custom server URLs, and host-offline detection.
 - 🌈 **Personalization and themes**:
   light/dark/follow-system mode, dynamic color, seed colors, theme styles,
-  UI scaling, custom background image, lyric font size, and Home card toggles.
+  UI scaling, custom background image, lyric font size, lyric blur, default start
+  destination, and Home card toggles.
 - ✨ **Now Playing visuals and lyrics**:
-  audio-reactive dynamic background, cover blur background, advanced lyrics,
-  word-timed lyrics, translated lyrics, lyric offset, lyric editing, font scaling,
-  and a full Lyrics page.
+  `RuntimeShader` / GLSL fluid background, audio-reactive dynamic background,
+  cover blur background, Apple Music-style lyrics, advanced lyrics, word-timed
+  lyrics, translated lyrics, lyric offset, lyric editing, font scaling, and a
+  full Lyrics page.
 - 🪟 **Floating lyrics**:
   system overlay lyrics with customizable color, outline, font size, position,
   alignment, and translation display, plus auto-hide while the app is foregrounded.
@@ -217,8 +271,9 @@ For release build and signing details, see
   YouTube / Bili / NetEase / Search / Listen Together probes, log viewer, and
   crash log viewer.
 - 🛟 **Safe mode and crash logs**:
-  if the previous startup crashed, the app can boot directly into safe mode so
-  you can inspect or export the crash log and selectively clear settings or auth data.
+  if the previous startup hit a JVM/native crash or system ANR, the app can boot
+  directly into safe mode so you can inspect or export the log and selectively
+  clear settings or auth data.
 
 ---
 
