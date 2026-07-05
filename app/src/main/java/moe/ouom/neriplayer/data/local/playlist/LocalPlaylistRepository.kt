@@ -404,8 +404,13 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     }
 
     suspend fun addSongsToPlaylist(playlistId: Long, songs: List<SongItem>) {
-        withContext(Dispatchers.IO) {
-            if (songs.isEmpty()) return@withContext
+        addSongsToPlaylistAndCount(playlistId, songs)
+    }
+
+    suspend fun addSongsToPlaylistAndCount(playlistId: Long, songs: List<SongItem>): Int {
+        return withContext(Dispatchers.IO) {
+            if (songs.isEmpty()) return@withContext 0
+            var addedCount = 0
             val updated = _playlists.value.map { playlist ->
                 if (playlist.id != playlistId) return@map playlist
                 if (isLocalFilesPlaylist(playlist.id, playlist.name)) {
@@ -417,6 +422,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
                 if (toAdd.isEmpty()) {
                     playlist
                 } else {
+                    addedCount += toAdd.size
                     playlist.copy(
                         songs = (playlist.songs + toAdd).toMutableList(),
                         modifiedAt = System.currentTimeMillis()
@@ -424,6 +430,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
                 }
             }
             publish(updated)
+            addedCount
         }
     }
 

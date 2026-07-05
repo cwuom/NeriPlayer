@@ -189,6 +189,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailUiState
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticFloatingActionButton
 import moe.ouom.neriplayer.util.HapticIconButton
+import moe.ouom.neriplayer.util.HapticOutlinedButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.formatTotalDuration
@@ -398,6 +399,7 @@ fun LocalPlaylistDetailScreen(
             var searchQuery by remember { mutableStateOf("") }
             var showDownloadManager by remember { mutableStateOf(false) }
             var showLocalScanModeDialog by remember { mutableStateOf(false) }
+            var showScanPlaylistExportSheet by remember { mutableStateOf(false) }
             val searchFocusRequester = remember { FocusRequester() }
             val focusManager = LocalFocusManager.current
             val keyboardController = LocalSoftwareKeyboardController.current
@@ -447,6 +449,9 @@ fun LocalPlaylistDetailScreen(
                                 result.importedCount
                             )
                         }
+                        result.failedCount == 0 -> {
+                            context.getString(R.string.local_playlist_import_audio_no_new)
+                        }
                         else -> {
                             resources.getQuantityString(
                                 R.plurals.local_playlist_import_audio_failed,
@@ -454,6 +459,21 @@ fun LocalPlaylistDetailScreen(
                                 result.failedCount
                             )
                         }
+                    }
+                    snackbarHostState.showSnackbar(message)
+                }
+            }
+
+            fun showScannedPlaylistAddResult(result: moe.ouom.neriplayer.ui.viewmodel.playlist.LocalAudioImportUiResult) {
+                scope.launch {
+                    val message = if (result.importedCount > 0) {
+                        context.resources.getQuantityString(
+                            R.plurals.local_playlist_add_scanned_success,
+                            result.importedCount,
+                            result.importedCount
+                        )
+                    } else {
+                        context.getString(R.string.local_playlist_add_scanned_no_new)
                     }
                     snackbarHostState.showSnackbar(message)
                 }
@@ -491,6 +511,7 @@ fun LocalPlaylistDetailScreen(
             }
 
             fun dismissScanPreviewPage(cancelScan: Boolean = true) {
+                showScanPlaylistExportSheet = false
                 vm.clearScanPreview(cancelScan = cancelScan)
             }
 
@@ -907,8 +928,67 @@ fun LocalPlaylistDetailScreen(
                         }
                         vm.applyScannedSongs(selectedSongs, ::showAudioImportResult)
                         dismissScanPreviewPage(cancelScan = false)
-                    }
+                    },
+                    onSecondaryAction = {
+                        showScanPlaylistExportSheet = true
+                    },
+                    secondaryActionLabel = stringResource(R.string.download_scan_add_to_playlist)
                 )
+                if (showScanPlaylistExportSheet) {
+                    PlaylistExportSheet(
+                        title = stringResource(R.string.download_scan_add_to_playlist),
+                        playlists = allPlaylists.filterNot {
+                            LocalFilesPlaylist.isSystemPlaylist(it, context)
+                        },
+                        selectedCount = scanPreviewState.selectedKeys.size,
+                        onDismissRequest = { showScanPlaylistExportSheet = false },
+                        onCreateAndExport = { name ->
+                            val selectedSongs = scanPreviewState.songs.filter {
+                                it.stableKey() in scanPreviewState.selectedKeys
+                            }
+                            launchWithLocalSyncWarning(
+                                songs = selectedSongs,
+                                actionLabel = context.getString(R.string.playlist_add_to)
+                            ) {
+                                vm.createPlaylistWithScannedSongs(
+                                    name = name,
+                                    songs = selectedSongs,
+                                    onResult = ::showScannedPlaylistAddResult
+                                )
+                            }
+                        },
+                        onExportToPlaylist = { target ->
+                            val selectedSongs = scanPreviewState.songs.filter {
+                                it.stableKey() in scanPreviewState.selectedKeys
+                            }
+                            launchWithLocalSyncWarning(
+                                songs = selectedSongs,
+                                actionLabel = context.getString(R.string.playlist_add_to)
+                            ) {
+                                vm.addScannedSongsToPlaylist(
+                                    targetPlaylistId = target.id,
+                                    songs = selectedSongs,
+                                    onResult = ::showScannedPlaylistAddResult
+                                )
+                            }
+                        },
+                        createActionLabel = stringResource(R.string.playlist_create_and_add)
+                    )
+                }
+                pendingSyncConfirmAction?.let { action ->
+                    LocalSongSyncConfirmDialog(
+                        actionLabel = pendingSyncConfirmLabel,
+                        onConfirm = {
+                            pendingSyncConfirmAction = null
+                            pendingSyncConfirmLabel = ""
+                            action()
+                        },
+                        onDismiss = {
+                            pendingSyncConfirmAction = null
+                            pendingSyncConfirmLabel = ""
+                        }
+                    )
+                }
                 return@Surface
             }
 
@@ -1754,8 +1834,10 @@ private fun LocalScanPreviewScreen(
     snackbarHostState: SnackbarHostState,
     onBack: () -> Unit,
     onImport: () -> Unit,
+    onSecondaryAction: (() -> Unit)? = null,
     title: String? = null,
     actionLabel: ((Int) -> String)? = null,
+    secondaryActionLabel: String? = null,
     searchPlaceholder: String? = null,
     emptyText: String? = null,
     isBusy: Boolean = false
@@ -1852,23 +1934,31 @@ private fun LocalScanPreviewScreen(
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                         Spacer(Modifier.height(10.dp))
                     }
+                    Text(
+                        text = pluralStringResource(
+                            R.plurals.common_selected_count,
+                            selectedKeys.size,
+                            selectedKeys.size
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)
                     ) {
-                        Text(
-                            text = pluralStringResource(
-                                R.plurals.common_selected_count,
-                                selectedKeys.size,
-                                selectedKeys.size
-                            ),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f)
-                        )
+                        if (onSecondaryAction != null && secondaryActionLabel != null) {
+                            HapticOutlinedButton(
+                                enabled = selectedKeys.isNotEmpty() && !showBusy,
+                                onClick = onSecondaryAction
+                            ) {
+                                Text(secondaryActionLabel)
+                            }
+                        }
                         HapticTextButton(
-                            enabled = selectedKeys.isNotEmpty() && !isBusy,
+                            enabled = selectedKeys.isNotEmpty() && !showBusy,
                             onClick = onImport
                         ) {
                             Text(resolvedActionLabel)

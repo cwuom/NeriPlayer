@@ -107,6 +107,7 @@
     <string name="playlist_export_to_local">Export to Local</string>
     <string name="playlist_export_to">Export to Playlist</string>
     <string name="playlist_create_and_export">Create and Export</string>
+    <string name="playlist_create_and_add">Create and Add</string>
     <string name="playlist_name_empty">Name cannot be empty</string>
     <string name="playlist_enter_name">Enter Playlist Name</string>
     <string name="playlist_queue">Play Queue</string>
@@ -1480,7 +1481,10 @@
     <string name="download_scanning">Scanning local audio…</string>
     <string name="download_scan_empty">No local audio files found</string>
     <string name="download_scan_add_selected">Add selected (%1$d)</string>
+    <string name="download_scan_add_to_playlist">Add to another playlist</string>
     <string name="download_scan_permission_required">Grant audio read permission before scanning local music</string>
+    <string name="local_playlist_import_audio_no_new">No new local tracks to import</string>
+    <string name="local_playlist_add_scanned_no_new">Selected tracks are already in the target playlist</string>
     <string name="download_delete_selected">Delete Selected</string>
     <string name="download_exit_selection">Exit Selection</string>
     <string name="download_no_songs">No Downloaded Songs</string>

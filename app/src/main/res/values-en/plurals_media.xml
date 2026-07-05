@@ -56,6 +56,10 @@
         <item quantity="one">Imported %d local track</item>
         <item quantity="other">Imported %d local tracks</item>
     </plurals>
+    <plurals name="local_playlist_add_scanned_success">
+        <item quantity="one">Added %d track to the target playlist</item>
+        <item quantity="other">Added %d tracks to the target playlist</item>
+    </plurals>
     <plurals name="local_playlist_import_audio_partial">
         <item quantity="one">Imported %1$d local track, %2$s</item>
         <item quantity="other">Imported %1$d local tracks, %2$s</item>

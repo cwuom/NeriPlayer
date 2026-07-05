@@ -55,12 +55,15 @@ internal fun PlaylistExportSheet(
     selectedCount: Int,
     onDismissRequest: () -> Unit,
     onCreateAndExport: (String) -> Unit,
-    onExportToPlaylist: (LocalPlaylist) -> Unit
+    onExportToPlaylist: (LocalPlaylist) -> Unit,
+    createActionLabel: String? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var newName by remember { mutableStateOf("") }
+    val resolvedCreateActionLabel =
+        createActionLabel ?: stringResource(R.string.playlist_create_and_export)
 
     fun dismissAnimated() {
         scope.launch {
@@ -131,7 +134,7 @@ internal fun PlaylistExportSheet(
                 ) {
                     Icon(Icons.Outlined.Add, contentDescription = null)
                     Spacer(Modifier.width(4.dp))
-                    Text(stringResource(R.string.playlist_create_and_export))
+                    Text(resolvedCreateActionLabel)
                 }
             }
 

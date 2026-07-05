@@ -42,6 +42,9 @@
     <plurals name="local_playlist_import_audio_success">
         <item quantity="other">已导入 %d 首本地音频</item>
     </plurals>
+    <plurals name="local_playlist_add_scanned_success">
+        <item quantity="other">已添加 %d 首歌曲到目标歌单</item>
+    </plurals>
     <plurals name="local_playlist_import_audio_partial">
         <item quantity="other">已导入 %1$d 首本地音频，%2$s</item>
     </plurals>

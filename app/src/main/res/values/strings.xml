@@ -107,6 +107,7 @@
     <string name="playlist_export_to_local">导出到本地歌单</string>
     <string name="playlist_export_to">导出到歌单</string>
     <string name="playlist_create_and_export">新建并导出</string>
+    <string name="playlist_create_and_add">新建并添加</string>
     <string name="playlist_name_empty">名称不能为空哦</string>
     <string name="playlist_enter_name">输入歌单名称</string>
     <string name="playlist_queue">播放列表</string>
@@ -1492,7 +1493,10 @@
     <string name="download_scanning">正在扫描本地音频…</string>
     <string name="download_scan_empty">未找到本地音频文件</string>
     <string name="download_scan_add_selected">添加已选（%1$d）</string>
+    <string name="download_scan_add_to_playlist">添加到其他歌单</string>
     <string name="download_scan_permission_required">需要授予本地音频读取权限后才能扫描</string>
+    <string name="local_playlist_import_audio_no_new">没有新的本地音频需要导入</string>
+    <string name="local_playlist_add_scanned_no_new">所选歌曲已在目标歌单中</string>
     <string name="download_delete_selected">删除所选</string>
     <string name="download_exit_selection">退出多选</string>
     <string name="download_no_songs">暂无已下载歌曲</string>

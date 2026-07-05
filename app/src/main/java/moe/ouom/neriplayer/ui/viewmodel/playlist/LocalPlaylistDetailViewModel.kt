@@ -228,6 +228,38 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         }
     }
 
+    fun createPlaylistWithScannedSongs(
+        name: String,
+        songs: List<SongItem>,
+        onResult: (LocalAudioImportUiResult) -> Unit
+    ) {
+        viewModelScope.launch {
+            val playlist = repo.createPlaylistWithSongs(name, songs)
+            onResult(
+                LocalAudioImportUiResult(
+                    importedCount = playlist.songs.size,
+                    failedCount = 0
+                )
+            )
+        }
+    }
+
+    fun addScannedSongsToPlaylist(
+        targetPlaylistId: Long,
+        songs: List<SongItem>,
+        onResult: (LocalAudioImportUiResult) -> Unit
+    ) {
+        viewModelScope.launch {
+            val importedCount = repo.addSongsToPlaylistAndCount(targetPlaylistId, songs)
+            onResult(
+                LocalAudioImportUiResult(
+                    importedCount = importedCount,
+                    failedCount = 0
+                )
+            )
+        }
+    }
+
     fun removeSongs(songs: List<SongItem>) {
         viewModelScope.launch {
             if (songs.isEmpty()) return@launch
