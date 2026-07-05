@@ -45,6 +45,8 @@ user-owned data.
 
 > [!WARNING]
 > This project is for learning and research purposes only. Do not use it for illegal purposes.
+> 
+>This project and its maintainer do not accept any form of sponsorship, donation, or commercial funding.
 
 ---
 

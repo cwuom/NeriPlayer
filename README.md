@@ -43,6 +43,8 @@
 
 > [!WARNING]
 > 本项目仅供学习与研究使用，请勿将其用于任何非法用途。
+> 
+> 本项目及维护者不接受任何形式的赞助、捐赠或商业资助。
 
 ---
 
@@ -94,9 +96,9 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 
 1. 前往 [GitHub Releases](https://github.com/cwuom/NeriPlayer/releases)
 2. 如何选择版本？
-  - 大部分手机请选择 `arm64-v8a`
-  - 老旧 32 位设备请选择 `armeabi-v7a`
-  - `x86` / `x86_64` 主要用于模拟器、英特尔设备或 Chromebook
+- 大部分手机请选择 `arm64-v8a`
+- 老旧 32 位设备请选择 `armeabi-v7a`
+- `x86` / `x86_64` 主要用于模拟器、英特尔设备或 Chromebook
 
 > [!IMPORTANT]
 > Release 渠道不是严格意义上的稳定通道。版本通常在完成一批功能后手动发布，
