@@ -79,9 +79,10 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     private var scanSessionId: Long = 0L
 
     fun start(id: Long) {
-        if (playlistId == id && _uiState.value.playlist != null) return
+        if (playlistId == id && _uiState.value.playlist?.id == id) return
         playlistId = id
         playlistCollectJob?.cancel()
+        _uiState.value = LocalPlaylistDetailUiState()
         playlistCollectJob = viewModelScope.launch {
             repo.playlists.collect { list ->
                 _uiState.value = LocalPlaylistDetailUiState(

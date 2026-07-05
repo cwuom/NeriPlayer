@@ -183,6 +183,7 @@ import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailViewModel
+import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailUiState
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticFloatingActionButton
 import moe.ouom.neriplayer.util.HapticIconButton
@@ -203,6 +204,8 @@ private fun hasCachedLocalDownload(song: SongItem): Boolean {
         ManagedDownloadStorage.peekDownloadedAudio(song) != null
 }
 
+private const val BLANK_COVER_MODEL = "about:blank"
+
 internal fun areDisplayedSongKeysSelected(
     selectedKeys: Set<String>,
     displayedKeys: Set<String>
@@ -222,6 +225,22 @@ internal fun toggleDisplayedSongSelection(
     }
 }
 
+internal fun normalizeLocalPlaylistHeaderCoverModel(headerCover: String?): String {
+    return headerCover?.takeIf { it.isNotBlank() } ?: BLANK_COVER_MODEL
+}
+
+internal fun resolveDisplayedLocalPlaylistDetailState(
+    uiState: LocalPlaylistDetailUiState,
+    requestedPlaylistId: Long
+): LocalPlaylistDetailUiState {
+    val playlist = uiState.playlist ?: return uiState
+    return if (playlist.id == requestedPlaylistId) {
+        uiState
+    } else {
+        LocalPlaylistDetailUiState()
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class,
     DelicateCoroutinesApi::class
 )
@@ -236,14 +255,17 @@ fun LocalPlaylistDetailScreen(
 ) {
     val context = LocalContext.current
     val vm: LocalPlaylistDetailViewModel = viewModel()
-    val ui = vm.uiState.collectAsState()
+    val rawUiState by vm.uiState.collectAsState()
+    val uiState = remember(rawUiState, playlistId) {
+        resolveDisplayedLocalPlaylistDetailState(rawUiState, playlistId)
+    }
     val scanPreviewState by vm.scanPreviewState.collectAsState()
     LaunchedEffect(playlistId) { vm.start(playlistId) }
 
     // 保存最新的歌单数据，用于在Screen销毁时更新使用记录
     var latestPlaylist by remember { mutableStateOf<moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist?>(null) }
-    LaunchedEffect(ui.value.playlist) {
-        ui.value.playlist?.let { latestPlaylist = it }
+    LaunchedEffect(uiState.playlist) {
+        uiState.playlist?.let { latestPlaylist = it }
     }
 
     // 在Screen销毁时更新使用记录，确保返回主页时卡片显示最新信息
@@ -261,8 +283,8 @@ fun LocalPlaylistDetailScreen(
         }
     }
 
-    val playlist = ui.value.playlist
-    val isResolved = ui.value.isResolved
+    val playlist = uiState.playlist
+    val isResolved = uiState.isResolved
 
     LaunchedEffect(isResolved, playlist, playlistId) {
         if (isResolved && playlist == null) {
@@ -682,10 +704,10 @@ fun LocalPlaylistDetailScreen(
             var savedListOffset by rememberSaveable(playlistId) { mutableIntStateOf(0) }
             val hasRestoredScroll = rememberSaveable(playlistId) { mutableStateOf(false) }
             val listState = reorderState.listState
-            val baseQueue by remember {
+            val baseQueue by remember(localSongs) {
                 derivedStateOf { localSongs.asReversed() }
             }
-            val queueIndexBySongKey by remember {
+            val queueIndexBySongKey by remember(baseQueue) {
                 derivedStateOf {
                     buildMap(baseQueue.size) {
                         baseQueue.forEachIndexed { index, song ->
@@ -695,14 +717,14 @@ fun LocalPlaylistDetailScreen(
                 }
             }
             val appContext = remember(context) { context.applicationContext }
-            var headerCover by remember(baseQueue, downloadPresenceVersion) {
+            var headerCover by remember(playlistId, baseQueue, downloadPresenceVersion) {
                 mutableStateOf(
                     baseQueue.firstNotNullOfOrNull { song ->
                         song.displayCoverUrl(context)?.takeIf(String::isNotBlank)
                     }
                 )
             }
-            LaunchedEffect(baseQueue, appContext, downloadPresenceVersion) {
+            LaunchedEffect(playlistId, baseQueue, appContext, downloadPresenceVersion) {
                 val immediateCover = baseQueue.firstNotNullOfOrNull { song ->
                     song.displayCoverUrl(context)?.takeIf(String::isNotBlank)
                 }
@@ -715,7 +737,7 @@ fun LocalPlaylistDetailScreen(
                     headerCover = resolvedCover
                 }
             }
-            val displayedSongs by remember {
+            val displayedSongs by remember(baseQueue, searchQuery, context) {
                 derivedStateOf {
                     val base = baseQueue
                     if (searchQuery.isBlank()) base
@@ -771,7 +793,7 @@ fun LocalPlaylistDetailScreen(
             }
 
             // 统计
-            val totalDurationMs by remember(playlistId) {
+            val totalDurationMs by remember(localSongs) {
                 derivedStateOf { localSongs.sumOf { it.durationMs } }
             }
 
@@ -1070,9 +1092,10 @@ fun LocalPlaylistDetailScreen(
                                     AsyncImage(
                                         model = offlineCachedImageRequest(
                                             context = context,
-                                            data = headerCover,
+                                            data = normalizeLocalPlaylistHeaderCoverModel(headerCover),
                                             sizePx = 768,
                                             allowHardware = false,
+                                            crossfade = true,
                                             offlineMode = offlineMode
                                         ),
                                         contentDescription = playlist.name,
