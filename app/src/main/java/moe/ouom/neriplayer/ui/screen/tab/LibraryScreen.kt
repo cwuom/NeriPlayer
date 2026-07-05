@@ -1002,7 +1002,7 @@ private fun LocalPlaylistList(
                 }
             }
         }
-        item {
+        item(key = "local_playlist_create") {
             Card(
                 shape = cardShape,
                 colors = CardDefaults.cardColors(
@@ -1089,8 +1089,9 @@ private fun LocalPlaylistList(
                     confirmButton = {
                         HapticTextButton(
                             onClick = {
-                                selectedIds.forEach { onDelete(it) }
+                                val idsToDelete = selectedIds.toList()
                                 exitSelection()
+                                idsToDelete.forEach { onDelete(it) }
                             }
                         ) { Text(stringResource(R.string.action_delete)) }
                     },
@@ -1366,8 +1367,9 @@ private fun LocalPlaylistList(
                         confirmButton = {
                             HapticTextButton(
                                 onClick = {
-                                    onDelete(pl.id)
+                                    val playlistId = pl.id
                                     showDeleteDialog = false
+                                    onDelete(playlistId)
                                 }
                             ) { Text(stringResource(R.string.action_delete)) }
                         },

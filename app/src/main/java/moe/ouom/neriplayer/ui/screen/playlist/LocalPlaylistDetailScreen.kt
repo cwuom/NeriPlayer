@@ -182,6 +182,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
+import moe.ouom.neriplayer.ui.component.playlistExportListHeight
 import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
@@ -292,11 +293,18 @@ fun LocalPlaylistDetailScreen(
 
     val playlist = uiState.playlist
     val isResolved = uiState.isResolved
+    var deleteNavigationHandled by remember(playlistId) { mutableStateOf(false) }
+
+    fun navigateAfterPlaylistDeleted() {
+        if (deleteNavigationHandled) return
+        deleteNavigationHandled = true
+        onDeleted()
+    }
 
     LaunchedEffect(isResolved, playlist, playlistId) {
         if (isResolved && playlist == null) {
             AppContainer.playlistUsageRepo.removeEntry(playlistId, "local")
-            onDeleted()
+            navigateAfterPlaylistDeleted()
         }
     }
 
@@ -1496,8 +1504,10 @@ fun LocalPlaylistDetailScreen(
                         text = { Text(stringResource(R.string.local_playlist_delete_confirm)) },
                         confirmButton = {
                             HapticTextButton(onClick = {
-                                vm.delete { ok -> if (ok) onDeleted() }
                                 showDeletePlaylistConfirm = false
+                                vm.delete { ok ->
+                                    if (ok) navigateAfterPlaylistDeleted()
+                                }
                             }) { Text(stringResource(R.string.action_delete)) }
                         },
                         dismissButton = {
@@ -1577,7 +1587,48 @@ fun LocalPlaylistDetailScreen(
                             Text(stringResource(R.string.local_playlist_export_to), style = MaterialTheme.typography.titleMedium)
                             Spacer(Modifier.height(8.dp))
 
-                            LazyColumn {
+                            var newName by remember { mutableStateOf("") }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedTextField(
+                                    value = newName,
+                                    onValueChange = { newName = it },
+                                    modifier = Modifier.weight(1f),
+                                    placeholder = { Text(stringResource(R.string.playlist_create_name)) },
+                                    singleLine = true
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                HapticTextButton(
+                                    enabled = newName.isNotBlank() && selectedKeysState.value.isNotEmpty(),
+                                    onClick = {
+                                        val name = newName.trim()
+                                        if (name.isBlank()) return@HapticTextButton
+                                        val displayedSongs = snapshotReversedList(localSongs)
+                                        val songs = displayedSongs.filter {
+                                            it.stableKey() in selectedKeysState.value
+                                        }
+                                        launchWithLocalSyncWarning(
+                                            songs = songs,
+                                            actionLabel = context.getString(R.string.playlist_add_to)
+                                        ) {
+                                            scope.launch {
+                                                repo.createPlaylist(name)
+                                                val target =
+                                                    repo.playlists.value.lastOrNull { it.name == name }
+                                                if (target != null) {
+                                                    repo.addSongsToPlaylist(target.id, songs)
+                                                }
+                                                showExportSheet = false
+                                            }
+                                        }
+                                    }
+                                ) { Text(stringResource(R.string.playlist_create_and_export)) }
+                            }
+
+                            Spacer(Modifier.height(12.dp))
+                            HorizontalDivider()
+                            Spacer(Modifier.height(4.dp))
+
+                            LazyColumn(modifier = Modifier.playlistExportListHeight()) {
                     itemsIndexed(
                         allPlaylists.filter {
                             it.id != playlist.id && !LocalFilesPlaylist.isSystemPlaylist(it, context)
@@ -1616,47 +1667,6 @@ fun LocalPlaylistDetailScreen(
                                         )
                                     }
                                 }
-                            }
-
-                            Spacer(Modifier.height(12.dp))
-                            HorizontalDivider()
-                            Spacer(Modifier.height(12.dp))
-
-                            var newName by remember { mutableStateOf("") }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                OutlinedTextField(
-                                    value = newName,
-                                    onValueChange = { newName = it },
-                                    modifier = Modifier.weight(1f),
-                                    placeholder = { Text(stringResource(R.string.playlist_create_name)) },
-                                    singleLine = true
-                                )
-                                Spacer(Modifier.width(12.dp))
-                                HapticTextButton(
-                                    enabled = newName.isNotBlank() && selectedKeysState.value.isNotEmpty(),
-                                    onClick = {
-                                        val name = newName.trim()
-                                        if (name.isBlank()) return@HapticTextButton
-                                        val displayedSongs = snapshotReversedList(localSongs)
-                                        val songs = displayedSongs.filter {
-                                            it.stableKey() in selectedKeysState.value
-                                        }
-                                        launchWithLocalSyncWarning(
-                                            songs = songs,
-                                            actionLabel = context.getString(R.string.playlist_add_to)
-                                        ) {
-                                            scope.launch {
-                                                repo.createPlaylist(name)
-                                                val target =
-                                                    repo.playlists.value.lastOrNull { it.name == name }
-                                                if (target != null) {
-                                                    repo.addSongsToPlaylist(target.id, songs)
-                                                }
-                                                showExportSheet = false
-                                            }
-                                        }
-                                    }
-                                ) { Text(stringResource(R.string.playlist_create_and_export)) }
                             }
                             Spacer(Modifier.height(12.dp))
                         }

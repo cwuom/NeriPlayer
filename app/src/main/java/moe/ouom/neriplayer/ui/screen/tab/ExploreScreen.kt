@@ -128,6 +128,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
+import moe.ouom.neriplayer.ui.component.playlistExportListHeight
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreUiState
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreViewModel
@@ -646,7 +647,44 @@ fun ExploreScreen(
                 Text(stringResource(R.string.playlist_export_to_local), style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
 
-                LazyColumn {
+                var newName by remember { mutableStateOf("") }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text(stringResource(R.string.playlist_create_name)) },
+                        singleLine = true
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    HapticTextButton(
+                        enabled = newName.isNotBlank() && selectedParts.isNotEmpty(),
+                        onClick = {
+                            val name = newName.trim()
+                            if (name.isBlank()) return@HapticTextButton
+
+                            val songs = partsInfo!!.pages
+                                .filter { selectedParts.contains(it.page) }
+                                .map { page -> vm.toSongItem(page, partsInfo!!, clickedSongCoverUrl) }
+
+                            scope.launch {
+                                repo.createPlaylist(name)
+                                val target = repo.playlists.value.lastOrNull { it.name == name }
+                                if (target != null) {
+                                    repo.addSongsToPlaylist(target.id, songs)
+                                }
+                                showExportSheet = false
+                                exitPartsSelection()
+                            }
+                        }
+                    ) { Text(stringResource(R.string.playlist_create_and_export)) }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider(thickness = DividerDefaults.Thickness, color = DividerDefaults.color)
+                Spacer(Modifier.height(4.dp))
+
+                LazyColumn(modifier = Modifier.playlistExportListHeight()) {
                     itemsIndexed(
                         allLocalPlaylists.filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
                     ) { _, pl ->
@@ -679,43 +717,6 @@ fun ExploreScreen(
                                 )
                         }
                     }
-                }
-
-                Spacer(Modifier.height(12.dp))
-                HorizontalDivider(thickness = DividerDefaults.Thickness, color = DividerDefaults.color)
-                Spacer(Modifier.height(12.dp))
-
-                var newName by remember { mutableStateOf("") }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = newName,
-                        onValueChange = { newName = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text(stringResource(R.string.playlist_create_name)) },
-                        singleLine = true
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    HapticTextButton(
-                        enabled = newName.isNotBlank() && selectedParts.isNotEmpty(),
-                        onClick = {
-                            val name = newName.trim()
-                            if (name.isBlank()) return@HapticTextButton
-
-                            val songs = partsInfo!!.pages
-                                .filter { selectedParts.contains(it.page) }
-                                .map { page -> vm.toSongItem(page, partsInfo!!, clickedSongCoverUrl) }
-
-                            scope.launch {
-                                repo.createPlaylist(name)
-                                val target = repo.playlists.value.lastOrNull { it.name == name }
-                                if (target != null) {
-                                    repo.addSongsToPlaylist(target.id, songs)
-                                }
-                                showExportSheet = false
-                                exitPartsSelection()
-                            }
-                        }
-                    ) { Text(stringResource(R.string.playlist_create_and_export)) }
                 }
                 Spacer(Modifier.height(12.dp))
             }

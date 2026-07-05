@@ -150,6 +150,7 @@ import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
+import moe.ouom.neriplayer.ui.component.playlistExportListHeight
 import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionDetailUiState
 import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionHeader
@@ -710,7 +711,47 @@ fun DetailScreen(
                             Text(stringResource(R.string.playlist_export_to_local), style = MaterialTheme.typography.titleMedium)
                             Spacer(Modifier.height(8.dp))
 
-                            LazyColumn {
+                            var newName by remember { mutableStateOf("") }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedTextField(
+                                    value = newName,
+                                    onValueChange = { newName = it },
+                                    modifier = Modifier.weight(1f),
+                                    placeholder = { Text(stringResource(R.string.playlist_create_name)) },
+                                    singleLine = true
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                HapticTextButton(
+                                    enabled = newName.isNotBlank() && selectedIds.isNotEmpty(),
+                                    onClick = {
+                                        val name = newName.trim()
+                                        if (name.isBlank()) return@HapticTextButton
+                                        // 倒序导出
+                                        val songs = ui.tracks
+                                            .asReversed()
+                                            .filter { selectedIds.contains(it.id) }
+                                        scope.launch {
+                                            repo.createPlaylist(name)
+                                            val target =
+                                                repo.playlists.value.lastOrNull { it.name == name }
+                                            if (target != null) {
+                                                repo.addSongsToPlaylist(target.id, songs)
+                                            }
+                                            showExportSheet = false
+                                        }
+                                    }
+                                ) { Text(stringResource(R.string.playlist_create_and_export)) }
+                            }
+
+                            Spacer(Modifier.height(12.dp))
+                            HorizontalDivider(
+                                Modifier,
+                                DividerDefaults.Thickness,
+                                DividerDefaults.color
+                            )
+                            Spacer(Modifier.height(4.dp))
+
+                            LazyColumn(modifier = Modifier.playlistExportListHeight()) {
                                 itemsIndexed(
                                     allPlaylists.filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
                                 ) { _, pl ->
@@ -742,46 +783,6 @@ fun DetailScreen(
                                         )
                                     }
                                 }
-                            }
-
-                            Spacer(Modifier.height(12.dp))
-                            HorizontalDivider(
-                                Modifier,
-                                DividerDefaults.Thickness,
-                                DividerDefaults.color
-                            )
-                            Spacer(Modifier.height(12.dp))
-
-                            var newName by remember { mutableStateOf("") }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                OutlinedTextField(
-                                    value = newName,
-                                    onValueChange = { newName = it },
-                                    modifier = Modifier.weight(1f),
-                                    placeholder = { Text(stringResource(R.string.playlist_create_name)) },
-                                    singleLine = true
-                                )
-                                Spacer(Modifier.width(12.dp))
-                                HapticTextButton(
-                                    enabled = newName.isNotBlank() && selectedIds.isNotEmpty(),
-                                    onClick = {
-                                        val name = newName.trim()
-                                        if (name.isBlank()) return@HapticTextButton
-                                        // 倒序导出
-                                        val songs = ui.tracks
-                                            .asReversed()
-                                            .filter { selectedIds.contains(it.id) }
-                                        scope.launch {
-                                            repo.createPlaylist(name)
-                                            val target =
-                                                repo.playlists.value.lastOrNull { it.name == name }
-                                            if (target != null) {
-                                                repo.addSongsToPlaylist(target.id, songs)
-                                            }
-                                            showExportSheet = false
-                                        }
-                                    }
-                                ) { Text(stringResource(R.string.playlist_create_and_export)) }
                             }
                             Spacer(Modifier.height(12.dp))
                         }
