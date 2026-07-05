@@ -1157,6 +1157,8 @@ private fun StartupCrashReportDialog(
                         stringResource(R.string.startup_crash_report_title_jvm)
                     CrashReportStore.CrashOrigin.Native ->
                         stringResource(R.string.startup_crash_report_title_native)
+                    CrashReportStore.CrashOrigin.Anr ->
+                        stringResource(R.string.startup_crash_report_title_anr)
                     CrashReportStore.CrashOrigin.Unknown ->
                         stringResource(R.string.startup_crash_report_title)
                 }

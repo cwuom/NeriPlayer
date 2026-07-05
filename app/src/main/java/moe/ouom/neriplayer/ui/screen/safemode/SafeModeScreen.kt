@@ -247,6 +247,8 @@ fun SafeModeScreen(
                 )
             }
 
+            SafeModeExportCard(busy = busy)
+
             RecoveryActionCard(
                 busy = busy,
                 onResetLogin = { showResetLoginDialog = true },

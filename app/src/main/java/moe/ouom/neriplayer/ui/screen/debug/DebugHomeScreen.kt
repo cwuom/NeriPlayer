@@ -87,6 +87,10 @@ enum class DebugCrashTestType(
         titleRes = R.string.debug_test_exception_jvm_uncaught_worker,
         descriptionRes = R.string.debug_test_exception_jvm_uncaught_worker_desc
     ),
+    MainThreadAnr(
+        titleRes = R.string.debug_test_exception_anr,
+        descriptionRes = R.string.debug_test_exception_anr_desc
+    ),
     NativeSigSegv(
         titleRes = R.string.debug_test_exception_native_sigsegv,
         descriptionRes = R.string.debug_test_exception_native_sigsegv_desc

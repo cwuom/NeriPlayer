@@ -13,6 +13,7 @@ internal object CrashReportStore {
     enum class CrashOrigin {
         Jvm,
         Native,
+        Anr,
         Unknown
     }
 
@@ -53,6 +54,7 @@ internal object CrashReportStore {
             val origin = when (lines.firstOrNull()?.trim()?.lowercase()) {
                 "jvm" -> CrashOrigin.Jvm
                 "native" -> CrashOrigin.Native
+                "anr" -> CrashOrigin.Anr
                 else -> CrashOrigin.Unknown
             }
             val logFileName = lines.getOrNull(1)?.trim().orEmpty()

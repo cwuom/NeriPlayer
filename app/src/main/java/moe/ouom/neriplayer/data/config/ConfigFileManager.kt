@@ -10,6 +10,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.ListenTogetherPreferences
+import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
+import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.settings.SettingsKeys
@@ -35,26 +39,30 @@ class ConfigFileManager(private val context: Context) {
     suspend fun exportConfig(uri: Uri): Result<String> = withContext(Dispatchers.IO) {
         try {
             val settingsPrefs = context.dataStore.data.first()
+            val listenTogetherPreferences = ListenTogetherPreferences(context)
+            val neteaseCookieRepo = NeteaseCookieRepository(context)
+            val biliCookieRepo = BiliCookieRepository(context)
+            val youTubeAuthRepo = YouTubeAuthRepository(context)
             val payload = AppConfigBackup(
                 exportedAt = System.currentTimeMillis(),
                 settings = settingsPrefs.toTypedPreferenceSnapshot(),
-                listenTogether = AppContainer.listenTogetherPreferences.snapshot(),
+                listenTogether = listenTogetherPreferences.snapshot(),
                 language = LanguageConfigSnapshot(
                     code = LanguageManager.getCurrentLanguage(context).code
                 ),
-                neteaseAuth = AppContainer.neteaseCookieRepo.run {
+                neteaseAuth = neteaseCookieRepo.run {
                     SavedCookieConfigSnapshot(
                         cookies = getCookiesOnce(),
                         savedAt = getAuthHealthOnce().savedAt
                     )
                 },
-                biliAuth = AppContainer.biliCookieRepo.run {
+                biliAuth = biliCookieRepo.run {
                     SavedCookieConfigSnapshot(
                         cookies = getCookiesOnce(),
                         savedAt = getAuthHealthOnce().savedAt
                     )
                 },
-                youTubeAuth = AppContainer.youtubeAuthRepo.getAuthOnce().toConfigSnapshot(),
+                youTubeAuth = youTubeAuthRepo.getAuthOnce().toConfigSnapshot(),
                 gitHubSync = SecureTokenStorage(context).snapshot(),
                 webDavSync = WebDavStorage(context).snapshot()
             )

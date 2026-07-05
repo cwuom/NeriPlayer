@@ -203,6 +203,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
+import moe.ouom.neriplayer.util.AnrWatchdog
 import moe.ouom.neriplayer.util.CoverArtColorCache
 import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.NativeCrashHandler
@@ -1924,6 +1925,10 @@ private fun NeriAppContent(
                                                     Thread {
                                                         throw RuntimeException(crashMessage)
                                                     }.start()
+                                                }
+
+                                                DebugCrashTestType.MainThreadAnr -> {
+                                                    AnrWatchdog.triggerTestAnr(context)
                                                 }
 
                                                 DebugCrashTestType.NativeSigSegv -> {

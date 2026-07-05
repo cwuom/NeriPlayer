@@ -40,6 +40,7 @@ import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicLibraryGateway
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicPlaylistDetail
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicTrack
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicUiDependencies
+import moe.ouom.neriplayer.util.AnrWatchdog
 import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.LanguageManager
 import moe.ouom.neriplayer.util.NativeCrashHandler
@@ -54,6 +55,7 @@ class NeriPlayerApplication : Application() {
 
         // 初始化语言设置
         LanguageManager.init(this)
+        AnrWatchdog.capturePreviousAnrIfNeeded(this)
         val enterSafeMode = SafeModeManager.shouldEnterSafeMode(this)
         ExceptionHandler.init(this, installNativeCrashHandler = !enterSafeMode)
 

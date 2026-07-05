@@ -11,6 +11,8 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
 import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
+import moe.ouom.neriplayer.data.backup.BackupManager
+import moe.ouom.neriplayer.data.config.ConfigFileManager
 import moe.ouom.neriplayer.data.settings.BootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
@@ -51,6 +53,22 @@ internal object SafeModeManager {
                 destination = destination
             )
         }
+    }
+
+    suspend fun exportConfigBackup(context: Context, destination: Uri): Result<String> {
+        return ConfigFileManager(context.applicationContext).exportConfig(destination)
+    }
+
+    suspend fun exportPlaylistBackup(context: Context, destination: Uri): Result<String> {
+        return BackupManager(context.applicationContext).exportPlaylists(destination)
+    }
+
+    fun generateConfigBackupFileName(context: Context): String {
+        return ConfigFileManager(context.applicationContext).generateBackupFileName()
+    }
+
+    fun generatePlaylistBackupFileName(context: Context): String {
+        return BackupManager(context.applicationContext).generateBackupFileName()
     }
 
     suspend fun clearAllCookiesAndLoginOptions(context: Context) {
