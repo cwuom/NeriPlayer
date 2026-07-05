@@ -37,6 +37,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.common.parseRawCookieText
+import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthHealth
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
@@ -97,6 +98,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
     fun clearAuth() {
         viewModelScope.launch(Dispatchers.IO) {
             repo.clear()
+            clearWebViewLoginState()
             _events.send(
                 YouTubeAuthEvent.ShowSnack(
                     getApplication<Application>().getString(R.string.auth_cookie_cleared)

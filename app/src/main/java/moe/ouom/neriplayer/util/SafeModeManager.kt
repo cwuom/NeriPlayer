@@ -2,14 +2,12 @@ package moe.ouom.neriplayer.util
 
 import android.content.Context
 import android.net.Uri
-import android.webkit.CookieManager
-import android.webkit.WebStorage
 import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
 import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
+import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.backup.BackupManager
 import moe.ouom.neriplayer.data.config.ConfigFileManager
@@ -21,7 +19,6 @@ import moe.ouom.neriplayer.data.settings.persistBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.settings.persistPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.persistThemePreferenceSnapshot
 import java.io.File
-import kotlin.coroutines.resume
 
 internal object SafeModeManager {
 
@@ -98,19 +95,6 @@ internal object SafeModeManager {
     }
 
     private suspend fun clearWebViewState() {
-        withContext(Dispatchers.Main.immediate) {
-            val cookieManager = CookieManager.getInstance()
-            suspendCancellableCoroutine<Unit> { continuation ->
-                cookieManager.removeAllCookies {
-                    cookieManager.removeSessionCookies {
-                        if (continuation.isActive) {
-                            continuation.resume(Unit)
-                        }
-                    }
-                }
-            }
-            cookieManager.flush()
-            WebStorage.getInstance().deleteAllData()
-        }
+        clearWebViewLoginState()
     }
 }

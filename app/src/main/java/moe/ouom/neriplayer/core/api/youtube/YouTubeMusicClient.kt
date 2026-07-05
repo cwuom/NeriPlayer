@@ -42,6 +42,7 @@ import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_WEB_ORIGIN
 import moe.ouom.neriplayer.data.platform.youtube.resolveBootstrapUserAgent
 import moe.ouom.neriplayer.data.platform.youtube.resolveRequestUserAgent
 import moe.ouom.neriplayer.data.platform.youtube.resolveXGoogAuthUser
+import moe.ouom.neriplayer.util.NPLogger
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -49,6 +50,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 
+private const val TAG = "NERI-YTMusicClient"
 private const val YOUTUBE_MUSIC_BROWSE_ID_LIBRARY_PLAYLISTS = "FEmusic_liked_playlists"
 private const val YOUTUBE_MUSIC_MUSIC_ORIGIN = "https://music.youtube.com"
 private const val YOUTUBE_MUSIC_BOOTSTRAP_TTL_MS = 10L * 60L * 1000L
@@ -1799,6 +1801,7 @@ class YouTubeMusicClient(
         if (query.isBlank()) {
             return@withContext emptyList()
         }
+        NPLogger.d(TAG, "search start: query=$query, limit=$limit")
         authAutoRefreshManager?.refreshIfNeeded(reason = "search", force = false)
         val requestedLimit = limit.coerceAtLeast(1)
         var bootstrap = bootstrap()
@@ -1827,8 +1830,13 @@ class YouTubeMusicClient(
                 response.root
             } catch (error: IOException) {
                 if (page == 0) {
+                    NPLogger.e(TAG, "search failed on first page: query=$query", error)
                     throw error
                 }
+                NPLogger.w(
+                    TAG,
+                    "search continuation stopped: query=$query, page=$page, message=${error.message}"
+                )
                 break
             }
             YouTubeMusicParser.parseSongSearchResults(
@@ -1846,10 +1854,13 @@ class YouTubeMusicClient(
             page++
         }
 
-        items.take(requestedLimit)
+        val results = items.take(requestedLimit)
+        NPLogger.d(TAG, "search success: query=$query, count=${results.size}, pages=${page + 1}")
+        results
     }
 
     suspend fun getLibraryPlaylists(): List<YouTubeMusicLibraryPlaylist> = withContext(Dispatchers.IO) {
+        NPLogger.d(TAG, "getLibraryPlaylists start")
         authAutoRefreshManager?.refreshIfNeeded(reason = "library_playlists", force = false)
         var bootstrap = bootstrap()
         var requestLocale = YouTubeMusicLocaleResolver.preferred()
@@ -1870,8 +1881,13 @@ class YouTubeMusicClient(
                 response.root
             } catch (error: IOException) {
                 if (page == 0) {
+                    NPLogger.e(TAG, "getLibraryPlaylists failed on first page", error)
                     throw error
                 }
+                NPLogger.w(
+                    TAG,
+                    "getLibraryPlaylists continuation stopped: page=$page, message=${error.message}"
+                )
                 break
             }
             items += YouTubeMusicParser.parseLibraryPlaylists(root)
@@ -1899,7 +1915,11 @@ class YouTubeMusicClient(
                 bootstrap = response.bootstrap
                 requestLocale = response.requestLocale
                 response.root
-            } catch (_: IOException) {
+            } catch (error: IOException) {
+                NPLogger.w(
+                    TAG,
+                    "resolve track count failed: browseId=${playlists[index].browseId}, title=${playlists[index].title}, message=${error.message}"
+                )
                 null
             } ?: return@forEach
             playlists[index] = playlists[index].copy(
@@ -1912,15 +1932,18 @@ class YouTubeMusicClient(
                 force = true
             )
             if (refreshResult?.refreshed == true) {
+                NPLogger.w(TAG, "getLibraryPlaylists empty, retry after auth refresh")
                 bootstrapCache = null
                 return@withContext getLibraryPlaylists()
             }
         }
+        NPLogger.d(TAG, "getLibraryPlaylists success: count=${playlists.size}, pages=${page + 1}")
         playlists
     }
 
     /** 获取 YouTube Music 首页推荐 */
     suspend fun getHomeFeed(): List<YouTubeMusicHomeShelf> = withContext(Dispatchers.IO) {
+        NPLogger.d(TAG, "getHomeFeed start")
         authAutoRefreshManager?.refreshIfNeeded(reason = "home_feed", force = false)
         var bootstrap = bootstrap()
         var requestLocale = YouTubeMusicLocaleResolver.preferred()
@@ -1967,7 +1990,11 @@ class YouTubeMusicClient(
                             payload = JSONObject().put("continuation", shelfContinuation),
                             preferredLocale = requestLocale
                         )
-                    } catch (_: IOException) {
+                    } catch (error: IOException) {
+                        NPLogger.w(
+                            TAG,
+                            "getHomeFeed shelf continuation stopped: shelf=${parsedShelf.title}, page=$shelfPage, message=${error.message}"
+                        )
                         break
                     }
                     bootstrap = shelfResponse.bootstrap
@@ -2001,11 +2028,14 @@ class YouTubeMusicClient(
                 force = true
             )
             if (refreshResult?.refreshed == true) {
+                NPLogger.w(TAG, "getHomeFeed empty, retry after auth refresh")
                 bootstrapCache = null
                 return@withContext getHomeFeed()
             }
         }
-        result.take(YOUTUBE_MUSIC_HOME_MAX_SHELVES)
+        val shelves = result.take(YOUTUBE_MUSIC_HOME_MAX_SHELVES)
+        NPLogger.d(TAG, "getHomeFeed success: shelves=${shelves.size}, pages=${page + 1}")
+        shelves
     }
 
     suspend fun getPlaylistDetail(
@@ -2287,6 +2317,7 @@ class YouTubeMusicClient(
             throw lastError ?: IOException("YouTube Music bootstrap request failed")
         }
         suspend fun refreshWorkingAuth(reason: String) {
+            NPLogger.d(TAG, "bootstrap auth refresh requested: reason=$reason")
             authAutoRefreshManager?.refreshIfNeeded(
                 reason = reason,
                 force = true
@@ -2305,6 +2336,7 @@ class YouTubeMusicClient(
         } catch (error: IOException) {
             val recoverableFailure = isYouTubeAuthRecoverableFailure(error)
             if (workingCookieHeader.isBlank() && !recoverableFailure) {
+                NPLogger.e(TAG, "bootstrap failed without recoverable auth context", error)
                 throw error
             }
             val refreshReason = if (recoverableFailure) {
@@ -2312,6 +2344,10 @@ class YouTubeMusicClient(
             } else {
                 "music_bootstrap_parse_recoverable"
             }
+            NPLogger.w(
+                TAG,
+                "bootstrap retry after auth refresh: reason=$refreshReason, message=${error.message}"
+            )
             refreshWorkingAuth(refreshReason)
             fetchBootstrapConfig()
         }
@@ -2510,6 +2546,10 @@ class YouTubeMusicClient(
                     )
                     // 某些地区/语言组合会返回只有 microformat 的空壳 browse，需要切到通用 locale 重试
                     if (YouTubeMusicLocaleResolver.shouldRetryWithSafeFallback(payload, root)) {
+                        NPLogger.w(
+                            TAG,
+                            "browse fallback locale because response is empty: ${requestLocale.hl}/${requestLocale.gl}"
+                        )
                         lastError = IOException(
                             "YouTube Music browse response missing contents for ${requestLocale.hl}/${requestLocale.gl}"
                         )
@@ -2522,6 +2562,10 @@ class YouTubeMusicClient(
                     )
                 } catch (error: IOException) {
                     lastError = error
+                    NPLogger.w(
+                        TAG,
+                        "browse attempt failed: locale=${requestLocale.hl}/${requestLocale.gl}, attempt=${attempt + 1}/$YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS, message=${error.message}"
+                    )
                     if (attempt == YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS - 1) {
                         break
                     }
@@ -2556,12 +2600,20 @@ class YouTubeMusicClient(
                         requestLocale = requestLocale
                     )
                     if (YouTubeMusicLocaleResolver.shouldRetryWithSafeFallback(payload, root)) {
+                        NPLogger.w(
+                            TAG,
+                            "search fallback locale because response is empty: ${requestLocale.hl}/${requestLocale.gl}"
+                        )
                         lastError = IOException(
                             "YouTube Music search response missing contents for ${requestLocale.hl}/${requestLocale.gl}"
                         )
                         break
                     }
                     if (expectSongShelf && !YouTubeMusicParser.hasSongSearchShelf(root)) {
+                        NPLogger.w(
+                            TAG,
+                            "search fallback locale because song shelf is missing: ${requestLocale.hl}/${requestLocale.gl}"
+                        )
                         lastError = IOException(
                             "YouTube Music songs search missing song shelf for ${requestLocale.hl}/${requestLocale.gl}"
                         )
@@ -2574,6 +2626,10 @@ class YouTubeMusicClient(
                     )
                 } catch (error: IOException) {
                     lastError = error
+                    NPLogger.w(
+                        TAG,
+                        "search attempt failed: locale=${requestLocale.hl}/${requestLocale.gl}, attempt=${attempt + 1}/$YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS, message=${error.message}"
+                    )
                     if (attempt == YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS - 1) {
                         break
                     }

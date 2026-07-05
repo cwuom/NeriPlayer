@@ -45,9 +45,12 @@ import moe.ouom.neriplayer.core.player.PlayerManager.neteaseClient
 import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
+import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistSummaries
 import org.json.JSONObject
+
+private const val TAG = "NERI-ExploreVM"
 
 /**
  * Tag key to Chinese API category mapping
@@ -118,7 +121,8 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         viewModelScope.launch {
-            neteaseRepo.cookieFlow.collect { raw ->
+            neteaseRepo.cookieFlow.collect {
+                NPLogger.d(TAG, "cookieFlow updated, reload high quality playlists tag=${_uiState.value.selectedTag}")
                 loadHighQuality()
             }
         }
@@ -127,6 +131,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     /** 设置当前搜索源 */
     fun setSearchSource(source: SearchSource) {
         if (source == _uiState.value.selectedSearchSource) return
+        NPLogger.d(TAG, "setSearchSource: ${_uiState.value.selectedSearchSource} -> $source")
         searchJob?.cancel()
         invalidateSearchRequest()
         _uiState.value = _uiState.value.copy(
@@ -140,6 +145,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     /** 统一搜索入口 */
     fun search(keyword: String) {
         if (keyword.isBlank()) {
+            NPLogger.d(TAG, "search cleared because keyword is blank")
             searchJob?.cancel()
             invalidateSearchRequest()
             _uiState.value = _uiState.value.copy(
@@ -151,6 +157,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         }
         val source = _uiState.value.selectedSearchSource
         val requestVersion = beginSearchRequest()
+        NPLogger.d(TAG, "search start: source=$source, request=$requestVersion, keyword=$keyword")
         when (source) {
             SearchSource.NETEASE -> searchNetease(keyword, requestVersion)
             SearchSource.BILIBILI -> searchBilibili(keyword, requestVersion)
@@ -167,6 +174,10 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 }
                 // 将B站搜索结果转换为通用的 SongItem
                 val songs = searchPage.items.map { it.toSongItem() }
+                NPLogger.d(
+                    TAG,
+                    "search Bilibili success: request=$requestVersion, keyword=$keyword, count=${songs.size}, page=${searchPage.page}"
+                )
                 updateSearchStateIfCurrent(requestVersion, SearchSource.BILIBILI) {
                     it.copy(
                         searching = false,
@@ -177,6 +188,11 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                NPLogger.e(
+                    TAG,
+                    "search Bilibili failed: request=$requestVersion, keyword=$keyword",
+                    e
+                )
                 updateSearchStateIfCurrent(requestVersion, SearchSource.BILIBILI) {
                     it.copy(
                         searching = false,
@@ -213,7 +229,14 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         source: SearchSource,
         transform: (ExploreUiState) -> ExploreUiState
     ) {
-        if (!isSearchRequestCurrent(requestVersion, source)) return
+        if (!isSearchRequestCurrent(requestVersion, source)) {
+            val currentState = _uiState.value
+            NPLogger.d(
+                TAG,
+                "drop stale search update: source=$source, request=$requestVersion, currentRequest=$searchRequestVersion, currentSource=${currentState.selectedSearchSource}"
+            )
+            return
+        }
         _uiState.value = transform(_uiState.value)
     }
 
@@ -233,6 +256,10 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             error = null,
             selectedTag = realCat
         )
+        NPLogger.d(
+            TAG,
+            "loadHighQuality start: tag=$realCat, apiCategory=${TAG_TO_API_CATEGORY[realCat] ?: realCat}, previousCount=${previousPlaylists.size}"
+        )
         highQualityLoadJob = viewModelScope.launch {
             try {
                 // Convert tag key to Chinese API category
@@ -241,6 +268,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     neteaseClient.getHighQualityPlaylists(apiCategory, 50, 0L)
                 }
                 val mapped = parsePlaylists(raw)
+                NPLogger.d(TAG, "loadHighQuality success: tag=$realCat, count=${mapped.size}")
 
                 _uiState.value = _uiState.value.copy(
                     loading = false,
@@ -252,6 +280,11 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 throw e
             } catch (e: Exception) {
                 val shouldRestorePreviousContent = previousPlaylists.isNotEmpty() && realCat != previousTag
+                NPLogger.e(
+                    TAG,
+                    "loadHighQuality failed: tag=$realCat, restorePrevious=$shouldRestorePreviousContent",
+                    e
+                )
                 _uiState.value = _uiState.value.copy(
                     loading = false,
                     error = app.getString(
@@ -268,7 +301,11 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     private fun parsePlaylists(raw: String): List<PlaylistSummary> {
         val result = mutableListOf<PlaylistSummary>()
         val root = JSONObject(raw)
-        if (root.optInt("code") != 200) return emptyList()
+        val code = root.optInt("code", -1)
+        if (code != 200) {
+            NPLogger.w(TAG, "parsePlaylists unexpected code=$code")
+            return emptyList()
+        }
         val arr = root.optJSONArray("playlists") ?: return emptyList()
         for (i in 0 until arr.length()) {
             val obj = arr.optJSONObject(i) ?: continue
@@ -297,6 +334,10 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     )
                 }
                 val songs = parseSongs(raw)
+                NPLogger.d(
+                    TAG,
+                    "search Netease success: request=$requestVersion, keyword=$keyword, count=${songs.size}"
+                )
                 updateSearchStateIfCurrent(requestVersion, SearchSource.NETEASE) {
                     it.copy(
                         searching = false,
@@ -307,6 +348,11 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                NPLogger.e(
+                    TAG,
+                    "search Netease failed: request=$requestVersion, keyword=$keyword",
+                    e
+                )
                 updateSearchStateIfCurrent(requestVersion, SearchSource.NETEASE) {
                     it.copy(
                         searching = false,
@@ -324,7 +370,11 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     private fun parseSongs(raw: String): List<SongItem> {
         val list = mutableListOf<SongItem>()
         val root = JSONObject(raw)
-        if (root.optInt("code") != 200) return emptyList()
+        val code = root.optInt("code", -1)
+        if (code != 200) {
+            NPLogger.w(TAG, "parseSongs unexpected code=$code")
+            return emptyList()
+        }
         val songs = root.optJSONObject("result")?.optJSONArray("songs") ?: return emptyList()
         for (i in 0 until songs.length()) {
             val obj = songs.optJSONObject(i) ?: continue
@@ -379,6 +429,10 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     startIndex = 0,
                     source = "yt_search_result_load"
                 )
+                NPLogger.d(
+                    TAG,
+                    "search YouTube Music success: request=$requestVersion, keyword=$keyword, count=${songs.size}"
+                )
                 updateSearchStateIfCurrent(requestVersion, SearchSource.YOUTUBE_MUSIC) {
                     it.copy(
                         searching = false,
@@ -389,6 +443,11 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                NPLogger.e(
+                    TAG,
+                    "search YouTube Music failed: request=$requestVersion, keyword=$keyword",
+                    e
+                )
                 updateSearchStateIfCurrent(requestVersion, SearchSource.YOUTUBE_MUSIC) {
                     it.copy(
                         searching = false,
@@ -406,6 +465,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     /** 加载 YouTube Music 歌单列表 */
     fun loadYtMusicPlaylists() {
         _uiState.value = _uiState.value.copy(ytMusicPlaylistsLoading = true, ytMusicPlaylistsError = null)
+        NPLogger.d(TAG, "loadYtMusicPlaylists start")
         viewModelScope.launch {
             try {
                 val library = withContext(Dispatchers.IO) {
@@ -421,6 +481,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                         trackCount = pl.trackCount ?: 0
                     )
                 }
+                NPLogger.d(TAG, "loadYtMusicPlaylists success: count=${playlists.size}")
                 _uiState.value = _uiState.value.copy(
                     ytMusicPlaylistsLoading = false,
                     ytMusicPlaylists = playlists,
@@ -428,6 +489,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 )
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
+                NPLogger.e(TAG, "loadYtMusicPlaylists failed", e)
                 _uiState.value = _uiState.value.copy(
                     ytMusicPlaylistsLoading = false,
                     ytMusicPlaylistsError = "YouTube Music: ${e.message ?: "unknown error"}"

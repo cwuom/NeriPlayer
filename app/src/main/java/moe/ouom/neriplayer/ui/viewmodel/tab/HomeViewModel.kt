@@ -110,6 +110,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         // 观察国际化设置变化，切换推荐源
         viewModelScope.launch {
             AppContainer.settingsRepo.internationalizationEnabledFlow.collect { enabled ->
+                NPLogger.d(TAG, "internationalizationEnabled updated: $enabled")
                 _uiState.value = _uiState.value.copy(internationalizationEnabled = enabled)
                 if (enabled) {
                     refreshYtMusicPlaylists()
@@ -125,10 +126,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     return@collect
                 }
                 lastYouTubeAuthFingerprint = nextFingerprint
+                NPLogger.d(
+                    TAG,
+                    "youtube auth changed: hasLogin=${bundle.hasLoginCookies()}, intl=${_uiState.value.internationalizationEnabled}"
+                )
                 if (!_uiState.value.internationalizationEnabled) {
                     return@collect
                 }
                 if (!bundle.hasLoginCookies()) {
+                    NPLogger.d(TAG, "youtube auth cleared, reset home YouTube sections")
                     _uiState.value = _uiState.value.copy(
                         ytMusicPlaylists = HomeSectionState(),
                         ytMusicHomeShelves = HomeSectionState()
@@ -172,6 +178,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun setOfflineMode(enabled: Boolean) {
         if (offlineMode == enabled) return
 
+        NPLogger.d(TAG, "setOfflineMode: $enabled")
         offlineMode = enabled
         if (!enabled) return
 
@@ -197,13 +204,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshRecommend() {
         if (offlineMode) return
 
+        NPLogger.d(TAG, "refreshRecommend start: hasLogin=$hasRecommendLogin")
         playlistJob?.cancel()
         val previous = _uiState.value.playlists
         _uiState.value = _uiState.value.copy(
             playlists = previous.copy(loading = true, error = null)
         )
         playlistJob = viewModelScope.launch {
-            when (val result = fetchWithRetry {
+            when (val result = fetchWithRetry("refreshRecommend") {
                 val raw = withContext(Dispatchers.IO) {
                     client.getRecommendedPlaylists(limit = 30, usePersistedCookies = hasRecommendLogin)
                 }
@@ -211,6 +219,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     parseRecommendOnWorker(raw)
                 } catch (e: ApiCodeException) {
                     if (hasRecommendLogin && shouldFallbackRecommend(e.code)) {
+                        NPLogger.w(TAG, "refreshRecommend fallback to anonymous due to api_code=${e.code}")
                         val fallbackRaw = withContext(Dispatchers.IO) {
                             client.getRecommendedPlaylists(limit = 30, usePersistedCookies = false)
                         }
@@ -221,11 +230,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }) {
                 is RetryLoadResult.Success -> {
+                    NPLogger.d(TAG, "refreshRecommend success: count=${result.items.size}")
                     _uiState.value = _uiState.value.copy(
                         playlists = HomeSectionState(items = result.items)
                     )
                 }
                 is RetryLoadResult.Failure -> {
+                    NPLogger.e(TAG, "refreshRecommend failed", result.throwable)
                     _uiState.value = _uiState.value.copy(
                         playlists = _uiState.value.playlists.copy(
                             loading = false,
@@ -260,13 +271,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private fun refreshHotSongs() {
         if (offlineMode) return
 
+        NPLogger.d(TAG, "refreshHotSongs start")
         hotSongsJob?.cancel()
         val previous = _uiState.value.hotSongs
         _uiState.value = _uiState.value.copy(
             hotSongs = previous.copy(loading = true, error = null)
         )
         hotSongsJob = viewModelScope.launch {
-            when (val result = fetchWithRetry {
+            when (val result = fetchWithRetry("refreshHotSongs") {
                 val raw = withContext(Dispatchers.IO) {
                     client.searchSongs(
                         keyword = HOME_SEARCH_HOT_KEYWORD,
@@ -279,11 +291,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 parseSongsOnWorker(raw)
             }) {
                 is RetryLoadResult.Success -> {
+                    NPLogger.d(TAG, "refreshHotSongs success: count=${result.items.size}")
                     _uiState.value = _uiState.value.copy(
                         hotSongs = HomeSectionState(items = result.items)
                     )
                 }
                 is RetryLoadResult.Failure -> {
+                    NPLogger.e(TAG, "refreshHotSongs failed", result.throwable)
                     _uiState.value = _uiState.value.copy(
                         hotSongs = _uiState.value.hotSongs.copy(
                             loading = false,
@@ -298,13 +312,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private fun refreshRadarSongs() {
         if (offlineMode) return
 
+        NPLogger.d(TAG, "refreshRadarSongs start")
         radarSongsJob?.cancel()
         val previous = _uiState.value.radarSongs
         _uiState.value = _uiState.value.copy(
             radarSongs = previous.copy(loading = true, error = null)
         )
         radarSongsJob = viewModelScope.launch {
-            when (val result = fetchWithRetry {
+            when (val result = fetchWithRetry("refreshRadarSongs") {
                 val raw = withContext(Dispatchers.IO) {
                     client.searchSongs(
                         keyword = HOME_SEARCH_RADAR_KEYWORD,
@@ -317,11 +332,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 parseSongsOnWorker(raw)
             }) {
                 is RetryLoadResult.Success -> {
+                    NPLogger.d(TAG, "refreshRadarSongs success: count=${result.items.size}")
                     _uiState.value = _uiState.value.copy(
                         radarSongs = HomeSectionState(items = result.items)
                     )
                 }
                 is RetryLoadResult.Failure -> {
+                    NPLogger.e(TAG, "refreshRadarSongs failed", result.throwable)
                     _uiState.value = _uiState.value.copy(
                         radarSongs = _uiState.value.radarSongs.copy(
                             loading = false,
@@ -337,12 +354,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshYtMusicPlaylists() {
         if (offlineMode) return
 
+        NPLogger.d(TAG, "refreshYtMusicPlaylists start")
         ytMusicPlaylistJob?.cancel()
         _uiState.value = _uiState.value.copy(
             ytMusicPlaylists = _uiState.value.ytMusicPlaylists.copy(loading = true, error = null)
         )
         ytMusicPlaylistJob = viewModelScope.launch {
-            when (val result = fetchWithRetry {
+            when (val result = fetchWithRetry("refreshYtMusicPlaylists") {
                 val library = withContext(Dispatchers.IO) {
                     AppContainer.youtubeMusicClient.getLibraryPlaylists()
                 }
@@ -358,11 +376,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 }.take(HOME_YT_MUSIC_PLAYLIST_LIMIT)
             }) {
                 is RetryLoadResult.Success -> {
+                    NPLogger.d(TAG, "refreshYtMusicPlaylists success: count=${result.items.size}")
                     _uiState.value = _uiState.value.copy(
                         ytMusicPlaylists = HomeSectionState(items = result.items)
                     )
                 }
                 is RetryLoadResult.Failure -> {
+                    NPLogger.e(TAG, "refreshYtMusicPlaylists failed", result.throwable)
                     _uiState.value = _uiState.value.copy(
                         ytMusicPlaylists = _uiState.value.ytMusicPlaylists.copy(
                             loading = false,
@@ -379,22 +399,25 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshYtMusicHomeFeed() {
         if (offlineMode) return
 
+        NPLogger.d(TAG, "refreshYtMusicHomeFeed start")
         ytMusicHomeFeedJob?.cancel()
         _uiState.value = _uiState.value.copy(
             ytMusicHomeShelves = _uiState.value.ytMusicHomeShelves.copy(loading = true, error = null)
         )
         ytMusicHomeFeedJob = viewModelScope.launch {
-            when (val result = fetchWithRetry {
+            when (val result = fetchWithRetry("refreshYtMusicHomeFeed") {
                 withContext(Dispatchers.IO) {
                     AppContainer.youtubeMusicClient.getHomeFeed()
                 }
             }) {
                 is RetryLoadResult.Success -> {
+                    NPLogger.d(TAG, "refreshYtMusicHomeFeed success: count=${result.items.size}")
                     _uiState.value = _uiState.value.copy(
                         ytMusicHomeShelves = HomeSectionState(items = result.items)
                     )
                 }
                 is RetryLoadResult.Failure -> {
+                    NPLogger.e(TAG, "refreshYtMusicHomeFeed failed", result.throwable)
                     _uiState.value = _uiState.value.copy(
                         ytMusicHomeShelves = _uiState.value.ytMusicHomeShelves.copy(
                             loading = false,
@@ -407,15 +430,27 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun <T> fetchWithRetry(
+        name: String,
         fetch: suspend () -> List<T>
     ): RetryLoadResult<T> {
         var lastError: Throwable? = null
-        repeat(HOME_MAX_FAILURE_BEFORE_WARNING) {
+        repeat(HOME_MAX_FAILURE_BEFORE_WARNING) { attempt ->
             try {
-                return RetryLoadResult.Success(fetch())
+                val items = fetch()
+                if (attempt > 0) {
+                    NPLogger.d(
+                        TAG,
+                        "$name recovered on attempt ${attempt + 1}: count=${items.size}"
+                    )
+                }
+                return RetryLoadResult.Success(items)
             } catch (e: Throwable) {
                 if (e is CancellationException) throw e
                 lastError = e
+                NPLogger.w(
+                    TAG,
+                    "$name attempt ${attempt + 1}/$HOME_MAX_FAILURE_BEFORE_WARNING failed: ${e.message}"
+                )
             }
         }
         return RetryLoadResult.Failure(lastError ?: IllegalStateException("Unknown error"))

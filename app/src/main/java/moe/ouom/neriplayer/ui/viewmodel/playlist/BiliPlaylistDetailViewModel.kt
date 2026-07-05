@@ -40,8 +40,10 @@ import moe.ouom.neriplayer.data.platform.bili.BiliFavoriteFolderContentCache
 import moe.ouom.neriplayer.data.platform.bili.CachedBiliFavoriteVideo
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
+import moe.ouom.neriplayer.util.NPLogger
 import java.io.IOException
 
+private const val TAG = "NERI-BiliPlaylistVM"
 private const val BILI_RESOURCE_TYPE_VIDEO = 2
 private const val BILI_RESOURCE_TYPE_COLLECTION = 21
 private const val BILI_FAVORITE_LATEST_PAGE_SIZE = 20
@@ -89,6 +91,10 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
             header = playlist.copy(count = cachedVideos.size.takeIf { it > 0 } ?: playlist.count),
             videos = cachedVideos
         )
+        NPLogger.d(
+            TAG,
+            "start load: mediaId=${playlist.mediaId}, kind=${playlist.kind}, forceRefresh=$forceRefresh, cachedCount=${cachedVideos.size}"
+        )
         loadContent(forceRefresh = forceRefresh)
     }
 
@@ -108,7 +114,15 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
      */
     suspend fun getVideoInfo(bvid: String): BiliClient.VideoBasicInfo {
         return withContext(Dispatchers.IO) {
-            client.getVideoBasicInfoByBvid(bvid)
+            NPLogger.d(TAG, "getVideoInfo start: bvid=$bvid")
+            runCatching { client.getVideoBasicInfoByBvid(bvid) }
+                .onSuccess {
+                    NPLogger.d(TAG, "getVideoInfo success: bvid=$bvid, pages=${it.pages.size}")
+                }
+                .onFailure {
+                    NPLogger.e(TAG, "getVideoInfo failed: bvid=$bvid", it)
+                }
+                .getOrThrow()
         }
     }
 
@@ -117,6 +131,10 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
             _uiState.value = _uiState.value.copy(loading = true, error = null)
             try {
                 val header = uiState.value.header ?: return@launch
+                NPLogger.d(
+                    TAG,
+                    "loadContent start: mediaId=${header.mediaId}, kind=${header.kind}, forceRefresh=$forceRefresh, cachedCount=${uiState.value.videos.size}"
+                )
                 val videos = withContext(Dispatchers.IO) {
                     when (header.kind) {
                         BiliPlaylistKind.COLLECTION -> loadCollectionVideos(header)
@@ -133,15 +151,29 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                     header = header.copy(count = videos.size),
                     videos = videos
                 )
+                NPLogger.d(
+                    TAG,
+                    "loadContent success: mediaId=${header.mediaId}, kind=${header.kind}, count=${videos.size}"
+                )
 
             } catch (e: IOException) {
                 val hasCachedVideos = uiState.value.videos.isNotEmpty()
+                NPLogger.e(
+                    TAG,
+                    "loadContent network failed: mediaId=$mediaId, hasCachedVideos=$hasCachedVideos",
+                    e
+                )
                 _uiState.value = _uiState.value.copy(
                     loading = false,
                     error = if (hasCachedVideos) null else "Network error: ${e.message}"
                 )
             } catch (e: Exception) {
                 val hasCachedVideos = uiState.value.videos.isNotEmpty()
+                NPLogger.e(
+                    TAG,
+                    "loadContent failed: mediaId=$mediaId, hasCachedVideos=$hasCachedVideos",
+                    e
+                )
                 _uiState.value = _uiState.value.copy(
                     loading = false,
                     error = if (hasCachedVideos) null else "Load failed: ${e.message}"
@@ -155,6 +187,10 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
         forceRefresh: Boolean
     ): List<BiliVideoItem> {
         val cached = favoriteCacheRepo.read(playlist.mediaId)
+        NPLogger.d(
+            TAG,
+            "loadFavoriteFolderVideos start: mediaId=${playlist.mediaId}, forceRefresh=$forceRefresh, hasCache=${cached != null}, cachedCount=${cached?.videos?.size ?: 0}"
+        )
         val latestPageResult = runCatching {
             client.getFavFolderContents(
                 mediaId = playlist.mediaId,
@@ -163,12 +199,27 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
             )
         }
         if (latestPageResult.isFailure && cached != null && !forceRefresh) {
+            NPLogger.w(
+                TAG,
+                "loadFavoriteFolderVideos fallback to cache: mediaId=${playlist.mediaId}, message=${latestPageResult.exceptionOrNull()?.message}"
+            )
             return cached.videos.map { it.toVideoItem() }
+        }
+        latestPageResult.exceptionOrNull()?.let { error ->
+            NPLogger.e(
+                TAG,
+                "loadFavoriteFolderVideos latest page failed: mediaId=${playlist.mediaId}, forceRefresh=$forceRefresh",
+                error
+            )
         }
 
         val latestPage = latestPageResult.getOrThrow()
         val latestSignature = latestPage.latestPageSignature()
         if (!forceRefresh && cached?.latestPageSignature == latestSignature) {
+            NPLogger.d(
+                TAG,
+                "loadFavoriteFolderVideos reuse cached signature: mediaId=${playlist.mediaId}, count=${cached.videos.size}"
+            )
             return cached.videos.map { it.toVideoItem() }
         }
 
@@ -182,6 +233,10 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                 videos = videos.map { it.toCachedVideo() }
             )
         )
+        NPLogger.d(
+            TAG,
+            "loadFavoriteFolderVideos refreshed: mediaId=${playlist.mediaId}, items=${items.size}, videos=${videos.size}"
+        )
         return videos
     }
 
@@ -193,6 +248,12 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                 BILI_RESOURCE_TYPE_COLLECTION -> {
                     val collectionVideos = runCatching {
                         client.getAllCollectionArchives(mid = item.upperMid, seasonId = item.id)
+                    }.onFailure { error ->
+                        NPLogger.w(
+                            TAG,
+                            "load collection videos failed: seasonId=${item.id}, upperMid=${item.upperMid}, title=${item.title}",
+                            error
+                        )
                     }.getOrDefault(emptyList())
                     collectionVideos.mapTo(videos) { archive ->
                         archive.toVideoItem(uploader = item.upperName.ifBlank { item.title })
@@ -229,11 +290,16 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
     }
 
     private suspend fun loadCollectionVideos(playlist: BiliPlaylist): List<BiliVideoItem> {
-        if (playlist.mid == 0L) return emptyList()
-        return client.getAllCollectionArchives(mid = playlist.mid, seasonId = playlist.mediaId)
+        if (playlist.mid == 0L) {
+            NPLogger.w(TAG, "loadCollectionVideos skipped because mid is 0: mediaId=${playlist.mediaId}")
+            return emptyList()
+        }
+        val videos = client.getAllCollectionArchives(mid = playlist.mid, seasonId = playlist.mediaId)
             .map { archive ->
                 archive.toVideoItem(uploader = playlist.subtitle.ifBlank { playlist.title })
             }
+        NPLogger.d(TAG, "loadCollectionVideos success: mediaId=${playlist.mediaId}, count=${videos.size}")
+        return videos
     }
 
     private fun BiliClient.FavResourceItem.toVideoItem(): BiliVideoItem? {

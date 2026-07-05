@@ -40,6 +40,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicDebugProbeResult
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicLocaleResolver
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
 
 data class YouTubeApiProbeUiState(
@@ -187,15 +188,18 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearAuth() {
-        authRepo.clear()
-        client.clearBootstrapCache()
-        _ui.value = _ui.value.copy(
-            running = false,
-            authSummary = buildAuthSummary(),
-            status = string(R.string.debug_youtube_probe_status_auth_cleared),
-            summary = "",
-            rawJson = ""
-        )
+        viewModelScope.launch(Dispatchers.IO) {
+            authRepo.clear()
+            client.clearBootstrapCache()
+            clearWebViewLoginState()
+            _ui.value = _ui.value.copy(
+                running = false,
+                authSummary = buildAuthSummary(),
+                status = string(R.string.debug_youtube_probe_status_auth_cleared),
+                summary = "",
+                rawJson = ""
+            )
+        }
     }
 
     fun clearPreview() {

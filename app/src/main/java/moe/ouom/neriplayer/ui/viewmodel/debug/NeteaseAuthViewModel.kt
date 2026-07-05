@@ -38,6 +38,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthHealth
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.common.parseRawCookieText
+import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
 import org.json.JSONObject
 
 data class NeteaseAuthUiState(
@@ -112,6 +113,7 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
             runCatching { api.logout() }
             cookieStore.clear()
             cookieRepo.clear()
+            clearWebViewLoginState()
             _events.tryEmit(
                 NeteaseAuthEvent.ShowSnack(
                     getApplication<Application>().getString(R.string.auth_cookie_cleared)
