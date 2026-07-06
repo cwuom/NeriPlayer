@@ -1225,6 +1225,8 @@
     <string name="settings_usb_exclusive_playback_desc">连接 USB DAC 或耳机时优先固定到 USB 输出，断开后暂停播放</string>
     <string name="settings_allow_mixed_playback">允许与其他应用同时播放</string>
     <string name="settings_allow_mixed_playback_desc">不占用音频焦点，允许与其他应用同时播放</string>
+    <string name="settings_preempt_audio_focus">预抢占音频焦点</string>
+    <string name="settings_preempt_audio_focus_desc">打开主界面且未播放时提前占用音频焦点，让耳机线控更容易唤起本应用</string>
     <string name="settings_lyrics_blur">歌词模糊</string>
     <string name="settings_lyrics_font_size">歌词字体大小</string>
     <string name="settings_lyrics_font_current">当前：%d%%</string>

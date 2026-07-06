@@ -1388,5 +1388,18 @@ object AutoSettingsSchema {
             titleRes = R.string.settings_allow_mixed_playback,
             descriptionRes = R.string.settings_allow_mixed_playback_desc
         )
+
+        @AutoSetting(
+            key = "preempt_audio_focus",
+            type = SettingValueType.Boolean,
+            defaultBoolean = false,
+            order = 180,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val preemptAudioFocus = autoSetting(
+            titleRes = R.string.settings_preempt_audio_focus,
+            descriptionRes = R.string.settings_preempt_audio_focus_desc
+        )
     }
 }

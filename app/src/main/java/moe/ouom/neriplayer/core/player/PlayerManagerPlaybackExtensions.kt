@@ -204,6 +204,7 @@ internal suspend fun PlayerManager.fadeOutCurrentPlaybackIfNeeded(
 
 internal fun PlayerManager.startPlayerPlaybackWithFade(plan: PlaybackStartPlan) {
     cancelVolumeFade()
+    StartupAudioFocusController.release("playback_start")
     NPLogger.d(
         "NERI-PlayerManager",
         "startPlayerPlaybackWithFade: useFadeIn=${plan.useFadeIn}, fadeDurationMs=${plan.fadeDurationMs}, initialVolume=${plan.initialVolume}, currentSong=${_currentSongFlow.value?.name}"

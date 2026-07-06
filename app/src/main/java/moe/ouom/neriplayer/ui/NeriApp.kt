@@ -154,6 +154,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.preloadRestoredStateSnapshot
 import moe.ouom.neriplayer.core.player.shouldSkipLocalPlaybackSyncServiceStart
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -756,6 +757,9 @@ private fun NeriAppContent(
         initial = startupPlaybackPreferences.usbExclusivePlayback
     )
     val allowMixedPlayback by repo.allowMixedPlaybackFlow.collectAsState(initial = false)
+    val preemptAudioFocus by repo.preemptAudioFocusFlow.collectAsState(
+        initial = startupPlaybackPreferences.preemptAudioFocus
+    )
     val maxCacheSizeBytes by repo.maxCacheSizeBytesFlow.collectAsState(
         initial = startupPlaybackPreferences.maxCacheSizeBytes
     )
@@ -846,6 +850,20 @@ private fun NeriAppContent(
         }
     }
 
+    fun updateStartupAudioFocus(reason: String) {
+        if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return
+        if (!PlayerManager.isPlayerInitialized()) return
+        val transportActive = runCatching { PlayerManager.isTransportActive() }
+            .getOrDefault(false)
+        StartupAudioFocusController.updateForForeground(
+            context = context,
+            enabled = preemptAudioFocus,
+            allowMixedPlayback = allowMixedPlayback,
+            transportActive = transportActive,
+            reason = reason
+        )
+    }
+
     LaunchedEffect(application) {
         val exactStartupPlaybackPreferences = withContext(Dispatchers.IO) {
             readPlaybackPreferenceSnapshot(application)
@@ -870,9 +888,24 @@ private fun NeriAppContent(
         )
         val shouldBootstrapPlaybackService =
             PlayerManager.hasItems() && PlayerManager.shouldBootstrapPlaybackServiceOnAppLaunch()
+        val shouldBootstrapPreemptAudioFocusSession =
+            !shouldBootstrapPlaybackService &&
+                exactStartupPlaybackPreferences.preemptAudioFocus &&
+                !exactStartupPlaybackPreferences.allowMixedPlayback &&
+                PlayerManager.hasItems()
+        StartupAudioFocusController.updateForForeground(
+            context = context,
+            enabled = exactStartupPlaybackPreferences.preemptAudioFocus,
+            allowMixedPlayback = exactStartupPlaybackPreferences.allowMixedPlayback,
+            transportActive = PlayerManager.isTransportActive() || shouldBootstrapPlaybackService,
+            reason = "app_bootstrap"
+        )
         if (shouldBootstrapPlaybackService) {
             NPLogger.d("NERI-App", "Starting audio service from app bootstrap")
             scheduleAudioServiceStart("app_bootstrap", true)
+        } else if (shouldBootstrapPreemptAudioFocusSession) {
+            NPLogger.d("NERI-App", "Starting audio service for preempt audio focus session")
+            scheduleAudioServiceStart("preempt_audio_focus_bootstrap", false)
         } else {
             NPLogger.d(
                 "NERI-App",
@@ -920,6 +953,14 @@ private fun NeriAppContent(
                 }
             }
 
+    }
+
+    LaunchedEffect(preemptAudioFocus, allowMixedPlayback) {
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            updateStartupAudioFocus("settings_changed")
+        } else if (!preemptAudioFocus || allowMixedPlayback) {
+            StartupAudioFocusController.release("settings_changed_inactive")
+        }
     }
 
     LaunchedEffect(storedFollowSystemDark, pendingFollowSystemDark) {
@@ -1078,16 +1119,18 @@ private fun NeriAppContent(
         themeRevealCaptureJob = captureJob
     }
 
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, preemptAudioFocus, allowMixedPlayback) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> {
                     coverArtRefreshToken += 1
+                    updateStartupAudioFocus("lifecycle_resume")
                 }
                 Lifecycle.Event.ON_PAUSE,
                 Lifecycle.Event.ON_STOP,
                 Lifecycle.Event.ON_DESTROY -> {
                     clearThemeRevealState()
+                    StartupAudioFocusController.release("lifecycle_${event.name.lowercase()}")
                 }
                 else -> Unit
             }
@@ -1964,6 +2007,10 @@ private fun NeriAppContent(
                                         allowMixedPlayback = allowMixedPlayback,
                                         onAllowMixedPlaybackChange = { enabled ->
                                             scope.launch { repo.setAllowMixedPlayback(enabled) }
+                                        },
+                                        preemptAudioFocus = preemptAudioFocus,
+                                        onPreemptAudioFocusChange = { enabled ->
+                                            scope.launch { repo.setPreemptAudioFocus(enabled) }
                                         },
                                         maxCacheSizeBytes = maxCacheSizeBytes,
                                         onMaxCacheSizeBytesChange = { size ->

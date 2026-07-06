@@ -1226,6 +1226,8 @@
     <string name="settings_usb_exclusive_playback_desc">Prefer USB audio output when a USB DAC or headset is connected, and pause after disconnect</string>
     <string name="settings_allow_mixed_playback">Allow Mixed Playback</string>
     <string name="settings_allow_mixed_playback_desc">Do not take audio focus so other apps can play</string>
+    <string name="settings_preempt_audio_focus">Preempt Audio Focus</string>
+    <string name="settings_preempt_audio_focus_desc">Take audio focus when the main screen opens and playback is idle, making headset controls more likely to target NeriPlayer</string>
     <string name="settings_lyrics_blur">Blur</string>
     <string name="settings_lyrics_font_size">Lyrics Font Size</string>
     <string name="settings_lyrics_font_current">Current: %d%%</string>

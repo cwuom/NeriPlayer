@@ -37,6 +37,7 @@ import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.BluetoothAudio
 import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Tune
@@ -93,7 +94,9 @@ internal fun SettingsPlaybackSection(
     usbExclusivePlayback: Boolean,
     onUsbExclusivePlaybackChange: (Boolean) -> Unit,
     allowMixedPlayback: Boolean,
-    onAllowMixedPlaybackChange: (Boolean) -> Unit
+    onAllowMixedPlaybackChange: (Boolean) -> Unit,
+    preemptAudioFocus: Boolean,
+    onPreemptAudioFocusChange: (Boolean) -> Unit
 ) {
     if (showHeader) {
         ExpandableHeader(
@@ -263,6 +266,21 @@ internal fun SettingsPlaybackSection(
                 },
                 onToggle = { onAllowMixedPlaybackChange(!allowMixedPlayback) },
                 onCheckedChange = onAllowMixedPlaybackChange
+            )
+
+            PlaybackSwitchItem(
+                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.PREEMPT_AUDIO_FOCUS),
+                checked = preemptAudioFocus,
+                icon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Headphones,
+                        contentDescription = stringResource(R.string.settings_preempt_audio_focus),
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                },
+                onToggle = { onPreemptAudioFocusChange(!preemptAudioFocus) },
+                onCheckedChange = onPreemptAudioFocusChange
             )
         }
     }

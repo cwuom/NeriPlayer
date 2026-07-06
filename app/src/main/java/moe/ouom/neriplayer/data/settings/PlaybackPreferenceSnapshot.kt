@@ -74,6 +74,7 @@ private const val PLAYBACK_EQUALIZER_LEVELS_KEY = "playback_equalizer_custom_ban
 private const val PLAYBACK_STOP_ON_BLUETOOTH_KEY = "stop_on_bluetooth_disconnect"
 private const val PLAYBACK_USB_EXCLUSIVE_KEY = "usb_exclusive_playback"
 private const val PLAYBACK_ALLOW_MIXED_KEY = "allow_mixed_playback"
+private const val PLAYBACK_PREEMPT_AUDIO_FOCUS_KEY = "preempt_audio_focus"
 private const val PLAYBACK_MAX_CACHE_SIZE_BYTES_KEY = "max_cache_size_bytes"
 private const val PLAYBACK_CLOUD_MUSIC_LYRIC_OFFSET_KEY = "cloud_music_lyric_default_offset_ms"
 private const val PLAYBACK_QQ_MUSIC_LYRIC_OFFSET_KEY = "qq_music_lyric_default_offset_ms"
@@ -111,6 +112,7 @@ data class PlaybackPreferenceSnapshot(
     val stopOnBluetoothDisconnect: Boolean = true,
     val usbExclusivePlayback: Boolean = false,
     val allowMixedPlayback: Boolean = false,
+    val preemptAudioFocus: Boolean = false,
     val cloudMusicLyricDefaultOffsetMs: Long = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS,
     val qqMusicLyricDefaultOffsetMs: Long = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS,
     val lyriconEnabled: Boolean = false,
@@ -283,6 +285,10 @@ internal fun persistPlaybackPreferenceSnapshot(
                     normalizedSnapshot.usbExclusivePlayback
                 )
                 .putBoolean(PLAYBACK_ALLOW_MIXED_KEY, normalizedSnapshot.allowMixedPlayback)
+                .putBoolean(
+                    PLAYBACK_PREEMPT_AUDIO_FOCUS_KEY,
+                    normalizedSnapshot.preemptAudioFocus
+                )
                 .putLong(
                     PLAYBACK_CLOUD_MUSIC_LYRIC_OFFSET_KEY,
                     normalizedSnapshot.cloudMusicLyricDefaultOffsetMs
@@ -342,6 +348,7 @@ internal fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnaps
         stopOnBluetoothDisconnect = this[SettingsKeys.STOP_ON_BLUETOOTH_DISCONNECT] ?: true,
         usbExclusivePlayback = this[SettingsKeys.USB_EXCLUSIVE_PLAYBACK] ?: false,
         allowMixedPlayback = this[SettingsKeys.ALLOW_MIXED_PLAYBACK] ?: false,
+        preemptAudioFocus = this[SettingsKeys.PREEMPT_AUDIO_FOCUS] ?: false,
         cloudMusicLyricDefaultOffsetMs =
             this[SettingsKeys.CLOUD_MUSIC_LYRIC_DEFAULT_OFFSET_MS]
                 ?: DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS,
@@ -434,6 +441,7 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
         stopOnBluetoothDisconnect = prefs.getBoolean(PLAYBACK_STOP_ON_BLUETOOTH_KEY, true),
         usbExclusivePlayback = prefs.getBoolean(PLAYBACK_USB_EXCLUSIVE_KEY, false),
         allowMixedPlayback = prefs.getBoolean(PLAYBACK_ALLOW_MIXED_KEY, false),
+        preemptAudioFocus = prefs.getBoolean(PLAYBACK_PREEMPT_AUDIO_FOCUS_KEY, false),
         cloudMusicLyricDefaultOffsetMs = prefs.getLong(
             PLAYBACK_CLOUD_MUSIC_LYRIC_OFFSET_KEY,
             DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS

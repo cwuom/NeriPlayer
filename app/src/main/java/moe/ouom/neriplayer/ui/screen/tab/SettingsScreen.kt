@@ -336,6 +336,8 @@ fun SettingsScreen(
     onUsbExclusivePlaybackChange: (Boolean) -> Unit,
     allowMixedPlayback: Boolean,
     onAllowMixedPlaybackChange: (Boolean) -> Unit,
+    preemptAudioFocus: Boolean,
+    onPreemptAudioFocusChange: (Boolean) -> Unit,
     onNavigateToDownloadManager: () -> Unit = {},
     maxCacheSizeBytes: Long,
     onMaxCacheSizeBytesChange: (Long) -> Unit,
@@ -1257,7 +1259,9 @@ fun SettingsScreen(
                             usbExclusivePlayback = usbExclusivePlayback,
                             onUsbExclusivePlaybackChange = onUsbExclusivePlaybackChange,
                             allowMixedPlayback = allowMixedPlayback,
-                            onAllowMixedPlaybackChange = onAllowMixedPlaybackChange
+                            onAllowMixedPlaybackChange = onAllowMixedPlaybackChange,
+                            preemptAudioFocus = preemptAudioFocus,
+                            onPreemptAudioFocusChange = onPreemptAudioFocusChange
                         )
                     }
                 }

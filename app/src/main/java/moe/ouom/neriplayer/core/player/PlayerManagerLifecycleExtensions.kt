@@ -684,6 +684,9 @@ internal fun PlayerManager.initializeImpl(
         ioScope.launch {
             settingsRepo.allowMixedPlaybackFlow.collect { enabled ->
                 allowMixedPlaybackEnabled = enabled
+                if (enabled) {
+                    StartupAudioFocusController.release("allow_mixed_playback_enabled")
+                }
                 applyAudioFocusPolicy()
             }
         }
@@ -1096,6 +1099,7 @@ internal fun PlayerManager.releaseImpl() {
     )
     updateResumePlaybackRequested(false)
     lastAutoTrackAdvanceAtMs = 0L
+    StartupAudioFocusController.release("player_release")
 
     try {
         val audioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager

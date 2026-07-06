@@ -395,6 +395,9 @@ class SettingsRepository(private val context: Context) {
     val allowMixedPlaybackFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.ALLOW_MIXED_PLAYBACK] ?: false }
 
+    val preemptAudioFocusFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.PREEMPT_AUDIO_FOCUS] ?: false }
+
     // 中文系统默认关闭国际化
     private val defaultInternationalization: Boolean
         get() = !Locale.getDefault().language.startsWith("zh")
@@ -932,6 +935,13 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[SettingsKeys.ALLOW_MIXED_PLAYBACK] = enabled }
         updatePlaybackPreferenceSnapshot(context) {
             it.copy(allowMixedPlayback = enabled)
+        }
+    }
+
+    suspend fun setPreemptAudioFocus(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.PREEMPT_AUDIO_FOCUS] = enabled }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(preemptAudioFocus = enabled)
         }
     }
 
