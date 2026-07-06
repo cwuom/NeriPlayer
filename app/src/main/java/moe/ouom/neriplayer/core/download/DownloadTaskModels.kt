@@ -106,8 +106,8 @@ internal fun stabilizeDownloadTaskSummary(
         )
     }
     return taskSummary.copy(
-        pendingTaskCount = 1,
-        queuedTaskCount = if (isSingleDownloading) 0 else 1,
+        pendingTaskCount = 0,
+        queuedTaskCount = 0,
         hasActiveTasks = isSingleDownloading,
         hasActiveOperations = true
     )

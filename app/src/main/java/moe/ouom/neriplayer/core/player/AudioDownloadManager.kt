@@ -118,6 +118,7 @@ object AudioDownloadManager {
     private const val TRANSIENT_DOWNLOAD_NETWORK_SETTLE_MS = 750L
     private const val DOWNLOAD_RETRY_POLL_SLICE_MS = 250L
     private const val DOWNLOAD_CLIENT_MAX_REQUESTS = 24
+    private const val RECOVERY_OPPORTUNITY_COOLDOWN_MS = 2_500L
     private const val DOWNLOAD_CLIENT_MAX_REQUESTS_PER_HOST = 12
     private const val DOWNLOAD_CLIENT_CONNECT_TIMEOUT_MS = 20_000L
     private const val DOWNLOAD_CLIENT_READ_TIMEOUT_MS = 45_000L
@@ -172,6 +173,9 @@ object AudioDownloadManager {
     private val activeSongOperationCounts = ConcurrentHashMap<String, Int>()
     private val batchSessionLock = Any()
     private val networkRecoveryMonitorLock = Any()
+
+    @Volatile
+    private var lastRecoveryOpportunityAtMs = 0L
 
     private fun newDownloadTrafficAccumulator(): TrafficByteAccumulator {
         val appContext = AppContainer.applicationContext
@@ -464,10 +468,23 @@ object AudioDownloadManager {
     }
 
     fun notifyRecoveryOpportunity(reason: String) {
+        val appContext = AppContainer.applicationContext
+        val nowMs = System.currentTimeMillis()
+        synchronized(networkRecoveryMonitorLock) {
+            if (nowMs - lastRecoveryOpportunityAtMs < RECOVERY_OPPORTUNITY_COOLDOWN_MS) {
+                NPLogger.d(TAG, "跳过重复下载恢复机会: reason=$reason")
+                return
+            }
+            lastRecoveryOpportunityAtMs = nowMs
+        }
+        if (!GlobalDownloadManager.hasPendingRecoveryCandidates(appContext)) {
+            NPLogger.d(TAG, "跳过无候选下载恢复机会: reason=$reason")
+            return
+        }
         evictDownloadConnections()
         retryWakeSignalVersion.value = advanceRetryWakeSignalVersion(retryWakeSignalVersion.value)
         GlobalDownloadManager.recoverPendingDownloadsForNetworkRestored(
-            context = AppContainer.applicationContext,
+            context = appContext,
             reason = reason
         )
         NPLogger.d(TAG, "下载恢复机会已触发: reason=$reason")
@@ -943,7 +960,10 @@ object AudioDownloadManager {
                     }
 
                     if (ManagedDownloadStorage.findDownloadedAudio(context, song) != null) {
-                        NPLogger.d(TAG, context.getString(R.string.download_file_exists, song.name))
+                        NPLogger.d(
+                            TAG,
+                            "${context.getString(R.string.download_file_exists, song.name)}, songKey=$songKey"
+                        )
                         // 文件已存在，设置进度为null触发任务完成
                         _progressFlow.value = null
                         return@withContext
