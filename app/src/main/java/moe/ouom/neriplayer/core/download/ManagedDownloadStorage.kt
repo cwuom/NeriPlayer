@@ -126,9 +126,14 @@ internal object ManagedDownloadStorage {
         createDefaultRoot(appContext)
         val stagingRecovery = cleanupStagingFiles(appContext)
         val pendingAudioRecovery = resolveStartupPendingAudioRecovery(appContext)
+        val metadataRecovery = cleanupUnfinalizedDownloadArtifacts(appContext)
         startupRecoveryResult = StartupRecoveryResult(
-            cleanedCount = stagingRecovery.cleanedCount + pendingAudioRecovery.cleanedCount,
-            failedCount = stagingRecovery.failedCount + pendingAudioRecovery.failedCount
+            cleanedCount = stagingRecovery.cleanedCount +
+                pendingAudioRecovery.cleanedCount +
+                metadataRecovery.cleanedCount,
+            failedCount = stagingRecovery.failedCount +
+                pendingAudioRecovery.failedCount +
+                metadataRecovery.failedCount
         )
         invalidateSnapshotCache()
     }
@@ -501,7 +506,8 @@ internal object ManagedDownloadStorage {
         val coverPath: String? = null,
         val lyricPath: String? = null,
         val translatedLyricPath: String? = null,
-        val durationMs: Long = 0L
+        val durationMs: Long = 0L,
+        val downloadFinalized: Boolean? = null
     )
 
     private sealed interface RootHandle {
@@ -788,7 +794,7 @@ internal object ManagedDownloadStorage {
     }
 
     internal fun buildWorkingFileName(songKey: String, fileName: String): String {
-        val normalizedKey = java.lang.Long.toHexString(songKey.hashCode().toLong() and 0xffffffffL)
+        val normalizedKey = buildWorkingSongKeyHash(songKey)
         val normalizedPrefix = fileName.substringBeforeLast('.', fileName)
             .ifBlank { "download" }
             .replace(Regex("[^A-Za-z0-9._-]"), "_")
@@ -802,6 +808,10 @@ internal object ManagedDownloadStorage {
         val fileBody = "${DOWNLOAD_STAGING_FILE_PREFIX}${normalizedKey}_$normalizedPrefix"
         return extension?.let { "$fileBody.$it$DOWNLOAD_STAGING_FILE_SUFFIX" }
             ?: "$fileBody$DOWNLOAD_STAGING_FILE_SUFFIX"
+    }
+
+    internal fun buildWorkingSongKeyHash(songKey: String): String {
+        return java.lang.Long.toHexString(songKey.hashCode().toLong() and 0xffffffffL)
     }
 
     fun createWorkingFile(context: Context, songKey: String, fileName: String): File {
@@ -820,6 +830,16 @@ internal object ManagedDownloadStorage {
     internal fun shouldPreserveWorkingFileForResume(
         entry: File,
         nowMs: Long = System.currentTimeMillis()
+    ): Boolean {
+        if (!isFreshNamedNonEmptyWorkingFile(entry, nowMs)) {
+            return false
+        }
+        return hasFreshValidWorkingResumeMetadata(entry, nowMs)
+    }
+
+    private fun isFreshNamedNonEmptyWorkingFile(
+        entry: File,
+        nowMs: Long
     ): Boolean {
         if (!entry.isFile) {
             return false
@@ -878,7 +898,34 @@ internal object ManagedDownloadStorage {
             return false
         }
         val pairedWorkingFile = File(entry.parentFile, workingFileName)
-        return shouldPreserveWorkingFileForResume(pairedWorkingFile, nowMs)
+        if (!isFreshNamedNonEmptyWorkingFile(pairedWorkingFile, nowMs)) {
+            return false
+        }
+        return hasValidWorkingResumeMetadataFile(entry)
+    }
+
+    private fun hasFreshValidWorkingResumeMetadata(
+        workingFile: File,
+        nowMs: Long
+    ): Boolean {
+        val metadataFile = buildWorkingResumeMetadataFile(workingFile)
+        if (!metadataFile.isFile) {
+            return false
+        }
+        val ageMs = (nowMs - metadataFile.lastModified().coerceAtLeast(0L)).coerceAtLeast(0L)
+        if (ageMs > DOWNLOAD_STAGING_MAX_AGE_MS) {
+            return false
+        }
+        return hasValidWorkingResumeMetadataFile(metadataFile)
+    }
+
+    private fun hasValidWorkingResumeMetadataFile(metadataFile: File): Boolean {
+        if (!metadataFile.isFile) {
+            return false
+        }
+        return runCatching {
+            parseWorkingResumeMetadataSong(metadataFile.readText(Charsets.UTF_8)) != null
+        }.getOrDefault(false)
     }
 
     internal fun saveWorkingResumeMetadata(
@@ -936,13 +983,24 @@ internal object ManagedDownloadStorage {
         if (keys.isEmpty()) {
             return emptySet()
         }
-        return listPendingResumableDownloadsInDirectory(stagingDir)
+        val deletedKeys = listPendingResumableDownloadsInDirectory(stagingDir)
             .filter { pendingDownload -> pendingDownload.song.stableKey() in keys }
             .mapNotNullTo(linkedSetOf()) { pendingDownload ->
                 val songKey = pendingDownload.song.stableKey()
                 deleteWorkingDownloadArtifacts(pendingDownload.workingFile)
                 songKey
             }
+        val keyHashes = keys.associateBy(::buildWorkingSongKeyHash)
+        stagingDir.listFiles()
+            .orEmpty()
+            .filter { entry -> matchingWorkingArtifactSongKey(entry.name, keyHashes) != null }
+            .forEach { entry ->
+                val songKey = matchingWorkingArtifactSongKey(entry.name, keyHashes) ?: return@forEach
+                if (deleteWorkingArtifactEntry(entry)) {
+                    deletedKeys += songKey
+                }
+            }
+        return deletedKeys
     }
 
     internal fun listPendingResumableDownloads(context: Context): List<PendingResumableDownload> {
@@ -1196,6 +1254,31 @@ internal object ManagedDownloadStorage {
             cleanedCount = cleanedCount,
             failedCount = failedCount
         )
+    }
+
+    private fun matchingWorkingArtifactSongKey(
+        fileName: String,
+        songKeyByHash: Map<String, String>
+    ): String? {
+        if (!fileName.startsWith(DOWNLOAD_STAGING_FILE_PREFIX)) {
+            return null
+        }
+        val keyHash = fileName
+            .removePrefix(DOWNLOAD_STAGING_FILE_PREFIX)
+            .substringBefore('_', missingDelimiterValue = "")
+            .takeIf(String::isNotBlank)
+            ?: return null
+        return songKeyByHash[keyHash]
+    }
+
+    private fun deleteWorkingArtifactEntry(entry: File): Boolean {
+        return runCatching {
+            if (entry.isDirectory) {
+                entry.deleteRecursively()
+            } else {
+                !entry.exists() || entry.delete()
+            }
+        }.getOrDefault(false)
     }
 
     fun findAudio(
@@ -1608,6 +1691,12 @@ internal object ManagedDownloadStorage {
             ?: findMetadataByDirectLookup(context, audio)
     }
 
+    private fun findMetadataForAudioBlocking(context: Context, audio: StoredEntry): StoredEntry? {
+        val snapshot = resolveSnapshotForIndexedLookup(context)
+        return snapshot?.metadataEntriesByAudioName?.get(audio.name)
+            ?: findMetadataByDirectLookup(context, audio)
+    }
+
     private fun findMetadataByDirectLookup(context: Context, audio: StoredEntry): StoredEntry? {
         val metadataName = "${audio.name}$METADATA_SUFFIX"
         return when (val root = resolveRootBlocking(context)) {
@@ -1674,14 +1763,16 @@ internal object ManagedDownloadStorage {
         tempFile: File,
         fileName: String,
         mimeType: String?,
-        expectedSizeBytes: Long? = null
+        expectedSizeBytes: Long? = null,
+        seedMetadataJson: String? = null
     ): StoredEntry = withContext(Dispatchers.IO) {
         saveAudioFromTempBlocking(
             context = context,
             tempFile = tempFile,
             fileName = fileName,
             mimeType = mimeType,
-            expectedSizeBytes = expectedSizeBytes
+            expectedSizeBytes = expectedSizeBytes,
+            seedMetadataJson = seedMetadataJson
         )
     }
 
@@ -1690,7 +1781,8 @@ internal object ManagedDownloadStorage {
         tempFile: File,
         fileName: String,
         mimeType: String?,
-        expectedSizeBytes: Long?
+        expectedSizeBytes: Long?,
+        seedMetadataJson: String?
     ): StoredEntry {
         val actualSizeBytes = tempFile.length().coerceAtLeast(0L)
         if (expectedSizeBytes != null && expectedSizeBytes > 0L && actualSizeBytes < expectedSizeBytes) {
@@ -1701,10 +1793,17 @@ internal object ManagedDownloadStorage {
                 is RootHandle.FileRoot -> {
                     val finalName = reserveUniqueFileChildName(root.dir, fileName)
                     val pendingTarget = File(root.dir, buildPendingAudioWriteName(finalName))
+                    var seedMetadataEntry: StoredEntry? = null
                     try {
                         if (!tempFile.renameTo(pendingTarget)) {
                             tempFile.copyTo(pendingTarget, overwrite = false)
                         }
+                        seedMetadataEntry = writeSeedMetadataBeforeAudioCommit(
+                            context = context,
+                            root = root,
+                            audioName = finalName,
+                            seedMetadataJson = seedMetadataJson
+                        )
                         val target = File(root.dir, finalName)
                         if (!pendingTarget.renameTo(target)) {
                             throw IOException("无法提交下载文件: $finalName")
@@ -1714,6 +1813,7 @@ internal object ManagedDownloadStorage {
                         if (pendingTarget.exists()) {
                             pendingTarget.delete()
                         }
+                        deleteSeedMetadataAfterAudioCommitFailure(context, seedMetadataEntry)
                         forgetFileChildName(root.dir, finalName)
                         throw error
                     }
@@ -1721,6 +1821,7 @@ internal object ManagedDownloadStorage {
 
                 is RootHandle.TreeRoot -> {
                     val finalName = reserveUniqueTreeChildName(context, root.tree, fileName)
+                    var seedMetadataEntry: StoredEntry? = null
                     try {
                         val committedAtMs = System.currentTimeMillis()
                         val pendingName = buildPendingAudioWriteName(finalName)
@@ -1736,6 +1837,12 @@ internal object ManagedDownloadStorage {
                                 input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
                             }
                         } ?: throw IOException("无法打开下载目录输出流")
+                        seedMetadataEntry = writeSeedMetadataBeforeAudioCommit(
+                            context = context,
+                            root = root,
+                            audioName = finalName,
+                            seedMetadataJson = seedMetadataJson
+                        )
                         if (pendingTarget.renameTo(finalName)) {
                             val storedName = pendingTarget.resolvedTreeStoredName(finalName)
                             forgetTreeChildName(root.tree, pendingName)
@@ -1764,6 +1871,7 @@ internal object ManagedDownloadStorage {
                             )
                         }
                     } catch (error: Throwable) {
+                        deleteSeedMetadataAfterAudioCommitFailure(context, seedMetadataEntry)
                         forgetTreeChildName(root.tree, finalName)
                         throw error
                     }
@@ -1777,7 +1885,45 @@ internal object ManagedDownloadStorage {
         if (!updateSnapshotCacheAfterStoredEntryWrite(context, storedEntry, SnapshotEntryBucket.AUDIO)) {
             invalidateSnapshotCache(context)
         }
+        seedMetadataJson
+            ?.let(::parseDownloadedAudioMetadataJson)
+            ?.let { metadata ->
+                val metadataEntry = findMetadataForAudioBlocking(context, storedEntry)
+                if (metadataEntry == null || !updateSnapshotCacheAfterMetadataWrite(context, metadataEntry, metadata)) {
+                    invalidateSnapshotCache(context)
+                }
+            }
         return storedEntry
+    }
+
+    private fun writeSeedMetadataBeforeAudioCommit(
+        context: Context,
+        root: RootHandle,
+        audioName: String,
+        seedMetadataJson: String?
+    ): StoredEntry? {
+        val content = seedMetadataJson?.takeIf(String::isNotBlank) ?: return null
+        return writeRootText(
+            context = context,
+            root = root,
+            displayName = "$audioName$METADATA_SUFFIX",
+            content = content,
+            invalidateSnapshot = false
+        )
+    }
+
+    private fun deleteSeedMetadataAfterAudioCommitFailure(
+        context: Context,
+        metadataEntry: StoredEntry?
+    ) {
+        metadataEntry ?: return
+        runCatching {
+            deleteInternal(
+                context = context,
+                reference = metadataEntry.reference,
+                invalidateSnapshot = false
+            )
+        }
     }
 
     fun commitCoverFile(
@@ -2611,6 +2757,71 @@ internal object ManagedDownloadStorage {
             )
         }.onFailure {
             NPLogger.w(TAG, "清理下载提交残留失败: ${it.message}")
+        }.getOrDefault(StartupRecoveryResult())
+    }
+
+    internal fun cleanupUnfinalizedDownloadArtifacts(context: Context): StartupRecoveryResult {
+        return runCatching {
+            val root = resolveRootBlocking(context)
+            val rootEntries = listChildren(context, root).filterNot(StoredEntry::isDirectory)
+            val audioEntriesByName = rootEntries
+                .filter { entry -> entry.extension in audioExtensions }
+                .associateBy(StoredEntry::name)
+            val parsedMetadataEntries = rootEntries
+                .filter { entry -> entry.name.endsWith(METADATA_SUFFIX) }
+                .mapNotNull { entry ->
+                    val metadata = parseDownloadedAudioMetadata(context, entry) ?: return@mapNotNull null
+                    entry to metadata
+                }
+            val unfinalizedMetadataEntries = parsedMetadataEntries
+                .filter { (_, metadata) -> isUnfinalizedDownloadedMetadata(metadata) }
+            if (unfinalizedMetadataEntries.isEmpty()) {
+                return@runCatching StartupRecoveryResult()
+            }
+            val protectedReferences = parsedMetadataEntries
+                .asSequence()
+                .filterNot { (_, metadata) -> isUnfinalizedDownloadedMetadata(metadata) }
+                .flatMap { (_, metadata) ->
+                    sequenceOf(metadata.coverPath, metadata.lyricPath, metadata.translatedLyricPath)
+                }
+                .filterNot(String?::isNullOrBlank)
+                .map(String?::orEmpty)
+                .toSet()
+            val referencesToDelete = linkedSetOf<String>()
+            unfinalizedMetadataEntries.forEach { (entry, metadata) ->
+                referencesToDelete += entry.reference
+                audioEntriesByName[entry.name.removeSuffix(METADATA_SUFFIX)]
+                    ?.reference
+                    ?.let(referencesToDelete::add)
+                listOf(metadata.coverPath, metadata.lyricPath, metadata.translatedLyricPath)
+                    .filterNot(String?::isNullOrBlank)
+                    .map(String?::orEmpty)
+                    .filterNot(protectedReferences::contains)
+                    .forEach(referencesToDelete::add)
+            }
+            var cleanedCount = 0
+            var failedCount = 0
+            referencesToDelete.forEach { reference ->
+                val deleted = deleteInternal(
+                    context = context,
+                    reference = reference,
+                    invalidateSnapshot = false
+                )
+                if (deleted) {
+                    cleanedCount++
+                } else {
+                    failedCount++
+                }
+            }
+            if (cleanedCount > 0 || failedCount > 0) {
+                NPLogger.d(TAG, "清理未完成下载半成品完成: cleaned=$cleanedCount, failed=$failedCount")
+            }
+            StartupRecoveryResult(
+                cleanedCount = cleanedCount,
+                failedCount = failedCount
+            )
+        }.onFailure {
+            NPLogger.w(TAG, "清理未完成下载半成品失败: ${it.message}")
         }.getOrDefault(StartupRecoveryResult())
     }
 
@@ -3899,6 +4110,7 @@ internal object ManagedDownloadStorage {
             put("lyricPath", lyricPath)
             put("translatedLyricPath", translatedLyricPath)
             put("durationMs", durationMs)
+            put("downloadFinalized", downloadFinalized)
         }
     }
 
@@ -4279,7 +4491,8 @@ internal object ManagedDownloadStorage {
             coverPath = optString("coverPath").takeIf(String::isNotBlank),
             lyricPath = optString("lyricPath").takeIf(String::isNotBlank),
             translatedLyricPath = optString("translatedLyricPath").takeIf(String::isNotBlank),
-            durationMs = optLong("durationMs")
+            durationMs = optLong("durationMs"),
+            downloadFinalized = optOptionalBoolean("downloadFinalized")
         )
     }
 
@@ -4296,6 +4509,13 @@ internal object ManagedDownloadStorage {
             return null
         }
         return optString(fieldName)
+    }
+
+    private fun JSONObject.optOptionalBoolean(fieldName: String): Boolean? {
+        if (!has(fieldName) || isNull(fieldName)) {
+            return null
+        }
+        return optBoolean(fieldName)
     }
 
     private fun JSONArray?.toNeteaseArtistSummaries(): List<NeteaseArtistSummary> {

@@ -212,6 +212,7 @@ internal fun shouldRunPlaybackServiceInForeground(
 
 internal fun shouldBootstrapPlaybackServiceOnAppLaunch(
     hasCurrentSong: Boolean,
+    hasPendingRestoredPlaybackResume: Boolean,
     resumePlaybackRequested: Boolean,
     playJobActive: Boolean,
     pendingPauseJobActive: Boolean,
@@ -220,7 +221,8 @@ internal fun shouldBootstrapPlaybackServiceOnAppLaunch(
     playerPlaybackState: Int
 ): Boolean {
     if (!hasCurrentSong) return false
-    return resumePlaybackRequested ||
+    return hasPendingRestoredPlaybackResume ||
+        resumePlaybackRequested ||
         playJobActive ||
         pendingPauseJobActive ||
         playWhenReady ||

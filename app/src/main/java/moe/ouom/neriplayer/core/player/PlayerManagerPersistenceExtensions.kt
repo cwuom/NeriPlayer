@@ -133,9 +133,16 @@ private fun loadRestoredStateSnapshot(
         }?.getOrNull()
         val data = playbackState?.let(legacyData::withPlaybackState) ?: legacyData
         val playlist = data.playlist.map { persistedSong -> persistedSong.toSongItem() }
-            .filter { song ->
-                !LocalSongSupport.isLocalSong(song, app) || PlayerManager.isRestorableLocalSong(song)
-            }
+        val currentlyUnreadableLocalCount = playlist.count { song ->
+            LocalSongSupport.isLocalSong(song, app) &&
+                !PlayerManager.isRestorableLocalSong(song, app)
+        }
+        if (currentlyUnreadableLocalCount > 0) {
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "restoreState: keeping $currentlyUnreadableLocalCount local songs even though they are not readable yet"
+            )
+        }
         val preferredSong = data.playlist.getOrNull(data.index)?.toSongItem()
         val currentIndex = when {
             playlist.isEmpty() -> -1
@@ -157,11 +164,7 @@ private fun loadRestoredStateSnapshot(
                         it.startsWith("content://") ||
                         it.startsWith("android.resource://") ||
                         it.startsWith("/")
-                val isSongRestorable =
-                    !LocalSongSupport.isLocalSong(currentSong, app) ||
-                        PlayerManager.isRestorableLocalSong(currentSong)
-                isSongRestorable &&
-                    (!isPersistedLocalMediaUrl || PlayerManager.isReadableLocalMediaUri(it))
+                !isPersistedLocalMediaUrl || PlayerManager.isReadableLocalMediaUri(it, app)
             }
         }
         val repeatMode = if (keepPlaybackModeStateEnabled) {
@@ -723,10 +726,18 @@ internal fun PlayerManager.resumeRestoredPlaybackIfNeededImpl(): Long? {
         return null
     }
     val resumeIndex = currentIndex
+    val resumeSong = currentPlaylist[resumeIndex]
+    if (isLocalSong(resumeSong) && !isRestorableLocalSong(resumeSong)) {
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "resumeRestoredPlaybackIfNeeded(): keep restored local progress because media is not readable yet, song=${resumeSong.name}"
+        )
+        return null
+    }
     val resumePositionMs = restoredResumePositionMs.coerceAtLeast(0L)
     NPLogger.d(
         "NERI-PlayerManager",
-        "resumeRestoredPlaybackIfNeeded(): resumeIndex=$resumeIndex, positionMs=$resumePositionMs, song=${currentPlaylist.getOrNull(resumeIndex)?.name}, stack=[${debugStackHint()}]"
+        "resumeRestoredPlaybackIfNeeded(): resumeIndex=$resumeIndex, positionMs=$resumePositionMs, song=${resumeSong.name}, stack=[${debugStackHint()}]"
     )
     restoredShouldResumePlayback = false
     restoredResumePositionMs = 0L

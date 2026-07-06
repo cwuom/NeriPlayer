@@ -13,6 +13,26 @@ class DownloadMetadataValidationTest {
     // --- shouldRepairMetadataLessManagedDownload 测试 ---
 
     @Test
+    fun `unfinalized metadata only treats explicit false as incomplete`() {
+        assertTrue(
+            isUnfinalizedDownloadedMetadata(
+                ManagedDownloadStorage.DownloadedAudioMetadata(downloadFinalized = false)
+            )
+        )
+        assertFalse(
+            isUnfinalizedDownloadedMetadata(
+                ManagedDownloadStorage.DownloadedAudioMetadata(downloadFinalized = true)
+            )
+        )
+        assertFalse(
+            isUnfinalizedDownloadedMetadata(
+                ManagedDownloadStorage.DownloadedAudioMetadata(downloadFinalized = null)
+            )
+        )
+        assertFalse(isUnfinalizedDownloadedMetadata(null))
+    }
+
+    @Test
     fun `shouldRepair returns true when actual title is null`() {
         assertTrue(
             shouldRepairMetadataLessManagedDownload(

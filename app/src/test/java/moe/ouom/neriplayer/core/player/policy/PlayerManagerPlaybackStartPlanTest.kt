@@ -198,6 +198,7 @@ class PlayerManagerPlaybackStartPlanTest {
     fun `app bootstrap skips paused queue without active transport`() {
         val shouldBootstrap = shouldBootstrapPlaybackServiceOnAppLaunch(
             hasCurrentSong = true,
+            hasPendingRestoredPlaybackResume = false,
             resumePlaybackRequested = false,
             playJobActive = false,
             pendingPauseJobActive = false,
@@ -213,12 +214,29 @@ class PlayerManagerPlaybackStartPlanTest {
     fun `app bootstrap still resumes live buffering session`() {
         val shouldBootstrap = shouldBootstrapPlaybackServiceOnAppLaunch(
             hasCurrentSong = true,
+            hasPendingRestoredPlaybackResume = false,
             resumePlaybackRequested = false,
             playJobActive = false,
             pendingPauseJobActive = false,
             playWhenReady = false,
             isPlaying = false,
             playerPlaybackState = androidx.media3.common.Player.STATE_BUFFERING
+        )
+
+        assertTrue(shouldBootstrap)
+    }
+
+    @Test
+    fun `app bootstrap resumes pending restored playback without active transport`() {
+        val shouldBootstrap = shouldBootstrapPlaybackServiceOnAppLaunch(
+            hasCurrentSong = true,
+            hasPendingRestoredPlaybackResume = true,
+            resumePlaybackRequested = false,
+            playJobActive = false,
+            pendingPauseJobActive = false,
+            playWhenReady = false,
+            isPlaying = false,
+            playerPlaybackState = 0
         )
 
         assertTrue(shouldBootstrap)

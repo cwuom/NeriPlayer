@@ -27,6 +27,7 @@ package moe.ouom.neriplayer.core.player
 
 
 import android.app.Application
+import android.content.Context
 import android.media.AudioDeviceCallback
 import android.net.Uri
 import android.os.Looper
@@ -464,9 +465,14 @@ object PlayerManager {
 
     fun shouldBootstrapPlaybackServiceOnAppLaunch(): Boolean {
         ensureInitialized()
-        if (!initialized || _currentSongFlow.value == null) return false
+        val currentSong = _currentSongFlow.value
+        if (!initialized || currentSong == null) return false
+        val canAutoResumeRestoredPlayback =
+            restoredShouldResumePlayback &&
+                (!isLocalSong(currentSong) || isRestorableLocalSong(currentSong))
         return shouldBootstrapPlaybackServiceOnAppLaunch(
-            hasCurrentSong = _currentSongFlow.value != null,
+            hasCurrentSong = true,
+            hasPendingRestoredPlaybackResume = canAutoResumeRestoredPlayback,
             resumePlaybackRequested = resumePlaybackRequested,
             playJobActive = playJob?.isActive == true,
             pendingPauseJobActive = pendingPauseJob?.isActive == true,
@@ -804,7 +810,7 @@ object PlayerManager {
         }
     }
 
-    internal fun isReadableLocalMediaUri(mediaUri: String?): Boolean {
+    internal fun isReadableLocalMediaUri(mediaUri: String?, context: Context = application): Boolean {
         val uriString = mediaUri?.takeIf { it.isNotBlank() } ?: return false
         if (uriString.startsWith("/")) {
             return canOpenLocalFile(File(uriString))
@@ -815,13 +821,13 @@ object PlayerManager {
             null, "" -> canOpenLocalFile(File(uriString))
             "file" -> uri.path?.let(::File)?.let(::canOpenLocalFile) == true
             "content", "android.resource" -> runCatching {
-                application.contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
+                context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
             }.getOrDefault(false)
             else -> false
         }
     }
 
-    internal fun isRestorableLocalMediaUri(mediaUri: String?): Boolean {
+    internal fun isRestorableLocalMediaUri(mediaUri: String?, context: Context = application): Boolean {
         val uriString = mediaUri?.takeIf { it.isNotBlank() } ?: return false
         if (uriString.startsWith("/")) {
             return canOpenLocalFile(File(uriString))
@@ -832,13 +838,13 @@ object PlayerManager {
             null, "" -> canOpenLocalFile(File(uriString))
             "file" -> uri.path?.let(::File)?.let(::canOpenLocalFile) == true
             "content", "android.resource" -> runCatching {
-                application.contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
+                context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
             }.getOrDefault(false)
             else -> false
         }
     }
 
-    internal fun isRestorableLocalSong(song: SongItem): Boolean {
+    internal fun isRestorableLocalSong(song: SongItem, context: Context = application): Boolean {
         val preferred = preferredLocalMediaReference(
             localFilePath = song.localFilePath,
             mediaUri = song.mediaUri
@@ -846,7 +852,7 @@ object PlayerManager {
         return listOf(preferred, song.localFilePath, song.mediaUri)
             .filterNotNull()
             .distinct()
-            .any(::isRestorableLocalMediaUri)
+            .any { isRestorableLocalMediaUri(it, context) }
     }
 
     internal fun sanitizeRestoredPlaylist(playlist: List<SongItem>): List<SongItem> {

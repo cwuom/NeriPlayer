@@ -72,8 +72,14 @@ object LocalSongSupport {
     }
 
     fun identityMediaReference(song: SongItem): String? {
-        return normalizedLocalReference(song.localFilePath)
+        val preferred = preferredLocalMediaReference(
+            localFilePath = song.localFilePath,
+            mediaUri = song.mediaUri
+        )
+        return normalizedLocalReference(preferred)
+            ?: normalizedLocalReference(song.localFilePath)
             ?: normalizedLocalReference(song.mediaUri)
+            ?: preferred
             ?: song.localFilePath
             ?: song.mediaUri
     }
@@ -168,6 +174,12 @@ object LocalSongSupport {
             runCatching {
                 java.net.URI(raw).path?.takeIf { it.isNotBlank() }
             }.getOrNull()?.let { return File(it).absolutePath }
+        }
+        if (
+            raw.startsWith("content://", ignoreCase = true) ||
+            raw.startsWith("android.resource://", ignoreCase = true)
+        ) {
+            return raw
         }
 
         val uri = runCatching { raw.toUri() }.getOrNull() ?: return null

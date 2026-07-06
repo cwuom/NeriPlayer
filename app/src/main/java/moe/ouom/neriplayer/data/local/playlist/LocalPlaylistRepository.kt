@@ -599,18 +599,22 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
 
     suspend fun updateSongMetadata(originalSong: SongItem, newSongInfo: SongItem) {
         withContext(Dispatchers.IO) {
-            saveCoverMapping(newSongInfo)
             var changed = false
             val updated = _playlists.value.map { playlist ->
                 val songIndex = playlist.songs.indexOfFirst { it.sameIdentityAs(originalSong) }
                 if (songIndex == -1) {
                     playlist
                 } else {
-                    if (playlist.songs[songIndex] == newSongInfo) {
+                    val mergedSongInfo = mergeSongMetadataForPersistence(
+                        currentSong = playlist.songs[songIndex],
+                        newSongInfo = newSongInfo
+                    )
+                    if (playlist.songs[songIndex] == mergedSongInfo) {
                         return@map playlist
                     }
+                    saveCoverMapping(mergedSongInfo)
                     val songs = playlist.songs.toMutableList()
-                    songs[songIndex] = newSongInfo
+                    songs[songIndex] = mergedSongInfo
                     changed = true
                     playlist.copy(songs = songs)
                 }
@@ -627,6 +631,19 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
         updateSongMetadata(
             originalSong = newSongInfo.copy(id = songId, album = albumIdentifier),
             newSongInfo = newSongInfo
+        )
+    }
+
+    private fun mergeSongMetadataForPersistence(
+        currentSong: SongItem,
+        newSongInfo: SongItem
+    ): SongItem {
+        return newSongInfo.copy(
+            coverUrl = newSongInfo.coverUrl.takeIf { !it.isNullOrBlank() }
+                ?: currentSong.coverUrl,
+            originalCoverUrl = newSongInfo.originalCoverUrl.takeIf { !it.isNullOrBlank() }
+                ?: currentSong.originalCoverUrl
+                ?: currentSong.coverUrl
         )
     }
 

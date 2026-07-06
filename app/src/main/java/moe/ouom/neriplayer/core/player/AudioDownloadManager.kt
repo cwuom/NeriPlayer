@@ -74,7 +74,7 @@ import moe.ouom.neriplayer.data.traffic.TrafficUsageSource
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.currentTrafficNetworkType
-import moe.ouom.neriplayer.util.hasValidatedInternet
+import moe.ouom.neriplayer.util.hasLikelyInternetAccess
 import okhttp3.Dispatcher
 import okhttp3.Request
 import okio.Buffer
@@ -213,7 +213,7 @@ object AudioDownloadManager {
             val callback = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
                     handleTrafficNetworkChanged(appContext, "network_available")
-                    if (appContext.hasValidatedInternet()) {
+                    if (appContext.hasLikelyInternetAccess()) {
                         notifyRecoveryOpportunity("network_available")
                     }
                 }
@@ -222,11 +222,8 @@ object AudioDownloadManager {
                     network: Network,
                     networkCapabilities: NetworkCapabilities
                 ) {
-                    if (
-                        networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                        networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-                    ) {
-                        notifyRecoveryOpportunity("network_validated")
+                    if (appContext.hasLikelyInternetAccess()) {
+                        notifyRecoveryOpportunity("network_available")
                     }
                     handleTrafficNetworkChanged(appContext, "network_capabilities_changed")
                 }
@@ -1122,19 +1119,16 @@ object AudioDownloadManager {
                                 attemptId = attemptId
                             )
                             ensureSongDownloadNotCancelled(songKey, "audio_commit", batchSessionId, attemptId)
+                            val seedMetadataJson = buildSeedDownloadedMetadataJson(workingSong)
                             storedAudio = ManagedDownloadStorage.saveAudioFromTemp(
                                 context = context,
                                 fileName = fileName,
                                 tempFile = workingFile,
                                 mimeType = mime,
-                                expectedSizeBytes = downloadedPayload.expectedBytes
+                                expectedSizeBytes = downloadedPayload.expectedBytes,
+                                seedMetadataJson = seedMetadataJson
                             )
                             ManagedDownloadStorage.deleteWorkingResumeMetadata(workingFile)
-                            persistSeedDownloadedMetadata(
-                                context = context,
-                                audio = storedAudio,
-                                song = workingSong
-                            )
                             ensureSongDownloadNotCancelled(songKey, "audio_committed", batchSessionId, attemptId)
                             publishFinalizingProgress(
                                 songId = workingSong.id,
@@ -1700,6 +1694,7 @@ object AudioDownloadManager {
                 suspend fun processTrackedSong(trackedSong: TrackedBatchSong) {
                     val song = trackedSong.song
                     val songKey = song.stableKey()
+                    val attemptId = songAttemptIds[songKey]
                     GlobalDownloadManager.withSongExecutionLock(songKey) {
                         if (_isCancelled.value || !isBatchSessionCurrent(batchSessionId)) {
                             NPLogger.d(TAG, context.getString(R.string.download_cancelled_message))
@@ -1714,6 +1709,11 @@ object AudioDownloadManager {
                             invokeBatchCallback(song) { onSongCancelled(song) }
                             return@withSongExecutionLock
                         }
+                        if (!GlobalDownloadManager.isDownloadAttemptActive(songKey, attemptId)) {
+                            NPLogger.d(TAG, "跳过过期的批量下载项: ${song.name}")
+                            markSongFinished(songKey)
+                            return@withSongExecutionLock
+                        }
 
                         try {
                             markSongStarted(trackedSong)
@@ -1722,7 +1722,7 @@ object AudioDownloadManager {
                                 context = context,
                                 song = song,
                                 batchSessionId = batchSessionId,
-                                attemptId = songAttemptIds[songKey]
+                                attemptId = attemptId
                             )
                             invokeBatchCallback(song) { onSongCompleted(song) }
                         } catch (_: java.util.concurrent.CancellationException) {
@@ -1928,7 +1928,7 @@ object AudioDownloadManager {
         attemptId: Long? = null
     ) {
         val initialDelayMs = delayMs.coerceAtLeast(0L)
-        val startedOffline = !context.hasValidatedInternet()
+        val startedOffline = !context.hasLikelyInternetAccess()
         var remainingMs = if (startedOffline) {
             maxOf(initialDelayMs, TRANSIENT_DOWNLOAD_OFFLINE_RECOVERY_WAIT_MS)
         } else {
@@ -1938,8 +1938,8 @@ object AudioDownloadManager {
         var observedWakeSignalVersion = retryWakeSignalVersion.value
         while (remainingMs > 0L) {
             ensureSongDownloadNotCancelled(songKey, "retry_wait", batchSessionId, attemptId)
-            val hasValidatedInternetNow = context.hasValidatedInternet()
-            if (startedOffline && hasValidatedInternetNow) {
+            val hasLikelyInternetNow = context.hasLikelyInternetAccess()
+            if (startedOffline && hasLikelyInternetNow) {
                 val nowMs = System.currentTimeMillis()
                 val recoveredAtMs = recoveredOnlineAtMs ?: nowMs.also { recoveredOnlineAtMs = it }
                 if (nowMs - recoveredAtMs >= TRANSIENT_DOWNLOAD_NETWORK_SETTLE_MS) {
@@ -1956,7 +1956,7 @@ object AudioDownloadManager {
             }
             if (wakeSignalResult != null) {
                 observedWakeSignalVersion = wakeSignalResult
-                if (!startedOffline || hasValidatedInternetNow || context.hasValidatedInternet()) {
+                if (!startedOffline || hasLikelyInternetNow || context.hasLikelyInternetAccess()) {
                     if (!startedOffline) {
                         return
                     }
@@ -2038,11 +2038,9 @@ object AudioDownloadManager {
         return null
     }
 
-    private suspend fun persistSeedDownloadedMetadata(
-        context: Context,
-        audio: ManagedDownloadStorage.StoredEntry,
+    private fun buildSeedDownloadedMetadataJson(
         song: SongItem
-    ) {
+    ): String {
         val identity = song.identity()
         val payload = JSONObject().apply {
             put("stableKey", identity.stableKey())
@@ -2070,12 +2068,9 @@ object AudioDownloadManager {
             put("subAudioId", song.subAudioId)
             put("playlistContextId", song.playlistContextId)
             put("durationMs", song.durationMs.coerceAtLeast(0L))
+            put("downloadFinalized", false)
         }
-        runCatching {
-            ManagedDownloadStorage.saveMetadata(context, audio, payload.toString())
-        }.onFailure { error ->
-            NPLogger.w(TAG, "预写下载 metadata 失败: ${audio.name} - ${error.message}")
-        }
+        return payload.toString()
     }
 
     internal fun resolveLocalLyricForDownload(rawLyric: String?): String? {

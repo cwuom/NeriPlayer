@@ -66,7 +66,8 @@ class ManagedDownloadStorageSnapshotCacheTest {
             coverPath = coverEntry.reference,
             lyricPath = lyricEntry.reference,
             translatedLyricPath = "/music/Lyrics/Artist - Song_trans.lrc",
-            durationMs = 5000L
+            durationMs = 5000L,
+            downloadFinalized = false
         )
         val snapshot = ManagedDownloadStorage.DownloadLibrarySnapshot(
             audioEntries = listOf(audioEntry),

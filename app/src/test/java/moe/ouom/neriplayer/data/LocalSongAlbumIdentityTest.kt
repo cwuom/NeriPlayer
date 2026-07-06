@@ -50,6 +50,29 @@ class LocalSongAlbumIdentityTest {
     }
 
     @Test
+    fun `local song identity matches content uri and hydrated file path aliases`() {
+        val contentSong = SongItem(
+            id = 10L,
+            name = "test",
+            artist = "artist",
+            album = "Local Files",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = "content://media/external/audio/media/42",
+            channelId = "local",
+            audioId = "10"
+        )
+        val hydratedSong = contentSong.copy(
+            id = 20L,
+            localFilePath = "/storage/emulated/0/Music/test.mp3",
+            audioId = "20"
+        )
+
+        assertTrue(contentSong.sameIdentityAs(hydratedSong))
+    }
+
+    @Test
     fun `remote song identity preserves explicit album names`() {
         val song = SongItem(
             id = 2L,

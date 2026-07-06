@@ -55,6 +55,7 @@ class ManagedDownloadStorageWorkingFileTest {
             writeText("partial-audio")
             setLastModified(nowMs - 5_000L)
         }
+        ManagedDownloadStorage.saveWorkingResumeMetadata(preservedFile, queuedSong(id = 1L, name = "Song"))
         val preservedCheckpoint = ManagedDownloadStorage.buildWorkingHlsCheckpointFile(
             preservedFile
         ).apply {
@@ -120,6 +121,7 @@ class ManagedDownloadStorageWorkingFileTest {
             writeText("partial")
             setLastModified(nowMs - 1_000L)
         }
+        ManagedDownloadStorage.saveWorkingResumeMetadata(file, queuedSong(id = 4L, name = "Song"))
         val staleFile = tempFolder.newFile(
             ManagedDownloadStorage.buildWorkingFileName(
                 songKey = "song-5",
@@ -129,6 +131,7 @@ class ManagedDownloadStorageWorkingFileTest {
             writeText("partial")
             setLastModified(nowMs - TimeUnit.DAYS.toMillis(8))
         }
+        ManagedDownloadStorage.saveWorkingResumeMetadata(staleFile, queuedSong(id = 5L, name = "Song"))
         val unnamedFile = tempFolder.newFile("legacy.download").apply {
             writeText("partial")
             setLastModified(nowMs - 1_000L)
@@ -152,6 +155,44 @@ class ManagedDownloadStorageWorkingFileTest {
         assertTrue(ManagedDownloadStorage.shouldPreserveWorkingCheckpointForResume(checkpointFile, nowMs))
         assertFalse(ManagedDownloadStorage.shouldPreserveWorkingCheckpointForResume(staleCheckpointFile, nowMs))
         assertFalse(ManagedDownloadStorage.shouldPreserveWorkingCheckpointForResume(orphanCheckpoint, nowMs))
+    }
+
+    @Test
+    fun `startup staging cleanup removes files without valid resume metadata`() {
+        val stagingDir = tempFolder.newFolder("download_staging")
+        val nowMs = System.currentTimeMillis()
+        val missingResumeFile = File(
+            stagingDir,
+            ManagedDownloadStorage.buildWorkingFileName(
+                songKey = "song-missing-resume",
+                fileName = "Missing.m4a"
+            )
+        ).apply {
+            writeText("partial")
+            setLastModified(nowMs - 1_000L)
+        }
+        val brokenResumeFile = File(
+            stagingDir,
+            ManagedDownloadStorage.buildWorkingFileName(
+                songKey = "song-broken-resume",
+                fileName = "Broken.m4a"
+            )
+        ).apply {
+            writeText("partial")
+            setLastModified(nowMs - 1_000L)
+        }
+        ManagedDownloadStorage.buildWorkingResumeMetadataFile(brokenResumeFile).writeText("{")
+
+        val result = ManagedDownloadStorage.cleanupStagingFilesInDirectory(
+            stagingDir = stagingDir,
+            nowMs = nowMs
+        )
+
+        assertFalse(missingResumeFile.exists())
+        assertFalse(brokenResumeFile.exists())
+        assertFalse(ManagedDownloadStorage.buildWorkingResumeMetadataFile(brokenResumeFile).exists())
+        assertEquals(3, result.cleanedCount)
+        assertEquals(0, result.failedCount)
     }
 
     @Test
@@ -263,6 +304,48 @@ class ManagedDownloadStorageWorkingFileTest {
             writeText("partial")
         }
         ManagedDownloadStorage.saveWorkingResumeMetadata(targetWorkingFile, targetSong)
+        ManagedDownloadStorage.saveWorkingResumeMetadata(keptWorkingFile, keptSong)
+        val targetCheckpoint = ManagedDownloadStorage.buildWorkingHlsCheckpointFile(targetWorkingFile).apply {
+            writeText("""{"playlistFingerprint":1,"nextSegmentIndex":1,"downloadedBytes":7}""")
+        }
+
+        val deletedKeys = ManagedDownloadStorage.deletePendingWorkingDownloadArtifactsInDirectory(
+            stagingDir = stagingDir,
+            songKeys = setOf(targetSong.stableKey())
+        )
+
+        assertEquals(setOf(targetSong.stableKey()), deletedKeys)
+        assertFalse(targetWorkingFile.exists())
+        assertFalse(targetCheckpoint.exists())
+        assertFalse(ManagedDownloadStorage.buildWorkingResumeMetadataFile(targetWorkingFile).exists())
+        assertTrue(keptWorkingFile.exists())
+        assertTrue(ManagedDownloadStorage.buildWorkingResumeMetadataFile(keptWorkingFile).exists())
+    }
+
+    @Test
+    fun `pending working artifacts are deleted by hash when resume metadata is broken`() {
+        val stagingDir = tempFolder.newFolder("download_staging")
+        val targetSong = queuedSong(id = 81L, name = "Target")
+        val keptSong = queuedSong(id = 82L, name = "Kept")
+        val targetWorkingFile = File(
+            stagingDir,
+            ManagedDownloadStorage.buildWorkingFileName(
+                songKey = targetSong.stableKey(),
+                fileName = "Target.m4a"
+            )
+        ).apply {
+            writeText("partial")
+        }
+        val keptWorkingFile = File(
+            stagingDir,
+            ManagedDownloadStorage.buildWorkingFileName(
+                songKey = keptSong.stableKey(),
+                fileName = "Kept.m4a"
+            )
+        ).apply {
+            writeText("partial")
+        }
+        ManagedDownloadStorage.buildWorkingResumeMetadataFile(targetWorkingFile).writeText("{")
         ManagedDownloadStorage.saveWorkingResumeMetadata(keptWorkingFile, keptSong)
         val targetCheckpoint = ManagedDownloadStorage.buildWorkingHlsCheckpointFile(targetWorkingFile).apply {
             writeText("""{"playlistFingerprint":1,"nextSegmentIndex":1,"downloadedBytes":7}""")

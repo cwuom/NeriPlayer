@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player
 
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.lifecycle.Lifecycle
+import moe.ouom.neriplayer.core.player.policy.shouldBootstrapPlaybackServiceOnAppLaunch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

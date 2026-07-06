@@ -75,7 +75,15 @@ fun SyncSong.identity(): SongIdentity {
 fun SyncSong.stableKey(): String = identity().stableKey()
 
 fun SongItem.sameIdentityAs(other: SongItem?): Boolean {
-    return other != null && identity() == other.identity()
+    if (other == null) return false
+    if (identity() == other.identity()) return true
+    if (!LocalSongSupport.isLocalSong(this, null) || !LocalSongSupport.isLocalSong(other, null)) {
+        return false
+    }
+    return LocalSongSupport.hasSameLocalSource(
+        first = this,
+        second = other
+    )
 }
 
 fun SyncSong.sameIdentityAs(other: SyncSong?): Boolean {
