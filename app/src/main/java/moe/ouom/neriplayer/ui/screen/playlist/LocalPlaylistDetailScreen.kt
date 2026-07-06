@@ -208,6 +208,27 @@ private fun hasCachedLocalDownload(song: SongItem): Boolean {
 
 private const val BLANK_COVER_MODEL = "about:blank"
 
+private fun playlistNameFieldValue(text: String, maxLength: Int): TextFieldValue {
+    val limited = text.take(maxLength)
+    return TextFieldValue(
+        text = limited,
+        selection = TextRange(limited.length)
+    )
+}
+
+private fun limitedPlaylistNameFieldValue(value: TextFieldValue, maxLength: Int): TextFieldValue {
+    val limited = value.text.take(maxLength)
+    if (limited == value.text) return value
+
+    return value.copy(
+        text = limited,
+        selection = TextRange(
+            start = value.selection.start.coerceIn(0, limited.length),
+            end = value.selection.end.coerceIn(0, limited.length)
+        )
+    )
+}
+
 internal fun areDisplayedSongKeysSelected(
     selectedKeys: Set<String>,
     displayedKeys: Set<String>
@@ -695,11 +716,11 @@ fun LocalPlaylistDetailScreen(
 
             // 重命名
             var showRename by remember { mutableStateOf(false) }
+            val maxNameLength = LocalPlaylistRepository.MAX_PLAYLIST_NAME_LENGTH
             var renameText by remember {
-                mutableStateOf(TextFieldValue(playlist.name.take(LocalPlaylistRepository.MAX_PLAYLIST_NAME_LENGTH)))
+                mutableStateOf(playlistNameFieldValue(playlist.name, maxNameLength))
             }
             var renameError by remember { mutableStateOf<String?>(null) }
-            val maxNameLength = LocalPlaylistRepository.MAX_PLAYLIST_NAME_LENGTH
             fun normalizedRenameName(input: String): String = input.trim().take(maxNameLength)
             fun isSameRenameName(input: String): Boolean {
                 return normalizedRenameName(input).equals(
@@ -759,12 +780,9 @@ fun LocalPlaylistDetailScreen(
                         OutlinedTextField(
                             value = renameText,
                             onValueChange = {
-                                val limited = it.text.take(maxNameLength)
-                                renameText = it.copy(
-                                    text = limited,
-                                    selection = TextRange(limited.length)
-                                )
-                                renameError = validateRename(limited)
+                                val limitedValue = limitedPlaylistNameFieldValue(it, maxNameLength)
+                                renameText = limitedValue
+                                renameError = validateRename(limitedValue.text)
                             },
                             singleLine = true,
                             isError = renameError != null,
@@ -1101,7 +1119,7 @@ fun LocalPlaylistDetailScreen(
                                 
                                 if (!isSystemPlaylist) {
                                     HapticIconButton(onClick = {
-                                        renameText = TextFieldValue(playlist.name.take(maxNameLength))
+                                        renameText = playlistNameFieldValue(playlist.name, maxNameLength)
                                         renameError = null
                                         showRename = true
                                     }) {
