@@ -26,9 +26,11 @@ package moe.ouom.neriplayer.activity
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.net.http.SslError
 import android.net.Uri
 import android.os.Bundle
+import android.view.MenuItem
 import android.view.ViewGroup
 import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
@@ -42,8 +44,19 @@ import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
+import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.net.toUri
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
+import com.google.android.material.appbar.AppBarLayout
+import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.color.MaterialColors
+import com.google.android.material.snackbar.Snackbar
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.shouldAutoCompleteBiliWebLogin
 import moe.ouom.neriplayer.util.NPLogger
@@ -82,6 +95,7 @@ class BiliWebLoginActivity : ComponentActivity() {
     }
 
     private lateinit var webView: WebView
+    private lateinit var toolbar: MaterialToolbar
     private var foregroundWebLoginToken: AutoCloseable? = null
     private var hasReturned = false
     private val loginCompletionWatcher = WebLoginCompletionWatcher(::maybeReturnIfLoggedIn)
@@ -91,13 +105,50 @@ class BiliWebLoginActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         lockPortraitIfPhone()
         enableEdgeToEdge()
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         NPLogger.d(LOG_TAG, "Bilibili login activity created")
         foregroundWebLoginToken = ForegroundWebLoginGuard.enter("bilibili")
+
+        val root = CoordinatorLayout(this).apply {
+            fitsSystemWindows = false
+            setBackgroundColor(
+                MaterialColors.getColor(
+                    this,
+                    com.google.android.material.R.attr.cardBackgroundColor,
+                    Color.WHITE
+                )
+            )
+        }
+
+        val appBar = AppBarLayout(this).apply {
+            layoutParams = CoordinatorLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            setBackgroundColor(
+                MaterialColors.getColor(
+                    this,
+                    com.google.android.material.R.attr.colorSurface,
+                    Color.WHITE
+                )
+            )
+        }
+        toolbar = MaterialToolbar(this).apply {
+            title = getString(R.string.bili_web_login)
+            setNavigationIcon(R.drawable.ic_arrow_back_24)
+            setNavigationOnClickListener { finish() }
+            inflateMenu(R.menu.menu_netease_web_login)
+            setOnMenuItemClickListener { onToolbarMenu(it) }
+        }
+        appBar.addView(toolbar)
+
         webView = WebView(this).apply {
-            layoutParams = ViewGroup.LayoutParams(
+            layoutParams = CoordinatorLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
-            )
+            ).apply {
+                behavior = AppBarLayout.ScrollingViewBehavior()
+            }
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
@@ -115,7 +166,32 @@ class BiliWebLoginActivity : ComponentActivity() {
         // 后台 YouTube 预热 WebView 可能残留了全局定时器暂停状态，这里先抢回前台时钟
         webView.resumeTimers()
         forceFreshWebContext()
-        setContentView(webView)
+
+        root.addView(webView)
+        root.addView(appBar)
+        appBar.bringToFront()
+        setContentView(root)
+
+        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+            val status = insets.getInsets(WindowInsetsCompat.Type.statusBars())
+            val nav = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+            appBar.updatePadding(top = status.top)
+            webView.updatePadding(bottom = nav.bottom)
+            insets
+        }
+
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    if (this@BiliWebLoginActivity::webView.isInitialized && webView.canGoBack()) {
+                        webView.goBack()
+                    } else {
+                        finish()
+                    }
+                }
+            }
+        )
 
         loginCompletionWatcher.start()
         reloadLoginPage("create")
@@ -154,6 +230,51 @@ class BiliWebLoginActivity : ComponentActivity() {
         foregroundWebLoginToken?.close()
         foregroundWebLoginToken = null
         super.onDestroy()
+    }
+
+    private fun onToolbarMenu(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_refresh -> {
+                webView.reload()
+                true
+            }
+            R.id.action_read_cookie -> {
+                readAndReturnCookies()
+                true
+            }
+            else -> false
+        }
+    }
+
+    private fun readAndReturnCookies() {
+        try {
+            CookieManager.getInstance().flush()
+            val map = readCookieForDomains(
+                listOf(
+                    ".bilibili.com",
+                    "bilibili.com",
+                    "www.bilibili.com",
+                    "m.bilibili.com",
+                    "passport.bilibili.com"
+                )
+            )
+            if (!shouldAutoCompleteBiliWebLogin(map)) {
+                Snackbar.make(webView, getString(R.string.snackbar_cookie_empty), Snackbar.LENGTH_SHORT).show()
+                return
+            }
+
+            val json = org.json.JSONObject().apply {
+                map.forEach { (key, value) -> put(key, value) }
+            }.toString()
+            setResult(RESULT_OK, Intent().putExtra(RESULT_COOKIE, json))
+            finish()
+        } catch (error: Throwable) {
+            Snackbar.make(
+                webView,
+                getString(R.string.snackbar_read_failed, error.message ?: error.javaClass.simpleName),
+                Snackbar.LENGTH_LONG
+            ).show()
+        }
     }
 
     private fun forceFreshWebContext() {

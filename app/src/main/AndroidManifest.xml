@@ -84,6 +84,12 @@
             android:theme="@style/Theme.Material3.DayNight.NoActionBar"
             />
         <activity
+            android:name="moe.ouom.neriplayer.activity.BiliQrLoginActivity"
+            android:exported="false"
+            android:process=":bili_web_login"
+            android:theme="@style/Theme.Material3.DayNight.NoActionBar"
+            />
+        <activity
             android:name=".activity.YouTubeWebLoginActivity"
             android:exported="false"
             android:process=":youtube_web_login"

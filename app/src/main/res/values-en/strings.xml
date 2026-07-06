@@ -338,6 +338,7 @@
     <string name="login_qr">QR Login</string>
     <string name="login_start_browser">Login via Browser</string>
     <string name="login_start_netease_qr">Sign in with NetEase QR</string>
+    <string name="login_start_bili_qr">Sign in with Bilibili QR</string>
     <string name="login_success">Login Successful</string>
     <string name="login_netease">NetEase Login</string>
     <string name="login_verification_code">SMS Login</string>
@@ -1323,6 +1324,8 @@
     <!-- NetEase / Login -->
     <string name="netease_web_login">NetEase Login</string>
     <string name="netease_qr_login">NetEase QR Login</string>
+    <string name="netease_qr_login_title">Connect your account</string>
+    <string name="netease_qr_login_subtitle">Scan and confirm with NetEase Cloud Music on your phone, then return to NeriPlayer immediately.</string>
     <string name="netease_qr_login_loading">Creating QR code…</string>
     <string name="netease_qr_login_waiting">Scan with NetEase Cloud Music</string>
     <string name="netease_qr_login_scanned">Scanned. Confirm sign-in on your phone</string>
@@ -1332,6 +1335,19 @@
     <string name="netease_qr_login_web_fallback">Use web login fallback</string>
     <string name="netease_qr_login_cookie_incomplete">Sign-in was confirmed, but the Cookie was incomplete. Try again</string>
     <string name="netease_qr_login_hint">The QR code is created by the NetEase API. The app watches its status and saves cookies after confirmation.</string>
+    <string name="bili_web_login">Bilibili Web Login</string>
+    <string name="bili_qr_login">Bilibili QR Login</string>
+    <string name="bili_qr_login_title">Connect your Bilibili account</string>
+    <string name="bili_qr_login_subtitle">Scan and confirm with the Bilibili app on your phone, then return to NeriPlayer immediately.</string>
+    <string name="bili_qr_login_loading">Creating QR code…</string>
+    <string name="bili_qr_login_waiting">Scan with the Bilibili app</string>
+    <string name="bili_qr_login_scanned">Scanned. Confirm sign-in on your phone</string>
+    <string name="bili_qr_login_expired">QR code expired. Refresh it</string>
+    <string name="bili_qr_login_failed">Bilibili QR login failed: %1$s</string>
+    <string name="bili_qr_login_retry">Refresh QR code</string>
+    <string name="bili_qr_login_web_fallback">Use web login fallback</string>
+    <string name="bili_qr_login_cookie_incomplete">Sign-in was confirmed, but the Cookie was incomplete. Try again</string>
+    <string name="bili_qr_login_hint">The QR code is created by the Bilibili API. The app watches its status and saves cookies after confirmation.</string>
     <string name="youtube_web_login">YouTube Login</string>
 
     <!-- Main Activity / Disclaimer -->
@@ -1446,7 +1462,7 @@
     <string name="settings_resend_code_countdown">Resend (%ds)</string>
     <string name="settings_empty_placeholder">(Empty)</string>
     <string name="settings_netease_login_browser_hint">Opens NetEase QR login. After you scan and confirm, cookies are saved automatically. If it fails, use the web login fallback on the QR page.</string>
-    <string name="settings_bili_login_browser_hint">Opens the built-in web view for passport.bilibili.com and automatically reads cookies after sign-in.</string>
+    <string name="settings_bili_login_browser_hint">Opens Bilibili QR login and saves cookies after confirmation. If it fails, use the web login fallback on the QR page.</string>
     <string name="settings_bili_saved_cookie_title">Saved Bilibili Cookie detected</string>
     <string name="settings_bili_saved_cookie_message">A local Bilibili Cookie is already saved. You can sign out to clear it, or continue signing in to refresh the Cookie.</string>
     <string name="settings_netease_saved_cookie_title">Saved NetEase Cookie detected</string>

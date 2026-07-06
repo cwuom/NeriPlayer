@@ -53,7 +53,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.activity.BiliWebLoginActivity
+import moe.ouom.neriplayer.activity.BiliQrLoginActivity
 import moe.ouom.neriplayer.activity.YouTubeWebLoginActivity
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
@@ -112,7 +112,7 @@ internal fun SettingsBiliAuthDialogs(
                 contract = ActivityResultContracts.StartActivityForResult()
             ) { result ->
                 if (result.resultCode == android.app.Activity.RESULT_OK) {
-                    val json = result.data?.getStringExtra(BiliWebLoginActivity.RESULT_COOKIE) ?: "{}"
+                    val json = result.data?.getStringExtra(BiliQrLoginActivity.RESULT_COOKIE) ?: "{}"
                     vm.importCookiesFromMap(vm.parseJsonToMap(json))
                 } else {
                     onInlineMsgChange(context.getString(R.string.settings_cookie_cancelled))
@@ -121,7 +121,7 @@ internal fun SettingsBiliAuthDialogs(
             val defaultBrowserLogin: () -> Unit = {
                 onInlineMsgChange(null)
                 AppContainer.pauseYouTubeBackgroundWebWorkForForegroundLogin()
-                webLoginLauncher.launch(Intent(context, BiliWebLoginActivity::class.java))
+                webLoginLauncher.launch(Intent(context, BiliQrLoginActivity::class.java))
             }
             defaultBrowserLogin
         }
@@ -132,6 +132,8 @@ internal fun SettingsBiliAuthDialogs(
             inlineMsg = inlineMsg,
             onInlineMsgChange = onInlineMsgChange,
             onDismiss = onDismissSheet,
+            browserTabLabel = stringResource(R.string.login_qr),
+            browserButtonLabel = stringResource(R.string.login_start_bili_qr),
             browserHintContent = {
                 Text(
                     stringResource(R.string.settings_bili_login_browser_hint),
@@ -227,6 +229,8 @@ internal fun SettingsYouTubeAuthDialogs(
             inlineMsg = inlineMsg,
             onInlineMsgChange = onInlineMsgChange,
             onDismiss = onDismissSheet,
+            browserTabLabel = stringResource(R.string.login_browser),
+            browserButtonLabel = stringResource(R.string.login_start_browser),
             browserHintContent = {
                 Text(
                     stringResource(R.string.settings_youtube_login_browser_hint),
@@ -269,6 +273,8 @@ private fun TwoTabCookieLoginSheet(
     inlineMsg: String?,
     onInlineMsgChange: (String?) -> Unit,
     onDismiss: () -> Unit,
+    browserTabLabel: String,
+    browserButtonLabel: String,
     browserHintContent: @Composable ColumnScope.() -> Unit,
     cookieLabel: String,
     onBrowserLogin: () -> Unit,
@@ -302,7 +308,7 @@ private fun TwoTabCookieLoginSheet(
 
                 MiuixSettingsSegmentedTabs(
                     labels = listOf(
-                        stringResource(R.string.login_browser),
+                        browserTabLabel,
                         stringResource(R.string.login_paste_cookie)
                     ),
                     selectedIndex = selectedTab,
@@ -315,7 +321,7 @@ private fun TwoTabCookieLoginSheet(
                     0 -> {
                         browserHintContent()
                         MiuixSettingsButton(onClick = onBrowserLogin) {
-                            Text(stringResource(R.string.login_start_browser))
+                            Text(browserButtonLabel)
                         }
                     }
 

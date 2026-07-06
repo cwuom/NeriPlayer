@@ -338,6 +338,7 @@
     <string name="login_qr">扫码登录</string>
     <string name="login_start_browser">开始浏览器登录</string>
     <string name="login_start_netease_qr">扫码登录网易云</string>
+    <string name="login_start_bili_qr">扫码登录 B 站</string>
     <string name="login_success">登录成功</string>
     <string name="login_netease">网易云音乐登录</string>
     <string name="login_verification_code">验证码登录</string>
@@ -1322,6 +1323,8 @@
     <!-- NetEase / Login -->
     <string name="netease_web_login">网易云登录</string>
     <string name="netease_qr_login">网易云扫码登录</string>
+    <string name="netease_qr_login_title">扫码连接你的账号</string>
+    <string name="netease_qr_login_subtitle">用手机网易云音乐扫码并确认后，请立刻返回 NeriPlayer。</string>
     <string name="netease_qr_login_loading">正在生成二维码…</string>
     <string name="netease_qr_login_waiting">请使用网易云音乐扫码登录</string>
     <string name="netease_qr_login_scanned">已扫码，请在手机上确认登录</string>
@@ -1331,6 +1334,19 @@
     <string name="netease_qr_login_web_fallback">网页登录兜底</string>
     <string name="netease_qr_login_cookie_incomplete">登录已确认，但没有拿到完整 Cookie，请重试</string>
     <string name="netease_qr_login_hint">二维码由网易云接口生成，确认后会自动监听状态并保存 Cookie。</string>
+    <string name="bili_web_login">B 站网页登录</string>
+    <string name="bili_qr_login">B 站扫码登录</string>
+    <string name="bili_qr_login_title">扫码连接你的 B 站账号</string>
+    <string name="bili_qr_login_subtitle">用哔哩哔哩客户端扫码并确认后，请立刻返回 NeriPlayer。</string>
+    <string name="bili_qr_login_loading">正在生成二维码…</string>
+    <string name="bili_qr_login_waiting">请使用哔哩哔哩客户端扫码登录</string>
+    <string name="bili_qr_login_scanned">已扫码，请在手机上确认登录</string>
+    <string name="bili_qr_login_expired">二维码已过期，请刷新</string>
+    <string name="bili_qr_login_failed">B 站扫码登录失败：%1$s</string>
+    <string name="bili_qr_login_retry">刷新二维码</string>
+    <string name="bili_qr_login_web_fallback">网页登录兜底</string>
+    <string name="bili_qr_login_cookie_incomplete">登录已确认，但没有拿到完整 Cookie，请重试</string>
+    <string name="bili_qr_login_hint">二维码由 B 站接口生成，确认后会在本页监听状态并保存 Cookie。</string>
     <string name="youtube_web_login">YouTube 登录</string>
 
     <!-- Main Activity / Disclaimer -->
@@ -1462,7 +1478,7 @@
     <string name="settings_resend_code_countdown">重新获取(%ds)</string>
     <string name="settings_empty_placeholder">(空)</string>
     <string name="settings_netease_login_browser_hint">将打开网易云扫码登录，扫码确认后会自动保存 Cookie；如果失败，可在二维码页使用网页登录兜底。</string>
-    <string name="settings_bili_login_browser_hint">将打开内置网页访问 passport.bilibili.com，登录成功后自动读取 Cookie。</string>
+    <string name="settings_bili_login_browser_hint">将打开 B 站扫码登录，扫码确认后会自动保存 Cookie；如果失败，可在二维码页使用网页登录兜底。</string>
     <string name="settings_bili_saved_cookie_title">检测到已保存的 B 站 Cookie</string>
     <string name="settings_bili_saved_cookie_message">检测到本地已保存 B 站 Cookie。你可以退出登录清空旧 Cookie，或继续登录以刷新 Cookie。</string>
     <string name="settings_netease_saved_cookie_title">检测到已保存的网易云 Cookie</string>

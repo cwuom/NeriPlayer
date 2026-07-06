@@ -43,24 +43,26 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.netease.NeteaseQrLoginClient
+import moe.ouom.neriplayer.core.api.bili.BiliQrLoginClient
+import moe.ouom.neriplayer.core.api.bili.BiliQrLoginSession
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
-import moe.ouom.neriplayer.data.auth.web.normalizeNeteaseWebLoginCookies
+import moe.ouom.neriplayer.data.auth.web.shouldAutoCompleteBiliWebLogin
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.lockPortraitIfPhone
 import org.json.JSONObject
 import kotlin.math.roundToInt
 
-class NeteaseQrLoginActivity : ComponentActivity() {
+class BiliQrLoginActivity : ComponentActivity() {
 
     companion object {
-        const val RESULT_COOKIE = "result_cookie_map_json"
-        private const val LOG_TAG = "NERI-NeteaseQrLogin"
+        const val RESULT_COOKIE = BiliWebLoginActivity.RESULT_COOKIE
+        private const val LOG_TAG = "NERI-BiliQrLogin"
         private const val POLL_INTERVAL_MS = 1_500L
         private const val QR_SIZE_DP = 260
+        private const val BILI_PINK = 0xFFFB7299.toInt()
     }
 
-    private val qrClient by lazy { NeteaseQrLoginClient(this) }
+    private val qrClient by lazy { BiliQrLoginClient() }
     private var foregroundWebLoginToken: AutoCloseable? = null
     private var pollJob: Job? = null
     private var hasReturned = false
@@ -92,7 +94,7 @@ class NeteaseQrLoginActivity : ComponentActivity() {
         lockPortraitIfPhone()
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        foregroundWebLoginToken = ForegroundWebLoginGuard.enter("netease")
+        foregroundWebLoginToken = ForegroundWebLoginGuard.enter("bilibili")
 
         buildLayout()
         onBackPressedDispatcher.addCallback(
@@ -129,10 +131,9 @@ class NeteaseQrLoginActivity : ComponentActivity() {
             com.google.android.material.R.attr.colorOnSurfaceVariant,
             Color.DKGRAY
         )
-        val primary = root.materialColor(com.google.android.material.R.attr.colorPrimary, Color.rgb(199, 37, 53))
         val onPrimary = root.materialColor(com.google.android.material.R.attr.colorOnPrimary, Color.WHITE)
         val outline = root.materialColor(com.google.android.material.R.attr.colorOutline, Color.LTGRAY)
-        val softPrimary = ColorUtils.blendARGB(surface, primary, 0.08f)
+        val softPrimary = ColorUtils.blendARGB(surface, BILI_PINK, 0.08f)
 
         root.background = GradientDrawable(
             GradientDrawable.Orientation.TOP_BOTTOM,
@@ -140,7 +141,6 @@ class NeteaseQrLoginActivity : ComponentActivity() {
         )
 
         val toolbarBackground = ColorUtils.blendARGB(surface, softPrimary, 0.38f)
-
         val appBar = AppBarLayout(this).apply {
             layoutParams = CoordinatorLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -150,7 +150,7 @@ class NeteaseQrLoginActivity : ComponentActivity() {
         }
         appBar.addView(
             MaterialToolbar(this).apply {
-                title = getString(R.string.netease_qr_login)
+                title = getString(R.string.bili_qr_login)
                 setNavigationIcon(R.drawable.ic_arrow_back_24)
                 setNavigationOnClickListener { finish() }
                 setBackgroundColor(toolbarBackground)
@@ -166,14 +166,14 @@ class NeteaseQrLoginActivity : ComponentActivity() {
         val qrImageSizePx = minOf(QR_SIZE_DP.dp(), qrCardSizePx - 24.dp()).coerceAtLeast(196.dp())
 
         val titleText = TextView(this).apply {
-            text = getString(R.string.netease_qr_login_title)
+            text = getString(R.string.bili_qr_login_title)
             gravity = Gravity.CENTER
             textSize = 22f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(onSurface)
         }
         val subtitleText = TextView(this).apply {
-            text = getString(R.string.netease_qr_login_subtitle)
+            text = getString(R.string.bili_qr_login_subtitle)
             gravity = Gravity.CENTER
             textSize = 14f
             setLineSpacing(2.dp().toFloat(), 1f)
@@ -219,15 +219,15 @@ class NeteaseQrLoginActivity : ComponentActivity() {
         progressBar = ProgressBar(this).apply {
             isIndeterminate = true
             visibility = View.GONE
-            indeterminateTintList = ColorStateList.valueOf(primary)
+            indeterminateTintList = ColorStateList.valueOf(BILI_PINK)
         }
         retryButton = MaterialButton(this).apply {
-            text = getString(R.string.netease_qr_login_retry)
+            text = getString(R.string.bili_qr_login_retry)
             cornerRadius = 18.dp()
             minHeight = 50.dp()
             insetTop = 0
             insetBottom = 0
-            backgroundTintList = ColorStateList.valueOf(primary)
+            backgroundTintList = ColorStateList.valueOf(BILI_PINK)
             setTextColor(onPrimary)
             setOnClickListener { startQrLogin() }
         }
@@ -236,15 +236,15 @@ class NeteaseQrLoginActivity : ComponentActivity() {
             null,
             com.google.android.material.R.attr.materialButtonOutlinedStyle
         ).apply {
-            text = getString(R.string.netease_qr_login_web_fallback)
+            text = getString(R.string.bili_qr_login_web_fallback)
             cornerRadius = 18.dp()
             minHeight = 50.dp()
             insetTop = 0
             insetBottom = 0
             strokeWidth = 1.dp()
-            strokeColor = ColorStateList.valueOf(ColorUtils.blendARGB(outline, primary, 0.25f))
+            strokeColor = ColorStateList.valueOf(ColorUtils.blendARGB(outline, BILI_PINK, 0.25f))
             backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
-            setTextColor(primary)
+            setTextColor(BILI_PINK)
             setOnClickListener { openWebFallback() }
         }
 
@@ -317,43 +317,38 @@ class NeteaseQrLoginActivity : ComponentActivity() {
         NPLogger.d(LOG_TAG, "Start QR login")
         pollJob = lifecycleScope.launch {
             setLoadingState(true)
-            setStatus(getString(R.string.netease_qr_login_loading))
-            hintText.text = getString(R.string.netease_qr_login_hint)
+            setStatus(getString(R.string.bili_qr_login_loading))
+            hintText.text = getString(R.string.bili_qr_login_hint)
             qrImage.setImageDrawable(null)
 
             val session = runCatching {
                 withContext(Dispatchers.IO) { qrClient.createSession() }
             }.getOrElse { error ->
                 setLoadingState(false)
-                setErrorStatus(getString(R.string.netease_qr_login_failed, error.readableMessage()))
+                setErrorStatus(getString(R.string.bili_qr_login_failed, error.readableMessage()))
                 NPLogger.w(LOG_TAG, "Create QR login session failed", error)
                 return@launch
             }
-            NPLogger.d(
-                LOG_TAG,
-                "QR session ready key=${session.key.take(4)}...${session.key.takeLast(4)} " +
-                    "chainId=${session.chainId} ydDeviceTokenLength=${session.ydDeviceToken.length} " +
-                    "seedCookieKeys=${session.seedCookieKeys}"
-            )
+            NPLogger.d(LOG_TAG, "QR session ready key=${session.key.take(4)}...${session.key.takeLast(4)}")
 
             val bitmap = withContext(Dispatchers.Default) {
                 createQrBitmap(session.qrContent, QR_SIZE_DP.dp())
             }
             qrImage.setImageBitmap(bitmap)
             setLoadingState(false)
-            setStatus(getString(R.string.netease_qr_login_waiting))
+            setStatus(getString(R.string.bili_qr_login_waiting))
             pollQrLogin(session)
         }
     }
 
-    private suspend fun pollQrLogin(session: moe.ouom.neriplayer.core.api.netease.NeteaseQrLoginSession) {
+    private suspend fun pollQrLogin(session: BiliQrLoginSession) {
         while (lifecycleScope.isActive && !hasReturned) {
             pollRound += 1
             NPLogger.d(LOG_TAG, "Poll round=$pollRound")
             val check = runCatching {
                 withContext(Dispatchers.IO) { qrClient.checkLogin(session) }
             }.getOrElse { error ->
-                setErrorStatus(getString(R.string.netease_qr_login_failed, error.readableMessage()))
+                setErrorStatus(getString(R.string.bili_qr_login_failed, error.readableMessage()))
                 NPLogger.w(LOG_TAG, "Check QR login failed", error)
                 return
             }
@@ -363,20 +358,20 @@ class NeteaseQrLoginActivity : ComponentActivity() {
             )
 
             when (check.code) {
-                801 -> setStatus(getString(R.string.netease_qr_login_waiting))
-                802 -> setStatus(getString(R.string.netease_qr_login_scanned))
-                803 -> {
+                86101 -> setStatus(getString(R.string.bili_qr_login_waiting))
+                86090 -> setStatus(getString(R.string.bili_qr_login_scanned))
+                0 -> {
                     finishWithCookies(check.cookies)
                     return
                 }
-                800 -> {
-                    setErrorStatus(getString(R.string.netease_qr_login_expired))
+                86038 -> {
+                    setErrorStatus(getString(R.string.bili_qr_login_expired))
                     return
                 }
                 else -> {
                     val message = check.message.ifBlank { "code=${check.code}" }
                     NPLogger.w(LOG_TAG, "Unexpected QR status code=${check.code} message=$message")
-                    setErrorStatus(getString(R.string.netease_qr_login_failed, message))
+                    setErrorStatus(getString(R.string.bili_qr_login_failed, message))
                     return
                 }
             }
@@ -385,31 +380,25 @@ class NeteaseQrLoginActivity : ComponentActivity() {
     }
 
     private fun finishWithCookies(cookies: Map<String, String>) {
-        val normalized = normalizeNeteaseWebLoginCookies(cookies)
-        NPLogger.d(
-            LOG_TAG,
-            "Finish with cookies rawKeys=${cookies.keys} normalizedKeys=${normalized.keys} " +
-                "hasMusicU=${normalized["MUSIC_U"].isNullOrBlank().not()} hasCsrf=${normalized["__csrf"].isNullOrBlank().not()}"
-        )
-        if (normalized["MUSIC_U"].isNullOrBlank()) {
-            setErrorStatus(getString(R.string.netease_qr_login_cookie_incomplete))
+        if (!shouldAutoCompleteBiliWebLogin(cookies)) {
+            setErrorStatus(getString(R.string.bili_qr_login_cookie_incomplete))
             NPLogger.w(LOG_TAG, "QR login confirmed but cookie is incomplete, keys=${cookies.keys}")
             return
         }
 
         hasReturned = true
         val json = JSONObject().apply {
-            normalized.forEach { (key, value) -> put(key, value) }
+            cookies.forEach { (key, value) -> put(key, value) }
         }.toString()
         setResult(RESULT_OK, Intent().putExtra(RESULT_COOKIE, json))
-        NPLogger.d(LOG_TAG, "QR login OK, cookie keys=${normalized.keys}")
+        NPLogger.d(LOG_TAG, "QR login OK, cookie keys=${cookies.keys}")
         finish()
     }
 
     private fun openWebFallback() {
         pollJob?.cancel()
         NPLogger.d(LOG_TAG, "Open web fallback login")
-        webLoginLauncher.launch(Intent(this, NeteaseWebLoginActivity::class.java))
+        webLoginLauncher.launch(Intent(this, BiliWebLoginActivity::class.java))
     }
 
     private fun setLoadingState(loading: Boolean) {
