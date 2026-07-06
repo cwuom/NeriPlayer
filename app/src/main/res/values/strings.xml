@@ -213,9 +213,10 @@
     <string name="settings_theme_toggle_dark">切换到深色主题</string>
     <string name="settings_theme_toggle_light">切换到浅色主题</string>
     <string name="settings_theme_mode">深浅色模式</string>
-    <string name="settings_theme_mode_desc">快速切换浅色和深色</string>
+    <string name="settings_theme_mode_desc">快速切换浅色、深色和自动跟随系统</string>
     <string name="settings_theme_mode_light">浅色</string>
     <string name="settings_theme_mode_dark">深色</string>
+    <string name="settings_theme_mode_auto">自动</string>
     <string name="settings_theme_palette_style">色彩风格</string>
     <string name="settings_theme_palette_style_desc">切换 Material Kolor 的调色风格，动态封面取色和自定义主题色都会使用。</string>
     <string name="settings_theme_color_spec">色彩空间</string>

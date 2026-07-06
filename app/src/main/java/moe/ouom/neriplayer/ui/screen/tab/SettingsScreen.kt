@@ -115,6 +115,7 @@ import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
+import moe.ouom.neriplayer.data.settings.ThemeMode
 import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
@@ -235,7 +236,9 @@ fun SettingsScreen(
     dynamicColor: Boolean,
     onDynamicColorChange: (Boolean) -> Unit,
     isDarkTheme: Boolean,
+    themeMode: ThemeMode,
     onThemeToggleRequest: (Offset, Float) -> Unit,
+    onThemeModeRequest: (ThemeMode, Offset, Float) -> Unit,
     preferredQuality: String,
     onQualityChange: (String) -> Unit,
     youtubePreferredQuality: String,
@@ -1026,8 +1029,8 @@ fun SettingsScreen(
                 SettingsPage.Theme -> {
                     miuixSettingsSectionCardItem("${selectedPage.name}:content") {
                         ThemeModeSelectorListItem(
-                            isDarkTheme = isDarkTheme,
-                            onThemeToggleRequest = onThemeToggleRequest
+                            themeMode = themeMode,
+                            onThemeModeRequest = onThemeModeRequest
                         )
                         AutoSettingsListItem(
                             setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DYNAMIC_COLOR),
@@ -2030,13 +2033,14 @@ private data class ThemeOption(
 
 @Composable
 private fun ThemeModeSelectorListItem(
-    isDarkTheme: Boolean,
-    onThemeToggleRequest: (Offset, Float) -> Unit
+    themeMode: ThemeMode,
+    onThemeModeRequest: (ThemeMode, Offset, Float) -> Unit
 ) {
     var tabsTopLeftInWindow by remember { mutableStateOf(Offset.Zero) }
     var tabsWidthPx by remember { mutableFloatStateOf(0f) }
     var tabsHeightPx by remember { mutableFloatStateOf(0f) }
-    val selectedIndex = if (isDarkTheme) 1 else 0
+    val options = listOf(ThemeMode.LIGHT, ThemeMode.DARK, ThemeMode.AUTO)
+    val selectedIndex = options.indexOf(themeMode).coerceAtLeast(0)
 
     ListItem(
         leadingContent = {
@@ -2059,12 +2063,14 @@ private fun ThemeModeSelectorListItem(
                     },
                     labels = listOf(
                         stringResource(R.string.settings_theme_mode_light),
-                        stringResource(R.string.settings_theme_mode_dark)
+                        stringResource(R.string.settings_theme_mode_dark),
+                        stringResource(R.string.settings_theme_mode_auto)
                     ),
                     selectedIndex = selectedIndex,
                     onSelectedIndexChange = { index ->
-                        if (index != selectedIndex) {
-                            val tabWidth = tabsWidthPx / 2f
+                        val targetMode = options.getOrNull(index) ?: return@MiuixSettingsSegmentedTabs
+                        if (targetMode != themeMode) {
+                            val tabWidth = tabsWidthPx / options.size.toFloat()
                             val origin = if (tabWidth > 0f && tabsHeightPx > 0f) {
                                 tabsTopLeftInWindow + Offset(
                                     x = tabWidth * (index + 0.5f),
@@ -2073,7 +2079,7 @@ private fun ThemeModeSelectorListItem(
                             } else {
                                 Offset.Zero
                             }
-                            onThemeToggleRequest(origin, 1f)
+                            onThemeModeRequest(targetMode, origin, 1f)
                         }
                     }
                 )

@@ -48,13 +48,14 @@ fun NeriTheme(
     seedColorHex: String,
     paletteStyle: PaletteStyle = PaletteStyle.TonalSpot,
     colorSpec: ColorSpec.SpecVersion = ColorSpec.SpecVersion.Default,
+    systemDark: Boolean? = null,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
 
     val isDark = when {
         forceDark -> true
-        followSystemDark -> isSystemInDarkTheme()
+        followSystemDark -> systemDark ?: isSystemInDarkTheme()
         else -> false
     }
 

@@ -46,6 +46,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
+import moe.ouom.neriplayer.data.settings.ThemeMode
 import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
 import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
 import moe.ouom.neriplayer.ui.screen.tab.SettingsScreen
@@ -63,7 +64,9 @@ fun SettingsHostScreen(
     dynamicColor: Boolean,
     onDynamicColorChange: (Boolean) -> Unit,
     isDarkTheme: Boolean,
+    themeMode: ThemeMode,
     onThemeToggleRequest: (Offset, Float) -> Unit,
+    onThemeModeRequest: (ThemeMode, Offset, Float) -> Unit,
     preferredQuality: String,
     onQualityChange: (String) -> Unit,
     youtubePreferredQuality: String,
@@ -221,7 +224,9 @@ fun SettingsHostScreen(
                             dynamicColor = dynamicColor,
                             onDynamicColorChange = onDynamicColorChange,
                             isDarkTheme = isDarkTheme,
+                            themeMode = themeMode,
                             onThemeToggleRequest = onThemeToggleRequest,
+                            onThemeModeRequest = onThemeModeRequest,
                             preferredQuality = preferredQuality,
                             onQualityChange = onQualityChange,
                             youtubePreferredQuality = youtubePreferredQuality,

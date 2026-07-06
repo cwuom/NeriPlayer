@@ -1058,7 +1058,7 @@ object AutoSettingsSchema {
             defaultValue = DEFAULT_DOWNLOAD_PARALLELISM,
             titleRes = R.string.settings_download_parallelism,
             descriptionRes = R.string.settings_download_parallelism_desc,
-            icon = AutoSettingIcon.Download
+            icon = AutoSettingIcon.Tune
         )
     }
 

@@ -25,8 +25,13 @@ package moe.ouom.neriplayer.ui
 
 import android.app.Activity
 import android.app.Application
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.res.Configuration
+import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.net.Uri
@@ -52,7 +57,6 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -113,6 +117,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.graphics.createBitmap
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -168,6 +173,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
+import moe.ouom.neriplayer.data.settings.ThemeMode
 import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotCached
@@ -237,6 +243,39 @@ private fun resolveMainStartDestination(
         Destinations.Debug.route -> if (devModeEnabled) Destinations.Debug.route else if (showHomeTab) Destinations.Home.route else Destinations.Explore.route
         else -> if (showHomeTab) Destinations.Home.route else Destinations.Explore.route
     }
+}
+
+private fun readActualSystemDarkTheme(): Boolean {
+    return (Resources.getSystem().configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+        Configuration.UI_MODE_NIGHT_YES
+}
+
+@Composable
+private fun rememberActualSystemDarkTheme(): Boolean {
+    val context = LocalContext.current
+    val applicationContext = remember(context) { context.applicationContext }
+    var systemDark by remember { mutableStateOf(readActualSystemDarkTheme()) }
+
+    DisposableEffect(applicationContext) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                systemDark = readActualSystemDarkTheme()
+            }
+        }
+        ContextCompat.registerReceiver(
+            applicationContext,
+            receiver,
+            IntentFilter(Intent.ACTION_CONFIGURATION_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        onDispose {
+            runCatching {
+                applicationContext.unregisterReceiver(receiver)
+            }
+        }
+    }
+
+    return systemDark
 }
 
 private fun SongItem?.resolveUiCoverSource(context: android.content.Context): String? {
@@ -632,7 +671,7 @@ fun NeriApp(
     var appContentReady by rememberSaveable { mutableStateOf(false) }
     val bootstrapIsDark = when {
         initialThemeSnapshot.forceDark -> true
-        initialThemeSnapshot.followSystemDark -> isSystemInDarkTheme()
+        initialThemeSnapshot.followSystemDark -> readActualSystemDarkTheme()
         else -> false
     }
 
@@ -666,6 +705,7 @@ private fun NeriAppContent(
     val offlineMode by rememberOfflineModeState()
     val rootView = LocalView.current
     val repo = remember { AppContainer.settingsRepo }
+    val systemDark = rememberActualSystemDarkTheme()
     val application = remember(context) { context.applicationContext as Application }
     val startupPlaybackPreferences = remember(application) {
         readPlaybackPreferenceSnapshotCached(application) ?: PlaybackPreferenceSnapshot()
@@ -779,6 +819,12 @@ private fun NeriAppContent(
 
     val followSystemDark = pendingFollowSystemDark ?: storedFollowSystemDark
     val forceDark = pendingForceDark ?: storedForceDark
+    val themeMode = remember(followSystemDark, forceDark) {
+        ThemeMode.fromPreferenceFlags(
+            forceDark = forceDark,
+            followSystemDark = followSystemDark
+        )
+    }
     val effectiveBackgroundImageAlpha = pendingBackgroundImageAlpha ?: backgroundImageAlpha
 
     val clearThemeRevealVisualState = {
@@ -1030,11 +1076,7 @@ private fun NeriAppContent(
         )
     }
 
-    val isDark = when {
-        forceDark -> true
-        followSystemDark -> isSystemInDarkTheme()
-        else -> false
-    }
+    val isDark = themeMode.resolveUseDark(systemDark)
     val hazeState = remember { HazeState() }
     val preferredQuality by repo.audioQualityFlow.collectAsState(initial = "exhigh")
     val youtubePreferredQuality by repo.youtubeAudioQualityFlow.collectAsState(initial = "very_high")
@@ -1062,7 +1104,11 @@ private fun NeriAppContent(
         }
     }
 
-    fun requestThemeToggle(originInWindow: Offset, startRadiusPx: Float) {
+    fun requestThemeModeChange(
+        targetMode: ThemeMode,
+        originInWindow: Offset,
+        startRadiusPx: Float
+    ) {
         if (
             themeRevealCaptureInFlight ||
             pendingFollowSystemDark != null ||
@@ -1072,7 +1118,23 @@ private fun NeriAppContent(
             return
         }
 
-        val nextDark = !isDark
+        if (targetMode == themeMode) {
+            return
+        }
+
+        val nextFollowSystemDark = targetMode.followSystemDark
+        val nextForceDark = targetMode.forceDark
+        val nextDark = targetMode.resolveUseDark(systemDark)
+        if (nextDark == isDark) {
+            pendingFollowSystemDark = nextFollowSystemDark
+            pendingForceDark = nextForceDark
+            scope.launch {
+                repo.setFollowSystemDark(nextFollowSystemDark)
+                repo.setForceDark(nextForceDark)
+            }
+            return
+        }
+
         val activity = context as? Activity
         val captureView = activity?.window?.decorView?.rootView ?: rootView.rootView
         val captureToken = themeRevealCaptureToken + 1
@@ -1105,10 +1167,10 @@ private fun NeriAppContent(
                 themeRevealStartRadiusPx = startRadiusPx.coerceAtLeast(1f)
             }
             try {
-                pendingFollowSystemDark = false
-                pendingForceDark = nextDark
-                repo.setFollowSystemDark(false)
-                repo.setForceDark(nextDark)
+                pendingFollowSystemDark = nextFollowSystemDark
+                pendingForceDark = nextForceDark
+                repo.setFollowSystemDark(nextFollowSystemDark)
+                repo.setForceDark(nextForceDark)
             } finally {
                 if (themeRevealCaptureToken == captureToken) {
                     themeRevealCaptureJob = null
@@ -1117,6 +1179,15 @@ private fun NeriAppContent(
             }
         }
         themeRevealCaptureJob = captureJob
+    }
+
+    fun requestThemeToggle(originInWindow: Offset, startRadiusPx: Float) {
+        val targetMode = if (isDark) ThemeMode.LIGHT else ThemeMode.DARK
+        requestThemeModeChange(
+            targetMode = targetMode,
+            originInWindow = originInWindow,
+            startRadiusPx = startRadiusPx
+        )
     }
 
     DisposableEffect(lifecycleOwner, preemptAudioFocus, allowMixedPlayback) {
@@ -1224,7 +1295,8 @@ private fun NeriAppContent(
             dynamicColor = useSystemDynamic,
             seedColorHex = effectiveSeedHex,
             paletteStyle = themePaletteStyle,
-            colorSpec = themeColorSpec
+            colorSpec = themeColorSpec,
+            systemDark = systemDark
         ) {
             val navController = rememberNavController()
             val backEntry by navController.currentBackStackEntryAsState()
@@ -1765,7 +1837,9 @@ private fun NeriAppContent(
                                         dynamicColor = dynamicColorEnabled,
                                         onDynamicColorChange = { scope.launch { repo.setDynamicColor(it) } },
                                         isDarkTheme = isDark,
+                                        themeMode = themeMode,
                                         onThemeToggleRequest = ::requestThemeToggle,
+                                        onThemeModeRequest = ::requestThemeModeChange,
                                         preferredQuality = preferredQuality,
                                         onQualityChange = { scope.launch { repo.setAudioQuality(it) } },
                                         youtubePreferredQuality = youtubePreferredQuality,
