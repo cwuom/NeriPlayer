@@ -1261,6 +1261,9 @@
     <string name="settings_download_file_name_format_preview">Preview: %1$s</string>
     <string name="settings_download_metadata_post_processing">Metadata post-processing</string>
     <string name="settings_download_metadata_post_processing_desc">Use TagLib to write embedded audio tags, lyrics, and cover after downloads complete; management metadata is still saved when off</string>
+    <string name="settings_download_parallelism">Download thread count</string>
+    <string name="settings_download_parallelism_desc">Controls how many song download tasks can run at the same time, up to 8</string>
+    <string name="settings_download_parallelism_current">Current: %1$d, max %2$d</string>
     <string name="settings_download_directory_default_label">App private folder</string>
     <string name="settings_download_directory_custom_label">Custom Directory</string>
     <string name="settings_download_directory_internal_storage">Internal Storage</string>

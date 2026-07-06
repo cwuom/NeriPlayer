@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.settings
 
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.player.DEFAULT_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_PITCH
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_SPEED
@@ -12,6 +13,7 @@ import moe.ouom.neriplayer.ksp.annotations.AutoSettingsSection
 import moe.ouom.neriplayer.ksp.annotations.SettingAccessMode
 import moe.ouom.neriplayer.ksp.annotations.SettingUiType
 import moe.ouom.neriplayer.ksp.annotations.SettingValueType
+import moe.ouom.neriplayer.ksp.annotations.autoIntSetting
 import moe.ouom.neriplayer.ksp.annotations.autoSetting
 import moe.ouom.neriplayer.ksp.annotations.autoSettingsSection
 import moe.ouom.neriplayer.ksp.annotations.autoSwitchSetting
@@ -1045,6 +1047,18 @@ object AutoSettingsSchema {
             titleRes = R.string.settings_download_metadata_post_processing,
             descriptionRes = R.string.settings_download_metadata_post_processing_desc,
             icon = AutoSettingIcon.AutoAwesome
+        )
+
+        @AutoSetting(
+            order = 50,
+            ui = SettingUiType.Custom
+        )
+        val downloadParallelism = autoIntSetting(
+            key = "download_parallelism",
+            defaultValue = DEFAULT_DOWNLOAD_PARALLELISM,
+            titleRes = R.string.settings_download_parallelism,
+            descriptionRes = R.string.settings_download_parallelism_desc,
+            icon = AutoSettingIcon.Download
         )
     }
 

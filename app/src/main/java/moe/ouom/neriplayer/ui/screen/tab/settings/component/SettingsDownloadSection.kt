@@ -42,17 +42,27 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
+import moe.ouom.neriplayer.core.player.MAX_DOWNLOAD_PARALLELISM
+import moe.ouom.neriplayer.core.player.normalizeDownloadParallelism
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 
 @Composable
@@ -112,6 +122,10 @@ private fun SettingsDownloadExpandedContent(
         AutoSettingSpecSwitchItem(
             setting = AutoSettingsSchema.download.downloadMetadataPostProcessingEnabled
         )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        DownloadParallelismSettingItem()
 
         Spacer(modifier = Modifier.height(4.dp))
 
@@ -190,4 +204,54 @@ private fun SettingsDownloadExpandedContent(
             )
         }
     }
+}
+
+@Composable
+private fun DownloadParallelismSettingItem() {
+    val setting = AutoSettingsSchema.download.downloadParallelism
+    val repository = rememberAutoSettingSpecRepository()
+    val scope = rememberCoroutineScope()
+    val flow = remember(repository, setting) { repository.flow(setting) }
+    val savedValue by flow.collectAsState(initial = setting.defaultValue)
+    val normalizedValue = normalizeDownloadParallelism(savedValue)
+    var sliderValue by remember { mutableFloatStateOf(normalizedValue.toFloat()) }
+
+    LaunchedEffect(normalizedValue) {
+        if (sliderValue.roundToInt() != normalizedValue) {
+            sliderValue = normalizedValue.toFloat()
+        }
+    }
+
+    AutoSettingSpecListItem(
+        setting = setting,
+        supportingContent = {
+            val displayValue = normalizeDownloadParallelism(sliderValue.roundToInt())
+            Column {
+                Text(
+                    text = stringResource(
+                        R.string.settings_download_parallelism_current,
+                        displayValue,
+                        MAX_DOWNLOAD_PARALLELISM
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                MiuixSettingsSlider(
+                    value = sliderValue,
+                    onValueChange = { value ->
+                        sliderValue = normalizeDownloadParallelism(value.roundToInt()).toFloat()
+                    },
+                    onValueChangeFinished = {
+                        val nextValue = normalizeDownloadParallelism(sliderValue.roundToInt())
+                        sliderValue = nextValue.toFloat()
+                        scope.launch {
+                            repository.set(setting, nextValue)
+                        }
+                    },
+                    valueRange = 1f..MAX_DOWNLOAD_PARALLELISM.toFloat(),
+                    steps = MAX_DOWNLOAD_PARALLELISM - 2
+                )
+            }
+        }
+    )
 }

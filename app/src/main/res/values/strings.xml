@@ -1260,6 +1260,9 @@
     <string name="settings_download_file_name_format_preview">预览：%1$s</string>
     <string name="settings_download_metadata_post_processing">元信息后处理</string>
     <string name="settings_download_metadata_post_processing_desc">下载完成后使用 TagLib 写入音频内嵌标签、歌词和封面；关闭后仍保存管理用元数据</string>
+    <string name="settings_download_parallelism">下载线程数量</string>
+    <string name="settings_download_parallelism_desc">控制同时下载的歌曲任务数量，最多并行 8 个</string>
+    <string name="settings_download_parallelism_current">当前：%1$d 个，最多 %2$d 个</string>
     <string name="settings_download_directory_default_label">应用私有目录</string>
     <string name="settings_download_directory_custom_label">自定义目录</string>
     <string name="settings_download_directory_internal_storage">内部存储</string>

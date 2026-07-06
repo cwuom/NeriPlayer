@@ -2108,9 +2108,12 @@ object GlobalDownloadManager {
                     request.song.stableKey() to request.attemptId
                 }
                 AudioDownloadManager.resetCancelFlag()
+                val downloadParallelism =
+                    AudioDownloadManager.resolveConfiguredDownloadParallelism(appContext)
                 AudioDownloadManager.downloadPlaylist(
                     context = appContext,
                     songs = pendingSongs.map(PreparedDownloadTaskRequest::song),
+                    maxConcurrentDownloads = downloadParallelism,
                     songAttemptIds = pendingAttemptIds,
                     onSongStarted = { startedSong ->
                         val attemptId = pendingAttemptIds[startedSong.stableKey()] ?: return@downloadPlaylist

@@ -68,6 +68,8 @@ import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
+import moe.ouom.neriplayer.data.settings.autoSettingFlow
 import moe.ouom.neriplayer.data.traffic.TrafficByteAccumulator
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.TrafficUsageSource
@@ -109,7 +111,8 @@ object AudioDownloadManager {
     private const val TAG = "NERI-Downloader"
     private const val BILI_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     private const val BILI_REFERER = "https://www.bilibili.com"
-    internal const val DEFAULT_MAX_CONCURRENT_DOWNLOADS = 6
+    internal const val DEFAULT_MAX_CONCURRENT_DOWNLOADS = DEFAULT_DOWNLOAD_PARALLELISM
+    internal const val MAX_CONCURRENT_DOWNLOADS_LIMIT = MAX_DOWNLOAD_PARALLELISM
     private const val PROGRESS_EMIT_INTERVAL_NS = 180_000_000L
     private const val PROGRESS_EMIT_MIN_BYTES_DELTA = 256L * 1024L
     private const val DOWNLOAD_TRAFFIC_FLUSH_BYTES = 512L * 1024L
@@ -155,7 +158,9 @@ object AudioDownloadManager {
     // 取消下载控制
     private val _isCancelled = MutableStateFlow(false)
     val isCancelledFlow: StateFlow<Boolean> = _isCancelled
-    private val downloadSemaphore = Semaphore(DEFAULT_MAX_CONCURRENT_DOWNLOADS)
+    private val downloadSemaphore = Semaphore(MAX_CONCURRENT_DOWNLOADS_LIMIT)
+    private val downloadPermitLock = Mutex()
+    private var activeDownloadPermitCount = 0
     private val progressPublishLock = Any()
     private val lastPublishedProgressBySongKey = mutableMapOf<String, PublishedProgressState>()
     private val completedSidecarReferencesBySongKey =
@@ -942,7 +947,7 @@ object AudioDownloadManager {
         batchSessionId: Long? = null,
         attemptId: Long? = null
     ) {
-        downloadSemaphore.withPermit {
+        withConfiguredDownloadPermit(context) {
             withContext(Dispatchers.IO) {
                 val songKey = song.stableKey()
                 var storedAudio: ManagedDownloadStorage.StoredEntry? = null
@@ -1341,6 +1346,44 @@ object AudioDownloadManager {
                     endSongDownloadOperation(songKey)
                 }
             }
+        }
+    }
+
+    private suspend fun <T> withConfiguredDownloadPermit(
+        context: Context,
+        block: suspend () -> T
+    ): T {
+        return downloadSemaphore.withPermit {
+            acquireConfiguredDownloadPermit(context)
+            try {
+                block()
+            } finally {
+                releaseConfiguredDownloadPermit()
+            }
+        }
+    }
+
+    private suspend fun acquireConfiguredDownloadPermit(context: Context) {
+        while (true) {
+            val configuredLimit = resolveConfiguredDownloadParallelism(context)
+            val acquired = downloadPermitLock.withLock {
+                if (activeDownloadPermitCount >= configuredLimit) {
+                    false
+                } else {
+                    activeDownloadPermitCount++
+                    true
+                }
+            }
+            if (acquired) {
+                return
+            }
+            delay(DOWNLOAD_RETRY_POLL_SLICE_MS)
+        }
+    }
+
+    private suspend fun releaseConfiguredDownloadPermit() {
+        downloadPermitLock.withLock {
+            activeDownloadPermitCount = (activeDownloadPermitCount - 1).coerceAtLeast(0)
         }
     }
 
@@ -1994,7 +2037,18 @@ object AudioDownloadManager {
     }
 
     internal fun clampBatchDownloadParallelism(requestedParallelism: Int): Int {
-        return requestedParallelism.coerceIn(1, DEFAULT_MAX_CONCURRENT_DOWNLOADS)
+        return normalizeDownloadParallelism(requestedParallelism)
+    }
+
+    internal suspend fun resolveConfiguredDownloadParallelism(context: Context): Int {
+        val setting = AutoSettingsSchema.download.downloadParallelism
+        val configuredValue = runCatching {
+            context.applicationContext.autoSettingFlow(setting).first()
+        }.getOrElse { error ->
+            NPLogger.w(TAG, "读取下载线程数量失败，按默认值处理: ${error.message}")
+            setting.defaultValue
+        }
+        return normalizeDownloadParallelism(configuredValue)
     }
 
     internal fun resolveBatchDownloadWorkerCount(

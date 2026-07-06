@@ -14,14 +14,15 @@ import java.net.UnknownHostException
 class AudioDownloadManagerTest {
 
     @Test
-    fun `batch download parallelism is capped at six workers`() {
+    fun `batch download parallelism keeps default six and caps at eight workers`() {
         assertEquals(6, AudioDownloadManager.DEFAULT_MAX_CONCURRENT_DOWNLOADS)
+        assertEquals(8, AudioDownloadManager.MAX_CONCURRENT_DOWNLOADS_LIMIT)
         assertEquals(1, AudioDownloadManager.clampBatchDownloadParallelism(0))
         assertEquals(4, AudioDownloadManager.clampBatchDownloadParallelism(4))
-        assertEquals(6, AudioDownloadManager.clampBatchDownloadParallelism(9))
+        assertEquals(8, AudioDownloadManager.clampBatchDownloadParallelism(9))
         assertEquals(0, AudioDownloadManager.resolveBatchDownloadWorkerCount(0, 6))
         assertEquals(2, AudioDownloadManager.resolveBatchDownloadWorkerCount(2, 6))
-        assertEquals(6, AudioDownloadManager.resolveBatchDownloadWorkerCount(20, 9))
+        assertEquals(8, AudioDownloadManager.resolveBatchDownloadWorkerCount(20, 9))
     }
 
     @Test
