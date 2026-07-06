@@ -127,12 +127,15 @@ import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.component.LyricVisualSpec
 import moe.ouom.neriplayer.ui.component.WaveformSlider
 import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
+import moe.ouom.neriplayer.ui.component.rememberLyricSeekHapticFeedback
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.util.HapticFeedbackEffect
 import moe.ouom.neriplayer.util.HapticFilledIconButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
+import moe.ouom.neriplayer.util.performHapticFeedback
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, androidx.compose.animation.ExperimentalSharedTransitionApi::class)
@@ -529,6 +532,8 @@ fun LyricsScreen(
                 LyricsProgressSection(
                     songKey = currentSong?.stableKey(),
                     durationMs = durationMs,
+                    lyrics = plainLyrics,
+                    lyricOffsetMs = lyricOffsetMs,
                     isPlaying = isPlaying,
                     onSeekTo = onSeekTo,
                     onPreviewPositionChange = { previewPositionOverrideMs = it },
@@ -1041,13 +1046,20 @@ private fun LyricsContentPane(
 private fun LyricsProgressSection(
     songKey: String?,
     durationMs: Long,
+    lyrics: List<LyricEntry>,
+    lyricOffsetMs: Long,
     isPlaying: Boolean,
     onSeekTo: (Long) -> Unit,
     onPreviewPositionChange: (Long?) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
     val latestOnPreviewPositionChange by rememberUpdatedState(onPreviewPositionChange)
+    val lyricSeekHaptic = rememberLyricSeekHapticFeedback(
+        lyrics = lyrics,
+        lyricOffsetMs = lyricOffsetMs
+    )
     var isUserDraggingSlider by remember(songKey) { mutableStateOf(false) }
     var sliderPosition by remember(songKey) {
         mutableFloatStateOf(PlayerManager.playbackPositionFlow.value.toFloat())
@@ -1114,14 +1126,30 @@ private fun LyricsProgressSection(
                 0f
             },
             onValueChange = { newValue ->
+                val previewPosition = newValue * durationMs.toFloat()
                 isUserDraggingSlider = true
-                sliderPosition = newValue * durationMs.toFloat()
+                sliderPosition = previewPosition
+                lyricSeekHaptic.onSeekMove(previewPosition.toLong())
+            },
+            onValueChangeStarted = { startValue ->
+                val previewPosition = startValue * durationMs.toFloat()
+                isUserDraggingSlider = true
+                sliderPosition = previewPosition
+                lyricSeekHaptic.onSeekStart(previewPosition.toLong())
+                context.performHapticFeedback(HapticFeedbackEffect.Click)
             },
             onValueChangeFinished = {
                 val previewTarget = sliderPosition.toLong()
                 pendingSeekPreviewPositionMs = previewTarget
                 onSeekTo(previewTarget)
                 isUserDraggingSlider = false
+                lyricSeekHaptic.onSeekEnd()
+                context.performHapticFeedback(HapticFeedbackEffect.Confirm)
+            },
+            onValueChangeCanceled = {
+                sliderPosition = currentPosition.toFloat()
+                isUserDraggingSlider = false
+                lyricSeekHaptic.onSeekEnd()
             },
             isPlaying = isPlaying
         )

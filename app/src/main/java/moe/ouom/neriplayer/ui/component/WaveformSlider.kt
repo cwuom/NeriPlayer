@@ -60,6 +60,8 @@ fun WaveformSlider(
     onValueChange: (Float) -> Unit,
     onValueChangeFinished: () -> Unit,
     isPlaying: Boolean,
+    onValueChangeStarted: (Float) -> Unit = {},
+    onValueChangeCanceled: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val activeColor = MaterialTheme.colorScheme.primary
@@ -91,12 +93,27 @@ fun WaveformSlider(
         modifier = modifier
             .fillMaxWidth()
             .height(48.dp)
-            .pointerInput(onValueChange, onValueChangeFinished) {
+            .pointerInput(
+                onValueChange,
+                onValueChangeFinished,
+                onValueChangeStarted,
+                onValueChangeCanceled
+            ) {
                 detectDragGestures(
-                    onDragStart = { isDragging = true },
+                    onDragStart = { offset ->
+                        isDragging = true
+                        if (canvasWidth > 0f) {
+                            val startValue = (offset.x / canvasWidth).coerceIn(0f, 1f)
+                            onValueChangeStarted(startValue)
+                        }
+                    },
                     onDragEnd = {
                         isDragging = false
                         onValueChangeFinished()
+                    },
+                    onDragCancel = {
+                        isDragging = false
+                        onValueChangeCanceled()
                     },
                     onDrag = { change, _ ->
                         if (canvasWidth > 0) {

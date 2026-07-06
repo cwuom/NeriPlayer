@@ -248,6 +248,7 @@ import moe.ouom.neriplayer.ui.component.WaveformSlider
 import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.component.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.ui.component.rememberLyricSeekHapticFeedback
 import moe.ouom.neriplayer.ui.component.resolveLyricsEditorInitialText
 import moe.ouom.neriplayer.ui.component.resolveLyricsEditorSeed
 import moe.ouom.neriplayer.ui.component.resolvePreferredLyricContent
@@ -258,12 +259,14 @@ import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
+import moe.ouom.neriplayer.util.HapticFeedbackEffect
 import moe.ouom.neriplayer.util.HapticFilledIconButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
+import moe.ouom.neriplayer.util.performHapticFeedback
 import moe.ouom.neriplayer.util.saveCoverToPictures
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -1175,6 +1178,8 @@ fun NowPlayingScreen(
                     NowPlayingProgressSection(
                         songKey = currentSong?.stableKey(),
                         durationMs = durationMs,
+                        lyrics = plainLyrics,
+                        lyricOffsetMs = totalOffset,
                         isPlaying = isPlaying,
                         progressInfoSegments = progressInfoSegments,
                         useWideLandscapeLayout = useWideLandscapeLayout,
@@ -3381,14 +3386,21 @@ fun EditSongInfoSheet(
 private fun NowPlayingProgressSection(
     songKey: String?,
     durationMs: Long,
+    lyrics: List<LyricEntry>,
+    lyricOffsetMs: Long,
     isPlaying: Boolean,
     progressInfoSegments: List<NowPlayingProgressInfoSegment>,
     useWideLandscapeLayout: Boolean,
     onPreviewPositionChange: (Long?) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
     val latestOnPreviewPositionChange by rememberUpdatedState(onPreviewPositionChange)
+    val lyricSeekHaptic = rememberLyricSeekHapticFeedback(
+        lyrics = lyrics,
+        lyricOffsetMs = lyricOffsetMs
+    )
     var isUserDraggingSlider by remember(songKey) { mutableStateOf(false) }
     var sliderPosition by remember(songKey) {
         mutableFloatStateOf(PlayerManager.playbackPositionFlow.value.toFloat())
@@ -3458,14 +3470,30 @@ private fun NowPlayingProgressSection(
                     0f
                 },
                 onValueChange = { newPercentage ->
+                    val previewPosition = newPercentage * durationMs
                     isUserDraggingSlider = true
-                    sliderPosition = newPercentage * durationMs
+                    sliderPosition = previewPosition
+                    lyricSeekHaptic.onSeekMove(previewPosition.toLong())
+                },
+                onValueChangeStarted = { startPercentage ->
+                    val previewPosition = startPercentage * durationMs
+                    isUserDraggingSlider = true
+                    sliderPosition = previewPosition
+                    lyricSeekHaptic.onSeekStart(previewPosition.toLong())
+                    context.performHapticFeedback(HapticFeedbackEffect.Click)
                 },
                 onValueChangeFinished = {
                     val previewTarget = sliderPosition.toLong()
                     pendingSeekPreviewPositionMs = previewTarget
                     PlayerManager.seekTo(previewTarget)
                     isUserDraggingSlider = false
+                    lyricSeekHaptic.onSeekEnd()
+                    context.performHapticFeedback(HapticFeedbackEffect.Confirm)
+                },
+                onValueChangeCanceled = {
+                    sliderPosition = currentPosition.toFloat()
+                    isUserDraggingSlider = false
+                    lyricSeekHaptic.onSeekEnd()
                 },
                 isPlaying = isPlaying
             )
