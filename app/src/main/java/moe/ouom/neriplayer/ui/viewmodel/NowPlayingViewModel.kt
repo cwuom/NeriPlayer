@@ -114,7 +114,6 @@ class NowPlayingViewModel : ViewModel() {
     }
 
     fun retryDownload(context: Context, song: SongItem) {
-        GlobalDownloadManager.removeDownloadTask(song.stableKey())
         GlobalDownloadManager.startDownload(context, song)
     }
 

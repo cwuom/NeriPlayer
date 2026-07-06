@@ -108,9 +108,7 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.hasPendingDownloadTasks
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.model.displayArtist
@@ -192,10 +190,9 @@ fun YouTubeMusicPlaylistDetailScreen(
     }
 
     var showDownloadManager by remember { mutableStateOf(false) }
-    val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
-    val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
-    val pendingTaskCount = remember(downloadTasks) { countPendingDownloadTasks(downloadTasks) }
-    val hasDownloadManagerEntry = remember(downloadTasks) { hasPendingDownloadTasks(downloadTasks) }
+    val downloadTaskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
+    val pendingTaskCount = downloadTaskSummary.pendingTaskCount
+    val hasDownloadManagerEntry = downloadTaskSummary.hasPendingTasks
 
     var showExportSheet by remember { mutableStateOf(false) }
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
@@ -629,6 +626,8 @@ fun YouTubeMusicPlaylistDetailScreen(
         BackHandler(enabled = selectionMode) { exitSelection() }
         
         if (showDownloadManager) {
+            val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
+            val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
             val progress = batchDownloadProgress
             BatchDownloadManagerSheet(
                 batchDownloadProgress = progress,

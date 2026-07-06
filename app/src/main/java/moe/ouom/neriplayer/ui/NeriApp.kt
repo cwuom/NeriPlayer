@@ -53,11 +53,14 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -69,6 +72,7 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -166,6 +170,7 @@ import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotCached
+import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.component.NeriBottomBar
 import moe.ouom.neriplayer.ui.component.NeriMiniPlayer
@@ -209,6 +214,7 @@ import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.NativeCrashHandler
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.adjustedAccentColorArgb
+import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.isRemoteImageSource
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.rememberOfflineModeState
@@ -261,6 +267,107 @@ private fun resolvedNowPlayingBlurStrength(coverUrl: String?, configuredBlurAmou
     } else {
         configuredBlurAmount.coerceAtMost(64f)
     }
+}
+
+@Composable
+private fun TrafficRiskDownloadDialog(
+    request: GlobalDownloadManager.TrafficRiskDownloadRequest,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val networkLabel = stringResource(
+        when (request.networkType) {
+            TrafficNetworkType.ROAMING -> R.string.traffic_risk_network_roaming
+            TrafficNetworkType.MOBILE -> R.string.traffic_risk_network_mobile
+            TrafficNetworkType.WIFI -> R.string.traffic_risk_network_wifi
+        }
+    )
+    val message = if (request.songCount <= 1) {
+        stringResource(
+            R.string.traffic_risk_download_single_message,
+            networkLabel,
+            request.songs.firstOrNull()?.displayName().orEmpty()
+        )
+    } else {
+        stringResource(
+            R.string.traffic_risk_download_batch_message,
+            networkLabel,
+            request.songCount
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.traffic_risk_download_title)) },
+        text = { Text(message) },
+        confirmButton = {
+            HapticTextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.traffic_risk_download_confirm))
+            }
+        },
+        dismissButton = {
+            HapticTextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun MobileDataDownloadInterruptionDialog(
+    request: GlobalDownloadManager.MobileDataDownloadInterruptionRequest,
+    onContinue: () -> Unit,
+    onWaitWifi: () -> Unit,
+    onCancelAll: () -> Unit
+) {
+    val networkLabel = stringResource(
+        when (request.networkType) {
+            TrafficNetworkType.ROAMING -> R.string.traffic_risk_network_roaming
+            TrafficNetworkType.MOBILE -> R.string.traffic_risk_network_mobile
+            TrafficNetworkType.WIFI -> R.string.traffic_risk_network_wifi
+        }
+    )
+
+    AlertDialog(
+        onDismissRequest = onWaitWifi,
+        title = { Text(stringResource(R.string.mobile_data_download_interruption_title)) },
+        confirmButton = {},
+        dismissButton = {},
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    stringResource(
+                        R.string.mobile_data_download_interruption_message,
+                        networkLabel,
+                        request.taskCount
+                    )
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    HapticTextButton(onClick = onWaitWifi) {
+                        Text(stringResource(R.string.mobile_data_download_wait_wifi))
+                    }
+                    HapticTextButton(onClick = onContinue) {
+                        Text(stringResource(R.string.traffic_risk_download_confirm))
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .wrapContentWidth(Alignment.End)
+                ) {
+                    HapticTextButton(onClick = onCancelAll) {
+                        Text(
+                            stringResource(R.string.mobile_data_download_cancel_all),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+        }
+    )
 }
 
 private const val THEME_REVEAL_SNAPSHOT_MAX_DIMENSION_PX = 1080
@@ -693,6 +800,17 @@ private fun NeriAppContent(
         currentSong.resolveUiCoverSource(context)
     }
     val scope = rememberCoroutineScope()
+    var pendingTrafficRiskDownloadRequest by remember {
+        mutableStateOf<GlobalDownloadManager.TrafficRiskDownloadRequest?>(null)
+    }
+    val pendingMobileDataDownloadInterruptionRequest by
+        GlobalDownloadManager.mobileDataDownloadInterruptionRequest.collectAsState()
+
+    LaunchedEffect(Unit) {
+        GlobalDownloadManager.trafficRiskDownloadRequests.collect { request ->
+            pendingTrafficRiskDownloadRequest = request
+        }
+    }
 
     val scheduleAudioServiceStart: (String, Boolean) -> Unit = { source, forceForeground ->
         scope.launch {
@@ -879,6 +997,18 @@ private fun NeriAppContent(
     val preferredQuality by repo.audioQualityFlow.collectAsState(initial = "exhigh")
     val youtubePreferredQuality by repo.youtubeAudioQualityFlow.collectAsState(initial = "very_high")
     val biliPreferredQuality by repo.biliAudioQualityFlow.collectAsState(initial = "high")
+    val mobileDataFollowDefaultAudioQuality by repo.mobileDataFollowDefaultAudioQualityFlow.collectAsState(
+        initial = startupPlaybackPreferences.mobileDataFollowDefaultAudioQuality
+    )
+    val mobileDataNeteaseAudioQuality by repo.mobileDataNeteaseAudioQualityFlow.collectAsState(
+        initial = startupPlaybackPreferences.mobileDataNeteaseAudioQuality
+    )
+    val mobileDataYouTubeAudioQuality by repo.mobileDataYouTubeAudioQualityFlow.collectAsState(
+        initial = startupPlaybackPreferences.mobileDataYouTubeAudioQuality
+    )
+    val mobileDataBiliAudioQuality by repo.mobileDataBiliAudioQualityFlow.collectAsState(
+        initial = startupPlaybackPreferences.mobileDataBiliAudioQuality
+    )
     val currentThemeBackgroundArgb = MaterialTheme.colorScheme.background.toArgb()
     val themeRevealActive =
         themeRevealOriginWindow != null &&
@@ -1152,10 +1282,10 @@ private fun NeriAppContent(
                 val currentSong by PlayerManager.currentSongFlow.collectAsState()
                 val isMiniPlayerVisible = currentSong != null && !showNowPlaying
                 val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsState()
-                val reservedMiniPlayerHeightDp = if (currentSong == null) {
-                    0.dp
-                } else {
+                val reservedMiniPlayerHeightDp = if (isMiniPlayerVisible) {
                     moe.ouom.neriplayer.ui.component.NeriMiniPlayerDefaults.Height
+                } else {
+                    0.dp
                 }
 
                 LaunchedEffect(currentRoute, showHomeTab, effectiveStartDestination) {
@@ -1600,6 +1730,33 @@ private fun NeriAppContent(
                                         },
                                         biliPreferredQuality = biliPreferredQuality,
                                         onBiliQualityChange = { scope.launch { repo.setBiliAudioQuality(it) } },
+                                        mobileDataFollowDefaultAudioQuality =
+                                            mobileDataFollowDefaultAudioQuality,
+                                        onMobileDataFollowDefaultAudioQualityChange = { enabled ->
+                                            scope.launch {
+                                                repo.setMobileDataFollowDefaultAudioQuality(enabled)
+                                            }
+                                        },
+                                        mobileDataNeteaseAudioQuality =
+                                            mobileDataNeteaseAudioQuality,
+                                        onMobileDataNeteaseAudioQualityChange = { quality ->
+                                            scope.launch {
+                                                repo.setMobileDataNeteaseAudioQuality(quality)
+                                            }
+                                        },
+                                        mobileDataYouTubeAudioQuality =
+                                            mobileDataYouTubeAudioQuality,
+                                        onMobileDataYouTubeAudioQualityChange = { quality ->
+                                            scope.launch {
+                                                repo.setMobileDataYouTubeAudioQuality(quality)
+                                            }
+                                        },
+                                        mobileDataBiliAudioQuality = mobileDataBiliAudioQuality,
+                                        onMobileDataBiliAudioQualityChange = { quality ->
+                                            scope.launch {
+                                                repo.setMobileDataBiliAudioQuality(quality)
+                                            }
+                                        },
                                         seedColorHex = themeSeedColor,
                                         onSeedColorChange = { hex -> scope.launch { repo.setThemeSeedColor(hex) } },
                                         themeColorPalette = themeColorPalette,
@@ -1715,11 +1872,7 @@ private fun NeriAppContent(
                                         },
                                         downloadDirectoryUri = downloadDirectoryUri,
                                         downloadFileNameTemplate = downloadFileNameTemplate,
-                                        onDownloadDirectoryUriChange = { uri ->
-                                            val label = ManagedDownloadStorage.describeConfiguredDirectory(
-                                                context,
-                                                uri
-                                            ).takeIf { !uri.isNullOrBlank() }
+                                        onDownloadDirectoryUriChange = { uri, label ->
                                             scope.launch {
                                                 repo.setDownloadDirectory(uri, label)
                                                 ManagedDownloadStorage.updateConfiguredTreeUri(uri)
@@ -2355,6 +2508,34 @@ private fun NeriAppContent(
                         legacySnapshotDim = true,
                         durationMillis = 720,
                         onFinished = clearThemeRevealState
+                    )
+                }
+
+                pendingTrafficRiskDownloadRequest?.let { request ->
+                    TrafficRiskDownloadDialog(
+                        request = request,
+                        onConfirm = {
+                            pendingTrafficRiskDownloadRequest = null
+                            GlobalDownloadManager.confirmTrafficRiskDownload(context, request)
+                        },
+                        onDismiss = {
+                            pendingTrafficRiskDownloadRequest = null
+                        }
+                    )
+                }
+
+                pendingMobileDataDownloadInterruptionRequest?.let { request ->
+                    MobileDataDownloadInterruptionDialog(
+                        request = request,
+                        onContinue = {
+                            GlobalDownloadManager.continueDownloadsOnMobileData(context, request)
+                        },
+                        onWaitWifi = {
+                            GlobalDownloadManager.waitDownloadsForWifi(request)
+                        },
+                        onCancelAll = {
+                            GlobalDownloadManager.cancelAllDownloadsForMobileData(request)
+                        }
                     )
                 }
             }

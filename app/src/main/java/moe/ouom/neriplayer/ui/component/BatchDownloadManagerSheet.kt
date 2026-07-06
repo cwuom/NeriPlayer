@@ -24,6 +24,8 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,7 +37,6 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.DownloadTask
 import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.hasActiveDownloadTasks
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
@@ -48,13 +49,21 @@ fun BatchDownloadManagerSheet(
     progressSummaryText: String,
     onDismiss: () -> Unit
 ) {
-    val pendingTaskCount = remember(downloadTasks) {
-        countPendingDownloadTasks(downloadTasks)
+    val taskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
+    val activeDownloadOperations by GlobalDownloadManager.activeDownloadOperationsFlow.collectAsState()
+    val pendingTaskCount = taskSummary.pendingTaskCount
+    val visibleProgress = batchDownloadProgress?.takeIf { progress ->
+        pendingTaskCount <= 1 || progress.totalSongs >= pendingTaskCount
     }
-    val hasActiveTasks = remember(downloadTasks) {
-        hasActiveDownloadTasks(downloadTasks)
+    val stableProgressSummaryText = if (visibleProgress != null) {
+        progressSummaryText
+    } else {
+        pluralStringResource(
+            R.plurals.download_tasks_count,
+            pendingTaskCount,
+            pendingTaskCount
+        )
     }
-    val visibleProgress = batchDownloadProgress?.takeIf { hasActiveTasks }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
@@ -86,7 +95,7 @@ fun BatchDownloadManagerSheet(
                 }
             }
 
-            if (visibleProgress != null || pendingTaskCount > 0) {
+            if (visibleProgress != null || pendingTaskCount > 0 || activeDownloadOperations) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -103,10 +112,10 @@ fun BatchDownloadManagerSheet(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = progressSummaryText,
+                                text = stableProgressSummaryText,
                                 style = MaterialTheme.typography.titleMedium
                             )
-                            if (hasActiveTasks) {
+                            if (pendingTaskCount > 0) {
                                 HapticTextButton(onClick = { GlobalDownloadManager.cancelAllDownloadTasks() }) {
                                     Text(
                                         text = stringResource(R.string.action_cancel),
@@ -142,7 +151,7 @@ fun BatchDownloadManagerSheet(
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             )
-                        } else if (pendingTaskCount > 0) {
+                        } else if (pendingTaskCount > 0 || activeDownloadOperations) {
                             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                         }
 

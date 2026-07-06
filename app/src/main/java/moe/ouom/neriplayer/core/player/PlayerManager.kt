@@ -180,6 +180,10 @@ object PlayerManager {
     internal var preferredQuality: String = "exhigh"
     internal var youtubePreferredQuality: String = "very_high"
     internal var biliPreferredQuality: String = "high"
+    internal var mobileDataFollowDefaultAudioQuality = true
+    internal var mobileDataNeteaseAudioQuality: String = "standard"
+    internal var mobileDataYouTubeAudioQuality: String = "low"
+    internal var mobileDataBiliAudioQuality: String = "low"
     internal var playbackFadeInEnabled = false
     internal var playbackCrossfadeNextEnabled = false
     internal var playbackFadeInDurationMs = DEFAULT_FADE_DURATION_MS
@@ -1240,24 +1244,24 @@ object PlayerManager {
             isLocalSong(song) -> "local-${song.stableKey().hashCode()}"
             isYouTubeMusicTrack(song) -> {
                 val videoId = song.audioId ?: extractYouTubeMusicVideoId(song.mediaUri).orEmpty()
-                computeYouTubeCacheKey(videoId, youtubePreferredQuality)
+                computeYouTubeCacheKey(videoId, effectiveYouTubeQuality())
             }
             isBiliTrack(song) -> {
             val cidPart = song.subAudioId ?: song.album.split('|').getOrNull(1)
             val biliSongId = song.audioId ?: song.id.toString()
             if (cidPart != null) {
-                "bili-$biliSongId-$cidPart-$biliPreferredQuality"
+                "bili-$biliSongId-$cidPart-${effectiveBiliQuality()}"
             } else {
-                "bili-$biliSongId-$biliPreferredQuality"
+                "bili-$biliSongId-${effectiveBiliQuality()}"
             }
             }
-            else -> "netease-${song.id}-$preferredQuality"
+            else -> "netease-${song.id}-${effectiveNeteaseQuality()}"
         }
     }
 
     internal fun computeYouTubeCacheKey(
         videoId: String,
-        preferredQuality: String = youtubePreferredQuality
+        preferredQuality: String = effectiveYouTubeQuality()
     ): String {
         return "ytmusic-$videoId-$preferredQuality-m4a"
     }

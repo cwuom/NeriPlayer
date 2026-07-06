@@ -53,6 +53,7 @@ import moe.ouom.neriplayer.data.platform.bili.BiliFavoriteFolderCacheRepository
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeMusicPlaylistCacheRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
+import moe.ouom.neriplayer.data.traffic.TrafficStatsRepository
 import moe.ouom.neriplayer.listentogether.ListenTogetherApi
 import moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager
 import moe.ouom.neriplayer.listentogether.ListenTogetherWebSocketClient
@@ -160,6 +161,9 @@ object AppContainer {
     }
     val playbackStatsRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         PlaybackStatsRepository.getInstance(application)
+    }
+    val trafficStatsRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        TrafficStatsRepository.getInstance(application)
     }
     val playlistUsageRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         PlaylistUsageRepository(application)

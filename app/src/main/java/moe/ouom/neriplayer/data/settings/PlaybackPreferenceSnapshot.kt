@@ -47,6 +47,15 @@ private const val PLAYBACK_SNAPSHOT_READY_KEY = "ready"
 private const val PLAYBACK_AUDIO_QUALITY_KEY = "audio_quality"
 private const val PLAYBACK_YOUTUBE_AUDIO_QUALITY_KEY = "youtube_audio_quality"
 private const val PLAYBACK_BILI_AUDIO_QUALITY_KEY = "bili_audio_quality"
+private const val PLAYBACK_MOBILE_DATA_DOWNGRADE_QUALITY_KEY = "mobile_data_downgrade_quality"
+private const val PLAYBACK_MOBILE_DATA_FOLLOW_DEFAULT_AUDIO_QUALITY_KEY =
+    "mobile_data_follow_default_audio_quality"
+private const val PLAYBACK_MOBILE_DATA_NETEASE_AUDIO_QUALITY_KEY =
+    "mobile_data_netease_audio_quality"
+private const val PLAYBACK_MOBILE_DATA_YOUTUBE_AUDIO_QUALITY_KEY =
+    "mobile_data_youtube_audio_quality"
+private const val PLAYBACK_MOBILE_DATA_BILI_AUDIO_QUALITY_KEY =
+    "mobile_data_bili_audio_quality"
 private const val PLAYBACK_KEEP_PROGRESS_KEY = "keep_last_playback_progress"
 private const val PLAYBACK_KEEP_MODE_STATE_KEY = "keep_playback_mode_state"
 private const val PLAYBACK_NETEASE_AUTO_SOURCE_SWITCH_KEY = "netease_auto_source_switch"
@@ -80,6 +89,10 @@ data class PlaybackPreferenceSnapshot(
     val audioQuality: String = "exhigh",
     val youtubeAudioQuality: String = "very_high",
     val biliAudioQuality: String = "high",
+    val mobileDataFollowDefaultAudioQuality: Boolean = true,
+    val mobileDataNeteaseAudioQuality: String = DEFAULT_MOBILE_DATA_NETEASE_AUDIO_QUALITY,
+    val mobileDataYouTubeAudioQuality: String = DEFAULT_MOBILE_DATA_YOUTUBE_AUDIO_QUALITY,
+    val mobileDataBiliAudioQuality: String = DEFAULT_MOBILE_DATA_BILI_AUDIO_QUALITY,
     val keepLastPlaybackProgress: Boolean = true,
     val keepPlaybackModeState: Boolean = true,
     val neteaseAutoSourceSwitch: Boolean = true,
@@ -108,6 +121,12 @@ data class PlaybackPreferenceSnapshot(
             audioQuality = audioQuality.trim().ifBlank { "exhigh" },
             youtubeAudioQuality = youtubeAudioQuality.trim().ifBlank { "very_high" },
             biliAudioQuality = biliAudioQuality.trim().ifBlank { "high" },
+            mobileDataNeteaseAudioQuality =
+                normalizeMobileDataNeteaseAudioQuality(mobileDataNeteaseAudioQuality),
+            mobileDataYouTubeAudioQuality =
+                normalizeMobileDataYouTubeAudioQuality(mobileDataYouTubeAudioQuality),
+            mobileDataBiliAudioQuality =
+                normalizeMobileDataBiliAudioQuality(mobileDataBiliAudioQuality),
             playbackFadeInDurationMs = playbackFadeInDurationMs.coerceAtLeast(0L),
             playbackFadeOutDurationMs = playbackFadeOutDurationMs.coerceAtLeast(0L),
             playbackCrossfadeInDurationMs = playbackCrossfadeInDurationMs.coerceAtLeast(0L),
@@ -206,6 +225,22 @@ internal fun persistPlaybackPreferenceSnapshot(
                     normalizedSnapshot.youtubeAudioQuality
                 )
                 .putString(PLAYBACK_BILI_AUDIO_QUALITY_KEY, normalizedSnapshot.biliAudioQuality)
+                .putBoolean(
+                    PLAYBACK_MOBILE_DATA_FOLLOW_DEFAULT_AUDIO_QUALITY_KEY,
+                    normalizedSnapshot.mobileDataFollowDefaultAudioQuality
+                )
+                .putString(
+                    PLAYBACK_MOBILE_DATA_NETEASE_AUDIO_QUALITY_KEY,
+                    normalizedSnapshot.mobileDataNeteaseAudioQuality
+                )
+                .putString(
+                    PLAYBACK_MOBILE_DATA_YOUTUBE_AUDIO_QUALITY_KEY,
+                    normalizedSnapshot.mobileDataYouTubeAudioQuality
+                )
+                .putString(
+                    PLAYBACK_MOBILE_DATA_BILI_AUDIO_QUALITY_KEY,
+                    normalizedSnapshot.mobileDataBiliAudioQuality
+                )
                 .putBoolean(PLAYBACK_KEEP_PROGRESS_KEY, normalizedSnapshot.keepLastPlaybackProgress)
                 .putBoolean(PLAYBACK_KEEP_MODE_STATE_KEY, normalizedSnapshot.keepPlaybackModeState)
                 .putBoolean(
@@ -262,10 +297,27 @@ internal fun persistPlaybackPreferenceSnapshot(
     }
 
 internal fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnapshot {
+    val legacyMobileDataQuality = this[SettingsKeys.MOBILE_DATA_DOWNGRADE_QUALITY]
     return PlaybackPreferenceSnapshot(
         audioQuality = this[SettingsKeys.AUDIO_QUALITY] ?: "exhigh",
         youtubeAudioQuality = this[SettingsKeys.YOUTUBE_AUDIO_QUALITY] ?: "very_high",
         biliAudioQuality = this[SettingsKeys.BILI_AUDIO_QUALITY] ?: "high",
+        mobileDataFollowDefaultAudioQuality =
+            this[SettingsKeys.MOBILE_DATA_FOLLOW_DEFAULT_AUDIO_QUALITY]
+                ?: resolveLegacyMobileDataFollowDefaultAudioQuality(legacyMobileDataQuality)
+                ?: true,
+        mobileDataNeteaseAudioQuality = normalizeMobileDataNeteaseAudioQuality(
+            this[SettingsKeys.MOBILE_DATA_NETEASE_AUDIO_QUALITY]
+                ?: resolveLegacyMobileDataNeteaseAudioQuality(legacyMobileDataQuality)
+        ),
+        mobileDataYouTubeAudioQuality = normalizeMobileDataYouTubeAudioQuality(
+            this[SettingsKeys.MOBILE_DATA_YOUTUBE_AUDIO_QUALITY]
+                ?: resolveLegacyMobileDataYouTubeAudioQuality(legacyMobileDataQuality)
+        ),
+        mobileDataBiliAudioQuality = normalizeMobileDataBiliAudioQuality(
+            this[SettingsKeys.MOBILE_DATA_BILI_AUDIO_QUALITY]
+                ?: resolveLegacyMobileDataBiliAudioQuality(legacyMobileDataQuality)
+        ),
         keepLastPlaybackProgress = this[SettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS] ?: true,
         keepPlaybackModeState = this[SettingsKeys.KEEP_PLAYBACK_MODE_STATE] ?: true,
         neteaseAutoSourceSwitch = this[SettingsKeys.NETEASE_AUTO_SOURCE_SWITCH] ?: true,
@@ -307,11 +359,52 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
     if (!prefs.getBoolean(PLAYBACK_SNAPSHOT_READY_KEY, false)) {
         return null
     }
+    val legacyMobileDataQuality = prefs.getString(
+        PLAYBACK_MOBILE_DATA_DOWNGRADE_QUALITY_KEY,
+        null
+    )
     return PlaybackPreferenceSnapshot(
         audioQuality = prefs.getString(PLAYBACK_AUDIO_QUALITY_KEY, "exhigh") ?: "exhigh",
         youtubeAudioQuality =
             prefs.getString(PLAYBACK_YOUTUBE_AUDIO_QUALITY_KEY, "very_high") ?: "very_high",
         biliAudioQuality = prefs.getString(PLAYBACK_BILI_AUDIO_QUALITY_KEY, "high") ?: "high",
+        mobileDataFollowDefaultAudioQuality = if (
+            prefs.contains(PLAYBACK_MOBILE_DATA_FOLLOW_DEFAULT_AUDIO_QUALITY_KEY)
+        ) {
+            prefs.getBoolean(PLAYBACK_MOBILE_DATA_FOLLOW_DEFAULT_AUDIO_QUALITY_KEY, true)
+        } else {
+            resolveLegacyMobileDataFollowDefaultAudioQuality(legacyMobileDataQuality) ?: true
+        },
+        mobileDataNeteaseAudioQuality = normalizeMobileDataNeteaseAudioQuality(
+            if (prefs.contains(PLAYBACK_MOBILE_DATA_NETEASE_AUDIO_QUALITY_KEY)) {
+                prefs.getString(
+                    PLAYBACK_MOBILE_DATA_NETEASE_AUDIO_QUALITY_KEY,
+                    DEFAULT_MOBILE_DATA_NETEASE_AUDIO_QUALITY
+                )
+            } else {
+                resolveLegacyMobileDataNeteaseAudioQuality(legacyMobileDataQuality)
+            }
+        ),
+        mobileDataYouTubeAudioQuality = normalizeMobileDataYouTubeAudioQuality(
+            if (prefs.contains(PLAYBACK_MOBILE_DATA_YOUTUBE_AUDIO_QUALITY_KEY)) {
+                prefs.getString(
+                    PLAYBACK_MOBILE_DATA_YOUTUBE_AUDIO_QUALITY_KEY,
+                    DEFAULT_MOBILE_DATA_YOUTUBE_AUDIO_QUALITY
+                )
+            } else {
+                resolveLegacyMobileDataYouTubeAudioQuality(legacyMobileDataQuality)
+            }
+        ),
+        mobileDataBiliAudioQuality = normalizeMobileDataBiliAudioQuality(
+            if (prefs.contains(PLAYBACK_MOBILE_DATA_BILI_AUDIO_QUALITY_KEY)) {
+                prefs.getString(
+                    PLAYBACK_MOBILE_DATA_BILI_AUDIO_QUALITY_KEY,
+                    DEFAULT_MOBILE_DATA_BILI_AUDIO_QUALITY
+                )
+            } else {
+                resolveLegacyMobileDataBiliAudioQuality(legacyMobileDataQuality)
+            }
+        ),
         keepLastPlaybackProgress = prefs.getBoolean(PLAYBACK_KEEP_PROGRESS_KEY, true),
         keepPlaybackModeState = prefs.getBoolean(PLAYBACK_KEEP_MODE_STATE_KEY, true),
         neteaseAutoSourceSwitch =

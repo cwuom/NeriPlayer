@@ -68,8 +68,12 @@ import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.traffic.TrafficByteAccumulator
+import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
+import moe.ouom.neriplayer.data.traffic.TrafficUsageSource
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.currentTrafficNetworkType
 import moe.ouom.neriplayer.util.hasValidatedInternet
 import okhttp3.Dispatcher
 import okhttp3.Request
@@ -90,6 +94,7 @@ import java.net.URLConnection
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.SSLException
 import kotlin.LazyThreadSafetyMode
 
@@ -107,6 +112,7 @@ object AudioDownloadManager {
     internal const val DEFAULT_MAX_CONCURRENT_DOWNLOADS = 6
     private const val PROGRESS_EMIT_INTERVAL_NS = 180_000_000L
     private const val PROGRESS_EMIT_MIN_BYTES_DELTA = 256L * 1024L
+    private const val DOWNLOAD_TRAFFIC_FLUSH_BYTES = 512L * 1024L
     private const val TRANSIENT_DOWNLOAD_MAX_ATTEMPTS = 6
     private const val TRANSIENT_DOWNLOAD_OFFLINE_RECOVERY_WAIT_MS = 12_000L
     private const val TRANSIENT_DOWNLOAD_NETWORK_SETTLE_MS = 750L
@@ -161,9 +167,23 @@ object AudioDownloadManager {
     private val retryWakeSignalVersion = MutableStateFlow(0L)
     private val activeCallsBySongKey =
         ConcurrentHashMap<String, MutableSet<okhttp3.Call>>()
+    private val networkPolicyPausedSongKeys =
+        Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
     private val activeSongOperationCounts = ConcurrentHashMap<String, Int>()
     private val batchSessionLock = Any()
     private val networkRecoveryMonitorLock = Any()
+
+    private fun newDownloadTrafficAccumulator(): TrafficByteAccumulator {
+        val appContext = AppContainer.applicationContext
+        val networkType = appContext.currentTrafficNetworkType()
+        return TrafficByteAccumulator(DOWNLOAD_TRAFFIC_FLUSH_BYTES) { bytes ->
+            AppContainer.trafficStatsRepo.recordNetworkBytes(
+                networkType = networkType,
+                bytes = bytes,
+                source = TrafficUsageSource.DOWNLOAD
+            )
+        }
+    }
 
     @Volatile
     private var nextBatchSessionId = 0L
@@ -173,6 +193,9 @@ object AudioDownloadManager {
 
     @Volatile
     private var networkRecoveryMonitorRegistered = false
+
+    @Volatile
+    private var lastObservedTrafficNetworkType: TrafficNetworkType? = null
 
     fun isSongDownloadActive(songKey: String): Boolean {
         return (activeSongOperationCounts[songKey] ?: 0) > 0
@@ -186,8 +209,10 @@ object AudioDownloadManager {
             }
             val connectivityManager = appContext.getSystemService(ConnectivityManager::class.java)
                 ?: return
+            lastObservedTrafficNetworkType = appContext.currentTrafficNetworkType()
             val callback = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
+                    handleTrafficNetworkChanged(appContext, "network_available")
                     if (appContext.hasValidatedInternet()) {
                         notifyRecoveryOpportunity("network_available")
                     }
@@ -203,6 +228,11 @@ object AudioDownloadManager {
                     ) {
                         notifyRecoveryOpportunity("network_validated")
                     }
+                    handleTrafficNetworkChanged(appContext, "network_capabilities_changed")
+                }
+
+                override fun onLost(network: Network) {
+                    handleTrafficNetworkChanged(appContext, "network_lost")
                 }
             }
             val registered = runCatching {
@@ -212,6 +242,19 @@ object AudioDownloadManager {
             if (registered) {
                 networkRecoveryMonitorRegistered = true
             }
+        }
+    }
+
+    private fun handleTrafficNetworkChanged(context: Context, reason: String) {
+        val nextType = context.currentTrafficNetworkType()
+        val previousType = lastObservedTrafficNetworkType
+        lastObservedTrafficNetworkType = nextType
+        if (previousType == TrafficNetworkType.WIFI && nextType != TrafficNetworkType.WIFI) {
+            NPLogger.w(
+                TAG,
+                "WIFI 下载环境已切换，准备中断下载: reason=$reason, nextType=$nextType"
+            )
+            GlobalDownloadManager.interruptDownloadsForWifiDisconnected(nextType)
         }
     }
 
@@ -426,6 +469,10 @@ object AudioDownloadManager {
     fun notifyRecoveryOpportunity(reason: String) {
         evictDownloadConnections()
         retryWakeSignalVersion.value = advanceRetryWakeSignalVersion(retryWakeSignalVersion.value)
+        GlobalDownloadManager.recoverPendingDownloadsForNetworkRestored(
+            context = AppContainer.applicationContext,
+            reason = reason
+        )
         NPLogger.d(TAG, "下载恢复机会已触发: reason=$reason")
     }
 
@@ -543,6 +590,10 @@ object AudioDownloadManager {
     private fun deleteWorkingFile(tempFile: File?) {
         clearHlsResumeState(tempFile)
         ManagedDownloadStorage.deleteWorkingDownloadArtifacts(tempFile)
+    }
+
+    private fun shouldPreserveArtifactsForNetworkPolicy(songKey: String): Boolean {
+        return networkPolicyPausedSongKeys.contains(songKey)
     }
 
     private fun publishProgress(
@@ -1124,7 +1175,11 @@ object AudioDownloadManager {
                                 val partialSidecarReferences = consumePartialSidecarReferences(songKey)
                                     ?.retainCreatedOnly()
                                 NPLogger.d(TAG, "下载已取消: ${song.name}")
-                                if (storedAudio != null || !(partialSidecarReferences?.isEmpty ?: true)) {
+                                val preserveArtifacts = shouldPreserveArtifactsForNetworkPolicy(songKey)
+                                if (
+                                    !preserveArtifacts &&
+                                    (storedAudio != null || !(partialSidecarReferences?.isEmpty ?: true))
+                                ) {
                                     runCatching {
                                         NPLogger.d(
                                             TAG,
@@ -1144,13 +1199,19 @@ object AudioDownloadManager {
                                         )
                                     }
                                 }
-                                deleteWorkingFile(tempFile)
-                                tempFile = null
+                                if (!preserveArtifacts) {
+                                    deleteWorkingFile(tempFile)
+                                    tempFile = null
+                                }
                                 _progressFlow.value = null
-                                clearSongCancelled(songKey)
+                                if (!preserveArtifacts) {
+                                    clearSongCancelled(songKey)
+                                }
                                 clearCompletedSidecarReferences(songKey)
                                 clearPartialSidecarReferences(songKey)
-                                throw java.util.concurrent.CancellationException("Download cancelled")
+                                throw java.util.concurrent.CancellationException(
+                                    if (preserveArtifacts) "Download paused for network policy" else "Download cancelled"
+                                )
                             }
 
                             clearCompletedSidecarReferences(songKey)
@@ -1218,7 +1279,11 @@ object AudioDownloadManager {
                         val partialSidecarReferences = consumePartialSidecarReferences(songKey)
                             ?.retainCreatedOnly()
                         NPLogger.d(TAG, "下载已取消: ${song.name}")
-                        if (storedAudio != null || !(partialSidecarReferences?.isEmpty ?: true)) {
+                        val preserveArtifacts = shouldPreserveArtifactsForNetworkPolicy(songKey)
+                        if (
+                            !preserveArtifacts &&
+                            (storedAudio != null || !(partialSidecarReferences?.isEmpty ?: true))
+                        ) {
                             runCatching {
                                 NPLogger.d(
                                     TAG,
@@ -1238,12 +1303,18 @@ object AudioDownloadManager {
                                 )
                             }
                         }
-                        deleteWorkingFile(tempFile)
+                        if (!preserveArtifacts) {
+                            deleteWorkingFile(tempFile)
+                        }
                         _progressFlow.value = null
-                        clearSongCancelled(songKey)
+                        if (!preserveArtifacts) {
+                            clearSongCancelled(songKey)
+                        }
                         clearCompletedSidecarReferences(songKey)
                         clearPartialSidecarReferences(songKey)
-                        throw java.util.concurrent.CancellationException("Download cancelled")
+                        throw java.util.concurrent.CancellationException(
+                            if (preserveArtifacts) "Download paused for network policy" else "Download cancelled"
+                        )
                     }
                     NPLogger.e(TAG, "下载失败: ${song.name}, 错误: ${e.javaClass.simpleName} - ${e.message}", e)
                     deleteWorkingFile(tempFile)
@@ -1603,7 +1674,10 @@ object AudioDownloadManager {
                         aggregateProgressFraction = 0f
                     )
                 )
-                val batchSemaphore = Semaphore(clampBatchDownloadParallelism(maxConcurrentDownloads))
+                val workerCount = resolveBatchDownloadWorkerCount(
+                    songCount = trackedSongs.size,
+                    requestedParallelism = maxConcurrentDownloads
+                )
 
                 val progressJob = launch {
                     _progressFlow.collect { progress ->
@@ -1623,57 +1697,66 @@ object AudioDownloadManager {
                     }
                 }
 
+                suspend fun processTrackedSong(trackedSong: TrackedBatchSong) {
+                    val song = trackedSong.song
+                    val songKey = song.stableKey()
+                    GlobalDownloadManager.withSongExecutionLock(songKey) {
+                        if (_isCancelled.value || !isBatchSessionCurrent(batchSessionId)) {
+                            NPLogger.d(TAG, context.getString(R.string.download_cancelled_message))
+                            markSongFinished(songKey)
+                            invokeBatchCallback(song) { onSongCancelled(song) }
+                            return@withSongExecutionLock
+                        }
+                        if (GlobalDownloadManager.isSongCancelled(songKey)) {
+                            NPLogger.d(TAG, "跳过已取消的歌曲: ${song.name}")
+                            clearSongCancelled(songKey)
+                            markSongFinished(songKey)
+                            invokeBatchCallback(song) { onSongCancelled(song) }
+                            return@withSongExecutionLock
+                        }
+
+                        try {
+                            markSongStarted(trackedSong)
+                            invokeBatchCallback(song) { onSongStarted(song) }
+                            downloadSong(
+                                context = context,
+                                song = song,
+                                batchSessionId = batchSessionId,
+                                attemptId = songAttemptIds[songKey]
+                            )
+                            invokeBatchCallback(song) { onSongCompleted(song) }
+                        } catch (_: java.util.concurrent.CancellationException) {
+                            NPLogger.d(TAG, "歌曲下载被取消: ${song.name}")
+                            clearSongCancelled(songKey)
+                            invokeBatchCallback(song) { onSongCancelled(song) }
+                        } catch (e: Exception) {
+                            NPLogger.e(
+                                TAG,
+                                context.getString(
+                                    R.string.download_batch_failed_song,
+                                    song.name,
+                                    e.message ?: ""
+                                ),
+                                e
+                            )
+                            invokeBatchCallback(song) { onSongFailed(song, e) }
+                        } finally {
+                            markSongFinished(songKey)
+                        }
+                    }
+                }
+
                 try {
                     coroutineScope {
-                        trackedSongs.map { trackedSong ->
+                        val nextSongIndex = AtomicInteger(0)
+                        List(workerCount) {
                             launch {
-                                batchSemaphore.withPermit {
-                                    val song = trackedSong.song
-                                    val songKey = song.stableKey()
-                                    GlobalDownloadManager.withSongExecutionLock(songKey) {
-                                        if (_isCancelled.value || !isBatchSessionCurrent(batchSessionId)) {
-                                            NPLogger.d(TAG, context.getString(R.string.download_cancelled_message))
-                                            markSongFinished(songKey)
-                                            invokeBatchCallback(song) { onSongCancelled(song) }
-                                            return@withSongExecutionLock
-                                        }
-                                        if (GlobalDownloadManager.isSongCancelled(songKey)) {
-                                            NPLogger.d(TAG, "跳过已取消的歌曲: ${song.name}")
-                                            clearSongCancelled(songKey)
-                                            markSongFinished(songKey)
-                                            invokeBatchCallback(song) { onSongCancelled(song) }
-                                            return@withSongExecutionLock
-                                        }
-
-                                        try {
-                                            markSongStarted(trackedSong)
-                                            invokeBatchCallback(song) { onSongStarted(song) }
-                                            downloadSong(
-                                                context = context,
-                                                song = song,
-                                                batchSessionId = batchSessionId,
-                                                attemptId = songAttemptIds[songKey]
-                                            )
-                                            invokeBatchCallback(song) { onSongCompleted(song) }
-                                        } catch (_: java.util.concurrent.CancellationException) {
-                                            NPLogger.d(TAG, "歌曲下载被取消: ${song.name}")
-                                            clearSongCancelled(songKey)
-                                            invokeBatchCallback(song) { onSongCancelled(song) }
-                                        } catch (e: Exception) {
-                                            NPLogger.e(
-                                                TAG,
-                                                context.getString(
-                                                    R.string.download_batch_failed_song,
-                                                    song.name,
-                                                    e.message ?: ""
-                                                ),
-                                                e
-                                            )
-                                            invokeBatchCallback(song) { onSongFailed(song, e) }
-                                        } finally {
-                                            markSongFinished(songKey)
-                                        }
+                                while (true) {
+                                    val songIndex = nextSongIndex.getAndIncrement()
+                                    if (songIndex >= trackedSongs.size) {
+                                        break
                                     }
+                                    processTrackedSong(trackedSongs[songIndex])
                                 }
                             }
                         }.joinAll()
@@ -1711,6 +1794,7 @@ object AudioDownloadManager {
     
     /** 取消下载 */
     fun cancelSongDownload(songKey: String) {
+        networkPolicyPausedSongKeys.remove(songKey)
         snapshotActiveCalls(songKey).forEach { call ->
             call.cancel()
         }
@@ -1722,6 +1806,7 @@ object AudioDownloadManager {
 
     /** 取消下载 */
     fun cancelDownload() {
+        networkPolicyPausedSongKeys.clear()
         _isCancelled.value = true
         invalidateBatchSession()
         snapshotActiveCalls().forEach { call ->
@@ -1732,9 +1817,36 @@ object AudioDownloadManager {
         clearAllPublishedProgress()
     }
 
+    fun pauseDownloadsForNetworkPolicy(songKeys: Collection<String>) {
+        val normalizedKeys = songKeys
+            .mapNotNull { it.takeIf(String::isNotBlank) }
+            .distinct()
+        if (normalizedKeys.isEmpty()) {
+            return
+        }
+        networkPolicyPausedSongKeys.addAll(normalizedKeys)
+        _isCancelled.value = true
+        invalidateBatchSession()
+        normalizedKeys
+            .flatMap { songKey -> snapshotActiveCalls(songKey) }
+            .distinct()
+            .forEach { call -> call.cancel() }
+        _progressFlow.value = null
+        _batchProgressFlow.value = null
+        normalizedKeys.forEach(::clearPublishedProgress)
+    }
+
+    fun isDownloadPausedForNetworkPolicy(songKey: String): Boolean {
+        return networkPolicyPausedSongKeys.contains(songKey)
+    }
+
     /** 重置取消标志 */
     fun resetCancelFlag() {
         _isCancelled.value = false
+    }
+
+    fun clearNetworkPolicyPause(songKeys: Collection<String>) {
+        songKeys.forEach(networkPolicyPausedSongKeys::remove)
     }
 
     internal fun resolveTransientDownloadRetryDelayMs(attemptNumber: Int): Long {
@@ -1863,6 +1975,16 @@ object AudioDownloadManager {
 
     internal fun clampBatchDownloadParallelism(requestedParallelism: Int): Int {
         return requestedParallelism.coerceIn(1, DEFAULT_MAX_CONCURRENT_DOWNLOADS)
+    }
+
+    internal fun resolveBatchDownloadWorkerCount(
+        songCount: Int,
+        requestedParallelism: Int
+    ): Int {
+        if (songCount <= 0) {
+            return 0
+        }
+        return clampBatchDownloadParallelism(requestedParallelism).coerceAtMost(songCount)
     }
 
     private fun resolveReadableManagedDownload(
@@ -2456,55 +2578,62 @@ object AudioDownloadManager {
         }
 
         var downloadedBytes = attemptStartBytes
-        FileOutputStream(destFile, resumeSegmentIndex > 0).sink().buffer().use { sink ->
-            segmentUrls.drop(resumeSegmentIndex).forEachIndexed { relativeIndex, segmentUrl ->
-                val index = resumeSegmentIndex + relativeIndex
-                ensureDownloadNotCancelled(songId, songKey, destFile, batchSessionId, attemptId)
-                val segmentRequest = Request.Builder()
-                    .url(segmentUrl)
-                    .apply {
-                        headerMap.forEach { (name, value) ->
-                            header(name, value)
+        val trafficAccumulator = newDownloadTrafficAccumulator()
+        try {
+            FileOutputStream(destFile, resumeSegmentIndex > 0).sink().buffer().use { sink ->
+                segmentUrls.drop(resumeSegmentIndex).forEachIndexed { relativeIndex, segmentUrl ->
+                    val index = resumeSegmentIndex + relativeIndex
+                    ensureDownloadNotCancelled(songId, songKey, destFile, batchSessionId, attemptId)
+                    val segmentRequest = Request.Builder()
+                        .url(segmentUrl)
+                        .apply {
+                            headerMap.forEach { (name, value) ->
+                                header(name, value)
+                            }
                         }
+                        .build()
+
+                    executeTrackedCall(
+                        client = client,
+                        request = segmentRequest,
+                        songKey = songKey
+                    ) { response ->
+                        if (!response.isSuccessful) throw IllegalStateException("HTTP ${response.code}")
+                        val rawPayload = response.body.bytes()
+                        trafficAccumulator.add(rawPayload.size.toLong())
+                        val payload = stripLeadingId3(rawPayload)
+                        sink.write(payload)
+                        downloadedBytes += payload.size.toLong()
                     }
-                    .build()
-
-                executeTrackedCall(
-                    client = client,
-                    request = segmentRequest,
-                    songKey = songKey
-                ) { response ->
-                    if (!response.isSuccessful) throw IllegalStateException("HTTP ${response.code}")
-                    val payload = stripLeadingId3(response.body.bytes())
-                    sink.write(payload)
-                    downloadedBytes += payload.size.toLong()
-                }
-                rememberHlsResumeState(
-                    destFile = destFile,
-                    playlistFingerprint = playlistFingerprint,
-                    nextSegmentIndex = index + 1,
-                    downloadedBytes = downloadedBytes
-                )
-
-                val elapsedSec = ((System.nanoTime() - startNs) / 1_000_000_000.0)
-                    .coerceAtLeast(0.001)
-                val attemptTransferredBytes = (downloadedBytes - attemptStartBytes).coerceAtLeast(0L)
-                publishProgress(
-                    DownloadProgress(
-                        songKey = songKey,
-                        songId = songId,
-                        fileName = resolveVisibleDownloadFileName(displayFileName, destFile.name),
-                        bytesRead = downloadedBytes,
-                        totalBytes = totalBytesHint,
-                        speedBytesPerSec = (attemptTransferredBytes / elapsedSec).toLong(),
-                        attemptId = attemptId
+                    rememberHlsResumeState(
+                        destFile = destFile,
+                        playlistFingerprint = playlistFingerprint,
+                        nextSegmentIndex = index + 1,
+                        downloadedBytes = downloadedBytes
                     )
-                )
-                if ((index + 1) % 8 == 0) {
-                    sink.flush()
+
+                    val elapsedSec = ((System.nanoTime() - startNs) / 1_000_000_000.0)
+                        .coerceAtLeast(0.001)
+                    val attemptTransferredBytes = (downloadedBytes - attemptStartBytes).coerceAtLeast(0L)
+                    publishProgress(
+                        DownloadProgress(
+                            songKey = songKey,
+                            songId = songId,
+                            fileName = resolveVisibleDownloadFileName(displayFileName, destFile.name),
+                            bytesRead = downloadedBytes,
+                            totalBytes = totalBytesHint,
+                            speedBytesPerSec = (attemptTransferredBytes / elapsedSec).toLong(),
+                            attemptId = attemptId
+                        )
+                    )
+                    if ((index + 1) % 8 == 0) {
+                        sink.flush()
+                    }
                 }
+                sink.flush()
             }
-            sink.flush()
+        } finally {
+            trafficAccumulator.flush()
         }
         clearHlsResumeState(destFile)
 
@@ -2644,29 +2773,35 @@ object AudioDownloadManager {
             NPLogger.d(TAG, "文件总大小: $total bytes, songId=$songId")
             val source = resp.body.source()
             var readSoFar = initialBytes
-            FileOutputStream(destFile, appending).sink().buffer().use { sink ->
-                val buffer = Buffer()
-                while (true) {
-                    ensureDownloadNotCancelled(songId, songKey, destFile, batchSessionId, attemptId)
+            val trafficAccumulator = newDownloadTrafficAccumulator()
+            try {
+                FileOutputStream(destFile, appending).sink().buffer().use { sink ->
+                    val buffer = Buffer()
+                    while (true) {
+                        ensureDownloadNotCancelled(songId, songKey, destFile, batchSessionId, attemptId)
 
-                    val read = source.read(buffer, DOWNLOAD_READ_BUFFER_BYTES)
-                    if (read == -1L) break
-                    sink.write(buffer, read)
-                    readSoFar += read
-                    val elapsedSec = ((System.nanoTime() - startNs) / 1_000_000_000.0).coerceAtLeast(0.001)
-                    val speed = ((readSoFar - initialBytes) / elapsedSec).toLong()
-                    val progress = DownloadProgress(
-                        songKey = songKey,
-                        songId = songId,
-                        fileName = resolveVisibleDownloadFileName(displayFileName, destFile.name),
-                        bytesRead = readSoFar,
-                        totalBytes = total,
-                        speedBytesPerSec = speed,
-                        attemptId = attemptId
-                    )
-                    publishProgress(progress)
+                        val read = source.read(buffer, DOWNLOAD_READ_BUFFER_BYTES)
+                        if (read == -1L) break
+                        sink.write(buffer, read)
+                        trafficAccumulator.add(read)
+                        readSoFar += read
+                        val elapsedSec = ((System.nanoTime() - startNs) / 1_000_000_000.0).coerceAtLeast(0.001)
+                        val speed = ((readSoFar - initialBytes) / elapsedSec).toLong()
+                        val progress = DownloadProgress(
+                            songKey = songKey,
+                            songId = songId,
+                            fileName = resolveVisibleDownloadFileName(displayFileName, destFile.name),
+                            bytesRead = readSoFar,
+                            totalBytes = total,
+                            speedBytesPerSec = speed,
+                            attemptId = attemptId
+                        )
+                        publishProgress(progress)
+                    }
+                    sink.flush()
                 }
-                sink.flush()
+            } finally {
+                trafficAccumulator.flush()
             }
             NPLogger.d(TAG, "文件下载完成: ${destFile.name}, 实际大小: $readSoFar bytes, songId=$songId")
             if (!isTransferSizeComplete(total.takeIf { it > 0L }, readSoFar)) {
@@ -2809,80 +2944,86 @@ object AudioDownloadManager {
             length = requestedChunkLength
         )
 
-        executeTrackedCall(
-            client = client,
-            request = chunkRequest,
-            songKey = songKey
-        ) { response ->
-            if (!response.isSuccessful) {
-                throw ChunkRequestIOException(response.code, "HTTP ${response.code}")
-            }
-
-            val responseHeaders = response.headers.toMultimap()
-            var downloadedBytes = currentDownloadedBytes
-            var totalBytes = YouTubeGoogleVideoRangeSupport.resolveTotalContentLength(
-                uri = request.url.toString().toUri(),
-                headers = responseHeaders
-            ) ?: currentTotalBytes
-            val actualChunkLength = YouTubeGoogleVideoRangeSupport.resolveChunkResponseLength(
-                requestedLength = requestedChunkLength,
-                headers = responseHeaders,
-                delegateOpenLength = response.body.contentLength()
-            )
-
-            val source = response.body.source()
-            val buffer = Buffer()
-            var chunkRead = 0L
-            while (true) {
-                ensureDownloadNotCancelled(songId, songKey, destFile, batchSessionId, attemptId)
-
-                val read = source.read(buffer, DOWNLOAD_READ_BUFFER_BYTES)
-                if (read == -1L) {
-                    break
+        val trafficAccumulator = newDownloadTrafficAccumulator()
+        try {
+            executeTrackedCall(
+                client = client,
+                request = chunkRequest,
+                songKey = songKey
+            ) { response ->
+                if (!response.isSuccessful) {
+                    throw ChunkRequestIOException(response.code, "HTTP ${response.code}")
                 }
-                sink.write(buffer, read)
-                chunkRead += read
-                downloadedBytes += read
 
-                val elapsedSec = ((System.nanoTime() - startNs) / 1_000_000_000.0)
-                    .coerceAtLeast(0.001)
-                val speed = ((downloadedBytes - attemptStartBytes) / elapsedSec).toLong()
-                publishProgress(
-                    DownloadProgress(
-                        songKey = songKey,
-                        songId = songId,
-                        fileName = resolveVisibleDownloadFileName(displayFileName, destFile.name),
-                        bytesRead = downloadedBytes,
-                        totalBytes = totalBytes,
-                        speedBytesPerSec = speed,
-                        attemptId = attemptId
-                    )
+                val responseHeaders = response.headers.toMultimap()
+                var downloadedBytes = currentDownloadedBytes
+                var totalBytes = YouTubeGoogleVideoRangeSupport.resolveTotalContentLength(
+                    uri = request.url.toString().toUri(),
+                    headers = responseHeaders
+                ) ?: currentTotalBytes
+                val actualChunkLength = YouTubeGoogleVideoRangeSupport.resolveChunkResponseLength(
+                    requestedLength = requestedChunkLength,
+                    headers = responseHeaders,
+                    delegateOpenLength = response.body.contentLength()
                 )
-            }
 
-            if (chunkRead <= 0L) {
+                val source = response.body.source()
+                val buffer = Buffer()
+                var chunkRead = 0L
+                while (true) {
+                    ensureDownloadNotCancelled(songId, songKey, destFile, batchSessionId, attemptId)
+
+                    val read = source.read(buffer, DOWNLOAD_READ_BUFFER_BYTES)
+                    if (read == -1L) {
+                        break
+                    }
+                    sink.write(buffer, read)
+                    trafficAccumulator.add(read)
+                    chunkRead += read
+                    downloadedBytes += read
+
+                    val elapsedSec = ((System.nanoTime() - startNs) / 1_000_000_000.0)
+                        .coerceAtLeast(0.001)
+                    val speed = ((downloadedBytes - attemptStartBytes) / elapsedSec).toLong()
+                    publishProgress(
+                        DownloadProgress(
+                            songKey = songKey,
+                            songId = songId,
+                            fileName = resolveVisibleDownloadFileName(displayFileName, destFile.name),
+                            bytesRead = downloadedBytes,
+                            totalBytes = totalBytes,
+                            speedBytesPerSec = speed,
+                            attemptId = attemptId
+                        )
+                    )
+                }
+
+                if (chunkRead <= 0L) {
+                    return ChunkDownloadResult(
+                        requestedChunkLength = requestedChunkLength,
+                        downloadedBytes = downloadedBytes,
+                        totalBytes = totalBytes,
+                        isEndOfStream = true
+                    )
+                }
+
+                if (totalBytes <= 0L && actualChunkLength < requestedChunkLength) {
+                    totalBytes = downloadedBytes
+                }
+
+                val isEndOfStream = chunkRead < requestedChunkLength || (
+                    totalBytes in 1..downloadedBytes
+                )
+
                 return ChunkDownloadResult(
                     requestedChunkLength = requestedChunkLength,
                     downloadedBytes = downloadedBytes,
                     totalBytes = totalBytes,
-                    isEndOfStream = true
+                    isEndOfStream = isEndOfStream
                 )
             }
-
-            if (totalBytes <= 0L && actualChunkLength < requestedChunkLength) {
-                totalBytes = downloadedBytes
-            }
-
-            val isEndOfStream = chunkRead < requestedChunkLength || (
-                totalBytes in 1..downloadedBytes
-            )
-
-            return ChunkDownloadResult(
-                requestedChunkLength = requestedChunkLength,
-                downloadedBytes = downloadedBytes,
-                totalBytes = totalBytes,
-                isEndOfStream = isEndOfStream
-            )
+        } finally {
+            trafficAccumulator.flush()
         }
     }
 
@@ -2900,7 +3041,9 @@ object AudioDownloadManager {
             !GlobalDownloadManager.isDownloadAttemptActive(songKey, attemptId)
         ) {
             NPLogger.d(TAG, "下载被取消，停止分块下载: songId=$songId")
-            deleteWorkingFile(destFile)
+            if (!shouldPreserveArtifactsForNetworkPolicy(songKey)) {
+                deleteWorkingFile(destFile)
+            }
             _progressFlow.value = null
             throw java.util.concurrent.CancellationException("Download cancelled")
         }

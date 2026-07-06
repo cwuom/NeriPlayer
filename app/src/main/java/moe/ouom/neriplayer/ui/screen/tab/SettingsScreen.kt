@@ -24,6 +24,7 @@
  */
 
 import android.content.Intent
+import android.content.Context
 import android.net.Uri
 import android.text.format.Formatter
 import android.widget.Toast
@@ -102,7 +103,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -121,6 +124,9 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSwitchItems
+import moe.ouom.neriplayer.data.settings.normalizeMobileDataBiliAudioQuality
+import moe.ouom.neriplayer.data.settings.normalizeMobileDataNeteaseAudioQuality
+import moe.ouom.neriplayer.data.settings.normalizeMobileDataYouTubeAudioQuality
 import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import moe.ouom.neriplayer.listentogether.configuredListenTogetherBaseUrlOrNull
 import moe.ouom.neriplayer.listentogether.isDefaultListenTogetherBaseUrl
@@ -138,6 +144,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsLyricsSectio
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsMotionSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsPlaybackSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsStorageCacheSection
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsTrafficManagementSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeModeActionButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeSeedListItem
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.maskCookieValue
@@ -184,6 +191,42 @@ private data class PendingDownloadDirectoryChange(
             !ManagedDownloadStorage.areEquivalentDirectoryUris(previousUri, targetUri)
 }
 
+private fun Context.neteaseQualityLabel(value: String): String {
+    return when (value) {
+        "standard" -> getString(R.string.settings_audio_quality_standard)
+        "higher" -> getString(R.string.settings_audio_quality_higher)
+        "exhigh" -> getString(R.string.settings_audio_quality_exhigh)
+        "lossless" -> getString(R.string.settings_audio_quality_lossless)
+        "hires" -> getString(R.string.quality_hires)
+        "jyeffect" -> getString(R.string.settings_audio_quality_jyeffect)
+        "sky" -> getString(R.string.settings_audio_quality_sky)
+        "jymaster" -> getString(R.string.settings_audio_quality_jymaster)
+        else -> value
+    }
+}
+
+private fun Context.youtubeQualityLabel(value: String): String {
+    return when (value) {
+        "low" -> getString(R.string.settings_audio_quality_standard)
+        "medium" -> getString(R.string.settings_audio_quality_medium)
+        "high" -> getString(R.string.settings_audio_quality_high)
+        "very_high" -> getString(R.string.quality_very_high)
+        else -> value
+    }
+}
+
+private fun Context.biliQualityLabel(value: String): String {
+    return when (value) {
+        "dolby" -> getString(R.string.settings_audio_quality_dolby)
+        "hires" -> getString(R.string.quality_hires)
+        "lossless" -> getString(R.string.settings_audio_quality_lossless)
+        "high" -> getString(R.string.settings_audio_quality_high)
+        "medium" -> getString(R.string.settings_audio_quality_medium)
+        "low" -> getString(R.string.settings_audio_quality_low)
+        else -> value
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @Suppress("AssignedValueIsNeverRead")
@@ -199,6 +242,14 @@ fun SettingsScreen(
     onYouTubeQualityChange: (String) -> Unit,
     biliPreferredQuality: String,
     onBiliQualityChange: (String) -> Unit,
+    mobileDataFollowDefaultAudioQuality: Boolean,
+    onMobileDataFollowDefaultAudioQualityChange: (Boolean) -> Unit,
+    mobileDataNeteaseAudioQuality: String,
+    onMobileDataNeteaseAudioQualityChange: (String) -> Unit,
+    mobileDataYouTubeAudioQuality: String,
+    onMobileDataYouTubeAudioQualityChange: (String) -> Unit,
+    mobileDataBiliAudioQuality: String,
+    onMobileDataBiliAudioQualityChange: (String) -> Unit,
     devModeEnabled: Boolean,
     onDevModeChange: (Boolean) -> Unit,
     seedColorHex: String,
@@ -242,7 +293,7 @@ fun SettingsScreen(
     onBackgroundImageChange: (Uri?) -> Unit,
     downloadDirectoryUri: String?,
     downloadFileNameTemplate: String?,
-    onDownloadDirectoryUriChange: (String?) -> Unit,
+    onDownloadDirectoryUriChange: (String?, String?) -> Unit,
     onDownloadFileNameTemplateChange: (String?) -> Unit,
     backgroundImageBlur: Float,
     onBackgroundImageBlurChange: (Float) -> Unit,
@@ -351,6 +402,9 @@ fun SettingsScreen(
     var showNeteaseSheet by remember { mutableStateOf(false) }
     var showYouTubeQualityDialog by remember { mutableStateOf(false) }
     var showBiliQualityDialog by remember { mutableStateOf(false) }
+    var showMobileDataNeteaseQualityDialog by remember { mutableStateOf(false) }
+    var showMobileDataYouTubeQualityDialog by remember { mutableStateOf(false) }
+    var showMobileDataBiliQualityDialog by remember { mutableStateOf(false) }
     var showDefaultStartDestinationDialog by remember { mutableStateOf(false) }
     var showConfirmDialog by remember { mutableStateOf(false) }
     var showCookieDialog by remember { mutableStateOf(false) }
@@ -434,7 +488,7 @@ fun SettingsScreen(
         val targetLabel = targetSummary.takeIf { !targetUri.isNullOrBlank() }
         ManagedDownloadStorage.updateConfiguredTreeUri(targetUri)
         ManagedDownloadStorage.updateCustomDirectoryLabel(targetLabel)
-        onDownloadDirectoryUriChange(targetUri)
+        onDownloadDirectoryUriChange(targetUri, targetLabel)
         GlobalDownloadManager.scanLocalFiles(context, forceRefresh = true)
         if (shouldReleasePreviousPermission) {
             ManagedDownloadStorage.releasePersistedDirectoryPermission(context, previousUri)
@@ -570,8 +624,10 @@ fun SettingsScreen(
             val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             context.contentResolver.takePersistableUriPermission(uri, flags)
             val targetUri = uri.toString()
-            val targetSummary = ManagedDownloadStorage.describeConfiguredDirectory(context, targetUri)
             scope.launch {
+                val targetSummary = withContext(Dispatchers.IO) {
+                    ManagedDownloadStorage.describeConfiguredDirectory(context, targetUri)
+                }
                 prepareDownloadDirectoryChange(
                     targetUri = targetUri,
                     targetSummary = targetSummary,
@@ -592,8 +648,17 @@ fun SettingsScreen(
         }
     }
 
-    val downloadDirectorySummary = remember(downloadDirectoryUri) {
-        ManagedDownloadStorage.describeConfiguredDirectory(context, downloadDirectoryUri)
+    var downloadDirectorySummary by remember(downloadDirectoryUri, defaultDownloadDirectorySummary) {
+        mutableStateOf(defaultDownloadDirectorySummary)
+    }
+    LaunchedEffect(downloadDirectoryUri, defaultDownloadDirectorySummary) {
+        downloadDirectorySummary = if (downloadDirectoryUri.isNullOrBlank()) {
+            defaultDownloadDirectorySummary
+        } else {
+            withContext(Dispatchers.IO) {
+                ManagedDownloadStorage.describeConfiguredDirectory(context, downloadDirectoryUri)
+            }
+        }
     }
     val resetDownloadDirectory: () -> Unit = {
         if (!guardDownloadDirectoryChange()) {
@@ -653,41 +718,35 @@ fun SettingsScreen(
         (context as? android.app.Activity)?.recreate()
     }
 
-    // 当前所选音质对应的中文标签
     val qualityLabel = remember(preferredQuality) {
-        when (preferredQuality) {
-            "standard" -> context.getString(R.string.settings_audio_quality_standard)
-            "higher" -> context.getString(R.string.settings_audio_quality_higher)
-            "exhigh" -> context.getString(R.string.settings_audio_quality_exhigh)
-            "lossless" -> context.getString(R.string.settings_audio_quality_lossless)
-            "hires" -> context.getString(R.string.quality_hires)
-            "jyeffect" -> context.getString(R.string.settings_audio_quality_jyeffect)
-            "sky" -> context.getString(R.string.settings_audio_quality_sky)
-            "jymaster" -> context.getString(R.string.settings_audio_quality_jymaster)
-            else -> preferredQuality
-        }
+        context.neteaseQualityLabel(preferredQuality)
     }
 
     val biliQualityLabel = remember(biliPreferredQuality) {
-        when (biliPreferredQuality) {
-            "dolby"   -> context.getString(R.string.settings_audio_quality_dolby)
-            "hires"   -> context.getString(R.string.quality_hires)
-            "lossless"-> context.getString(R.string.settings_audio_quality_lossless)
-            "high"    -> context.getString(R.string.settings_audio_quality_high)
-            "medium"  -> context.getString(R.string.settings_audio_quality_medium)
-            "low"     -> context.getString(R.string.settings_audio_quality_low)
-            else -> biliPreferredQuality
-        }
+        context.biliQualityLabel(biliPreferredQuality)
     }
 
     val youtubeQualityLabel = remember(youtubePreferredQuality) {
-        when (youtubePreferredQuality) {
-            "low" -> context.getString(R.string.settings_audio_quality_standard)
-            "medium" -> context.getString(R.string.settings_audio_quality_medium)
-            "high" -> context.getString(R.string.settings_audio_quality_high)
-            "very_high" -> context.getString(R.string.quality_very_high)
-            else -> youtubePreferredQuality
-        }
+        context.youtubeQualityLabel(youtubePreferredQuality)
+    }
+
+    val normalizedMobileDataNeteaseAudioQuality = remember(mobileDataNeteaseAudioQuality) {
+        normalizeMobileDataNeteaseAudioQuality(mobileDataNeteaseAudioQuality)
+    }
+    val normalizedMobileDataYouTubeAudioQuality = remember(mobileDataYouTubeAudioQuality) {
+        normalizeMobileDataYouTubeAudioQuality(mobileDataYouTubeAudioQuality)
+    }
+    val normalizedMobileDataBiliAudioQuality = remember(mobileDataBiliAudioQuality) {
+        normalizeMobileDataBiliAudioQuality(mobileDataBiliAudioQuality)
+    }
+    val mobileDataNeteaseQualityLabel = remember(normalizedMobileDataNeteaseAudioQuality) {
+        context.neteaseQualityLabel(normalizedMobileDataNeteaseAudioQuality)
+    }
+    val mobileDataYouTubeQualityLabel = remember(normalizedMobileDataYouTubeAudioQuality) {
+        context.youtubeQualityLabel(normalizedMobileDataYouTubeAudioQuality)
+    }
+    val mobileDataBiliQualityLabel = remember(normalizedMobileDataBiliAudioQuality) {
+        context.biliQualityLabel(normalizedMobileDataBiliAudioQuality)
     }
 
     val homeStartAvailable =
@@ -1243,12 +1302,38 @@ fun SettingsScreen(
                             biliQualityLabel = biliQualityLabel,
                             biliPreferredQuality = biliPreferredQuality,
                             onBiliQualityChange = onBiliQualityChange,
+                            mobileDataFollowDefaultAudioQuality = mobileDataFollowDefaultAudioQuality,
+                            onMobileDataFollowDefaultAudioQualityChange =
+                                onMobileDataFollowDefaultAudioQualityChange,
+                            mobileDataNeteaseQualityLabel = mobileDataNeteaseQualityLabel,
+                            mobileDataNeteaseAudioQuality = normalizedMobileDataNeteaseAudioQuality,
+                            onMobileDataNeteaseAudioQualityChange =
+                                onMobileDataNeteaseAudioQualityChange,
+                            mobileDataYouTubeQualityLabel = mobileDataYouTubeQualityLabel,
+                            mobileDataYouTubeAudioQuality = normalizedMobileDataYouTubeAudioQuality,
+                            onMobileDataYouTubeAudioQualityChange =
+                                onMobileDataYouTubeAudioQualityChange,
+                            mobileDataBiliQualityLabel = mobileDataBiliQualityLabel,
+                            mobileDataBiliAudioQuality = normalizedMobileDataBiliAudioQuality,
+                            onMobileDataBiliAudioQualityChange = onMobileDataBiliAudioQualityChange,
                             showQualityDialog = showQualityDialog,
                             onShowQualityDialogChange = { showQualityDialog = it },
                             showYouTubeQualityDialog = showYouTubeQualityDialog,
                             onShowYouTubeQualityDialogChange = { showYouTubeQualityDialog = it },
                             showBiliQualityDialog = showBiliQualityDialog,
-                            onShowBiliQualityDialogChange = { showBiliQualityDialog = it }
+                            onShowBiliQualityDialogChange = { showBiliQualityDialog = it },
+                            showMobileDataNeteaseQualityDialog = showMobileDataNeteaseQualityDialog,
+                            onShowMobileDataNeteaseQualityDialogChange = {
+                                showMobileDataNeteaseQualityDialog = it
+                            },
+                            showMobileDataYouTubeQualityDialog = showMobileDataYouTubeQualityDialog,
+                            onShowMobileDataYouTubeQualityDialogChange = {
+                                showMobileDataYouTubeQualityDialog = it
+                            },
+                            showMobileDataBiliQualityDialog = showMobileDataBiliQualityDialog,
+                            onShowMobileDataBiliQualityDialogChange = {
+                                showMobileDataBiliQualityDialog = it
+                            }
                         )
                     }
                 }
@@ -1297,6 +1382,12 @@ fun SettingsScreen(
                             showHeader = false,
                             onNavigateToDownloadManager = onNavigateToDownloadManager
                         )
+                    }
+                }
+
+                SettingsPage.TrafficManagement -> {
+                    miuixSettingsSectionCardItem("${selectedPage.name}:content") {
+                        SettingsTrafficManagementSection()
                     }
                 }
 

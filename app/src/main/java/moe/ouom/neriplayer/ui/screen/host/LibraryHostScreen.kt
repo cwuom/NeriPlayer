@@ -34,6 +34,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Surface
@@ -47,6 +48,8 @@ import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.CancellationException
@@ -109,6 +112,8 @@ fun LibraryHostScreen(
         mutableStateOf(null)
     }
     var skipDetailCloseAnimation by rememberSaveable { mutableStateOf(false) }
+    var pendingLocalListRestoreIndex by rememberSaveable { mutableStateOf<Int?>(null) }
+    var pendingLocalListRestoreOffset by rememberSaveable { mutableStateOf(0) }
     // 保存当前选中的标签页类型，避免国际化切换后索引错位
     var selectedTab by rememberSaveable { mutableStateOf(LibraryTab.LOCAL) }
     val libraryStateHolder = rememberSaveableStateHolder()
@@ -173,22 +178,42 @@ fun LibraryHostScreen(
     val topAppBarState = rememberTopAppBarState()
     val context = LocalContext.current
 
-    Surface(color = Color.Transparent) {
+    LaunchedEffect(selected, selectedTab, pendingLocalListRestoreIndex) {
+        val restoreIndex = pendingLocalListRestoreIndex ?: return@LaunchedEffect
+        if (selected != null || selectedTab != LibraryTab.LOCAL) return@LaunchedEffect
+
+        var attempts = 0
+        while (localListState.layoutInfo.totalItemsCount == 0 && attempts < 4) {
+            withFrameNanos { }
+            attempts++
+        }
+
+        val itemCount = localListState.layoutInfo.totalItemsCount
+        if (itemCount > 0) {
+            val safeIndex = restoreIndex.coerceAtMost(itemCount - 1)
+            localListState.scrollToItem(safeIndex, pendingLocalListRestoreOffset)
+        }
+        pendingLocalListRestoreIndex = null
+        pendingLocalListRestoreOffset = 0
+    }
+
+    Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
         AnimatedContent(
             targetState = selected,
+            modifier = Modifier.fillMaxSize(),
             label = "library_host_switch",
             transitionSpec = {
                 if (targetState == null && skipDetailCloseAnimation) {
                     fadeIn(animationSpec = tween(0)) togetherWith fadeOut(animationSpec = tween(0))
                 } else if (initialState == null && targetState != null) {
                     (slideInVertically(animationSpec = tween(220)) { it } + fadeIn()) togetherWith
-                            (fadeOut(animationSpec = tween(160)))
+                        fadeOut(animationSpec = tween(160))
                 } else if (targetState == null) {
                     fadeIn(animationSpec = tween(160)) togetherWith
-                            (slideOutVertically(animationSpec = tween(240)) { it } + fadeOut())
+                        (slideOutVertically(animationSpec = tween(240)) { it } + fadeOut())
                 } else {
                     (slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()) togetherWith
-                            (slideOutVertically(animationSpec = tween(240)) { it } + fadeOut())
+                        (slideOutVertically(animationSpec = tween(240)) { it } + fadeOut())
                 }.using(SizeTransform(clip = false))
             }
         ) { current ->
@@ -208,6 +233,8 @@ fun LibraryHostScreen(
                         offlineMode = offlineMode,
                         onLocalPlaylistClick = { playlist ->
                             skipDetailCloseAnimation = false
+                            pendingLocalListRestoreIndex = localListState.firstVisibleItemIndex
+                            pendingLocalListRestoreOffset = localListState.firstVisibleItemScrollOffset
                             selected = LibrarySelectedItem.Local(playlist.id)
                             AppContainer.playlistUsageRepo.recordOpen(
                                 id = playlist.id,
@@ -285,6 +312,7 @@ fun LibraryHostScreen(
                             offlineMode = offlineMode
                         )
                     }
+
                     is LibrarySelectedItem.NeteaseAlbum -> {
                         NeteaseAlbumDetailScreen(
                             onBack = { selected = null },
@@ -293,6 +321,7 @@ fun LibraryHostScreen(
                             offlineMode = offlineMode
                         )
                     }
+
                     is LibrarySelectedItem.Netease -> {
                         NeteasePlaylistDetailScreen(
                             playlist = current.playlist,
@@ -301,6 +330,7 @@ fun LibraryHostScreen(
                             offlineMode = offlineMode
                         )
                     }
+
                     is LibrarySelectedItem.NeteaseArtist -> {
                         libraryStateHolder.SaveableStateProvider("netease_artist_${current.artist.id}") {
                             NeteaseArtistDetailScreen(
@@ -314,6 +344,7 @@ fun LibraryHostScreen(
                             )
                         }
                     }
+
                     is LibrarySelectedItem.NeteaseArtistAlbum -> {
                         NeteaseAlbumDetailScreen(
                             onBack = { selected = LibrarySelectedItem.NeteaseArtist(current.artist) },
@@ -322,6 +353,7 @@ fun LibraryHostScreen(
                             offlineMode = offlineMode
                         )
                     }
+
                     is LibrarySelectedItem.YouTubeMusic -> {
                         YouTubeMusicPlaylistDetailScreen(
                             playlist = current.playlist,
@@ -330,6 +362,7 @@ fun LibraryHostScreen(
                             offlineMode = offlineMode
                         )
                     }
+
                     is LibrarySelectedItem.Bili -> {
                         BiliPlaylistDetailScreen(
                             playlist = current.playlist,

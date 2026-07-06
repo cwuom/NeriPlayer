@@ -99,6 +99,48 @@ class SettingsRepository(private val context: Context) {
     val biliAudioQualityFlow: Flow<String> =
         context.dataStore.data.map { it[SettingsKeys.BILI_AUDIO_QUALITY] ?: "high" }
 
+    val mobileDataFollowDefaultAudioQualityFlow: Flow<Boolean> =
+        context.dataStore.data.map { prefs ->
+            prefs[SettingsKeys.MOBILE_DATA_FOLLOW_DEFAULT_AUDIO_QUALITY]
+                ?: resolveLegacyMobileDataFollowDefaultAudioQuality(
+                    prefs[SettingsKeys.MOBILE_DATA_DOWNGRADE_QUALITY]
+                )
+                ?: true
+        }
+
+    val mobileDataNeteaseAudioQualityFlow: Flow<String> =
+        context.dataStore.data.map { prefs ->
+            normalizeMobileDataNeteaseAudioQuality(
+                prefs[SettingsKeys.MOBILE_DATA_NETEASE_AUDIO_QUALITY]
+                    ?: resolveLegacyMobileDataNeteaseAudioQuality(
+                        prefs[SettingsKeys.MOBILE_DATA_DOWNGRADE_QUALITY]
+                    )
+            )
+        }
+
+    val mobileDataYouTubeAudioQualityFlow: Flow<String> =
+        context.dataStore.data.map { prefs ->
+            normalizeMobileDataYouTubeAudioQuality(
+                prefs[SettingsKeys.MOBILE_DATA_YOUTUBE_AUDIO_QUALITY]
+                    ?: resolveLegacyMobileDataYouTubeAudioQuality(
+                        prefs[SettingsKeys.MOBILE_DATA_DOWNGRADE_QUALITY]
+                    )
+            )
+        }
+
+    val mobileDataBiliAudioQualityFlow: Flow<String> =
+        context.dataStore.data.map { prefs ->
+            normalizeMobileDataBiliAudioQuality(
+                prefs[SettingsKeys.MOBILE_DATA_BILI_AUDIO_QUALITY]
+                    ?: resolveLegacyMobileDataBiliAudioQuality(
+                        prefs[SettingsKeys.MOBILE_DATA_DOWNGRADE_QUALITY]
+                    )
+            )
+        }
+
+    val mobileDataHighRiskPromptEnabledFlow: Flow<Boolean> =
+        autoSettingsRepository.mobileDataHighRiskPromptEnabledFlow
+
     val devModeEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.devModeEnabledFlow
 
@@ -425,6 +467,49 @@ class SettingsRepository(private val context: Context) {
     suspend fun setBiliAudioQuality(value: String) {
         context.dataStore.edit { it[SettingsKeys.BILI_AUDIO_QUALITY] = value }
         updatePlaybackPreferenceSnapshot(context) { it.copy(biliAudioQuality = value) }
+    }
+
+    suspend fun setMobileDataFollowDefaultAudioQuality(enabled: Boolean) {
+        context.dataStore.edit {
+            it[SettingsKeys.MOBILE_DATA_FOLLOW_DEFAULT_AUDIO_QUALITY] = enabled
+        }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(mobileDataFollowDefaultAudioQuality = enabled)
+        }
+    }
+
+    suspend fun setMobileDataNeteaseAudioQuality(value: String) {
+        val normalized = normalizeMobileDataNeteaseAudioQuality(value)
+        context.dataStore.edit {
+            it[SettingsKeys.MOBILE_DATA_NETEASE_AUDIO_QUALITY] = normalized
+        }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(mobileDataNeteaseAudioQuality = normalized)
+        }
+    }
+
+    suspend fun setMobileDataYouTubeAudioQuality(value: String) {
+        val normalized = normalizeMobileDataYouTubeAudioQuality(value)
+        context.dataStore.edit {
+            it[SettingsKeys.MOBILE_DATA_YOUTUBE_AUDIO_QUALITY] = normalized
+        }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(mobileDataYouTubeAudioQuality = normalized)
+        }
+    }
+
+    suspend fun setMobileDataBiliAudioQuality(value: String) {
+        val normalized = normalizeMobileDataBiliAudioQuality(value)
+        context.dataStore.edit {
+            it[SettingsKeys.MOBILE_DATA_BILI_AUDIO_QUALITY] = normalized
+        }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(mobileDataBiliAudioQuality = normalized)
+        }
+    }
+
+    suspend fun setMobileDataHighRiskPromptEnabled(enabled: Boolean) {
+        autoSettingsRepository.setMobileDataHighRiskPromptEnabled(enabled)
     }
 
     suspend fun setDevModeEnabled(enabled: Boolean) {

@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.page
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Info
@@ -19,6 +20,7 @@ import moe.ouom.neriplayer.ksp.annotations.AutoSettingIcon
 internal fun AutoSettingIcon.toSettingsPageIcon(fallbackIcon: ImageVector): ImageVector {
     return when (this) {
         AutoSettingIcon.Audiotrack -> Icons.Filled.Audiotrack
+        AutoSettingIcon.Analytics -> Icons.Outlined.Analytics
         AutoSettingIcon.Bolt -> Icons.Outlined.Bolt
         AutoSettingIcon.Download -> Icons.Outlined.Download
         AutoSettingIcon.Info -> Icons.Outlined.Info

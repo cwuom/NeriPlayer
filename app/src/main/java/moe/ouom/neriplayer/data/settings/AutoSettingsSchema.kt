@@ -245,6 +245,73 @@ object AutoSettingsSchema {
             titleRes = R.string.quality_bili_default,
             iconRes = R.drawable.ic_bilibili
         )
+
+        @AutoSetting(
+            key = "mobile_data_follow_default_audio_quality",
+            type = SettingValueType.Boolean,
+            defaultBoolean = true,
+            order = 40,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val mobileDataFollowDefaultAudioQuality = autoSetting(
+            titleRes = R.string.settings_mobile_data_follow_default_audio_quality,
+            descriptionRes = R.string.settings_mobile_data_follow_default_audio_quality_desc,
+            icon = AutoSettingIcon.Analytics
+        )
+
+        @AutoSetting(
+            key = "mobile_data_netease_audio_quality",
+            type = SettingValueType.String,
+            defaultString = DEFAULT_MOBILE_DATA_NETEASE_AUDIO_QUALITY,
+            order = 50,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val mobileDataNeteaseAudioQuality = autoSetting(
+            titleRes = R.string.settings_mobile_data_netease_audio_quality,
+            iconRes = R.drawable.ic_netease_cloud_music
+        )
+
+        @AutoSetting(
+            key = "mobile_data_youtube_audio_quality",
+            type = SettingValueType.String,
+            defaultString = DEFAULT_MOBILE_DATA_YOUTUBE_AUDIO_QUALITY,
+            order = 60,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val mobileDataYouTubeAudioQuality = autoSetting(
+            titleRes = R.string.settings_mobile_data_youtube_audio_quality,
+            iconRes = R.drawable.ic_youtube
+        )
+
+        @AutoSetting(
+            key = "mobile_data_bili_audio_quality",
+            type = SettingValueType.String,
+            defaultString = DEFAULT_MOBILE_DATA_BILI_AUDIO_QUALITY,
+            order = 70,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val mobileDataBiliAudioQuality = autoSetting(
+            titleRes = R.string.settings_mobile_data_bili_audio_quality,
+            iconRes = R.drawable.ic_bilibili
+        )
+
+        @AutoSetting(
+            key = "mobile_data_downgrade_quality",
+            type = SettingValueType.String,
+            defaultString = "low",
+            order = 80,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val mobileDataDowngradeQuality = autoSetting(
+            titleRes = R.string.settings_mobile_data_downgrade_quality,
+            descriptionRes = R.string.settings_mobile_data_downgrade_quality_desc,
+            icon = AutoSettingIcon.Analytics
+        )
     }
 
     /*
@@ -967,6 +1034,32 @@ object AutoSettingsSchema {
             titleRes = R.string.settings_download_metadata_post_processing,
             descriptionRes = R.string.settings_download_metadata_post_processing_desc,
             icon = AutoSettingIcon.AutoAwesome
+        )
+    }
+
+    /*
+     * 流量管理
+     *
+     * 放流量统计展示和移动/漫游网络下的风险操作提示
+     * 统计数据不进 DataStore，只有用户偏好开关在这里登记
+     */
+    @AutoSettingsSection(
+        order = 85
+    )
+    object trafficManagement {
+        val metadata = autoSettingsSection(
+            titleRes = R.string.settings_traffic_management,
+            descriptionRes = R.string.settings_traffic_management_desc,
+            icon = AutoSettingIcon.Analytics
+        )
+
+        @AutoSetting(order = 10)
+        val mobileDataHighRiskPromptEnabled = autoSwitchSetting(
+            key = "mobile_data_high_risk_prompt_enabled",
+            defaultValue = true,
+            titleRes = R.string.settings_mobile_data_high_risk_prompt,
+            descriptionRes = R.string.settings_mobile_data_high_risk_prompt_desc,
+            icon = AutoSettingIcon.Error
         )
     }
 

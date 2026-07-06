@@ -19,6 +19,9 @@ class AudioDownloadManagerTest {
         assertEquals(1, AudioDownloadManager.clampBatchDownloadParallelism(0))
         assertEquals(4, AudioDownloadManager.clampBatchDownloadParallelism(4))
         assertEquals(6, AudioDownloadManager.clampBatchDownloadParallelism(9))
+        assertEquals(0, AudioDownloadManager.resolveBatchDownloadWorkerCount(0, 6))
+        assertEquals(2, AudioDownloadManager.resolveBatchDownloadWorkerCount(2, 6))
+        assertEquals(6, AudioDownloadManager.resolveBatchDownloadWorkerCount(20, 9))
     }
 
     @Test

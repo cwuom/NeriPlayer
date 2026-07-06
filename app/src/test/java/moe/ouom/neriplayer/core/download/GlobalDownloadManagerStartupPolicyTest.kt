@@ -5,6 +5,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -336,6 +337,14 @@ class GlobalDownloadManagerStartupPolicyTest {
         )
         assertFalse(hasPendingDownloadTasks(listOf(completedTask)))
         assertFalse(hasPendingDownloadTasks(listOf(cancelledTask)))
+
+        val summary = buildDownloadTaskSummary(
+            listOf(downloadingTask, completedTask, failedTask, cancelledTask)
+        )
+        assertEquals(2, summary.pendingTaskCount)
+        assertEquals(0, summary.queuedTaskCount)
+        assertTrue(summary.hasActiveTasks)
+        assertTrue(summary.hasActiveOperations)
     }
 
     @Test
@@ -1080,6 +1089,37 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `waiting network status keeps queue visible but not active`() {
+        val queuedTask = DownloadTask(
+            song = recoverySong(id = 31L, name = "Queued"),
+            progress = null,
+            status = DownloadStatus.QUEUED,
+            attemptId = 301L
+        )
+        val downloadingTask = queuedTask.copy(
+            song = recoverySong(id = 32L, name = "Downloading"),
+            status = DownloadStatus.DOWNLOADING,
+            attemptId = 302L
+        )
+
+        val waitingTasks = applyWaitingNetworkStatus(
+            tasks = listOf(queuedTask, downloadingTask),
+            waitingTasks = listOf(queuedTask, downloadingTask)
+        )
+
+        assertEquals(listOf(DownloadStatus.WAITING_NETWORK, DownloadStatus.WAITING_NETWORK), waitingTasks.map { it.status })
+        assertEquals(2, countPendingDownloadTasks(waitingTasks))
+        assertFalse(hasActiveDownloadTasks(waitingTasks))
+        assertFalse(
+            hasActiveDownloadOperations(
+                tasks = waitingTasks,
+                isSingleDownloading = false,
+                hasActiveBatchJobs = false
+            )
+        )
+    }
+
+    @Test
     fun `resolveUndeletedManagedReferences only keeps references that still exist`() = runBlocking {
         val remaining = resolveUndeletedManagedReferences(
             requestedReferences = setOf("audio", "cover", "lyric"),
@@ -1150,6 +1190,90 @@ class GlobalDownloadManagerStartupPolicyTest {
                 actualArtist = "Matisyahu",
                 actualDurationMs = 204_500L
             )
+        )
+    }
+
+    @Test
+    fun `download recovery merges queued snapshot and partial files without losing queued songs`() {
+        val firstSong = recoverySong(id = 901L, name = "First")
+        val secondSong = recoverySong(id = 902L, name = "Second")
+        val queuedDownloads = listOf(
+            ManagedDownloadStorage.PendingDownloadQueueEntry(
+                stableKey = firstSong.stableKey(),
+                song = firstSong,
+                order = 0,
+                queuedAtMs = 10L
+            ),
+            ManagedDownloadStorage.PendingDownloadQueueEntry(
+                stableKey = secondSong.stableKey(),
+                song = secondSong,
+                order = 1,
+                queuedAtMs = 10L
+            )
+        )
+        val partialFile = File("first.partial")
+
+        val merged = mergePendingDownloadRecoveryCandidates(
+            queuedDownloads = queuedDownloads,
+            resumableDownloads = listOf(
+                ManagedDownloadStorage.PendingResumableDownload(
+                    song = firstSong.copy(durationMs = 2_000L),
+                    workingFile = partialFile
+                )
+            )
+        )
+
+        assertEquals(listOf(firstSong.stableKey(), secondSong.stableKey()), merged.map { it.song.stableKey() })
+        assertEquals(partialFile, merged.first().workingFile)
+        assertEquals(2_000L, merged.first().song.durationMs)
+        assertNull(merged[1].workingFile)
+    }
+
+    @Test
+    fun `download recovery marks cancelled candidates so stale partial files do not resurrect`() {
+        val cancelledSong = recoverySong(id = 911L, name = "Cancelled")
+        val queuedSong = recoverySong(id = 912L, name = "Queued")
+        val partialFile = File("cancelled.partial")
+
+        val merged = mergePendingDownloadRecoveryCandidates(
+            queuedDownloads = listOf(
+                ManagedDownloadStorage.PendingDownloadQueueEntry(
+                    stableKey = cancelledSong.stableKey(),
+                    song = cancelledSong,
+                    order = 0,
+                    queuedAtMs = 10L
+                ),
+                ManagedDownloadStorage.PendingDownloadQueueEntry(
+                    stableKey = queuedSong.stableKey(),
+                    song = queuedSong,
+                    order = 1,
+                    queuedAtMs = 10L
+                )
+            ),
+            resumableDownloads = listOf(
+                ManagedDownloadStorage.PendingResumableDownload(
+                    song = cancelledSong,
+                    workingFile = partialFile
+                )
+            ),
+            cancelledKeys = setOf(cancelledSong.stableKey())
+        )
+
+        assertEquals(listOf(true, false), merged.map { it.cancelled })
+        assertEquals(partialFile, merged.first().workingFile)
+        assertEquals(listOf(cancelledSong.stableKey(), queuedSong.stableKey()), merged.map { it.song.stableKey() })
+    }
+
+    private fun recoverySong(id: Long, name: String): SongItem {
+        return SongItem(
+            id = id,
+            name = name,
+            artist = "Artist",
+            album = "Album",
+            albumId = 1L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = "https://example.com/$id"
         )
     }
 }

@@ -32,9 +32,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileNotFoundException
+import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.net.URLDecoder
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
@@ -54,9 +58,15 @@ internal object ManagedDownloadStorage {
     private const val PENDING_AUDIO_WRITE_MARKER = ".npdl_pending"
     private const val NO_MEDIA_FILE_NAME = ".nomedia"
     private const val SNAPSHOT_CACHE_FILE_NAME = "managed_download_snapshot_v1.json"
+    private const val PENDING_DOWNLOAD_QUEUE_FILE_NAME = "pending_download_queue_v1.json"
+    private const val CANCELLED_DOWNLOAD_KEYS_FILE_NAME = "cancelled_download_keys_v1.json"
+    private const val PENDING_DOWNLOAD_QUEUE_VERSION = 1
+    private const val CANCELLED_DOWNLOAD_KEYS_VERSION = 1
     private const val SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS = 1_200L
     private const val TREE_ROOT_CACHE_VALIDATE_INTERVAL_MS = 1_500L
     private const val TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS = 2_000L
+    private const val TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS = 60_000L
+    private const val FILE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS = 60_000L
     private const val MIGRATION_PROGRESS_EMIT_INTERVAL_MS = 80L
     @Suppress("SpellCheckingInspection")
     private const val METADATA_SUFFIX = ".npmeta.json"
@@ -67,6 +77,8 @@ internal object ManagedDownloadStorage {
     private const val MIGRATION_DELETE_PARALLELISM = 8
     private const val MIGRATION_IO_MAX_ATTEMPTS = 3
     private const val MIGRATION_IO_RETRY_DELAY_MS = 150L
+    private const val SAF_DELETE_MAX_ATTEMPTS = 3
+    private const val SAF_DELETE_RETRY_DELAY_MS = 80L
     private const val STREAM_COPY_BUFFER_SIZE_BYTES = 1 * 1024 * 1024
     private val audioExtensions = setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "webm", "eac3")
     private val imageExtensions = setOf("jpg", "jpeg", "png", "webp")
@@ -85,12 +97,17 @@ internal object ManagedDownloadStorage {
 
     private val snapshotBuildLock = Any()
     private val snapshotPersistenceLock = Any()
+    private val pendingDownloadQueueLock = Any()
+    private val cancelledDownloadKeysLock = Any()
     private val snapshotScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val treeDirectoryLocks = ConcurrentHashMap<String, Any>()
     private val treeSubdirectoryCache = ConcurrentHashMap<String, DocumentFile>()
-    private val treeChildrenNameCache = ConcurrentHashMap<String, CachedTreeChildren>()
+    private val treeChildrenNameCache = ConcurrentHashMap<String, CachedChildNames>()
+    private val fileChildrenNameCache = ConcurrentHashMap<String, CachedChildNames>()
+    private val childNameReservationLocks = ConcurrentHashMap<String, Any>()
     private val ensuredNoMediaMarkers = ConcurrentHashMap<String, Boolean>()
     private val pendingAudioWriteIdGenerator = AtomicLong(0L)
+    private val atomicFileWriteIdGenerator = AtomicLong(0L)
 
     @Volatile
     private var snapshotPersistJob: Job? = null
@@ -144,6 +161,13 @@ internal object ManagedDownloadStorage {
     internal data class PendingResumableDownload(
         val song: SongItem,
         val workingFile: File
+    )
+
+    internal data class PendingDownloadQueueEntry(
+        val stableKey: String,
+        val song: SongItem,
+        val order: Int,
+        val queuedAtMs: Long
     )
 
     data class StoredEntry(
@@ -253,10 +277,21 @@ internal object ManagedDownloadStorage {
         val validatedAtMs: Long
     )
 
-    private data class CachedTreeChildren(
-        val names: Set<String>,
-        val refreshedAtMs: Long
-    )
+    private class CachedChildNames(
+        initialNames: Collection<String>,
+        initialRefreshedAtMs: Long,
+        initialComplete: Boolean
+    ) {
+        val names: MutableSet<String> = ConcurrentHashMap.newKeySet<String>().apply {
+            addAll(initialNames)
+        }
+
+        @Volatile
+        var refreshedAtMs: Long = initialRefreshedAtMs
+
+        @Volatile
+        var isComplete: Boolean = initialComplete
+    }
 
     private data class QueriedTreeChild(
         val name: String,
@@ -885,9 +920,192 @@ internal object ManagedDownloadStorage {
         }
     }
 
+    internal fun deletePendingWorkingDownloadArtifacts(
+        context: Context,
+        songKeys: Collection<String>
+    ): Set<String> {
+        val stagingDir = File(context.cacheDir, DOWNLOAD_STAGING_DIR_NAME)
+        return deletePendingWorkingDownloadArtifactsInDirectory(stagingDir, songKeys)
+    }
+
+    internal fun deletePendingWorkingDownloadArtifactsInDirectory(
+        stagingDir: File,
+        songKeys: Collection<String>
+    ): Set<String> {
+        val keys = songKeys.filter(String::isNotBlank).toSet()
+        if (keys.isEmpty()) {
+            return emptySet()
+        }
+        return listPendingResumableDownloadsInDirectory(stagingDir)
+            .filter { pendingDownload -> pendingDownload.song.stableKey() in keys }
+            .mapNotNullTo(linkedSetOf()) { pendingDownload ->
+                val songKey = pendingDownload.song.stableKey()
+                deleteWorkingDownloadArtifacts(pendingDownload.workingFile)
+                songKey
+            }
+    }
+
     internal fun listPendingResumableDownloads(context: Context): List<PendingResumableDownload> {
         val stagingDir = File(context.cacheDir, DOWNLOAD_STAGING_DIR_NAME)
         return listPendingResumableDownloadsInDirectory(stagingDir)
+    }
+
+    internal fun upsertPendingDownloadQueue(
+        context: Context,
+        songs: List<SongItem>
+    ) {
+        upsertPendingDownloadQueueInFile(
+            queueFile = pendingDownloadQueueFile(context),
+            songs = songs
+        )
+    }
+
+    internal fun listPendingQueuedDownloads(context: Context): List<PendingDownloadQueueEntry> {
+        return listPendingQueuedDownloadsFromFile(pendingDownloadQueueFile(context))
+    }
+
+    internal fun removePendingDownloadQueueEntries(
+        context: Context,
+        songKeys: Collection<String>
+    ) {
+        removePendingDownloadQueueEntriesFromFile(
+            queueFile = pendingDownloadQueueFile(context),
+            songKeys = songKeys
+        )
+    }
+
+    internal fun clearPendingDownloadQueue(context: Context) {
+        clearPendingDownloadQueueFile(pendingDownloadQueueFile(context))
+    }
+
+    internal fun markCancelledDownloadKeys(
+        context: Context,
+        songKeys: Collection<String>
+    ) {
+        markCancelledDownloadKeysInFile(
+            keysFile = cancelledDownloadKeysFile(context),
+            songKeys = songKeys
+        )
+    }
+
+    internal fun listCancelledDownloadKeys(context: Context): Set<String> {
+        return listCancelledDownloadKeysFromFile(cancelledDownloadKeysFile(context))
+    }
+
+    internal fun removeCancelledDownloadKeys(
+        context: Context,
+        songKeys: Collection<String>
+    ) {
+        removeCancelledDownloadKeysFromFile(
+            keysFile = cancelledDownloadKeysFile(context),
+            songKeys = songKeys
+        )
+    }
+
+    internal fun clearCancelledDownloadKeys(context: Context) {
+        clearCancelledDownloadKeysFile(cancelledDownloadKeysFile(context))
+    }
+
+    internal fun upsertPendingDownloadQueueInFile(
+        queueFile: File,
+        songs: List<SongItem>,
+        nowMs: Long = System.currentTimeMillis()
+    ) {
+        val distinctSongs = songs.distinctBy { it.stableKey() }
+        if (distinctSongs.isEmpty()) {
+            return
+        }
+        synchronized(pendingDownloadQueueLock) {
+            val existingEntries = readPendingDownloadQueueFile(queueFile)
+            val mergedEntries = mergePendingDownloadQueueEntries(
+                existingEntries = existingEntries,
+                songs = distinctSongs,
+                nowMs = nowMs
+            )
+            writePendingDownloadQueueFile(queueFile, mergedEntries, nowMs)
+        }
+    }
+
+    internal fun listPendingQueuedDownloadsFromFile(queueFile: File): List<PendingDownloadQueueEntry> {
+        return synchronized(pendingDownloadQueueLock) {
+            readPendingDownloadQueueFile(queueFile)
+        }
+    }
+
+    internal fun removePendingDownloadQueueEntriesFromFile(
+        queueFile: File,
+        songKeys: Collection<String>,
+        nowMs: Long = System.currentTimeMillis()
+    ) {
+        val keys = songKeys.filter(String::isNotBlank).toSet()
+        if (keys.isEmpty()) {
+            return
+        }
+        synchronized(pendingDownloadQueueLock) {
+            val existingEntries = readPendingDownloadQueueFile(queueFile)
+            if (existingEntries.isEmpty()) {
+                return
+            }
+            val retainedEntries = existingEntries.filterNot { it.stableKey in keys }
+            if (retainedEntries.size == existingEntries.size) {
+                return
+            }
+            writePendingDownloadQueueFile(queueFile, retainedEntries, nowMs)
+        }
+    }
+
+    internal fun clearPendingDownloadQueueFile(
+        queueFile: File,
+        nowMs: Long = System.currentTimeMillis()
+    ) {
+        synchronized(pendingDownloadQueueLock) {
+            writePendingDownloadQueueFile(queueFile, emptyList(), nowMs)
+        }
+    }
+
+    internal fun markCancelledDownloadKeysInFile(
+        keysFile: File,
+        songKeys: Collection<String>,
+        nowMs: Long = System.currentTimeMillis()
+    ) {
+        val keys = songKeys.filter(String::isNotBlank).toSet()
+        if (keys.isEmpty()) {
+            return
+        }
+        synchronized(cancelledDownloadKeysLock) {
+            val mergedKeys = listCancelledDownloadKeysFromFileLocked(keysFile) + keys
+            writeCancelledDownloadKeysFile(keysFile, mergedKeys, nowMs)
+        }
+    }
+
+    internal fun listCancelledDownloadKeysFromFile(keysFile: File): Set<String> {
+        return synchronized(cancelledDownloadKeysLock) {
+            listCancelledDownloadKeysFromFileLocked(keysFile)
+        }
+    }
+
+    internal fun removeCancelledDownloadKeysFromFile(
+        keysFile: File,
+        songKeys: Collection<String>,
+        nowMs: Long = System.currentTimeMillis()
+    ) {
+        val keys = songKeys.filter(String::isNotBlank).toSet()
+        if (keys.isEmpty()) {
+            return
+        }
+        synchronized(cancelledDownloadKeysLock) {
+            val retainedKeys = listCancelledDownloadKeysFromFileLocked(keysFile) - keys
+            writeCancelledDownloadKeysFile(keysFile, retainedKeys, nowMs)
+        }
+    }
+
+    internal fun clearCancelledDownloadKeysFile(
+        keysFile: File,
+        nowMs: Long = System.currentTimeMillis()
+    ) {
+        synchronized(cancelledDownloadKeysLock) {
+            writeCancelledDownloadKeysFile(keysFile, emptySet(), nowMs)
+        }
     }
 
     internal fun listPendingResumableDownloadsInDirectory(
@@ -1481,59 +1699,73 @@ internal object ManagedDownloadStorage {
         val storedEntry = try {
             when (val root = resolveRootBlocking(context)) {
                 is RootHandle.FileRoot -> {
-                    val finalName = createUniqueName(existingNames(root.dir), fileName)
+                    val finalName = reserveUniqueFileChildName(root.dir, fileName)
                     val pendingTarget = File(root.dir, buildPendingAudioWriteName(finalName))
-                    tempFile.copyTo(pendingTarget, overwrite = false)
-                    val target = File(root.dir, finalName)
-                    if (!pendingTarget.renameTo(target)) {
-                        pendingTarget.delete()
-                        throw IOException("无法提交下载文件: $finalName")
+                    try {
+                        if (!tempFile.renameTo(pendingTarget)) {
+                            tempFile.copyTo(pendingTarget, overwrite = false)
+                        }
+                        val target = File(root.dir, finalName)
+                        if (!pendingTarget.renameTo(target)) {
+                            throw IOException("无法提交下载文件: $finalName")
+                        }
+                        target.toStoredEntry()
+                    } catch (error: Throwable) {
+                        if (pendingTarget.exists()) {
+                            pendingTarget.delete()
+                        }
+                        forgetFileChildName(root.dir, finalName)
+                        throw error
                     }
-                    target.toStoredEntry()
                 }
 
                 is RootHandle.TreeRoot -> {
-                    val finalName = createUniqueName(
-                        cachedTreeChildrenNames(context, root.tree),
-                        fileName
-                    )
-                    val committedAtMs = System.currentTimeMillis()
-                    val pendingName = buildPendingAudioWriteName(finalName)
-                    val pendingTarget = createRootFile(
-                        context = context,
-                        parent = root.tree,
-                        desiredName = pendingName,
-                        mimeType = mimeTypeFromName(finalName, mimeType),
-                        replace = false
-                    )
-                    context.contentResolver.openOutputStream(pendingTarget.uri, "w")?.use { output ->
-                        tempFile.inputStream().use { input ->
-                            input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
-                        }
-                    } ?: throw IOException("无法打开下载目录输出流")
-                    if (pendingTarget.renameTo(finalName)) {
-                        val storedName = pendingTarget.resolvedTreeStoredName(finalName)
-                        forgetTreeChildName(root.tree, pendingName)
-                        rememberTreeChildName(root.tree, storedName)
-                        pendingTarget.toStoredEntry(
-                            knownName = storedName,
-                            knownSizeBytes = actualSizeBytes,
-                            knownLastModifiedMs = committedAtMs,
-                            knownIsDirectory = false
-                        )
-                            ?: throw IOException("无法读取已写入的下载文件")
-                    } else {
-                        commitTreeAudioAfterRenameFailure(
+                    val finalName = reserveUniqueTreeChildName(context, root.tree, fileName)
+                    try {
+                        val committedAtMs = System.currentTimeMillis()
+                        val pendingName = buildPendingAudioWriteName(finalName)
+                        val pendingTarget = createRootFile(
                             context = context,
                             parent = root.tree,
-                            pendingTarget = pendingTarget,
-                            pendingName = pendingName,
-                            finalName = finalName,
-                            mimeType = mimeType,
-                            tempFile = tempFile,
-                            actualSizeBytes = actualSizeBytes,
-                            committedAtMs = committedAtMs
+                            desiredName = pendingName,
+                            mimeType = mimeTypeFromName(finalName, mimeType),
+                            replace = false
                         )
+                        context.contentResolver.openOutputStream(pendingTarget.uri, "w")?.use { output ->
+                            tempFile.inputStream().use { input ->
+                                input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                            }
+                        } ?: throw IOException("无法打开下载目录输出流")
+                        if (pendingTarget.renameTo(finalName)) {
+                            val storedName = pendingTarget.resolvedTreeStoredName(finalName)
+                            forgetTreeChildName(root.tree, pendingName)
+                            if (storedName != finalName) {
+                                forgetTreeChildName(root.tree, finalName)
+                            }
+                            rememberTreeChildName(root.tree, storedName)
+                            pendingTarget.toStoredEntry(
+                                knownName = storedName,
+                                knownSizeBytes = actualSizeBytes,
+                                knownLastModifiedMs = committedAtMs,
+                                knownIsDirectory = false
+                            )
+                                ?: throw IOException("无法读取已写入的下载文件")
+                        } else {
+                            commitTreeAudioAfterRenameFailure(
+                                context = context,
+                                parent = root.tree,
+                                pendingTarget = pendingTarget,
+                                pendingName = pendingName,
+                                finalName = finalName,
+                                mimeType = mimeType,
+                                tempFile = tempFile,
+                                actualSizeBytes = actualSizeBytes,
+                                committedAtMs = committedAtMs
+                            )
+                        }
+                    } catch (error: Throwable) {
+                        forgetTreeChildName(root.tree, finalName)
+                        throw error
                     }
                 }
             }
@@ -1837,15 +2069,11 @@ internal object ManagedDownloadStorage {
 
     private fun resolveRootBlocking(context: Context): RootHandle {
         val configuredUri = normalizeDirectoryUri(customDirectoryUri)
-        resolveTreeRootBlocking(context, configuredUri)?.also {
-            ensureManagedMediaScanIsolation(context, it)
-        }?.let { return it }
+        resolveTreeRootBlocking(context, configuredUri)?.let { return it }
         if (configuredUri != null) {
             NPLogger.w(TAG, "自定义下载目录不可用，回退默认目录: $configuredUri")
         }
-        return createDefaultRoot(context).also {
-            ensureManagedMediaScanIsolation(context, it)
-        }
+        return createDefaultRoot(context)
     }
 
     private fun resolveRootBlocking(context: Context, directoryUriString: String?): RootHandle? {
@@ -1855,7 +2083,6 @@ internal object ManagedDownloadStorage {
         } else {
             resolveTreeRootBlocking(context, normalizedUri)
         }
-        root?.let { ensureManagedMediaScanIsolation(context, it) }
         return root
     }
 
@@ -2387,13 +2614,6 @@ internal object ManagedDownloadStorage {
         }.getOrDefault(StartupRecoveryResult())
     }
 
-    private fun existingNames(dir: File): Set<String> {
-        return dir.listFiles()
-            ?.mapNotNull(File::getName)
-            ?.toSet()
-            .orEmpty()
-    }
-
     internal fun isPendingAudioWriteName(name: String): Boolean {
         return name.contains(PENDING_AUDIO_WRITE_MARKER)
     }
@@ -2483,38 +2703,128 @@ internal object ManagedDownloadStorage {
         }
     }
 
+    private fun cachedFileChildrenNames(dir: File): Set<String> {
+        val cacheKey = dir.absolutePath
+        val now = System.currentTimeMillis()
+        fileChildrenNameCache[cacheKey]
+            ?.takeIf {
+                it.isComplete &&
+                    now - it.refreshedAtMs <= FILE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
+            }
+            ?.let { return it.names }
+        val refreshedNames = dir.listFiles()
+            ?.mapNotNull(File::getName)
+            .orEmpty()
+        val refreshed = CachedChildNames(
+            initialNames = refreshedNames,
+            initialRefreshedAtMs = now,
+            initialComplete = true
+        )
+        fileChildrenNameCache[cacheKey] = refreshed
+        return refreshed.names
+    }
+
+    private fun rememberFileChildName(dir: File, childName: String) {
+        val cacheKey = dir.absolutePath
+        val now = System.currentTimeMillis()
+        fileChildrenNameCache[cacheKey]?.let { cached ->
+            cached.names += childName
+            cached.refreshedAtMs = now
+            return
+        }
+        fileChildrenNameCache[cacheKey] = CachedChildNames(
+            initialNames = listOf(childName),
+            initialRefreshedAtMs = now,
+            initialComplete = false
+        )
+    }
+
+    private fun reserveUniqueFileChildName(dir: File, desiredName: String): String {
+        val cacheKey = dir.absolutePath
+        val lock = childNameReservationLocks.computeIfAbsent("file:$cacheKey") { Any() }
+        return synchronized(lock) {
+            createUniqueName(cachedFileChildrenNames(dir), desiredName)
+                .also { reservedName -> rememberFileChildName(dir, reservedName) }
+        }
+    }
+
+    private fun forgetFileChildName(dir: File, childName: String) {
+        val cacheKey = dir.absolutePath
+        val cached = fileChildrenNameCache[cacheKey] ?: return
+        cached.names -= childName
+        cached.refreshedAtMs = System.currentTimeMillis()
+    }
+
     private fun cachedTreeChildrenNames(context: Context, parent: DocumentFile): Set<String> {
+        return cachedTreeChildrenNames(
+            context = context,
+            parent = parent,
+            maxCacheAgeMs = TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS
+        )
+    }
+
+    private fun cachedTreeChildrenNamesForWrite(context: Context, parent: DocumentFile): Set<String> {
+        return cachedTreeChildrenNames(
+            context = context,
+            parent = parent,
+            maxCacheAgeMs = TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
+        )
+    }
+
+    private fun cachedTreeChildrenNames(
+        context: Context,
+        parent: DocumentFile,
+        maxCacheAgeMs: Long
+    ): Set<String> {
         val cacheKey = parent.uri.toString()
         val now = System.currentTimeMillis()
         treeChildrenNameCache[cacheKey]
-            ?.takeIf { now - it.refreshedAtMs <= TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS }
+            ?.takeIf { it.isComplete && now - it.refreshedAtMs <= maxCacheAgeMs }
             ?.let { return it.names }
         val refreshedNames = queryTreeChildren(context, parent)
             .map(QueriedTreeChild::name)
-            .toSet()
-        treeChildrenNameCache[cacheKey] = CachedTreeChildren(
-            names = refreshedNames,
-            refreshedAtMs = now
+        val refreshed = CachedChildNames(
+            initialNames = refreshedNames,
+            initialRefreshedAtMs = now,
+            initialComplete = true
         )
-        return refreshedNames
+        treeChildrenNameCache[cacheKey] = refreshed
+        return refreshed.names
     }
 
     private fun rememberTreeChildName(parent: DocumentFile, childName: String) {
         val cacheKey = parent.uri.toString()
-        val existing = treeChildrenNameCache[cacheKey]?.names.orEmpty()
-        treeChildrenNameCache[cacheKey] = CachedTreeChildren(
-            names = existing + childName,
-            refreshedAtMs = System.currentTimeMillis()
+        val now = System.currentTimeMillis()
+        treeChildrenNameCache[cacheKey]?.let { cached ->
+            cached.names += childName
+            cached.refreshedAtMs = now
+            return
+        }
+        treeChildrenNameCache[cacheKey] = CachedChildNames(
+            initialNames = listOf(childName),
+            initialRefreshedAtMs = now,
+            initialComplete = false
         )
+    }
+
+    private fun reserveUniqueTreeChildName(
+        context: Context,
+        parent: DocumentFile,
+        desiredName: String
+    ): String {
+        val cacheKey = parent.uri.toString()
+        val lock = childNameReservationLocks.computeIfAbsent("tree:$cacheKey") { Any() }
+        return synchronized(lock) {
+            createUniqueName(cachedTreeChildrenNamesForWrite(context, parent), desiredName)
+                .also { reservedName -> rememberTreeChildName(parent, reservedName) }
+        }
     }
 
     private fun forgetTreeChildName(parent: DocumentFile, childName: String) {
         val cacheKey = parent.uri.toString()
-        val existing = treeChildrenNameCache[cacheKey]?.names ?: return
-        treeChildrenNameCache[cacheKey] = CachedTreeChildren(
-            names = existing - childName,
-            refreshedAtMs = System.currentTimeMillis()
-        )
+        val cached = treeChildrenNameCache[cacheKey] ?: return
+        cached.names -= childName
+        cached.refreshedAtMs = System.currentTimeMillis()
     }
 
     internal fun resolveTreeStoredName(actualName: String?, expectedName: String): String {
@@ -2589,6 +2899,9 @@ internal object ManagedDownloadStorage {
                 throw error
             }
 
+            if (storedName != finalName) {
+                forgetTreeChildName(parent, finalName)
+            }
             rememberTreeChildName(parent, storedName)
             target.toStoredEntry(
                 knownName = storedName,
@@ -3008,32 +3321,10 @@ internal object ManagedDownloadStorage {
     private fun clearTreeDirectoryCache() {
         treeSubdirectoryCache.clear()
         treeChildrenNameCache.clear()
+        fileChildrenNameCache.clear()
+        childNameReservationLocks.clear()
         ensuredNoMediaMarkers.clear()
         cachedTreeRoot = null
-    }
-
-    private fun ensureManagedMediaScanIsolation(context: Context, root: RootHandle) {
-        runCatching {
-            when (root) {
-                is RootHandle.FileRoot -> {
-                    findSubdirectories(context, root, COVER_SUBDIRECTORY).forEach { directory ->
-                        if (directory is RootHandle.FileRoot) {
-                            ensureNoMediaMarker(directory.dir)
-                        }
-                    }
-                }
-
-                is RootHandle.TreeRoot -> {
-                    findSubdirectories(context, root, COVER_SUBDIRECTORY).forEach { directory ->
-                        if (directory is RootHandle.TreeRoot) {
-                            ensureNoMediaMarker(directory.tree)
-                        }
-                    }
-                }
-            }
-        }.onFailure {
-            NPLogger.w(TAG, "补写封面目录 .nomedia 失败: ${it.message}")
-        }
     }
 
     // 只给封面目录补 .nomedia，避免把用户手选的整个下载根目录从媒体库里隐藏
@@ -3345,7 +3636,7 @@ internal object ManagedDownloadStorage {
         return RootHandle.FileRoot(dir)
     }
 
-    private fun createUniqueName(existingNames: Set<String>, desiredName: String): String {
+    internal fun createUniqueName(existingNames: Set<String>, desiredName: String): String {
         if (desiredName !in existingNames) return desiredName
         val base = desiredName.substringBeforeLast('.', desiredName)
         val ext = desiredName.substringAfterLast('.', "")
@@ -3435,9 +3726,12 @@ internal object ManagedDownloadStorage {
                 deletedReferences += reference
             }
         }
-        if (deletedReferences.isNotEmpty() && invalidateSnapshot) {
+        if (invalidateSnapshot) {
             clearTreeDirectoryCache()
-            if (!updateSnapshotCacheAfterDelete(context, deletedReferences)) {
+            val hasUnconfirmedDeletes = deletedReferences.size != normalizedReferences.size
+            if (hasUnconfirmedDeletes) {
+                invalidateSnapshotCache(context)
+            } else if (deletedReferences.isNotEmpty() && !updateSnapshotCacheAfterDelete(context, deletedReferences)) {
                 invalidateSnapshotCache(context)
             }
         }
@@ -3454,10 +3748,27 @@ internal object ManagedDownloadStorage {
         reference: String,
         uri: Uri
     ): Boolean {
-        if (!existsInternal(context, reference)) {
-            return true
+        repeat(SAF_DELETE_MAX_ATTEMPTS) { attempt ->
+            if (!existsInternal(context, reference)) {
+                return true
+            }
+            if (deleteContentReferenceOnce(context, reference, uri)) {
+                return true
+            }
+            if (attempt < SAF_DELETE_MAX_ATTEMPTS - 1) {
+                runCatching {
+                    Thread.sleep(SAF_DELETE_RETRY_DELAY_MS * (attempt + 1L))
+                }
+            }
         }
+        return !existsInternal(context, reference)
+    }
 
+    private fun deleteContentReferenceOnce(
+        context: Context,
+        reference: String,
+        uri: Uri
+    ): Boolean {
         val deletedByContract = runCatching {
             DocumentsContract.deleteDocument(context.contentResolver, uri)
         }.getOrElse { error ->
@@ -3683,6 +3994,261 @@ internal object ManagedDownloadStorage {
         }.onFailure {
             NPLogger.w(TAG, "解析下载恢复元数据失败: ${it.message}")
         }.getOrNull()
+    }
+
+    private fun pendingDownloadQueueFile(context: Context): File {
+        return File(context.filesDir, PENDING_DOWNLOAD_QUEUE_FILE_NAME)
+    }
+
+    private fun cancelledDownloadKeysFile(context: Context): File {
+        return File(context.filesDir, CANCELLED_DOWNLOAD_KEYS_FILE_NAME)
+    }
+
+    private fun mergePendingDownloadQueueEntries(
+        existingEntries: List<PendingDownloadQueueEntry>,
+        songs: List<SongItem>,
+        nowMs: Long
+    ): List<PendingDownloadQueueEntry> {
+        val merged = linkedMapOf<String, PendingDownloadQueueEntry>()
+        existingEntries
+            .sortedBy(PendingDownloadQueueEntry::order)
+            .forEach { entry ->
+                merged.putIfAbsent(entry.stableKey, entry)
+            }
+
+        var nextOrder = (merged.values.maxOfOrNull(PendingDownloadQueueEntry::order) ?: -1) + 1
+        songs.forEach { song ->
+            val stableKey = song.stableKey()
+            val existingEntry = merged[stableKey]
+            merged[stableKey] = PendingDownloadQueueEntry(
+                stableKey = stableKey,
+                song = song,
+                order = existingEntry?.order ?: nextOrder++,
+                queuedAtMs = existingEntry?.queuedAtMs ?: nowMs
+            )
+        }
+
+        return merged.values
+            .sortedBy(PendingDownloadQueueEntry::order)
+            .mapIndexed { index, entry -> entry.copy(order = index) }
+    }
+
+    private fun readPendingDownloadQueueFile(queueFile: File): List<PendingDownloadQueueEntry> {
+        val rawPayload = runCatching {
+            queueFile.takeIf(File::exists)
+                ?.readText(Charsets.UTF_8)
+                ?.takeIf(String::isNotBlank)
+        }.onFailure {
+            NPLogger.w(TAG, "读取未完成下载队列失败: ${it.message}")
+        }.getOrNull() ?: return emptyList()
+
+        return runCatching {
+            parsePendingDownloadQueuePayload(rawPayload)
+        }.onFailure {
+            NPLogger.w(TAG, "解析未完成下载队列失败: ${it.message}")
+        }.getOrDefault(emptyList())
+    }
+
+    private fun writePendingDownloadQueueFile(
+        queueFile: File,
+        entries: List<PendingDownloadQueueEntry>,
+        updatedAtMs: Long
+    ) {
+        if (entries.isEmpty()) {
+            deletePendingDownloadQueueFile(queueFile)
+            return
+        }
+
+        runCatching {
+            writeTextAtomically(
+                target = queueFile,
+                content = serializePendingDownloadQueuePayload(entries, updatedAtMs)
+            )
+        }.onFailure {
+            NPLogger.w(TAG, "写入未完成下载队列失败: ${it.message}")
+        }
+    }
+
+    private fun deletePendingDownloadQueueFile(queueFile: File) {
+        runCatching {
+            if (queueFile.exists() && !queueFile.delete()) {
+                throw IOException("delete failed: ${queueFile.name}")
+            }
+        }.onFailure {
+            NPLogger.w(TAG, "删除未完成下载队列失败: ${it.message}")
+        }
+    }
+
+    private fun listCancelledDownloadKeysFromFileLocked(keysFile: File): Set<String> {
+        val rawPayload = runCatching {
+            keysFile.takeIf(File::exists)
+                ?.readText(Charsets.UTF_8)
+                ?.takeIf(String::isNotBlank)
+        }.onFailure {
+            NPLogger.w(TAG, "读取已取消下载标记失败: ${it.message}")
+        }.getOrNull() ?: return emptySet()
+
+        return runCatching {
+            parseCancelledDownloadKeysPayload(rawPayload)
+        }.onFailure {
+            NPLogger.w(TAG, "解析已取消下载标记失败: ${it.message}")
+        }.getOrDefault(emptySet())
+    }
+
+    private fun writeCancelledDownloadKeysFile(
+        keysFile: File,
+        songKeys: Set<String>,
+        updatedAtMs: Long
+    ) {
+        if (songKeys.isEmpty()) {
+            deleteCancelledDownloadKeysFile(keysFile)
+            return
+        }
+
+        runCatching {
+            writeTextAtomically(
+                target = keysFile,
+                content = serializeCancelledDownloadKeysPayload(songKeys, updatedAtMs)
+            )
+        }.onFailure {
+            NPLogger.w(TAG, "写入已取消下载标记失败: ${it.message}")
+        }
+    }
+
+    private fun deleteCancelledDownloadKeysFile(keysFile: File) {
+        runCatching {
+            if (keysFile.exists() && !keysFile.delete()) {
+                throw IOException("delete failed: ${keysFile.name}")
+            }
+        }.onFailure {
+            NPLogger.w(TAG, "删除已取消下载标记失败: ${it.message}")
+        }
+    }
+
+    internal fun serializePendingDownloadQueuePayload(
+        entries: List<PendingDownloadQueueEntry>,
+        updatedAtMs: Long
+    ): String {
+        return JSONObject().apply {
+            put("version", PENDING_DOWNLOAD_QUEUE_VERSION)
+            put("updatedAtMs", updatedAtMs)
+            put(
+                "entries",
+                JSONArray().also { entriesArray ->
+                    entries
+                        .sortedBy(PendingDownloadQueueEntry::order)
+                        .forEach { entry ->
+                            entriesArray.put(entry.toPendingDownloadQueueJson())
+                        }
+                }
+            )
+        }.toString()
+    }
+
+    internal fun parsePendingDownloadQueuePayload(rawJson: String): List<PendingDownloadQueueEntry> {
+        val root = JSONObject(rawJson)
+        val entries = root.optJSONArray("entries") ?: return emptyList()
+        val restoredEntries = mutableListOf<PendingDownloadQueueEntry>()
+        for (index in 0 until entries.length()) {
+            entries.optJSONObject(index)
+                ?.toPendingDownloadQueueEntry()
+                ?.let(restoredEntries::add)
+        }
+        return restoredEntries
+            .sortedBy(PendingDownloadQueueEntry::order)
+            .distinctBy(PendingDownloadQueueEntry::stableKey)
+            .mapIndexed { index, entry -> entry.copy(order = index) }
+    }
+
+    internal fun serializeCancelledDownloadKeysPayload(
+        songKeys: Set<String>,
+        updatedAtMs: Long
+    ): String {
+        return JSONObject().apply {
+            put("version", CANCELLED_DOWNLOAD_KEYS_VERSION)
+            put("updatedAtMs", updatedAtMs)
+            put(
+                "keys",
+                JSONArray().also { keysArray ->
+                    songKeys
+                        .filter(String::isNotBlank)
+                        .sorted()
+                        .forEach(keysArray::put)
+                }
+            )
+        }.toString()
+    }
+
+    internal fun parseCancelledDownloadKeysPayload(rawJson: String): Set<String> {
+        val root = JSONObject(rawJson)
+        val keys = root.optJSONArray("keys") ?: return emptySet()
+        return buildSet {
+            for (index in 0 until keys.length()) {
+                keys.optString(index)
+                    .takeIf(String::isNotBlank)
+                    ?.let(::add)
+            }
+        }
+    }
+
+    private fun PendingDownloadQueueEntry.toPendingDownloadQueueJson(): JSONObject {
+        return JSONObject().apply {
+            put("stableKey", stableKey)
+            put("order", order)
+            put("queuedAtMs", queuedAtMs)
+            put("song", song.toWorkingResumeMetadataJson())
+        }
+    }
+
+    private fun JSONObject.toPendingDownloadQueueEntry(): PendingDownloadQueueEntry? {
+        val song = optJSONObject("song")?.toWorkingResumeMetadataSong() ?: return null
+        val stableKey = song.stableKey()
+        return PendingDownloadQueueEntry(
+            stableKey = stableKey,
+            song = song,
+            order = optInt("order", Int.MAX_VALUE),
+            queuedAtMs = optLong("queuedAtMs").coerceAtLeast(0L)
+        )
+    }
+
+    private fun writeTextAtomically(target: File, content: String) {
+        val parent = target.parentFile
+        parent?.mkdirs()
+        val tempFile = File(
+            parent ?: File("."),
+            "${target.name}.tmp.${atomicFileWriteIdGenerator.incrementAndGet()}.${System.nanoTime()}"
+        )
+        try {
+            FileOutputStream(tempFile).use { output ->
+                output.write(content.toByteArray(Charsets.UTF_8))
+                output.fd.sync()
+            }
+            moveFileAtomically(tempFile, target)
+        } catch (error: Exception) {
+            runCatching {
+                if (tempFile.exists()) {
+                    tempFile.delete()
+                }
+            }
+            throw error
+        }
+    }
+
+    private fun moveFileAtomically(source: File, target: File) {
+        try {
+            Files.move(
+                source.toPath(),
+                target.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE
+            )
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(
+                source.toPath(),
+                target.toPath(),
+                StandardCopyOption.REPLACE_EXISTING
+            )
+        }
     }
 
     private fun JSONObject.toDownloadedAudioMetadata(): DownloadedAudioMetadata {

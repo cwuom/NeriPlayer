@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -54,6 +55,7 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 
 private const val NETEASE_LOSSLESS_QUALITY = "lossless"
@@ -91,12 +93,29 @@ internal fun SettingsAudioQualitySection(
     biliQualityLabel: String,
     biliPreferredQuality: String,
     onBiliQualityChange: (String) -> Unit,
+    mobileDataFollowDefaultAudioQuality: Boolean,
+    onMobileDataFollowDefaultAudioQualityChange: (Boolean) -> Unit,
+    mobileDataNeteaseQualityLabel: String,
+    mobileDataNeteaseAudioQuality: String,
+    onMobileDataNeteaseAudioQualityChange: (String) -> Unit,
+    mobileDataYouTubeQualityLabel: String,
+    mobileDataYouTubeAudioQuality: String,
+    onMobileDataYouTubeAudioQualityChange: (String) -> Unit,
+    mobileDataBiliQualityLabel: String,
+    mobileDataBiliAudioQuality: String,
+    onMobileDataBiliAudioQualityChange: (String) -> Unit,
     showQualityDialog: Boolean,
     onShowQualityDialogChange: (Boolean) -> Unit,
     showYouTubeQualityDialog: Boolean,
     onShowYouTubeQualityDialogChange: (Boolean) -> Unit,
     showBiliQualityDialog: Boolean,
-    onShowBiliQualityDialogChange: (Boolean) -> Unit
+    onShowBiliQualityDialogChange: (Boolean) -> Unit,
+    showMobileDataNeteaseQualityDialog: Boolean,
+    onShowMobileDataNeteaseQualityDialogChange: (Boolean) -> Unit,
+    showMobileDataYouTubeQualityDialog: Boolean,
+    onShowMobileDataYouTubeQualityDialogChange: (Boolean) -> Unit,
+    showMobileDataBiliQualityDialog: Boolean,
+    onShowMobileDataBiliQualityDialogChange: (Boolean) -> Unit
 ) {
     var audioQualityNotice by remember { mutableStateOf<AudioQualityNotice?>(null) }
 
@@ -150,6 +169,72 @@ internal fun SettingsAudioQualitySection(
                 iconRes = R.drawable.ic_bilibili,
                 onClick = { onShowBiliQualityDialogChange(true) }
             )
+
+            AutoSettingsListItem(
+                setting = AutoSettingsMetadata.requireSetting(
+                    AutoSettingsKeys.MOBILE_DATA_FOLLOW_DEFAULT_AUDIO_QUALITY
+                ),
+                leadingContent = {
+                    Icon(
+                        imageVector = Icons.Outlined.Analytics,
+                        contentDescription = stringResource(
+                            R.string.settings_mobile_data_follow_default_audio_quality
+                        ),
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                },
+                trailingContent = {
+                    MiuixSettingsSwitch(
+                        checked = mobileDataFollowDefaultAudioQuality,
+                        onCheckedChange = onMobileDataFollowDefaultAudioQualityChange
+                    )
+                },
+                onClick = {
+                    onMobileDataFollowDefaultAudioQualityChange(
+                        !mobileDataFollowDefaultAudioQuality
+                    )
+                }
+            )
+
+            if (!mobileDataFollowDefaultAudioQuality) {
+                Text(
+                    text = stringResource(R.string.settings_mobile_data_quality_group),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp)
+                )
+
+                AudioQualityListItem(
+                    setting = AutoSettingsMetadata.requireSetting(
+                        AutoSettingsKeys.MOBILE_DATA_NETEASE_AUDIO_QUALITY
+                    ),
+                    valueLabel = mobileDataNeteaseQualityLabel,
+                    preferredQuality = mobileDataNeteaseAudioQuality,
+                    iconRes = R.drawable.ic_netease_cloud_music,
+                    onClick = { onShowMobileDataNeteaseQualityDialogChange(true) }
+                )
+
+                AudioQualityListItem(
+                    setting = AutoSettingsMetadata.requireSetting(
+                        AutoSettingsKeys.MOBILE_DATA_YOUTUBE_AUDIO_QUALITY
+                    ),
+                    valueLabel = mobileDataYouTubeQualityLabel,
+                    preferredQuality = mobileDataYouTubeAudioQuality,
+                    iconRes = R.drawable.ic_youtube,
+                    onClick = { onShowMobileDataYouTubeQualityDialogChange(true) }
+                )
+
+                AudioQualityListItem(
+                    setting = AutoSettingsMetadata.requireSetting(
+                        AutoSettingsKeys.MOBILE_DATA_BILI_AUDIO_QUALITY
+                    ),
+                    valueLabel = mobileDataBiliQualityLabel,
+                    preferredQuality = mobileDataBiliAudioQuality,
+                    iconRes = R.drawable.ic_bilibili,
+                    onClick = { onShowMobileDataBiliQualityDialogChange(true) }
+                )
+            }
         }
     }
 
@@ -213,6 +298,72 @@ internal fun SettingsAudioQualitySection(
                 onBiliQualityChange(level)
                 onShowBiliQualityDialogChange(false)
                 if (level == BILI_DOLBY_QUALITY && biliPreferredQuality != level) {
+                    audioQualityNotice = AudioQualityNotice.BiliDolby
+                }
+            }
+        )
+    }
+
+    if (showMobileDataNeteaseQualityDialog) {
+        QualityOptionsDialog(
+            title = stringResource(R.string.settings_mobile_data_netease_audio_quality),
+            selectedValue = mobileDataNeteaseAudioQuality,
+            options = listOf(
+                "standard" to stringResource(R.string.quality_standard),
+                "higher" to stringResource(R.string.quality_high),
+                "exhigh" to stringResource(R.string.quality_very_high),
+                NETEASE_LOSSLESS_QUALITY to stringResource(R.string.quality_lossless),
+                NETEASE_HIRES_QUALITY to stringResource(R.string.quality_hires),
+                NETEASE_HD_SURROUND_QUALITY to stringResource(R.string.quality_hd_surround),
+                NETEASE_SURROUND_QUALITY to stringResource(R.string.quality_surround),
+                NETEASE_MASTER_QUALITY to stringResource(R.string.settings_audio_quality_jymaster)
+            ),
+            onDismiss = { onShowMobileDataNeteaseQualityDialogChange(false) },
+            onSelect = { level ->
+                onMobileDataNeteaseAudioQualityChange(level)
+                onShowMobileDataNeteaseQualityDialogChange(false)
+                if (level in NETEASE_MEMBER_QUALITIES && mobileDataNeteaseAudioQuality != level) {
+                    audioQualityNotice = AudioQualityNotice.NeteaseMemberQuality
+                }
+            }
+        )
+    }
+
+    if (showMobileDataYouTubeQualityDialog) {
+        QualityOptionsDialog(
+            title = stringResource(R.string.settings_mobile_data_youtube_audio_quality),
+            selectedValue = mobileDataYouTubeAudioQuality,
+            options = listOf(
+                "low" to stringResource(R.string.settings_audio_quality_standard),
+                "medium" to stringResource(R.string.settings_audio_quality_medium),
+                "high" to stringResource(R.string.settings_audio_quality_high),
+                "very_high" to stringResource(R.string.quality_very_high)
+            ),
+            onDismiss = { onShowMobileDataYouTubeQualityDialogChange(false) },
+            onSelect = { level ->
+                onMobileDataYouTubeAudioQualityChange(level)
+                onShowMobileDataYouTubeQualityDialogChange(false)
+            }
+        )
+    }
+
+    if (showMobileDataBiliQualityDialog) {
+        QualityOptionsDialog(
+            title = stringResource(R.string.settings_mobile_data_bili_audio_quality),
+            selectedValue = mobileDataBiliAudioQuality,
+            options = listOf(
+                BILI_DOLBY_QUALITY to stringResource(R.string.settings_dolby),
+                "hires" to stringResource(R.string.quality_hires),
+                "lossless" to stringResource(R.string.quality_lossless),
+                "high" to stringResource(R.string.settings_audio_quality_high),
+                "medium" to stringResource(R.string.settings_audio_quality_medium),
+                "low" to stringResource(R.string.settings_audio_quality_low)
+            ),
+            onDismiss = { onShowMobileDataBiliQualityDialogChange(false) },
+            onSelect = { level ->
+                onMobileDataBiliAudioQualityChange(level)
+                onShowMobileDataBiliQualityDialogChange(false)
+                if (level == BILI_DOLBY_QUALITY && mobileDataBiliAudioQuality != level) {
                     audioQualityNotice = AudioQualityNotice.BiliDolby
                 }
             }

@@ -4,6 +4,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Download
@@ -72,6 +73,10 @@ internal enum class SettingsPage(
         AutoSettingsSchema.storage.metadata,
         Icons.Outlined.Storage
     ),
+    TrafficManagement(
+        AutoSettingsSchema.trafficManagement.metadata,
+        Icons.Outlined.Analytics
+    ),
     Downloads(
         AutoSettingsSchema.download.metadata,
         Icons.Outlined.Download
@@ -105,7 +110,8 @@ internal val SettingsHomePageGroups: List<List<SettingsPage>> = listOf(
         SettingsPage.PlaybackSource,
         SettingsPage.AudioQuality,
         SettingsPage.Downloads,
-        SettingsPage.Storage
+        SettingsPage.Storage,
+        SettingsPage.TrafficManagement
     ),
     listOf(
         SettingsPage.General,

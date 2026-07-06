@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import androidx.compose.runtime.Composable
@@ -12,6 +13,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalContext
+import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 
 @Composable
 fun rememberOfflineModeState(): State<Boolean> {
@@ -89,9 +91,41 @@ fun Context.hasValidatedInternet(): Boolean {
 
 fun Context.isOfflineModeNow(): Boolean = !hasValidatedInternet()
 
+fun Context.currentTrafficNetworkType(): TrafficNetworkType {
+    val connectivityManager = getSystemService(ConnectivityManager::class.java)
+        ?: return TrafficNetworkType.MOBILE
+    return connectivityManager.currentTrafficNetworkType()
+}
+
+fun Context.isTrafficRiskNetworkNow(): Boolean {
+    return when (currentTrafficNetworkType()) {
+        TrafficNetworkType.MOBILE,
+        TrafficNetworkType.ROAMING -> true
+        TrafficNetworkType.WIFI -> false
+    }
+}
+
 private fun ConnectivityManager.hasValidatedInternet(): Boolean = runCatching {
     val activeNetwork = activeNetwork ?: return@runCatching false
     val capabilities = getNetworkCapabilities(activeNetwork) ?: return@runCatching false
     capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
         capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
 }.getOrDefault(false)
+
+private fun ConnectivityManager.currentTrafficNetworkType(): TrafficNetworkType = runCatching {
+    val activeNetwork = activeNetwork ?: return@runCatching TrafficNetworkType.MOBILE
+    val capabilities = getNetworkCapabilities(activeNetwork)
+        ?: return@runCatching TrafficNetworkType.MOBILE
+
+    if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) {
+        val isNotRoaming = Build.VERSION.SDK_INT < Build.VERSION_CODES.P ||
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING)
+        return@runCatching if (isNotRoaming) {
+            TrafficNetworkType.MOBILE
+        } else {
+            TrafficNetworkType.ROAMING
+        }
+    }
+
+    TrafficNetworkType.WIFI
+}.getOrDefault(TrafficNetworkType.MOBILE)

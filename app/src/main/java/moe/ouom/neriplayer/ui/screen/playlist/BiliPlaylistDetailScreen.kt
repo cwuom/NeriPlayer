@@ -103,9 +103,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.saveable.rememberSaveable
-import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.hasPendingDownloadTasks
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -160,10 +158,9 @@ fun BiliPlaylistDetailScreen(
 
     // 下载进度
     var showDownloadManager by remember { mutableStateOf(false) }
-    val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
-    val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
-    val pendingTaskCount = remember(downloadTasks) { countPendingDownloadTasks(downloadTasks) }
-    val hasDownloadManagerEntry = remember(downloadTasks) { hasPendingDownloadTasks(downloadTasks) }
+    val downloadTaskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
+    val pendingTaskCount = downloadTaskSummary.pendingTaskCount
+    val hasDownloadManagerEntry = downloadTaskSummary.hasPendingTasks
 
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allLocalPlaylists by repo.playlists.collectAsState(initial = emptyList())
@@ -557,6 +554,8 @@ fun BiliPlaylistDetailScreen(
 
             // 下载管理器
             if (showDownloadManager) {
+                val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
+                val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
                 val progress = batchDownloadProgress
                 BatchDownloadManagerSheet(
                     batchDownloadProgress = progress,

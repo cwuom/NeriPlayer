@@ -191,6 +191,8 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
@@ -1870,14 +1872,19 @@ fun MoreOptionsSheet(
     val currentQualityLabel = currentPlaybackAudioInfo?.qualityLabel
     val playbackSoundState by PlayerManager.playbackSoundStateFlow.collectAsState()
     val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
-    val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
     val hasLocalDownload = remember(downloadPresenceVersion, originalSong) {
         hasCachedLocalDownload(originalSong)
     }
     val downloadSongKey = remember(originalSong) { originalSong.stableKey() }
-    val currentDownloadTask = remember(downloadTasks, downloadSongKey) {
-        downloadTasks.firstOrNull { it.song.stableKey() == downloadSongKey }
+    val currentDownloadTaskFlow = remember(downloadSongKey) {
+        GlobalDownloadManager.downloadTasks
+            .map { tasks -> tasks.firstOrNull { it.song.stableKey() == downloadSongKey } }
+            .distinctUntilChanged()
     }
+    val currentDownloadTask by currentDownloadTaskFlow.collectAsState(
+        initial = GlobalDownloadManager.downloadTasks.value
+            .firstOrNull { it.song.stableKey() == downloadSongKey }
+    )
     val shouldHideDownloadAction = remember(hasLocalDownload, currentDownloadTask) {
         shouldHideDownloadActionForSong(hasLocalDownload, currentDownloadTask)
     }
@@ -2011,16 +2018,19 @@ fun MoreOptionsSheet(
                                 }
                             )
                         } else if (!shouldHideDownloadAction) {
+                            val task = currentDownloadTask
                             val downloadHeadlineRes = when {
-                                currentDownloadTask?.status == DownloadStatus.QUEUED -> R.string.download_cancel_download
-                                currentDownloadTask?.status == DownloadStatus.DOWNLOADING -> R.string.download_cancel_download
-                                currentDownloadTask?.status == DownloadStatus.CANCELLED -> R.string.download_to_local
-                                currentDownloadTask?.status == DownloadStatus.FAILED -> R.string.action_retry
+                                task?.status == DownloadStatus.QUEUED -> R.string.download_cancel_download
+                                task?.status == DownloadStatus.DOWNLOADING -> R.string.download_cancel_download
+                                task?.status == DownloadStatus.WAITING_NETWORK -> R.string.download_cancel_download
+                                task?.status == DownloadStatus.CANCELLED -> R.string.download_to_local
+                                task?.status == DownloadStatus.FAILED -> R.string.action_retry
                                 else -> R.string.download_to_local
                             }
                             val canClickDownloadAction =
-                                (currentDownloadTask?.status != DownloadStatus.QUEUED &&
-                                    currentDownloadTask?.status != DownloadStatus.DOWNLOADING) ||
+                                (task?.status != DownloadStatus.QUEUED &&
+                                    task?.status != DownloadStatus.DOWNLOADING &&
+                                    task?.status != DownloadStatus.WAITING_NETWORK) ||
                                     currentDownloadCancellable
 
                             ListItem(
@@ -2029,9 +2039,9 @@ fun MoreOptionsSheet(
                                 },
                                 leadingContent = { Icon(Icons.Outlined.Download, null) },
                                 supportingContent = {
+                                    val progress = task?.progress
                                     when {
-                                        currentDownloadTask?.progress != null -> {
-                                            val progress = currentDownloadTask.progress
+                                        progress != null -> {
                                             Column {
                                                 if (progress.stage == AudioDownloadManager.DownloadStage.FINALIZING) {
                                                     Text(stringResource(R.string.download_finalizing))
@@ -2064,14 +2074,19 @@ fun MoreOptionsSheet(
                                             }
                                         }
 
-                                        currentDownloadTask?.status == DownloadStatus.FAILED -> {
+                                        task?.status == DownloadStatus.FAILED -> {
                                             Text(stringResource(R.string.download_failed))
+                                        }
+
+                                        task?.status == DownloadStatus.WAITING_NETWORK -> {
+                                            Text(stringResource(R.string.download_waiting_network_recovery))
                                         }
                                     }
                                 },
                                 modifier = Modifier.clickable(enabled = canClickDownloadAction) {
-                                    when (currentDownloadTask?.status) {
+                                    when (task?.status) {
                                         DownloadStatus.QUEUED,
+                                        DownloadStatus.WAITING_NETWORK,
                                         DownloadStatus.DOWNLOADING -> {
                                             viewModel.cancelDownload(downloadSongKey)
                                         }

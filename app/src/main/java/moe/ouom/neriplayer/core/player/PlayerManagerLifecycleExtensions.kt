@@ -90,6 +90,14 @@ internal fun PlayerManager.initializeImpl(
         preferredQuality = initialPlaybackPreferences.audioQuality
         youtubePreferredQuality = initialPlaybackPreferences.youtubeAudioQuality
         biliPreferredQuality = initialPlaybackPreferences.biliAudioQuality
+        mobileDataFollowDefaultAudioQuality =
+            initialPlaybackPreferences.mobileDataFollowDefaultAudioQuality
+        mobileDataNeteaseAudioQuality =
+            initialPlaybackPreferences.mobileDataNeteaseAudioQuality
+        mobileDataYouTubeAudioQuality =
+            initialPlaybackPreferences.mobileDataYouTubeAudioQuality
+        mobileDataBiliAudioQuality =
+            initialPlaybackPreferences.mobileDataBiliAudioQuality
         keepLastPlaybackProgressEnabled =
             initialPlaybackPreferences.keepLastPlaybackProgress
         keepPlaybackModeStateEnabled =
@@ -126,14 +134,16 @@ internal fun PlayerManager.initializeImpl(
         playbackSoundConfig = initialPlaybackPreferences.toPlaybackSoundConfig()
         NPLogger.d(
             "NERI-PlayerManager",
-            "initialize(): prefs quality=$preferredQuality, youtubeQuality=$youtubePreferredQuality, biliQuality=$biliPreferredQuality, keepProgress=$keepLastPlaybackProgressEnabled, keepMode=$keepPlaybackModeStateEnabled, neteaseAutoSourceSwitch=$neteaseAutoSourceSwitchEnabled, fadeIn=$playbackFadeInEnabled/${playbackFadeInDurationMs}ms, crossfade=$playbackCrossfadeNextEnabled/${playbackCrossfadeInDurationMs}ms, stopOnBluetoothDisconnect=$stopOnBluetoothDisconnectEnabled, usbExclusivePlayback=$usbExclusivePlaybackEnabled, allowMixedPlayback=$allowMixedPlaybackEnabled"
+            "initialize(): prefs quality=$preferredQuality, youtubeQuality=$youtubePreferredQuality, biliQuality=$biliPreferredQuality, mobileDataFollowDefault=$mobileDataFollowDefaultAudioQuality, mobileDataQuality=$mobileDataNeteaseAudioQuality/$mobileDataYouTubeAudioQuality/$mobileDataBiliAudioQuality, keepProgress=$keepLastPlaybackProgressEnabled, keepMode=$keepPlaybackModeStateEnabled, neteaseAutoSourceSwitch=$neteaseAutoSourceSwitchEnabled, fadeIn=$playbackFadeInEnabled/${playbackFadeInDurationMs}ms, crossfade=$playbackCrossfadeNextEnabled/${playbackCrossfadeInDurationMs}ms, stopOnBluetoothDisconnect=$stopOnBluetoothDisconnectEnabled, usbExclusivePlayback=$usbExclusivePlaybackEnabled, allowMixedPlayback=$allowMixedPlaybackEnabled"
         )
         val okHttpClient = AppContainer.sharedOkHttpClient
         val upstreamFactory: HttpDataSource.Factory = OkHttpDataSource.Factory(okHttpClient)
         val conditionalFactory = ConditionalHttpDataSourceFactory(
             upstreamFactory,
             biliCookieRepo,
-            AppContainer.youtubeAuthRepo
+            AppContainer.youtubeAuthRepo,
+            context = app,
+            trafficStatsRepository = AppContainer.trafficStatsRepo
         )
         conditionalHttpFactory = conditionalFactory
 
@@ -151,6 +161,13 @@ internal fun PlayerManager.initializeImpl(
                 .setCache(cache)
                 .setUpstreamDataSourceFactory(conditionalFactory)
                 .setFlags(CacheDataSource.FLAG_BLOCK_ON_CACHE)
+                .setEventListener(object : CacheDataSource.EventListener {
+                    override fun onCachedBytesRead(cacheSizeBytes: Long, cachedBytesRead: Long) {
+                        AppContainer.trafficStatsRepo.recordCacheHitBytes(cachedBytesRead)
+                    }
+
+                    override fun onCacheIgnored(reason: Int) = Unit
+                })
 
             androidx.media3.datasource.DefaultDataSource.Factory(app, cacheDsFactory)
         } else {
@@ -431,6 +448,62 @@ internal fun PlayerManager.initializeImpl(
                     scheduleQualityRefresh(
                         source = PlaybackAudioSource.BILIBILI,
                         reason = "bili_quality_changed"
+                    )
+                }
+            }
+        }
+        ioScope.launch {
+            settingsRepo.mobileDataFollowDefaultAudioQualityFlow.collect { enabled ->
+                val previousValue = mobileDataFollowDefaultAudioQuality
+                mobileDataFollowDefaultAudioQuality = enabled
+                if (previousValue != enabled) {
+                    scheduleQualityRefresh(
+                        source = PlaybackAudioSource.NETEASE,
+                        reason = "mobile_data_follow_default_quality_changed"
+                    )
+                    scheduleQualityRefresh(
+                        source = PlaybackAudioSource.YOUTUBE_MUSIC,
+                        reason = "mobile_data_follow_default_quality_changed"
+                    )
+                    scheduleQualityRefresh(
+                        source = PlaybackAudioSource.BILIBILI,
+                        reason = "mobile_data_follow_default_quality_changed"
+                    )
+                }
+            }
+        }
+        ioScope.launch {
+            settingsRepo.mobileDataNeteaseAudioQualityFlow.collect { q ->
+                val previousQuality = mobileDataNeteaseAudioQuality
+                mobileDataNeteaseAudioQuality = q
+                if (previousQuality != q) {
+                    scheduleQualityRefresh(
+                        source = PlaybackAudioSource.NETEASE,
+                        reason = "mobile_data_netease_quality_changed"
+                    )
+                }
+            }
+        }
+        ioScope.launch {
+            settingsRepo.mobileDataYouTubeAudioQualityFlow.collect { q ->
+                val previousQuality = mobileDataYouTubeAudioQuality
+                mobileDataYouTubeAudioQuality = q
+                if (previousQuality != q) {
+                    scheduleQualityRefresh(
+                        source = PlaybackAudioSource.YOUTUBE_MUSIC,
+                        reason = "mobile_data_youtube_quality_changed"
+                    )
+                }
+            }
+        }
+        ioScope.launch {
+            settingsRepo.mobileDataBiliAudioQualityFlow.collect { q ->
+                val previousQuality = mobileDataBiliAudioQuality
+                mobileDataBiliAudioQuality = q
+                if (previousQuality != q) {
+                    scheduleQualityRefresh(
+                        source = PlaybackAudioSource.BILIBILI,
+                        reason = "mobile_data_bili_quality_changed"
                     )
                 }
             }

@@ -12,6 +12,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableStreamType
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.prefetch.YouTubePrefetchRunner
 import moe.ouom.neriplayer.core.player.prefetch.YouTubePrefetchTask
 import moe.ouom.neriplayer.core.player.policy.resolveYouTubeWarmupTargets
@@ -41,7 +42,7 @@ internal fun PlayerManager.prefetchYouTubeQueueWindowImpl(
     val targets = resolveYouTubeWarmupTargets(
         playlist = playlist,
         currentSongIndex = startIndex,
-        preferredQuality = youtubePreferredQuality
+        preferredQuality = effectiveYouTubeQuality()
     )
     if (!targets.hasWork) {
         return
@@ -176,6 +177,13 @@ private suspend fun PlayerManager.prefetchIntoPlayerCache(
         .setCache(cache)
         .setUpstreamDataSourceFactory(upstreamFactory)
         .setFlags(CacheDataSource.FLAG_BLOCK_ON_CACHE)
+        .setEventListener(object : CacheDataSource.EventListener {
+            override fun onCachedBytesRead(cacheSizeBytes: Long, cachedBytesRead: Long) {
+                AppContainer.trafficStatsRepo.recordCacheHitBytes(cachedBytesRead)
+            }
+
+            override fun onCacheIgnored(reason: Int) = Unit
+        })
         .createDataSource()
     val dataSpec = DataSpec.Builder()
         .setUri(url.toUri())

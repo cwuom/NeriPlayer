@@ -159,7 +159,6 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.hasPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -406,12 +405,12 @@ fun LocalPlaylistDetailScreen(
             
             // 下载进度
             val hasDownloadManagerEntryFlow = remember {
-                GlobalDownloadManager.downloadTasks
-                    .map(::hasPendingDownloadTasks)
+                GlobalDownloadManager.downloadTaskSummary
+                    .map { it.hasPendingTasks }
                     .distinctUntilChanged()
             }
             val hasDownloadManagerEntry by hasDownloadManagerEntryFlow.collectAsState(
-                initial = hasPendingDownloadTasks(GlobalDownloadManager.downloadTasks.collectAsState().value)
+                initial = GlobalDownloadManager.downloadTaskSummary.value.hasPendingTasks
             )
             val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
 

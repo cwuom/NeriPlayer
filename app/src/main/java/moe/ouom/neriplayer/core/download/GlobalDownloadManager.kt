@@ -41,16 +41,23 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
@@ -63,8 +70,10 @@ import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.autoSettingFlow
+import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.currentTrafficNetworkType
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.LazyThreadSafetyMode
@@ -85,25 +94,82 @@ object GlobalDownloadManager {
     private const val METADATA_WRITE_RETRY_DELAY_MS = 200L
     private const val METADATA_POST_PROCESSING_MAX_ATTEMPTS = 3
     private const val METADATA_POST_PROCESSING_RETRY_DELAY_MS = 350L
+    private const val DOWNLOAD_TASK_PROGRESS_EMIT_INTERVAL_NS = 450_000_000L
+    private const val METADATA_POST_PROCESSING_PARALLELISM = 2
     internal const val PLAYBACK_METADATA_HYDRATION_DELAY_MS = 1_500L
     internal const val LOCAL_PLAYBACK_METADATA_HYDRATION_DELAY_MS = 4_000L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    data class TrafficRiskDownloadRequest(
+        val id: Long,
+        val songs: List<SongItem>,
+        val networkType: TrafficNetworkType,
+        val isBatch: Boolean
+    ) {
+        val songCount: Int
+            get() = songs.size
+    }
+
+    private val _trafficRiskDownloadRequests =
+        MutableSharedFlow<TrafficRiskDownloadRequest>(
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST
+        )
+    val trafficRiskDownloadRequests: SharedFlow<TrafficRiskDownloadRequest> =
+        _trafficRiskDownloadRequests
+
+    data class MobileDataDownloadInterruptionRequest(
+        val id: Long,
+        val networkType: TrafficNetworkType,
+        val taskCount: Int
+    )
+
+    private val _mobileDataDownloadInterruptionRequest =
+        MutableStateFlow<MobileDataDownloadInterruptionRequest?>(null)
+    val mobileDataDownloadInterruptionRequest:
+        StateFlow<MobileDataDownloadInterruptionRequest?> =
+        _mobileDataDownloadInterruptionRequest.asStateFlow()
+
     private val _isSingleDownloading = MutableStateFlow(false)
     private val _downloadTasks = MutableStateFlow<List<DownloadTask>>(emptyList())
     val downloadTasks: StateFlow<List<DownloadTask>> = _downloadTasks.asStateFlow()
     private val _activeBatchDownloadJobCount = MutableStateFlow(0)
-    val activeDownloadOperationsFlow: StateFlow<Boolean> = combine(
-        _downloadTasks,
+    private val rawDownloadTaskSummary: StateFlow<DownloadTaskSummary> = _downloadTasks
+        .map(::buildDownloadTaskSummary)
+        .distinctUntilChanged()
+        .stateIn(
+            scope = scope,
+            started = SharingStarted.Eagerly,
+            initialValue = DownloadTaskSummary()
+        )
+    val downloadTaskSummary: StateFlow<DownloadTaskSummary> = combine(
+        rawDownloadTaskSummary,
         _isSingleDownloading,
         _activeBatchDownloadJobCount
-    ) { tasks, isSingleDownloading, activeBatchDownloadJobCount ->
-        hasActiveDownloadOperations(
-            tasks = tasks,
+    ) { taskSummary: DownloadTaskSummary,
+        isSingleDownloading: Boolean,
+        activeBatchDownloadJobCount: Int ->
+        stabilizeDownloadTaskSummary(
+            taskSummary = taskSummary,
             isSingleDownloading = isSingleDownloading,
             hasActiveBatchJobs = activeBatchDownloadJobCount > 0
         )
+    }.distinctUntilChanged().stateIn(
+        scope = scope,
+        started = SharingStarted.Eagerly,
+        initialValue = DownloadTaskSummary()
+    )
+    val activeDownloadOperationsFlow: StateFlow<Boolean> = combine(
+        downloadTaskSummary,
+        _isSingleDownloading,
+        _activeBatchDownloadJobCount
+    ) { taskSummary: DownloadTaskSummary,
+        isSingleDownloading: Boolean,
+        activeBatchDownloadJobCount: Int ->
+        isSingleDownloading ||
+            activeBatchDownloadJobCount > 0 ||
+            taskSummary.hasActiveOperations
     }.stateIn(
         scope = scope,
         started = SharingStarted.Eagerly,
@@ -123,6 +189,8 @@ object GlobalDownloadManager {
     private var refreshJob: Job? = null
     private var catalogPersistJob: Job? = null
     private var catalogReconcileJob: Job? = null
+    private val taskProgressPublishStates = ConcurrentHashMap<String, TaskProgressPublishState>()
+    private val metadataPostProcessingSemaphore = Semaphore(METADATA_POST_PROCESSING_PARALLELISM)
 
     @Volatile
     private var downloadedSongCatalogIndex = DownloadedSongCatalogIndex.EMPTY
@@ -138,8 +206,27 @@ object GlobalDownloadManager {
 
     private var initialized = false
     private val taskAttemptIdGenerator = AtomicLong(0L)
+    private val trafficRiskRequestIdGenerator = AtomicLong(0L)
+    private val mobileDataInterruptionRequestIdGenerator = AtomicLong(0L)
     private val songExecutionLocks = ConcurrentHashMap<String, Mutex>()
+    private val pendingDownloadRecoveryMutex = Mutex()
     private val activeBatchDownloadJobs = Collections.newSetFromMap(ConcurrentHashMap<Job, Boolean>())
+    private val downloadTasksMutationLock = Any()
+
+    @Volatile
+    private var pendingDownloadRecoveryActive = false
+
+    @Volatile
+    private var mobileDataDownloadOverrideAllowed = false
+
+    private data class TaskProgressPublishState(
+        val bytesRead: Long,
+        val totalBytes: Long,
+        val percentage: Int,
+        val speedBytesPerSec: Long,
+        val stage: AudioDownloadManager.DownloadStage,
+        val emittedAtNs: Long
+    )
 
     fun initialize(context: Context) {
         if (initialized) return
@@ -150,7 +237,7 @@ object GlobalDownloadManager {
         scope.launch {
             val startupRecovery = ManagedDownloadStorage.consumeStartupRecoveryResult()
             val restoredCatalog = restorePersistedDownloadedSongs(appContext)
-            recoverPendingResumableDownloads(appContext)
+            recoverPendingResumableDownloads(appContext, reason = "startup")
             if (
                 !shouldRunInitialDownloadScan(
                     catalogReady = restoredCatalog,
@@ -167,22 +254,55 @@ object GlobalDownloadManager {
         }
     }
 
-    private suspend fun recoverPendingResumableDownloads(context: Context) {
+    private suspend fun recoverPendingResumableDownloads(
+        context: Context,
+        reason: String
+    ) {
+        pendingDownloadRecoveryMutex.withLock {
+            recoverPendingResumableDownloadsLocked(context, reason)
+        }
+    }
+
+    private suspend fun recoverPendingResumableDownloadsLocked(
+        context: Context,
+        reason: String
+    ) {
         runCatching {
+            val pendingQueuedDownloads = ManagedDownloadStorage.listPendingQueuedDownloads(context)
             val pendingDownloads = ManagedDownloadStorage.listPendingResumableDownloads(context)
-            if (pendingDownloads.isEmpty()) {
+            val cancelledDownloadKeys = ManagedDownloadStorage.listCancelledDownloadKeys(context)
+            val recoveryCandidates = mergePendingDownloadRecoveryCandidates(
+                queuedDownloads = pendingQueuedDownloads,
+                resumableDownloads = pendingDownloads,
+                cancelledKeys = cancelledDownloadKeys
+            )
+            val recoveryCandidateKeys = recoveryCandidates
+                .mapTo(mutableSetOf()) { candidate -> candidate.song.stableKey() }
+            removeObsoleteWaitingNetworkTasks(recoveryCandidateKeys)
+            if (recoveryCandidates.isEmpty()) {
+                if (pendingQueuedDownloads.isEmpty() && pendingDownloads.isEmpty()) {
+                    ManagedDownloadStorage.clearCancelledDownloadKeys(context)
+                }
                 return
             }
 
             val resumableSongs = mutableListOf<SongItem>()
-            pendingDownloads.forEach { pendingDownload ->
-                val song = pendingDownload.song
+            val settledSongKeys = mutableSetOf<String>()
+            recoveryCandidates.forEach { candidate ->
+                val song = candidate.song
+                val songKey = song.stableKey()
                 when {
+                    candidate.cancelled -> {
+                        candidate.workingFile?.let(ManagedDownloadStorage::deleteWorkingDownloadArtifacts)
+                        settledSongKeys += songKey
+                    }
                     shouldSkipDownload(context, song) -> {
-                        ManagedDownloadStorage.deleteWorkingDownloadArtifacts(pendingDownload.workingFile)
+                        candidate.workingFile?.let(ManagedDownloadStorage::deleteWorkingDownloadArtifacts)
+                        settledSongKeys += songKey
                     }
                     findExistingDownloadedAudio(context, song) != null -> {
-                        ManagedDownloadStorage.deleteWorkingDownloadArtifacts(pendingDownload.workingFile)
+                        candidate.workingFile?.let(ManagedDownloadStorage::deleteWorkingDownloadArtifacts)
+                        settledSongKeys += songKey
                     }
                     else -> {
                         resumableSongs += song
@@ -190,14 +310,78 @@ object GlobalDownloadManager {
                 }
             }
 
+            forgetPendingDownloadQueueEntries(context, settledSongKeys)
+            ManagedDownloadStorage.removeCancelledDownloadKeys(context, settledSongKeys)
+
             if (resumableSongs.isEmpty()) {
                 return
             }
 
-            NPLogger.d(TAG, "检测到未完成下载，准备自动恢复: count=${resumableSongs.size}")
-            startBatchDownload(context, resumableSongs)
+            NPLogger.d(
+                TAG,
+                "检测到未完成下载，准备自动恢复: reason=$reason, count=${resumableSongs.size}, queued=${pendingQueuedDownloads.size}, partial=${pendingDownloads.size}"
+            )
+            startBatchDownload(context, resumableSongs, skipTrafficRiskPrompt = true)
         }.onFailure { error ->
             NPLogger.e(TAG, "自动恢复未完成下载失败: ${error.message}", error)
+        }
+    }
+
+    private fun removeObsoleteWaitingNetworkTasks(recoveryCandidateKeys: Set<String>) {
+        mutateDownloadTasks { tasks ->
+            tasks.filterNot { task ->
+                task.status == DownloadStatus.WAITING_NETWORK &&
+                    task.song.stableKey() !in recoveryCandidateKeys
+            }
+        }
+    }
+
+    fun recoverPendingDownloadsForNetworkRestored(context: Context, reason: String) {
+        val appContext = context.applicationContext
+        scope.launch {
+            if (appContext.currentTrafficNetworkType() != TrafficNetworkType.WIFI) {
+                return@launch
+            }
+            mobileDataDownloadOverrideAllowed = false
+            _mobileDataDownloadInterruptionRequest.value = null
+            if (!tryBeginPendingDownloadRecovery()) {
+                return@launch
+            }
+            try {
+                waitForActiveDownloadJobsToSettle()
+                if (hasActiveDownloadOperations()) {
+                    return@launch
+                }
+                recoverPendingResumableDownloads(appContext, reason = reason)
+                delay(1_500L)
+            } finally {
+                finishPendingDownloadRecovery()
+            }
+        }
+    }
+
+    private fun tryBeginPendingDownloadRecovery(): Boolean {
+        synchronized(downloadTasksMutationLock) {
+            if (pendingDownloadRecoveryActive) {
+                return false
+            }
+            pendingDownloadRecoveryActive = true
+            return true
+        }
+    }
+
+    private fun finishPendingDownloadRecovery() {
+        synchronized(downloadTasksMutationLock) {
+            pendingDownloadRecoveryActive = false
+        }
+    }
+
+    private suspend fun waitForActiveDownloadJobsToSettle() {
+        repeat(20) {
+            if (activeBatchDownloadJobs.isEmpty()) {
+                return
+            }
+            delay(100L)
         }
     }
 
@@ -335,24 +519,73 @@ object GlobalDownloadManager {
     }
 
     private fun updateDownloadProgress(progress: AudioDownloadManager.DownloadProgress) {
-        val tasks = _downloadTasks.value
-        val taskIndex = tasks.indexOfFirst { task ->
-            task.song.stableKey() == progress.songKey &&
-                task.status == DownloadStatus.DOWNLOADING &&
-                shouldApplyTaskMutation(task, progress.attemptId)
-        }
-        if (taskIndex < 0) {
+        if (!shouldPublishDownloadTaskProgress(progress)) {
             return
         }
+        mutateDownloadTasks { tasks ->
+            val taskIndex = tasks.indexOfFirst { task ->
+                task.song.stableKey() == progress.songKey &&
+                    task.status == DownloadStatus.DOWNLOADING &&
+                    shouldApplyTaskMutation(task, progress.attemptId)
+            }
+            if (taskIndex < 0) {
+                return@mutateDownloadTasks tasks
+            }
 
-        val currentTask = tasks[taskIndex]
-        if (currentTask.progress == progress) {
-            return
+            val currentTask = tasks[taskIndex]
+            if (currentTask.progress == progress) {
+                return@mutateDownloadTasks tasks
+            }
+
+            tasks.replaceAt(taskIndex, currentTask.copy(progress = progress))
         }
+    }
 
-        val updatedTasks = tasks.toMutableList()
-        updatedTasks[taskIndex] = currentTask.copy(progress = progress)
-        _downloadTasks.value = updatedTasks
+    private fun shouldPublishDownloadTaskProgress(
+        progress: AudioDownloadManager.DownloadProgress
+    ): Boolean {
+        val nowNs = System.nanoTime()
+        val previous = taskProgressPublishStates[progress.songKey]
+        val shouldPublish = previous == null || shouldPublishDownloadTaskProgress(
+            previous = previous,
+            progress = progress,
+            nowNs = nowNs
+        )
+        if (!shouldPublish) {
+            return false
+        }
+        taskProgressPublishStates[progress.songKey] = TaskProgressPublishState(
+            bytesRead = progress.bytesRead,
+            totalBytes = progress.totalBytes,
+            percentage = progress.percentage,
+            speedBytesPerSec = progress.speedBytesPerSec,
+            stage = progress.stage,
+            emittedAtNs = nowNs
+        )
+        return true
+    }
+
+    private fun shouldPublishDownloadTaskProgress(
+        previous: TaskProgressPublishState,
+        progress: AudioDownloadManager.DownloadProgress,
+        nowNs: Long
+    ): Boolean {
+        val enoughTimeElapsed = nowNs - previous.emittedAtNs >= DOWNLOAD_TASK_PROGRESS_EMIT_INTERVAL_NS
+        return progress.stage != previous.stage ||
+            progress.stage != AudioDownloadManager.DownloadStage.TRANSFERRING ||
+            progress.totalBytes != previous.totalBytes ||
+            (
+                enoughTimeElapsed &&
+                    (
+                        progress.percentage != previous.percentage ||
+                            progress.bytesRead != previous.bytesRead ||
+                            progress.speedBytesPerSec != previous.speedBytesPerSec
+                        )
+                )
+    }
+
+    private fun clearTaskProgressPublishState(songKey: String) {
+        taskProgressPublishStates.remove(songKey)
     }
 
     private suspend fun finalizeCompletedDownload(
@@ -402,6 +635,7 @@ object GlobalDownloadManager {
                     DownloadStatus.COMPLETED,
                     expectedAttemptId = expectedAttemptId
                 )
+                forgetPendingDownloadQueueEntries(context, setOf(songKey))
                 scheduleCompletedTaskRemoval(songKey, expectedAttemptId = expectedAttemptId)
                 scheduleCatalogReconcile(context, forceRefresh = true)
                 return
@@ -416,10 +650,10 @@ object GlobalDownloadManager {
             song = song,
             sidecarReferences = sidecarReferences
         )
-        if (
-            handleCancelledCompletedDownload(
-                context = context,
-                song = song,
+            if (
+                handleCancelledCompletedDownload(
+                    context = context,
+                    song = song,
                 songKey = songKey,
                 storedAudio = storedAudio,
                 sidecarReferences = sidecarReferences,
@@ -474,6 +708,7 @@ object GlobalDownloadManager {
             DownloadStatus.COMPLETED,
             expectedAttemptId = expectedAttemptId
         )
+        forgetPendingDownloadQueueEntries(context, setOf(songKey))
         scheduleCompletedTaskRemoval(songKey, expectedAttemptId = expectedAttemptId)
         if (refreshCatalog) {
             // 正常完成时前面已经做过 optimistic publish 和 snapshot 增量更新
@@ -500,12 +735,14 @@ object GlobalDownloadManager {
                 return true
             }
             val writeResult = runCatching {
-                DownloadedAudioTagWriter.write(
-                    context = context,
-                    audio = audio,
-                    song = song,
-                    sidecarReferences = sidecarReferences
-                )
+                metadataPostProcessingSemaphore.withPermit {
+                    DownloadedAudioTagWriter.write(
+                        context = context,
+                        audio = audio,
+                        song = song,
+                        sidecarReferences = sidecarReferences
+                    )
+                }
             }
             if (writeResult.getOrDefault(false)) {
                 return true
@@ -534,6 +771,7 @@ object GlobalDownloadManager {
             DownloadStatus.FAILED,
             expectedAttemptId = expectedAttemptId
         )
+        forgetPendingDownloadQueueEntries(context, setOf(songKey))
         return false
     }
 
@@ -571,11 +809,11 @@ object GlobalDownloadManager {
             NPLogger.e(TAG, "下载最终入库回滚失败: ${song.name}, ${error.message}", error)
         }
         clearSongCancelled(songKey)
-        updateTaskStatus(
+        removeDownloadTask(
             songKey,
-            DownloadStatus.CANCELLED,
             expectedAttemptId = expectedAttemptId
         )
+        forgetPendingDownloadQueueEntries(context, setOf(songKey))
         return true
     }
 
@@ -1062,6 +1300,20 @@ object GlobalDownloadManager {
             }
     }
 
+    private fun findAllIndexedCoverReferences(
+        candidateBaseNames: List<String>,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): List<String> {
+        return candidateBaseNames
+            .flatMap { baseName ->
+                sequenceOf("jpg", "jpeg", "png", "webp")
+                    .mapNotNull { extension ->
+                        snapshot.coverEntriesByName["$baseName.$extension"]?.reference
+                    }
+            }
+            .distinct()
+    }
+
     private fun findIndexedLyricReference(
         candidateBaseNames: List<String>,
         songId: Long?,
@@ -1076,6 +1328,22 @@ object GlobalDownloadManager {
         return candidates.firstNotNullOfOrNull { candidate ->
             snapshot.lyricEntriesByName[candidate]?.reference
         }
+    }
+
+    private fun findAllIndexedLyricReferences(
+        candidateBaseNames: List<String>,
+        songId: Long?,
+        translated: Boolean,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): List<String> {
+        val candidates = ManagedDownloadStorage.buildLyricCandidateNames(
+            songId = songId,
+            candidateBaseNames = candidateBaseNames,
+            translated = translated
+        )
+        return candidates
+            .mapNotNull { candidate -> snapshot.lyricEntriesByName[candidate]?.reference }
+            .distinct()
     }
 
     private suspend fun removeManagedDownloadArtifacts(
@@ -1139,27 +1407,29 @@ object GlobalDownloadManager {
         val lyricReferences = buildList {
             metadata?.lyricPath?.let(::add)
             metadata?.translatedLyricPath?.let(::add)
-            if (isEmpty()) {
-                findIndexedLyricReference(
+            addAll(
+                findAllIndexedLyricReferences(
                     candidateBaseNames = candidateBaseNames,
                     songId = resolvedSongId,
                     translated = false,
                     snapshot = snapshot
-                )?.let(::add)
-                findIndexedLyricReference(
+                )
+            )
+            addAll(
+                findAllIndexedLyricReferences(
                     candidateBaseNames = candidateBaseNames,
                     songId = resolvedSongId,
                     translated = true,
                     snapshot = snapshot
-                )?.let(::add)
-            }
+                )
+            )
         }
         val coverReferences = buildList {
             metadata?.coverPath?.let(::add)
-            when {
-                storedAudio != null -> findIndexedCoverReference(storedAudio, snapshot)
-                else -> findIndexedCoverReference(candidateBaseNames, snapshot)
-            }?.let(::add)
+            val indexedCoverBaseNames = storedAudio
+                ?.let { candidateManagedDownloadBaseNames(it.nameWithoutExtension) }
+                ?: candidateBaseNames
+            addAll(findAllIndexedCoverReferences(indexedCoverBaseNames, snapshot))
         }
 
         return linkedSetOf<String>().apply {
@@ -1329,7 +1599,7 @@ object GlobalDownloadManager {
                 optimisticKeys.contains(candidate.deletionIdentity())
             }
             if (optimisticSongs != previousSongs) {
-                publishDownloadedSongs(appContext, optimisticSongs, persistCatalog = true)
+                publishDownloadedSongs(appContext, optimisticSongs, persistCatalog = false)
             }
             try {
                 val deletePlans = buildManagedDownloadDeletePlans(
@@ -1356,6 +1626,7 @@ object GlobalDownloadManager {
                     },
                     remainingReferences = remainingReferences
                 )
+                val hasUnconfirmedDeletes = requestedReferences.size != deletedReferences.size
                 var deletionFailed = remainingReferences.isNotEmpty()
                 deletePlans.forEach { deletePlan ->
                     val remainingForSong = remainingReferencesBySong[deletePlan.song.deletionIdentity()].orEmpty()
@@ -1369,9 +1640,12 @@ object GlobalDownloadManager {
                         NPLogger.d(TAG, "删除下载文件完成: ${deletePlan.song.name}")
                     }
                 }
+                if (!deletionFailed) {
+                    scheduleDownloadedSongsCatalogPersist(appContext, optimisticSongs)
+                }
                 scheduleCatalogReconcile(
                     appContext,
-                    forceRefresh = deletionFailed
+                    forceRefresh = deletionFailed || hasUnconfirmedDeletes
                 )
             } catch (error: Exception) {
                 if (previousSongs != _downloadedSongs.value) {
@@ -1577,15 +1851,45 @@ object GlobalDownloadManager {
     }
 
     fun startDownload(context: Context, song: SongItem) {
+        startDownload(context, song, skipTrafficRiskPrompt = false)
+    }
+
+    private fun startDownload(
+        context: Context,
+        song: SongItem,
+        skipTrafficRiskPrompt: Boolean
+    ) {
+        val appContext = context.applicationContext
+        scope.launch {
+            if (
+                maybeRequestTrafficRiskDownloadConfirmation(
+                    context = appContext,
+                    songs = listOf(song),
+                    isBatch = false,
+                    skipTrafficRiskPrompt = skipTrafficRiskPrompt
+                )
+            ) {
+                return@launch
+            }
+            rememberPendingDownloadQueue(appContext, listOf(song))
+            startDownloadConfirmed(appContext, song)
+        }
+    }
+
+    private fun startDownloadConfirmed(context: Context, song: SongItem) {
         val appContext = context.applicationContext
         scope.launch {
             val songKey = song.stableKey()
-            awaitSongCancellationSettled(songKey)
+            if (!awaitSongCancellationSettled(songKey)) {
+                return@launch
+            }
+            AudioDownloadManager.clearNetworkPolicyPause(setOf(songKey))
             val attemptId = prepareDownloadTask(song) ?: return@launch
             try {
                 withSongExecutionLock(songKey) {
                     if (shouldSkipDownload(appContext, song)) {
                         removeDownloadTask(songKey, expectedAttemptId = attemptId)
+                        forgetPendingDownloadQueueEntries(appContext, setOf(songKey))
                         return@withSongExecutionLock
                     }
 
@@ -1611,6 +1915,15 @@ object GlobalDownloadManager {
                         throw CancellationException("Download cancelled before start")
                     }
 
+                    if (AudioDownloadManager.isDownloadPausedForNetworkPolicy(songKey)) {
+                        updateTaskStatus(
+                            songKey,
+                            DownloadStatus.WAITING_NETWORK,
+                            expectedAttemptId = attemptId
+                        )
+                        return@withSongExecutionLock
+                    }
+
                     _isSingleDownloading.value = true
                     try {
                         AudioDownloadManager.resetCancelFlag()
@@ -1630,12 +1943,21 @@ object GlobalDownloadManager {
                     }
                 }
             } catch (_: CancellationException) {
-                clearSongCancelled(songKey)
-                updateTaskStatus(
-                    songKey,
-                    DownloadStatus.CANCELLED,
-                    expectedAttemptId = attemptId
-                )
+                if (AudioDownloadManager.isDownloadPausedForNetworkPolicy(songKey)) {
+                    updateTaskStatus(
+                        songKey,
+                        DownloadStatus.WAITING_NETWORK,
+                        expectedAttemptId = attemptId
+                    )
+                } else {
+                    clearSongCancelled(songKey)
+                    updateTaskStatus(
+                        songKey,
+                        DownloadStatus.CANCELLED,
+                        expectedAttemptId = attemptId
+                    )
+                    forgetPendingDownloadQueueEntries(appContext, setOf(songKey))
+                }
                 _isSingleDownloading.value = false
             } catch (error: Exception) {
                 NPLogger.e(TAG, "下载失败: ${song.name} - ${error.message}", error)
@@ -1644,12 +1966,45 @@ object GlobalDownloadManager {
                     DownloadStatus.FAILED,
                     expectedAttemptId = attemptId
                 )
+                forgetPendingDownloadQueueEntries(appContext, setOf(songKey))
                 _isSingleDownloading.value = false
             }
         }
     }
 
     fun startBatchDownload(context: Context, songs: List<SongItem>) {
+        startBatchDownload(context, songs, skipTrafficRiskPrompt = false)
+    }
+
+    private fun startBatchDownload(
+        context: Context,
+        songs: List<SongItem>,
+        skipTrafficRiskPrompt: Boolean
+    ) {
+        if (songs.isEmpty()) return
+
+        val appContext = context.applicationContext
+        scope.launch {
+            val requestedSongs = songs.distinctBy { it.stableKey() }
+            if (requestedSongs.isEmpty()) {
+                return@launch
+            }
+            if (
+                maybeRequestTrafficRiskDownloadConfirmation(
+                    context = appContext,
+                    songs = requestedSongs,
+                    isBatch = true,
+                    skipTrafficRiskPrompt = skipTrafficRiskPrompt
+                )
+            ) {
+                return@launch
+            }
+            rememberPendingDownloadQueue(appContext, requestedSongs)
+            startBatchDownloadConfirmed(appContext, requestedSongs)
+        }
+    }
+
+    private fun startBatchDownloadConfirmed(context: Context, songs: List<SongItem>) {
         if (songs.isEmpty()) return
 
         val appContext = context.applicationContext
@@ -1658,16 +2013,23 @@ object GlobalDownloadManager {
             val pendingSongs = mutableListOf<PreparedDownloadTaskRequest>()
             try {
                 val optimisticCompletedSongs = mutableListOf<DownloadedSong>()
+                val settledSongKeys = mutableSetOf<String>()
                 val settledSongs = coroutineScope {
                     requestedSongs.map { song ->
                         async {
-                            awaitSongCancellationSettled(song.stableKey())
-                            song
+                            val songKey = song.stableKey()
+                            if (!awaitSongCancellationSettled(songKey)) {
+                                null
+                            } else {
+                                AudioDownloadManager.clearNetworkPolicyPause(setOf(songKey))
+                                song
+                            }
                         }
                     }.awaitAll()
-                }
+                }.filterNotNull()
                 settledSongs.forEach { song ->
                     if (shouldSkipDownload(appContext, song)) {
+                        settledSongKeys += song.stableKey()
                         return@forEach
                     }
 
@@ -1683,6 +2045,7 @@ object GlobalDownloadManager {
                             )
                         } else {
                             optimisticCompletedSongs += buildOptimisticDownloadedSong(song, existingAudio)
+                            settledSongKeys += song.stableKey()
                         }
                         return@forEach
                     }
@@ -1695,6 +2058,7 @@ object GlobalDownloadManager {
                 }
 
                 publishOptimisticDownloadedSongs(appContext, optimisticCompletedSongs)
+                forgetPendingDownloadQueueEntries(appContext, settledSongKeys)
                 if (optimisticCompletedSongs.isNotEmpty()) {
                     scheduleCatalogReconcile(appContext, forceRefresh = false)
                 }
@@ -1732,25 +2096,48 @@ object GlobalDownloadManager {
                             DownloadStatus.FAILED,
                             expectedAttemptId = attemptId
                         )
+                        forgetPendingDownloadQueueEntries(appContext, setOf(failedSong.stableKey()))
                     },
                     onSongCancelled = { cancelledSong ->
-                        val attemptId = pendingAttemptIds[cancelledSong.stableKey()] ?: return@downloadPlaylist
-                        clearSongCancelled(cancelledSong.stableKey())
+                        val songKey = cancelledSong.stableKey()
+                        val attemptId = pendingAttemptIds[songKey] ?: return@downloadPlaylist
+                        if (AudioDownloadManager.isDownloadPausedForNetworkPolicy(songKey)) {
+                            updateTaskStatus(
+                                songKey,
+                                DownloadStatus.WAITING_NETWORK,
+                                expectedAttemptId = attemptId
+                            )
+                            return@downloadPlaylist
+                        }
+                        clearSongCancelled(songKey)
                         updateTaskStatus(
-                            cancelledSong.stableKey(),
+                            songKey,
                             DownloadStatus.CANCELLED,
                             expectedAttemptId = attemptId
                         )
+                        forgetPendingDownloadQueueEntries(appContext, setOf(songKey))
                     }
                 )
             } catch (_: CancellationException) {
+                val cancelledSongKeys = mutableSetOf<String>()
                 pendingSongs.forEach { request ->
-                    clearSongCancelled(request.song.stableKey())
+                    val songKey = request.song.stableKey()
+                    if (AudioDownloadManager.isDownloadPausedForNetworkPolicy(songKey)) {
+                        updateTaskStatus(
+                            songKey,
+                            DownloadStatus.WAITING_NETWORK,
+                            expectedAttemptId = request.attemptId
+                        )
+                        return@forEach
+                    }
+                    clearSongCancelled(songKey)
                     removeDownloadTask(
-                        request.song.stableKey(),
+                        songKey,
                         expectedAttemptId = request.attemptId
                     )
+                    cancelledSongKeys += songKey
                 }
+                forgetPendingDownloadQueueEntries(appContext, cancelledSongKeys)
             } catch (error: Exception) {
                 NPLogger.e(TAG, "批量下载失败: ${error.message}", error)
                 pendingSongs.forEach { request ->
@@ -1760,6 +2147,10 @@ object GlobalDownloadManager {
                         expectedAttemptId = request.attemptId
                     )
                 }
+                forgetPendingDownloadQueueEntries(
+                    appContext,
+                    pendingSongs.map { it.song.stableKey() }.toSet()
+                )
             }
         }
         activeBatchDownloadJobs += batchJob
@@ -1770,35 +2161,103 @@ object GlobalDownloadManager {
         }
     }
 
+    fun confirmTrafficRiskDownload(
+        context: Context,
+        request: TrafficRiskDownloadRequest
+    ) {
+        if (request.isBatch) {
+            startBatchDownload(context, request.songs, skipTrafficRiskPrompt = true)
+            return
+        }
+        request.songs.firstOrNull()?.let { song ->
+            startDownload(context, song, skipTrafficRiskPrompt = true)
+        }
+    }
+
+    private suspend fun maybeRequestTrafficRiskDownloadConfirmation(
+        context: Context,
+        songs: List<SongItem>,
+        isBatch: Boolean,
+        skipTrafficRiskPrompt: Boolean
+    ): Boolean {
+        if (skipTrafficRiskPrompt) {
+            return false
+        }
+        val distinctSongs = songs.distinctBy { it.stableKey() }
+        if (distinctSongs.isEmpty()) {
+            return false
+        }
+        val networkType = context.currentTrafficNetworkType()
+        if (networkType == TrafficNetworkType.WIFI) {
+            return false
+        }
+        if (!AppContainer.settingsRepo.mobileDataHighRiskPromptEnabledFlow.first()) {
+            return false
+        }
+
+        _trafficRiskDownloadRequests.emit(
+            TrafficRiskDownloadRequest(
+                id = trafficRiskRequestIdGenerator.incrementAndGet(),
+                songs = distinctSongs,
+                networkType = networkType,
+                isBatch = isBatch
+            )
+        )
+        return true
+    }
+
     private fun prepareDownloadTask(
         song: SongItem,
         status: DownloadStatus = DownloadStatus.DOWNLOADING
     ): Long? {
         val songKey = song.stableKey()
-        val attemptId = nextTaskAttemptId()
-        val existingTask = _downloadTasks.value.find { it.song.stableKey() == songKey }
-        if (existingTask != null) {
-            return when (existingTask.status) {
+        var preparedAttemptId: Long? = null
+        mutateDownloadTasks { tasks ->
+            val existingIndex = tasks.indexOfFirst { it.song.stableKey() == songKey }
+            if (existingIndex < 0) {
+                val attemptId = nextTaskAttemptId()
+                preparedAttemptId = attemptId
+                clearTaskProgressPublishState(songKey)
+                return@mutateDownloadTasks tasks + DownloadTask(
+                    song = song,
+                    progress = null,
+                    status = status,
+                    attemptId = attemptId
+                )
+            }
+
+            val existingTask = tasks[existingIndex]
+            when (existingTask.status) {
+                DownloadStatus.QUEUED,
+                DownloadStatus.DOWNLOADING -> return@mutateDownloadTasks tasks
+
                 DownloadStatus.COMPLETED,
                 DownloadStatus.CANCELLED,
-                DownloadStatus.FAILED -> {
-                    removeDownloadTask(songKey)
-                    registerDownloadTask(song, status, attemptId)
-                    attemptId
+                DownloadStatus.FAILED,
+                DownloadStatus.WAITING_NETWORK -> {
+                    val attemptId = nextTaskAttemptId()
+                    preparedAttemptId = attemptId
+                    clearTaskProgressPublishState(songKey)
+                    tasks.replaceAt(
+                        existingIndex,
+                        DownloadTask(
+                            song = song,
+                            progress = null,
+                            status = status,
+                            attemptId = attemptId
+                        )
+                    )
                 }
-                DownloadStatus.QUEUED,
-                DownloadStatus.DOWNLOADING -> null
             }
         }
-
-        registerDownloadTask(song, status, attemptId)
-        return attemptId
+        return preparedAttemptId
     }
 
     private fun registerActiveDownloadTask(
         song: SongItem,
         expectedAttemptId: Long
     ) {
+        clearTaskProgressPublishState(song.stableKey())
         updateDownloadTask(
             songKey = song.stableKey(),
             expectedAttemptId = expectedAttemptId
@@ -1820,34 +2279,36 @@ object GlobalDownloadManager {
         attemptId: Long
     ) {
         val songKey = song.stableKey()
-        val tasks = _downloadTasks.value
-        val existingIndex = tasks.indexOfFirst { it.song.stableKey() == songKey }
-        if (existingIndex >= 0) {
-            val existingTask = tasks[existingIndex]
-            if (
-                existingTask.attemptId == attemptId &&
-                existingTask.status == status &&
-                existingTask.progress == null
-            ) {
-                return
+        mutateDownloadTasks { tasks ->
+            clearTaskProgressPublishState(songKey)
+            val existingIndex = tasks.indexOfFirst { it.song.stableKey() == songKey }
+            if (existingIndex >= 0) {
+                val existingTask = tasks[existingIndex]
+                if (
+                    existingTask.attemptId == attemptId &&
+                    existingTask.status == status &&
+                    existingTask.progress == null
+                ) {
+                    return@mutateDownloadTasks tasks
+                }
+                return@mutateDownloadTasks tasks.replaceAt(
+                    existingIndex,
+                    DownloadTask(
+                        song = song,
+                        progress = null,
+                        status = status,
+                        attemptId = attemptId
+                    )
+                )
             }
-            val updatedTasks = tasks.toMutableList()
-            updatedTasks[existingIndex] = DownloadTask(
+
+            tasks + DownloadTask(
                 song = song,
                 progress = null,
                 status = status,
                 attemptId = attemptId
             )
-            _downloadTasks.value = updatedTasks
-            return
         }
-
-        _downloadTasks.value = tasks + DownloadTask(
-            song = song,
-            progress = null,
-            status = status,
-            attemptId = attemptId
-        )
     }
 
     private suspend fun findExistingDownloadedAudio(
@@ -1937,6 +2398,9 @@ object GlobalDownloadManager {
         status: DownloadStatus,
         expectedAttemptId: Long? = null
     ) {
+        if (status != DownloadStatus.DOWNLOADING) {
+            clearTaskProgressPublishState(songKey)
+        }
         updateDownloadTask(songKey, expectedAttemptId) { task ->
             if (task.status == status && task.progress == null) {
                 return@updateDownloadTask task
@@ -1946,16 +2410,18 @@ object GlobalDownloadManager {
     }
 
     fun removeDownloadTask(songKey: String, expectedAttemptId: Long? = null) {
-        val tasks = _downloadTasks.value
-        val taskIndex = tasks.indexOfFirst { it.song.stableKey() == songKey }
-        if (taskIndex < 0) {
-            return
+        mutateDownloadTasks { tasks ->
+            val taskIndex = tasks.indexOfFirst { it.song.stableKey() == songKey }
+            if (taskIndex < 0) {
+                return@mutateDownloadTasks tasks
+            }
+            val task = tasks[taskIndex]
+            if (!shouldApplyTaskMutation(task, expectedAttemptId)) {
+                return@mutateDownloadTasks tasks
+            }
+            clearTaskProgressPublishState(songKey)
+            tasks.filterIndexed { index, _ -> index != taskIndex }
         }
-        val task = tasks[taskIndex]
-        if (!shouldApplyTaskMutation(task, expectedAttemptId)) {
-            return
-        }
-        _downloadTasks.value = tasks.filterIndexed { index, _ -> index != taskIndex }
     }
 
     private fun scheduleCompletedTaskRemoval(
@@ -1985,8 +2451,56 @@ object GlobalDownloadManager {
         }
     }
 
+    private fun rememberPendingDownloadQueue(
+        context: Context,
+        songs: List<SongItem>
+    ) {
+        if (songs.isEmpty()) {
+            return
+        }
+        ManagedDownloadStorage.removeCancelledDownloadKeys(
+            context,
+            songs.map { it.stableKey() }
+        )
+        ManagedDownloadStorage.upsertPendingDownloadQueue(context, songs)
+    }
+
+    private fun forgetPendingDownloadQueueEntries(
+        context: Context,
+        songKeys: Collection<String>
+    ) {
+        val keys = songKeys.filter(String::isNotBlank)
+        if (keys.isEmpty()) {
+            return
+        }
+        ManagedDownloadStorage.removePendingDownloadQueueEntries(context, keys)
+    }
+
+    private fun clearPendingDownloadQueue(context: Context) {
+        ManagedDownloadStorage.clearPendingDownloadQueue(context)
+    }
+
+    private fun clearCancelledDownloadKeys(context: Context) {
+        ManagedDownloadStorage.clearCancelledDownloadKeys(context)
+    }
+
     private fun markSongCancelled(songKey: String) {
         cancelledSongKeys.add(songKey)
+    }
+
+    private fun persistCancelledDownloadKeys(songKeys: Collection<String>) {
+        val keys = songKeys.filter(String::isNotBlank).toSet()
+        if (keys.isEmpty()) {
+            return
+        }
+        runCatching {
+            ManagedDownloadStorage.markCancelledDownloadKeys(
+                AppContainer.applicationContext,
+                keys
+            )
+        }.onFailure { error ->
+            NPLogger.w(TAG, "记录下载取消标记失败: count=${keys.size}, ${error.message}")
+        }
     }
 
     fun clearSongCancelled(songKey: String) {
@@ -1995,35 +2509,233 @@ object GlobalDownloadManager {
 
     fun cancelDownloadTask(songKey: String) {
         val task = _downloadTasks.value.find { it.song.stableKey() == songKey } ?: return
-        if (task.status != DownloadStatus.QUEUED && task.status != DownloadStatus.DOWNLOADING) return
-
-        markSongCancelled(songKey)
-        updateTaskStatus(
-            songKey,
-            DownloadStatus.CANCELLED,
-            expectedAttemptId = task.attemptId
-        )
-        AudioDownloadManager.cancelSongDownload(songKey)
-    }
-
-    fun cancelAllDownloadTasks() {
-        val batchJobs = activeBatchDownloadJobs.toList()
-        val activeTasks = _downloadTasks.value.filter { task ->
-            task.status == DownloadStatus.QUEUED || task.status == DownloadStatus.DOWNLOADING
-        }
-        if (activeTasks.isEmpty() && batchJobs.isEmpty()) {
+        if (
+            task.status != DownloadStatus.QUEUED &&
+            task.status != DownloadStatus.DOWNLOADING &&
+            task.status != DownloadStatus.WAITING_NETWORK
+        ) {
             return
         }
 
-        val activeKeys = activeTasks.map { it.song.stableKey() }.toSet()
-        activeKeys.forEach(::markSongCancelled)
-        if (activeTasks.isNotEmpty()) {
-            _downloadTasks.value = applyCancelledStatus(_downloadTasks.value, activeTasks)
+        markSongCancelled(songKey)
+        removeDownloadTask(songKey, expectedAttemptId = task.attemptId)
+        scope.launch {
+            cancelDownloadTaskInBackground(task)
         }
+    }
+
+    fun cancelAllDownloadTasks() {
+        val appContext = AppContainer.applicationContext
+        val batchJobs = activeBatchDownloadJobs.toList()
+        val activeTasks = _downloadTasks.value.filter { task ->
+            task.status == DownloadStatus.QUEUED ||
+                task.status == DownloadStatus.DOWNLOADING ||
+                task.status == DownloadStatus.WAITING_NETWORK
+        }
+        if (activeTasks.isEmpty() && batchJobs.isEmpty()) {
+            clearPendingDownloadQueue(appContext)
+            clearCancelledDownloadKeys(appContext)
+            return
+        }
+
+        activeTasks
+            .map { it.song.stableKey() }
+            .forEach(::markSongCancelled)
+        removeActiveDownloadTasks(activeTasks)
+        _mobileDataDownloadInterruptionRequest.value = null
         batchJobs.forEach { job ->
             job.cancel(CancellationException("cancel all download tasks"))
         }
         AudioDownloadManager.cancelDownload()
+        scope.launch {
+            cancelDownloadTasksInBackground(appContext, activeTasks)
+        }
+    }
+
+    private fun cleanupPendingWorkingDownloadArtifactsAfterCancellation(
+        context: Context,
+        songKeys: Set<String>
+    ) {
+        if (songKeys.isEmpty()) {
+            return
+        }
+        val appContext = context.applicationContext
+        scope.launch {
+            songKeys.forEach { songKey ->
+                awaitSongCancellationSettled(songKey)
+            }
+            ManagedDownloadStorage.deletePendingWorkingDownloadArtifacts(appContext, songKeys)
+        }
+    }
+
+    fun interruptDownloadsForWifiDisconnected(networkType: TrafficNetworkType) {
+        scope.launch {
+            if (networkType == TrafficNetworkType.WIFI) {
+                return@launch
+            }
+            mobileDataDownloadOverrideAllowed = false
+            val activeTasks = _downloadTasks.value.filter { task ->
+                task.status == DownloadStatus.QUEUED || task.status == DownloadStatus.DOWNLOADING
+            }
+            if (activeTasks.isEmpty() && activeBatchDownloadJobs.isEmpty()) {
+                return@launch
+            }
+            NPLogger.w(
+                TAG,
+                "WIFI 已断开，等待用户确认下载策略: networkType=$networkType, activeTasks=${activeTasks.size}"
+            )
+            if (!AppContainer.settingsRepo.mobileDataHighRiskPromptEnabledFlow.first()) {
+                pauseDownloadTasksForNetworkPolicy(AppContainer.applicationContext, activeTasks)
+                return@launch
+            }
+            _mobileDataDownloadInterruptionRequest.value = MobileDataDownloadInterruptionRequest(
+                id = mobileDataInterruptionRequestIdGenerator.incrementAndGet(),
+                networkType = networkType,
+                taskCount = activeTasks.size
+            )
+            pauseDownloadTasksForNetworkPolicy(AppContainer.applicationContext, activeTasks)
+        }
+    }
+
+    fun continueDownloadsOnMobileData(
+        context: Context,
+        request: MobileDataDownloadInterruptionRequest
+    ) {
+        if (_mobileDataDownloadInterruptionRequest.value?.id != request.id) {
+            return
+        }
+        mobileDataDownloadOverrideAllowed = true
+        _mobileDataDownloadInterruptionRequest.value = null
+        recoverPendingDownloadsOnCurrentNetwork(context, reason = "mobile_data_user_confirmed")
+    }
+
+    fun waitDownloadsForWifi(request: MobileDataDownloadInterruptionRequest) {
+        if (_mobileDataDownloadInterruptionRequest.value?.id != request.id) {
+            return
+        }
+        _mobileDataDownloadInterruptionRequest.value = null
+        scope.launch {
+            val activeTasks = _downloadTasks.value.filter { task ->
+                task.status == DownloadStatus.QUEUED || task.status == DownloadStatus.DOWNLOADING
+            }
+            pauseDownloadTasksForNetworkPolicy(AppContainer.applicationContext, activeTasks)
+        }
+    }
+
+    fun cancelAllDownloadsForMobileData(request: MobileDataDownloadInterruptionRequest) {
+        if (_mobileDataDownloadInterruptionRequest.value?.id != request.id) {
+            return
+        }
+        _mobileDataDownloadInterruptionRequest.value = null
+        cancelAllDownloadTasks()
+    }
+
+    private fun recoverPendingDownloadsOnCurrentNetwork(context: Context, reason: String) {
+        val appContext = context.applicationContext
+        scope.launch {
+            val networkType = appContext.currentTrafficNetworkType()
+            if (networkType != TrafficNetworkType.WIFI && !mobileDataDownloadOverrideAllowed) {
+                return@launch
+            }
+            if (!tryBeginPendingDownloadRecovery()) {
+                return@launch
+            }
+            try {
+                waitForActiveDownloadJobsToSettle()
+                if (hasActiveDownloadOperations()) {
+                    return@launch
+                }
+                recoverPendingResumableDownloads(appContext, reason = reason)
+                delay(1_500L)
+            } finally {
+                finishPendingDownloadRecovery()
+            }
+        }
+    }
+
+    private suspend fun cancelDownloadTaskInBackground(task: DownloadTask) {
+        val appContext = AppContainer.applicationContext
+        val songKey = task.song.stableKey()
+        persistCancelledDownloadKeys(setOf(songKey))
+        AudioDownloadManager.cancelSongDownload(songKey)
+        forgetPendingDownloadQueueEntries(appContext, setOf(songKey))
+        awaitSongCancellationSettled(songKey)
+        ManagedDownloadStorage.deletePendingWorkingDownloadArtifacts(appContext, setOf(songKey))
+    }
+
+    private suspend fun cancelDownloadTasksInBackground(
+        context: Context,
+        tasks: Collection<DownloadTask>
+    ) {
+        val appContext = context.applicationContext
+        val persistedKeys = ManagedDownloadStorage.listPendingQueuedDownloads(appContext)
+            .mapTo(mutableSetOf()) { it.stableKey }
+        val activeKeys = tasks.mapTo(persistedKeys) { it.song.stableKey() }
+        activeKeys.forEach(::markSongCancelled)
+        persistCancelledDownloadKeys(activeKeys)
+        clearPendingDownloadQueue(appContext)
+        awaitDownloadCancellationsSettled(activeKeys)
+        ManagedDownloadStorage.deletePendingWorkingDownloadArtifacts(appContext, activeKeys)
+    }
+
+    private suspend fun awaitDownloadCancellationsSettled(songKeys: Set<String>) {
+        if (songKeys.isEmpty()) {
+            return
+        }
+        val deadlineAt = System.currentTimeMillis() + DOWNLOAD_CANCEL_SETTLE_TIMEOUT_MS
+        while (System.currentTimeMillis() < deadlineAt) {
+            if (songKeys.none(AudioDownloadManager::isSongDownloadActive)) {
+                break
+            }
+            delay(50L)
+        }
+        val stuckKeys = songKeys.filter(AudioDownloadManager::isSongDownloadActive)
+        if (stuckKeys.isNotEmpty()) {
+            NPLogger.w(TAG, "等待批量取消清理超时: count=${stuckKeys.size}")
+        }
+        songKeys.forEach(::clearSongCancelled)
+    }
+
+    private fun removeActiveDownloadTasks(activeTasks: Collection<DownloadTask>) {
+        if (activeTasks.isEmpty()) {
+            return
+        }
+        val activeTaskKeys = activeTasks.mapTo(mutableSetOf()) { task ->
+            task.song.stableKey() to task.attemptId
+        }
+        activeTasks.forEach { task ->
+            clearTaskProgressPublishState(task.song.stableKey())
+        }
+        mutateDownloadTasks { tasks ->
+            tasks.filterNot { task ->
+                task.status in arrayOf(
+                    DownloadStatus.QUEUED,
+                    DownloadStatus.DOWNLOADING,
+                    DownloadStatus.WAITING_NETWORK
+                ) && activeTaskKeys.contains(task.song.stableKey() to task.attemptId)
+            }
+        }
+    }
+
+    private fun pauseDownloadTasksForNetworkPolicy(
+        context: Context,
+        activeTasks: List<DownloadTask>
+    ) {
+        val activeKeys = ManagedDownloadStorage.listPendingQueuedDownloads(context)
+            .mapTo(mutableSetOf()) { entry -> entry.stableKey }
+        activeTasks.mapTo(activeKeys) { task -> task.song.stableKey() }
+        if (activeKeys.isEmpty()) {
+            activeBatchDownloadJobs.toList().forEach { job ->
+                job.cancel(CancellationException("pause downloads for network policy"))
+            }
+            return
+        }
+        activeKeys.forEach(::clearTaskProgressPublishState)
+        AudioDownloadManager.pauseDownloadsForNetworkPolicy(activeKeys)
+        mutateDownloadTasks { tasks -> applyWaitingNetworkStatus(tasks, activeTasks) }
+        activeBatchDownloadJobs.toList().forEach { job ->
+            job.cancel(CancellationException("pause downloads for network policy"))
+        }
     }
 
     fun isSongCancelled(songKey: String): Boolean {
@@ -2069,7 +2781,11 @@ object GlobalDownloadManager {
 
     fun resumeDownloadTask(context: Context, songKey: String) {
         val task = _downloadTasks.value.find { it.song.stableKey() == songKey } ?: return
-        if (task.status != DownloadStatus.CANCELLED && task.status != DownloadStatus.FAILED) {
+        if (
+            task.status != DownloadStatus.CANCELLED &&
+            task.status != DownloadStatus.FAILED &&
+            task.status != DownloadStatus.WAITING_NETWORK
+        ) {
             return
         }
 
@@ -2080,7 +2796,9 @@ object GlobalDownloadManager {
 
     fun clearCompletedTasks() {
         val downloadingTasks = _downloadTasks.value.filter { task ->
-            task.status == DownloadStatus.QUEUED || task.status == DownloadStatus.DOWNLOADING
+            task.status == DownloadStatus.QUEUED ||
+                task.status == DownloadStatus.DOWNLOADING ||
+                task.status == DownloadStatus.WAITING_NETWORK
         }
         if (downloadingTasks.isNotEmpty()) {
             AudioDownloadManager.cancelDownload()
@@ -2089,13 +2807,16 @@ object GlobalDownloadManager {
             }
         }
 
-        _downloadTasks.value = emptyList()
+        mutateDownloadTasks { emptyList() }
+        taskProgressPublishStates.clear()
         cancelledSongKeys.clear()
+        clearPendingDownloadQueue(AppContainer.applicationContext)
+        clearCancelledDownloadKeys(AppContainer.applicationContext)
     }
 
-    private suspend fun awaitSongCancellationSettled(songKey: String) {
+    private suspend fun awaitSongCancellationSettled(songKey: String): Boolean {
         if (!isSongCancelled(songKey) && !AudioDownloadManager.isSongDownloadActive(songKey)) {
-            return
+            return true
         }
 
         val deadlineAt = System.currentTimeMillis() + DOWNLOAD_CANCEL_SETTLE_TIMEOUT_MS
@@ -2104,20 +2825,10 @@ object GlobalDownloadManager {
         }
         if (AudioDownloadManager.isSongDownloadActive(songKey)) {
             NPLogger.w(TAG, "等待取消中的下载清理超时: songKey=$songKey")
+            return false
         }
-        _downloadTasks.value
-            .firstOrNull { it.song.stableKey() == songKey }
-            ?.takeIf { task ->
-                task.status == DownloadStatus.QUEUED || task.status == DownloadStatus.DOWNLOADING
-            }
-            ?.let { staleTask ->
-                updateTaskStatus(
-                    songKey = songKey,
-                    status = DownloadStatus.CANCELLED,
-                    expectedAttemptId = staleTask.attemptId
-                )
-            }
         clearSongCancelled(songKey)
+        return true
     }
 
     private fun nextTaskAttemptId(): Long {
@@ -2128,28 +2839,51 @@ object GlobalDownloadManager {
         return songExecutionLocks.computeIfAbsent(songKey) { Mutex() }
     }
 
+    private inline fun mutateDownloadTasks(
+        transform: (List<DownloadTask>) -> List<DownloadTask>
+    ): List<DownloadTask> {
+        synchronized(downloadTasksMutationLock) {
+            val currentTasks = _downloadTasks.value
+            val updatedTasks = transform(currentTasks)
+            if (updatedTasks != currentTasks) {
+                _downloadTasks.value = updatedTasks
+            }
+            return updatedTasks
+        }
+    }
+
+    private fun List<DownloadTask>.replaceAt(
+        index: Int,
+        task: DownloadTask
+    ): List<DownloadTask> {
+        val updatedTasks = toMutableList()
+        updatedTasks[index] = task
+        return updatedTasks
+    }
+
     private inline fun updateDownloadTask(
         songKey: String,
         expectedAttemptId: Long? = null,
         transform: (DownloadTask) -> DownloadTask
     ): Boolean {
-        val tasks = _downloadTasks.value
-        val taskIndex = tasks.indexOfFirst { it.song.stableKey() == songKey }
-        if (taskIndex < 0) {
-            return false
+        var applied = false
+        mutateDownloadTasks { tasks ->
+            val taskIndex = tasks.indexOfFirst { it.song.stableKey() == songKey }
+            if (taskIndex < 0) {
+                return@mutateDownloadTasks tasks
+            }
+            val task = tasks[taskIndex]
+            if (!shouldApplyTaskMutation(task, expectedAttemptId)) {
+                return@mutateDownloadTasks tasks
+            }
+            val updatedTask = transform(task)
+            applied = true
+            if (updatedTask == task) {
+                return@mutateDownloadTasks tasks
+            }
+            tasks.replaceAt(taskIndex, updatedTask)
         }
-        val task = tasks[taskIndex]
-        if (!shouldApplyTaskMutation(task, expectedAttemptId)) {
-            return false
-        }
-        val updatedTask = transform(task)
-        if (updatedTask == task) {
-            return true
-        }
-        val updatedTasks = tasks.toMutableList()
-        updatedTasks[taskIndex] = updatedTask
-        _downloadTasks.value = updatedTasks
-        return true
+        return applied
     }
 
     private fun candidateBaseNames(
@@ -2355,7 +3089,9 @@ internal fun isDownloadTaskFinalizing(task: DownloadTask?): Boolean {
 }
 
 internal fun isDownloadTaskCancellable(task: DownloadTask?): Boolean {
-    return task?.status == DownloadStatus.QUEUED || task?.status == DownloadStatus.DOWNLOADING
+    return task?.status == DownloadStatus.QUEUED ||
+        task?.status == DownloadStatus.DOWNLOADING ||
+        task?.status == DownloadStatus.WAITING_NETWORK
 }
 
 internal fun shouldHideRemoteDownloadAction(
@@ -2825,23 +3561,133 @@ data class DownloadTask(
     val attemptId: Long = 0L
 )
 
+data class DownloadTaskSummary(
+    val pendingTaskCount: Int = 0,
+    val queuedTaskCount: Int = 0,
+    val hasActiveTasks: Boolean = false,
+    val hasActiveOperations: Boolean = false
+) {
+    val hasPendingTasks: Boolean
+        get() = pendingTaskCount > 0
+}
+
 private data class PreparedDownloadTaskRequest(
     val song: SongItem,
     val attemptId: Long
 )
 
+internal data class PendingDownloadRecoveryCandidate(
+    val song: SongItem,
+    val workingFile: File?,
+    val order: Int,
+    val cancelled: Boolean
+)
+
+internal fun mergePendingDownloadRecoveryCandidates(
+    queuedDownloads: List<ManagedDownloadStorage.PendingDownloadQueueEntry>,
+    resumableDownloads: List<ManagedDownloadStorage.PendingResumableDownload>,
+    cancelledKeys: Set<String> = emptySet()
+): List<PendingDownloadRecoveryCandidate> {
+    val merged = linkedMapOf<String, PendingDownloadRecoveryCandidate>()
+
+    queuedDownloads
+        .sortedBy(ManagedDownloadStorage.PendingDownloadQueueEntry::order)
+        .forEach { entry ->
+            merged[entry.stableKey] = PendingDownloadRecoveryCandidate(
+                song = entry.song,
+                workingFile = null,
+                order = entry.order,
+                cancelled = entry.stableKey in cancelledKeys
+            )
+        }
+
+    resumableDownloads.forEachIndexed { index, pendingDownload ->
+        val songKey = pendingDownload.song.stableKey()
+        val existing = merged[songKey]
+        merged[songKey] = PendingDownloadRecoveryCandidate(
+            song = pendingDownload.song,
+            workingFile = pendingDownload.workingFile,
+            order = existing?.order ?: queuedDownloads.size + index,
+            cancelled = existing?.cancelled == true || songKey in cancelledKeys
+        )
+    }
+
+    return merged.values
+        .sortedBy(PendingDownloadRecoveryCandidate::order)
+        .mapIndexed { index, candidate -> candidate.copy(order = index) }
+}
+
 enum class DownloadStatus {
     QUEUED,
     DOWNLOADING,
+    WAITING_NETWORK,
     COMPLETED,
     FAILED,
     CANCELLED
+}
+
+fun buildDownloadTaskSummary(tasks: List<DownloadTask>): DownloadTaskSummary {
+    var pendingTaskCount = 0
+    var queuedTaskCount = 0
+    var hasActiveTasks = false
+    var hasActiveOperations = false
+
+    tasks.forEach { task ->
+        when (task.status) {
+            DownloadStatus.QUEUED -> {
+                pendingTaskCount++
+                queuedTaskCount++
+                hasActiveOperations = true
+            }
+
+            DownloadStatus.DOWNLOADING -> {
+                pendingTaskCount++
+                hasActiveTasks = true
+                hasActiveOperations = true
+            }
+
+            DownloadStatus.WAITING_NETWORK -> pendingTaskCount++
+            DownloadStatus.FAILED -> pendingTaskCount++
+            DownloadStatus.COMPLETED,
+            DownloadStatus.CANCELLED -> Unit
+        }
+    }
+
+    return DownloadTaskSummary(
+        pendingTaskCount = pendingTaskCount,
+        queuedTaskCount = queuedTaskCount,
+        hasActiveTasks = hasActiveTasks,
+        hasActiveOperations = hasActiveOperations
+    )
+}
+
+internal fun stabilizeDownloadTaskSummary(
+    taskSummary: DownloadTaskSummary,
+    isSingleDownloading: Boolean,
+    hasActiveBatchJobs: Boolean
+): DownloadTaskSummary {
+    if (!isSingleDownloading && !hasActiveBatchJobs) {
+        return taskSummary
+    }
+    if (taskSummary.hasPendingTasks) {
+        return taskSummary.copy(
+            hasActiveTasks = taskSummary.hasActiveTasks || isSingleDownloading,
+            hasActiveOperations = true
+        )
+    }
+    return taskSummary.copy(
+        pendingTaskCount = 1,
+        queuedTaskCount = if (isSingleDownloading) 0 else 1,
+        hasActiveTasks = isSingleDownloading,
+        hasActiveOperations = true
+    )
 }
 
 fun countPendingDownloadTasks(tasks: List<DownloadTask>): Int {
     return tasks.count { task ->
         task.status == DownloadStatus.QUEUED ||
             task.status == DownloadStatus.DOWNLOADING ||
+            task.status == DownloadStatus.WAITING_NETWORK ||
             task.status == DownloadStatus.FAILED
     }
 }
@@ -2868,6 +3714,29 @@ internal fun isActiveDownloadAttempt(
     return task.status == DownloadStatus.QUEUED || task.status == DownloadStatus.DOWNLOADING
 }
 
+internal fun applyWaitingNetworkStatus(
+    tasks: List<DownloadTask>,
+    waitingTasks: Collection<DownloadTask>
+): List<DownloadTask> {
+    if (tasks.isEmpty() || waitingTasks.isEmpty()) {
+        return tasks
+    }
+    val waitingTaskKeys = waitingTasks
+        .mapTo(mutableSetOf()) { task -> task.song.stableKey() to task.attemptId }
+    var changed = false
+    val updatedTasks = tasks.map { task ->
+        val shouldWait =
+            task.status in arrayOf(DownloadStatus.QUEUED, DownloadStatus.DOWNLOADING) &&
+                waitingTaskKeys.contains(task.song.stableKey() to task.attemptId)
+        if (!shouldWait) {
+            return@map task
+        }
+        changed = true
+        task.copy(status = DownloadStatus.WAITING_NETWORK, progress = null)
+    }
+    return if (changed) updatedTasks else tasks
+}
+
 internal fun applyCancelledStatus(
     tasks: List<DownloadTask>,
     cancelledTasks: Collection<DownloadTask>
@@ -2880,7 +3749,11 @@ internal fun applyCancelledStatus(
     var changed = false
     val updatedTasks = tasks.map { task ->
         val shouldCancel =
-            task.status in arrayOf(DownloadStatus.QUEUED, DownloadStatus.DOWNLOADING) &&
+            task.status in arrayOf(
+                DownloadStatus.QUEUED,
+                DownloadStatus.DOWNLOADING,
+                DownloadStatus.WAITING_NETWORK
+            ) &&
                 cancelledTaskKeys.contains(task.song.stableKey() to task.attemptId)
         if (!shouldCancel) {
             return@map task

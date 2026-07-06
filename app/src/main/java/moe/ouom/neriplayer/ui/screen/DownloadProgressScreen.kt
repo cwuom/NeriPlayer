@@ -70,8 +70,13 @@ fun DownloadProgressScreen(
     val context = LocalContext.current
     val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
     val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
-    val pendingTaskCount = remember(downloadTasks) { countPendingDownloadTasks(downloadTasks) }
-    val queuedTaskCount = remember(downloadTasks) { countQueuedDownloadTasks(downloadTasks) }
+    val taskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
+    val activeDownloadOperations by GlobalDownloadManager.activeDownloadOperationsFlow.collectAsState()
+    val pendingTaskCount = taskSummary.pendingTaskCount
+    val queuedTaskCount = taskSummary.queuedTaskCount
+    val visibleBatchProgress = batchDownloadProgress?.takeIf { progress ->
+        pendingTaskCount <= 1 || progress.totalSongs >= pendingTaskCount
+    }
     val visibleTasks = remember(downloadTasks) {
         downloadTasks.filter { it.status != DownloadStatus.QUEUED }
     }
@@ -116,11 +121,11 @@ fun DownloadProgressScreen(
                         style = MaterialTheme.typography.titleLarge
                     )
                     Text(
-                        text = if (batchDownloadProgress != null) {
+                        text = if (visibleBatchProgress != null) {
                             stringResource(
                                 R.string.download_progress_format,
-                                batchDownloadProgress!!.completedSongs,
-                                batchDownloadProgress!!.totalSongs
+                                visibleBatchProgress.completedSongs,
+                                visibleBatchProgress.totalSongs
                             )
                         } else {
                             pluralStringResource(
@@ -155,7 +160,7 @@ fun DownloadProgressScreen(
             }
         )
 
-        if (visibleTasks.isEmpty() && queuedTaskCount == 0) {
+        if (visibleTasks.isEmpty() && queuedTaskCount == 0 && !activeDownloadOperations) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -354,6 +359,7 @@ private fun DownloadTaskStatusIcon(status: DownloadStatus) {
         imageVector = when (status) {
             DownloadStatus.QUEUED -> Icons.Default.Schedule
             DownloadStatus.DOWNLOADING -> Icons.Default.CloudDownload
+            DownloadStatus.WAITING_NETWORK -> Icons.Default.Schedule
             DownloadStatus.COMPLETED -> Icons.Default.CheckCircle
             DownloadStatus.FAILED -> Icons.Default.Error
             DownloadStatus.CANCELLED -> Icons.Default.Cancel
@@ -362,6 +368,7 @@ private fun DownloadTaskStatusIcon(status: DownloadStatus) {
         tint = when (status) {
             DownloadStatus.QUEUED -> MaterialTheme.colorScheme.onSurfaceVariant
             DownloadStatus.DOWNLOADING -> MaterialTheme.colorScheme.primary
+            DownloadStatus.WAITING_NETWORK -> MaterialTheme.colorScheme.onSurfaceVariant
             DownloadStatus.COMPLETED -> Color(0xFF4CAF50)
             DownloadStatus.FAILED -> MaterialTheme.colorScheme.error
             DownloadStatus.CANCELLED -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -378,6 +385,7 @@ private fun DownloadTaskActionButton(
 ) {
     when (task.status) {
         DownloadStatus.QUEUED,
+        DownloadStatus.WAITING_NETWORK,
         DownloadStatus.DOWNLOADING -> {
             val cancellable = isDownloadTaskCancellable(task)
             IconButton(onClick = onCancel, enabled = cancellable) {
@@ -416,6 +424,14 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
         DownloadStatus.QUEUED -> {
             Text(
                 text = stringResource(R.string.download_queued_status),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        DownloadStatus.WAITING_NETWORK -> {
+            Text(
+                text = stringResource(R.string.download_waiting_network_recovery),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

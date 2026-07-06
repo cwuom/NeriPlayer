@@ -195,6 +195,42 @@ class ManagedDownloadStorageMigrationCompatTest {
     }
 
     @Test
+    fun `createUniqueName keeps desired name when no conflict exists`() {
+        assertEquals(
+            "Artist - Song.flac",
+            ManagedDownloadStorage.createUniqueName(
+                existingNames = setOf("Other.flac"),
+                desiredName = "Artist - Song.flac"
+            )
+        )
+    }
+
+    @Test
+    fun `createUniqueName increments numbered suffix on conflict`() {
+        assertEquals(
+            "Artist - Song (2).flac",
+            ManagedDownloadStorage.createUniqueName(
+                existingNames = setOf(
+                    "Artist - Song.flac",
+                    "Artist - Song (1).flac"
+                ),
+                desiredName = "Artist - Song.flac"
+            )
+        )
+    }
+
+    @Test
+    fun `createUniqueName supports extensionless names`() {
+        assertEquals(
+            "Artist - Song (1)",
+            ManagedDownloadStorage.createUniqueName(
+                existingNames = setOf("Artist - Song"),
+                desiredName = "Artist - Song"
+            )
+        )
+    }
+
+    @Test
     fun `parseDownloadedAudioMetadataJson keeps embedded lyrics for local fallback`() {
         val metadata = ManagedDownloadStorage.parseDownloadedAudioMetadataJson(
             JSONObject().apply {

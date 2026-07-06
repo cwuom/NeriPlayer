@@ -28,6 +28,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.C
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.DataSpec
+import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +43,7 @@ import moe.ouom.neriplayer.data.platform.bili.isBiliStreamHost
 import moe.ouom.neriplayer.data.platform.bili.isBiliStreamUrl
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
+import moe.ouom.neriplayer.data.traffic.TrafficStatsRepository
 import moe.ouom.neriplayer.util.NPLogger
 
 /**
@@ -53,7 +55,9 @@ import moe.ouom.neriplayer.util.NPLogger
 class ConditionalHttpDataSourceFactory(
     private val baseFactory: HttpDataSource.Factory,
     cookieRepo: BiliCookieRepository,
-    youtubeAuthRepo: YouTubeAuthRepository
+    youtubeAuthRepo: YouTubeAuthRepository,
+    private val context: Context? = null,
+    private val trafficStatsRepository: TrafficStatsRepository? = null
 ) : HttpDataSource.Factory {
 
     companion object {
@@ -83,7 +87,7 @@ class ConditionalHttpDataSourceFactory(
     }
 
     override fun createDataSource(): HttpDataSource {
-        return ConditionalChunkedHttpDataSource(
+        val dataSource = ConditionalChunkedHttpDataSource(
             upstreamFactory = baseFactory,
             transformDataSpec = { dataSpec ->
                 NPLogger.i("createDataSource", dataSpec.uri)
@@ -101,6 +105,17 @@ class ConditionalHttpDataSourceFactory(
                 }
             }
         )
+        val statsRepository = trafficStatsRepository
+        val appContext = context
+        return if (statsRepository != null && appContext != null) {
+            TrafficCountingHttpDataSource(
+                context = appContext,
+                delegate = dataSource,
+                trafficStatsRepository = statsRepository
+            )
+        } else {
+            dataSource
+        }
     }
 
     override fun setDefaultRequestProperties(defaultRequestProperties: Map<String, String>): HttpDataSource.Factory {

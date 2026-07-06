@@ -50,9 +50,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.hasActiveDownloadTasks
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
@@ -95,10 +93,11 @@ private fun SettingsDownloadExpandedContent(
     onNavigateToDownloadManager: () -> Unit
 ) {
     val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
-    val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
-    val pendingTaskCount = countPendingDownloadTasks(downloadTasks)
-    val hasActiveTasks = hasActiveDownloadTasks(downloadTasks)
-    val visibleProgress = batchDownloadProgress?.takeIf { hasActiveTasks }
+    val taskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
+    val visibleProgress = batchDownloadProgress?.takeIf { progress ->
+        taskSummary.hasPendingTasks &&
+            (taskSummary.pendingTaskCount <= 1 || progress.totalSongs >= taskSummary.pendingTaskCount)
+    }
 
     Column(
         modifier = Modifier
@@ -116,7 +115,7 @@ private fun SettingsDownloadExpandedContent(
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        if (visibleProgress != null || pendingTaskCount > 0) {
+        if (visibleProgress != null || taskSummary.hasPendingTasks) {
             ListItem(
                 leadingContent = {
                     Icon(
@@ -139,21 +138,21 @@ private fun SettingsDownloadExpandedContent(
                         Text(
                             pluralStringResource(
                                 R.plurals.download_tasks_count,
-                                pendingTaskCount,
-                                pendingTaskCount
+                                taskSummary.pendingTaskCount,
+                                taskSummary.pendingTaskCount
                             )
                         )
                     }
                 },
                 trailingContent = {
-                    if (pendingTaskCount > 0) {
+                    if (taskSummary.hasPendingTasks) {
                         MiuixSettingsTextButton(
                             onClick = { GlobalDownloadManager.cancelAllDownloadTasks() },
-                            enabled = hasActiveTasks
+                            enabled = taskSummary.hasPendingTasks
                         ) {
                             Text(
                                 stringResource(R.string.action_cancel),
-                                color = if (hasActiveTasks) {
+                                color = if (taskSummary.hasPendingTasks) {
                                     MaterialTheme.colorScheme.error
                                 } else {
                                     MaterialTheme.colorScheme.onSurfaceVariant

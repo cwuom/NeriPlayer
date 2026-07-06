@@ -19,6 +19,7 @@ internal val NETEASE_QUALITY_FALLBACK_ORDER = listOf(
     "hires",
     "lossless",
     "exhigh",
+    "higher",
     "standard"
 )
 

@@ -89,7 +89,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
         )
         val cachedAudioInfo = _currentPlaybackAudioInfo.value
             ?.takeIf { _currentSongFlow.value?.sameIdentityAs(song) == true }
-            ?: buildYouTubeOfflineCacheAudioInfo(youtubePreferredQuality) {
+            ?: buildYouTubeOfflineCacheAudioInfo(effectiveYouTubeQuality()) {
                 getLocalizedString(it)
             }
         return SongUrlResult.Success(
@@ -651,7 +651,8 @@ private suspend fun PlayerManager.getNeteaseSongUrl(
     sideEffects: RefreshResolverSideEffects = RefreshResolverSideEffects()
 ): SongUrlResult = withContext(Dispatchers.IO) {
     try {
-        val qualityCandidates = buildNeteaseQualityCandidates(preferredQuality)
+        val effectiveQuality = effectiveNeteaseQuality()
+        val qualityCandidates = buildNeteaseQualityCandidates(effectiveQuality)
         var previewFallback: SongUrlResult.Success? = null
         var lastFailureReason: NeteasePlaybackResponseParser.FailureReason? = null
 
@@ -675,10 +676,10 @@ private suspend fun PlayerManager.getNeteaseSongUrl(
                         getLocalizedString = { getLocalizedString(it) }
                     )
                     if (parsed.notice != NeteasePlaybackResponseParser.Notice.PREVIEW_CLIP) {
-                        if (quality != preferredQuality) {
+                        if (quality != effectiveQuality) {
                             NPLogger.w(
                                 "NERI-PlayerManager",
-                                "当前音质不可用，已自动降级: id=${song.id}, preferred=$preferredQuality, resolved=$quality"
+                                "当前音质不可用，已自动降级: id=${song.id}, preferred=$effectiveQuality, resolved=$quality"
                             )
                         }
                         return@withContext success
@@ -774,7 +775,8 @@ private suspend fun PlayerManager.getBiliAudioUrl(
 
         val (availableStreams, audioStream) = biliRepo.getAudioWithDecision(
             resolved.videoInfo.bvid,
-            resolved.cid
+            resolved.cid,
+            preferredKeyOverride = effectiveBiliQuality()
         )
 
         if (audioStream?.url != null) {
@@ -834,7 +836,7 @@ private suspend fun PlayerManager.getYouTubeMusicAudioUrl(
         // 播放时优先保留更高码率的 Opus，避免被 m4a 偏好压到 140
         val resolvedPlayableAudio = youtubeMusicPlaybackRepository.getBestPlayableAudio(
             videoId = videoId,
-            preferredQualityOverride = youtubePreferredQuality,
+            preferredQualityOverride = effectiveYouTubeQuality(),
             forceRefresh = forceRefresh,
             preferM4a = false
         )?.takeIf { it.url.isNotBlank() }

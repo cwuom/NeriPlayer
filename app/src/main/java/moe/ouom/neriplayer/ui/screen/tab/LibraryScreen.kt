@@ -841,7 +841,14 @@ private fun LocalPlaylistList(
     val defaultPlaylistName = context.getString(R.string.library_create_playlist_default)
     val maxNameLength = LocalPlaylistRepository.MAX_PLAYLIST_NAME_LENGTH
     val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsState(initial = false)
-    val reorderablePlaylists = remember { mutableStateListOf<LocalPlaylist>() }
+    val editablePlaylists = remember(playlists, context) {
+        playlists.filterNot { SystemLocalPlaylists.isSystemPlaylist(it, context) }
+    }
+    val reorderablePlaylists = remember(editablePlaylists) {
+        mutableStateListOf<LocalPlaylist>().apply {
+            addAll(editablePlaylists)
+        }
+    }
 
     LaunchedEffect(showDialog) {
         if (showDialog && autoShowKeyboard) focusRequester.requestFocus()
@@ -865,13 +872,10 @@ private fun LocalPlaylistList(
 
     BackHandler(enabled = selectionMode) { exitSelection() }
 
-    LaunchedEffect(playlists) {
-        val filtered = playlists.filterNot { SystemLocalPlaylists.isSystemPlaylist(it, context) }
-        reorderablePlaylists.clear()
-        reorderablePlaylists.addAll(filtered)
-        val validIds = filtered.map { it.id }.toSet()
+    LaunchedEffect(editablePlaylists) {
+        val validIds = editablePlaylists.map { it.id }.toSet()
         selectedIds = selectedIds.intersect(validIds)
-        if (selectionMode && reorderablePlaylists.isEmpty()) {
+        if (selectionMode && editablePlaylists.isEmpty()) {
             exitSelection()
         }
     }

@@ -70,6 +70,14 @@ fun SettingsHostScreen(
     onYouTubeQualityChange: (String) -> Unit,
     biliPreferredQuality: String,
     onBiliQualityChange: (String) -> Unit,
+    mobileDataFollowDefaultAudioQuality: Boolean,
+    onMobileDataFollowDefaultAudioQualityChange: (Boolean) -> Unit,
+    mobileDataNeteaseAudioQuality: String,
+    onMobileDataNeteaseAudioQualityChange: (String) -> Unit,
+    mobileDataYouTubeAudioQuality: String,
+    onMobileDataYouTubeAudioQualityChange: (String) -> Unit,
+    mobileDataBiliAudioQuality: String,
+    onMobileDataBiliAudioQualityChange: (String) -> Unit,
     seedColorHex: String,
     onSeedColorChange: (String) -> Unit,
     themeColorPalette: List<String>,
@@ -113,7 +121,7 @@ fun SettingsHostScreen(
     onBackgroundImageChange: (Uri?) -> Unit,
     downloadDirectoryUri: String?,
     downloadFileNameTemplate: String?,
-    onDownloadDirectoryUriChange: (String?) -> Unit,
+    onDownloadDirectoryUriChange: (String?, String?) -> Unit,
     onDownloadFileNameTemplateChange: (String?) -> Unit,
     backgroundImageBlur: Float,
     onBackgroundImageBlurChange: (Float) -> Unit,
@@ -218,6 +226,19 @@ fun SettingsHostScreen(
                             onYouTubeQualityChange = onYouTubeQualityChange,
                             biliPreferredQuality = biliPreferredQuality,
                             onBiliQualityChange = onBiliQualityChange,
+                            mobileDataFollowDefaultAudioQuality =
+                                mobileDataFollowDefaultAudioQuality,
+                            onMobileDataFollowDefaultAudioQualityChange =
+                                onMobileDataFollowDefaultAudioQualityChange,
+                            mobileDataNeteaseAudioQuality = mobileDataNeteaseAudioQuality,
+                            onMobileDataNeteaseAudioQualityChange =
+                                onMobileDataNeteaseAudioQualityChange,
+                            mobileDataYouTubeAudioQuality = mobileDataYouTubeAudioQuality,
+                            onMobileDataYouTubeAudioQualityChange =
+                                onMobileDataYouTubeAudioQualityChange,
+                            mobileDataBiliAudioQuality = mobileDataBiliAudioQuality,
+                            onMobileDataBiliAudioQualityChange =
+                                onMobileDataBiliAudioQualityChange,
                             seedColorHex = seedColorHex,
                             onSeedColorChange = onSeedColorChange,
                             themeColorPalette = themeColorPalette,

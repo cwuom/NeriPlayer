@@ -133,9 +133,7 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.hasPendingDownloadTasks
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
@@ -289,10 +287,9 @@ fun DetailScreen(
 
     // 下载进度
     var showDownloadManager by remember { mutableStateOf(false) }
-    val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
-    val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
-    val pendingTaskCount = remember(downloadTasks) { countPendingDownloadTasks(downloadTasks) }
-    val hasDownloadManagerEntry = remember(downloadTasks) { hasPendingDownloadTasks(downloadTasks) }
+    val downloadTaskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
+    val pendingTaskCount = downloadTaskSummary.pendingTaskCount
+    val hasDownloadManagerEntry = downloadTaskSummary.hasPendingTasks
 
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val listState = rememberSaveable(playlistId, saver = LazyListState.Saver) {
@@ -736,6 +733,8 @@ fun DetailScreen(
 
     // 下载管理器
     if (showDownloadManager) {
+        val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
+        val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
         val progress = batchDownloadProgress
         BatchDownloadManagerSheet(
             batchDownloadProgress = progress,
