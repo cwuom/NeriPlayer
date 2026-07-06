@@ -1357,14 +1357,14 @@ fun DisclaimerScreen(
     )
 }
 @Composable private fun BodyText(text: String) {
-    Text(text = text, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Justify)
+    Text(text = text, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Start)
 }
 @Composable private fun EmphasisText(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
         color = MaterialTheme.colorScheme.error,
-        textAlign = TextAlign.Justify
+        textAlign = TextAlign.Start
     )
 }
 @Composable private fun Bullets(items: List<String>) {
@@ -1375,7 +1375,7 @@ fun DisclaimerScreen(
                 Text(
                     text = item,
                     style = MaterialTheme.typography.bodyLarge,
-                    textAlign = TextAlign.Justify,
+                    textAlign = TextAlign.Start,
                     modifier = Modifier.weight(1f)
                 )
             }

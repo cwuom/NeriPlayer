@@ -1663,32 +1663,32 @@
     <string name="local_playlist_play_next">Play Next…</string>
 
     <!-- Disclaimer -->
-    <string name="disclaimer_section1_body">This software (NeriPlayer) is a cross-platform audio/video player tool, used only to integrate and play public content from multiple third-party online platforms. The software itself does not upload, distribute, or modify any audio/video files; it does not store any user content or third-party content on the server side. For offline playback convenience, this software provides a &quot;save to local device only&quot; download function. The download process does not go through the developer\'s server and will not perform any cloud sync or backup.</string>
-    <string name="disclaimer_section2_bullet1">All playable content is accessed by users from third-party platforms, and copyright and related rights belong to the original author or platform;</string>
-    <string name="disclaimer_section2_bullet2">Users should comply with the laws and regulations of their country/region when using;</string>
-    <string name="disclaimer_section2_bullet3">The software supports downloading audio/video content from third-party platforms to the user\'s local device, but will not upload, sync, or store to any server;</string>
-    <string name="disclaimer_section2_bullet4">Do not infringe on third-party content in any way.</string>
-    <string name="disclaimer_section3_bullet1">Users should confirm the legal source and usage rights of accessed and downloaded content;</string>
-    <string name="disclaimer_section3_bullet2">The developer does not guarantee the legality or availability of third-party platform content;</string>
-    <string name="disclaimer_section3_bullet3">Legal risks arising from user actions (including downloading, sharing, distributing, etc.) are the user\'s own responsibility.</string>
-    <string name="disclaimer_section4_bullet1">Some functions of this software rely on third-party platform interfaces and services;</string>
-    <string name="disclaimer_section4_bullet2">The developer makes no guarantees regarding the stability, compatibility, or timeliness of third-party services;</string>
-    <string name="disclaimer_section4_bullet3">Users should review and comply with the terms of use and privacy policies of each platform.</string>
-    <string name="disclaimer_section5_bullet1">This software does not collect any personal information;</string>
-    <string name="disclaimer_section5_bullet2">This software does not collect any device information;</string>
-    <string name="disclaimer_section5_bullet3">This software does not perform behavior tracking, analysis, or user profiling;</string>
-    <string name="disclaimer_section5_bullet4">Play records, search records, etc. are only kept locally;</string>
-    <string name="disclaimer_section5_bullet5">When users initiate downloads, files are only saved to local storage and will not be sent back to the developer or any third party;</string>
-    <string name="disclaimer_section5_bullet6">No third-party statistics, crash analysis, or advertising SDKs are integrated;</string>
-    <string name="disclaimer_section5_bullet7">Third-party platform access logs are handled by that platform according to its privacy policy;</string>
-    <string name="disclaimer_section5_bullet8">GitHub Sync Feature (Optional): Users can choose to back up playlist data to their own GitHub private repository. Tokens are encrypted and stored locally using Android Keystore, and developers cannot access them;</string>
-    <string name="disclaimer_section5_bullet9">This privacy statement was last updated: 2025–01–07.</string>
-    <string name="disclaimer_section6_bullet1">This software is provided &quot;as is&quot; without any warranty regarding stability, etc.;</string>
-    <string name="disclaimer_section6_bullet2">To the extent permitted by law, the developer is not responsible for losses caused by use (including download actions);</string>
+    <string name="disclaimer_section1_body">NeriPlayer is a cross-platform audio and video player. It helps users organize and play publicly available content from third-party platforms. NeriPlayer does not upload, distribute, modify, or host audio/video files, and it does not store user content or third-party content on developer-controlled servers. Downloads are saved only to the user\'s device for offline playback. Downloaded files do not pass through the developer\'s servers and are not synced or backed up by NeriPlayer.</string>
+    <string name="disclaimer_section2_bullet1">Playable content is accessed by users from third-party platforms. Copyright and related rights remain with the original creators or platforms.</string>
+    <string name="disclaimer_section2_bullet2">Users must comply with the laws and regulations of their country or region.</string>
+    <string name="disclaimer_section2_bullet3">NeriPlayer may save supported third-party audio/video content to the user\'s local device, but it does not upload, sync, or store those files on any server.</string>
+    <string name="disclaimer_section2_bullet4">Do not use NeriPlayer to infringe third-party content rights.</string>
+    <string name="disclaimer_section3_bullet1">Users are responsible for confirming that the content they access or download comes from a lawful source and that they have the necessary rights to use it.</string>
+    <string name="disclaimer_section3_bullet2">The developer does not guarantee the legality, accuracy, availability, or continued accessibility of third-party platform content.</string>
+    <string name="disclaimer_section3_bullet3">Any legal risk arising from user actions, including downloading, sharing, or distributing content, is the user\'s responsibility.</string>
+    <string name="disclaimer_section4_bullet1">Some features rely on third-party platform APIs or services.</string>
+    <string name="disclaimer_section4_bullet2">The developer does not guarantee the stability, compatibility, timeliness, or continued availability of third-party services.</string>
+    <string name="disclaimer_section4_bullet3">Users should review and comply with each platform\'s terms of use and privacy policy.</string>
+    <string name="disclaimer_section5_bullet1">NeriPlayer does not collect personally identifiable information.</string>
+    <string name="disclaimer_section5_bullet2">NeriPlayer does not collect device identifiers or device information.</string>
+    <string name="disclaimer_section5_bullet3">NeriPlayer does not track behavior, analyze usage, or build user profiles.</string>
+    <string name="disclaimer_section5_bullet4">Playback history, search history, and similar records are kept locally.</string>
+    <string name="disclaimer_section5_bullet5">When a user starts a download, the file is saved only to local storage and is not sent to the developer or any third party.</string>
+    <string name="disclaimer_section5_bullet6">NeriPlayer does not include third-party analytics, crash reporting, or advertising SDKs.</string>
+    <string name="disclaimer_section5_bullet7">Access logs created by third-party platforms are handled by those platforms under their own privacy policies.</string>
+    <string name="disclaimer_section5_bullet8">GitHub Sync (optional): users may back up playlist data to their own private GitHub repository. Tokens are encrypted with Android Keystore and stored locally, so the developer cannot access them.</string>
+    <string name="disclaimer_section5_bullet9">Last updated: 2025-01-07.</string>
+    <string name="disclaimer_section6_bullet1">NeriPlayer is provided &quot;as is&quot; without warranties, including warranties of stability or uninterrupted availability.</string>
+    <string name="disclaimer_section6_bullet2">To the extent permitted by law, the developer is not liable for losses arising from use of the app, including download-related actions.</string>
     <string name="disclaimer_section6_bullet3">The above limitations apply even if the developer has been advised of the possibility of such losses.</string>
-    <string name="disclaimer_section7_body">Users should ensure that their use and download actions comply with the laws of their jurisdiction.</string>
-    <string name="disclaimer_section8_body">The developer may update this disclaimer and privacy statement from time to time. Continued use indicates acceptance of the updates.</string>
-    <string name="disclaimer_section9_body">By using this software, you indicate that you have read, understood, and agreed to all content on this page. If you do not agree, please uninstall and stop using.</string>
+    <string name="disclaimer_section7_body">Users are responsible for ensuring that their use of the app, including any downloads, complies with the laws of their jurisdiction.</string>
+    <string name="disclaimer_section8_body">The developer may update this disclaimer and privacy statement from time to time. Continued use of the app means you accept the updated terms.</string>
+    <string name="disclaimer_section9_body">By using NeriPlayer, you confirm that you have read, understood, and agreed to this page. If you do not agree, please stop using the app and uninstall it.</string>
 
     <!-- Download / Result -->
     <string name="download_cancelled_message">Download cancelled</string>
