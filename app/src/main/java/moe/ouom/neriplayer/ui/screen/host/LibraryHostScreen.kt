@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.ui.screen.artist.NeteaseArtistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.LocalArtistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
@@ -70,6 +71,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.util.toSaveMap
@@ -82,6 +84,8 @@ import moe.ouom.neriplayer.ui.util.restoreYouTubeMusicPlaylist
 sealed class LibrarySelectedItem : Parcelable {
     @Parcelize
     data class Local(val playlistId: Long) : LibrarySelectedItem()
+    @Parcelize
+    data class LocalArtist(val artistName: String) : LibrarySelectedItem()
     @Parcelize
     data class Netease(val playlist: PlaylistSummary) : LibrarySelectedItem()
     @Parcelize
@@ -244,6 +248,19 @@ fun LibraryHostScreen(
                                 source = "local"
                             )
                         },
+                        onLocalArtistClick = { artist ->
+                            skipDetailCloseAnimation = false
+                            pendingLocalListRestoreIndex = localListState.firstVisibleItemIndex
+                            pendingLocalListRestoreOffset = localListState.firstVisibleItemScrollOffset
+                            selected = LibrarySelectedItem.LocalArtist(artist.name)
+                            AppContainer.playlistUsageRepo.recordOpen(
+                                id = artist.id,
+                                name = artist.name,
+                                picUrl = artist.coverSong?.displayCoverUrl(context),
+                                trackCount = artist.songs.size,
+                                source = PlaylistUsageRepository.SOURCE_LOCAL_ARTIST
+                            )
+                        },
                         onNeteasePlaylistClick = { playlist ->
                             skipDetailCloseAnimation = false
                             selected = LibrarySelectedItem.Netease(playlist)
@@ -308,6 +325,15 @@ fun LibraryHostScreen(
                             playlistId = current.playlistId,
                             onBack = { closeSelectedDetail() },
                             onDeleted = { closeDeletedLocalPlaylist() },
+                            onSongClick = onSongClick,
+                            offlineMode = offlineMode
+                        )
+                    }
+
+                    is LibrarySelectedItem.LocalArtist -> {
+                        LocalArtistDetailScreen(
+                            artistName = current.artistName,
+                            onBack = { closeSelectedDetail() },
                             onSongClick = onSongClick,
                             offlineMode = offlineMode
                         )
@@ -388,6 +414,10 @@ private val librarySelectedItemSaver = mapSaver<LibrarySelectedItem?>(
                 "type" to "local",
                 "playlistId" to item.playlistId
             )
+            is LibrarySelectedItem.LocalArtist -> hashMapOf(
+                "type" to "localArtist",
+                "artistName" to item.artistName
+            )
             is LibrarySelectedItem.NeteaseAlbum -> hashMapOf(
                 "type" to "neteaseAlbum",
                 "album" to item.album.toSaveMap()
@@ -421,6 +451,9 @@ private val librarySelectedItemSaver = mapSaver<LibrarySelectedItem?>(
         when (saved["type"] as? String) {
             null -> null
             "local" -> (saved["playlistId"] as? Number)?.toLong()?.let { LibrarySelectedItem.Local(it) }
+            "localArtist" -> (saved["artistName"] as? String)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { LibrarySelectedItem.LocalArtist(it) }
             "neteaseAlbum" -> restoreAlbumSummary(saved["album"] as? Map<*, *>)?.let { LibrarySelectedItem.NeteaseAlbum(it) }
             "netease" -> restorePlaylistSummary(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.Netease(it) }
             "neteaseArtist" -> restoreNeteaseArtistSummary(

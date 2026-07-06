@@ -33,6 +33,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.data.local.playlist.model.buildLocalArtistSummaries
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.displayCoverUrl
@@ -44,7 +45,7 @@ data class UsageEntry(
     val name: String,
     val picUrl: String?,
     val trackCount: Int,
-    val source: String, // "netease" | "neteaseAlbum" | "bili" | "local" | "youtubeMusic"
+    val source: String, // "netease" | "neteaseAlbum" | "bili" | "local" | "localArtist" | "youtubeMusic"
     val lastOpened: Long,
     val openCount: Int,
     val fid: Long? = null,
@@ -66,6 +67,8 @@ internal fun playlistUsageKey(source: String, id: Long, subtype: String?): Strin
 
 internal fun UsageEntry.usageKey(): String = playlistUsageKey(source, id, subtype)
 
+internal fun UsageEntry.hasPlayableTracks(): Boolean = trackCount > 0
+
 private val usageEntryComparator = Comparator<UsageEntry> { left, right ->
     when {
         left.lastOpened != right.lastOpened -> right.lastOpened.compareTo(left.lastOpened)
@@ -76,6 +79,7 @@ private val usageEntryComparator = Comparator<UsageEntry> { left, right ->
 
 internal fun normalizeUsageEntries(list: List<UsageEntry>): List<UsageEntry> {
     return list
+        .filter(UsageEntry::hasPlayableTracks)
         .groupBy(UsageEntry::usageKey)
         .map { (_, duplicates) -> mergeDuplicateUsageEntries(duplicates) }
         .sortedWith(usageEntryComparator)
@@ -93,6 +97,7 @@ private fun mergeDuplicateUsageEntries(entries: List<UsageEntry>): UsageEntry {
 class PlaylistUsageRepository(private val app: Context) {
     companion object {
         const val SOURCE_LOCAL = "local"
+        const val SOURCE_LOCAL_ARTIST = "localArtist"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -135,6 +140,11 @@ class PlaylistUsageRepository(private val app: Context) {
         subtype: String? = null,
         now: Long = System.currentTimeMillis()
     ) {
+        if (trackCount <= 0) {
+            removeEntryIfPresent(id, source, subtype)
+            return
+        }
+
         val data = _flow.value.toMutableList()
         val targetKey = playlistUsageKey(source, id, subtype)
         val idx = data.indexOfFirst { it.usageKey() == targetKey }
@@ -175,7 +185,7 @@ class PlaylistUsageRepository(private val app: Context) {
         saveAsync(out)
     }
 
-    /** 仅刷新歌单信息，不改动最近打开时间与排序 */
+    /** 刷新歌单信息；详情加载出有效曲目时可补齐打开记录 */
     fun updateInfo(
         id: Long,
         name: String,
@@ -186,8 +196,14 @@ class PlaylistUsageRepository(private val app: Context) {
         source: String,
         browseId: String? = null,
         playlistId: String? = null,
-        subtype: String? = null
+        subtype: String? = null,
+        now: Long = System.currentTimeMillis()
     ) {
+        if (trackCount <= 0) {
+            removeEntryIfPresent(id, source, subtype)
+            return
+        }
+
         val data = _flow.value.toMutableList()
         val targetKey = playlistUsageKey(source, id, subtype)
         val idx = data.indexOfFirst { it.usageKey() == targetKey }
@@ -203,10 +219,28 @@ class PlaylistUsageRepository(private val app: Context) {
                 playlistId = playlistId ?: old.playlistId,
                 subtype = subtype ?: old.subtype
             )
-            val out = normalizeUsageEntries(data)
-            _flow.value = out
-            saveAsync(out)
+        } else {
+            data.add(
+                UsageEntry(
+                    id = id,
+                    name = name,
+                    picUrl = picUrl,
+                    trackCount = trackCount,
+                    source = source,
+                    lastOpened = now,
+                    openCount = 1,
+                    fid = fid,
+                    mid = mid,
+                    browseId = browseId,
+                    playlistId = playlistId,
+                    subtype = subtype
+                )
+            )
         }
+
+        val out = normalizeUsageEntries(data)
+        _flow.value = out
+        saveAsync(out)
     }
 
     /**
@@ -258,11 +292,59 @@ class PlaylistUsageRepository(private val app: Context) {
         saveAsync(out)
     }
 
+    /** 同步本地歌手虚拟歌单卡片信息 */
+    fun syncLocalArtistEntries(playlists: List<LocalPlaylist>) {
+        val current = _flow.value
+        if (current.none { it.source == SOURCE_LOCAL_ARTIST }) return
+
+        val localizedContext = LanguageManager.applyLanguage(app)
+        val artistsById = buildLocalArtistSummaries(playlists, localizedContext)
+            .associateBy { artist -> artist.id }
+        var changed = false
+        val updated = current.mapNotNull { entry ->
+            if (entry.source != SOURCE_LOCAL_ARTIST) return@mapNotNull entry
+
+            val artist = artistsById[entry.id] ?: run {
+                changed = true
+                return@mapNotNull null
+            }
+
+            val refreshedPicUrl = artist.coverSong?.displayCoverUrl()
+            val refreshedTrackCount = artist.songs.size
+            if (
+                entry.name == artist.name &&
+                entry.picUrl == refreshedPicUrl &&
+                entry.trackCount == refreshedTrackCount
+            ) {
+                entry
+            } else {
+                changed = true
+                entry.copy(
+                    name = artist.name,
+                    picUrl = refreshedPicUrl,
+                    trackCount = refreshedTrackCount
+                )
+            }
+        }
+
+        if (!changed) return
+
+        val out = normalizeUsageEntries(updated)
+        _flow.value = out
+        saveAsync(out)
+    }
+
     /** 从继续播放列表中移除指定项 */
     fun removeEntry(id: Long, source: String, subtype: String? = null) {
+        removeEntryIfPresent(id, source, subtype)
+    }
+
+    private fun removeEntryIfPresent(id: Long, source: String, subtype: String? = null) {
         val data = _flow.value.toMutableList()
         val targetKey = playlistUsageKey(source, id, subtype)
-        data.removeAll { it.usageKey() == targetKey }
+        val removed = data.removeAll { it.usageKey() == targetKey }
+        if (!removed) return
+
         val out = normalizeUsageEntries(data)
         _flow.value = out
         saveAsync(out)

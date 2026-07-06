@@ -170,12 +170,16 @@ fun HomeScreen(
     }
 
     val hasLocalUsage = remember(usage) {
-        usage.any { it.source == PlaylistUsageRepository.SOURCE_LOCAL }
+        usage.any {
+            it.source == PlaylistUsageRepository.SOURCE_LOCAL ||
+                it.source == PlaylistUsageRepository.SOURCE_LOCAL_ARTIST
+        }
     }
     LaunchedEffect(hasLocalUsage, localPlaylists) {
         if (hasLocalUsage) {
             withContext(Dispatchers.Default) {
                 AppContainer.playlistUsageRepo.syncLocalEntries(localPlaylists)
+                AppContainer.playlistUsageRepo.syncLocalArtistEntries(localPlaylists)
             }
         }
     }

@@ -136,6 +136,19 @@
     <string name="library_no_favorite_artist">暂无关注的歌手</string>
     <string name="library_favorite_artist_hint">在歌手详情页点击关注，歌手会保存在这里</string>
     <string name="library_favorite_source_artist">歌手</string>
+    <string name="library_local_artist_empty">暂无本地歌手</string>
+    <string name="library_local_artist_hint">导入本地音频后，会按歌曲艺术家自动分类</string>
+    <string name="library_local_playlist_search_hint">搜索本地歌单 / 歌曲</string>
+    <string name="library_local_artist_search_hint">搜索本地歌手 / 歌曲</string>
+    <string name="library_local_search_empty">没有找到匹配的本地内容</string>
+    <string name="library_local_search_empty_hint">试试输入歌单、歌手或歌曲名称</string>
+    <string name="library_local_artist_sort">本地歌手排序</string>
+    <string name="library_local_artist_sort_count">按歌曲数量排序</string>
+    <string name="library_local_artist_sort_recent">按最近添加排序</string>
+    <string name="library_local_artist_sort_name">按名称排序</string>
+    <string name="library_favorite_search_hint">搜索当前收藏</string>
+    <string name="library_favorite_search_empty">没有找到匹配的收藏</string>
+    <string name="library_favorite_search_empty_hint">试试输入名称、来源、歌手或歌曲名称</string>
 
     <!-- Download -->
     <string name="download_title">下载管理</string>
@@ -1580,6 +1593,7 @@
     <!-- Library / Screen -->
     <string name="library_tab_local">本地</string>
     <string name="library_tab_favorite">收藏</string>
+    <string name="library_tab_netease">网易云</string>
     <string name="library_tab_netease_playlist">网易云 - 歌单</string>
     <string name="library_tab_netease_album">网易云 - 专辑</string>
     <string name="library_tab_youtube_music">YouTube</string>
@@ -1590,6 +1604,8 @@
     <string name="library_name_exists">已存在同名歌单，请换一个名称</string>
     <string name="library_create_new">＋ 新建歌单</string>
     <string name="library_qqmusic_coming">QQ音乐功能开发中…</string>
+    <string name="library_netease_tab_playlists">歌单</string>
+    <string name="library_netease_tab_albums">专辑</string>
     <string name="library_netease_search_hint">搜索歌单 / 专辑</string>
     <string name="library_netease_search_empty">没有找到匹配的歌单或专辑</string>
     <string name="library_netease_search_empty_hint">试试输入名称、ID、播放数或曲目数</string>
@@ -1673,6 +1689,7 @@
     <string name="local_playlist_import_audio">导入本地音频</string>
     <string name="local_playlist_total_duration" formatted="false">%s · %d 首</string>
     <string name="local_playlist_play_next">接下来播放…</string>
+    <string name="local_artist_detail_empty">这个歌手暂无可播放的本地歌曲</string>
 
     <!-- Disclaimer -->
     <string name="disclaimer_section1_body">本软件（音理音理!）为跨平台音视频播放工具，仅用于整合并播放来自多个第三方在线平台的公开内容。本软件本身不上传、分发或修改任何音视频文件；不在服务器侧存储任何用户内容或第三方内容。为便于离线播放，本软件提供"仅保存至本地设备"的下载功能，下载过程不经过开发者服务器，亦不会进行任何云端同步或备份。</string>

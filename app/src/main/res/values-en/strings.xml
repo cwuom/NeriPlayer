@@ -136,6 +136,19 @@
     <string name="library_no_favorite_artist">No followed artists</string>
     <string name="library_favorite_artist_hint">Tap Follow on an artist page, and the artist will appear here</string>
     <string name="library_favorite_source_artist">Artist</string>
+    <string name="library_local_artist_empty">No local artists</string>
+    <string name="library_local_artist_hint">After importing local audio, songs are grouped by artist automatically</string>
+    <string name="library_local_playlist_search_hint">Search local playlists / songs</string>
+    <string name="library_local_artist_search_hint">Search local artists / songs</string>
+    <string name="library_local_search_empty">No matching local content found</string>
+    <string name="library_local_search_empty_hint">Try a playlist, artist, or song name</string>
+    <string name="library_local_artist_sort">Sort local artists</string>
+    <string name="library_local_artist_sort_count">Sort by song count</string>
+    <string name="library_local_artist_sort_recent">Sort by recently added</string>
+    <string name="library_local_artist_sort_name">Sort by name</string>
+    <string name="library_favorite_search_hint">Search current favorites</string>
+    <string name="library_favorite_search_empty">No matching favorites found</string>
+    <string name="library_favorite_search_empty_hint">Try a name, source, artist, or song name</string>
 
     <!-- Download -->
     <string name="download_title">Downloads</string>
@@ -1568,6 +1581,7 @@
     <!-- Library / Screen -->
     <string name="library_tab_local">Local</string>
     <string name="library_tab_favorite">Favorites</string>
+    <string name="library_tab_netease">Netease</string>
     <string name="library_tab_netease_playlist">Netease - Playlists</string>
     <string name="library_tab_netease_album">Netease - Albums</string>
     <string name="library_tab_youtube_music">YouTube Music</string>
@@ -1578,6 +1592,8 @@
     <string name="library_name_exists">A playlist with this name already exists, please choose another name</string>
     <string name="library_create_new">+ Create Playlist</string>
     <string name="library_qqmusic_coming">Coming Soon</string>
+    <string name="library_netease_tab_playlists">Playlists</string>
+    <string name="library_netease_tab_albums">Albums</string>
     <string name="library_netease_search_hint">Search playlists / albums</string>
     <string name="library_netease_search_empty">No matching playlists or albums found</string>
     <string name="library_netease_search_empty_hint">Try a name, ID, play count, or track count</string>
@@ -1661,6 +1677,7 @@
     <string name="local_playlist_import_audio">Import Local Audio</string>
     <string name="local_playlist_total_duration" formatted="false">%s · %d songs</string>
     <string name="local_playlist_play_next">Play Next…</string>
+    <string name="local_artist_detail_empty">This artist has no playable local songs</string>
 
     <!-- Disclaimer -->
     <string name="disclaimer_section1_body">NeriPlayer is a cross-platform audio and video player. It helps users organize and play publicly available content from third-party platforms. NeriPlayer does not upload, distribute, modify, or host audio/video files, and it does not store user content or third-party content on developer-controlled servers. Downloads are saved only to the user\'s device for offline playback. Downloaded files do not pass through the developer\'s servers and are not synced or backed up by NeriPlayer.</string>

@@ -46,8 +46,10 @@ import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
+import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.playlist.usage.UsageEntry
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.LocalArtistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
@@ -70,6 +72,7 @@ private sealed class HomeSelectedItem {
     data class Netease(val playlist: PlaylistSummary) : HomeSelectedItem()
     data class NeteaseAlbumList(val album: AlbumSummary) : HomeSelectedItem()
     data class Local(val playlistId: Long) : HomeSelectedItem()
+    data class LocalArtist(val artistName: String) : HomeSelectedItem()
     data class Bili(val playlist: BiliPlaylist) : HomeSelectedItem()
     data class YouTubeMusic(val playlist: YouTubeMusicPlaylist) : HomeSelectedItem()
 }
@@ -194,6 +197,14 @@ fun HomeHostScreen(
                             offlineMode = offlineMode
                         )
                     }
+                    is HomeSelectedItem.LocalArtist -> {
+                        LocalArtistDetailScreen(
+                            artistName = current.artistName,
+                            onBack = { closeSelectedDetail() },
+                            onSongClick = onSongClick,
+                            offlineMode = offlineMode
+                        )
+                    }
                     is HomeSelectedItem.Bili -> {
                         BiliPlaylistDetailScreen(
                             playlist = current.playlist,
@@ -229,6 +240,10 @@ private val homeSelectedItemSaver = mapSaver<HomeSelectedItem?>(
                 "type" to "local",
                 "playlistId" to item.playlistId
             )
+            is HomeSelectedItem.LocalArtist -> hashMapOf(
+                "type" to "localArtist",
+                "artistName" to item.artistName
+            )
             is HomeSelectedItem.Netease -> hashMapOf(
                 "type" to "netease",
                 "playlist" to item.playlist.toSaveMap()
@@ -251,6 +266,9 @@ private val homeSelectedItemSaver = mapSaver<HomeSelectedItem?>(
         when (saved["type"] as? String) {
             null -> null
             "local" -> (saved["playlistId"] as? Number)?.toLong()?.let { HomeSelectedItem.Local(it) }
+            "localArtist" -> (saved["artistName"] as? String)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { HomeSelectedItem.LocalArtist(it) }
             "neteaseAlbum" -> restoreAlbumSummary(saved["album"] as? Map<*, *>)?.let { HomeSelectedItem.NeteaseAlbumList(it) }
             "netease" -> restorePlaylistSummary(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.Netease(it) }
             "bili" -> restoreBiliPlaylist(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.Bili(it) }
@@ -293,6 +311,9 @@ private fun openRecent(
         }
         "local" -> {
             onSelected(HomeSelectedItem.Local(entry.id))
+        }
+        PlaylistUsageRepository.SOURCE_LOCAL_ARTIST.lowercase() -> {
+            onSelected(HomeSelectedItem.LocalArtist(entry.name))
         }
         "bili" -> {
             val kind = entry.subtype

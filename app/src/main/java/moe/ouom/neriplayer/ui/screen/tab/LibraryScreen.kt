@@ -53,7 +53,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.MoreVert
@@ -98,6 +100,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
@@ -113,10 +116,14 @@ import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylist
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.local.playlist.model.buildLocalArtistSummaries
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
+import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
@@ -140,14 +147,24 @@ enum class LibraryTab(val labelResId: Int) {
     LOCAL(R.string.library_tab_local),
     FAVORITE(R.string.library_tab_favorite),
     YTMUSIC(R.string.library_tab_youtube_music),
-    NETEASE(R.string.library_tab_netease_playlist),
+    NETEASE(R.string.library_tab_netease),
     NETEASEALBUM(R.string.library_tab_netease_album),
     BILI(R.string.library_tab_bilibili),
     QQMUSIC(R.string.library_tab_qqmusic)
 }
 
+private const val NETEASE_CATEGORY_PLAYLIST = 0
+private const val NETEASE_CATEGORY_ALBUM = 1
 private const val FAVORITE_CATEGORY_PLAYLIST = 0
 private const val FAVORITE_CATEGORY_ARTIST = 1
+private const val LOCAL_CATEGORY_PLAYLIST = 0
+private const val LOCAL_CATEGORY_ARTIST = 1
+
+private enum class LocalArtistSortMode {
+    SONG_COUNT,
+    RECENT_ADDED,
+    NAME
+}
 
 private fun libraryTabDisplayOrder(isInternational: Boolean): List<LibraryTab> {
     return if (isInternational) {
@@ -156,7 +173,6 @@ private fun libraryTabDisplayOrder(isInternational: Boolean): List<LibraryTab> {
             LibraryTab.FAVORITE,
             LibraryTab.YTMUSIC,
             LibraryTab.NETEASE,
-            LibraryTab.NETEASEALBUM,
             LibraryTab.BILI,
             LibraryTab.QQMUSIC
         )
@@ -165,7 +181,6 @@ private fun libraryTabDisplayOrder(isInternational: Boolean): List<LibraryTab> {
             LibraryTab.LOCAL,
             LibraryTab.FAVORITE,
             LibraryTab.NETEASE,
-            LibraryTab.NETEASEALBUM,
             LibraryTab.YTMUSIC,
             LibraryTab.BILI,
             LibraryTab.QQMUSIC
@@ -173,12 +188,15 @@ private fun libraryTabDisplayOrder(isInternational: Boolean): List<LibraryTab> {
     }
 }
 
+private fun LibraryTab.asVisibleLibraryTab(): LibraryTab {
+    return if (this == LibraryTab.NETEASEALBUM) LibraryTab.NETEASE else this
+}
+
 private fun LibraryTab?.isRefreshable(): Boolean {
-    return when (this) {
+    return when (this?.asVisibleLibraryTab()) {
         LibraryTab.BILI,
         LibraryTab.YTMUSIC,
-        LibraryTab.NETEASE,
-        LibraryTab.NETEASEALBUM -> true
+        LibraryTab.NETEASE -> true
         else -> false
     }
 }
@@ -197,6 +215,7 @@ fun LibraryScreen(
     qqMusicListState: LazyListState,
     topAppBarState: TopAppBarState,
     onLocalPlaylistClick: (LocalPlaylist) -> Unit = {},
+    onLocalArtistClick: (LocalArtistSummary) -> Unit = {},
     onNeteasePlaylistClick: (PlaylistSummary) -> Unit = {},
     onNeteaseAlbumClick: (AlbumSummary) -> Unit = {},
     onNeteaseArtistClick: (NeteaseArtistSummary) -> Unit = {},
@@ -214,7 +233,7 @@ fun LibraryScreen(
         .collectAsState(initial = false)
     val orderedTabs = remember(isInternational) { libraryTabDisplayOrder(isInternational) }
     val initialPage = remember(orderedTabs, initialTab) {
-        orderedTabs.indexOf(initialTab).takeIf { it >= 0 } ?: 0
+        orderedTabs.indexOf(initialTab.asVisibleLibraryTab()).takeIf { it >= 0 } ?: 0
     }
 
     val pagerState = rememberPagerState(
@@ -224,7 +243,7 @@ fun LibraryScreen(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(initialTab, orderedTabs) {
-        val targetPage = orderedTabs.indexOf(initialTab).takeIf { it >= 0 } ?: 0
+        val targetPage = orderedTabs.indexOf(initialTab.asVisibleLibraryTab()).takeIf { it >= 0 } ?: 0
         if (pagerState.currentPage != targetPage) {
             pagerState.scrollToPage(targetPage)
         }
@@ -280,48 +299,28 @@ fun LibraryScreen(
                 .fillMaxSize()
         ) {
             Column(Modifier.fillMaxSize()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    PrimaryScrollableTabRow(
-                        selectedTabIndex = pagerState.currentPage,
-                        edgePadding = 8.dp,
-                        containerColor = Color.Transparent,
-                        contentColor = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        orderedTabs.forEachIndexed { index, tab ->
-                            Tab(
-                                selected = pagerState.currentPage == index,
-                                onClick = {
-                                    scope.launch {
-                                        pagerState.animateScrollToPage(index)
-                                    }
-                                },
-                                selectedContentColor = MaterialTheme.colorScheme.primary,
-                                unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                text = { Text(stringResource(tab.labelResId)) }
-                            )
+                val currentTab = orderedTabs.getOrNull(pagerState.currentPage)
+                LibraryMainTabs(
+                    tabs = orderedTabs,
+                    selectedTabIndex = pagerState.currentPage,
+                    refreshEnabled = currentTab.isRefreshable(),
+                    onTabSelected = { index ->
+                        scope.launch {
+                            pagerState.animateScrollToPage(index)
+                        }
+                    },
+                    onRefresh = {
+                        when (currentTab) {
+                            LibraryTab.BILI -> vm.refreshBilibili()
+                            LibraryTab.YTMUSIC -> vm.refreshYouTubeMusicPlaylists()
+                            LibraryTab.NETEASE -> {
+                                vm.refreshNeteasePlaylists()
+                                vm.refreshNeteaseAlbums()
+                            }
+                            else -> Unit
                         }
                     }
-
-                    val currentTab = orderedTabs.getOrNull(pagerState.currentPage)
-                    HapticIconButton(
-                        onClick = {
-                            when (currentTab) {
-                                LibraryTab.BILI -> vm.refreshBilibili()
-                                LibraryTab.YTMUSIC -> vm.refreshYouTubeMusicPlaylists()
-                                LibraryTab.NETEASE -> vm.refreshNeteasePlaylists()
-                                LibraryTab.NETEASEALBUM -> vm.refreshNeteaseAlbums()
-                                else -> Unit
-                            }
-                        },
-                        enabled = currentTab.isRefreshable()
-                    ) {
-                        Icon(
-                            Icons.Filled.Refresh,
-                            contentDescription = stringResource(R.string.action_refresh)
-                        )
-                    }
-                }
+                )
 
                 HorizontalPager(
                     state = pagerState,
@@ -337,6 +336,7 @@ fun LibraryScreen(
                                 vm.createLocalPlaylist(finalName)
                             },
                             onClick = onLocalPlaylistClick,
+                            onArtistClick = onLocalArtistClick,
                             onRename = { playlistId, newName ->
                                 vm.renameLocalPlaylist(playlistId, newName)
                             },
@@ -359,17 +359,14 @@ fun LibraryScreen(
                             offlineMode = offlineMode
                         )
 
-                        LibraryTab.NETEASE -> NeteasePlaylistList(
+                        LibraryTab.NETEASE,
+                        LibraryTab.NETEASEALBUM -> NeteaseLibraryList(
                             playlists = ui.neteasePlaylists,
-                            listState = neteaseListState,
-                            onClick = onNeteasePlaylistClick,
-                            offlineMode = offlineMode
-                        )
-
-                        LibraryTab.NETEASEALBUM -> NeteaseAlbumList(
-                            playlists = ui.neteaseAlbums,
-                            listState = neteaseAlbumState,
-                            onClick = onNeteaseAlbumClick,
+                            albums = ui.neteaseAlbums,
+                            playlistListState = neteaseListState,
+                            albumListState = neteaseAlbumState,
+                            onPlaylistClick = onNeteasePlaylistClick,
+                            onAlbumClick = onNeteaseAlbumClick,
                             offlineMode = offlineMode
                         )
 
@@ -396,6 +393,48 @@ fun LibraryScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun LibraryMainTabs(
+    tabs: List<LibraryTab>,
+    selectedTabIndex: Int,
+    refreshEnabled: Boolean,
+    onTabSelected: (Int) -> Unit,
+    onRefresh: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        PrimaryScrollableTabRow(
+            selectedTabIndex = selectedTabIndex,
+            edgePadding = 8.dp,
+            containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f)
+        ) {
+            tabs.forEachIndexed { index, tab ->
+                Tab(
+                    selected = selectedTabIndex == index,
+                    onClick = { onTabSelected(index) },
+                    selectedContentColor = MaterialTheme.colorScheme.primary,
+                    unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = { Text(stringResource(tab.labelResId)) }
+                )
+            }
+        }
+
+        HapticIconButton(
+            onClick = onRefresh,
+            enabled = refreshEnabled
+        ) {
+            Icon(
+                Icons.Filled.Refresh,
+                contentDescription = stringResource(R.string.action_refresh)
+            )
         }
     }
 }
@@ -825,11 +864,19 @@ private fun LocalPlaylistList(
     listState: LazyListState,
     onCreate: (String) -> Unit,
     onClick: (LocalPlaylist) -> Unit,
+    onArtistClick: (LocalArtistSummary) -> Unit,
     onRename: (Long, String) -> Unit = { _, _ -> },
     onDelete: (Long) -> Unit = {},
     onReorder: (List<Long>) -> Unit = {},
     offlineMode: Boolean
 ) {
+    var selectedLocalCategory by rememberSaveable {
+        mutableIntStateOf(LOCAL_CATEGORY_PLAYLIST)
+    }
+    var localSearchQuery by rememberSaveable { mutableStateOf("") }
+    var localArtistSortMode by rememberSaveable {
+        mutableStateOf(LocalArtistSortMode.RECENT_ADDED)
+    }
     var showDialog by rememberSaveable { mutableStateOf(false) }
     var newName by rememberSaveable { mutableStateOf("") }
     var nameError by rememberSaveable { mutableStateOf<String?>(null) }
@@ -841,6 +888,15 @@ private fun LocalPlaylistList(
     val defaultPlaylistName = context.getString(R.string.library_create_playlist_default)
     val maxNameLength = LocalPlaylistRepository.MAX_PLAYLIST_NAME_LENGTH
     val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsState(initial = false)
+    val localArtists = remember(playlists, context) {
+        buildLocalArtistSummaries(playlists, context)
+    }
+    val filteredLocalArtists = remember(localArtists, localSearchQuery) {
+        filterLocalArtists(localArtists, localSearchQuery)
+    }
+    val displayedLocalArtists = remember(filteredLocalArtists, localArtistSortMode) {
+        sortLocalArtists(filteredLocalArtists, localArtistSortMode)
+    }
     val editablePlaylists = remember(playlists, context) {
         playlists.filterNot { SystemLocalPlaylists.isSystemPlaylist(it, context) }
     }
@@ -931,18 +987,108 @@ private fun LocalPlaylistList(
         }
     )
 
+    val displayedFavoritesPlaylist = favoritesPlaylist
+        ?.takeIf { playlist -> playlist.matchesLocalPlaylistSearch(localSearchQuery, context) }
+    val displayedLocalFilesPlaylist = localFilesPlaylist
+        ?.takeIf { playlist -> playlist.matchesLocalPlaylistSearch(localSearchQuery, context) }
+    val displayedPlaylists = reorderablePlaylists
+        .filter { playlist -> playlist.matchesLocalPlaylistSearch(localSearchQuery, context) }
+    val hasPlaylistSearchMatches =
+        displayedFavoritesPlaylist != null ||
+            displayedPlaylists.isNotEmpty() ||
+            displayedLocalFilesPlaylist != null
+    val configuration = LocalConfiguration.current
+    val localArtistColumnCount = remember(configuration.screenWidthDp) {
+        ((configuration.screenWidthDp - 16 + 10) / 130).coerceAtLeast(1)
+    }
+    val localArtistRows = remember(displayedLocalArtists, localArtistColumnCount) {
+        displayedLocalArtists.chunked(localArtistColumnCount)
+    }
+
     LazyColumn(
         state = reorderState.listState,
-        contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp + miniPlayerHeight),
+        contentPadding = PaddingValues(
+            start = 8.dp,
+            end = 8.dp,
+            top = 8.dp,
+            bottom = 8.dp + miniPlayerHeight
+        ),
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier
             .fillMaxSize()
             .reorderable(reorderState)
     ) {
         val cardShape = RoundedCornerShape(12.dp)
-        if (selectionMode) {
-            item(key = "local_playlist_selection_header") {
-                val allSelected = selectedIds.size == reorderablePlaylists.size && reorderablePlaylists.isNotEmpty()
+        item(key = "local_library_header") {
+            LocalLibraryHeaderContent(
+                selectedLocalCategory = selectedLocalCategory,
+                selectionMode = selectionMode,
+                searchQuery = localSearchQuery,
+                onSearchQueryChange = { localSearchQuery = it },
+                artistSortMode = localArtistSortMode,
+                onArtistSortModeChange = { localArtistSortMode = it },
+                onPlaylistSelected = {
+                    if (selectedLocalCategory != LOCAL_CATEGORY_PLAYLIST) {
+                        exitSelection()
+                        selectedLocalCategory = LOCAL_CATEGORY_PLAYLIST
+                    }
+                },
+                onArtistSelected = {
+                    if (selectedLocalCategory != LOCAL_CATEGORY_ARTIST) {
+                        exitSelection()
+                        selectedLocalCategory = LOCAL_CATEGORY_ARTIST
+                    }
+                }
+            )
+        }
+
+        if (selectedLocalCategory == LOCAL_CATEGORY_ARTIST) {
+            if (displayedLocalArtists.isEmpty()) {
+                item(key = "local_artist_empty") {
+                    LibrarySearchEmptyCard(
+                        titleResId = if (localSearchQuery.isBlank()) {
+                            R.string.library_local_artist_empty
+                        } else {
+                            R.string.library_local_search_empty
+                        },
+                        hintResId = if (localSearchQuery.isBlank()) {
+                            R.string.library_local_artist_hint
+                        } else {
+                            R.string.library_local_search_empty_hint
+                        },
+                        iconIsArtist = true
+                    )
+                }
+            }
+            items(
+                items = localArtistRows,
+                key = { row -> row.joinToString(separator = "|") { artist -> artist.stableKey } }
+            ) { rowArtists ->
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 5.dp)
+                ) {
+                    rowArtists.forEach { artist ->
+                        Box(modifier = Modifier.weight(1f)) {
+                            LocalArtistGridCard(
+                                artist = artist,
+                                onClick = { onArtistClick(artist) },
+                                offlineMode = offlineMode
+                            )
+                        }
+                    }
+                    repeat(localArtistColumnCount - rowArtists.size) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        } else {
+                if (selectionMode) {
+                    item(key = "local_playlist_selection_header") {
+                        val allSelected =
+                            selectedIds.size == displayedPlaylists.size && displayedPlaylists.isNotEmpty()
                 Card(
                     shape = cardShape,
                     colors = CardDefaults.cardColors(
@@ -981,7 +1127,7 @@ private fun LocalPlaylistList(
                                         selectedIds = if (allSelected) {
                                             emptySet()
                                         } else {
-                                            reorderablePlaylists.map { it.id }.toSet()
+                                            displayedPlaylists.map { it.id }.toSet()
                                         }
                                     }
                                 ) {
@@ -1008,7 +1154,8 @@ private fun LocalPlaylistList(
                 }
             }
         }
-        item(key = "local_playlist_create") {
+        if (localSearchQuery.isBlank()) {
+            item(key = "local_playlist_create") {
             Card(
                 shape = cardShape,
                 colors = CardDefaults.cardColors(
@@ -1108,9 +1255,20 @@ private fun LocalPlaylistList(
                     }
                 )
             }
+            }
         }
 
-        favoritesPlaylist?.let { system ->
+        if (localSearchQuery.isNotBlank() && !hasPlaylistSearchMatches) {
+            item(key = "local_playlist_search_empty") {
+                LibrarySearchEmptyCard(
+                    titleResId = R.string.library_local_search_empty,
+                    hintResId = R.string.library_local_search_empty_hint,
+                    iconIsArtist = false
+                )
+            }
+        }
+
+        displayedFavoritesPlaylist?.let { system ->
             item(key = "local_playlist_favorites") {
                 val displayName = SystemLocalPlaylists.resolve(system.id, system.name, context)?.currentName ?: system.name
                 Card(
@@ -1182,11 +1340,11 @@ private fun LocalPlaylistList(
             }
         }
 
-        items(
-            items = reorderablePlaylists,
-            key = { it.id }
-        ) { pl ->
-            ReorderableItem(state = reorderState, key = pl.id) { isDragging ->
+            items(
+                items = displayedPlaylists,
+                key = { it.id }
+            ) { pl ->
+            ReorderableItem(state = reorderState, key = pl.id) { _ ->
                 val systemPlaylist = SystemLocalPlaylists.resolve(pl.id, pl.name, context)
                 val displayName = systemPlaylist?.currentName ?: pl.name
                 val isSystemPlaylist = systemPlaylist != null
@@ -1389,7 +1547,7 @@ private fun LocalPlaylistList(
             }
         }
 
-        localFilesPlaylist?.let { system ->
+        displayedLocalFilesPlaylist?.let { system ->
             item(key = "local_playlist_local_files") {
                 val displayName = SystemLocalPlaylists.resolve(system.id, system.name, context)?.currentName ?: system.name
                 Card(
@@ -1461,12 +1619,708 @@ private fun LocalPlaylistList(
             }
         }
     }
+    }
+}
+
+@Composable
+private fun LocalLibraryHeaderContent(
+    selectedLocalCategory: Int,
+    selectionMode: Boolean,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    artistSortMode: LocalArtistSortMode,
+    onArtistSortModeChange: (LocalArtistSortMode) -> Unit,
+    onPlaylistSelected: () -> Unit,
+    onArtistSelected: () -> Unit
+) {
+    Column(Modifier.fillMaxWidth()) {
+        LocalCategoryTabs(
+            selectedCategory = selectedLocalCategory,
+            onPlaylistSelected = onPlaylistSelected,
+            onArtistSelected = onArtistSelected
+        )
+        if (!selectionMode) {
+            if (selectedLocalCategory == LOCAL_CATEGORY_ARTIST) {
+                LocalArtistSearchAndSortRow(
+                    query = searchQuery,
+                    onQueryChange = onSearchQueryChange,
+                    sortMode = artistSortMode,
+                    onSortModeChange = onArtistSortModeChange
+                )
+            } else {
+                LibraryInlineSearchField(
+                    query = searchQuery,
+                    onQueryChange = onSearchQueryChange,
+                    placeholderResId = R.string.library_local_playlist_search_hint
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalArtistSearchAndSortRow(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    sortMode: LocalArtistSortMode,
+    onSortModeChange: (LocalArtistSortMode) -> Unit
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = Modifier.weight(1f),
+            placeholder = { Text(stringResource(R.string.library_local_artist_search_hint)) },
+            singleLine = true,
+            trailingIcon = {
+                if (query.isNotEmpty()) {
+                    HapticIconButton(onClick = { onQueryChange("") }) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = stringResource(R.string.action_clear)
+                        )
+                    }
+                }
+            },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
+        )
+        Box {
+            HapticIconButton(onClick = { menuExpanded = true }) {
+                Icon(
+                    imageVector = Icons.Filled.MoreVert,
+                    contentDescription = stringResource(R.string.library_local_artist_sort)
+                )
+            }
+            DropdownMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false }
+            ) {
+                LocalArtistSortMenuItem(
+                    selected = sortMode == LocalArtistSortMode.SONG_COUNT,
+                    text = stringResource(R.string.library_local_artist_sort_count),
+                    onClick = {
+                        onSortModeChange(LocalArtistSortMode.SONG_COUNT)
+                        menuExpanded = false
+                    }
+                )
+                LocalArtistSortMenuItem(
+                    selected = sortMode == LocalArtistSortMode.RECENT_ADDED,
+                    text = stringResource(R.string.library_local_artist_sort_recent),
+                    onClick = {
+                        onSortModeChange(LocalArtistSortMode.RECENT_ADDED)
+                        menuExpanded = false
+                    }
+                )
+                LocalArtistSortMenuItem(
+                    selected = sortMode == LocalArtistSortMode.NAME,
+                    text = stringResource(R.string.library_local_artist_sort_name),
+                    onClick = {
+                        onSortModeChange(LocalArtistSortMode.NAME)
+                        menuExpanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalArtistSortMenuItem(
+    selected: Boolean,
+    text: String,
+    onClick: () -> Unit
+) {
+    DropdownMenuItem(
+        text = {
+            Text(text)
+        },
+        leadingIcon = {
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = stringResource(R.string.common_selected)
+                )
+            } else {
+                Spacer(modifier = Modifier.size(24.dp))
+            }
+        },
+        onClick = onClick
+    )
+}
+
+@Composable
+private fun LocalCategoryTabs(
+    selectedCategory: Int,
+    onPlaylistSelected: () -> Unit,
+    onArtistSelected: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+    ) {
+        PrimaryTabRow(
+            selectedTabIndex = selectedCategory,
+            containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.primary
+        ) {
+            Tab(
+                selected = selectedCategory == LOCAL_CATEGORY_PLAYLIST,
+                onClick = onPlaylistSelected,
+                text = { Text(stringResource(R.string.library_favorite_tab_playlists)) },
+                icon = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = null
+                    )
+                }
+            )
+            Tab(
+                selected = selectedCategory == LOCAL_CATEGORY_ARTIST,
+                onClick = onArtistSelected,
+                text = { Text(stringResource(R.string.library_favorite_tab_artists)) },
+                icon = {
+                    Icon(
+                        imageVector = Icons.Filled.AccountCircle,
+                        contentDescription = null
+                    )
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun LibraryInlineSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    placeholderResId: Int
+) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        placeholder = { Text(stringResource(placeholderResId)) },
+        singleLine = true,
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                HapticIconButton(onClick = { onQueryChange("") }) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = stringResource(R.string.action_clear)
+                    )
+                }
+            }
+        },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
+    )
+}
+
+@Composable
+private fun LibrarySearchEmptyCard(
+    titleResId: Int,
+    hintResId: Int,
+    iconIsArtist: Boolean
+) {
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+    ) {
+        ListItem(
+            headlineContent = { Text(stringResource(titleResId)) },
+            supportingContent = {
+                Text(
+                    stringResource(hintResId),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            leadingContent = {
+                Icon(
+                    imageVector = if (iconIsArtist) {
+                        Icons.Filled.AccountCircle
+                    } else {
+                        Icons.AutoMirrored.Filled.QueueMusic
+                    },
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(56.dp)
+                )
+            }
+        )
+    }
+}
+
+private fun filterLocalArtists(
+    artists: List<LocalArtistSummary>,
+    query: String
+): List<LocalArtistSummary> {
+    if (query.isBlank()) return artists
+    return artists.filter { artist -> artist.matchesLocalArtistSearch(query) }
+}
+
+private fun sortLocalArtists(
+    artists: List<LocalArtistSummary>,
+    sortMode: LocalArtistSortMode
+): List<LocalArtistSummary> {
+    return when (sortMode) {
+        LocalArtistSortMode.SONG_COUNT -> artists.sortedWith(
+            compareByDescending<LocalArtistSummary> { artist ->
+                artist.songs.size
+            }.thenBy { artist ->
+                artist.name.lowercase()
+            }
+        )
+        LocalArtistSortMode.RECENT_ADDED -> artists.sortedWith(
+            compareByDescending<LocalArtistSummary> { artist ->
+                artist.coverSong?.addedAt ?: 0L
+            }.thenBy { artist ->
+                artist.name.lowercase()
+            }
+        )
+        LocalArtistSortMode.NAME -> artists.sortedBy { artist ->
+            artist.name.lowercase()
+        }
+    }
+}
+
+private fun LocalArtistSummary.matchesLocalArtistSearch(query: String): Boolean {
+    return queryMatches(query, name) ||
+        songs.any { song ->
+            queryMatches(
+                query,
+                song.displayName(),
+                song.displayArtist(),
+                song.album,
+                song.localFileName
+            )
+        }
+}
+
+private fun LocalPlaylist.matchesLocalPlaylistSearch(query: String, context: Context): Boolean {
+    if (query.isBlank()) return true
+    val displayName = SystemLocalPlaylists.resolve(id, name, context)?.currentName ?: name
+    return queryMatches(query, id, name, displayName, songs.size) ||
+        songs.any { song ->
+            queryMatches(
+                query,
+                song.displayName(),
+                song.displayArtist(),
+                song.album,
+                song.localFileName
+            )
+        }
+}
+
+private fun filterFavoritePlaylists(
+    favorites: List<FavoritePlaylist>,
+    query: String
+): List<FavoritePlaylist> {
+    if (query.isBlank()) return favorites
+    return favorites.filter { favorite -> favorite.matchesFavoriteSearch(query) }
+}
+
+private fun FavoritePlaylist.matchesFavoriteSearch(query: String): Boolean {
+    return queryMatches(
+        query,
+        id,
+        name,
+        subtitle,
+        source,
+        browseId,
+        playlistId,
+        trackCount,
+        favoriteSourceSearchAliases(source)
+    ) || songs.any { song ->
+        queryMatches(
+            query,
+            song.displayName(),
+            song.displayArtist(),
+            song.album,
+            song.localFileName
+        )
+    }
+}
+
+private fun favoriteSourceSearchAliases(source: String): List<String> {
+    return when (source) {
+        "youtubeMusic" -> listOf("YouTube", "YouTube Music")
+        "neteaseAlbum" -> listOf("Netease Album", "网易云专辑", "专辑")
+        "netease" -> listOf("Netease", "网易云", "歌单")
+        "bili" -> listOf("Bilibili", "哔哩哔哩", "B站")
+        FAVORITE_SOURCE_NETEASE_ARTIST -> listOf("Artist", "歌手")
+        else -> listOf(source)
+    }
+}
+
+private fun queryMatches(query: String, vararg values: Any?): Boolean {
+    val normalizedQuery = query.trim()
+    if (normalizedQuery.isBlank()) return true
+    return values.any { value ->
+        when (value) {
+            null -> false
+            is Iterable<*> -> value.any { item ->
+                item?.toString()?.contains(normalizedQuery, ignoreCase = true) == true
+            }
+            else -> value.toString().contains(normalizedQuery, ignoreCase = true)
+        }
+    }
+}
+
+@Composable
+private fun NeteaseLibraryList(
+    playlists: List<PlaylistSummary>,
+    albums: List<AlbumSummary>,
+    playlistListState: LazyListState,
+    albumListState: LazyListState,
+    onPlaylistClick: (PlaylistSummary) -> Unit,
+    onAlbumClick: (AlbumSummary) -> Unit,
+    offlineMode: Boolean
+) {
+    var selectedCategory by rememberSaveable {
+        mutableIntStateOf(NETEASE_CATEGORY_PLAYLIST)
+    }
+    var playlistSearchQuery by rememberSaveable { mutableStateOf("") }
+    var albumSearchQuery by rememberSaveable { mutableStateOf("") }
+    val context = LocalContext.current
+    val miniPlayerHeight = LocalMiniPlayerHeight.current
+    val isAlbumCategory = selectedCategory == NETEASE_CATEGORY_ALBUM
+    val listState = if (isAlbumCategory) albumListState else playlistListState
+    val searchQuery = if (isAlbumCategory) albumSearchQuery else playlistSearchQuery
+    val filteredPlaylists = remember(playlists, playlistSearchQuery) {
+        filterNeteasePlaylists(playlists, playlistSearchQuery)
+    }
+    val filteredAlbums = remember(albums, albumSearchQuery) {
+        filterNeteaseAlbums(albums, albumSearchQuery)
+    }
+
+    fun updateSearchQuery(category: Int, value: String) {
+        if (category == NETEASE_CATEGORY_ALBUM) {
+            albumSearchQuery = value
+        } else {
+            playlistSearchQuery = value
+        }
+    }
+
+    LazyColumn(
+        state = listState,
+        contentPadding = PaddingValues(
+            start = 8.dp,
+            end = 8.dp,
+            top = 8.dp,
+            bottom = 8.dp + miniPlayerHeight
+        ),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        val cardShape = RoundedCornerShape(12.dp)
+        item(key = "netease_library_header") {
+            NeteaseLibraryHeaderContent(
+                selectedCategory = selectedCategory,
+                onCategoryChange = { category ->
+                    if (selectedCategory != category) {
+                        selectedCategory = category
+                    }
+                }
+            )
+            LibraryInlineSearchField(
+                query = searchQuery,
+                onQueryChange = { value ->
+                    updateSearchQuery(selectedCategory, value)
+                },
+                placeholderResId = R.string.library_netease_search_hint
+            )
+        }
+
+        if (isAlbumCategory) {
+            if (albums.isNotEmpty() && filteredAlbums.isEmpty()) {
+                item(key = "netease_album_search_empty") {
+                    NeteaseLibraryEmptyCard(
+                        cardShape = cardShape,
+                        title = stringResource(R.string.library_netease_search_empty),
+                        hint = stringResource(R.string.library_netease_search_empty_hint),
+                        iconIsAlbum = true
+                    )
+                }
+            } else if (filteredAlbums.isEmpty()) {
+                item(key = "netease_album_empty") {
+                    NeteaseLibraryEmptyCard(
+                        cardShape = cardShape,
+                        title = stringResource(R.string.library_netease_album_empty),
+                        hint = stringResource(R.string.library_netease_search_hint),
+                        iconIsAlbum = true
+                    )
+                }
+            }
+            items(
+                items = filteredAlbums,
+                key = { album -> "album:${album.id}" }
+            ) { album ->
+                NeteaseAlbumRow(
+                    album = album,
+                    cardShape = cardShape,
+                    onClick = { onAlbumClick(album) },
+                    offlineMode = offlineMode
+                )
+            }
+        } else {
+            if (playlists.isNotEmpty() && filteredPlaylists.isEmpty()) {
+                item(key = "netease_playlist_search_empty") {
+                    NeteaseLibraryEmptyCard(
+                        cardShape = cardShape,
+                        title = stringResource(R.string.library_netease_search_empty),
+                        hint = stringResource(R.string.library_netease_search_empty_hint),
+                        iconIsAlbum = false
+                    )
+                }
+            } else if (filteredPlaylists.isEmpty()) {
+                item(key = "netease_playlist_empty") {
+                    NeteaseLibraryEmptyCard(
+                        cardShape = cardShape,
+                        title = stringResource(R.string.library_netease_playlist_empty),
+                        hint = stringResource(R.string.library_netease_search_hint),
+                        iconIsAlbum = false
+                    )
+                }
+            }
+            items(
+                items = filteredPlaylists,
+                key = { playlist -> "playlist:${playlist.id}" }
+            ) { playlist ->
+                NeteasePlaylistRow(
+                    playlist = playlist,
+                    cardShape = cardShape,
+                    context = context,
+                    onClick = { onPlaylistClick(playlist) },
+                    offlineMode = offlineMode
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NeteaseLibraryHeaderContent(
+    selectedCategory: Int,
+    onCategoryChange: (Int) -> Unit
+) {
+    Column(Modifier.fillMaxWidth()) {
+        NeteaseCategoryTabs(
+            selectedCategory = selectedCategory,
+            onCategoryChange = onCategoryChange
+        )
+    }
+}
+
+@Composable
+private fun NeteaseCategoryTabs(
+    selectedCategory: Int,
+    onCategoryChange: (Int) -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+    ) {
+        PrimaryTabRow(
+            selectedTabIndex = selectedCategory,
+            containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.primary
+        ) {
+            Tab(
+                selected = selectedCategory == NETEASE_CATEGORY_PLAYLIST,
+                onClick = { onCategoryChange(NETEASE_CATEGORY_PLAYLIST) },
+                text = { Text(stringResource(R.string.library_netease_tab_playlists)) },
+                icon = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = null
+                    )
+                }
+            )
+            Tab(
+                selected = selectedCategory == NETEASE_CATEGORY_ALBUM,
+                onClick = { onCategoryChange(NETEASE_CATEGORY_ALBUM) },
+                text = { Text(stringResource(R.string.library_netease_tab_albums)) },
+                icon = {
+                    Icon(
+                        imageVector = Icons.Filled.Album,
+                        contentDescription = null
+                    )
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun NeteaseLibraryEmptyCard(
+    cardShape: RoundedCornerShape,
+    title: String,
+    hint: String,
+    iconIsAlbum: Boolean
+) {
+    Card(
+        shape = cardShape,
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .clip(cardShape)
+    ) {
+        ListItem(
+            headlineContent = { Text(title) },
+            supportingContent = {
+                Text(
+                    text = hint,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            leadingContent = {
+                Icon(
+                    imageVector = if (iconIsAlbum) {
+                        Icons.Filled.Album
+                    } else {
+                        Icons.AutoMirrored.Filled.QueueMusic
+                    },
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(56.dp)
+                )
+            }
+        )
+    }
+}
+
+@Composable
+private fun NeteasePlaylistRow(
+    playlist: PlaylistSummary,
+    cardShape: RoundedCornerShape,
+    context: Context,
+    onClick: () -> Unit,
+    offlineMode: Boolean
+) {
+    Card(
+        shape = cardShape,
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .clip(cardShape)
+            .clickable(onClick = onClick)
+    ) {
+        ListItem(
+            headlineContent = { Text(playlist.name) },
+            supportingContent = {
+                Text(
+                    text = stringResource(
+                        R.string.home_play_count_format,
+                        formatPlayCount(context, playlist.playCount),
+                        playlist.trackCount
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            leadingContent = {
+                AsyncImage(
+                    model = offlineCachedImageRequest(
+                        context = context,
+                        data = playlist.picUrl,
+                        sizePx = 192,
+                        allowHardware = false,
+                        offlineMode = offlineMode
+                    ),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                )
+            }
+        )
+    }
+}
+
+@Composable
+private fun NeteaseAlbumRow(
+    album: AlbumSummary,
+    cardShape: RoundedCornerShape,
+    onClick: () -> Unit,
+    offlineMode: Boolean
+) {
+    val context = LocalContext.current
+    Card(
+        shape = cardShape,
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .clip(cardShape)
+            .clickable(onClick = onClick)
+    ) {
+        ListItem(
+            headlineContent = { Text(album.name) },
+            supportingContent = {
+                Text(
+                    text = pluralStringResource(
+                        R.plurals.library_song_count,
+                        album.size,
+                        album.size
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            leadingContent = {
+                AsyncImage(
+                    model = offlineCachedImageRequest(
+                        context = context,
+                        data = album.picUrl,
+                        sizePx = 192,
+                        allowHardware = false,
+                        offlineMode = offlineMode
+                    ),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                )
+            }
+        )
+    }
 }
 
 @Composable
 private fun NeteasePlaylistList(
     playlists: List<PlaylistSummary>,
     listState: LazyListState,
+    selectedCategory: Int,
+    onCategoryChange: (Int) -> Unit,
     onClick: (PlaylistSummary) -> Unit,
     offlineMode: Boolean
 ) {
@@ -1484,6 +2338,12 @@ private fun NeteasePlaylistList(
         modifier = Modifier.fillMaxSize()
     ) {
         val cardShape = RoundedCornerShape(12.dp)
+        item(key = "netease_library_header") {
+            NeteaseLibraryHeaderContent(
+                selectedCategory = selectedCategory,
+                onCategoryChange = onCategoryChange
+            )
+        }
         item(key = "netease_playlist_search") {
             OutlinedTextField(
                 value = searchQuery,
@@ -1617,6 +2477,8 @@ private fun NeteasePlaylistList(
 private fun NeteaseAlbumList(
     playlists: List<AlbumSummary>,
     listState: LazyListState,
+    selectedCategory: Int,
+    onCategoryChange: (Int) -> Unit,
     onClick: (AlbumSummary) -> Unit,
     offlineMode: Boolean
 ) {
@@ -1634,6 +2496,12 @@ private fun NeteaseAlbumList(
         modifier = Modifier.fillMaxSize()
     ) {
         val cardShape = RoundedCornerShape(12.dp)
+        item(key = "netease_library_header") {
+            NeteaseLibraryHeaderContent(
+                selectedCategory = selectedCategory,
+                onCategoryChange = onCategoryChange
+            )
+        }
         item(key = "netease_album_search") {
             OutlinedTextField(
                 value = searchQuery,
@@ -1668,7 +2536,7 @@ private fun NeteaseAlbumList(
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         leadingContent = {
                             Icon(
-                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                imageVector = Icons.Filled.Album,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(56.dp)
@@ -1700,7 +2568,7 @@ private fun NeteaseAlbumList(
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         leadingContent = {
                             Icon(
-                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                imageVector = Icons.Filled.Album,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(56.dp)
@@ -1779,6 +2647,7 @@ private fun FavoritePlaylistList(
     var selectedFavoriteCategory by rememberSaveable {
         mutableIntStateOf(FAVORITE_CATEGORY_PLAYLIST)
     }
+    var favoriteSearchQuery by rememberSaveable { mutableStateOf("") }
     var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showDeleteSelectedConfirm by rememberSaveable { mutableStateOf(false) }
     val reorderableFavorites = remember { mutableStateListOf<FavoritePlaylist>() }
@@ -1865,6 +2734,7 @@ private fun FavoritePlaylistList(
             .reorderable(reorderState)
     ) {
         val cardShape = RoundedCornerShape(12.dp)
+        val displayedFavorites = filterFavoritePlaylists(reorderableFavorites, favoriteSearchQuery)
         item(key = "favorite_category_tabs") {
             Card(
                 shape = RoundedCornerShape(24.dp),
@@ -1916,10 +2786,19 @@ private fun FavoritePlaylistList(
                 }
             }
         }
+        if (!sortMode) {
+            item(key = "favorite_search") {
+                LibraryInlineSearchField(
+                    query = favoriteSearchQuery,
+                    onQueryChange = { favoriteSearchQuery = it },
+                    placeholderResId = R.string.library_favorite_search_hint
+                )
+            }
+        }
         if (sortMode) {
             item(key = "favorite_sort_mode_header") {
                 val allSelected =
-                    selectedKeys.size == reorderableFavorites.size && reorderableFavorites.isNotEmpty()
+                    selectedKeys.size == displayedFavorites.size && displayedFavorites.isNotEmpty()
                 Card(
                     shape = cardShape,
                     colors = CardDefaults.cardColors(
@@ -1956,7 +2835,7 @@ private fun FavoritePlaylistList(
                                         selectedKeys = if (allSelected) {
                                             emptySet()
                                         } else {
-                                            reorderableFavorites.map(::favoriteKey).toSet()
+                                            displayedFavorites.map(::favoriteKey).toSet()
                                         }
                                     }
                                 ) {
@@ -1983,7 +2862,7 @@ private fun FavoritePlaylistList(
                 }
             }
         }
-        if (visibleFavorites.isEmpty()) {
+        if (displayedFavorites.isEmpty()) {
             item {
                 Card(
                     shape = cardShape,
@@ -1996,11 +2875,14 @@ private fun FavoritePlaylistList(
                         .clip(cardShape)
                 ) {
                     val isArtistCategory = selectedFavoriteCategory == FAVORITE_CATEGORY_ARTIST
+                    val isSearchEmpty = favoriteSearchQuery.isNotBlank() && visibleFavorites.isNotEmpty()
                     ListItem(
                         headlineContent = {
                             Text(
                                 stringResource(
-                                    if (isArtistCategory) {
+                                    if (isSearchEmpty) {
+                                        R.string.library_favorite_search_empty
+                                    } else if (isArtistCategory) {
                                         R.string.library_no_favorite_artist
                                     } else {
                                         R.string.playlist_no_favorite
@@ -2011,7 +2893,9 @@ private fun FavoritePlaylistList(
                         supportingContent = {
                             Text(
                                 stringResource(
-                                    if (isArtistCategory) {
+                                    if (isSearchEmpty) {
+                                        R.string.library_favorite_search_empty_hint
+                                    } else if (isArtistCategory) {
                                         R.string.library_favorite_artist_hint
                                     } else {
                                         R.string.playlist_favorite_hint
@@ -2040,7 +2924,7 @@ private fun FavoritePlaylistList(
             }
         } else {
             items(
-                items = reorderableFavorites,
+                items = displayedFavorites,
                 key = { favoriteKey(it) }
             ) { favorite ->
                 val itemKey = favoriteKey(favorite)
@@ -2176,10 +3060,10 @@ private fun FavoritePlaylistList(
                                     )
                                 } else {
                                     Icon(
-                                        imageVector = if (favorite.source == FAVORITE_SOURCE_NETEASE_ARTIST) {
-                                            Icons.Filled.AccountCircle
-                                        } else {
-                                            Icons.AutoMirrored.Filled.QueueMusic
+                                        imageVector = when (favorite.source) {
+                                            FAVORITE_SOURCE_NETEASE_ARTIST -> Icons.Filled.AccountCircle
+                                            "neteaseAlbum" -> Icons.Filled.Album
+                                            else -> Icons.AutoMirrored.Filled.QueueMusic
                                         },
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
