@@ -73,13 +73,14 @@ Current positioning:
 - **Local-first**: playback cache, downloads, playlists, history, settings, and
   auth data are stored locally on the device by default.
 - **Optional sync**: playlists, favorites, recent plays, and playback stats can
-  be synced to your own GitHub private repository or WebDAV remote file.
+  be synced to your own GitHub repository (repositories created in-app default
+  to private) or a WebDAV remote file.
 - **Single Activity + Compose**: `MainActivity` is the only external entry point.
   The UI is organized by Compose `NavHost`, a dynamic bottom bar, Mini Player,
   and the Now Playing overlay.
-- **Startup onboarding**: first launch follows
-  `Loading -> Disclaimer -> Onboarding -> Main`, covering language, platform
-  accounts, sync, and personalization after the disclaimer.
+- **Startup and recovery flow**: the normal startup path is
+  `Loading -> Disclaimer -> Onboarding -> Main`. If the previous launch ended in
+  a crash or system ANR, the app enters `Safe Mode` first.
 
 ---
 
@@ -124,6 +125,10 @@ Current positioning:
   and playback stats in the user's own remote. `PlaybackStatsRepository` records
   play count, total listen time, first/last played time, and daily buckets by
   stable track identity, then participates in sync merging.
+- **Traffic controls are built into the product, not bolted on later**:
+  `TrafficStatsRepository` tracks playback/download bytes, Wi-Fi/mobile/roaming
+  distribution, and cache-hit bytes. Download flows can also warn before high-risk
+  mobile or roaming transfers.
 - **Highly personalized, beyond theme colors**:
   `AutoSettingsSchema` covers dynamic colors, seed colors, palette style,
   UI scaling, custom backgrounds, lyric font size, lyric blur, the fluid Now
@@ -244,6 +249,9 @@ For release build and signing details, see
   records play count, accumulated listen time, first/last played time, and daily
   stat buckets by stable track identity. Stats are persisted locally and can be
   synced when configured.
+- 📶 **Traffic stats and download risk prompts**:
+  tracks playback/download bytes, Wi-Fi/mobile/roaming distribution, and cache
+  hits, and can warn before downloads on mobile data or roaming.
 - ♻️ **Backup and restore**:
   playlist JSON import/export, plus full config import/export for settings,
   language, platform auth, GitHub/WebDAV config, and Listen Together settings.
@@ -320,12 +328,16 @@ For release build and signing details, see
 - `:ksp-annotations` / `:ksp-processor`: generated settings registration and metadata.
 - `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`: lyrics parsing and Compose lyrics UI submodules.
 - `build-logic`: shared Gradle convention plugins.
+- `buildSrc`: retained auxiliary Gradle build logic.
 - `np-submodule/NeriPlayer-LTW`: Listen Together Cloudflare Workers server.
+- `np-submodule/miuix`: vendored upstream Miuix source/docs tree, not part of the current app module graph.
 
 ### Entry point and navigation
 
 - `MainActivity` is the only external entry point. It handles startup, notification
   permission, external audio imports, and `neriplayer://listen-together/join` links.
+- If the previous launch ended with a JVM/native crash or system ANR, the app
+  enters `Safe Mode` first and exposes only recovery and export actions.
 - The main UI is **Compose NavHost + dynamic bottom bar**:
   `Home / Explore / Library / Settings` are the primary tabs.
 - `Home` is displayed dynamically based on available Home cards. `Debug` appears
@@ -379,9 +391,24 @@ For release build and signing details, see
 ### Downloads, local import, and backups
 
 - Downloads use a shared `OkHttpClient`, not the system `DownloadManager`.
-- Downloaded files can be stored in the app-managed directory or a user-selected
-  SAF directory, with lyrics, covers, metadata, and audio tags.
-- Download resume is not implemented.
+- Downloads are first written into `cache/download_staging` working files, then
+  committed into the app-managed directory or a user-selected SAF directory.
+  Audio metadata is prepared before commit, and lyrics, covers, `.npmeta.json`,
+  and audio tags are written after the audio file is finalized.
+- Downloads support **automatic resume**, but the strategy depends on transport type:
+  - **Direct downloads** resume through `Range: bytes=<offset>-`
+  - **Chunked range downloads** resume by byte offset, mainly for YouTube flows
+    that require explicit range requests
+  - **HLS downloads** resume from a saved segment index plus downloaded byte count
+    through a `.hls.json` checkpoint
+- Each working file also stores `.resume.json` metadata so unfinished downloads
+  can be reconstructed after app restart. `GlobalDownloadManager` scans and
+  restores resumable downloads on startup.
+- Transient network failures try to keep partial data. Downloads that enter
+  `WAITING_NETWORK` because Wi-Fi was lost also keep their working files and can
+  continue after network recovery or user confirmation.
+- Manual cancellation is different from pause/resume: it cleans up working files
+  and rolls back partially committed audio/sidecar artifacts.
 - `LocalAudioImportManager` imports external audio, scans device music, and copies
   nearby `lrc/txt` lyrics and `cover/folder/front` images.
 - `BackupManager` supports playlist JSON export/import and diff analysis.
@@ -416,7 +443,9 @@ the local Listen Together identity from Settings.
 
 ## GitHub Sync
 
-NeriPlayer can sync local metadata to **your own GitHub private repository**.
+NeriPlayer can sync local metadata to **your own GitHub repository**.
+When created from inside the app, the repository defaults to private, and
+existing repositories are also supported.
 
 Current sync targets:
 
@@ -439,7 +468,7 @@ Current sync targets:
   deletion records, and playback stats.
 - 🪶 **Data Saver**: uses `ProtoBuf + GZIP` as `backup.bin`; JSON is used when
   Data Saver is disabled.
-- 📦 **Remote format**: a private GitHub repository is not end-to-end encryption.
+- 📦 **Remote format**: a GitHub repository is not end-to-end encryption.
   You are responsible for protecting remote files.
 - 🚫 **Sync boundary**: audio caches, downloaded files, local media files, cookies,
   and playback tokens are not uploaded.
@@ -448,7 +477,7 @@ Current sync targets:
 
 1. Open Backup & Sync in Settings.
 2. Create a GitHub Personal Access Token with `repo` permission.
-3. Validate the token and configure the repository in the app.
+3. Validate the token, then either create the default private repository or use an existing one.
 4. Enable automatic sync, or run a manual sync.
 
 ---
@@ -494,6 +523,13 @@ NeriPlayer also supports storing the same sync data in a WebDAV remote file.
 
 > ⚠️ QQ Music is currently used mainly for playback metadata completion.
 > Full account capabilities, library data, and a more stable auth flow are still in development.
+
+---
+
+Thank you for using NeriPlayer. Since the project has many features and user
+environments can vary a lot, you may occasionally encounter behavior differences
+ or unexpected issues. If you run into any problems, feel free to submit
+ feedback at any time. We will keep improving the project over time.
 
 ---
 
