@@ -108,10 +108,19 @@ class WebDavSyncWorker(
                     return@withContext Result.success()
                 }
                 NPLogger.e(TAG, "WebDAV sync failed", error)
-                if (forceSync || triggerByUserAction || error is WebDavAuthException) {
+                if (
+                    forceSync ||
+                    triggerByUserAction ||
+                    error is WebDavAuthException ||
+                    error is WebDavMissingConcurrencyTokenException
+                ) {
                     showErrorNotification(error)
                 }
-                if (error is WebDavAuthException) Result.failure() else Result.retry()
+                if (error is WebDavAuthException || error is WebDavMissingConcurrencyTokenException) {
+                    Result.failure()
+                } else {
+                    Result.retry()
+                }
             }
         } catch (e: Exception) {
             NPLogger.e(TAG, "WebDAV sync worker error", e)

@@ -19,10 +19,17 @@ class WebDavFileNotFoundException(message: String) : IOException(message)
 
 class WebDavSyncInProgressException(message: String) : IOException(message)
 
-class WebDavApiException(
+open class WebDavApiException(
     val statusCode: Int,
     message: String
 ) : IOException(message)
+
+class WebDavContentConflictException(
+    statusCode: Int,
+    message: String
+) : WebDavApiException(statusCode, message)
+
+class WebDavMissingConcurrencyTokenException(message: String) : IOException(message)
 
 class WebDavApiClient(
     context: Context,
@@ -58,6 +65,26 @@ class WebDavApiClient(
         }
     }
 
+    data class ConcurrencyToken(
+        val etag: String? = null,
+        val lastModified: String? = null
+    ) {
+        fun hasConditionToken(): Boolean {
+            return !etag.isNullOrBlank() || !lastModified.isNullOrBlank()
+        }
+    }
+
+    data class RemoteFileSnapshot(
+        val content: String,
+        val fingerprint: String,
+        val version: ConcurrencyToken
+    )
+
+    data class WriteResult(
+        val fingerprint: String,
+        val version: ConcurrencyToken
+    )
+
     fun validateConnection(serverUrl: String, basePath: String): Result<Unit> {
         return runCatching {
             val remoteUrl = buildRemoteFileUrl(serverUrl, basePath)
@@ -90,7 +117,7 @@ class WebDavApiClient(
         }
     }
 
-    fun getFileContentStrict(remoteUrl: String): Result<Pair<String, String>> {
+    fun getFileContentStrict(remoteUrl: String): Result<RemoteFileSnapshot> {
         return runCatching {
             val request = Request.Builder()
                 .url(remoteUrl)
@@ -103,7 +130,11 @@ class WebDavApiClient(
                     response.isSuccessful -> {
                         val body = response.body?.string()
                             ?: throw IOException("Empty response")
-                        body to calculateFingerprint(body)
+                        RemoteFileSnapshot(
+                            content = body,
+                            fingerprint = calculateFingerprint(body),
+                            version = extractConcurrencyToken(response)
+                        )
                     }
 
                     response.code == 401 || response.code == 403 -> {
@@ -132,21 +163,57 @@ class WebDavApiClient(
 
     fun updateFileContent(
         remoteUrl: String,
-        content: String
-    ): Result<String> {
+        content: String,
+        expectedVersion: ConcurrencyToken? = null,
+        createOnly: Boolean = false
+    ): Result<WriteResult> {
         return runCatching {
-            val request = Request.Builder()
+            if (!createOnly && expectedVersion != null && !expectedVersion.hasConditionToken()) {
+                throw WebDavMissingConcurrencyTokenException(
+                    "WebDAV server does not expose ETag or Last-Modified for conditional sync"
+                )
+            }
+
+            val requestBuilder = Request.Builder()
                 .url(remoteUrl)
                 .header("Authorization", authorizationHeader)
+
+            if (createOnly) {
+                requestBuilder.header("If-None-Match", "*")
+            } else {
+                expectedVersion?.etag?.let { requestBuilder.header("If-Match", it) }
+                if (expectedVersion?.etag.isNullOrBlank()) {
+                    expectedVersion?.lastModified?.let {
+                        requestBuilder.header("If-Unmodified-Since", it)
+                    }
+                }
+            }
+
+            val request = Request.Builder()
+                .url(remoteUrl)
+                .headers(requestBuilder.build().headers)
                 .put(content.toRequestBody("application/json; charset=utf-8".toMediaType()))
                 .build()
 
             client.newCall(request).execute().use { response ->
                 when {
-                    response.isSuccessful -> calculateFingerprint(content)
+                    response.isSuccessful -> WriteResult(
+                        fingerprint = calculateFingerprint(content),
+                        version = extractConcurrencyToken(response)
+                    )
                     response.code == 401 || response.code == 403 -> {
                         throw WebDavAuthException(
                             appContext.getString(R.string.webdav_auth_failed)
+                        )
+                    }
+
+                    response.code == 409 ||
+                        response.code == 412 ||
+                        response.code == 423 -> {
+                        val errorBody = response.body?.string().orEmpty()
+                        throw WebDavContentConflictException(
+                            statusCode = response.code,
+                            message = "Failed to update file: ${response.code}${errorBody.takeIf { it.isNotBlank() }?.let { " - $it" } ?: ""}"
                         )
                     }
 
@@ -162,5 +229,18 @@ class WebDavApiClient(
         }.onFailure {
             NPLogger.e(TAG, "Update WebDAV file content failed", it)
         }
+    }
+
+    private fun extractConcurrencyToken(response: okhttp3.Response): ConcurrencyToken {
+        val etag = response.header("ETag")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() && !it.startsWith("W/") }
+        val lastModified = response.header("Last-Modified")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+        return ConcurrencyToken(
+            etag = etag,
+            lastModified = lastModified
+        )
     }
 }

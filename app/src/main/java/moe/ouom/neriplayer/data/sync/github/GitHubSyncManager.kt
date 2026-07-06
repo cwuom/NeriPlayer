@@ -99,144 +99,104 @@ class GitHubSyncManager private constructor(context: Context) {
                 .toSet()
             val useDataSaver = storage.isDataSaverMode()
             val preferredFileName = SyncDataSerializer.getFileName(useDataSaver)
-
-            var remoteResult = apiClient.getFileContentStrict(owner, repo, preferredFileName)
-            var actualFileName = preferredFileName
-            if (remoteResult.exceptionOrNull() is GitHubFileNotFoundException) {
-                val alternativeFileName = SyncDataSerializer.getFileName(!useDataSaver)
-                val alternativeResult = apiClient.getFileContentStrict(owner, repo, alternativeFileName)
-                if (alternativeResult.isSuccess) {
-                    remoteResult = alternativeResult
-                    actualFileName = alternativeFileName
-                } else {
-                    val alternativeError = alternativeResult.exceptionOrNull()
-                    if (alternativeError !is GitHubFileNotFoundException) {
-                        if (alternativeError is TokenExpiredException) {
-                            storage.clearToken()
-                        }
-                        return@withContext Result.failure(
-                            alternativeError ?: IOException(localizedContext.getString(R.string.github_sync_failed_message))
-                        )
-                    }
-                }
-            }
-
-            if (remoteResult.isFailure) {
-                val error = remoteResult.exceptionOrNull()
+            val remoteSnapshotResult = fetchRemoteSnapshot(
+                apiClient = apiClient,
+                owner = owner,
+                repo = repo,
+                preferredFileName = preferredFileName,
+                useDataSaver = useDataSaver
+            )
+            if (remoteSnapshotResult.isFailure) {
+                val error = remoteSnapshotResult.exceptionOrNull()
                 if (error is TokenExpiredException) {
                     storage.clearToken()
-                    return@withContext Result.failure(error)
-                }
-                if (error is GitHubFileNotFoundException) {
-                    return@withContext handleInitialUpload(
-                        apiClient = apiClient,
-                        owner = owner,
-                        repo = repo,
-                        localData = localData,
-                        fileName = preferredFileName,
-                        localizedContext = localizedContext,
-                        startMutationVersion = startMutationVersion,
-                        uploadedDeletedPlaylistIds = uploadedDeletedPlaylistIds
-                    )
                 }
                 return@withContext Result.failure(
                     error ?: IOException(localizedContext.getString(R.string.github_sync_failed_message))
                 )
             }
 
-            val (remoteContent, remoteSha) = remoteResult.getOrThrow()
-            var actualRemoteSha = remoteSha
-            if (remoteContent.isEmpty()) {
-                return@withContext Result.failure(
-                    IOException(localizedContext.getString(R.string.github_backup_file_invalid))
-                )
-            }
-
-            val remoteData = try {
-                sanitizeSyncData(
-                    SyncDataSerializer.deserialize(
-                    remoteContent,
-                    SyncDataSerializer.isBinaryFileName(actualFileName)
-                    )
-                )
-            } catch (e: Exception) {
-                // 解析失败时尝试另一种格式，再不行才报错
-                val alternativeFileName = SyncDataSerializer.getFileName(!useDataSaver)
-                val fallbackResult = if (alternativeFileName != actualFileName) {
-                    apiClient.getFileContentStrict(owner, repo, alternativeFileName).getOrNull()
-                } else null
-
-                val fallbackContent = fallbackResult?.first
-                val fallbackSha = fallbackResult?.second
-                val parsedFallback = if (!fallbackContent.isNullOrEmpty()) {
-                    runCatching {
-                        sanitizeSyncData(
-                            SyncDataSerializer.deserialize(
-                                fallbackContent,
-                                SyncDataSerializer.isBinaryFileName(alternativeFileName)
-                            )
-                        )
-                    }.getOrNull()
-                } else null
-
-                if (parsedFallback != null) {
-                    actualFileName = alternativeFileName
-                    if (!fallbackSha.isNullOrBlank()) {
-                        actualRemoteSha = fallbackSha
-                    }
-                    parsedFallback
-                } else {
-                    NPLogger.e(TAG, "Failed to parse remote data", e)
-                    return@withContext Result.failure(e)
-                }
-            }
-
+            val remoteSnapshot = remoteSnapshotResult.getOrThrow()
             val lastRemoteSha = storage.getLastRemoteSha()
             val isFirstSync = lastRemoteSha == null
-            val remoteHasChanged = lastRemoteSha != null && lastRemoteSha != actualRemoteSha
+            val remoteHasChanged = remoteSnapshot != null &&
+                lastRemoteSha != null &&
+                lastRemoteSha != remoteSnapshot.version.sha
             val lastSyncTime = storage.getLastSyncTime()
-            val mergeResult = performThreeWayMerge(localData, remoteData, lastSyncTime)
-            val localMutatedDuringSync =
-                storage.getSyncMutationVersion() != startMutationVersion
-
-            if (!localMutatedDuringSync) {
-                applyMergedDataToLocal(
-                    mergedData = mergeResult.mergedData,
-                    remoteHasChanged = isFirstSync || remoteHasChanged
-                )
-            } else {
-                NPLogger.w(TAG, "Skip applying merged sync data because local state changed during sync")
-            }
-
-            if (!hasDataChanged(remoteData, mergeResult.mergedData) && !remoteHasChanged) {
-                storage.saveLastRemoteSha(actualRemoteSha)
-                storage.saveLastSyncTime(System.currentTimeMillis())
-                if (localMutatedDuringSync) {
+            val uploadResolutionResult = SyncUploadRetryExecutor.execute<SyncData?, MergeResult, GitHubRemoteVersion>(
+                initialRemote = remoteSnapshot?.data,
+                initialVersion = remoteSnapshot?.version ?: GitHubRemoteVersion(
+                    sha = null,
+                    fileName = preferredFileName
+                ),
+                initialRemoteChangedDuringSync = remoteHasChanged,
+                merge = { remoteData ->
+                    if (remoteData == null) {
+                        buildInitialMergeResult(localData, localizedContext)
+                    } else {
+                        performThreeWayMerge(localData, remoteData, lastSyncTime)
+                    }
+                },
+                hasMeaningfulChange = { remoteData, mergeResult ->
+                    remoteData == null || hasDataChanged(remoteData, mergeResult.mergedData)
+                },
+                upload = { mergeResult, version ->
+                    if (storage.getSyncMutationVersion() != startMutationVersion) {
+                        return@execute Result.failure(
+                            LocalSyncMutationConflictException("Local state changed during GitHub sync")
+                        )
+                    }
+                    uploadLocalData(
+                        apiClient = apiClient,
+                        owner = owner,
+                        repo = repo,
+                        data = mergeResult.mergedData,
+                        sha = version.sha,
+                        fileName = version.fileName
+                    ).map { newSha ->
+                        GitHubRemoteVersion(
+                            sha = newSha,
+                            fileName = version.fileName
+                        )
+                    }
+                },
+                refetch = { version ->
+                    fetchRemoteSnapshot(
+                        apiClient = apiClient,
+                        owner = owner,
+                        repo = repo,
+                        preferredFileName = version.fileName,
+                        useDataSaver = SyncDataSerializer.isBinaryFileName(version.fileName)
+                    ).map { snapshot ->
+                        val resolvedSnapshot = snapshot ?: GitHubRemoteSnapshot(
+                            data = null,
+                            version = GitHubRemoteVersion(
+                                sha = null,
+                                fileName = version.fileName
+                            )
+                        )
+                        resolvedSnapshot.data to resolvedSnapshot.version
+                    }
+                },
+                isConflict = { error ->
+                    error is GitHubContentConflictException
+                }
+            )
+            if (uploadResolutionResult.isFailure) {
+                val error = uploadResolutionResult.exceptionOrNull()
+                if (error is LocalSyncMutationConflictException) {
                     GitHubSyncWorker.scheduleDelayedSync(
                         appContext,
                         triggerByUserAction = false,
                         markMutation = false
                     )
-                }
-                return@withContext Result.success(
-                    SyncResult(
-                        success = true,
-                        message = localizedContext.getString(R.string.github_sync_no_change)
+                    return@withContext Result.success(
+                        SyncResult(
+                            success = true,
+                            message = localizedContext.getString(R.string.github_sync_no_change)
+                        )
                     )
-                )
-            }
-
-            val uploadResult = uploadLocalData(
-                apiClient = apiClient,
-                owner = owner,
-                repo = repo,
-                data = mergeResult.mergedData,
-                sha = actualRemoteSha,
-                fileName = actualFileName
-            )
-
-            if (uploadResult.isFailure) {
-                val error = uploadResult.exceptionOrNull()
+                }
                 if (error is TokenExpiredException) {
                     storage.clearToken()
                 }
@@ -245,7 +205,19 @@ class GitHubSyncManager private constructor(context: Context) {
                 )
             }
 
-            uploadResult.getOrNull()?.let { storage.saveLastRemoteSha(it) }
+            val uploadResolution = uploadResolutionResult.getOrThrow()
+            val localMutatedDuringSync = storage.getSyncMutationVersion() != startMutationVersion
+
+            if (!localMutatedDuringSync) {
+                applyMergedDataToLocal(
+                    mergedData = uploadResolution.merged.mergedData,
+                    remoteHasChanged = isFirstSync || uploadResolution.remoteChangedDuringSync
+                )
+            } else {
+                NPLogger.w(TAG, "Skip applying merged sync data because local state changed during sync")
+            }
+
+            uploadResolution.remoteVersion.sha?.let(storage::saveLastRemoteSha)
             storage.saveLastSyncTime(System.currentTimeMillis())
             storage.removeDeletedPlaylistIds(uploadedDeletedPlaylistIds)
             if (localMutatedDuringSync) {
@@ -255,53 +227,34 @@ class GitHubSyncManager private constructor(context: Context) {
                     markMutation = false
                 )
             }
-            Result.success(mergeResult.syncResult)
+            val syncResult = when {
+                !uploadResolution.uploadPerformed &&
+                    !uploadResolution.remoteChangedDuringSync &&
+                    !isFirstSync -> {
+                    SyncResult(
+                        success = true,
+                        message = localizedContext.getString(R.string.github_sync_no_change)
+                    )
+                }
+
+                remoteSnapshot == null &&
+                    uploadResolution.uploadPerformed &&
+                    !uploadResolution.remoteChangedDuringSync -> {
+                    SyncResult(
+                        success = true,
+                        message = localizedContext.getString(R.string.sync_initial_uploaded)
+                    )
+                }
+
+                else -> uploadResolution.merged.syncResult
+            }
+            Result.success(syncResult)
         } catch (e: Exception) {
             NPLogger.e(TAG, "Sync failed", e)
             Result.failure(e)
         } finally {
             syncLock.unlock()
         }
-    }
-
-    private suspend fun handleInitialUpload(
-        apiClient: GitHubApiClient,
-        owner: String,
-        repo: String,
-        localData: SyncData,
-        fileName: String,
-        localizedContext: Context,
-        startMutationVersion: Long,
-        uploadedDeletedPlaylistIds: Set<Long>
-    ): Result<SyncResult> {
-        val uploadResult = uploadLocalData(apiClient, owner, repo, localData, null, fileName)
-        if (uploadResult.isSuccess) {
-            uploadResult.getOrNull()?.let { storage.saveLastRemoteSha(it) }
-            storage.saveLastSyncTime(System.currentTimeMillis())
-            storage.removeDeletedPlaylistIds(uploadedDeletedPlaylistIds)
-            if (storage.getSyncMutationVersion() != startMutationVersion) {
-                GitHubSyncWorker.scheduleDelayedSync(
-                    appContext,
-                    triggerByUserAction = false,
-                    markMutation = false
-                )
-            }
-            return Result.success(
-                SyncResult(
-                    success = true,
-                    message = localizedContext.getString(R.string.sync_initial_uploaded)
-                )
-            )
-        }
-
-        val error = uploadResult.exceptionOrNull()
-        if (error is TokenExpiredException) {
-            storage.clearToken()
-            return Result.failure(error)
-        }
-        return Result.failure(
-            error ?: IOException(localizedContext.getString(R.string.sync_upload_failed))
-        )
     }
 
     private fun buildLocalSyncData(localizedContext: Context): SyncData {
@@ -1107,6 +1060,113 @@ class GitHubSyncManager private constructor(context: Context) {
             a.playlistContextId == b.playlistContextId
     }
 
+    private suspend fun fetchRemoteSnapshot(
+        apiClient: GitHubApiClient,
+        owner: String,
+        repo: String,
+        preferredFileName: String,
+        useDataSaver: Boolean
+    ): Result<GitHubRemoteSnapshot?> {
+        var remoteResult = apiClient.getFileContentStrict(owner, repo, preferredFileName)
+        var actualFileName = preferredFileName
+        if (remoteResult.exceptionOrNull() is GitHubFileNotFoundException) {
+            val alternativeFileName = SyncDataSerializer.getFileName(!useDataSaver)
+            val alternativeResult = apiClient.getFileContentStrict(owner, repo, alternativeFileName)
+            if (alternativeResult.isSuccess) {
+                remoteResult = alternativeResult
+                actualFileName = alternativeFileName
+            } else {
+                val alternativeError = alternativeResult.exceptionOrNull()
+                if (alternativeError !is GitHubFileNotFoundException) {
+                    return Result.failure(alternativeError ?: IOException("Failed to fetch remote data"))
+                }
+            }
+        }
+
+        if (remoteResult.isFailure) {
+            val error = remoteResult.exceptionOrNull()
+            return if (error is GitHubFileNotFoundException) {
+                Result.success(null)
+            } else {
+                Result.failure(error ?: IOException("Failed to fetch remote data"))
+            }
+        }
+
+        val (remoteContent, remoteSha) = remoteResult.getOrThrow()
+        if (remoteContent.isEmpty()) {
+            return Result.failure(
+                IOException(LanguageManager.applyLanguage(appContext).getString(R.string.github_backup_file_invalid))
+            )
+        }
+
+        var actualRemoteSha = remoteSha
+        val remoteData = try {
+            sanitizeSyncData(
+                SyncDataSerializer.deserialize(
+                    remoteContent,
+                    SyncDataSerializer.isBinaryFileName(actualFileName)
+                )
+            )
+        } catch (e: Exception) {
+            val alternativeFileName = SyncDataSerializer.getFileName(!SyncDataSerializer.isBinaryFileName(actualFileName))
+            val fallbackResult = if (alternativeFileName != actualFileName) {
+                apiClient.getFileContentStrict(owner, repo, alternativeFileName).getOrNull()
+            } else null
+            val fallbackContent = fallbackResult?.first
+            val fallbackSha = fallbackResult?.second
+            val parsedFallback = if (!fallbackContent.isNullOrEmpty()) {
+                runCatching {
+                    sanitizeSyncData(
+                        SyncDataSerializer.deserialize(
+                            fallbackContent,
+                            SyncDataSerializer.isBinaryFileName(alternativeFileName)
+                        )
+                    )
+                }.getOrNull()
+            } else null
+
+            if (parsedFallback != null) {
+                actualFileName = alternativeFileName
+                if (!fallbackSha.isNullOrBlank()) {
+                    actualRemoteSha = fallbackSha
+                }
+                parsedFallback
+            } else {
+                NPLogger.e(TAG, "Failed to parse remote data", e)
+                return Result.failure(e)
+            }
+        }
+
+        return Result.success(
+            GitHubRemoteSnapshot(
+                data = remoteData,
+                version = GitHubRemoteVersion(
+                    sha = actualRemoteSha,
+                    fileName = actualFileName
+                )
+            )
+        )
+    }
+
+    private fun buildInitialMergeResult(
+        localData: SyncData,
+        localizedContext: Context
+    ): MergeResult {
+        val playlistsAdded = localData.playlists.count { !it.isDeleted }
+        val playlistsDeleted = localData.playlists.count(SyncPlaylist::isDeleted)
+        val songsAdded = localData.playlists.sumOf { playlist -> playlist.songs.size }
+        return MergeResult(
+            mergedData = localData.copy(lastModified = System.currentTimeMillis()),
+            syncResult = SyncResult(
+                success = true,
+                message = localizedContext.getString(R.string.sync_initial_uploaded),
+                playlistsAdded = playlistsAdded,
+                playlistsDeleted = playlistsDeleted,
+                songsAdded = songsAdded
+            )
+        )
+    }
+
     private suspend fun uploadLocalData(
         apiClient: GitHubApiClient,
         owner: String,
@@ -1149,6 +1209,16 @@ class GitHubSyncManager private constructor(context: Context) {
     private data class MergeResult(
         val mergedData: SyncData,
         val syncResult: SyncResult
+    )
+
+    private data class GitHubRemoteVersion(
+        val sha: String?,
+        val fileName: String
+    )
+
+    private data class GitHubRemoteSnapshot(
+        val data: SyncData?,
+        val version: GitHubRemoteVersion
     )
 
     private data class PlaylistMergeResult(

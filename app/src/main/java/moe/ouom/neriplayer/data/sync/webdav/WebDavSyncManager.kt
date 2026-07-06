@@ -60,6 +60,8 @@ import moe.ouom.neriplayer.data.sync.github.SyncPlaylistDeletionPolicy
 import moe.ouom.neriplayer.data.sync.github.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.sync.github.SyncPlaylistSongMergePolicy
 import moe.ouom.neriplayer.data.sync.github.SyncTrackStat
+import moe.ouom.neriplayer.data.sync.github.LocalSyncMutationConflictException
+import moe.ouom.neriplayer.data.sync.github.SyncUploadRetryExecutor
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.util.LanguageManager
 import moe.ouom.neriplayer.util.NPLogger
@@ -117,89 +119,109 @@ class WebDavSyncManager private constructor(context: Context) {
                 .filter(SyncPlaylist::isDeleted)
                 .map(SyncPlaylist::id)
                 .toSet()
-            val remoteResult = apiClient.getFileContentStrict(remoteUrl)
-
-            if (remoteResult.isFailure) {
-                val error = remoteResult.exceptionOrNull()
-                if (error is WebDavFileNotFoundException) {
-                    return@withContext handleInitialUpload(
-                        apiClient = apiClient,
-                        remoteUrl = remoteUrl,
-                        localData = localData,
-                        localizedContext = localizedContext,
-                        startMutationVersion = startMutationVersion,
-                        uploadedDeletedPlaylistIds = uploadedDeletedPlaylistIds
-                    )
-                }
+            val remoteSnapshotResult = fetchRemoteSnapshot(
+                apiClient = apiClient,
+                remoteUrl = remoteUrl
+            )
+            if (remoteSnapshotResult.isFailure) {
                 return@withContext Result.failure(
-                    error ?: IOException(localizedContext.getString(R.string.webdav_sync_failed_message))
+                    remoteSnapshotResult.exceptionOrNull()
+                        ?: IOException(localizedContext.getString(R.string.webdav_sync_failed_message))
                 )
             }
 
-            val (remoteContent, remoteFingerprint) = remoteResult.getOrThrow()
-            if (remoteContent.isEmpty()) {
-                return@withContext Result.failure(
-                    IOException(localizedContext.getString(R.string.webdav_backup_file_invalid))
-                )
-            }
-
-            val remoteData = try {
-                sanitizeSyncData(SyncDataSerializer.deserialize(remoteContent, false))
-            } catch (e: Exception) {
-                NPLogger.e(TAG, "Failed to parse remote data", e)
-                return@withContext Result.failure(e)
-            }
-
+            val remoteSnapshot = remoteSnapshotResult.getOrThrow()
             val lastRemoteFingerprint = webDavStorage.getLastRemoteFingerprint()
             val isFirstSync = lastRemoteFingerprint == null
-            val remoteHasChanged =
-                lastRemoteFingerprint != null && lastRemoteFingerprint != remoteFingerprint
+            val remoteHasChanged = remoteSnapshot != null &&
+                lastRemoteFingerprint != null &&
+                lastRemoteFingerprint != remoteSnapshot.fingerprint
             val lastSyncTime = webDavStorage.getLastSyncTime()
-            val mergeResult = performThreeWayMerge(localData, remoteData, lastSyncTime)
-            val localMutatedDuringSync =
-                storage.getSyncMutationVersion() != startMutationVersion
-
-            if (!localMutatedDuringSync) {
-                applyMergedDataToLocal(
-                    mergedData = mergeResult.mergedData,
-                    remoteHasChanged = isFirstSync || remoteHasChanged
-                )
-            } else {
-                NPLogger.w(TAG, "Skip applying merged sync data because local state changed during sync")
-            }
-
-            if (!hasDataChanged(remoteData, mergeResult.mergedData) && !remoteHasChanged) {
-                webDavStorage.saveLastRemoteFingerprint(remoteFingerprint)
-                webDavStorage.saveLastSyncTime(System.currentTimeMillis())
-                if (localMutatedDuringSync) {
+            val uploadResolutionResult = SyncUploadRetryExecutor.execute<SyncData?, MergeResult, WebDavRemoteVersion>(
+                initialRemote = remoteSnapshot?.data,
+                initialVersion = remoteSnapshot?.version ?: WebDavRemoteVersion(
+                    token = null,
+                    createOnly = true
+                ),
+                initialRemoteChangedDuringSync = remoteHasChanged,
+                merge = { remoteData ->
+                    if (remoteData == null) {
+                        buildInitialMergeResult(localData, localizedContext)
+                    } else {
+                        performThreeWayMerge(localData, remoteData, lastSyncTime)
+                    }
+                },
+                hasMeaningfulChange = { remoteData, mergeResult ->
+                    remoteData == null || hasDataChanged(remoteData, mergeResult.mergedData)
+                },
+                upload = { mergeResult, version ->
+                    if (storage.getSyncMutationVersion() != startMutationVersion) {
+                        return@execute Result.failure(
+                            LocalSyncMutationConflictException("Local state changed during WebDAV sync")
+                        )
+                    }
+                    uploadLocalData(
+                        apiClient = apiClient,
+                        remoteUrl = remoteUrl,
+                        data = mergeResult.mergedData,
+                        version = version
+                    )
+                },
+                refetch = {
+                    fetchRemoteSnapshot(
+                        apiClient = apiClient,
+                        remoteUrl = remoteUrl
+                    ).map { snapshot ->
+                        val resolvedSnapshot = snapshot ?: WebDavRemoteSnapshot(
+                            data = null,
+                            fingerprint = "",
+                            version = WebDavRemoteVersion(
+                                token = null,
+                                createOnly = true
+                            )
+                        )
+                        resolvedSnapshot.data to resolvedSnapshot.version
+                    }
+                },
+                isConflict = { error ->
+                    error is WebDavContentConflictException
+                }
+            )
+            if (uploadResolutionResult.isFailure) {
+                val error = uploadResolutionResult.exceptionOrNull()
+                if (error is LocalSyncMutationConflictException) {
                     WebDavSyncWorker.scheduleDelayedSync(
                         appContext,
                         triggerByUserAction = false,
                         markMutation = false
                     )
-                }
-                return@withContext Result.success(
-                    SyncResult(
-                        success = true,
-                        message = localizedContext.getString(R.string.webdav_sync_no_change)
+                    return@withContext Result.success(
+                        SyncResult(
+                            success = true,
+                            message = localizedContext.getString(R.string.webdav_sync_no_change)
+                        )
                     )
-                )
-            }
-
-            val uploadResult = uploadLocalData(
-                apiClient = apiClient,
-                remoteUrl = remoteUrl,
-                data = mergeResult.mergedData
-            )
-
-            if (uploadResult.isFailure) {
+                }
                 return@withContext Result.failure(
-                    uploadResult.exceptionOrNull()
+                    error
                         ?: Exception(localizedContext.getString(R.string.sync_upload_failed))
                 )
             }
 
-            uploadResult.getOrNull()?.let(webDavStorage::saveLastRemoteFingerprint)
+            val uploadResolution = uploadResolutionResult.getOrThrow()
+            val localMutatedDuringSync = storage.getSyncMutationVersion() != startMutationVersion
+
+            if (!localMutatedDuringSync) {
+                applyMergedDataToLocal(
+                    mergedData = uploadResolution.merged.mergedData,
+                    remoteHasChanged = isFirstSync || uploadResolution.remoteChangedDuringSync
+                )
+            } else {
+                NPLogger.w(TAG, "Skip applying merged sync data because local state changed during sync")
+            }
+
+            uploadResolution.remoteVersion.lastKnownFingerprint
+                ?.let(webDavStorage::saveLastRemoteFingerprint)
             webDavStorage.saveLastSyncTime(System.currentTimeMillis())
             storage.removeDeletedPlaylistIds(uploadedDeletedPlaylistIds)
             if (localMutatedDuringSync) {
@@ -209,51 +231,34 @@ class WebDavSyncManager private constructor(context: Context) {
                     markMutation = false
                 )
             }
-            Result.success(mergeResult.syncResult)
+            val syncResult = when {
+                !uploadResolution.uploadPerformed &&
+                    !uploadResolution.remoteChangedDuringSync &&
+                    !isFirstSync -> {
+                    SyncResult(
+                        success = true,
+                        message = localizedContext.getString(R.string.webdav_sync_no_change)
+                    )
+                }
+
+                remoteSnapshot == null &&
+                    uploadResolution.uploadPerformed &&
+                    !uploadResolution.remoteChangedDuringSync -> {
+                    SyncResult(
+                        success = true,
+                        message = localizedContext.getString(R.string.sync_initial_uploaded)
+                    )
+                }
+
+                else -> uploadResolution.merged.syncResult
+            }
+            Result.success(syncResult)
         } catch (e: Exception) {
             NPLogger.e(TAG, "Sync failed", e)
             Result.failure(e)
         } finally {
             syncLock.unlock()
         }
-    }
-
-    private suspend fun handleInitialUpload(
-        apiClient: WebDavApiClient,
-        remoteUrl: String,
-        localData: SyncData,
-        localizedContext: Context,
-        startMutationVersion: Long,
-        uploadedDeletedPlaylistIds: Set<Long>
-    ): Result<SyncResult> {
-        val uploadResult = uploadLocalData(
-            apiClient = apiClient,
-            remoteUrl = remoteUrl,
-            data = localData
-        )
-        if (uploadResult.isSuccess) {
-            uploadResult.getOrNull()?.let(webDavStorage::saveLastRemoteFingerprint)
-            webDavStorage.saveLastSyncTime(System.currentTimeMillis())
-            storage.removeDeletedPlaylistIds(uploadedDeletedPlaylistIds)
-            if (storage.getSyncMutationVersion() != startMutationVersion) {
-                WebDavSyncWorker.scheduleDelayedSync(
-                    appContext,
-                    triggerByUserAction = false,
-                    markMutation = false
-                )
-            }
-            return Result.success(
-                SyncResult(
-                    success = true,
-                    message = localizedContext.getString(R.string.sync_initial_uploaded)
-                )
-            )
-        }
-
-        return Result.failure(
-            uploadResult.exceptionOrNull()
-                ?: IOException(localizedContext.getString(R.string.sync_upload_failed))
-        )
     }
 
     private fun buildLocalSyncData(localizedContext: Context): SyncData {
@@ -1059,11 +1064,72 @@ class WebDavSyncManager private constructor(context: Context) {
             a.playlistContextId == b.playlistContextId
     }
 
+    private suspend fun fetchRemoteSnapshot(
+        apiClient: WebDavApiClient,
+        remoteUrl: String
+    ): Result<WebDavRemoteSnapshot?> {
+        val remoteResult = apiClient.getFileContentStrict(remoteUrl)
+        if (remoteResult.isFailure) {
+            val error = remoteResult.exceptionOrNull()
+            return if (error is WebDavFileNotFoundException) {
+                Result.success(null)
+            } else {
+                Result.failure(error ?: IOException("Failed to fetch remote data"))
+            }
+        }
+
+        val snapshot = remoteResult.getOrThrow()
+        if (snapshot.content.isEmpty()) {
+            return Result.failure(
+                IOException(LanguageManager.applyLanguage(appContext).getString(R.string.webdav_backup_file_invalid))
+            )
+        }
+
+        val remoteData = try {
+            sanitizeSyncData(SyncDataSerializer.deserialize(snapshot.content, false))
+        } catch (e: Exception) {
+            NPLogger.e(TAG, "Failed to parse remote data", e)
+            return Result.failure(e)
+        }
+
+        return Result.success(
+            WebDavRemoteSnapshot(
+                data = remoteData,
+                fingerprint = snapshot.fingerprint,
+                version = WebDavRemoteVersion(
+                    token = snapshot.version,
+                    createOnly = false,
+                    lastKnownFingerprint = snapshot.fingerprint
+                )
+            )
+        )
+    }
+
+    private fun buildInitialMergeResult(
+        localData: SyncData,
+        localizedContext: Context
+    ): MergeResult {
+        val playlistsAdded = localData.playlists.count { !it.isDeleted }
+        val playlistsDeleted = localData.playlists.count(SyncPlaylist::isDeleted)
+        val songsAdded = localData.playlists.sumOf { playlist -> playlist.songs.size }
+        return MergeResult(
+            mergedData = localData.copy(lastModified = System.currentTimeMillis()),
+            syncResult = SyncResult(
+                success = true,
+                message = localizedContext.getString(R.string.sync_initial_uploaded),
+                playlistsAdded = playlistsAdded,
+                playlistsDeleted = playlistsDeleted,
+                songsAdded = songsAdded
+            )
+        )
+    }
+
     private suspend fun uploadLocalData(
         apiClient: WebDavApiClient,
         remoteUrl: String,
-        data: SyncData
-    ): Result<String> {
+        data: SyncData,
+        version: WebDavRemoteVersion
+    ): Result<WebDavRemoteVersion> {
         val localizedContext = LanguageManager.applyLanguage(appContext)
         val content = SyncDataSerializer.serialize(data, false)
         NPLogger.d(
@@ -1071,9 +1137,21 @@ class WebDavSyncManager private constructor(context: Context) {
             "Upload data size: ${SyncDataSerializer.getDataSize(data, false)} bytes (WebDAV)"
         )
 
-        val uploadResult = apiClient.updateFileContent(remoteUrl, content)
+        val uploadResult = apiClient.updateFileContent(
+            remoteUrl = remoteUrl,
+            content = content,
+            expectedVersion = version.token,
+            createOnly = version.createOnly
+        )
         return if (uploadResult.isSuccess) {
-            Result.success(uploadResult.getOrNull().orEmpty())
+            val writeResult = uploadResult.getOrThrow()
+            Result.success(
+                WebDavRemoteVersion(
+                    token = writeResult.version,
+                    createOnly = false,
+                    lastKnownFingerprint = writeResult.fingerprint
+                )
+            )
         } else {
             Result.failure(
                 uploadResult.exceptionOrNull()
@@ -1097,6 +1175,18 @@ class WebDavSyncManager private constructor(context: Context) {
     private data class MergeResult(
         val mergedData: SyncData,
         val syncResult: SyncResult
+    )
+
+    private data class WebDavRemoteVersion(
+        val token: WebDavApiClient.ConcurrencyToken?,
+        val createOnly: Boolean,
+        val lastKnownFingerprint: String? = null
+    )
+
+    private data class WebDavRemoteSnapshot(
+        val data: SyncData?,
+        val fingerprint: String,
+        val version: WebDavRemoteVersion
     )
 
     private data class PlaylistMergeResult(

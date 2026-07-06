@@ -45,10 +45,15 @@ class TokenExpiredException(message: String) : IOException(message)
 
 class GitHubFileNotFoundException(message: String) : IOException(message)
 
-class GitHubApiException(
+open class GitHubApiException(
     val statusCode: Int,
     message: String
 ) : IOException(message)
+
+class GitHubContentConflictException(
+    statusCode: Int,
+    message: String
+) : GitHubApiException(statusCode, message)
 
 class GitHubSyncInProgressException(message: String) : IOException(message)
 
@@ -342,7 +347,24 @@ class GitHubApiClient(
                     )
                 }
                 val errorBody = response.body?.string() ?: "Unknown error"
-                Result.failure(IOException("Failed to update file: ${response.code} - $errorBody"))
+                val error = when {
+                    response.code == 409 -> {
+                        GitHubContentConflictException(
+                            statusCode = response.code,
+                            message = "Failed to update file: ${response.code} - $errorBody"
+                        )
+                    }
+
+                    response.code == 422 && errorBody.contains("sha", ignoreCase = true) -> {
+                        GitHubContentConflictException(
+                            statusCode = response.code,
+                            message = "Failed to update file: ${response.code} - $errorBody"
+                        )
+                    }
+
+                    else -> IOException("Failed to update file: ${response.code} - $errorBody")
+                }
+                Result.failure(error)
             }
         } catch (e: Exception) {
             NPLogger.e(TAG, "Update file content error", e)
