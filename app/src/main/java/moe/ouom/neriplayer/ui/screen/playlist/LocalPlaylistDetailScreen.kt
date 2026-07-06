@@ -700,8 +700,17 @@ fun LocalPlaylistDetailScreen(
             }
             var renameError by remember { mutableStateOf<String?>(null) }
             val maxNameLength = LocalPlaylistRepository.MAX_PLAYLIST_NAME_LENGTH
+            fun normalizedRenameName(input: String): String = input.trim().take(maxNameLength)
+            fun isSameRenameName(input: String): Boolean {
+                return normalizedRenameName(input).equals(
+                    normalizedRenameName(playlist.name),
+                    ignoreCase = true
+                )
+            }
+
             fun validateRename(input: String): String? {
-                val name = input.trim().take(maxNameLength)
+                val name = normalizedRenameName(input)
+                if (isSameRenameName(input)) return null
                 if (name.isEmpty()) return context.getString(R.string.playlist_name_empty)
                 if (SystemLocalPlaylists.matchesReservedName(name, context)) {
                     val reservedName = SystemLocalPlaylists.resolve(
@@ -723,16 +732,17 @@ fun LocalPlaylistDetailScreen(
             }
 
             if (showRename) {
-                renameError = validateRename(renameText.text)
                 AlertDialog(
                     onDismissRequest = { showRename = false },
                     confirmButton = {
-                        val trimmed = renameText.text.trim().take(maxNameLength)
-                        val disabled =
-                            renameError != null || trimmed.equals(playlist.name, ignoreCase = true)
+                        val trimmed = normalizedRenameName(renameText.text)
+                        val disabled = renameError != null || isSameRenameName(renameText.text)
                         HapticTextButton(
                             onClick = {
-                                if (!disabled) {
+                                val error = validateRename(renameText.text)
+                                if (error != null) {
+                                    renameError = error
+                                } else if (!disabled) {
                                     vm.rename(trimmed)
                                     showRename = false
                                 }
@@ -1091,7 +1101,7 @@ fun LocalPlaylistDetailScreen(
                                 
                                 if (!isSystemPlaylist) {
                                     HapticIconButton(onClick = {
-                                        renameText = TextFieldValue(playlist.name)
+                                        renameText = TextFieldValue(playlist.name.take(maxNameLength))
                                         renameError = null
                                         showRename = true
                                     }) {
