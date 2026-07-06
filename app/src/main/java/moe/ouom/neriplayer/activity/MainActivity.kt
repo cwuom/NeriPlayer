@@ -224,9 +224,13 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val devModeEnabled by settingsRepository.devModeEnabledFlow.collectAsState(initial = false)
-            LaunchedEffect(devModeEnabled) {
+            val alwaysRecordLogsEnabled by settingsRepository.alwaysRecordLogsEnabledFlow.collectAsState(initial = false)
+            LaunchedEffect(devModeEnabled, alwaysRecordLogsEnabled) {
                 // 日志初始化只在配置变更时更新，避免每次根组合重组都触发
-                NPLogger.init(context = this@MainActivity, enableFileLogging = devModeEnabled)
+                NPLogger.init(
+                    context = this@MainActivity,
+                    enableFileLogging = devModeEnabled || alwaysRecordLogsEnabled
+                )
             }
 
             val dynamicColor by settingsRepository.dynamicColorFlow.collectAsState(

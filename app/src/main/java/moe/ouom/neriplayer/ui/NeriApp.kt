@@ -685,6 +685,7 @@ private fun NeriAppContent(
     var restoreLyricsAfterAlbumBack by rememberSaveable { mutableStateOf(false) }
     var lyricsAlbumRouteObserved by rememberSaveable { mutableStateOf(false) }
     val devModeEnabled by repo.devModeEnabledFlow.collectAsState(initial = false)
+    val alwaysRecordLogsEnabled by repo.alwaysRecordLogsEnabledFlow.collectAsState(initial = false)
     val themeSeedColor by repo.themeSeedColorFlow.collectAsState(initial = ThemeDefaults.DEFAULT_SEED_COLOR_HEX)
     val themeColorPalette by repo.themeColorPaletteFlow.collectAsState(initial = ThemeDefaults.PRESET_COLORS)
     val themePaletteStyleValue by repo.themePaletteStyleFlow.collectAsState(
@@ -2048,6 +2049,10 @@ private fun NeriAppContent(
                                     }
                                 ) {
                                     DebugHomeScreen(
+                                        alwaysRecordLogsEnabled = alwaysRecordLogsEnabled,
+                                        onAlwaysRecordLogsChange = { enabled ->
+                                            scope.launch { repo.setAlwaysRecordLogsEnabled(enabled) }
+                                        },
                                         onOpenListenTogetherDebug = {
                                             navController.navigate(Destinations.DebugListenTogether.route)
                                         },

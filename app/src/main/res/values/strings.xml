@@ -619,6 +619,8 @@
     <string name="debug_youtube_probe_library_preview_count">媒体库歌单数量：%1$d</string>
     <string name="debug_view_logs">查看应用日志</string>
     <string name="debug_view_logs_desc">查看、复制和导出本次运行的日志</string>
+    <string name="settings_always_record_logs">始终记录日志</string>
+    <string name="settings_always_record_logs_desc">无视调试模式开关，持续写入应用运行日志</string>
     <string name="debug_test_exception">测试异常处理器</string>
     <string name="debug_test_exception_desc">弹出 JVM、ANR 与 Native 异常测试菜单</string>
     <string name="debug_test_exception_picker_title">选择异常测试类型</string>

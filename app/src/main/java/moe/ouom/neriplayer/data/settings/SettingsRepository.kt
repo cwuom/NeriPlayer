@@ -144,6 +144,9 @@ class SettingsRepository(private val context: Context) {
     val devModeEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.devModeEnabledFlow
 
+    val alwaysRecordLogsEnabledFlow: Flow<Boolean> =
+        settingFlow(AutoSettingsSchema.general.alwaysRecordLogsEnabled)
+
     val themeSeedColorFlow: Flow<String> =
         context.dataStore.data.map { it[SettingsKeys.THEME_SEED_COLOR] ?: ThemeDefaults.DEFAULT_SEED_COLOR_HEX }
 
@@ -514,6 +517,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setDevModeEnabled(enabled: Boolean) {
         autoSettingsRepository.setDevModeEnabled(enabled)
+    }
+
+    suspend fun setAlwaysRecordLogsEnabled(enabled: Boolean) {
+        setSetting(AutoSettingsSchema.general.alwaysRecordLogsEnabled, enabled)
     }
 
     suspend fun setThemeSeedColor(hex: String) {

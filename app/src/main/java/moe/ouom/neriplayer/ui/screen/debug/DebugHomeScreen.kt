@@ -56,6 +56,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -103,6 +104,8 @@ enum class DebugCrashTestType(
 
 @Composable
 fun DebugHomeScreen(
+    alwaysRecordLogsEnabled: Boolean,
+    onAlwaysRecordLogsChange: (Boolean) -> Unit,
     onOpenListenTogetherDebug: () -> Unit,
     onOpenYouTubeDebug: () -> Unit,
     onOpenBiliDebug: () -> Unit,
@@ -286,6 +289,31 @@ fun DebugHomeScreen(
                     headlineContent = { Text(stringResource(R.string.debug_view_logs)) },
                     supportingContent = { Text(stringResource(R.string.debug_view_logs_desc)) },
                     modifier = Modifier.clickable(onClick = onOpenLogs),
+                    colors = ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    )
+                )
+
+                ListItem(
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Outlined.Description,
+                            contentDescription = stringResource(R.string.settings_always_record_logs),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    },
+                    headlineContent = { Text(stringResource(R.string.settings_always_record_logs)) },
+                    supportingContent = { Text(stringResource(R.string.settings_always_record_logs_desc)) },
+                    trailingContent = {
+                        Switch(
+                            checked = alwaysRecordLogsEnabled,
+                            onCheckedChange = onAlwaysRecordLogsChange
+                        )
+                    },
+                    modifier = Modifier.clickable {
+                        onAlwaysRecordLogsChange(!alwaysRecordLogsEnabled)
+                    },
                     colors = ListItemDefaults.colors(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
                     )

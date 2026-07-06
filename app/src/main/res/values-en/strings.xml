@@ -619,6 +619,8 @@
     <string name="debug_youtube_probe_library_preview_count">Library playlist count: %1$d</string>
     <string name="debug_view_logs">View App Logs</string>
     <string name="debug_view_logs_desc">View, copy and export runtime logs</string>
+    <string name="settings_always_record_logs">Always Record Logs</string>
+    <string name="settings_always_record_logs_desc">Keep writing runtime logs even when debug mode is off</string>
     <string name="debug_test_exception">Test Exception Handler</string>
     <string name="debug_test_exception_desc">Open the JVM, ANR, and native crash test menu</string>
     <string name="debug_test_exception_picker_title">Choose crash test type</string>

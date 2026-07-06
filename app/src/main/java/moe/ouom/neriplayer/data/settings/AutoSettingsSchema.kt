@@ -104,10 +104,21 @@ object AutoSettingsSchema {
         val devModeEnabled = Unit
 
         @AutoSetting(
+            order = 60
+        )
+        val alwaysRecordLogsEnabled = autoSwitchSetting(
+            key = "always_record_logs_enabled",
+            defaultValue = false,
+            titleRes = R.string.settings_always_record_logs,
+            descriptionRes = R.string.settings_always_record_logs_desc,
+            icon = AutoSettingIcon.Info
+        )
+
+        @AutoSetting(
             key = "disclaimer_accepted_v2",
             type = SettingValueType.Boolean,
             defaultBoolean = false,
-            order = 60,
+            order = 70,
             access = SettingAccessMode.KeyOnly
         )
         val disclaimerAcceptedV2 = Unit
@@ -116,7 +127,7 @@ object AutoSettingsSchema {
             key = "startup_onboarding_completed",
             type = SettingValueType.Boolean,
             defaultBoolean = false,
-            order = 70,
+            order = 80,
             access = SettingAccessMode.KeyOnly
         )
         val startupOnboardingCompleted = Unit
@@ -125,7 +136,7 @@ object AutoSettingsSchema {
             key = "internationalization_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = false,
-            order = 80,
+            order = 90,
             access = SettingAccessMode.KeyOnly
         )
         val internationalizationEnabled = autoSetting(
