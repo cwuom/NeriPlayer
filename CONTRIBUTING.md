@@ -117,8 +117,12 @@
   - 歌词解析和 Compose 歌词 UI 子模块。
 - `build-logic`
   - Android/Kotlin/Compose convention plugins。
+- `buildSrc`
+  - 保留的辅助 Gradle 构建逻辑模块。
 - `np-submodule/NeriPlayer-LTW`
   - 一起听 Cloudflare Workers 服务端。
+- `np-submodule/miuix`
+  - 仓库内附带的上游 Miuix 源码/文档树，当前不参与主应用模块构建。
 
 #### Android 客户端关键路径
 
@@ -127,10 +131,11 @@
     Lyricon、全局下载管理和共享图片加载器。
 
 - `app/src/main/java/moe/ouom/neriplayer/activity/`
-  - `MainActivity.kt` 是唯一对外入口，负责启动流程、免责声明、
+  - `MainActivity.kt` 是唯一对外入口，负责安全模式、启动流程、免责声明、
     启动引导、外部音频导入、一起听深链和顶层 Compose 宿主。
-  - `NeteaseWebLoginActivity.kt`、`BiliWebLoginActivity.kt`
-    与 `YouTubeWebLoginActivity.kt` 是内部 Web 登录页。
+  - `NeteaseWebLoginActivity.kt`、`NeteaseQrLoginActivity.kt`、
+    `BiliWebLoginActivity.kt` 与 `YouTubeWebLoginActivity.kt`
+    是内部平台登录页。
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt`
   - 顶层 Compose 应用骨架，负责 `NavHost`、动态底栏、
@@ -203,7 +208,15 @@
 - 本地「我喜欢的音乐」支持将可识别的网易云歌曲同步到网易云我喜欢的音乐；
   该能力依赖网易云登录态，并会跳过不支持或已存在的歌曲。
 - 下载使用共享 `OkHttpClient` 写入应用目录或 SAF 目录，
-  **不是**系统 `DownloadManager`，当前也**没有断点续传**。
+  **不是**系统 `DownloadManager`；当前已支持自动断点续传与启动恢复。
+- 续传按传输类型分别处理：
+  - 直链下载通过工作文件大小 + `Range` 头续传
+  - 显式分块下载按字节偏移续传
+  - HLS 下载通过 `.hls.json` 检查点按 segment 恢复
+- 工作文件位于 `cache/download_staging/`，并额外保存 `.resume.json`
+  恢复元数据；应用启动和网络恢复后会尝试自动找回未完成下载。
+- 手动取消会回滚半成品并删除工作文件；只有网络策略暂停与可恢复错误重试
+  才会保留断点。
 - 流媒体缓存与下载是两套能力：
   缓存使用 `SimpleCache`，下载由 `AudioDownloadManager` 与
   `ManagedDownloadStorage` 写入本地文件。

@@ -126,8 +126,12 @@ Security reminders:
   - Lyrics parsing and Compose lyrics UI submodules.
 - `build-logic`
   - Android/Kotlin/Compose convention plugins.
+- `buildSrc`
+  - Retained auxiliary Gradle build logic.
 - `np-submodule/NeriPlayer-LTW`
   - Listen Together Cloudflare Workers server.
+- `np-submodule/miuix`
+  - Vendored upstream Miuix source/docs tree, not part of the current app module graph.
 
 #### Android client key paths
 
@@ -136,11 +140,12 @@ Security reminders:
     Lyricon, global downloads, and the shared image loader.
 
 - `app/src/main/java/moe/ouom/neriplayer/activity/`
-  - `MainActivity.kt`: the only external entry point. Handles startup, disclaimer,
+  - `MainActivity.kt`: the only external entry point. Handles safe mode, startup, disclaimer,
     onboarding, external audio imports, Listen Together deep links, and the top-level
     Compose host.
-  - `NeteaseWebLoginActivity.kt`, `BiliWebLoginActivity.kt`, and
-    `YouTubeWebLoginActivity.kt`: internal web login pages.
+  - `NeteaseWebLoginActivity.kt`, `NeteaseQrLoginActivity.kt`,
+    `BiliWebLoginActivity.kt`, and `YouTubeWebLoginActivity.kt`:
+    internal platform sign-in pages.
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt`
   - Top-level Compose app shell. Handles `NavHost`, dynamic bottom bar, `MiniPlayer`,
@@ -221,8 +226,17 @@ Security reminders:
 - Local "My Favorite Music" can sync recognizable NetEase songs to NetEase
   Liked Songs. This requires NetEase login and skips unsupported or existing songs.
 - Downloads use a shared `OkHttpClient` and write to the app directory or a SAF
-  directory. They are **not** handled by the system `DownloadManager`, and
-  resume support is **not** implemented.
+  directory. They are **not** handled by the system `DownloadManager`, but they
+  do support automatic resume and startup recovery.
+- Resume behavior depends on transport type:
+  - direct downloads resume through working-file size plus `Range`
+  - explicit chunked downloads resume by byte offset
+  - HLS downloads resume from a saved segment checkpoint in `.hls.json`
+- Working files live under `cache/download_staging/` and also keep `.resume.json`
+  metadata so unfinished downloads can be reconstructed after app restart or
+  network recovery.
+- Manual cancellation rolls back partial artifacts and removes working files.
+  Partial data is preserved only for network-policy pauses and recoverable retry paths.
 - Streaming cache and permanent downloads are separate features: cache uses
   `SimpleCache`; downloads are written by `AudioDownloadManager` and
   `ManagedDownloadStorage`.
