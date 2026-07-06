@@ -1235,7 +1235,7 @@
     <string name="settings_download_directory">Download Directory</string>
     <string name="settings_download_directory_desc">Songs, lyrics, and covers will be saved here</string>
     <string name="settings_download_directory_current">Current: %1$s</string>
-    <string name="settings_download_directory_hint">A folder on your SD card is usually the easiest choice</string>
+    <string name="settings_download_directory_hint">Avoid moving the download directory unless necessary. The app private folder usually performs better</string>
     <string name="settings_download_directory_choose">Choose Folder</string>
     <string name="settings_download_directory_reset">Restore Default Folder</string>
     <string name="settings_download_directory_reset_desc">Switch back to the app private download folder</string>
@@ -1252,6 +1252,9 @@
     <string name="settings_download_directory_selected">Download directory updated</string>
     <string name="settings_download_directory_reset_done">Download directory reset to default</string>
     <string name="settings_download_directory_pick_failed">Failed to choose download directory: %1$s</string>
+    <string name="settings_download_directory_switch_warning_title">Change Download Directory</string>
+    <string name="settings_download_directory_switch_warning_message">Avoid moving the download directory unless necessary. The app private folder usually performs better. Only switch to a custom folder when you really need it</string>
+    <string name="settings_download_directory_switch_warning_confirm">Continue</string>
     <string name="settings_download_directory_migrate_title">Move Existing Downloads</string>
     <string name="settings_download_directory_migrate_message">Move your downloaded songs, lyrics, and covers to \"%1$s\"?</string>
     <string name="settings_download_directory_migrate_confirm">Move Files</string>

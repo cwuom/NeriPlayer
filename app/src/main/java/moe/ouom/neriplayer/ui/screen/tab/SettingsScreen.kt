@@ -431,6 +431,7 @@ fun SettingsScreen(
 
     val neteaseVm: NeteaseAuthViewModel = viewModel()
     var inlineMsg by remember { mutableStateOf<String?>(null) }
+    var showDownloadDirectorySwitchWarningDialog by remember { mutableStateOf(false) }
     var pendingDownloadDirectoryChange by remember { mutableStateOf<PendingDownloadDirectoryChange?>(null) }
     var isMigratingDownloadDirectory by remember { mutableStateOf(false) }
     val migrationProgress by ManagedDownloadStorage.migrationProgressFlow.collectAsState()
@@ -1354,7 +1355,7 @@ fun SettingsScreen(
                             downloadDirectoryChangeEnabled = downloadDirectoryChangeEnabled,
                             onPickDownloadDirectory = {
                                 if (!guardDownloadDirectoryChange()) {
-                                    downloadDirectoryLauncher.launch(null)
+                                    showDownloadDirectorySwitchWarningDialog = true
                                 }
                             },
                             onResetDownloadDirectory = resetDownloadDirectory,
@@ -1781,6 +1782,40 @@ fun SettingsScreen(
         showClearWebDavConfigDialog = showClearWebDavConfigDialog,
         onShowClearWebDavConfigDialogChange = { showClearWebDavConfigDialog = it }
     )
+
+    if (showDownloadDirectorySwitchWarningDialog) {
+        MiuixSettingsDialog(
+            onDismissRequest = { showDownloadDirectorySwitchWarningDialog = false },
+            title = {
+                Text(stringResource(R.string.settings_download_directory_switch_warning_title))
+            },
+            text = {
+                Text(stringResource(R.string.settings_download_directory_switch_warning_message))
+            },
+            confirmButton = {
+                MiuixSettingsTextButton(
+                    enabled = downloadDirectoryChangeEnabled,
+                    onClick = {
+                        if (guardDownloadDirectoryChange()) {
+                            showDownloadDirectorySwitchWarningDialog = false
+                            return@MiuixSettingsTextButton
+                        }
+                        showDownloadDirectorySwitchWarningDialog = false
+                        downloadDirectoryLauncher.launch(null)
+                    }
+                ) {
+                    Text(stringResource(R.string.settings_download_directory_switch_warning_confirm))
+                }
+            },
+            dismissButton = {
+                MiuixSettingsTextButton(
+                    onClick = { showDownloadDirectorySwitchWarningDialog = false }
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
 
     pendingDownloadDirectoryChange?.let { pendingChange ->
         MiuixSettingsDialog(

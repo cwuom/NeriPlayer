@@ -1234,7 +1234,7 @@
     <string name="settings_download_directory">下载目录</string>
     <string name="settings_download_directory_desc">歌曲、歌词和封面会保存到这里</string>
     <string name="settings_download_directory_current">当前：%1$s</string>
-    <string name="settings_download_directory_hint">建议选一个好找的位置，比如 SD 卡里的音乐文件夹</string>
+    <string name="settings_download_directory_hint">非必要不要迁移下载目录，应用私有目录通常具有更好的性能</string>
     <string name="settings_download_directory_choose">选择目录</string>
     <string name="settings_download_directory_reset">恢复默认目录</string>
     <string name="settings_download_directory_reset_desc">改回应用自己的下载位置</string>
@@ -1251,6 +1251,9 @@
     <string name="settings_download_directory_selected">下载目录已更新</string>
     <string name="settings_download_directory_reset_done">已恢复默认下载目录</string>
     <string name="settings_download_directory_pick_failed">选择下载目录失败：%1$s</string>
+    <string name="settings_download_directory_switch_warning_title">切换下载目录</string>
+    <string name="settings_download_directory_switch_warning_message">非必要不要迁移下载目录，应用私有目录通常具有更好的性能。确实需要时再切换到自定义目录</string>
+    <string name="settings_download_directory_switch_warning_confirm">继续选择</string>
     <string name="settings_download_directory_migrate_title">迁移旧下载文件</string>
     <string name="settings_download_directory_migrate_message">要把当前目录里的已下载歌曲、歌词和封面迁移到“%1$s”吗？</string>
     <string name="settings_download_directory_migrate_confirm">迁移</string>
