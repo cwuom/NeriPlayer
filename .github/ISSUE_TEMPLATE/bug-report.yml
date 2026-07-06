@@ -67,7 +67,7 @@ body:
     attributes:
       label: 版本和其他要求 / Version and Other Requirements
       options:
-        - label: 我正在使用最新 CI 调试版本且启用 DEBUG MODE / I am using latest debug CI version of NeriPlayer and enabled DEBUG MODE
+        - label: 我使用的是最新 CI 版本，并已开启开发者模式（在设置中连续点击 7 次版本号）。/ I'm using the latest CI build with Developer Mode enabled (by tapping the version number 7 times in Settings).
           required: false
         - label: 我已经在 [Issue Tracker](https://github.com/cwuom/NeriPlayer/issues) 中找过我要提出的问题，没有找到相同问题。重复问题会被关闭。 / I have searched in the [Issue Tracker](https://github.com/cwuom/NeriPlayer/issues) and found no similar issues. Duplicate issues will be closed.
           required: true
@@ -77,7 +77,7 @@ body:
   - type: textarea
     attributes:
       label: 日志 / Logs
-      description: 请先开启 DEBUG MODE （在设置界面点击 7 次版本号） 复现问题，然后在调试界面查看并导出日志。 / Please enable DEBUG MODE first (click version number 7 times in settings), reproduce the issue, then view and export logs in the debug interface.
+      description: 请先开启开发者模式（在设置界面点击 7 次版本号）复现问题，然后在 Debug 页面查看并导出日志。 / Please enable Developer Mode first (tap the version number 7 times in Settings), reproduce the issue, then view and export logs from the Debug page.
       placeholder: 将日志粘贴到此处或者点击文本框底栏上传日志文件。 / Paste logs here or upload logs by clicking the bar on the bottom.
     validations:
       required: false
