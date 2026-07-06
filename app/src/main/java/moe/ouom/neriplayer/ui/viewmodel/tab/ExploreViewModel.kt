@@ -43,6 +43,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.PlayerManager.biliClient
 import moe.ouom.neriplayer.core.player.PlayerManager.neteaseClient
 import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
+import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.util.NPLogger
@@ -84,14 +85,11 @@ val TAG_TO_API_CATEGORY = mapOf(
     "tag_light_music" to "轻音乐"
 )
 
-/**
- * 定义搜索源
- * @param displayName 用于在UI上显示的名称
- */
-enum class SearchSource(val displayName: String) {
-    YOUTUBE_MUSIC("YouTube"),
-    NETEASE("Netease"),
-    BILIBILI("Bilibili")
+/** 定义搜索源 */
+enum class SearchSource {
+    YOUTUBE_MUSIC,
+    NETEASE,
+    BILIBILI
 }
 
 data class ExploreUiState(
@@ -104,6 +102,7 @@ data class ExploreUiState(
     val searchError: String? = null,
     val searchResults: List<SongItem> = emptyList(),
     val selectedSearchSource: SearchSource = SearchSource.NETEASE,
+    val isNeteaseLoggedIn: Boolean = false,
     val ytMusicPlaylists: List<YouTubeMusicPlaylist> = emptyList(),
     val ytMusicPlaylistsLoading: Boolean = false,
     val ytMusicPlaylistsError: String? = null
@@ -120,6 +119,12 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     val uiState: StateFlow<ExploreUiState> = _uiState
 
     init {
+        viewModelScope.launch {
+            neteaseRepo.authHealthFlow.collect { health ->
+                val isLoggedIn = health.state != SavedCookieAuthState.Missing
+                _uiState.value = _uiState.value.copy(isNeteaseLoggedIn = isLoggedIn)
+            }
+        }
         viewModelScope.launch {
             neteaseRepo.cookieFlow.collect {
                 NPLogger.d(TAG, "cookieFlow updated, reload high quality playlists tag=${_uiState.value.selectedTag}")
@@ -322,6 +327,16 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
 
     /** 搜索网易云歌曲 */
     private fun searchNetease(keyword: String, requestVersion: Long) {
+        if (neteaseRepo.getAuthHealthOnce().state == SavedCookieAuthState.Missing) {
+            updateSearchStateIfCurrent(requestVersion, SearchSource.NETEASE) {
+                it.copy(
+                    searching = false,
+                    searchError = app.getString(R.string.netease_login_required_search),
+                    searchResults = emptyList()
+                )
+            }
+            return
+        }
         searchJob = viewModelScope.launch {
             try {
                 val raw = withContext(Dispatchers.IO) {

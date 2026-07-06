@@ -145,6 +145,15 @@ import moe.ouom.neriplayer.util.performHapticFeedback
 
 private const val SEARCH_INPUT_DEBOUNCE_MS = 300L
 
+@Composable
+private fun searchSourceLabel(source: SearchSource): String {
+    return when (source) {
+        SearchSource.YOUTUBE_MUSIC -> stringResource(R.string.explore_tag_youtube_music)
+        SearchSource.NETEASE -> stringResource(R.string.platform_netease_short)
+        SearchSource.BILIBILI -> stringResource(R.string.platform_bilibili)
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 @Suppress("AssignedValueIsNeverRead")
@@ -328,6 +337,11 @@ fun ExploreScreen(
                             searchQuery = it
                         },
                         label = { Text(stringResource(R.string.search_keyword)) },
+                        placeholder = {
+                            if (ui.selectedSearchSource == SearchSource.NETEASE && !ui.isNeteaseLoggedIn) {
+                                Text(stringResource(R.string.netease_login_required_search_placeholder))
+                            }
+                        },
                         leadingIcon = { Icon(Icons.Default.Search, "Search") },
                         trailingIcon = {
                             if (searchQuery.isNotEmpty()) {
@@ -344,6 +358,14 @@ fun ExploreScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    if (ui.selectedSearchSource == SearchSource.NETEASE && !ui.isNeteaseLoggedIn) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = stringResource(R.string.netease_login_required_search),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
                     PrimaryTabRow(
                         selectedTabIndex = pagerState.currentPage,
@@ -358,7 +380,7 @@ fun ExploreScreen(
                                         pagerState.animateScrollToPage(index)
                                     }
                                 },
-                                text = { Text(source.displayName) }
+                                text = { Text(searchSourceLabel(source)) }
                             )
                         }
                     }

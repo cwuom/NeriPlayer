@@ -789,6 +789,9 @@ fun SettingsScreen(
     } else {
         null
     }
+    val neteaseHomeCardAuthHealth by AppContainer.neteaseCookieRepo.authHealthFlow.collectAsStateWithLifecycleCompat()
+    val neteaseHomeCardsEnabled = internationalEnabled ||
+        neteaseHomeCardAuthHealth.state != SavedCookieAuthState.Missing
     val effectiveDefaultStartDestination = remember(defaultStartDestination, homeStartAvailable) {
         if (!homeStartAvailable && defaultStartDestination == "home") {
             "explore"
@@ -1110,6 +1113,7 @@ fun SettingsScreen(
                             homeTrendingSupportingRes = homeTrendingSupportingRes,
                             homeRadarSupportingRes = homeRadarSupportingRes,
                             homeRecommendedSupportingRes = homeRecommendedSupportingRes,
+                            neteaseHomeCardsEnabled = neteaseHomeCardsEnabled,
                             homeStartAvailable = homeStartAvailable,
                             showHomeContinueCard = showHomeContinueCard,
                             onShowHomeContinueCardChange = onShowHomeContinueCardChange,
@@ -2118,6 +2122,7 @@ private fun SettingsPersonalizationPageContent(
     homeTrendingSupportingRes: Int?,
     homeRadarSupportingRes: Int?,
     homeRecommendedSupportingRes: Int?,
+    neteaseHomeCardsEnabled: Boolean,
     homeStartAvailable: Boolean,
     showHomeContinueCard: Boolean,
     onShowHomeContinueCardChange: (Boolean) -> Unit,
@@ -2186,6 +2191,14 @@ private fun SettingsPersonalizationPageContent(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        if (!neteaseHomeCardsEnabled && !internationalEnabled) {
+            Text(
+                text = stringResource(R.string.settings_home_card_netease_login_required),
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
 
         SettingsHomeCardSwitch(
             title = stringResource(R.string.player_continue),
@@ -2199,7 +2212,8 @@ private fun SettingsPersonalizationPageContent(
             description = homeTrendingSupportingRes?.let { stringResource(it) },
             icon = Icons.Outlined.Bolt,
             checked = showHomeTrendingCard,
-            onCheckedChange = onShowHomeTrendingCardChange
+            onCheckedChange = onShowHomeTrendingCardChange,
+            enabled = neteaseHomeCardsEnabled
         )
 
         SettingsHomeCardSwitch(
@@ -2207,7 +2221,8 @@ private fun SettingsPersonalizationPageContent(
             description = homeRadarSupportingRes?.let { stringResource(it) },
             icon = if (internationalEnabled) Icons.Outlined.Explore else Icons.Outlined.Search,
             checked = showHomeRadarCard,
-            onCheckedChange = onShowHomeRadarCardChange
+            onCheckedChange = onShowHomeRadarCardChange,
+            enabled = neteaseHomeCardsEnabled
         )
 
         SettingsHomeCardSwitch(
@@ -2374,11 +2389,16 @@ private fun SettingsHomeCardSwitch(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    description: String? = null
+    description: String? = null,
+    enabled: Boolean = true
 ) {
     ListItem(
-        modifier = Modifier.settingsItemClickable {
-            onCheckedChange(!checked)
+        modifier = if (enabled) {
+            Modifier.settingsItemClickable {
+                onCheckedChange(!checked)
+            }
+        } else {
+            Modifier.alpha(0.5f)
         },
         leadingContent = {
             Icon(
@@ -2400,6 +2420,7 @@ private fun SettingsHomeCardSwitch(
         trailingContent = {
             MiuixSettingsSwitch(
                 checked = checked,
+                enabled = enabled,
                 onCheckedChange = onCheckedChange
             )
         },

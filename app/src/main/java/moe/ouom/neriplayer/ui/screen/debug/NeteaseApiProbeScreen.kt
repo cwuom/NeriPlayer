@@ -43,6 +43,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -101,9 +102,69 @@ fun NeteaseApiProbeScreen() {
             )
         ) {
             Column(
-                Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                Text(
+                    text = stringResource(R.string.debug_netease_probe_section_auth),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = ui.authSummary,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.debug_netease_probe_section_inputs),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                OutlinedTextField(
+                    value = ui.keyword,
+                    onValueChange = vm::onKeywordChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.debug_netease_probe_input_keyword)) },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = ui.songId,
+                    onValueChange = vm::onSongIdChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.debug_netease_probe_input_song_id)) },
+                    singleLine = true
+                )
+            }
+        }
+
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
+            )
+        ) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.debug_netease_probe_section_actions),
+                    style = MaterialTheme.typography.titleMedium
+                )
                 Button(
                     onClick = { vm.callAllAndCopy() },
                     enabled = !ui.running,
@@ -152,6 +213,24 @@ fun NeteaseApiProbeScreen() {
                     modifier = Modifier.fillMaxWidth()
                 ) { Text(stringResource(R.string.debug_lyric_sample)) }
 
+                OutlinedButton(
+                    onClick = vm::callSearchAndCopy,
+                    enabled = !ui.running,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(stringResource(R.string.debug_netease_probe_action_search)) }
+
+                OutlinedButton(
+                    onClick = vm::callSongDetailAndCopy,
+                    enabled = !ui.running,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(stringResource(R.string.debug_netease_probe_action_song_detail)) }
+
+                OutlinedButton(
+                    onClick = vm::callSongLyricAndCopy,
+                    enabled = !ui.running,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(stringResource(R.string.debug_netease_probe_action_song_lyric)) }
+
                 if (ui.running) {
                     Spacer(Modifier.height(8.dp))
                     CircularProgressIndicator()
@@ -166,12 +245,23 @@ fun NeteaseApiProbeScreen() {
             )
         ) {
             Column(
-                Modifier.fillMaxWidth(),
+                Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                Text(
+                    text = stringResource(R.string.debug_netease_probe_section_result),
+                    style = MaterialTheme.typography.titleMedium
+                )
                 Text(stringResource(R.string.debug_status, ui.lastMessage), style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    text = ui.lastJsonPreview.ifBlank { stringResource(R.string.debug_preview_hint) },
+                    text = ui.resultSummary.ifBlank { stringResource(R.string.debug_netease_probe_summary_empty) },
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace
+                )
+                Text(
+                    text = ui.lastJsonPreview.ifBlank { stringResource(R.string.debug_netease_probe_raw_empty) },
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace
                 )

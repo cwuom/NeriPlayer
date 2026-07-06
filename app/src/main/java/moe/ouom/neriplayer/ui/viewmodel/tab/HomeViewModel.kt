@@ -38,6 +38,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistSummaries
@@ -270,6 +271,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun refreshHotSongs() {
         if (offlineMode) return
+        if (repo.getAuthHealthOnce().state == SavedCookieAuthState.Missing) {
+            _uiState.value = _uiState.value.copy(
+                hotSongs = HomeSectionState(loading = false)
+            )
+            return
+        }
 
         NPLogger.d(TAG, "refreshHotSongs start")
         hotSongsJob?.cancel()
@@ -311,6 +318,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun refreshRadarSongs() {
         if (offlineMode) return
+        if (repo.getAuthHealthOnce().state == SavedCookieAuthState.Missing) {
+            _uiState.value = _uiState.value.copy(
+                radarSongs = HomeSectionState(loading = false)
+            )
+            return
+        }
 
         NPLogger.d(TAG, "refreshRadarSongs start")
         radarSongsJob?.cancel()

@@ -40,6 +40,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.SearchManager
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistSummaries
@@ -49,16 +50,49 @@ import org.json.JSONObject
 
 data class ManualSearchState(
     val keyword: String = "",
-    val selectedPlatform: MusicPlatform = MusicPlatform.CLOUD_MUSIC,
+    val selectedPlatform: MusicPlatform = MusicPlatform.QQ_MUSIC,
     val searchResults: List<SongSearchInfo> = emptyList(),
     val isLoading: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val isCloudMusicAvailable: Boolean = false
 )
 
 class NowPlayingViewModel : ViewModel() {
 
-    private val _manualSearchState = MutableStateFlow(ManualSearchState())
+    private val _manualSearchState = MutableStateFlow(
+        ManualSearchState(
+            selectedPlatform = if (
+                AppContainer.neteaseCookieRepo.getAuthHealthOnce().state == SavedCookieAuthState.Missing
+            ) {
+                MusicPlatform.QQ_MUSIC
+            } else {
+                MusicPlatform.CLOUD_MUSIC
+            },
+            isCloudMusicAvailable = AppContainer.neteaseCookieRepo.getAuthHealthOnce().state != SavedCookieAuthState.Missing
+        )
+    )
     val manualSearchState = _manualSearchState.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            AppContainer.neteaseCookieRepo.authHealthFlow.collect { health ->
+                val isCloudMusicAvailable = health.state != SavedCookieAuthState.Missing
+                _manualSearchState.update { current ->
+                    val nextPlatform = if (
+                        !isCloudMusicAvailable && current.selectedPlatform == MusicPlatform.CLOUD_MUSIC
+                    ) {
+                        MusicPlatform.QQ_MUSIC
+                    } else {
+                        current.selectedPlatform
+                    }
+                    current.copy(
+                        selectedPlatform = nextPlatform,
+                        isCloudMusicAvailable = isCloudMusicAvailable
+                    )
+                }
+            }
+        }
+    }
 
     fun prepareForSearch(initialKeyword: String) {
         _manualSearchState.update {
@@ -81,6 +115,19 @@ class NowPlayingViewModel : ViewModel() {
 
     fun performSearch() {
         if (_manualSearchState.value.keyword.isBlank()) return
+        if (
+            _manualSearchState.value.selectedPlatform == MusicPlatform.CLOUD_MUSIC &&
+            AppContainer.neteaseCookieRepo.getAuthHealthOnce().state == SavedCookieAuthState.Missing
+        ) {
+            _manualSearchState.update {
+                it.copy(
+                    isLoading = false,
+                    searchResults = emptyList(),
+                    error = AppContainer.applicationContext.getString(R.string.netease_login_required_search)
+                )
+            }
+            return
+        }
 
         viewModelScope.launch {
             _manualSearchState.update { it.copy(isLoading = true, error = null) }
@@ -183,6 +230,13 @@ class NowPlayingViewModel : ViewModel() {
     }
 
     fun fillLyrics(context: Context, song: SongItem, selectedSong: SongSearchInfo, onComplete: (Boolean, String) -> Unit) {
+        if (
+            selectedSong.source == MusicPlatform.CLOUD_MUSIC &&
+            AppContainer.neteaseCookieRepo.getAuthHealthOnce().state == SavedCookieAuthState.Missing
+        ) {
+            onComplete(false, context.getString(R.string.netease_login_required_metadata))
+            return
+        }
         viewModelScope.launch {
             try {
                 val platform = selectedSong.source

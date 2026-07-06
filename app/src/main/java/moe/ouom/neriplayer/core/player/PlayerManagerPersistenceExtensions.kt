@@ -31,6 +31,7 @@ import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.source.toSongItem
 import moe.ouom.neriplayer.core.player.state.blockingIo
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.settings.rebaseLyricUserOffsetMs
 import moe.ouom.neriplayer.data.settings.shouldRebaseLyricOffsetForSource
 import moe.ouom.neriplayer.ui.component.LyricEntry
@@ -789,6 +790,19 @@ internal fun PlayerManager.replaceMetadataFromSearchImpl(
             "replaceMetadataFromSearch: originalSong=${originalSong.name}, selectedId=${selectedSong.id}, source=${selectedSong.source}, isAuto=$isAuto, stack=[${debugStackHint()}]"
         )
         val platform = selectedSong.source
+        if (
+            platform == MusicPlatform.CLOUD_MUSIC &&
+            AppContainer.neteaseCookieRepo.getAuthHealthOnce().state == SavedCookieAuthState.Missing
+        ) {
+            mainScope.launch {
+                Toast.makeText(
+                    application,
+                    getLocalizedString(R.string.netease_login_required_metadata),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            return@launch
+        }
 
         val api = when (platform) {
             MusicPlatform.CLOUD_MUSIC -> cloudMusicSearchApi

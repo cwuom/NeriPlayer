@@ -576,7 +576,7 @@
     <string name="debug_bili_api_desc">搜索 / 取封面简介 / 统计 / 取流 / 收藏夹</string>
     <string name="debug_netease_api_desc">账户 / 歌单 / 歌曲 URL / 歌词</string>
     <string name="debug_search_api_desc">QQ / 网易云</string>
-    <string name="debug_youtube_probe_title">YouTube Music 接口调试</string>
+    <string name="debug_youtube_probe_title">YouTube 接口调试</string>
     <string name="debug_youtube_probe_desc">使用当前用户登录态调试 YouTube Music 接口，支持自定义 `hl/gl`、`browseId`、`videoId`、强制刷新，并展示原始 JSON 请求结果；未登录时将自动走匿名请求。</string>
     <string name="debug_youtube_probe_desc_short">支持 Home / Library / Browse / Player / Lyrics 与原始 JSON</string>
     <string name="debug_youtube_probe_section_inputs">调试参数</string>
@@ -673,6 +673,29 @@
     <string name="debug_search_desc">输入关键词,点击平台按钮将真实请求搜索接口,并把原始 JSON 结果复制到剪贴板。</string>
     <string name="debug_search_keyword_label">搜索关键词</string>
     <string name="debug_search_netease">搜索网易云</string>
+    <string name="netease_login_required_search">网易云未登录，暂不支持搜索</string>
+    <string name="netease_login_required_search_placeholder">登录网易云后才能搜索</string>
+    <string name="netease_login_required_home_search">网易云未登录，首页暂不展示网易云搜索推荐</string>
+    <string name="netease_login_required_metadata">网易云未登录，暂不支持补全歌曲信息</string>
+    <string name="debug_netease_probe_section_auth">鉴权状态</string>
+    <string name="debug_netease_probe_section_inputs">调试参数</string>
+    <string name="debug_netease_probe_section_actions">调试动作</string>
+    <string name="debug_netease_probe_section_result">调试结果</string>
+    <string name="debug_netease_probe_auth_missing">当前未登录，部分接口会直接失败</string>
+    <string name="debug_netease_probe_auth_logged_in">当前已登录 | 状态：%1$s | Cookie Key 数：%2$d</string>
+    <string name="debug_netease_probe_auth_state_missing">缺失</string>
+    <string name="debug_netease_probe_auth_state_valid">有效</string>
+    <string name="debug_netease_probe_auth_state_unknown">未知</string>
+    <string name="debug_netease_probe_input_keyword">搜索关键词</string>
+    <string name="debug_netease_probe_input_song_id">歌曲 ID</string>
+    <string name="debug_netease_probe_action_search">测试搜索</string>
+    <string name="debug_netease_probe_action_song_detail">测试歌曲详情</string>
+    <string name="debug_netease_probe_action_song_lyric">测试歌曲歌词</string>
+    <string name="debug_netease_probe_keyword_required">请先填写搜索关键词</string>
+    <string name="debug_netease_probe_song_id_required">请先填写有效歌曲 ID</string>
+    <string name="debug_netease_probe_summary_empty">这里会显示本次网易云接口调试摘要</string>
+    <string name="debug_netease_probe_raw_empty">这里会显示本次接口返回的原始 JSON</string>
+    <string name="debug_netease_probe_summary_template">动作：%1$s\n耗时：%2$d ms\ncode：%3$s\n顶层 key：%4$s\n长度：%5$d</string>
     <string name="debug_search_qq">搜索QQ</string>
     <string name="debug_search_preview_hint">(暂无预览,先输入关键词再点上面的按钮~)</string>
     <string name="debug_error_keyword_empty">错误:关键词不能为空</string>
@@ -881,7 +904,7 @@
     <!-- Explore / Tags -->
     <string name="explore_tag_netease">网易云</string>
     <string name="explore_tag_bilibili">哔哩哔哩</string>
-    <string name="explore_tag_youtube_music">YouTube Music</string>
+    <string name="explore_tag_youtube_music">YouTube</string>
     <string name="explore_tag_all">全部</string>
 
     <!-- Internationalization -->
@@ -889,7 +912,7 @@
     <string name="settings_internationalization_desc">开启后首页推荐和探索页将切换为 YouTube Music</string>
     <string name="settings_internationalization_unavailable">你所在的地区可能无法使用此功能</string>
     <string name="settings_internationalization_checking">正在检测可用性…</string>
-    <string name="home_ytmusic_playlists">YouTube Music 歌单</string>
+    <string name="home_ytmusic_playlists">YouTube 歌单</string>
     <string name="home_ytmusic_guess_you_like">猜你喜欢</string>
     <string name="home_ytmusic_daily_discover">每日发现</string>
     <string name="home_ytmusic_more_recommendations">更多推荐</string>
@@ -1157,6 +1180,7 @@
     <string name="settings_home_card_ytmusic_guess_you_like_desc">控制“猜你喜欢”歌曲推荐</string>
     <string name="settings_home_card_ytmusic_daily_discover_desc">控制“每日发现”歌曲推荐</string>
     <string name="settings_home_card_ytmusic_more_recommendations_desc">控制更多 YouTube Music 推荐与歌单栏目</string>
+    <string name="settings_home_card_netease_login_required">登录网易云后才能启用“热力飙升”和“私人雷达”</string>
     <string name="settings_display">显示设置</string>
     <string name="settings_display_desc">控制封面、歌词与背景的显示方式</string>
     <string name="settings_home_hidden_notice">当前已关闭全部首页卡片，首页会从底部栏隐藏。</string>
@@ -1537,7 +1561,7 @@
     <string name="library_tab_favorite">收藏</string>
     <string name="library_tab_netease_playlist">网易云 - 歌单</string>
     <string name="library_tab_netease_album">网易云 - 专辑</string>
-    <string name="library_tab_youtube_music">YouTube Music</string>
+    <string name="library_tab_youtube_music">YouTube</string>
     <string name="library_tab_bilibili">哔哩哔哩</string>
     <string name="library_tab_qqmusic">QQ音乐</string>
     <string name="library_create_playlist_default">新建歌单</string>

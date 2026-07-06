@@ -2301,16 +2301,36 @@ fun MoreOptionsSheet(
                                 .focusRequester(searchFocusRequester)
                                 .padding(horizontal = 16.dp, vertical = 8.dp),
                             trailingIcon = {
-                                HapticIconButton(onClick = { viewModel.performSearch() }) {
+                                HapticIconButton(
+                                    onClick = { viewModel.performSearch() },
+                                    enabled = searchState.selectedPlatform != MusicPlatform.CLOUD_MUSIC ||
+                                        searchState.isCloudMusicAvailable
+                                ) {
                                     Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.cd_search))
                                 }
                             },
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                             keyboardActions = KeyboardActions(onSearch = {
-                                viewModel.performSearch()
+                                if (
+                                    searchState.selectedPlatform != MusicPlatform.CLOUD_MUSIC ||
+                                    searchState.isCloudMusicAvailable
+                                ) {
+                                    viewModel.performSearch()
+                                }
                                 focusManager.clearFocus()
                             }),
                         )
+                        if (
+                            searchState.selectedPlatform == MusicPlatform.CLOUD_MUSIC &&
+                            !searchState.isCloudMusicAvailable
+                        ) {
+                            Text(
+                                text = stringResource(R.string.netease_login_required_metadata),
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
 
                         // 平台切换
                         androidx.compose.material3.PrimaryTabRow(
@@ -2322,7 +2342,7 @@ fun MoreOptionsSheet(
                                 Tab(
                                     selected = searchState.selectedPlatform.ordinal == index,
                                     onClick = { viewModel.selectPlatform(platform) },
-                                    text = { Text(platform.name.replace("_", " ")) }
+                                    text = { Text(musicPlatformLabel(platform)) }
                                 )
                             }
                         }
@@ -3235,10 +3255,14 @@ fun EditSongInfoSheet(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     trailingIcon = {
-                        HapticIconButton(onClick = {
-                            viewModel.performSearch()
-                            focusManager.clearFocus()
-                        }) {
+                        HapticIconButton(
+                            onClick = {
+                                viewModel.performSearch()
+                                focusManager.clearFocus()
+                            },
+                            enabled = searchState.selectedPlatform != MusicPlatform.CLOUD_MUSIC ||
+                                searchState.isCloudMusicAvailable
+                        ) {
                             Icon(
                                 Icons.Filled.Search,
                                 contentDescription = stringResource(R.string.cd_search)
@@ -3247,10 +3271,25 @@ fun EditSongInfoSheet(
                     },
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = {
-                        viewModel.performSearch()
+                        if (
+                            searchState.selectedPlatform != MusicPlatform.CLOUD_MUSIC ||
+                            searchState.isCloudMusicAvailable
+                        ) {
+                            viewModel.performSearch()
+                        }
                         focusManager.clearFocus()
                     })
                 )
+                if (
+                    searchState.selectedPlatform == MusicPlatform.CLOUD_MUSIC &&
+                    !searchState.isCloudMusicAvailable
+                ) {
+                    Text(
+                        text = stringResource(R.string.netease_login_required_metadata),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
 
                 // 平台切换
                 androidx.compose.material3.PrimaryTabRow(
@@ -3262,7 +3301,7 @@ fun EditSongInfoSheet(
                         Tab(
                             selected = searchState.selectedPlatform.ordinal == index,
                             onClick = { viewModel.selectPlatform(platform) },
-                            text = { Text(platform.name.replace("_", " ")) }
+                            text = { Text(musicPlatformLabel(platform)) }
                         )
                     }
                 }
@@ -3808,4 +3847,12 @@ fun FillOptionsDialog(
             }
         }
     )
+}
+
+@Composable
+private fun musicPlatformLabel(platform: MusicPlatform): String {
+    return when (platform) {
+        MusicPlatform.CLOUD_MUSIC -> stringResource(R.string.platform_netease_short)
+        MusicPlatform.QQ_MUSIC -> stringResource(R.string.settings_qq_music)
+    }
 }

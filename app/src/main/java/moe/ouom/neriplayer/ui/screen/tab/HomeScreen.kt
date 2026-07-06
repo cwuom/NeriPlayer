@@ -207,6 +207,8 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     val showContinue = showContinueCard && usage.isNotEmpty()
     val isInternational = ui.internationalizationEnabled
+    val showNeteaseTrending = showTrendingCard && (isInternational || ui.hasLogin)
+    val showNeteaseRadar = showRadarCard && (isInternational || ui.hasLogin)
     val showOnlineFeeds = !offlineMode
     var wasOffline by remember { mutableStateOf(offlineMode) }
 
@@ -230,7 +232,7 @@ fun HomeScreen(
     }
 
     val hasVisibleSections =
-        showContinue || (showOnlineFeeds && (showTrendingCard || showRadarCard || showRecommendedCard || isInternational))
+            showContinue || (showOnlineFeeds && (showNeteaseTrending || showNeteaseRadar || showRecommendedCard || isInternational))
 
     Box(Modifier.fillMaxSize()) {
         Column(
@@ -329,7 +331,7 @@ fun HomeScreen(
 
                     if (showOnlineFeeds) {
                         if (isInternational) {
-                            if (showTrendingCard && ytmSections.guessYouLike != null) {
+                            if (showNeteaseTrending && ytmSections.guessYouLike != null) {
                                 addYouTubeMusicSongShelfSection(
                                     shelf = ytmSections.guessYouLike,
                                     icon = Icons.Outlined.Bolt,
@@ -339,7 +341,7 @@ fun HomeScreen(
                                 )
                             }
 
-                            if (showRadarCard && ytmSections.dailyDiscover != null) {
+                            if (showNeteaseRadar && ytmSections.dailyDiscover != null) {
                                 addYouTubeMusicSongShelfSection(
                                     shelf = ytmSections.dailyDiscover,
                                     icon = Icons.Outlined.Explore,
@@ -458,7 +460,7 @@ fun HomeScreen(
                                 }
                             }
 
-                            if (!hasVisibleYtMusicFeed && (showTrendingCard || showRadarCard || showRecommendedCard)) {
+                            if (!hasVisibleYtMusicFeed && (showNeteaseTrending || showNeteaseRadar || showRecommendedCard)) {
                                 when {
                                     ui.ytMusicHomeShelves.loading -> {
                                         item(span = { GridItemSpan(maxLineSpan) }) {
@@ -473,7 +475,7 @@ fun HomeScreen(
                                 }
                             }
                         } else {
-                            if (showTrendingCard) {
+                            if (showNeteaseTrending) {
                                 item(span = { GridItemSpan(maxLineSpan) }) {
                                     SectionHeader(
                                         icon = Icons.Outlined.Bolt,
@@ -495,7 +497,7 @@ fun HomeScreen(
                                 }
                             }
 
-                            if (showRadarCard) {
+                            if (showNeteaseRadar) {
                                 item(span = { GridItemSpan(maxLineSpan) }) {
                                     SectionHeader(
                                         icon = Icons.Outlined.Radar,
