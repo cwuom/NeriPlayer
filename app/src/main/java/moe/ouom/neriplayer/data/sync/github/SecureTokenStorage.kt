@@ -34,6 +34,7 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import moe.ouom.neriplayer.data.config.GitHubSyncConfigSnapshot
 import moe.ouom.neriplayer.data.model.SongIdentity
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.util.NPLogger
 import java.util.UUID
 
@@ -58,10 +59,12 @@ class SecureTokenStorage(private val context: Context) {
         private const val KEY_PLAY_HISTORY_UPDATE_MODE = "play_history_update_mode"
         private const val KEY_DELETED_PLAYLIST_IDS = "deleted_playlist_ids"
         private const val KEY_RECENT_PLAY_DELETIONS = "recent_play_deletions"
+        private const val KEY_PLAYLIST_SONG_DELETIONS = "playlist_song_deletions"
         private const val KEY_TOKEN_WARNING_DISMISSED = "token_warning_dismissed"
         private const val KEY_DATA_SAVER_MODE = "data_saver_mode"
         private const val KEY_SYNC_MUTATION_VERSION = "sync_mutation_version"
         private const val MAX_RECENT_PLAY_DELETIONS = 500
+        private const val MAX_PLAYLIST_SONG_DELETIONS = 5000
     }
 
     private fun openEncryptedPrefsWithRecovery(): SharedPreferences {
@@ -293,6 +296,57 @@ class SecureTokenStorage(private val context: Context) {
         setRecentPlayDeletions(remaining)
     }
 
+    fun getPlaylistSongDeletions(): List<SyncPlaylistSongDeletion> {
+        val raw = encryptedPrefs.getString(KEY_PLAYLIST_SONG_DELETIONS, null).orEmpty()
+        if (raw.isBlank()) {
+            return emptyList()
+        }
+        val parsed = runCatching {
+            val type = object : TypeToken<List<SyncPlaylistSongDeletion>>() {}.type
+            gson.fromJson<List<SyncPlaylistSongDeletion>>(raw, type).orEmpty()
+        }.getOrElse { emptyList() }
+        return normalizePlaylistSongDeletions(parsed)
+    }
+
+    fun setPlaylistSongDeletions(deletions: List<SyncPlaylistSongDeletion>) {
+        val normalized = normalizePlaylistSongDeletions(deletions)
+        encryptedPrefs.edit {
+            if (normalized.isEmpty()) {
+                remove(KEY_PLAYLIST_SONG_DELETIONS)
+            } else {
+                putString(KEY_PLAYLIST_SONG_DELETIONS, gson.toJson(normalized))
+            }
+        }
+    }
+
+    fun addPlaylistSongDeletions(deletions: List<SyncPlaylistSongDeletion>) {
+        if (deletions.isEmpty()) {
+            return
+        }
+        setPlaylistSongDeletions(getPlaylistSongDeletions() + deletions)
+    }
+
+    fun removePlaylistSongDeletions(
+        playlistId: Long,
+        identities: Collection<SongIdentity>
+    ) {
+        if (identities.isEmpty()) {
+            return
+        }
+        val stableKeys = identities.mapTo(mutableSetOf()) { identity ->
+            "$playlistId|${identity.stableKey()}"
+        }
+        val remaining = getPlaylistSongDeletions()
+            .filterNot { it.stableKey() in stableKeys }
+        setPlaylistSongDeletions(remaining)
+    }
+
+    fun removePlaylistSongDeletionsForPlaylist(playlistId: Long) {
+        val remaining = getPlaylistSongDeletions()
+            .filterNot { it.playlistId == playlistId }
+        setPlaylistSongDeletions(remaining)
+    }
+
     /** 设置Token警告已忽略 */
     fun setTokenWarningDismissed(dismissed: Boolean) {
         encryptedPrefs.edit { putBoolean(KEY_TOKEN_WARNING_DISMISSED, dismissed) }
@@ -365,5 +419,20 @@ class SecureTokenStorage(private val context: Context) {
             .filterNotNull()
             .sortedByDescending { it.deletedAt }
             .take(MAX_RECENT_PLAY_DELETIONS)
+    }
+
+    private fun normalizePlaylistSongDeletions(
+        deletions: List<SyncPlaylistSongDeletion>
+    ): List<SyncPlaylistSongDeletion> {
+        return deletions
+            .groupBy { it.stableKey() }
+            .mapNotNull { (_, snapshots) ->
+                snapshots.maxWithOrNull(
+                    compareBy<SyncPlaylistSongDeletion> { it.deletedAt }
+                        .thenBy { it.deviceId }
+                ) ?: return@mapNotNull null
+            }
+            .sortedByDescending { it.deletedAt }
+            .take(MAX_PLAYLIST_SONG_DELETIONS)
     }
 }

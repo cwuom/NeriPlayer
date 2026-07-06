@@ -53,6 +53,7 @@ import moe.ouom.neriplayer.data.settings.shouldRebaseLyricOffsetForSource
 import moe.ouom.neriplayer.data.sync.github.CoverUrlMapper
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.github.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
@@ -64,6 +65,7 @@ import java.util.Locale
 class LocalPlaylistRepository private constructor(private val context: Context) {
     private val gson = Gson()
     private val file = File(context.filesDir, "local_playlists.json")
+    private val syncStorage by lazy { SecureTokenStorage(context) }
     private val recentNeteaseLikedIds = Collections.synchronizedSet(mutableSetOf<Long>())
 
     private data class NeteaseResolvedCandidate(
@@ -172,9 +174,8 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
 
     private fun triggerAutoSync() {
         try {
-            val storage = SecureTokenStorage(context)
-            storage.markSyncMutation()
-            if (!storage.isAutoSyncEnabled()) {
+            syncStorage.markSyncMutation()
+            if (!syncStorage.isAutoSyncEnabled()) {
                 NPLogger.d("LocalPlaylistRepo", "Auto sync disabled, skip")
             }
             GitHubSyncWorker.scheduleDelayedSync(context, triggerByUserAction = false)
@@ -209,6 +210,63 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     }
 
     private fun songSet(songs: List<SongItem>): Set<SongIdentity> = songs.map { it.identity() }.toSet()
+
+    private fun stampSongsForPlaylistInsert(songs: List<SongItem>, addedAt: Long): List<SongItem> {
+        return songs.map { it.copy(addedAt = addedAt) }
+    }
+
+    private fun recordPlaylistSongDeletions(
+        playlistId: Long,
+        songs: List<SongItem>,
+        deletedAt: Long
+    ) {
+        val deletions = buildPlaylistSongDeletions(playlistId, songs, deletedAt)
+        if (deletions.isNotEmpty()) {
+            syncStorage.addPlaylistSongDeletions(deletions)
+        }
+    }
+
+    private fun clearPlaylistSongDeletions(playlistId: Long, songs: List<SongItem>) {
+        val remoteIdentities = songs
+            .asSequence()
+            .filterNot { LocalSongSupport.isLocalSong(it, context) }
+            .map { it.identity() }
+            .toList()
+        if (remoteIdentities.isNotEmpty()) {
+            syncStorage.removePlaylistSongDeletions(playlistId, remoteIdentities)
+        }
+    }
+
+    private fun clearPlaylistSongDeletions(playlistId: Long) {
+        syncStorage.removePlaylistSongDeletionsForPlaylist(playlistId)
+    }
+
+    private fun buildPlaylistSongDeletions(
+        playlistId: Long,
+        songs: List<SongItem>,
+        deletedAt: Long
+    ): List<SyncPlaylistSongDeletion> {
+        if (songs.isEmpty() || isLocalFilesPlaylist(playlistId)) {
+            return emptyList()
+        }
+
+        val deviceId = syncStorage.getOrCreateDeviceId()
+        return songs
+            .asSequence()
+            .filterNot { LocalSongSupport.isLocalSong(it, context) }
+            .map { song ->
+                val identity = song.identity()
+                SyncPlaylistSongDeletion(
+                    playlistId = playlistId,
+                    songId = identity.id,
+                    album = identity.album,
+                    mediaUri = LocalSongSupport.sanitizeMediaUriForSync(identity.mediaUri),
+                    deletedAt = deletedAt,
+                    deviceId = deviceId
+                )
+            }
+            .toList()
+    }
 
     private suspend fun hydrateLocalSongsForPersistence(songs: List<SongItem>): List<SongItem> {
         if (songs.none { LocalSongSupport.isLocalSong(it, context) }) {
@@ -300,14 +358,18 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     suspend fun createPlaylistWithSongs(name: String, songs: List<SongItem>): LocalPlaylist {
         return withContext(Dispatchers.IO) {
             val list = _playlists.value.toMutableList()
+            val now = System.currentTimeMillis()
             val distinctSongs = distinctPlaylistSongs(
-                hydrateLocalSongsForPersistence(songs)
+                stampSongsForPlaylistInsert(
+                    songs = hydrateLocalSongsForPersistence(songs),
+                    addedAt = now
+                )
             )
             val playlist = LocalPlaylist(
                 id = nextPlaylistId(list),
                 name = sanitizePlaylistName(name),
                 songs = distinctSongs,
-                modifiedAt = System.currentTimeMillis()
+                modifiedAt = now
             )
             list.add(playlist)
             publish(list)
@@ -317,7 +379,11 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
 
     suspend fun addToFavorites(song: SongItem) {
         withContext(Dispatchers.IO) {
-            val hydratedSong = hydrateLocalSongsForPersistence(listOf(song)).first()
+            val now = System.currentTimeMillis()
+            val hydratedSong = stampSongsForPlaylistInsert(
+                songs = hydrateLocalSongsForPersistence(listOf(song)),
+                addedAt = now
+            ).first()
             val list = _playlists.value.toMutableList()
             val index = list.indexOfFirst { FavoritesPlaylist.isSystemPlaylist(it, context) }
             if (index == -1) return@withContext
@@ -325,9 +391,10 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             val favorites = list[index]
             if (hasExistingSong(favorites.songs, hydratedSong)) return@withContext
 
+            clearPlaylistSongDeletions(favorites.id, listOf(hydratedSong))
             list[index] = favorites.copy(
                 songs = (favorites.songs + hydratedSong).toMutableList(),
-                modifiedAt = System.currentTimeMillis()
+                modifiedAt = now
             )
             publish(list)
         }
@@ -340,12 +407,15 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             if (index == -1) return@withContext
 
             val favorites = list[index]
+            val removedSongs = favorites.songs.filter { it.sameIdentityAs(song) }
             val updatedSongs = favorites.songs.filterNot { it.sameIdentityAs(song) }.toMutableList()
             if (updatedSongs.size == favorites.songs.size) return@withContext
 
+            val deletedAt = System.currentTimeMillis()
+            recordPlaylistSongDeletions(favorites.id, removedSongs, deletedAt)
             list[index] = favorites.copy(
                 songs = updatedSongs,
-                modifiedAt = System.currentTimeMillis()
+                modifiedAt = deletedAt
             )
             publish(list)
         }
@@ -373,11 +443,14 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             val toRemove = songSet(songs)
             val updated = _playlists.value.map { playlist ->
                 if (playlist.id != playlistId) return@map playlist
+                val removedSongs = playlist.songs.filter { it.identity() in toRemove }
                 val filtered = playlist.songs.filterNot { it.identity() in toRemove }.toMutableList()
                 if (filtered.size == playlist.songs.size) {
                     playlist
                 } else {
-                    playlist.copy(songs = filtered, modifiedAt = System.currentTimeMillis())
+                    val deletedAt = System.currentTimeMillis()
+                    recordPlaylistSongDeletions(playlist.id, removedSongs, deletedAt)
+                    playlist.copy(songs = filtered, modifiedAt = deletedAt)
                 }
             }
             publish(updated)
@@ -392,9 +465,11 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
                     return@map playlist
                 }
                 changed = true
+                val deletedAt = System.currentTimeMillis()
+                recordPlaylistSongDeletions(playlist.id, playlist.songs, deletedAt)
                 playlist.copy(
                     songs = mutableListOf(),
-                    modifiedAt = System.currentTimeMillis()
+                    modifiedAt = deletedAt
                 )
             }
             if (!changed) return@withContext
@@ -407,11 +482,14 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             if (songIds.isEmpty()) return@withContext
             val updated = _playlists.value.map { playlist ->
                 if (playlist.id != playlistId) return@map playlist
+                val removedSongs = playlist.songs.filter { it.id in songIds }
                 val filtered = playlist.songs.filterNot { it.id in songIds }.toMutableList()
                 if (filtered.size == playlist.songs.size) {
                     return@map playlist
                 }
-                playlist.copy(songs = filtered, modifiedAt = System.currentTimeMillis())
+                val deletedAt = System.currentTimeMillis()
+                recordPlaylistSongDeletions(playlist.id, removedSongs, deletedAt)
+                playlist.copy(songs = filtered, modifiedAt = deletedAt)
             }
             publish(updated)
         }
@@ -424,7 +502,8 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
 
             val updated = _playlists.value.filterNot { it.id == playlistId }
             runCatching {
-                SecureTokenStorage(context).addDeletedPlaylistId(playlistId)
+                syncStorage.addDeletedPlaylistId(playlistId)
+                clearPlaylistSongDeletions(playlistId)
             }.onFailure {
                 NPLogger.e("LocalPlaylistRepo", "Failed to track deleted playlist", it)
             }
@@ -473,7 +552,11 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     suspend fun addSongsToPlaylistAndCount(playlistId: Long, songs: List<SongItem>): Int {
         return withContext(Dispatchers.IO) {
             if (songs.isEmpty()) return@withContext 0
-            val hydratedSongs = hydrateLocalSongsForPersistence(songs)
+            val now = System.currentTimeMillis()
+            val hydratedSongs = stampSongsForPlaylistInsert(
+                songs = hydrateLocalSongsForPersistence(songs),
+                addedAt = now
+            )
             var addedCount = 0
             val updated = _playlists.value.map { playlist ->
                 if (playlist.id != playlistId) return@map playlist
@@ -486,9 +569,10 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
                     playlist
                 } else {
                     addedCount += toAdd.size
+                    clearPlaylistSongDeletions(playlist.id, toAdd)
                     playlist.copy(
                         songs = (playlist.songs + toAdd).toMutableList(),
-                        modifiedAt = System.currentTimeMillis()
+                        modifiedAt = now
                     )
                 }
             }
@@ -541,7 +625,11 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     suspend fun addSongsToLocalFilesPlaylistAndCount(songs: List<SongItem>): Int {
         return withContext(Dispatchers.IO) {
             if (songs.isEmpty()) return@withContext 0
-            val hydratedSongs = hydrateLocalSongsForPersistence(songs)
+            val now = System.currentTimeMillis()
+            val hydratedSongs = stampSongsForPlaylistInsert(
+                songs = hydrateLocalSongsForPersistence(songs),
+                addedAt = now
+            )
             var addedCount = 0
             val updated = _playlists.value.map { playlist ->
                 if (!isLocalFilesPlaylist(playlist.id, playlist.name)) {
@@ -559,7 +647,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
                     addedCount += toAdd.size
                     playlist.copy(
                         songs = (playlist.songs + toAdd).toMutableList(),
-                        modifiedAt = System.currentTimeMillis()
+                        modifiedAt = now
                     )
                 }
             }
@@ -639,6 +727,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
         newSongInfo: SongItem
     ): SongItem {
         return newSongInfo.copy(
+            addedAt = newSongInfo.addedAt.takeIf { it > 0L } ?: currentSong.addedAt,
             coverUrl = newSongInfo.coverUrl.takeIf { !it.isNullOrBlank() }
                 ?: currentSong.coverUrl,
             originalCoverUrl = newSongInfo.originalCoverUrl.takeIf { !it.isNullOrBlank() }

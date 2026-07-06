@@ -42,6 +42,7 @@ class SyncDataSerializerCompatTest {
         assertEquals("", song.album)
         assertEquals(0L, song.albumId)
         assertEquals(180_000L, song.durationMs)
+        assertEquals(emptyList<SyncPlaylistSongDeletion>(), decoded.playlistSongDeletions)
     }
 
     @Test
@@ -72,6 +73,7 @@ class SyncDataSerializerCompatTest {
         assertEquals(0L, favorite.modifiedAt)
         assertEquals(false, favorite.isDeleted)
         assertEquals(0L, favorite.sortOrder)
+        assertEquals(emptyList<SyncPlaylistSongDeletion>(), decoded.playlistSongDeletions)
     }
 
     @Serializable

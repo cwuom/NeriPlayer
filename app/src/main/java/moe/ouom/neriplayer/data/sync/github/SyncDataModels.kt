@@ -54,7 +54,8 @@ data class SyncData(
     @ProtoNumber(9) val recentPlayDeletions: List<SyncRecentPlayDeletion> = emptyList(),
     @ProtoNumber(10) val playbackStats: List<SyncTrackStat> = emptyList(),
     @ProtoNumber(11) val playbackStatsClearedAt: Long = 0L,
-    @ProtoNumber(12) val playbackStatBuckets: List<SyncPlaybackStatBucket> = emptyList()
+    @ProtoNumber(12) val playbackStatBuckets: List<SyncPlaybackStatBucket> = emptyList(),
+    @ProtoNumber(13) val playlistSongDeletions: List<SyncPlaylistSongDeletion> = emptyList()
 )
 
 /**
@@ -151,6 +152,7 @@ data class SyncSong(
                 durationMs = song.durationMs,
                 coverUrl = syncCoverUrl,
                 mediaUri = LocalSongSupport.sanitizeMediaUriForSync(song.mediaUri),
+                addedAt = song.addedAt.takeIf { it > 0L } ?: System.currentTimeMillis(),
                 matchedLyric = song.matchedLyric,
                 matchedTranslatedLyric = song.matchedTranslatedLyric,
                 matchedLyricSource = song.matchedLyricSource?.name,
@@ -200,7 +202,8 @@ data class SyncSong(
             channelId = channelId,
             audioId = audioId,
             subAudioId = subAudioId,
-            playlistContextId = playlistContextId
+            playlistContextId = playlistContextId,
+            addedAt = addedAt
         )
     }
 }
@@ -231,6 +234,24 @@ data class SyncRecentPlayDeletion(
     )
 
     fun stableKey(): String = identity().stableKey()
+}
+
+@Serializable
+data class SyncPlaylistSongDeletion(
+    @ProtoNumber(1) val playlistId: Long,
+    @ProtoNumber(2) val songId: Long,
+    @ProtoNumber(3) val album: String,
+    @ProtoNumber(4) val mediaUri: String? = null,
+    @ProtoNumber(5) val deletedAt: Long,
+    @ProtoNumber(6) val deviceId: String
+) {
+    fun identity(): SongIdentity = SongIdentity(
+        id = songId,
+        album = album,
+        mediaUri = mediaUri
+    )
+
+    fun stableKey(): String = "$playlistId|${identity().stableKey()}"
 }
 
 /**

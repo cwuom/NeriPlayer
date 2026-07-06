@@ -364,6 +364,10 @@ class GitHubSyncManager private constructor(context: Context) {
             .map {
                 it.copy(mediaUri = LocalSongSupport.sanitizeMediaUriForSync(it.mediaUri))
             }
+        val syncPlaylistSongDeletions = storage.getPlaylistSongDeletions()
+            .map {
+                it.copy(mediaUri = LocalSongSupport.sanitizeMediaUriForSync(it.mediaUri))
+            }
 
         val syncPlaybackStats = playbackStatsRepo.statsFlow.value
             .filter { SyncPlaybackStatMapper.shouldSync(it, localizedContext) }
@@ -383,7 +387,8 @@ class GitHubSyncManager private constructor(context: Context) {
             recentPlayDeletions = syncRecentPlayDeletions,
             playbackStats = syncPlaybackStats,
             playbackStatsClearedAt = playbackStatsRepo.statsClearedAtFlow.value,
-            playbackStatBuckets = syncPlaybackStatBuckets
+            playbackStatBuckets = syncPlaybackStatBuckets,
+            playlistSongDeletions = syncPlaylistSongDeletions
         )
     }
 
@@ -399,6 +404,10 @@ class GitHubSyncManager private constructor(context: Context) {
         var playlistsDeleted = 0
         var songsAdded = 0
         var songsRemoved = 0
+        val mergedPlaylistSongDeletions = SyncPlaylistDeletionPolicy.mergeDeletions(
+            local = local.playlistSongDeletions,
+            remote = remote.playlistSongDeletions
+        )
 
         val mergedPlaylistsById = linkedMapOf<Long, SyncPlaylist>()
         val localPlaylistsMap = local.playlists.associateBy { it.id }
@@ -410,8 +419,8 @@ class GitHubSyncManager private constructor(context: Context) {
             val remotePlaylist = remotePlaylistsMap[playlistId]
             when {
                 localPlaylist != null && remotePlaylist == null -> {
+                    mergedPlaylistsById[localPlaylist.id] = localPlaylist
                     if (!localPlaylist.isDeleted) {
-                        mergedPlaylistsById[localPlaylist.id] = localPlaylist
                         playlistsAdded++
                     } else {
                         playlistsDeleted++
@@ -419,8 +428,8 @@ class GitHubSyncManager private constructor(context: Context) {
                 }
 
                 localPlaylist == null && remotePlaylist != null -> {
+                    mergedPlaylistsById[remotePlaylist.id] = remotePlaylist
                     if (!remotePlaylist.isDeleted) {
-                        mergedPlaylistsById[remotePlaylist.id] = remotePlaylist
                         playlistsAdded++
                     } else {
                         playlistsDeleted++
@@ -429,9 +438,15 @@ class GitHubSyncManager private constructor(context: Context) {
 
                 localPlaylist != null && remotePlaylist != null -> {
                     if (localPlaylist.isDeleted || remotePlaylist.isDeleted) {
+                        mergedPlaylistsById[playlistId] = mergeDeletedPlaylist(localPlaylist, remotePlaylist)
                         playlistsDeleted++
                     } else {
-                        val merged = mergePlaylist(localPlaylist, remotePlaylist, lastSyncTime)
+                        val merged = mergePlaylist(
+                            local = localPlaylist,
+                            remote = remotePlaylist,
+                            lastSyncTime = lastSyncTime,
+                            playlistSongDeletions = mergedPlaylistSongDeletions
+                        )
                         mergedPlaylistsById[merged.playlist.id] = merged.playlist
                         merged.conflict?.let { conflicts += it }
                         songsAdded += merged.songsAdded
@@ -460,6 +475,10 @@ class GitHubSyncManager private constructor(context: Context) {
             remote = remote.playlists,
             mergedById = mergedPlaylistsById,
             lastSyncTime = lastSyncTime
+        )
+        val prunedPlaylistSongDeletions = SyncPlaylistDeletionPolicy.pruneResolvedDeletions(
+            deletions = mergedPlaylistSongDeletions,
+            playlists = mergedPlaylists
         )
         val mergedRecentPlays = mergeRecentPlays(
             local = local.recentPlays,
@@ -492,7 +511,8 @@ class GitHubSyncManager private constructor(context: Context) {
             recentPlayDeletions = mergedRecentPlayDeletions,
             playbackStats = mergedPlaybackStats,
             playbackStatsClearedAt = playbackStatsClearedAt,
-            playbackStatBuckets = mergedPlaybackStatBuckets
+            playbackStatBuckets = mergedPlaybackStatBuckets,
+            playlistSongDeletions = prunedPlaylistSongDeletions
         )
 
         return MergeResult(
@@ -549,7 +569,8 @@ class GitHubSyncManager private constructor(context: Context) {
     private fun mergePlaylist(
         local: SyncPlaylist,
         remote: SyncPlaylist,
-        lastSyncTime: Long
+        lastSyncTime: Long,
+        playlistSongDeletions: List<SyncPlaylistSongDeletion>
     ): PlaylistMergeResult {
         val localizedContext = LanguageManager.applyLanguage(appContext)
         var conflict: SyncConflict? = null
@@ -558,7 +579,8 @@ class GitHubSyncManager private constructor(context: Context) {
 
         val systemDescriptor = SystemLocalPlaylists.resolve(local.id, local.name, localizedContext)
             ?: SystemLocalPlaylists.resolve(remote.id, remote.name, localizedContext)
-        val isFavorites = systemDescriptor?.id == FavoritesPlaylist.SYSTEM_ID
+        val resolvedPlaylistId = systemDescriptor?.id ?: local.id
+        val isFavorites = resolvedPlaylistId == FavoritesPlaylist.SYSTEM_ID
         val localChangedAfterSync = local.modifiedAt > lastSyncTime
         val remoteChangedAfterSync = remote.modifiedAt > lastSyncTime
 
@@ -612,8 +634,12 @@ class GitHubSyncManager private constructor(context: Context) {
             lastSyncTime = lastSyncTime,
             isFavorites = isFavorites
         )
-        val mergedSongs = songMergeResult.songs
-        if (songMergeResult.isUpdated) {
+        val mergedSongs = SyncPlaylistDeletionPolicy.applyDeletions(
+            playlistId = resolvedPlaylistId,
+            songs = songMergeResult.songs,
+            deletions = playlistSongDeletions
+        )
+        if (songMergeResult.isUpdated || mergedSongs.size != songMergeResult.songs.size) {
             isUpdated = true
         }
 
@@ -623,7 +649,7 @@ class GitHubSyncManager private constructor(context: Context) {
 
         return PlaylistMergeResult(
             playlist = SyncPlaylist(
-                id = systemDescriptor?.id ?: local.id,
+                id = resolvedPlaylistId,
                 name = finalName,
                 songs = mergedSongs,
                 createdAt = minOf(local.createdAt, remote.createdAt),
@@ -752,41 +778,64 @@ class GitHubSyncManager private constructor(context: Context) {
         )
     }
 
+    private fun mergeDeletedPlaylist(
+        local: SyncPlaylist,
+        remote: SyncPlaylist
+    ): SyncPlaylist {
+        val localizedContext = LanguageManager.applyLanguage(appContext)
+        val systemDescriptor = SystemLocalPlaylists.resolve(local.id, local.name, localizedContext)
+            ?: SystemLocalPlaylists.resolve(remote.id, remote.name, localizedContext)
+        val resolvedName = systemDescriptor?.currentName
+            ?: local.name.takeIf { it.isNotBlank() }
+            ?: remote.name
+        return SyncPlaylist(
+            id = systemDescriptor?.id ?: local.id,
+            name = resolvedName,
+            songs = emptyList(),
+            createdAt = minOf(local.createdAt, remote.createdAt),
+            modifiedAt = maxOf(local.modifiedAt, remote.modifiedAt),
+            isDeleted = true
+        )
+    }
+
     private suspend fun applyMergedDataToLocal(mergedData: SyncData, remoteHasChanged: Boolean) {
         val localizedContext = LanguageManager.applyLanguage(appContext)
         val sanitizedMergedData = sanitizeSyncData(mergedData)
         val currentPlaylists = playlistRepo.playlists.value.associateBy { playlist ->
             SystemLocalPlaylists.resolve(playlist.id, playlist.name, localizedContext)?.id ?: playlist.id
         }
-        val mergedLocalPlaylists = sanitizedMergedData.playlists.map { syncPlaylist ->
-            val systemDescriptor = SystemLocalPlaylists.resolve(
-                syncPlaylist.id,
-                syncPlaylist.name,
-                localizedContext
-            )
-            val normalizedId = systemDescriptor?.id ?: syncPlaylist.id
-            val syncedSongs = syncPlaylist.songs
-                .map { it.toSongItem() }
-                .distinctBy { it.identity() }
-            val preservedLocalSongs = currentPlaylists[normalizedId]
-                ?.songs
-                .orEmpty()
-                .filter { LocalSongSupport.isLocalSong(it, localizedContext) }
+        val mergedLocalPlaylists = sanitizedMergedData.playlists
+            .filterNot(SyncPlaylist::isDeleted)
+            .map { syncPlaylist ->
+                val systemDescriptor = SystemLocalPlaylists.resolve(
+                    syncPlaylist.id,
+                    syncPlaylist.name,
+                    localizedContext
+                )
+                val normalizedId = systemDescriptor?.id ?: syncPlaylist.id
+                val syncedSongs = syncPlaylist.songs
+                    .map { it.toSongItem() }
+                    .distinctBy { it.identity() }
+                val preservedLocalSongs = currentPlaylists[normalizedId]
+                    ?.songs
+                    .orEmpty()
+                    .filter { LocalSongSupport.isLocalSong(it, localizedContext) }
 
-            LocalPlaylist(
-                id = normalizedId,
-                name = systemDescriptor?.currentName ?: syncPlaylist.name,
-                songs = mergeLocalOnlySongs(syncedSongs, preservedLocalSongs),
-                modifiedAt = syncPlaylist.modifiedAt,
-                customCoverUrl = currentPlaylists[normalizedId]?.customCoverUrl
-            )
-        }
+                LocalPlaylist(
+                    id = normalizedId,
+                    name = systemDescriptor?.currentName ?: syncPlaylist.name,
+                    songs = mergeLocalOnlySongs(syncedSongs, preservedLocalSongs),
+                    modifiedAt = syncPlaylist.modifiedAt,
+                    customCoverUrl = currentPlaylists[normalizedId]?.customCoverUrl
+                )
+            }
         playlistRepo.updatePlaylists(mergedLocalPlaylists)
 
         favoriteRepo.replaceFavoritesFromSync(
             sanitizedMergedData.favoritePlaylists.map { it.toFavoritePlaylist() }
         )
         storage.setRecentPlayDeletions(sanitizedMergedData.recentPlayDeletions)
+        storage.setPlaylistSongDeletions(sanitizedMergedData.playlistSongDeletions)
 
         val localPlayHistoryEmpty = playHistoryRepo.historyFlow.value.isEmpty()
         val shouldApplyRemoteHistory = remoteHasChanged ||
@@ -864,6 +913,9 @@ class GitHubSyncManager private constructor(context: Context) {
             favoritePlaylists = data.favoritePlaylists.map { sanitizeSyncFavoritePlaylist(it) },
             recentPlays = data.recentPlays.mapNotNull { sanitizeRecentPlay(it) },
             recentPlayDeletions = data.recentPlayDeletions.mapNotNull { sanitizeRecentPlayDeletion(it) },
+            playlistSongDeletions = data.playlistSongDeletions.mapNotNull {
+                sanitizePlaylistSongDeletion(it)
+            },
             playbackStats = data.playbackStats.mapNotNull {
                 SyncPlaybackStatMapper.sanitize(it, appContext)
             },
@@ -879,6 +931,13 @@ class GitHubSyncManager private constructor(context: Context) {
         val systemDescriptor = SystemLocalPlaylists.resolve(playlist.id, playlist.name, localizedContext)
         if (systemDescriptor?.id == LocalFilesPlaylist.SYSTEM_ID) {
             return null
+        }
+        if (playlist.isDeleted) {
+            return playlist.copy(
+                id = systemDescriptor?.id ?: playlist.id,
+                name = systemDescriptor?.currentName ?: playlist.name,
+                songs = emptyList()
+            )
         }
         return playlist.copy(
             id = systemDescriptor?.id ?: playlist.id,
@@ -917,6 +976,18 @@ class GitHubSyncManager private constructor(context: Context) {
         return deletion.copy(mediaUri = LocalSongSupport.sanitizeMediaUriForSync(deletion.mediaUri))
     }
 
+    private fun sanitizePlaylistSongDeletion(
+        deletion: SyncPlaylistSongDeletion
+    ): SyncPlaylistSongDeletion? {
+        if (deletion.playlistId == LocalFilesPlaylist.SYSTEM_ID) {
+            return null
+        }
+        if (LocalSongSupport.isLocalSong(deletion.album, deletion.mediaUri, 0L, appContext)) {
+            return null
+        }
+        return deletion.copy(mediaUri = LocalSongSupport.sanitizeMediaUriForSync(deletion.mediaUri))
+    }
+
     private fun sanitizeSyncSong(song: SyncSong): SyncSong? {
         val localizedContext = LanguageManager.applyLanguage(appContext)
         if (LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, localizedContext)) {
@@ -932,6 +1003,7 @@ class GitHubSyncManager private constructor(context: Context) {
         val remotePlaylistMap = remote.playlists.associateBy { it.id }
         for (mergedPlaylist in merged.playlists) {
             val remotePlaylist = remotePlaylistMap[mergedPlaylist.id] ?: return true
+            if (remotePlaylist.isDeleted != mergedPlaylist.isDeleted) return true
             if (remotePlaylist.name != mergedPlaylist.name) return true
             if (remotePlaylist.songs.size != mergedPlaylist.songs.size) return true
             if (remotePlaylist.songs.map { it.identity() } != mergedPlaylist.songs.map { it.identity() }) return true
@@ -978,6 +1050,16 @@ class GitHubSyncManager private constructor(context: Context) {
             if (remoteRecentDeletions[i].deviceId != mergedRecentDeletions[i].deviceId) return true
         }
 
+        val remotePlaylistDeletions = remote.playlistSongDeletions.take(500)
+        val mergedPlaylistDeletions = merged.playlistSongDeletions.take(500)
+        if (remotePlaylistDeletions.size != mergedPlaylistDeletions.size) return true
+        for (i in remotePlaylistDeletions.indices) {
+            if (remotePlaylistDeletions[i].playlistId != mergedPlaylistDeletions[i].playlistId) return true
+            if (remotePlaylistDeletions[i].identity() != mergedPlaylistDeletions[i].identity()) return true
+            if (remotePlaylistDeletions[i].deletedAt != mergedPlaylistDeletions[i].deletedAt) return true
+            if (remotePlaylistDeletions[i].deviceId != mergedPlaylistDeletions[i].deviceId) return true
+        }
+
         val remoteStats = remote.playbackStats.associateBy { it.identityKey }
         val mergedStats = merged.playbackStats.associateBy { it.identityKey }
         if (remote.playbackStatsClearedAt != merged.playbackStatsClearedAt) return true
@@ -1005,6 +1087,7 @@ class GitHubSyncManager private constructor(context: Context) {
             a.durationMs == b.durationMs &&
             a.coverUrl == b.coverUrl &&
             a.mediaUri == b.mediaUri &&
+            a.addedAt == b.addedAt &&
             a.matchedLyric == b.matchedLyric &&
             a.matchedTranslatedLyric == b.matchedTranslatedLyric &&
             a.matchedLyricSource == b.matchedLyricSource &&
