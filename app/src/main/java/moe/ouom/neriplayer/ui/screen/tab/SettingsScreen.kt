@@ -45,6 +45,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -55,6 +56,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.AltRoute
 import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.BrightnessAuto
 import androidx.compose.material.icons.outlined.Brightness4
 import androidx.compose.material.icons.outlined.Colorize
 import androidx.compose.material.icons.outlined.Explore
@@ -1029,7 +1031,13 @@ fun SettingsScreen(
                 SettingsPage.Theme -> {
                     miuixSettingsSectionCardItem("${selectedPage.name}:content") {
                         ThemeModeSelectorListItem(
+                            isDarkTheme = isDarkTheme,
                             themeMode = themeMode,
+                            onThemeModeRequest = onThemeModeRequest
+                        )
+                        ThemeAutoModeListItem(
+                            themeMode = themeMode,
+                            isDarkTheme = isDarkTheme,
                             onThemeModeRequest = onThemeModeRequest
                         )
                         AutoSettingsListItem(
@@ -2033,14 +2041,14 @@ private data class ThemeOption(
 
 @Composable
 private fun ThemeModeSelectorListItem(
+    isDarkTheme: Boolean,
     themeMode: ThemeMode,
     onThemeModeRequest: (ThemeMode, Offset, Float) -> Unit
 ) {
     var tabsTopLeftInWindow by remember { mutableStateOf(Offset.Zero) }
     var tabsWidthPx by remember { mutableFloatStateOf(0f) }
     var tabsHeightPx by remember { mutableFloatStateOf(0f) }
-    val options = listOf(ThemeMode.LIGHT, ThemeMode.DARK, ThemeMode.AUTO)
-    val selectedIndex = options.indexOf(themeMode).coerceAtLeast(0)
+    val selectedIndex = if (isDarkTheme) 1 else 0
 
     ListItem(
         leadingContent = {
@@ -2063,14 +2071,17 @@ private fun ThemeModeSelectorListItem(
                     },
                     labels = listOf(
                         stringResource(R.string.settings_theme_mode_light),
-                        stringResource(R.string.settings_theme_mode_dark),
-                        stringResource(R.string.settings_theme_mode_auto)
+                        stringResource(R.string.settings_theme_mode_dark)
                     ),
                     selectedIndex = selectedIndex,
                     onSelectedIndexChange = { index ->
-                        val targetMode = options.getOrNull(index) ?: return@MiuixSettingsSegmentedTabs
+                        val targetMode = if (index == 0) {
+                            ThemeMode.LIGHT
+                        } else {
+                            ThemeMode.DARK
+                        }
                         if (targetMode != themeMode) {
-                            val tabWidth = tabsWidthPx / options.size.toFloat()
+                            val tabWidth = tabsWidthPx / 2f
                             val origin = if (tabWidth > 0f && tabsHeightPx > 0f) {
                                 tabsTopLeftInWindow + Offset(
                                     x = tabWidth * (index + 0.5f),
@@ -2085,6 +2096,73 @@ private fun ThemeModeSelectorListItem(
                 )
             }
         },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
+
+@Composable
+private fun ThemeAutoModeListItem(
+    themeMode: ThemeMode,
+    isDarkTheme: Boolean,
+    onThemeModeRequest: (ThemeMode, Offset, Float) -> Unit
+) {
+    val autoEnabled = themeMode == ThemeMode.AUTO
+    var switchCenterInWindow by remember { mutableStateOf<Offset?>(null) }
+    var revealStartRadiusPx by remember { mutableFloatStateOf(18f) }
+
+    fun requestAutoMode(enabled: Boolean) {
+        if (enabled == autoEnabled) {
+            return
+        }
+        val targetMode = when {
+            enabled -> ThemeMode.AUTO
+            isDarkTheme -> ThemeMode.DARK
+            else -> ThemeMode.LIGHT
+        }
+        onThemeModeRequest(
+            targetMode,
+            switchCenterInWindow ?: Offset.Zero,
+            revealStartRadiusPx
+        )
+    }
+
+    ListItem(
+        leadingContent = {
+            Icon(
+                imageVector = Icons.Outlined.BrightnessAuto,
+                contentDescription = stringResource(R.string.settings_theme_mode_auto),
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        headlineContent = { Text(stringResource(R.string.settings_theme_mode_auto)) },
+        supportingContent = {
+            Text(stringResource(R.string.settings_theme_mode_auto_desc))
+        },
+        trailingContent = {
+            Box(
+                modifier = Modifier.onGloballyPositioned { coordinates ->
+                    revealStartRadiusPx = maxOf(coordinates.size.width, coordinates.size.height) / 2f
+                    switchCenterInWindow = coordinates.positionInWindow() + Offset(
+                        x = coordinates.size.width / 2f,
+                        y = coordinates.size.height / 2f
+                    )
+                }
+                    .size(width = 56.dp, height = 40.dp)
+                    .settingsItemClickable(onClick = {
+                        requestAutoMode(!autoEnabled)
+                    }),
+                contentAlignment = Alignment.Center
+            ) {
+                MiuixSettingsSwitch(
+                    checked = autoEnabled,
+                    onCheckedChange = null
+                )
+            }
+        },
+        modifier = Modifier.settingsItemClickable(onClick = {
+            requestAutoMode(!autoEnabled)
+        }),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }

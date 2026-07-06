@@ -404,8 +404,10 @@ fun StartupOnboardingScreen() {
             themeRevealOriginWindow = originInWindow
             themeRevealStartRadiusPx = startRadiusPx.coerceAtLeast(1f)
             themeRevealCaptureInFlight = false
-            repo.setFollowSystemDark(false)
-            repo.setForceDark(nextDark)
+            repo.setThemeMode(
+                followSystemDark = false,
+                forceDark = nextDark
+            )
         }
     }
 

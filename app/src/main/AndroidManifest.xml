@@ -39,6 +39,7 @@
 
         <activity
             android:name=".activity.MainActivity"
+            android:configChanges="uiMode"
             android:enableOnBackInvokedCallback="true"
             android:exported="true"
             tools:targetApi="33">

@@ -216,6 +216,8 @@
     <string name="settings_theme_mode_desc">Quickly switch light and dark mode.</string>
     <string name="settings_theme_mode_light">Light</string>
     <string name="settings_theme_mode_dark">Dark</string>
+    <string name="settings_theme_mode_auto">Auto switch light/dark</string>
+    <string name="settings_theme_mode_auto_desc">When enabled, the app follows the system appearance automatically.</string>
     <string name="settings_theme_palette_style">Color style</string>
     <string name="settings_theme_palette_style_desc">Switch the Material Kolor palette style for cover colors and custom accent colors.</string>
     <string name="settings_theme_color_spec">Color spec</string>

@@ -51,7 +51,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -120,6 +119,7 @@ import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.data.settings.ThemeMode
 import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.readThemePreferenceSnapshotSync
 import moe.ouom.neriplayer.data.sync.webdav.WebDavStorage
@@ -133,6 +133,7 @@ import moe.ouom.neriplayer.listentogether.resolveListenTogetherBaseUrl
 import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.ui.onboarding.StartupOnboardingScreen
 import moe.ouom.neriplayer.ui.screen.safemode.SafeModeScreen
+import moe.ouom.neriplayer.ui.theme.rememberActualSystemDarkTheme
 import moe.ouom.neriplayer.util.CrashReportStore
 import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.HapticButton
@@ -206,7 +207,7 @@ class MainActivity : ComponentActivity() {
 
         if (safeModeActive) {
             setContent {
-                val systemDark = isSystemInDarkTheme()
+                val systemDark = rememberActualSystemDarkTheme()
                 val useDark = remember(systemDark) {
                     startupThemeSnapshot.resolveUseDark(systemDark = systemDark)
                 }
@@ -247,12 +248,25 @@ class MainActivity : ComponentActivity() {
             val disclaimerAcceptedNullable by settingsRepository.disclaimerAcceptedFlow.collectAsState(initial = null)
             val startupOnboardingCompletedNullable by settingsRepository.startupOnboardingCompletedFlow.collectAsState(initial = null)
 
-            val systemDark = isSystemInDarkTheme()
-            val useDark = remember(forceDark, followSystemDark, systemDark) {
-                when {
-                    forceDark -> true
-                    followSystemDark -> systemDark
-                    else -> false
+            val themeMode = remember(forceDark, followSystemDark) {
+                ThemeMode.fromPreferenceFlags(
+                    forceDark = forceDark,
+                    followSystemDark = followSystemDark
+                )
+            }
+            val systemDark = rememberActualSystemDarkTheme()
+            val useDark = remember(themeMode, systemDark) {
+                themeMode.resolveUseDark(systemDark)
+            }
+            LaunchedEffect(followSystemDark, forceDark, useDark) {
+                val currentResourceDark =
+                    (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                        Configuration.UI_MODE_NIGHT_YES
+                if (currentResourceDark != useDark) {
+                    NightModeHelper.applyNightMode(
+                        followSystemDark = followSystemDark,
+                        forceDark = forceDark
+                    )
                 }
             }
 

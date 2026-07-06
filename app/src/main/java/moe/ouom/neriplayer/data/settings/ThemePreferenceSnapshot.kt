@@ -95,6 +95,19 @@ internal fun persistThemeFollowSystemDark(context: Context, value: Boolean) {
     }
 }
 
+internal fun persistThemeModeSnapshot(
+    context: Context,
+    followSystemDark: Boolean,
+    forceDark: Boolean
+) {
+    val prefs = context.getSharedPreferences(THEME_SNAPSHOT_PREFS, Context.MODE_PRIVATE)
+    prefs.edit {
+        putBoolean(THEME_DYNAMIC_COLOR_KEY, prefs.getBoolean(THEME_DYNAMIC_COLOR_KEY, true))
+        putBoolean(THEME_FORCE_DARK_KEY, forceDark)
+        putBoolean(THEME_FOLLOW_SYSTEM_DARK_KEY, followSystemDark)
+    }
+}
+
 private fun readCachedThemePreferenceSnapshot(context: Context): ThemePreferenceSnapshot? {
     val prefs = context.getSharedPreferences(THEME_SNAPSHOT_PREFS, Context.MODE_PRIVATE)
     if (

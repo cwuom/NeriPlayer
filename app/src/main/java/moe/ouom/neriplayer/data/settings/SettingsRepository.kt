@@ -420,6 +420,21 @@ class SettingsRepository(private val context: Context) {
         persistThemeFollowSystemDark(context, value)
     }
 
+    suspend fun setThemeMode(
+        followSystemDark: Boolean,
+        forceDark: Boolean
+    ) {
+        context.dataStore.edit {
+            it[SettingsKeys.FOLLOW_SYSTEM_DARK] = followSystemDark
+            it[SettingsKeys.FORCE_DARK] = forceDark
+        }
+        persistThemeModeSnapshot(
+            context = context,
+            followSystemDark = followSystemDark,
+            forceDark = forceDark
+        )
+    }
+
     suspend fun setShowCoverSourceBadge(enabled: Boolean) {
         autoSettingsRepository.setShowCoverSourceBadge(enabled)
     }

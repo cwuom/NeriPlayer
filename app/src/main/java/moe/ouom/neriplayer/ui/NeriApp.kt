@@ -25,13 +25,8 @@ package moe.ouom.neriplayer.ui
 
 import android.app.Activity
 import android.app.Application
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.ContextWrapper
-import android.content.Intent
-import android.content.IntentFilter
-import android.content.res.Configuration
-import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.net.Uri
@@ -117,7 +112,6 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.core.graphics.createBitmap
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -207,6 +201,8 @@ import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.theme.NeriTheme
+import moe.ouom.neriplayer.ui.theme.isActualSystemDarkTheme
+import moe.ouom.neriplayer.ui.theme.rememberActualSystemDarkTheme
 import moe.ouom.neriplayer.ui.view.HyperBackground
 import moe.ouom.neriplayer.ui.viewmodel.debug.LogViewerScreen
 import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
@@ -243,39 +239,6 @@ private fun resolveMainStartDestination(
         Destinations.Debug.route -> if (devModeEnabled) Destinations.Debug.route else if (showHomeTab) Destinations.Home.route else Destinations.Explore.route
         else -> if (showHomeTab) Destinations.Home.route else Destinations.Explore.route
     }
-}
-
-private fun readActualSystemDarkTheme(): Boolean {
-    return (Resources.getSystem().configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-        Configuration.UI_MODE_NIGHT_YES
-}
-
-@Composable
-private fun rememberActualSystemDarkTheme(): Boolean {
-    val context = LocalContext.current
-    val applicationContext = remember(context) { context.applicationContext }
-    var systemDark by remember { mutableStateOf(readActualSystemDarkTheme()) }
-
-    DisposableEffect(applicationContext) {
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
-                systemDark = readActualSystemDarkTheme()
-            }
-        }
-        ContextCompat.registerReceiver(
-            applicationContext,
-            receiver,
-            IntentFilter(Intent.ACTION_CONFIGURATION_CHANGED),
-            ContextCompat.RECEIVER_NOT_EXPORTED
-        )
-        onDispose {
-            runCatching {
-                applicationContext.unregisterReceiver(receiver)
-            }
-        }
-    }
-
-    return systemDark
 }
 
 private fun SongItem?.resolveUiCoverSource(context: android.content.Context): String? {
@@ -668,10 +631,11 @@ fun NeriApp(
     initialThemeSnapshot: ThemePreferenceSnapshot = ThemePreferenceSnapshot(),
     onIsDarkChanged: (Boolean) -> Unit = {}
 ) {
+    val context = LocalContext.current
     var appContentReady by rememberSaveable { mutableStateOf(false) }
     val bootstrapIsDark = when {
         initialThemeSnapshot.forceDark -> true
-        initialThemeSnapshot.followSystemDark -> readActualSystemDarkTheme()
+        initialThemeSnapshot.followSystemDark -> isActualSystemDarkTheme(context)
         else -> false
     }
 
@@ -1129,8 +1093,10 @@ private fun NeriAppContent(
             pendingFollowSystemDark = nextFollowSystemDark
             pendingForceDark = nextForceDark
             scope.launch {
-                repo.setFollowSystemDark(nextFollowSystemDark)
-                repo.setForceDark(nextForceDark)
+                repo.setThemeMode(
+                    followSystemDark = nextFollowSystemDark,
+                    forceDark = nextForceDark
+                )
             }
             return
         }
@@ -1160,17 +1126,17 @@ private fun NeriAppContent(
             }
 
             clearThemeRevealVisualState()
-            if (snapshot != null) {
-                themeRevealSnapshot = snapshot
-                themeRevealFallbackColorArgb = currentThemeBackgroundArgb
-                themeRevealOriginWindow = originInWindow
-                themeRevealStartRadiusPx = startRadiusPx.coerceAtLeast(1f)
-            }
+            themeRevealSnapshot = snapshot
+            themeRevealFallbackColorArgb = currentThemeBackgroundArgb
+            themeRevealOriginWindow = originInWindow
+            themeRevealStartRadiusPx = startRadiusPx.coerceAtLeast(1f)
             try {
                 pendingFollowSystemDark = nextFollowSystemDark
                 pendingForceDark = nextForceDark
-                repo.setFollowSystemDark(nextFollowSystemDark)
-                repo.setForceDark(nextForceDark)
+                repo.setThemeMode(
+                    followSystemDark = nextFollowSystemDark,
+                    forceDark = nextForceDark
+                )
             } finally {
                 if (themeRevealCaptureToken == captureToken) {
                     themeRevealCaptureJob = null
