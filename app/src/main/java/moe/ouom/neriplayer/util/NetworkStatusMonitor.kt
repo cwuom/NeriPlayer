@@ -21,7 +21,7 @@ fun rememberOfflineModeState(): State<Boolean> {
     val appContext = remember(context) { context.applicationContext }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val offlineState = remember(appContext) {
-        mutableStateOf(!appContext.hasValidatedInternet())
+        mutableStateOf(!appContext.hasLikelyInternetAccess())
     }
 
     DisposableEffect(appContext) {
@@ -33,7 +33,7 @@ fun rememberOfflineModeState(): State<Boolean> {
             var disposed = false
 
             fun updateOfflineState() {
-                val nextOffline = !connectivityManager.hasValidatedInternet()
+                val nextOffline = !connectivityManager.hasLikelyInternetAccess()
                 if (disposed) return
 
                 if (Looper.myLooper() == Looper.getMainLooper()) {
@@ -84,12 +84,12 @@ fun rememberOfflineModeState(): State<Boolean> {
     return offlineState
 }
 
-fun Context.hasValidatedInternet(): Boolean {
+fun Context.hasLikelyInternetAccess(): Boolean {
     val connectivityManager = getSystemService(ConnectivityManager::class.java) ?: return false
-    return connectivityManager.hasValidatedInternet()
+    return connectivityManager.hasLikelyInternetAccess()
 }
 
-fun Context.isOfflineModeNow(): Boolean = !hasValidatedInternet()
+fun Context.isOfflineModeNow(): Boolean = !hasLikelyInternetAccess()
 
 fun Context.currentTrafficNetworkType(): TrafficNetworkType {
     val connectivityManager = getSystemService(ConnectivityManager::class.java)
@@ -105,12 +105,33 @@ fun Context.isTrafficRiskNetworkNow(): Boolean {
     }
 }
 
-private fun ConnectivityManager.hasValidatedInternet(): Boolean = runCatching {
-    val activeNetwork = activeNetwork ?: return@runCatching false
-    val capabilities = getNetworkCapabilities(activeNetwork) ?: return@runCatching false
-    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+private fun ConnectivityManager.hasLikelyInternetAccess(): Boolean = runCatching {
+    activeNetwork?.let { network ->
+        if (hasInternetTransport(network)) {
+            return@runCatching true
+        }
+    }
+    anyKnownNetworkHasInternetTransport()
 }.getOrDefault(false)
+
+@Suppress("DEPRECATION")
+private fun ConnectivityManager.anyKnownNetworkHasInternetTransport(): Boolean {
+    // 有些系统会短暂不给 activeNetwork，这里保守兜底避免误进脱机模式
+    return allNetworks.any { network -> hasInternetTransport(network) }
+}
+
+private fun ConnectivityManager.hasInternetTransport(network: Network): Boolean {
+    val capabilities = getNetworkCapabilities(network) ?: return false
+    return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+        capabilities.hasOnlineTransport()
+}
+
+private fun NetworkCapabilities.hasOnlineTransport(): Boolean {
+    return hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+        hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
+        hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
+        hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+}
 
 private fun ConnectivityManager.currentTrafficNetworkType(): TrafficNetworkType = runCatching {
     val activeNetwork = activeNetwork ?: return@runCatching TrafficNetworkType.MOBILE
