@@ -3,6 +3,7 @@
     <item
         android:drawable="@drawable/ic_neriplayer_round"
         android:gravity="center"
-        android:width="112dp"
-        android:height="112dp" />
+        android:width="84dp"
+        android:height="84dp" />
+
 </layer-list>

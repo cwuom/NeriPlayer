@@ -5,7 +5,11 @@
         <item name="android:forceDarkAllowed">false</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowDisablePreview">true</item>
-        <item name="android:windowSplashScreenBackground">#FFFFFFFF</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_neriplayer_splash</item>
+    </style>
+
+    <style name="Theme.NeriPlayer.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#FFFFFFFF</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_neriplayer_splash</item>
+        <item name="postSplashScreenTheme">@style/Theme.NeriPlayer</item>
     </style>
 </resources>

@@ -5,4 +5,10 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowDisablePreview">true</item>
     </style>
+
+    <style name="Theme.NeriPlayer" parent="Base.Theme.NeriPlayer" />
+
+    <style name="Theme.NeriPlayer.Starting" parent="Theme.NeriPlayer">
+        <item name="android:windowBackground">#FF121212</item>
+    </style>
 </resources>

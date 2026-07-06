@@ -94,6 +94,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.graphics.toColorInt
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
@@ -192,6 +193,7 @@ class MainActivity : ComponentActivity() {
             followSystemDark = startupThemeSnapshot.followSystemDark,
             forceDark = startupThemeSnapshot.forceDark
         )
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         lockPortraitIfPhone()
         WindowCompat.setDecorFitsSystemWindows(window, false)
