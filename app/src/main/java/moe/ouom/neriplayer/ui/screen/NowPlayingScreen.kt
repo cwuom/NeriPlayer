@@ -1881,10 +1881,7 @@ fun MoreOptionsSheet(
             .map { tasks -> tasks.firstOrNull { it.song.stableKey() == downloadSongKey } }
             .distinctUntilChanged()
     }
-    val currentDownloadTask by currentDownloadTaskFlow.collectAsState(
-        initial = GlobalDownloadManager.downloadTasks.value
-            .firstOrNull { it.song.stableKey() == downloadSongKey }
-    )
+    val currentDownloadTask by currentDownloadTaskFlow.collectAsState(initial = null)
     val shouldHideDownloadAction = remember(hasLocalDownload, currentDownloadTask) {
         shouldHideDownloadActionForSong(hasLocalDownload, currentDownloadTask)
     }

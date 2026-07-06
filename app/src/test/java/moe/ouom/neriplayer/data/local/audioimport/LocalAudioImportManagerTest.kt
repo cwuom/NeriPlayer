@@ -258,4 +258,41 @@ class LocalAudioImportManagerTest {
         assertEquals("file:///covers/demo.jpg", merged.coverUrl)
         assertEquals("[00:00.00]demo", merged.matchedLyric)
     }
+
+    @Test
+    fun `mergeImportedSongMetadata adopts resolved local path when quick scan only had content uri`() {
+        val resolvedFile = tempFolder.newFile("resolved_demo.mp3")
+        val quickSong = LocalAudioImportManager.buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = "content://tree/music/document/resolved_demo.mp3",
+                displayName = "resolved_demo.mp3",
+                title = "Quick Title",
+                artist = "Quick Artist",
+                album = null,
+                durationMs = 0L
+            ),
+            unknownArtistLabel = "Unknown Artist"
+        )
+        val detailedSong = LocalAudioImportManager.buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = resolvedFile.absolutePath,
+                displayName = resolvedFile.name,
+                title = "Detailed Title",
+                artist = "Detailed Artist",
+                album = "Detailed Album",
+                durationMs = 200_000L,
+                localFile = resolvedFile
+            ),
+            unknownArtistLabel = "Unknown Artist"
+        )
+
+        val merged = LocalAudioImportManager.mergeImportedSongMetadata(quickSong, detailedSong)
+
+        assertEquals(detailedSong.id, merged.id)
+        assertEquals(detailedSong.audioId, merged.audioId)
+        assertEquals(resolvedFile.absolutePath, merged.localFilePath)
+        assertEquals("content://tree/music/document/resolved_demo.mp3", merged.mediaUri)
+        assertEquals("Detailed Title", merged.name)
+        assertEquals("Detailed Artist", merged.artist)
+    }
 }

@@ -119,16 +119,25 @@ internal fun preferredLocalMediaReference(
 }
 
 fun SongItem.localMediaUri(): Uri? {
-    val source = preferredLocalMediaReference(
+    return localMediaUriCandidates().firstOrNull()
+}
+
+private fun SongItem.localMediaUriCandidates(): List<Uri> {
+    val preferredSource = preferredLocalMediaReference(
         localFilePath = localFilePath,
         mediaUri = mediaUri
-    ) ?: return null
-    val localUri = if (source.startsWith("/")) {
-        Uri.fromFile(File(source))
-    } else {
-        source.toUri()
-    }
-    return localUri.takeIf { it.isSupportedLocalMediaUri() }
+    )
+    return listOf(preferredSource, localFilePath, mediaUri)
+        .filterNotNull()
+        .mapNotNull { source ->
+            val localUri = if (source.startsWith("/")) {
+                Uri.fromFile(File(source))
+            } else {
+                runCatching { source.toUri() }.getOrNull()
+            }
+            localUri?.takeIf { it.isSupportedLocalMediaUri() }
+        }
+        .distinctBy { it.toString() }
 }
 
 internal fun resolveContentShareFallbackUri(localUri: Uri?, mediaUri: String?): Uri? {
@@ -339,8 +348,17 @@ object LocalMediaSupport {
     }
 
     fun inspect(context: Context, song: SongItem): LocalMediaDetails? {
-        val uri = song.localMediaUri()?.takeIf { it.isSupportedLocalMediaUri() } ?: return null
-        return inspect(context, uri)
+        for (uri in song.localMediaUriCandidates()) {
+            if (!uri.isSupportedLocalMediaUri()) {
+                continue
+            }
+            runCatching { inspect(context, uri) }
+                .onSuccess { return it }
+                .onFailure {
+                    NPLogger.w(TAG, "inspect candidate failed for $uri: ${it.message}")
+                }
+        }
+        return null
     }
 
     fun resolveLocalFile(context: Context, uri: Uri): File? {
@@ -359,7 +377,7 @@ object LocalMediaSupport {
         val resolved = resolveInspectableLocalMedia(
             context = context,
             uri = uri,
-            allowDescriptorFallback = false
+            allowDescriptorFallback = true
         )
         val audioTrackTechInfo = if (includeAudioTrackInfo) {
             inspectAudioTrackInfo(context, resolved.playableUri)
@@ -378,7 +396,7 @@ object LocalMediaSupport {
         val resolved = resolveInspectableLocalMedia(
             context = context,
             uri = uri,
-            allowDescriptorFallback = false
+            allowDescriptorFallback = true
         )
         val queried = resolved.queried
         val file = resolved.file

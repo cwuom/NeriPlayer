@@ -463,8 +463,23 @@ object LocalAudioImportManager {
         val resolvedArtist = detailedSong.artist.takeIf { it.isNotBlank() } ?: quickSong.artist
         val resolvedAlbum = detailedSong.album.takeIf { it.isNotBlank() } ?: quickSong.album
         val resolvedCoverUrl = detailedSong.coverUrl ?: quickSong.coverUrl
+        val quickLocalPath = quickSong.localFilePath?.takeIf { it.isNotBlank() }
+        val detailedLocalPath = detailedSong.localFilePath?.takeIf { it.isNotBlank() }
+        val resolvedLocalPath = quickLocalPath ?: detailedLocalPath
+        val shouldAdoptDetailedIdentity = quickLocalPath == null && detailedLocalPath != null
+        val resolvedId = if (shouldAdoptDetailedIdentity) detailedSong.id else quickSong.id
+        val resolvedAudioId = if (shouldAdoptDetailedIdentity) {
+            detailedSong.audioId ?: detailedSong.id.toString()
+        } else {
+            quickSong.audioId ?: detailedSong.audioId
+        }
+        val resolvedMediaUri = preferredLocalMediaReference(
+            localFilePath = resolvedLocalPath,
+            mediaUri = quickSong.mediaUri ?: detailedSong.mediaUri
+        ) ?: quickSong.mediaUri ?: detailedSong.mediaUri
 
         return quickSong.copy(
+            id = resolvedId,
             name = resolvedName,
             artist = resolvedArtist,
             album = resolvedAlbum,
@@ -477,7 +492,28 @@ object LocalAudioImportManager {
             originalCoverUrl = detailedSong.originalCoverUrl ?: quickSong.originalCoverUrl ?: resolvedCoverUrl,
             originalLyric = detailedSong.originalLyric ?: quickSong.originalLyric,
             originalTranslatedLyric = detailedSong.originalTranslatedLyric
-                ?: quickSong.originalTranslatedLyric
+                ?: quickSong.originalTranslatedLyric,
+            mediaUri = resolvedMediaUri,
+            localFileName = quickSong.localFileName ?: detailedSong.localFileName,
+            localFilePath = resolvedLocalPath,
+            channelId = quickSong.channelId ?: detailedSong.channelId ?: "local",
+            audioId = resolvedAudioId
+        )
+    }
+
+    fun hydrateLocalSongMetadata(context: Context, song: SongItem): SongItem {
+        if (!LocalSongSupport.isLocalSong(song, context)) {
+            return song
+        }
+        val details = runCatching {
+            LocalMediaSupport.inspect(context, song)
+        }.onFailure {
+            NPLogger.w(TAG, "hydrate local metadata failed for ${song.name}: ${it.message}")
+        }.getOrNull() ?: return song
+
+        return mergeImportedSongMetadata(
+            quickSong = song,
+            detailedSong = LocalMediaSupport.toSongItem(details)
         )
     }
 

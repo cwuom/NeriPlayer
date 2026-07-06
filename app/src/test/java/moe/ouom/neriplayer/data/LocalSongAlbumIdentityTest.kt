@@ -31,6 +31,25 @@ class LocalSongAlbumIdentityTest {
     }
 
     @Test
+    fun `local song identity normalizes file uri and path references`() {
+        val pathSong = SongItem(
+            id = 1L,
+            name = "test",
+            artist = "artist",
+            album = "Local Files",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = "/music/test.mp3"
+        )
+        val fileUriSong = pathSong.copy(
+            mediaUri = "file:///music/test.mp3"
+        )
+
+        assertTrue(pathSong.sameIdentityAs(fileUriSong))
+    }
+
+    @Test
     fun `remote song identity preserves explicit album names`() {
         val song = SongItem(
             id = 2L,

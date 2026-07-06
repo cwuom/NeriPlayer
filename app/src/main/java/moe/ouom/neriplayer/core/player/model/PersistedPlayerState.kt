@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.core.player.model
  */
 
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
 internal data class PersistedSongItem(
@@ -49,9 +50,23 @@ internal data class PersistedSongItem(
     val originalLyric: String? = null,
     val originalTranslatedLyric: String? = null,
     val localFileName: String? = null,
-    val localFilePath: String? = null
+    val localFilePath: String? = null,
+    val channelId: String? = null,
+    val audioId: String? = null,
+    val subAudioId: String? = null,
+    val playlistContextId: String? = null,
+    val streamUrl: String? = null
 ) {
     fun toSongItem(): SongItem {
+        val inferredChannelId = channelId ?: if (
+            !localFilePath.isNullOrBlank() ||
+            LocalSongSupport.isLocalSong(album, mediaUri, albumId, null)
+        ) {
+            "local"
+        } else {
+            null
+        }
+        val inferredAudioId = audioId ?: if (inferredChannelId == "local") id.toString() else null
         return SongItem(
             id = id,
             name = name,
@@ -75,7 +90,12 @@ internal data class PersistedSongItem(
             originalLyric = originalLyric,
             originalTranslatedLyric = originalTranslatedLyric,
             localFileName = localFileName,
-            localFilePath = localFilePath
+            localFilePath = localFilePath,
+            channelId = inferredChannelId,
+            audioId = inferredAudioId,
+            subAudioId = subAudioId,
+            playlistContextId = playlistContextId,
+            streamUrl = streamUrl
         )
     }
 }
@@ -104,7 +124,12 @@ internal fun SongItem.toPersistedSongItem(includeLyrics: Boolean = true): Persis
         originalLyric = originalLyric.takeIf { includeLyrics },
         originalTranslatedLyric = originalTranslatedLyric.takeIf { includeLyrics },
         localFileName = localFileName,
-        localFilePath = localFilePath
+        localFilePath = localFilePath,
+        channelId = channelId,
+        audioId = audioId,
+        subAudioId = subAudioId,
+        playlistContextId = playlistContextId,
+        streamUrl = streamUrl
     )
 }
 

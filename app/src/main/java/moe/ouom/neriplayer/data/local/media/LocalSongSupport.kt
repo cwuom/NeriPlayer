@@ -28,6 +28,8 @@ import android.content.Context
 import androidx.core.net.toUri
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import java.io.File
+import java.util.Locale
 
 object LocalSongSupport {
     private val localUriSchemes = setOf("content", "file", "android.resource")
@@ -56,6 +58,9 @@ object LocalSongSupport {
     fun isLocalMediaUri(mediaUri: String?): Boolean {
         if (mediaUri.isNullOrBlank()) return false
         if (mediaUri.startsWith("/")) return true
+        if (mediaUri.startsWith("file://", ignoreCase = true)) return true
+        if (mediaUri.startsWith("content://", ignoreCase = true)) return true
+        if (mediaUri.startsWith("android.resource://", ignoreCase = true)) return true
 
         val scheme = runCatching { mediaUri.toUri().scheme.orEmpty().lowercase() }
             .getOrDefault("")
@@ -64,6 +69,48 @@ object LocalSongSupport {
 
     fun sanitizeMediaUriForSync(mediaUri: String?): String? {
         return mediaUri?.takeUnless { isLocalMediaUri(it) }
+    }
+
+    fun identityMediaReference(song: SongItem): String? {
+        return normalizedLocalReference(song.localFilePath)
+            ?: normalizedLocalReference(song.mediaUri)
+            ?: song.localFilePath
+            ?: song.mediaUri
+    }
+
+    fun localDuplicateKeys(
+        song: SongItem,
+        includeMetadataFallback: Boolean = false
+    ): Set<String> {
+        if (!isLocalSong(song, null)) {
+            return emptySet()
+        }
+
+        return buildSet {
+            normalizedLocalReference(song.localFilePath)?.let { add("ref:$it") }
+            normalizedLocalReference(song.mediaUri)?.let { add("ref:$it") }
+
+            val localAudioId = song.audioId
+                ?.trim()
+                ?.takeIf { it.isNotBlank() && song.channelId.equals("local", ignoreCase = true) }
+            localAudioId?.let { add("audio:$it") }
+
+            if (includeMetadataFallback) {
+                addMetadataFallbackKeys(song)
+            }
+        }
+    }
+
+    fun hasSameLocalSource(
+        first: SongItem,
+        second: SongItem,
+        includeMetadataFallback: Boolean = false
+    ): Boolean {
+        val firstKeys = localDuplicateKeys(first, includeMetadataFallback)
+        if (firstKeys.isEmpty()) {
+            return false
+        }
+        return localDuplicateKeys(second, includeMetadataFallback).any(firstKeys::contains)
     }
 
     private fun isLikelyLegacyLocalSong(song: SongItem, context: Context?): Boolean {
@@ -79,5 +126,56 @@ object LocalSongSupport {
 
     internal fun identityAlbumKey(song: SongItem): String {
         return if (isLocalSong(song, null)) LOCAL_ALBUM_IDENTITY else song.album
+    }
+
+    private fun MutableSet<String>.addMetadataFallbackKeys(song: SongItem) {
+        val durationMs = song.durationMs.takeIf { it > 0L } ?: return
+        val fileName = localFileName(song)
+            ?.trim()
+            ?.lowercase(Locale.ROOT)
+            ?.takeIf { it.isNotBlank() }
+        fileName?.let { add("file:$it|$durationMs") }
+
+        val title = (song.originalName ?: song.name)
+            .trim()
+            .lowercase(Locale.ROOT)
+            .takeIf { it.isNotBlank() }
+        val artist = (song.originalArtist ?: song.artist)
+            .trim()
+            .lowercase(Locale.ROOT)
+            .takeIf { it.isNotBlank() }
+        if (title != null && artist != null) {
+            add("meta:$title|$artist|$durationMs")
+        }
+    }
+
+    private fun localFileName(song: SongItem): String? {
+        song.localFileName?.takeIf { it.isNotBlank() }?.let { return it }
+        song.localFilePath?.takeIf { it.isNotBlank() }?.let { return File(it).name }
+        val mediaUri = song.mediaUri?.takeIf { it.isNotBlank() } ?: return null
+        if (mediaUri.startsWith("/")) {
+            return File(mediaUri).name
+        }
+        return runCatching { mediaUri.toUri().lastPathSegment }.getOrNull()
+    }
+
+    private fun normalizedLocalReference(reference: String?): String? {
+        val raw = reference?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        if (raw.startsWith("/")) {
+            return File(raw).absolutePath
+        }
+        if (raw.startsWith("file://", ignoreCase = true)) {
+            runCatching {
+                java.net.URI(raw).path?.takeIf { it.isNotBlank() }
+            }.getOrNull()?.let { return File(it).absolutePath }
+        }
+
+        val uri = runCatching { raw.toUri() }.getOrNull() ?: return null
+        return when (uri.scheme?.lowercase(Locale.ROOT)) {
+            null, "" -> uri.path?.takeIf { it.startsWith("/") }?.let { File(it).absolutePath }
+            "file" -> uri.path?.takeIf { it.isNotBlank() }?.let { File(it).absolutePath }
+            "content", "android.resource" -> uri.toString()
+            else -> null
+        }
     }
 }

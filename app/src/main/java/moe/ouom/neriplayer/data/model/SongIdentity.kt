@@ -98,6 +98,8 @@ private fun normalizedIdentityMediaUri(song: SongItem): String? {
     val videoId = extractYouTubeMusicVideoId(song.mediaUri)
     return if (videoId != null) {
         buildYouTubeMusicMediaUri(videoId)
+    } else if (LocalSongSupport.isLocalSong(song, null)) {
+        LocalSongSupport.identityMediaReference(song)
     } else {
         song.localFilePath ?: song.mediaUri
     }

@@ -314,16 +314,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     }
 
     private fun prepareScannedSongs(songs: List<SongItem>): List<SongItem> {
-        val localFilesIdentities = LocalFilesPlaylist
-            .firstOrNull(repo.playlists.value, app)
-            ?.songs
-            .orEmpty()
-            .map { it.identity() }
-            .toSet()
-
-        return songs
-            .filterNot { it.identity() in localFilesIdentities }
-            .sortedWith(localScanSongComparator())
+        return songs.sortedWith(localScanSongComparator())
     }
 
     private fun localScanSongComparator(): Comparator<SongItem> {

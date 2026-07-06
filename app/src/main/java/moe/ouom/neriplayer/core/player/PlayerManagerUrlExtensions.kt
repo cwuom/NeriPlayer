@@ -42,6 +42,7 @@ import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
+import java.io.File
 
 internal suspend fun PlayerManager.resolveSongUrl(
     song: SongItem,
@@ -61,9 +62,12 @@ internal suspend fun PlayerManager.resolveSongUrl(
     if (isLocalSong(song)) {
         val localMediaUri = localMediaSource(song)
         if (localMediaUri != null && isReadableLocalMediaUri(localMediaUri)) {
+            val playbackAudioInfo = localMediaUri.toLocalPlaybackUri()
+                ?.let { buildLocalPlaybackAudioInfo(it, application) }
+                ?: buildLocalPlaybackAudioInfo(song, application)
             return SongUrlResult.Success(
                 url = toPlayableLocalUrl(localMediaUri) ?: localMediaUri,
-                audioInfo = buildLocalPlaybackAudioInfo(song, application)
+                audioInfo = playbackAudioInfo
             )
         }
         sideEffects.emitError {
@@ -126,6 +130,14 @@ internal suspend fun PlayerManager.resolveSongUrl(
         )
     } else {
         result
+    }
+}
+
+private fun String.toLocalPlaybackUri(): Uri? {
+    return if (startsWith("/")) {
+        Uri.fromFile(File(this))
+    } else {
+        runCatching { toUri() }.getOrNull()
     }
 }
 

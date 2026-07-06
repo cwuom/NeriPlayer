@@ -78,6 +78,7 @@ class AutoSettingsGeneratedTest {
         assertEquals("lyrics", AutoSettingsSections.lyrics)
         assertEquals("network", AutoSettingsSections.network)
         assertEquals("download", AutoSettingsSections.download)
+        assertEquals("trafficManagement", AutoSettingsSections.trafficManagement)
         assertEquals("storage", AutoSettingsSections.storage)
         assertEquals("backup", AutoSettingsSections.backup)
         assertEquals("playback", AutoSettingsSections.playback)
@@ -98,6 +99,7 @@ class AutoSettingsGeneratedTest {
                 AutoSettingsSections.lyrics,
                 AutoSettingsSections.network,
                 AutoSettingsSections.download,
+                AutoSettingsSections.trafficManagement,
                 AutoSettingsSections.storage,
                 AutoSettingsSections.backup,
                 AutoSettingsSections.playback
@@ -135,6 +137,14 @@ class AutoSettingsGeneratedTest {
         assertEquals(
             AutoSettingIcon.Sync,
             AutoSettingsMetadata.requireSection(AutoSettingsSections.backup).icon
+        )
+        assertEquals(
+            R.string.settings_traffic_management,
+            AutoSettingsMetadata.requireSection(AutoSettingsSections.trafficManagement).titleRes
+        )
+        assertEquals(
+            AutoSettingIcon.Analytics,
+            AutoSettingsMetadata.requireSection(AutoSettingsSections.trafficManagement).icon
         )
 
         val playbackFade = AutoSettingsMetadata.setting("playback_fade_in")

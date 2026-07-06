@@ -28,12 +28,17 @@ import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseLikeSyncPlan
 import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseLikeSyncResult
@@ -205,6 +210,65 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
 
     private fun songSet(songs: List<SongItem>): Set<SongIdentity> = songs.map { it.identity() }.toSet()
 
+    private suspend fun hydrateLocalSongsForPersistence(songs: List<SongItem>): List<SongItem> {
+        if (songs.none { LocalSongSupport.isLocalSong(it, context) }) {
+            return songs
+        }
+
+        return coroutineScope {
+            val hydrateDispatcher = Dispatchers.IO.limitedParallelism(4)
+            songs.map { song ->
+                async(hydrateDispatcher) {
+                    LocalAudioImportManager.hydrateLocalSongMetadata(context, song)
+                }
+            }.awaitAll()
+        }
+    }
+
+    private fun hasExistingSong(
+        existingSongs: List<SongItem>,
+        candidate: SongItem,
+        includeLocalMetadataFallback: Boolean = false
+    ): Boolean {
+        return existingSongs.any { existing ->
+            existing.sameIdentityAs(candidate) ||
+                LocalSongSupport.hasSameLocalSource(
+                    first = existing,
+                    second = candidate,
+                    includeMetadataFallback = includeLocalMetadataFallback
+                )
+        }
+    }
+
+    private fun distinctPlaylistSongs(
+        songs: List<SongItem>,
+        includeLocalMetadataFallback: Boolean = false
+    ): MutableList<SongItem> {
+        val distinct = mutableListOf<SongItem>()
+        songs.forEach { song ->
+            if (!hasExistingSong(distinct, song, includeLocalMetadataFallback)) {
+                distinct += song
+            }
+        }
+        return distinct
+    }
+
+    private fun filterNewSongs(
+        existingSongs: List<SongItem>,
+        candidates: List<SongItem>,
+        includeLocalMetadataFallback: Boolean = false
+    ): List<SongItem> {
+        val accepted = existingSongs.toMutableList()
+        return candidates.filter { candidate ->
+            if (hasExistingSong(accepted, candidate, includeLocalMetadataFallback)) {
+                false
+            } else {
+                accepted += candidate
+                true
+            }
+        }
+    }
+
     private fun nextPlaylistId(existing: List<LocalPlaylist>): Long {
         val usedIds = existing.mapTo(HashSet(existing.size)) { it.id }
         var candidate = System.currentTimeMillis()
@@ -236,9 +300,9 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     suspend fun createPlaylistWithSongs(name: String, songs: List<SongItem>): LocalPlaylist {
         return withContext(Dispatchers.IO) {
             val list = _playlists.value.toMutableList()
-            val distinctSongs = songs
-                .distinctBy { it.identity() }
-                .toMutableList()
+            val distinctSongs = distinctPlaylistSongs(
+                hydrateLocalSongsForPersistence(songs)
+            )
             val playlist = LocalPlaylist(
                 id = nextPlaylistId(list),
                 name = sanitizePlaylistName(name),
@@ -253,15 +317,16 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
 
     suspend fun addToFavorites(song: SongItem) {
         withContext(Dispatchers.IO) {
+            val hydratedSong = hydrateLocalSongsForPersistence(listOf(song)).first()
             val list = _playlists.value.toMutableList()
             val index = list.indexOfFirst { FavoritesPlaylist.isSystemPlaylist(it, context) }
             if (index == -1) return@withContext
 
             val favorites = list[index]
-            if (favorites.songs.any { it.sameIdentityAs(song) }) return@withContext
+            if (hasExistingSong(favorites.songs, hydratedSong)) return@withContext
 
             list[index] = favorites.copy(
-                songs = (favorites.songs + song).toMutableList(),
+                songs = (favorites.songs + hydratedSong).toMutableList(),
                 modifiedAt = System.currentTimeMillis()
             )
             publish(list)
@@ -324,14 +389,13 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             var changed = false
             val updated = _playlists.value.map { playlist ->
                 if (playlist.id != playlistId || playlist.songs.isEmpty()) {
-                    playlist
-                } else {
-                    changed = true
-                    playlist.copy(
-                        songs = mutableListOf(),
-                        modifiedAt = System.currentTimeMillis()
-                    )
+                    return@map playlist
                 }
+                changed = true
+                playlist.copy(
+                    songs = mutableListOf(),
+                    modifiedAt = System.currentTimeMillis()
+                )
             }
             if (!changed) return@withContext
             publish(updated)
@@ -345,10 +409,9 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
                 if (playlist.id != playlistId) return@map playlist
                 val filtered = playlist.songs.filterNot { it.id in songIds }.toMutableList()
                 if (filtered.size == playlist.songs.size) {
-                    playlist
-                } else {
-                    playlist.copy(songs = filtered, modifiedAt = System.currentTimeMillis())
+                    return@map playlist
                 }
+                playlist.copy(songs = filtered, modifiedAt = System.currentTimeMillis())
             }
             publish(updated)
         }
@@ -410,6 +473,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     suspend fun addSongsToPlaylistAndCount(playlistId: Long, songs: List<SongItem>): Int {
         return withContext(Dispatchers.IO) {
             if (songs.isEmpty()) return@withContext 0
+            val hydratedSongs = hydrateLocalSongsForPersistence(songs)
             var addedCount = 0
             val updated = _playlists.value.map { playlist ->
                 if (playlist.id != playlistId) return@map playlist
@@ -417,8 +481,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
                     return@map playlist
                 }
 
-                val existing = songSet(playlist.songs).toMutableSet()
-                val toAdd = songs.filter { existing.add(it.identity()) }
+                val toAdd = filterNewSongs(playlist.songs, hydratedSongs)
                 if (toAdd.isEmpty()) {
                     playlist
                 } else {
@@ -439,9 +502,10 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
         allowEmptyReplacement: Boolean = false
     ): Boolean {
         return withContext(Dispatchers.IO) {
-            val normalizedSongs = songs
-                .distinctBy { it.identity() }
-                .toMutableList()
+            val normalizedSongs = distinctPlaylistSongs(
+                songs = hydrateLocalSongsForPersistence(songs),
+                includeLocalMetadataFallback = true
+            )
             val currentLocalFiles = LocalFilesPlaylist.firstOrNull(_playlists.value, context)
             if (
                 normalizedSongs.isEmpty() &&
@@ -477,14 +541,18 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     suspend fun addSongsToLocalFilesPlaylistAndCount(songs: List<SongItem>): Int {
         return withContext(Dispatchers.IO) {
             if (songs.isEmpty()) return@withContext 0
+            val hydratedSongs = hydrateLocalSongsForPersistence(songs)
             var addedCount = 0
             val updated = _playlists.value.map { playlist ->
                 if (!isLocalFilesPlaylist(playlist.id, playlist.name)) {
                     return@map playlist
                 }
 
-                val existing = songSet(playlist.songs).toMutableSet()
-                val toAdd = songs.filter { existing.add(it.identity()) }
+                val toAdd = filterNewSongs(
+                    existingSongs = playlist.songs,
+                    candidates = hydratedSongs,
+                    includeLocalMetadataFallback = true
+                )
                 if (toAdd.isEmpty()) {
                     playlist
                 } else {

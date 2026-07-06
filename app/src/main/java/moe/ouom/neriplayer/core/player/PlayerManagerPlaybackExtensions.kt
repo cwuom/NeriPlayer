@@ -34,6 +34,7 @@ import moe.ouom.neriplayer.core.player.policy.resolveManualResumePlaybackDecisio
 import moe.ouom.neriplayer.core.player.policy.shouldApplyResolvedMedia
 import moe.ouom.neriplayer.core.player.policy.shouldApplyResolvedMediaSideEffects
 import moe.ouom.neriplayer.core.player.policy.shouldPausePlaybackWhenToggling
+import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -517,6 +518,7 @@ internal fun PlayerManager.playAtIndex(
     currentYouTubePrefetchJob = null
     playbackRequestToken += 1
     val requestToken = playbackRequestToken
+    maybeHydrateLocalSongForPlayback(index, song, requestToken)
     cancelUrlRefreshIfNotReusableForPendingLoad(
         song = song,
         resumePositionMs = resumePositionMs,
@@ -583,7 +585,7 @@ internal fun PlayerManager.playAtIndex(
                         cacheKey,
                         result.mimeType
                     )
-                    syncLyriconSong(song)
+                    syncLyriconSong(_currentSongFlow.value ?: song)
                     _currentMediaUrl.value = result.url
                     _currentPlaybackAudioInfo.value = result.audioInfo
                     currentMediaUrlResolvedAtMs = SystemClock.elapsedRealtime()
@@ -658,6 +660,51 @@ internal fun PlayerManager.playAtIndex(
                 }
             }
         }
+    }
+}
+
+private fun PlayerManager.maybeHydrateLocalSongForPlayback(
+    index: Int,
+    song: SongItem,
+    requestToken: Long
+) {
+    if (!isLocalSong(song)) {
+        return
+    }
+
+    ioScope.launch {
+        val hydratedSong = LocalAudioImportManager.hydrateLocalSongMetadata(application, song)
+        if (hydratedSong == song) {
+            return@launch
+        }
+
+        var applied = false
+        withContext(Dispatchers.Main) {
+            if (requestToken != playbackRequestToken) {
+                return@withContext
+            }
+            if (index !in currentPlaylist.indices || !currentPlaylist[index].sameIdentityAs(song)) {
+                return@withContext
+            }
+
+            val updatedPlaylist = currentPlaylist.toMutableList()
+            updatedPlaylist[index] = hydratedSong
+            currentPlaylist = updatedPlaylist
+            _currentQueueFlow.value = updatedPlaylist
+            if (_currentSongFlow.value?.sameIdentityAs(song) == true) {
+                setCurrentSongForPlayback(hydratedSong, syncLyricon = false)
+            }
+            applied = true
+        }
+
+        if (!applied) {
+            return@launch
+        }
+
+        withContext(Dispatchers.IO) {
+            localRepo.updateSongMetadata(song, hydratedSong)
+        }
+        scheduleStatePersist()
     }
 }
 

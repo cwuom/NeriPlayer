@@ -404,14 +404,8 @@ fun LocalPlaylistDetailScreen(
             val keyboardController = LocalSoftwareKeyboardController.current
             
             // 下载进度
-            val hasDownloadManagerEntryFlow = remember {
-                GlobalDownloadManager.downloadTaskSummary
-                    .map { it.hasPendingTasks }
-                    .distinctUntilChanged()
-            }
-            val hasDownloadManagerEntry by hasDownloadManagerEntryFlow.collectAsState(
-                initial = GlobalDownloadManager.downloadTaskSummary.value.hasPendingTasks
-            )
+            val downloadTaskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
+            val hasDownloadManagerEntry = downloadTaskSummary.hasPendingTasks
             val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
 
             // Snackbar状态

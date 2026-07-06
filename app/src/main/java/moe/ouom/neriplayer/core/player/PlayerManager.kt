@@ -768,17 +768,27 @@ object PlayerManager {
         return song.channelId == ListenTogetherChannels.BILIBILI ||
             song.album.startsWith(BILI_SOURCE_TAG)
     }
-    internal fun shouldPersistEmbeddedLyrics(song: SongItem): Boolean = !isLocalSong(song)
+    internal fun shouldPersistEmbeddedLyrics(song: SongItem): Boolean {
+        return song.matchedLyric != null ||
+            song.matchedTranslatedLyric != null ||
+            song.originalLyric != null ||
+            song.originalTranslatedLyric != null
+    }
 
     internal fun queueIndexOf(song: SongItem, playlist: List<SongItem> = currentPlaylist): Int {
         return playlist.indexOfFirst { it.sameIdentityAs(song) }
     }
 
     internal fun localMediaSource(song: SongItem): String? {
-        return preferredLocalMediaReference(
+        val preferred = preferredLocalMediaReference(
             localFilePath = song.localFilePath,
             mediaUri = song.mediaUri
         )
+        return listOf(preferred, song.localFilePath, song.mediaUri)
+            .filterNotNull()
+            .distinct()
+            .firstOrNull(::isReadableLocalMediaUri)
+            ?: preferred
     }
 
     internal fun toPlayableLocalUrl(mediaUri: String?): String? {
@@ -829,7 +839,14 @@ object PlayerManager {
     }
 
     internal fun isRestorableLocalSong(song: SongItem): Boolean {
-        return isRestorableLocalMediaUri(localMediaSource(song))
+        val preferred = preferredLocalMediaReference(
+            localFilePath = song.localFilePath,
+            mediaUri = song.mediaUri
+        )
+        return listOf(preferred, song.localFilePath, song.mediaUri)
+            .filterNotNull()
+            .distinct()
+            .any(::isRestorableLocalMediaUri)
     }
 
     internal fun sanitizeRestoredPlaylist(playlist: List<SongItem>): List<SongItem> {
