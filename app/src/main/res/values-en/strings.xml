@@ -1263,6 +1263,8 @@
     <string name="settings_download_file_name_format_preview">Preview: %1$s</string>
     <string name="settings_download_metadata_post_processing">Metadata post-processing</string>
     <string name="settings_download_metadata_post_processing_desc">Use TagLib to write embedded audio tags, lyrics, and cover after downloads complete; management metadata is still saved when off</string>
+    <string name="settings_standardized_lyric_embedding">Standardized lyric embedding</string>
+    <string name="settings_standardized_lyric_embedding_desc">Convert embedded audio tag lyrics to common LRC while keeping word-level lyrics for in-app playback</string>
     <string name="settings_download_parallelism">Download thread count</string>
     <string name="settings_download_parallelism_desc">Controls how many song download tasks can run at the same time, up to 8</string>
     <string name="settings_download_parallelism_current">Current: %1$d, max %2$d</string>

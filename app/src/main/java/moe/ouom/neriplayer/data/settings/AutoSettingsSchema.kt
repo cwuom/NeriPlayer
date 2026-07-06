@@ -1049,8 +1049,17 @@ object AutoSettingsSchema {
             icon = AutoSettingIcon.AutoAwesome
         )
 
+        @AutoSetting(order = 50)
+        val standardizedLyricEmbeddingEnabled = autoSwitchSetting(
+            key = "standardized_lyric_embedding_enabled",
+            defaultValue = true,
+            titleRes = R.string.settings_standardized_lyric_embedding,
+            descriptionRes = R.string.settings_standardized_lyric_embedding_desc,
+            icon = AutoSettingIcon.LibraryMusic
+        )
+
         @AutoSetting(
-            order = 50,
+            order = 60,
             ui = SettingUiType.Custom
         )
         val downloadParallelism = autoIntSetting(

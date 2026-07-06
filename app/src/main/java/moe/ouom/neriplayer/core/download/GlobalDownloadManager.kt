@@ -585,11 +585,14 @@ object GlobalDownloadManager {
             }
             val writeResult = runCatching {
                 metadataPostProcessingSemaphore.withPermit {
+                    val standardizedLyricEmbeddingEnabled =
+                        isStandardizedLyricEmbeddingEnabled(context)
                     DownloadedAudioTagWriter.write(
                         context = context,
                         audio = audio,
                         song = song,
-                        sidecarReferences = sidecarReferences
+                        sidecarReferences = sidecarReferences,
+                        standardizedLyricEmbeddingEnabled = standardizedLyricEmbeddingEnabled
                     )
                 }
             }
@@ -624,6 +627,16 @@ object GlobalDownloadManager {
             context.applicationContext.autoSettingFlow(setting).first()
         }.getOrElse { error ->
             NPLogger.w(TAG, "读取元信息后处理设置失败，按默认值处理: ${error.message}")
+            setting.defaultValue
+        }
+    }
+
+    private suspend fun isStandardizedLyricEmbeddingEnabled(context: Context): Boolean {
+        val setting = AutoSettingsSchema.download.standardizedLyricEmbeddingEnabled
+        return runCatching {
+            context.applicationContext.autoSettingFlow(setting).first()
+        }.getOrElse { error ->
+            NPLogger.w(TAG, "读取标准化歌词嵌入设置失败，按默认值处理: ${error.message}")
             setting.defaultValue
         }
     }

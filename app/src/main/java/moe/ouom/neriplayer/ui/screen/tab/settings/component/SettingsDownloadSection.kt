@@ -125,6 +125,12 @@ private fun SettingsDownloadExpandedContent(
 
         Spacer(modifier = Modifier.height(4.dp))
 
+        AutoSettingSpecSwitchItem(
+            setting = AutoSettingsSchema.download.standardizedLyricEmbeddingEnabled
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
         DownloadParallelismSettingItem()
 
         Spacer(modifier = Modifier.height(4.dp))

@@ -16,16 +16,22 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import java.io.File
+import java.util.Locale
 
 internal object DownloadedAudioTagWriter {
     private const val TAG = "DownloadedAudioTagWriter"
     private const val FRONT_COVER_TYPE = "Front Cover"
+    private val NETEASE_WORD_LINE_REGEX = Regex("""^\[(\d+),\s*\d+]\s*(.*)$""")
+    private val NETEASE_WORD_TOKEN_REGEX = Regex("""[\(<]\d+,\s*\d+,\s*-?\d+[\)>]""")
+    private val LRC_TIMED_LINE_REGEX = Regex("""^\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?]""")
+    private val LRC_METADATA_LINE_REGEX = Regex("""^\[[A-Za-z][A-Za-z0-9_]*:.*]$""")
 
     suspend fun write(
         context: Context,
         audio: ManagedDownloadStorage.StoredEntry,
         song: SongItem,
-        sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?
+        sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?,
+        standardizedLyricEmbeddingEnabled: Boolean
     ): Boolean = withContext(Dispatchers.IO) {
         val descriptor = openWritableDescriptor(context, audio) ?: return@withContext false
         descriptor.use { target ->
@@ -35,7 +41,8 @@ internal object DownloadedAudioTagWriter {
                 audio = audio,
                 existingPropertyMap = existingPropertyMap,
                 song = song,
-                sidecarReferences = sidecarReferences
+                sidecarReferences = sidecarReferences,
+                standardizedLyricEmbeddingEnabled = standardizedLyricEmbeddingEnabled
             )
             val coverPicture = buildFrontCoverPicture(
                 context = context,
@@ -84,19 +91,26 @@ internal object DownloadedAudioTagWriter {
         audio: ManagedDownloadStorage.StoredEntry,
         existingPropertyMap: PropertyMap?,
         song: SongItem,
-        sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?
+        sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?,
+        standardizedLyricEmbeddingEnabled: Boolean
     ): PropertyMap {
         val propertyMap = copyPropertyMap(existingPropertyMap)
         val audioExtension = audio.name.substringAfterLast('.', "").lowercase()
-        val embeddedLyric = resolveEmbeddedLyric(
-            context = context,
-            explicitReference = sidecarReferences?.lyricReference,
-            fallback = song.matchedLyric ?: song.originalLyric
+        val embeddedLyric = normalizeLyricForEmbedding(
+            lyric = resolveEmbeddedLyric(
+                context = context,
+                explicitReference = sidecarReferences?.lyricReference,
+                fallback = song.matchedLyric ?: song.originalLyric
+            ),
+            enabled = standardizedLyricEmbeddingEnabled
         )
-        val embeddedTranslatedLyric = resolveEmbeddedLyric(
-            context = context,
-            explicitReference = sidecarReferences?.translatedLyricReference,
-            fallback = song.matchedTranslatedLyric ?: song.originalTranslatedLyric
+        val embeddedTranslatedLyric = normalizeLyricForEmbedding(
+            lyric = resolveEmbeddedLyric(
+                context = context,
+                explicitReference = sidecarReferences?.translatedLyricReference,
+                fallback = song.matchedTranslatedLyric ?: song.originalTranslatedLyric
+            ),
+            enabled = standardizedLyricEmbeddingEnabled
         )
 
         putSingleValue(propertyMap, "TITLE", song.displayName())
@@ -121,6 +135,85 @@ internal object DownloadedAudioTagWriter {
             )
         }
         return propertyMap
+    }
+
+    private suspend fun resolveEmbeddedLyric(
+        context: Context,
+        explicitReference: String?,
+        fallback: String?
+    ): String? {
+        explicitReference
+            ?.takeIf(String::isNotBlank)
+            ?.let { reference ->
+                runCatching {
+                    ManagedDownloadStorage.readText(context, reference)
+                }.getOrNull()?.takeIf { it.isNotBlank() }?.let { return it }
+            }
+        return fallback?.takeIf { it.isNotBlank() }
+    }
+
+    private fun normalizeLyricForEmbedding(lyric: String?, enabled: Boolean): String? {
+        if (!enabled || lyric.isNullOrBlank()) {
+            return lyric
+        }
+        return convertNeteaseWordLyricToLrc(lyric).takeIf(String::isNotBlank) ?: lyric
+    }
+
+    private fun convertNeteaseWordLyricToLrc(lyric: String): String {
+        val output = mutableListOf<String>()
+        var convertedLineCount = 0
+
+        lyric.lineSequence().forEach { rawLine ->
+            val line = rawLine.trim()
+            if (line.isEmpty()) {
+                return@forEach
+            }
+
+            val wordLine = NETEASE_WORD_LINE_REGEX.find(line)
+            if (wordLine != null) {
+                val startMs = wordLine.groupValues[1].toLongOrNull() ?: return@forEach
+                val text = NETEASE_WORD_TOKEN_REGEX
+                    .replace(wordLine.groupValues[2], "")
+                    .trim()
+                if (text.isNotBlank()) {
+                    output += "${formatLrcTimestamp(startMs)}$text"
+                    convertedLineCount++
+                }
+                return@forEach
+            }
+
+            if (LRC_TIMED_LINE_REGEX.containsMatchIn(line) || LRC_METADATA_LINE_REGEX.matches(line)) {
+                output += line
+                return@forEach
+            }
+
+            if (!looksLikeStructuredLyricPayload(line)) {
+                output += line
+            }
+        }
+
+        return if (convertedLineCount > 0) {
+            output.joinToString("\n")
+        } else {
+            lyric
+        }
+    }
+
+    private fun formatLrcTimestamp(timeMs: Long): String {
+        val safeTimeMs = timeMs.coerceAtLeast(0L)
+        val totalSeconds = safeTimeMs / 1_000L
+        val minutes = totalSeconds / 60L
+        val seconds = totalSeconds % 60L
+        val centiseconds = (safeTimeMs % 1_000L) / 10L
+        return String.format(Locale.US, "[%02d:%02d.%02d]", minutes, seconds, centiseconds)
+    }
+
+    private fun looksLikeStructuredLyricPayload(line: String): Boolean {
+        return line.startsWith("{") ||
+            line.startsWith("[{") ||
+            line.startsWith("[\"") ||
+            line.contains("\"tx\"") ||
+            line.contains("\"t\"")
     }
 
     private fun loadExistingPropertyMap(descriptor: ParcelFileDescriptor): PropertyMap? {
@@ -214,21 +307,6 @@ internal object DownloadedAudioTagWriter {
             return
         }
         propertyMap[key] = arrayOf(normalized)
-    }
-
-    private suspend fun resolveEmbeddedLyric(
-        context: Context,
-        explicitReference: String?,
-        fallback: String?
-    ): String? {
-        explicitReference
-            ?.takeIf(String::isNotBlank)
-            ?.let { reference ->
-                runCatching {
-                    ManagedDownloadStorage.readText(context, reference)
-                }.getOrNull()?.takeIf { it.isNotBlank() }?.let { return it }
-            }
-        return fallback?.takeIf { it.isNotBlank() }
     }
 
     private fun openWritableDescriptor(
