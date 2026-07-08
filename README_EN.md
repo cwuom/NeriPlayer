@@ -531,6 +531,16 @@ NeriPlayer can sync local metadata to **your own GitHub repository**.
 When created from inside the app, the repository defaults to private, and
 existing repositories are also supported.
 
+We take your privacy and account safety seriously, so sync is intentionally
+decentralized: data is written to GitHub/WebDAV storage that you control, not to
+a centralized service operated by the project maintainer. The app is technically
+capable of sending playback history back to third-party music platforms, but
+centralized music clients often have risk-control and behavior-sampling systems.
+Uploading local playback history directly may be interpreted as abnormal login
+or playback behavior and could put an account at risk. To protect account safety,
+NeriPlayer does not upload local playback history or playback stats back to
+those platforms.
+
 Current sync targets:
 
 - Local playlists
@@ -671,12 +681,18 @@ We will keep improving the project over time.
 
 - NeriPlayer does not provide its own public cloud media distribution service,
   and does not include ad SDKs, third-party analytics, or third-party crash SDKs.
+- The project follows a decentralized data strategy: you choose and control the
+  sync target, and personal media data is not gathered into a maintainer-operated
+  central platform.
 - Playback cache, downloads, local playlists, history, playback stats, settings,
   and auth data are stored locally by default.
 - If you enable GitHub or WebDAV sync, only metadata such as playlists, favorites,
   history, and playback stats are synced.
 - Audio caches, downloaded files, cookies, and playback tokens are not uploaded
   to the developers.
+- For account safety, the app does not write local playback history or playback
+  stats back to third-party music platforms, because that kind of reporting may
+  be misclassified by platform risk-control systems.
 - Full config export files contain settings, auth data, and sync configuration.
   They are intended for personal migration and should not be shared publicly.
 - Android system cloud backup / device transfer is disabled by default.
