@@ -120,6 +120,7 @@ import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.component.AdvancedLyricsView
 import moe.ouom.neriplayer.ui.component.AppleMusicLyric
+import moe.ouom.neriplayer.ui.component.buildPhoneticLyricEntries
 import moe.ouom.neriplayer.ui.component.flattenWordTimedEntries
 import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
@@ -155,8 +156,10 @@ fun LyricsScreen(
     onSeekTo: (Long) -> Unit,
     advancedLyricsEnabled: Boolean = true,
     translatedLyrics: List<LyricEntry>? = null,
+    phoneticLyrics: List<LyricEntry> = emptyList(),
     lyricOffsetMs: Long,
     showLyricTranslation: Boolean = true,
+    lyricTranslationUsePhonetic: Boolean = false,
     sharedTransitionScope: androidx.compose.animation.SharedTransitionScope? = null,
     animatedContentScope: androidx.compose.animation.AnimatedContentScope? = null,
     offlineMode: Boolean = false,
@@ -171,6 +174,15 @@ fun LyricsScreen(
     val plainLyrics = remember(lyrics) { lyrics.flattenWordTimedEntries() }
     val plainTranslatedLyrics = remember(translatedLyrics) {
         translatedLyrics.orEmpty().flattenWordTimedEntries()
+    }
+    val embeddedPhoneticLyrics = remember(rawLyrics, lyrics) {
+        buildPhoneticLyricEntries(
+            rawLyrics = rawLyrics,
+            lyrics = lyrics
+        )
+    }
+    val effectivePhoneticLyrics = remember(phoneticLyrics, embeddedPhoneticLyrics) {
+        phoneticLyrics.takeIf { it.isNotEmpty() } ?: embeddedPhoneticLyrics
     }
     val durationMs = currentSong?.durationMs ?: 0L
     val favoriteActionLabel = stringResource(R.string.favorite_add)
@@ -467,6 +479,7 @@ fun LyricsScreen(
                     queue = displayedQueue,
                     displayedLyrics = lyrics,
                     displayedTranslatedLyrics = translatedLyrics.orEmpty(),
+                    hasPhoneticLyrics = effectivePhoneticLyrics.isNotEmpty(),
                     onDismiss = { showMoreOptions = false },
                     onShowSongDetails = { detailSong = it },
                     onEnterAlbum = onEnterAlbum,
@@ -489,9 +502,11 @@ fun LyricsScreen(
                 plainLyrics = plainLyrics,
                 plainTranslatedLyrics = plainTranslatedLyrics,
                 translatedLyrics = translatedLyrics.orEmpty(),
+                phoneticLyrics = effectivePhoneticLyrics,
                 previewPositionOverrideMs = previewPositionOverrideMs,
                 advancedLyricsEnabled = advancedLyricsEnabled,
                 showLyricTranslation = showLyricTranslation,
+                lyricTranslationUsePhonetic = lyricTranslationUsePhonetic,
                 lyricFontScale = lyricFontScale,
                 lyricOffsetMs = lyricOffsetMs,
                 lyricBlurEnabled = lyricBlurEnabled,
@@ -962,9 +977,11 @@ private fun LyricsContentPane(
     plainLyrics: List<LyricEntry>,
     plainTranslatedLyrics: List<LyricEntry>,
     translatedLyrics: List<LyricEntry>,
+    phoneticLyrics: List<LyricEntry>,
     previewPositionOverrideMs: Long?,
     advancedLyricsEnabled: Boolean,
     showLyricTranslation: Boolean,
+    lyricTranslationUsePhonetic: Boolean,
     lyricFontScale: Float,
     lyricOffsetMs: Long,
     lyricBlurEnabled: Boolean,
@@ -993,6 +1010,20 @@ private fun LyricsContentPane(
     val effectiveLyricTimeMs = previewPositionOverrideMs ?: currentPosition
     val isPreviewingSeek = previewPositionOverrideMs != null
     val shouldAnimateFromPlayback = isPlaying && !isPreviewingSeek
+    val usePhoneticTranslation = showLyricTranslation &&
+        lyricTranslationUsePhonetic &&
+        phoneticLyrics.isNotEmpty()
+    val effectivePlainTranslatedLyrics = if (usePhoneticTranslation) {
+        phoneticLyrics
+    } else {
+        plainTranslatedLyrics
+    }
+    val effectiveTranslatedLyrics = if (usePhoneticTranslation) {
+        phoneticLyrics
+    } else {
+        translatedLyrics
+    }
+    val effectiveRawTranslatedLyrics = if (usePhoneticTranslation) null else rawTranslatedLyrics
 
     if (advancedLyricsEnabled) {
         AdvancedLyricsView(
@@ -1005,10 +1036,11 @@ private fun LyricsContentPane(
             lyricOffsetMs = lyricOffsetMs,
             lyricBlurEnabled = lyricBlurEnabled,
             lyricBlurAmount = lyricBlurAmount,
-            translatedLyrics = translatedLyrics,
+            translatedLyrics = effectiveTranslatedLyrics,
             showLyricTranslation = showLyricTranslation,
+            showPhoneticAsTranslation = usePhoneticTranslation,
             rawLyrics = rawLyrics,
-            rawTranslatedLyrics = rawTranslatedLyrics,
+            rawTranslatedLyrics = effectiveRawTranslatedLyrics,
             isPlaying = shouldAnimateFromPlayback,
             animateViewportScroll = isPreviewingSeek,
             playbackSpeed = playbackSpeed,
@@ -1037,7 +1069,7 @@ private fun LyricsContentPane(
         onLyricClick = { lyricEntry ->
             onSeekTo(lyricEntry.startTimeMs)
         },
-        translatedLyrics = if (showLyricTranslation) plainTranslatedLyrics else null,
+        translatedLyrics = if (showLyricTranslation) effectivePlainTranslatedLyrics else null,
         translationFontSize = scaledLyricFontSize(16f, lyricFontScale).sp,
     )
 }

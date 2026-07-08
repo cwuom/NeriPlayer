@@ -59,7 +59,25 @@ class PlayerLyricsProviderTest {
     }
 
     @Test
-    fun `buildNeteaseLyricsCacheEntry parses original and translated lyrics from one payload`() {
+    fun `extractRomanizedNeteaseLyricContent reads romalrc`() {
+        val payload = """
+            {
+              "code": 200,
+              "romalrc": {
+                "lyric": "[00:23.88]1/3 6 5 no ki ma gu re de"
+              }
+            }
+        """.trimIndent()
+
+        val romanized = extractRomanizedNeteaseLyricContent(payload)
+        val parsed = parseNeteaseLyricsAuto(romanized)
+
+        assertEquals("[00:23.88]1/3 6 5 no ki ma gu re de", romanized)
+        assertEquals("1/3 6 5 no ki ma gu re de", parsed.single().text)
+    }
+
+    @Test
+    fun `buildNeteaseLyricsCacheEntry parses original translated and romanized lyrics from one payload`() {
         val payload = """
             {
               "code": 200,
@@ -68,6 +86,9 @@ class PlayerLyricsProviderTest {
               },
               "tlyric": {
                 "lyric": "[00:12.58]hard to forget"
+              },
+              "romalrc": {
+                "lyric": "[00:12.58]na n yi wang ji"
               }
             }
         """.trimIndent()
@@ -80,5 +101,7 @@ class PlayerLyricsProviderTest {
         )
         assertEquals("难以忘记", entry.preferredLyricEntries.single().text)
         assertEquals("hard to forget", entry.translatedLyricEntries.single().text)
+        assertEquals("[00:12.58]na n yi wang ji", entry.romanizedLyricText)
+        assertEquals("na n yi wang ji", entry.romanizedLyricEntries.single().text)
     }
 }

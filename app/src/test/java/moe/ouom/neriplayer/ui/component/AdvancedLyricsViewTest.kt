@@ -178,6 +178,94 @@ class AdvancedLyricsViewTest {
     }
 
     @Test
+    fun `buildPhoneticLyricEntries extracts line phonetic from raw ttml`() {
+        val rawLyrics = """
+            <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">
+                <body>
+                    <div>
+                        <p begin="00:01.000" end="00:02.000">
+                            <span begin="00:01.000" end="00:01.500">Hello</span>
+                            <span begin="00:01.500" end="00:02.000">World</span>
+                            <span ttm:role="x-roman">Halo Waludo</span>
+                        </p>
+                    </div>
+                </body>
+            </tt>
+        """.trimIndent()
+
+        val result = buildPhoneticLyricEntries(
+            rawLyrics = rawLyrics,
+            lyrics = emptyList()
+        )
+
+        assertEquals("Halo Waludo", result.single().text)
+        assertEquals(1_000L, result.single().startTimeMs)
+    }
+
+    @Test
+    fun `buildAdvancedSyncedLyrics can display phonetic instead of translation`() {
+        val rawLyrics = """
+            <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">
+                <body>
+                    <div>
+                        <p begin="00:01.000" end="00:02.000">
+                            <span begin="00:01.000" end="00:01.500">Hello</span>
+                            <span begin="00:01.500" end="00:02.000">World</span>
+                            <span ttm:role="x-translation">你好世界</span>
+                            <span ttm:role="x-roman">Halo Waludo</span>
+                        </p>
+                    </div>
+                </body>
+            </tt>
+        """.trimIndent()
+
+        val result = buildAdvancedSyncedLyrics(
+            rawLyrics = rawLyrics,
+            rawTranslatedLyrics = null,
+            lyrics = emptyList(),
+            translatedLyrics = emptyList(),
+            showPhoneticAsTranslation = true
+        )
+
+        val line = result.lines.single() as KaraokeLine.MainKaraokeLine
+        assertEquals("Halo Waludo", line.translation)
+    }
+
+    @Test
+    fun `buildAdvancedSyncedLyrics uses external romanized lyrics as phonetic translation`() {
+        val rawLyrics = """
+            <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">
+                <body>
+                    <div>
+                        <p begin="00:01.000" end="00:02.000">
+                            <span begin="00:01.000" end="00:01.500">今日は</span>
+                            <span ttm:role="x-translation">今天</span>
+                        </p>
+                    </div>
+                </body>
+            </tt>
+        """.trimIndent()
+        val romanizedLyrics = listOf(
+            LyricEntry(
+                text = "kyo u wa",
+                startTimeMs = 1_000L,
+                endTimeMs = 2_000L
+            )
+        )
+
+        val result = buildAdvancedSyncedLyrics(
+            rawLyrics = rawLyrics,
+            rawTranslatedLyrics = null,
+            lyrics = emptyList(),
+            translatedLyrics = romanizedLyrics,
+            showPhoneticAsTranslation = true
+        )
+
+        val line = result.lines.single() as KaraokeLine.MainKaraokeLine
+        assertEquals("kyo u wa", line.translation)
+    }
+
+    @Test
     fun `flattenWordTimedEntries removes word timings for plain lyric rendering`() {
         val flattened = listOf(
             LyricEntry(

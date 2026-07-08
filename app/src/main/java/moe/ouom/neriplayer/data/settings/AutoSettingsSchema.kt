@@ -589,6 +589,19 @@ object AutoSettingsSchema {
             descriptionRes = R.string.settings_show_lyric_translation_desc,
             icon = AutoSettingIcon.Subtitles
         )
+
+        @AutoSetting(
+            key = "lyric_translation_use_phonetic",
+            type = SettingValueType.Boolean,
+            defaultBoolean = false,
+            order = 140,
+            ui = SettingUiType.Switch
+        )
+        val lyricTranslationUsePhonetic = autoSetting(
+            titleRes = R.string.lyrics_translation_use_phonetic,
+            descriptionRes = R.string.lyrics_translation_use_phonetic_desc,
+            icon = AutoSettingIcon.Subtitles
+        )
     }
 
     /*

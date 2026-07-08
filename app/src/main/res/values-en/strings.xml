@@ -335,6 +335,11 @@
     <string name="lyrics_font_size">Lyrics Font Size</string>
     <string name="lyrics_offset">Lyrics Offset</string>
     <string name="lyrics_adjust_offset">Adjust Lyrics Offset</string>
+    <string name="lyrics_adjust_behavior">Adjust Lyrics Behavior</string>
+    <string name="lyrics_translation_use_phonetic">Show phonetics</string>
+    <string name="lyrics_translation_use_phonetic_desc">Replace translated lyrics with phonetics on the second line</string>
+    <string name="lyrics_translation_use_phonetic_unavailable">This lyric has no phonetics, so it cannot be enabled</string>
+    <string name="lyrics_translation_use_phonetic_requires_translation">Turn on lyric translation first</string>
 
     <!-- Background -->
     <string name="background_custom">Custom</string>

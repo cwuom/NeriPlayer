@@ -1385,7 +1385,7 @@ internal fun cancelVolumeFade(resetToFull: Boolean = false) =
         songs: List<SongItem>,
         startIndex: Int,
         commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
-    ) = playPlaylistImpl(songs, startIndex, commandSource)
+    ): Unit = playPlaylistImpl(songs, startIndex, commandSource)
 
     fun playBiliVideoParts(videoInfo: BiliClient.VideoBasicInfo, startIndex: Int, coverUrl: String) =
         playBiliVideoPartsImpl(videoInfo, startIndex, coverUrl)
@@ -1451,11 +1451,21 @@ internal fun cancelVolumeFade(resetToFull: Boolean = false) =
     suspend fun getNeteaseTranslatedLyrics(songId: Long): List<LyricEntry> =
         getNeteaseTranslatedLyricsImpl(songId)
 
+    @Suppress("unused")
+    suspend fun getNeteaseRomanizedLyrics(songId: Long): List<LyricEntry> =
+        getNeteaseRomanizedLyricsImpl(songId)
+
     suspend fun getPreferredNeteaseLyricContent(songId: Long): String =
         getPreferredNeteaseLyricContentImpl(songId)
 
+    suspend fun getPreferredNeteaseRomanizedLyricContent(songId: Long): String =
+        getPreferredNeteaseRomanizedLyricContentImpl(songId)
+
     suspend fun getTranslatedLyrics(song: SongItem): List<LyricEntry> =
         getTranslatedLyricsImpl(song)
+
+    suspend fun getRomanizedLyrics(song: SongItem): List<LyricEntry> =
+        getRomanizedLyricsImpl(song)
 
     suspend fun getLyrics(song: SongItem): List<LyricEntry> = getLyricsImpl(song)
 

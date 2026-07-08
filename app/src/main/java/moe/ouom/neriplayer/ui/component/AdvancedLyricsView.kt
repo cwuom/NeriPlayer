@@ -51,6 +51,7 @@ fun AdvancedLyricsView(
     rawTranslatedLyrics: String? = null,
     translatedLyrics: List<LyricEntry>? = null,
     showLyricTranslation: Boolean = true,
+    showPhoneticAsTranslation: Boolean = false,
     lyricBlurEnabled: Boolean = true,
     lyricBlurAmount: Float = 2.5f,
     isPlaying: Boolean = false,
@@ -65,12 +66,19 @@ fun AdvancedLyricsView(
     onSeekTo: (Long) -> Unit = {}
 ) {
     val effectiveTranslatedLyrics = translatedLyrics.orEmpty()
-    val syncedLyrics = remember(rawLyrics, rawTranslatedLyrics, lyrics, effectiveTranslatedLyrics) {
+    val syncedLyrics = remember(
+        rawLyrics,
+        rawTranslatedLyrics,
+        lyrics,
+        effectiveTranslatedLyrics,
+        showPhoneticAsTranslation
+    ) {
         buildAdvancedSyncedLyrics(
             rawLyrics = rawLyrics,
             rawTranslatedLyrics = rawTranslatedLyrics,
             lyrics = lyrics,
-            translatedLyrics = effectiveTranslatedLyrics
+            translatedLyrics = effectiveTranslatedLyrics,
+            showPhoneticAsTranslation = showPhoneticAsTranslation
         )
     }
     if (syncedLyrics.lines.isEmpty()) {
@@ -252,14 +260,19 @@ internal fun buildAdvancedSyncedLyrics(
     rawLyrics: String?,
     rawTranslatedLyrics: String?,
     lyrics: List<LyricEntry>,
-    translatedLyrics: List<LyricEntry>
+    translatedLyrics: List<LyricEntry>,
+    showPhoneticAsTranslation: Boolean = false
 ): SyncedLyrics {
-    val shouldPreferParsedLyrics = lyrics.hasWordTimedEntries() &&
-        (rawLyrics.isNullOrBlank() || !isNeteaseYrc(rawLyrics))
-    val baseLyrics = when {
-        shouldPreferParsedLyrics -> lyrics.toSyncedLyrics()
-        else -> parseRawLyrics(rawLyrics).takeIf { it.lines.isNotEmpty() }
-            ?: lyrics.toSyncedLyrics()
+    val baseLyrics = resolveAdvancedBaseSyncedLyrics(
+        rawLyrics = rawLyrics,
+        lyrics = lyrics
+    )
+    if (showPhoneticAsTranslation) {
+        return if (translatedLyrics.isNotEmpty()) {
+            baseLyrics.attachTranslations(translatedLyrics, replaceExisting = true)
+        } else {
+            baseLyrics.withPhoneticsAsTranslations()
+        }
     }
     val translationEntries = when {
         !rawTranslatedLyrics.isNullOrBlank() -> parseNeteaseLrc(rawTranslatedLyrics)
@@ -267,6 +280,36 @@ internal fun buildAdvancedSyncedLyrics(
         else -> emptyList()
     }
     return baseLyrics.attachTranslations(translationEntries)
+}
+
+fun buildPhoneticLyricEntries(
+    rawLyrics: String?,
+    lyrics: List<LyricEntry>
+): List<LyricEntry> {
+    return resolveAdvancedBaseSyncedLyrics(
+        rawLyrics = rawLyrics,
+        lyrics = lyrics
+    ).lines.mapNotNull { line ->
+        val phonetic = line.phoneticText()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+        LyricEntry(
+            text = phonetic,
+            startTimeMs = line.start.toLong(),
+            endTimeMs = line.end.toLong()
+        )
+    }
+}
+
+private fun resolveAdvancedBaseSyncedLyrics(
+    rawLyrics: String?,
+    lyrics: List<LyricEntry>
+): SyncedLyrics {
+    val shouldPreferParsedLyrics = lyrics.hasWordTimedEntries() &&
+        (rawLyrics.isNullOrBlank() || !isNeteaseYrc(rawLyrics))
+    return when {
+        shouldPreferParsedLyrics -> lyrics.toSyncedLyrics()
+        else -> parseRawLyrics(rawLyrics).takeIf { it.lines.isNotEmpty() }
+            ?: lyrics.toSyncedLyrics()
+    }
 }
 
 private fun parseRawLyrics(rawLyrics: String?): SyncedLyrics {
@@ -339,7 +382,10 @@ private fun LyricEntry.extractWordContent(index: Int): String {
     return ""
 }
 
-private fun SyncedLyrics.attachTranslations(translations: List<LyricEntry>): SyncedLyrics {
+private fun SyncedLyrics.attachTranslations(
+    translations: List<LyricEntry>,
+    replaceExisting: Boolean = false
+): SyncedLyrics {
     if (lines.isEmpty() || translations.isEmpty()) {
         return this
     }
@@ -362,15 +408,56 @@ private fun SyncedLyrics.attachTranslations(translations: List<LyricEntry>): Syn
 
         when {
             matchedTranslation.isNullOrBlank() -> line
-            line is KaraokeLine.MainKaraokeLine && line.translation.isNullOrBlank() ->
+            line is KaraokeLine.MainKaraokeLine && (replaceExisting || line.translation.isNullOrBlank()) ->
                 line.copy(translation = matchedTranslation)
-            line is SyncedLine && line.translation.isNullOrBlank() ->
+            line is SyncedLine && (replaceExisting || line.translation.isNullOrBlank()) ->
                 line.copy(translation = matchedTranslation)
             else -> line
         }
     }
 
     return copy(lines = updatedLines)
+}
+
+private fun SyncedLyrics.withPhoneticsAsTranslations(): SyncedLyrics {
+    if (lines.isEmpty()) {
+        return this
+    }
+
+    return copy(
+        lines = lines.map { line ->
+            val phonetic = line.phoneticText()?.takeIf { it.isNotBlank() } ?: return@map line
+            when (line) {
+                is KaraokeLine.MainKaraokeLine -> line.copy(
+                    translation = phonetic,
+                    accompanimentLines = line.accompanimentLines?.map { accompaniment ->
+                        val accompanimentPhonetic = accompaniment.phoneticText()
+                        accompaniment.copy(
+                            translation = accompanimentPhonetic.takeUnless { it.isNullOrBlank() }
+                                ?: accompaniment.translation
+                        )
+                    }
+                )
+                is KaraokeLine.AccompanimentKaraokeLine -> line.copy(translation = phonetic)
+                is SyncedLine -> line
+                else -> line
+            }
+        }
+    )
+}
+
+private fun ISyncedLine.phoneticText(): String? {
+    return when (this) {
+        is KaraokeLine -> linePhoneticText()
+        else -> null
+    }
+}
+
+private fun KaraokeLine.linePhoneticText(): String? {
+    phonetic?.takeIf { it.isNotBlank() }?.let { return it }
+    return syllables.joinToString(separator = " ") { it.phonetic.orEmpty() }
+        .trim()
+        .takeIf { it.isNotEmpty() }
 }
 
 private fun Long.toIntSafely(): Int {

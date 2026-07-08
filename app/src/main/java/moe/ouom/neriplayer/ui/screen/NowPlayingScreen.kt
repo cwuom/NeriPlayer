@@ -140,6 +140,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -233,6 +234,7 @@ import moe.ouom.neriplayer.data.settings.resolveLyricDefaultOffsetMs
 import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.AppleMusicLyric
+import moe.ouom.neriplayer.ui.component.buildPhoneticLyricEntries
 import moe.ouom.neriplayer.ui.component.flattenWordTimedEntries
 import moe.ouom.neriplayer.ui.component.hasWordTimedEntries
 import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
@@ -369,8 +371,10 @@ private fun resolvePreferredNeteaseLyricSongId(song: SongItem?): Long? {
 private data class LoadedLyricsState(
     val rawLyrics: String?,
     val rawTranslatedLyrics: String?,
+    val rawPhoneticLyrics: String?,
     val lyrics: List<LyricEntry>,
-    val translatedLyrics: List<LyricEntry>
+    val translatedLyrics: List<LyricEntry>,
+    val phoneticLyrics: List<LyricEntry>
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
@@ -419,6 +423,9 @@ fun NowPlayingScreen(
     val qqMusicLyricDefaultOffsetMs by settingsRepo
         .qqMusicLyricDefaultOffsetMsFlow
         .collectAsState(initial = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS)
+    val lyricTranslationUsePhonetic by settingsRepo
+        .lyricTranslationUsePhoneticFlow
+        .collectAsState(initial = false)
 
     // 订阅当前播放链接
     val currentMediaUrl by PlayerManager.currentMediaUrlFlow.collectAsState()
@@ -564,6 +571,8 @@ fun NowPlayingScreen(
     var translatedLyrics by remember(currentSong?.id) { mutableStateOf<List<LyricEntry>>(emptyList()) }
     var rawLyricsText by remember(currentSong?.id) { mutableStateOf<String?>(null) }
     var rawTranslatedLyricsText by remember(currentSong?.id) { mutableStateOf<String?>(null) }
+    var rawPhoneticLyricsText by remember(currentSong?.id) { mutableStateOf<String?>(null) }
+    var remotePhoneticLyrics by remember(currentSong?.id) { mutableStateOf<List<LyricEntry>>(emptyList()) }
     val nowPlayingViewModel: NowPlayingViewModel = viewModel()
     var artistPickerCandidates by remember { mutableStateOf<List<NeteaseArtistSummary>>(emptyList()) }
     var resolvingArtistNavigation by remember { mutableStateOf(false) }
@@ -614,6 +623,9 @@ fun NowPlayingScreen(
         currentSong?.matchedTranslatedLyric,
         currentSong?.originalLyric,
         currentSong?.originalTranslatedLyric,
+        currentSong?.matchedSongId,
+        currentSong?.matchedLyricSource,
+        currentSong?.album,
         currentMediaUrl
     ) {
         val song = currentSong
@@ -626,10 +638,17 @@ fun NowPlayingScreen(
                 currentLyric = song?.matchedTranslatedLyric,
                 legacyLyric = song?.originalTranslatedLyric
             )
+            val preferredSongId = resolvePreferredNeteaseLyricSongId(song)
             val preferredNeteaseLyric = runCatching {
-                val preferredSongId = resolvePreferredNeteaseLyricSongId(song)
                 if (storedRawLyrics == null && preferredSongId != null) {
                     PlayerManager.getPreferredNeteaseLyricContent(preferredSongId)
+                } else {
+                    ""
+                }
+            }.getOrNull().orEmpty()
+            val rawNeteasePhoneticLyric = runCatching {
+                if (preferredSongId != null) {
+                    PlayerManager.getPreferredNeteaseRomanizedLyricContent(preferredSongId)
                 } else {
                     ""
                 }
@@ -677,20 +696,50 @@ fun NowPlayingScreen(
             } catch (_: Exception) {
                 emptyList()
             }
+            val resolvedPhoneticLyrics = try {
+                when {
+                    rawNeteasePhoneticLyric.isNotBlank() -> {
+                        parseNeteaseLyricsAuto(rawNeteasePhoneticLyric)
+                    }
+                    song != null -> {
+                        PlayerManager.getRomanizedLyrics(song)
+                    }
+                    else -> emptyList()
+                }
+            } catch (_: Exception) {
+                emptyList()
+            }
             LoadedLyricsState(
                 rawLyrics = effectiveRawLyrics,
                 rawTranslatedLyrics = storedRawTranslatedLyrics,
+                rawPhoneticLyrics = rawNeteasePhoneticLyric.takeIf { it.isNotBlank() },
                 lyrics = resolvedLyrics,
-                translatedLyrics = resolvedTranslatedLyrics
+                translatedLyrics = resolvedTranslatedLyrics,
+                phoneticLyrics = resolvedPhoneticLyrics
             )
         }
         rawLyricsText = loadedLyricsState.rawLyrics
         rawTranslatedLyricsText = loadedLyricsState.rawTranslatedLyrics
+        rawPhoneticLyricsText = loadedLyricsState.rawPhoneticLyrics
         lyrics = loadedLyricsState.lyrics
         translatedLyrics = loadedLyricsState.translatedLyrics
+        remotePhoneticLyrics = loadedLyricsState.phoneticLyrics
     }
     val plainLyrics = remember(lyrics) { lyrics.flattenWordTimedEntries() }
     val plainTranslatedLyrics = remember(translatedLyrics) { translatedLyrics.flattenWordTimedEntries() }
+    val embeddedPhoneticLyrics = remember(rawLyricsText, lyrics) {
+        buildPhoneticLyricEntries(
+            rawLyrics = rawLyricsText,
+            lyrics = lyrics
+        )
+    }
+    val phoneticLyrics = remember(rawPhoneticLyricsText, remotePhoneticLyrics, embeddedPhoneticLyrics) {
+        remotePhoneticLyrics.takeIf { it.isNotEmpty() } ?: embeddedPhoneticLyrics
+    }
+    val usePhoneticTranslation = showLyricTranslation &&
+        lyricTranslationUsePhonetic &&
+        phoneticLyrics.isNotEmpty()
+    val secondaryPlainLyrics = if (usePhoneticTranslation) phoneticLyrics else plainTranslatedLyrics
     var previewPositionOverrideMs by remember(currentSong?.id) { mutableStateOf<Long?>(null) }
 
     LaunchedEffect(Unit) { contentVisible = true }
@@ -827,8 +876,10 @@ fun NowPlayingScreen(
                             onSeekTo = { position -> PlayerManager.seekTo(position) },
                             advancedLyricsEnabled = advancedLyricsEnabled,
                             translatedLyrics = translatedLyrics,
+                            phoneticLyrics = phoneticLyrics,
                             lyricOffsetMs = totalOffset,
                             showLyricTranslation = showLyricTranslation,
+                            lyricTranslationUsePhonetic = lyricTranslationUsePhonetic,
                             sharedTransitionScope = this@SharedTransitionLayout,
                             animatedContentScope = this@AnimatedContent,
                             offlineMode = offlineMode
@@ -948,6 +999,7 @@ fun NowPlayingScreen(
                                     queue = displayedQueue,
                                     displayedLyrics = lyrics,
                                     displayedTranslatedLyrics = translatedLyrics,
+                                    hasPhoneticLyrics = phoneticLyrics.isNotEmpty(),
                                     onDismiss = { showMoreOptions = false },
                                     onShowSongDetails = { detailSong = it },
                                     onEnterAlbum = onEnterAlbum,
@@ -1282,7 +1334,7 @@ fun NowPlayingScreen(
                             lyricBlurEnabled = lyricBlurEnabled,
                             lyricBlurAmount = lyricBlurAmount,
                             onLyricClick = { entry -> PlayerManager.seekTo(entry.startTimeMs) },
-                            translatedLyrics = if (showLyricTranslation) plainTranslatedLyrics else null
+                            translatedLyrics = if (showLyricTranslation) secondaryPlainLyrics else null
                         )
                     }
 
@@ -1484,7 +1536,7 @@ fun NowPlayingScreen(
                                     lyricBlurEnabled = lyricBlurEnabled,
                                     lyricBlurAmount = lyricBlurAmount,
                                     onLyricClick = { entry -> PlayerManager.seekTo(entry.startTimeMs) },
-                                    translatedLyrics = if (showLyricTranslation) plainTranslatedLyrics else null
+                                    translatedLyrics = if (showLyricTranslation) secondaryPlainLyrics else null
                                 )
                             } else {
                                 Column(
@@ -1846,6 +1898,7 @@ fun MoreOptionsSheet(
     queue: List<SongItem>,
     displayedLyrics: List<LyricEntry>,
     displayedTranslatedLyrics: List<LyricEntry>,
+    hasPhoneticLyrics: Boolean = false,
     onDismiss: () -> Unit,
     onShowSongDetails: (SongItem) -> Unit = {},
     onEnterAlbum: (AlbumSummary) -> Unit,
@@ -2110,7 +2163,7 @@ fun MoreOptionsSheet(
                         }
 
                         ListItem(
-                            headlineContent = { Text(stringResource(R.string.lyrics_adjust_offset)) },
+                            headlineContent = { Text(stringResource(R.string.lyrics_adjust_behavior)) },
                             leadingContent = { Icon(Icons.Outlined.Timer, null) },
                             modifier = Modifier.clickable { showOffsetSheet = true }
                         )
@@ -2419,8 +2472,9 @@ fun MoreOptionsSheet(
                 }
 
                 "Offset" -> {
-                    LyricOffsetSheet(
+                    LyricBehaviorSheet(
                         song = originalSong,
+                        hasPhoneticLyrics = hasPhoneticLyrics,
                         onDismiss = { showOffsetSheet = false }
                     )
                 }
@@ -2625,12 +2679,32 @@ fun VolumeControlSheetContent() {
 
 @Composable
 fun LyricOffsetSheet(song: SongItem, onDismiss: () -> Unit) {
+    LyricBehaviorSheet(
+        song = song,
+        hasPhoneticLyrics = false,
+        onDismiss = onDismiss
+    )
+}
+
+@Composable
+fun LyricBehaviorSheet(
+    song: SongItem,
+    hasPhoneticLyrics: Boolean,
+    onDismiss: () -> Unit
+) {
     var currentOffset by remember { mutableLongStateOf(song.userLyricOffsetMs) }
     val scope = rememberCoroutineScope()
+    val settingsRepo = remember { AppContainer.settingsRepo }
+    val showLyricTranslation by settingsRepo.showLyricTranslationFlow.collectAsState(initial = true)
+    val lyricTranslationUsePhonetic by settingsRepo
+        .lyricTranslationUsePhoneticFlow
+        .collectAsState(initial = false)
     val sliderMinOffset = minOf(MIN_LYRIC_DEFAULT_OFFSET_MS, currentOffset)
     val sliderMaxOffset = maxOf(MAX_LYRIC_DEFAULT_OFFSET_MS, currentOffset)
     val sliderSteps = (((sliderMaxOffset - sliderMinOffset) / LYRIC_DEFAULT_OFFSET_STEP_MS).toInt() - 1)
         .coerceAtLeast(0)
+    val phoneticSwitchEnabled = showLyricTranslation && hasPhoneticLyrics
+    val phoneticSwitchChecked = showLyricTranslation && lyricTranslationUsePhonetic && hasPhoneticLyrics
 
     Column(
         modifier = Modifier
@@ -2640,7 +2714,64 @@ fun LyricOffsetSheet(song: SongItem, onDismiss: () -> Unit) {
             .windowInsetsPadding(WindowInsets.navigationBars),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(stringResource(R.string.lyrics_adjust_offset), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.lyrics_adjust_behavior), style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
+
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.settings_show_lyric_translation)) },
+            supportingContent = { Text(stringResource(R.string.settings_show_lyric_translation_desc)) },
+            trailingContent = {
+                Switch(
+                    checked = showLyricTranslation,
+                    onCheckedChange = { enabled ->
+                        scope.launch { settingsRepo.setShowLyricTranslation(enabled) }
+                    }
+                )
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable {
+                    scope.launch { settingsRepo.setShowLyricTranslation(!showLyricTranslation) }
+                }
+        )
+
+        ListItem(
+            headlineContent = { Text(stringResource(R.string.lyrics_translation_use_phonetic)) },
+            supportingContent = {
+                Text(
+                    when {
+                        !showLyricTranslation ->
+                            stringResource(R.string.lyrics_translation_use_phonetic_requires_translation)
+                        !hasPhoneticLyrics ->
+                            stringResource(R.string.lyrics_translation_use_phonetic_unavailable)
+                        else -> stringResource(R.string.lyrics_translation_use_phonetic_desc)
+                    }
+                )
+            },
+            trailingContent = {
+                Switch(
+                    checked = phoneticSwitchChecked,
+                    onCheckedChange = { enabled ->
+                        if (hasPhoneticLyrics) {
+                            scope.launch { settingsRepo.setLyricTranslationUsePhonetic(enabled) }
+                        }
+                    },
+                    enabled = phoneticSwitchEnabled
+                )
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(enabled = phoneticSwitchEnabled) {
+                    scope.launch {
+                        settingsRepo.setLyricTranslationUsePhonetic(!phoneticSwitchChecked)
+                    }
+                }
+        )
+
+        Spacer(Modifier.height(16.dp))
+        Text(stringResource(R.string.lyrics_adjust_offset), style = MaterialTheme.typography.titleSmall)
         Spacer(Modifier.height(8.dp))
         Text(
             text = "${if (currentOffset > 0) "+" else ""}${currentOffset} ms",

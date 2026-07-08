@@ -335,6 +335,11 @@
     <string name="lyrics_font_size">歌词字体大小</string>
     <string name="lyrics_offset">歌词偏移调整</string>
     <string name="lyrics_adjust_offset">调整歌词偏移</string>
+    <string name="lyrics_adjust_behavior">调整歌词行为</string>
+    <string name="lyrics_translation_use_phonetic">音译显示</string>
+    <string name="lyrics_translation_use_phonetic_desc">开启后用音译替代歌词翻译显示在第二行</string>
+    <string name="lyrics_translation_use_phonetic_unavailable">当前歌词没有音译，无法开启</string>
+    <string name="lyrics_translation_use_phonetic_requires_translation">需要先开启歌词翻译</string>
 
     <!-- Background -->
     <string name="background_custom">自定义背景图</string>

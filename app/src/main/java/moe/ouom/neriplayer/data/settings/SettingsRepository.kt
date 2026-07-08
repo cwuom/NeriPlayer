@@ -311,6 +311,9 @@ class SettingsRepository(private val context: Context) {
     val showLyricTranslationFlow: Flow<Boolean> =
         autoSettingsRepository.showLyricTranslationFlow
 
+    val lyricTranslationUsePhoneticFlow: Flow<Boolean> =
+        autoSettingsRepository.lyricTranslationUsePhoneticFlow
+
     val defaultStartDestinationFlow: Flow<String> =
         autoSettingsRepository.defaultStartDestinationFlow
 
@@ -784,6 +787,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setShowLyricTranslation(enabled: Boolean) {
         autoSettingsRepository.setShowLyricTranslation(enabled)
+    }
+
+    suspend fun setLyricTranslationUsePhonetic(enabled: Boolean) {
+        autoSettingsRepository.setLyricTranslationUsePhonetic(enabled)
     }
 
     suspend fun setDefaultStartDestination(route: String) {

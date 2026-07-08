@@ -475,8 +475,24 @@ internal suspend fun PlayerManager.getNeteaseTranslatedLyricsImpl(songId: Long):
     )
 }
 
+internal suspend fun PlayerManager.getNeteaseRomanizedLyricsImpl(songId: Long): List<LyricEntry> {
+    return PlayerLyricsProvider.getNeteaseRomanizedLyrics(
+        songId,
+        neteaseClient,
+        neteaseLyricsCache
+    )
+}
+
 internal suspend fun PlayerManager.getPreferredNeteaseLyricContentImpl(songId: Long): String {
     return PlayerLyricsProvider.getPreferredNeteaseLyricContent(
+        songId,
+        neteaseClient,
+        neteaseLyricsCache
+    )
+}
+
+internal suspend fun PlayerManager.getPreferredNeteaseRomanizedLyricContentImpl(songId: Long): String {
+    return PlayerLyricsProvider.getPreferredNeteaseRomanizedLyricContent(
         songId,
         neteaseClient,
         neteaseLyricsCache
@@ -487,6 +503,15 @@ internal suspend fun PlayerManager.getTranslatedLyricsImpl(song: SongItem): List
     return PlayerLyricsProvider.getTranslatedLyrics(
         song = song,
         application = application,
+        neteaseClient = neteaseClient,
+        neteaseLyricsCache = neteaseLyricsCache,
+        biliSourceTag = BILI_SOURCE_TAG
+    )
+}
+
+internal suspend fun PlayerManager.getRomanizedLyricsImpl(song: SongItem): List<LyricEntry> {
+    return PlayerLyricsProvider.getRomanizedLyrics(
+        song = song,
         neteaseClient = neteaseClient,
         neteaseLyricsCache = neteaseLyricsCache,
         biliSourceTag = BILI_SOURCE_TAG

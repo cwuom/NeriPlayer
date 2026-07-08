@@ -61,10 +61,19 @@ internal fun extractTranslatedNeteaseLyricContent(rawResponse: String): String {
         ?: ""
 }
 
+internal fun extractRomanizedNeteaseLyricContent(rawResponse: String): String {
+    val payload = JSONObject(rawResponse)
+    return normalizeLegacyLrcTimestamps(
+        payload.optJSONObject("romalrc")?.optString("lyric").orEmpty()
+    )
+}
+
 internal data class NeteaseLyricsCacheEntry(
     val preferredLyricText: String,
+    val romanizedLyricText: String,
     val preferredLyricEntries: List<LyricEntry>,
-    val translatedLyricEntries: List<LyricEntry>
+    val translatedLyricEntries: List<LyricEntry>,
+    val romanizedLyricEntries: List<LyricEntry>
 )
 
 internal enum class LocalLyricOverrideState {
@@ -105,8 +114,10 @@ internal object PlayerLyricsProvider {
     internal fun buildNeteaseLyricsCacheEntry(rawResponse: String): NeteaseLyricsCacheEntry {
         val preferredLyric = extractPreferredNeteaseLyricContent(rawResponse)
         val translatedLyric = extractTranslatedNeteaseLyricContent(rawResponse)
+        val romanizedLyric = extractRomanizedNeteaseLyricContent(rawResponse)
         return NeteaseLyricsCacheEntry(
             preferredLyricText = preferredLyric,
+            romanizedLyricText = romanizedLyric,
             preferredLyricEntries = parseRemoteLyricEntriesOrEmpty(
                 rawLyric = preferredLyric,
                 logPrefix = "网易云原文歌词解析失败"
@@ -114,6 +125,10 @@ internal object PlayerLyricsProvider {
             translatedLyricEntries = parseRemoteLyricEntriesOrEmpty(
                 rawLyric = translatedLyric,
                 logPrefix = "网易云翻译歌词解析失败"
+            ),
+            romanizedLyricEntries = parseRemoteLyricEntriesOrEmpty(
+                rawLyric = romanizedLyric,
+                logPrefix = "网易云音译歌词解析失败"
             )
         )
     }
@@ -217,6 +232,26 @@ internal object PlayerLyricsProvider {
         }
     }
 
+    suspend fun getNeteaseRomanizedLyrics(
+        songId: Long,
+        neteaseClient: NeteaseClient,
+        neteaseLyricsCache: LruCache<Long, NeteaseLyricsCacheEntry>
+    ): List<LyricEntry> {
+        return withContext(Dispatchers.IO) {
+            try {
+                getCachedNeteaseLyricsEntry(songId, neteaseClient, neteaseLyricsCache)
+                    .romanizedLyricEntries
+            } catch (error: Exception) {
+                NPLogger.e(
+                    "NERI-PlayerManager",
+                    "getNeteaseRomanizedLyrics failed: ${error.message}",
+                    error
+                )
+                emptyList()
+            }
+        }
+    }
+
     suspend fun getPreferredNeteaseLyricContent(
         songId: Long,
         neteaseClient: NeteaseClient,
@@ -230,6 +265,26 @@ internal object PlayerLyricsProvider {
                 NPLogger.e(
                     "NERI-PlayerManager",
                     "getPreferredNeteaseLyricContent failed: ${error.message}",
+                    error
+                )
+                ""
+            }
+        }
+    }
+
+    suspend fun getPreferredNeteaseRomanizedLyricContent(
+        songId: Long,
+        neteaseClient: NeteaseClient,
+        neteaseLyricsCache: LruCache<Long, NeteaseLyricsCacheEntry>
+    ): String {
+        return withContext(Dispatchers.IO) {
+            try {
+                getCachedNeteaseLyricsEntry(songId, neteaseClient, neteaseLyricsCache)
+                    .romanizedLyricText
+            } catch (error: Exception) {
+                NPLogger.e(
+                    "NERI-PlayerManager",
+                    "getPreferredNeteaseRomanizedLyricContent failed: ${error.message}",
                     error
                 )
                 ""
@@ -282,6 +337,47 @@ internal object PlayerLyricsProvider {
             when (song.matchedLyricSource) {
                 null,
                 MusicPlatform.CLOUD_MUSIC -> getNeteaseTranslatedLyrics(
+                    song.id,
+                    neteaseClient,
+                    neteaseLyricsCache
+                )
+                else -> emptyList()
+            }
+        }
+    }
+
+    suspend fun getRomanizedLyrics(
+        song: SongItem,
+        neteaseClient: NeteaseClient,
+        neteaseLyricsCache: LruCache<Long, NeteaseLyricsCacheEntry>,
+        biliSourceTag: String
+    ): List<LyricEntry> {
+        return withContext(Dispatchers.IO) {
+            if (isYouTubeMusicSong(song)) {
+                return@withContext emptyList()
+            }
+
+            if (song.album.startsWith(biliSourceTag)) {
+                return@withContext when (song.matchedLyricSource) {
+                    MusicPlatform.CLOUD_MUSIC -> {
+                        val matchedId = song.matchedSongId?.toLongOrNull()
+                        if (matchedId != null) {
+                            getNeteaseRomanizedLyrics(
+                                matchedId,
+                                neteaseClient,
+                                neteaseLyricsCache
+                            )
+                        } else {
+                            emptyList()
+                        }
+                    }
+                    else -> emptyList()
+                }
+            }
+
+            when (song.matchedLyricSource) {
+                null,
+                MusicPlatform.CLOUD_MUSIC -> getNeteaseRomanizedLyrics(
                     song.id,
                     neteaseClient,
                     neteaseLyricsCache
