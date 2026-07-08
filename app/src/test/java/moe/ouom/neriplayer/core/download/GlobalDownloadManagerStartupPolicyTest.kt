@@ -489,6 +489,57 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `recovery is not blocked by stale queued tasks without a running pipeline`() {
+        val queuedTask = DownloadTask(
+            song = SongItem(
+                id = 8L,
+                name = "Queued",
+                artist = "Artist",
+                album = "Album",
+                albumId = 8L,
+                durationMs = 1_000L,
+                coverUrl = null,
+                mediaUri = "https://example.com/queued-recovery"
+            ),
+            progress = null,
+            status = DownloadStatus.QUEUED
+        )
+        val downloadingTask = queuedTask.copy(
+            song = queuedTask.song.copy(id = 9L, name = "Downloading"),
+            status = DownloadStatus.DOWNLOADING
+        )
+
+        assertFalse(
+            hasRecoveryBlockingDownloadOperations(
+                tasks = listOf(queuedTask),
+                isSingleDownloading = false,
+                hasActiveBatchJobs = false
+            )
+        )
+        assertTrue(
+            hasRecoveryBlockingDownloadOperations(
+                tasks = listOf(downloadingTask),
+                isSingleDownloading = false,
+                hasActiveBatchJobs = false
+            )
+        )
+        assertTrue(
+            hasRecoveryBlockingDownloadOperations(
+                tasks = listOf(queuedTask),
+                isSingleDownloading = false,
+                hasActiveBatchJobs = true
+            )
+        )
+        assertTrue(
+            hasRecoveryBlockingDownloadOperations(
+                tasks = emptyList(),
+                isSingleDownloading = true,
+                hasActiveBatchJobs = false
+            )
+        )
+    }
+
+    @Test
     fun `findDownloadedSongCatalogMatch prefers stable identity for remote favorites playback`() {
         val song = SongItem(
             id = 9L,

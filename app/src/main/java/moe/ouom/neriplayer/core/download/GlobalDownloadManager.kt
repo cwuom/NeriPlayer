@@ -81,6 +81,8 @@ object GlobalDownloadManager {
     private const val DOWNLOAD_CANCEL_SETTLE_TIMEOUT_MS = 5_000L
     private const val DOWNLOAD_CANCEL_FAST_SETTLE_TIMEOUT_MS = 1_200L
     private const val DOWNLOAD_CANCELLED_ARTIFACT_RECOVERY_DELAY_MS = 800L
+    private const val DOWNLOAD_RECOVERY_QUEUE_ATTACH_GRACE_MS = 300L
+    private const val DOWNLOAD_RECOVERY_QUEUE_ATTACH_POLL_MS = 50L
     private const val METADATA_WRITE_MAX_ATTEMPTS = 3
     private const val METADATA_WRITE_RETRY_DELAY_MS = 200L
     private const val METADATA_POST_PROCESSING_MAX_ATTEMPTS = 3
@@ -187,7 +189,7 @@ object GlobalDownloadManager {
         scope.launch {
             val startupRecovery = ManagedDownloadStorage.consumeStartupRecoveryResult()
             val restoredCatalog = restorePersistedDownloadedSongs(appContext)
-            recoverPendingResumableDownloads(appContext, reason = "startup")
+            recoverPendingDownloadsForStartup(appContext)
             if (
                 !shouldRunInitialDownloadScan(
                     catalogReady = restoredCatalog,
@@ -217,6 +219,29 @@ object GlobalDownloadManager {
                 )
                 scheduleCatalogReconcile(appContext, forceRefresh = true)
             }
+        }
+    }
+
+    private suspend fun recoverPendingDownloadsForStartup(context: Context) {
+        val appContext = context.applicationContext
+        if (!tryBeginPendingDownloadRecovery()) {
+            NPLogger.d(TAG, "跳过启动下载恢复: 已有恢复任务执行中")
+            return
+        }
+        try {
+            if (!hasPendingRecoveryCandidates(appContext)) {
+                return
+            }
+            waitForActiveDownloadJobsToSettle()
+            waitForQueuedTasksToAttachToBatch()
+            if (hasBlockingActiveDownloadOperationsForRecovery()) {
+                NPLogger.d(TAG, "延后启动下载恢复: 当前已有活动下载")
+                return
+            }
+            recoverPendingResumableDownloads(appContext, reason = "startup")
+            delay(1_500L)
+        } finally {
+            finishPendingDownloadRecovery()
         }
     }
 
@@ -291,7 +316,8 @@ object GlobalDownloadManager {
                 context = context,
                 songs = resumableSongs,
                 skipTrafficRiskPrompt = true,
-                cleanupBeforeStart = false
+                cleanupBeforeStart = false,
+                replaceExistingActiveTasks = true
             )
         }.onFailure { error ->
             NPLogger.e(TAG, "自动恢复未完成下载失败: ${error.message}", error)
@@ -318,7 +344,8 @@ object GlobalDownloadManager {
             }
             try {
                 waitForActiveDownloadJobsToSettle()
-                if (hasActiveDownloadOperations()) {
+                waitForQueuedTasksToAttachToBatch()
+                if (hasBlockingActiveDownloadOperationsForRecovery()) {
                     return@launch
                 }
                 recoverPendingResumableDownloads(appContext, reason = reason)
@@ -365,6 +392,37 @@ object GlobalDownloadManager {
             }
             delay(100L)
         }
+    }
+
+    private suspend fun waitForQueuedTasksToAttachToBatch() {
+        val pollCount = (
+            DOWNLOAD_RECOVERY_QUEUE_ATTACH_GRACE_MS /
+                DOWNLOAD_RECOVERY_QUEUE_ATTACH_POLL_MS
+            ).coerceAtLeast(1)
+        repeat(pollCount.toInt()) {
+            if (activeBatchDownloadJobs.isNotEmpty()) {
+                return
+            }
+            val currentTasks = taskStore.currentTasks()
+            val hasQueuedTask = currentTasks.any { task ->
+                task.status == DownloadStatus.QUEUED
+            }
+            val hasDownloadingTask = currentTasks.any { task ->
+                task.status == DownloadStatus.DOWNLOADING
+            }
+            if (!hasQueuedTask || hasDownloadingTask) {
+                return
+            }
+            delay(DOWNLOAD_RECOVERY_QUEUE_ATTACH_POLL_MS)
+        }
+    }
+
+    private fun hasBlockingActiveDownloadOperationsForRecovery(): Boolean {
+        return hasRecoveryBlockingDownloadOperations(
+            tasks = taskStore.currentTasks(),
+            isSingleDownloading = taskStore.isSingleDownloading,
+            hasActiveBatchJobs = activeBatchDownloadJobs.isNotEmpty()
+        )
     }
 
     fun hasActiveDownloadOperations(): Boolean {
@@ -2368,7 +2426,8 @@ object GlobalDownloadManager {
         context: Context,
         songs: List<SongItem>,
         skipTrafficRiskPrompt: Boolean,
-        cleanupBeforeStart: Boolean = true
+        cleanupBeforeStart: Boolean = true,
+        replaceExistingActiveTasks: Boolean = false
     ) {
         if (songs.isEmpty()) return
 
@@ -2396,7 +2455,8 @@ object GlobalDownloadManager {
                 context = appContext,
                 songs = requestedSongs,
                 cleanupBeforeStart = cleanupBeforeStart,
-                requestGeneration = requestGeneration
+                requestGeneration = requestGeneration,
+                replaceExistingActiveTasks = replaceExistingActiveTasks
             )
         }
     }
@@ -2405,7 +2465,8 @@ object GlobalDownloadManager {
         context: Context,
         songs: List<SongItem>,
         cleanupBeforeStart: Boolean,
-        requestGeneration: Long
+        requestGeneration: Long,
+        replaceExistingActiveTasks: Boolean
     ) {
         if (songs.isEmpty()) return
 
@@ -2425,7 +2486,7 @@ object GlobalDownloadManager {
             try {
                 NPLogger.d(
                     TAG,
-                    "批量下载启动: requested=${songs.size}, deduped=${requestedSongs.size}, cleanupBeforeStart=$cleanupBeforeStart, persistedQueued=${ManagedDownloadStorage.listPendingQueuedDownloads(appContext).size}, persistedCancelled=${ManagedDownloadStorage.listCancelledDownloadKeys(appContext).size}"
+                    "批量下载启动: requested=${songs.size}, deduped=${requestedSongs.size}, cleanupBeforeStart=$cleanupBeforeStart, replaceExistingActiveTasks=$replaceExistingActiveTasks, persistedQueued=${ManagedDownloadStorage.listPendingQueuedDownloads(appContext).size}, persistedCancelled=${ManagedDownloadStorage.listCancelledDownloadKeys(appContext).size}"
                 )
                 val settledSongKeys = mutableSetOf<String>()
                 val currentRequestedSongs = requestedSongs.filter { song ->
@@ -2437,7 +2498,8 @@ object GlobalDownloadManager {
                 }
                 val preparedAttemptIds = taskStore.prepareDownloadTasks(
                     songs = currentRequestedSongs,
-                    status = DownloadStatus.QUEUED
+                    status = DownloadStatus.QUEUED,
+                    replaceExistingActiveTasks = replaceExistingActiveTasks
                 )
                 val downloadLibrarySnapshot = buildBatchDownloadLibrarySnapshot(appContext)
                 val settledAttemptIds = linkedMapOf<String, Long>()
@@ -3296,7 +3358,8 @@ object GlobalDownloadManager {
             }
             try {
                 waitForActiveDownloadJobsToSettle()
-                if (hasActiveDownloadOperations()) {
+                waitForQueuedTasksToAttachToBatch()
+                if (hasBlockingActiveDownloadOperationsForRecovery()) {
                     return@launch
                 }
                 recoverPendingResumableDownloads(appContext, reason = reason)

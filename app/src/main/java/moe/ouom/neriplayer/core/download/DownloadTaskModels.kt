@@ -218,3 +218,16 @@ internal fun hasActiveDownloadOperations(
         task.status == DownloadStatus.QUEUED || task.status == DownloadStatus.DOWNLOADING
     }
 }
+
+internal fun hasRecoveryBlockingDownloadOperations(
+    tasks: List<DownloadTask>,
+    isSingleDownloading: Boolean,
+    hasActiveBatchJobs: Boolean
+): Boolean {
+    if (isSingleDownloading || hasActiveBatchJobs) {
+        return true
+    }
+    return tasks.any { task ->
+        task.status == DownloadStatus.DOWNLOADING
+    }
+}

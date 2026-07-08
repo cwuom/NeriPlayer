@@ -120,6 +120,42 @@ class DownloadTaskStoreTest {
     }
 
     @Test
+    fun `prepareDownloadTasks can replace stale active tasks during recovery`() {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val store = DownloadTaskStore(
+                scope = scope,
+                progressEmitIntervalNs = Long.MAX_VALUE
+            )
+            val songs = (1..225).map { index -> song(index.toLong()) }
+            val staleAttemptIds = store.prepareDownloadTasks(
+                songs = songs,
+                status = DownloadStatus.QUEUED
+            )
+
+            val recoveryAttemptIds = store.prepareDownloadTasks(
+                songs = songs,
+                status = DownloadStatus.QUEUED,
+                replaceExistingActiveTasks = true
+            )
+
+            assertEquals(225, recoveryAttemptIds.size)
+            assertEquals(225, store.currentTasks().size)
+            assertTrue(store.currentTasks().all { task -> task.status == DownloadStatus.QUEUED })
+            songs.forEach { recoverySong ->
+                val songKey = recoverySong.stableKey()
+                assertNotEquals(
+                    staleAttemptIds.getValue(songKey),
+                    recoveryAttemptIds.getValue(songKey)
+                )
+                assertEquals(recoveryAttemptIds.getValue(songKey), store.findTask(songKey)?.attemptId)
+            }
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun `removeDownloadTasks only removes matching attempts`() {
         val scope = CoroutineScope(SupervisorJob())
         try {

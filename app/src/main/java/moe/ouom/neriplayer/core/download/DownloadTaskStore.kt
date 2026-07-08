@@ -189,7 +189,8 @@ internal class DownloadTaskStore(
 
     fun prepareDownloadTasks(
         songs: List<SongItem>,
-        status: DownloadStatus = DownloadStatus.DOWNLOADING
+        status: DownloadStatus = DownloadStatus.DOWNLOADING,
+        replaceExistingActiveTasks: Boolean = false
     ): Map<String, Long> {
         if (songs.isEmpty()) {
             return emptyMap()
@@ -222,7 +223,20 @@ internal class DownloadTaskStore(
                 val existingTask = updatedTasks[existingIndex]
                 when (existingTask.status) {
                     DownloadStatus.QUEUED,
-                    DownloadStatus.DOWNLOADING -> return@forEach
+                    DownloadStatus.DOWNLOADING -> {
+                        if (!replaceExistingActiveTasks) {
+                            return@forEach
+                        }
+                        val attemptId = nextAttemptId()
+                        preparedAttemptIds[songKey] = attemptId
+                        clearProgressPublishState(songKey)
+                        updatedTasks[existingIndex] = DownloadTask(
+                            song = song,
+                            progress = null,
+                            status = status,
+                            attemptId = attemptId
+                        )
+                    }
 
                     DownloadStatus.COMPLETED,
                     DownloadStatus.CANCELLED,
