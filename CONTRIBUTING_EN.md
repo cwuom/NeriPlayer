@@ -73,11 +73,17 @@ NeriPlayer covers a broad product surface. Protect these paths first:
 - **Playback**: `PlayerManager`, stream resolution, cache, URL refresh,
   auto source switching, and state recovery.
 - **Downloads**: `AudioDownloadManager`, `GlobalDownloadManager`,
-  `ManagedDownloadStorage`, resume checkpoints, sidecar files, and SAF migration.
+  `DownloadTaskStore`, `DownloadLifecyclePolicies`, `ManagedDownloadStorage`,
+  resume checkpoints, sidecar files, queue recovery, cancellation cleanup, and SAF migration.
 - **Sync**: GitHub / WebDAV three-way merge, deletion records, playback stats,
   and remote format compatibility.
 - **Local data**: atomic playlist JSON writes, config import/export, encrypted
   auth storage, and DataStore settings.
+- **Lyrics and Now Playing UI**: `AdvancedLyricsView`, `AppleMusicLyric`,
+  `LyricShareSheet`, phonetic lyric display, long-press lyric sharing, and the
+  full-screen Lyrics page.
+- **Storage and cache UI**: `StorageUsageAnalyzer`, cache cleanup options,
+  download directory indexes, and SAF snapshots.
 - **Listen Together**: Android client, Worker protocol fields, roles, queues,
   and controller-offline recovery.
 - **Diagnostics**: safe mode, JVM/native crash logs, ANR capture, and Debug probes.
@@ -189,7 +195,14 @@ Security reminders:
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt`
   - Top-level Compose app shell. Handles `NavHost`, dynamic bottom bar, `MiniPlayer`,
-    `Now Playing` overlay, Debug routes, themes, and playback service sync.
+    `Now Playing` overlay, Debug routes, themes, cache cleanup, and playback service sync.
+
+- `app/src/main/java/moe/ouom/neriplayer/ui/component/`
+  - `AdvancedLyricsView.kt` and `AppleMusicLyric.kt`: advanced lyric layout,
+    word/character highlighting, translation/phonetic display, click-to-seek,
+    and long-press callbacks.
+  - `LyricShareSheet.kt`: lyric-line selection, copy, song sharing, and lyric card generation.
+  - `NeriMiniPlayer.kt`: bottom Mini Player, play/pause, and horizontal swipe for previous/next.
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/`
   - `LibraryScreen.kt`: top-level Library categories. Local content can switch
@@ -239,6 +252,8 @@ Security reminders:
 - `app/src/main/java/moe/ouom/neriplayer/core/download/`
   - `GlobalDownloadManager.kt`: global download tasks and downloaded song list.
   - `ManagedDownloadStorage.kt`: app directory / SAF directory, migration, snapshots, and `.nomedia`.
+  - `DownloadTaskStore.kt`: persisted download tasks, status, progress, and attempt IDs.
+  - `DownloadLifecyclePolicies.kt`: download recovery, cancellation cleanup, and fast-settle policies.
   - `ManagedDownloadNaming.kt`: filename templates and legacy filename compatibility.
   - `DownloadedAudioTagWriter.kt`: audio tag writing.
 
@@ -246,6 +261,8 @@ Security reminders:
   - `settings/`: `DataStore` settings, KSP schema, bootstrap snapshot, theme snapshot,
     and playback preference snapshot.
   - `auth/`: NetEase, Bilibili, and YouTube cookie/auth storage and validation.
+  - `platform/netease/`: NetEase platform-side caches, currently including playlist detail cache.
+  - `storage/`: storage usage analysis, cache grouping, and extra cache cleanup.
   - `local/playlist/`: local playlist JSON atomic writes, system playlist compatibility,
     and local artist aggregation models.
   - `local/audioimport/`, `local/media/`: local audio import, scanning, metadata reading, and sharing.
@@ -284,14 +301,24 @@ Security reminders:
 - `YouTube Music` supports login, home/playlist browsing, details, search,
   playback, and downloads.
 - Status-bar lyrics depend on private vendor support and only work on select devices.
+- Phonetic lyric display depends on phonetic lyrics returned by the platform or
+  phonetic fields embedded in word-level lyrics. When no phonetic data exists,
+  do not synthesize it or render an empty second line.
+- Lyric sharing uses `FileProvider` to share lyric card files from the app cache.
+  These generated share files are cleanable cache, not user-downloaded content.
 - NetEase playback tries lower qualities when the current quality is unavailable.
   For restricted, missing-URL, or preview-only tracks, it can auto-match a
   Bilibili fallback source when enabled.
+- NetEase playlist detail cache is only for playlist detail fast display and
+  failure fallback. Album details still refresh live and should not reuse playlist cache.
 - Local "My Favorite Music" can sync recognizable NetEase songs to NetEase
   Liked Songs. This requires NetEase login and skips unsupported or existing songs.
 - Downloads use a shared `OkHttpClient` and write to the app directory or a SAF
   directory. They are **not** handled by the system `DownloadManager`, but they
   do support automatic resume and startup recovery.
+- Download queues, cancellation records, and attempt IDs all participate in
+  recovery decisions. When changing recovery, make sure stale requests cannot
+  clear task state for newer requests.
 - Resume behavior depends on transport type:
   - direct downloads resume through working-file size plus `Range`
   - explicit chunked downloads resume by byte offset
@@ -301,6 +328,12 @@ Security reminders:
   network recovery.
 - Manual cancellation rolls back partial artifacts and removes working files.
   Partial data is preserved only for network-policy pauses and recoverable retry paths.
+- The app-private download directory is usually faster than custom SAF directories.
+  SAF snapshots and indexes reduce directory walking, but SAF access should not be
+  treated as having the same cost as normal file IO.
+- Storage cleanup must only delete regenerable cache, download staging, and share
+  staging. Do not delete user-saved audio, downloaded lyrics/covers, or auth data
+  through normal cache cleanup.
 - Streaming cache and permanent downloads are separate features: cache uses
   `SimpleCache`; downloads are written by `AudioDownloadManager` and
   `ManagedDownloadStorage`.
@@ -378,7 +411,8 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 
 #### 7. Modify download storage
 
-1. Read `ManagedDownloadStorage.kt`, `ManagedDownloadNaming.kt`, and related unit tests first.
+1. Read `ManagedDownloadStorage.kt`, `ManagedDownloadNaming.kt`,
+   `DownloadTaskStore.kt`, `DownloadLifecyclePolicies.kt`, and related unit tests first.
 2. Consider app-managed storage, SAF custom directories, migration, legacy names,
    metadata files, and `.nomedia`.
 3. Download tasks write to `cache/download_staging/` before being committed to
@@ -390,7 +424,43 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 5. Changes to migration, delete semantics, resume checkpoints, or sidecar writes
    must update or add unit tests.
 
-#### 8. Modify Lyricon integration
+#### 8. Modify lyrics display, sharing, or phonetics
+
+1. Now Playing lyrics mainly live in `AdvancedLyricsView.kt`, `AppleMusicLyric.kt`,
+   and `NowPlayingScreen.kt`.
+2. The full-screen Lyrics page lives in `LyricsScreen.kt`, and lyric sharing reuses
+   `LyricShareSheet.kt`.
+3. Phonetic display is controlled by the `lyric_translation_use_phonetic` setting,
+   requires lyric translation to be enabled, and only works when the current lyrics
+   include phonetic data.
+4. Long-press opens the lyric sharing sheet. When changing gestures, also check
+   click-to-seek, manual lyric offset, and advanced lyric viewport scrolling.
+5. Lyric cards are shared through `FileProvider` cache files. If the output location
+   changes, update `file_paths.xml` and cache cleanup behavior as well.
+
+#### 9. Modify storage usage and cache cleanup
+
+1. Entry points are `data/storage/StorageUsageAnalyzer.kt` and
+   `SettingsStorageCacheSection.kt`.
+2. When adding a cache directory, decide whether it belongs to cleanable cache,
+   downloaded content, diagnostics, or app data.
+3. Cleanup actions must target regenerable content only. Downloaded songs,
+   downloaded lyrics, download indexes, and auth data must not be removed by
+   normal cache cleanup.
+4. When clearing download staging, respect current download task state. Staging
+   files for active tasks should wait until the task ends.
+
+#### 10. Modify NetEase playlist detail cache
+
+1. The cache entry point is `NeteasePlaylistCacheRepository.kt`; page state is in
+   `NeteaseCollectionDetailViewModel.kt`.
+2. The cache signature is based on track count and recent track IDs, mainly to
+   decide whether the track list can be reused.
+3. Network or parse failures may fall back to cache, but manual refresh should keep
+   force-refresh semantics.
+4. Album details do not use this playlist cache, so keep the data models separated.
+
+#### 11. Modify Lyricon integration
 
 1. The integration entry point is `core/lyricon/LyriconManager.kt`.
 2. The setting key is `lyricon_enabled`, and playback lifecycle keeps it in sync.
@@ -399,7 +469,7 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 4. Keep Lyricon, SuperLyric, status-bar lyrics, advanced Now Playing lyrics,
    and external Bluetooth lyrics compatible when changing lyric structures.
 
-#### 9. Modify Listen Together
+#### 12. Modify Listen Together
 
 1. Android client logic is under `listentogether/`.
 2. Server logic is under `np-submodule/NeriPlayer-LTW`.

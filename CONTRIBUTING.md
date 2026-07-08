@@ -66,9 +66,13 @@
 
 - **播放链路**：`PlayerManager`、取流策略、缓存、失败刷新、自动换源和状态恢复。
 - **下载链路**：`AudioDownloadManager`、`GlobalDownloadManager`、
-  `ManagedDownloadStorage`、续传检查点、sidecar 文件和 SAF 目录迁移。
+  `DownloadTaskStore`、`DownloadLifecyclePolicies`、`ManagedDownloadStorage`、
+  续传检查点、sidecar 文件、任务队列恢复、取消清理和 SAF 目录迁移。
 - **同步链路**：GitHub / WebDAV 的三路合并、删除记录、播放统计和远端格式兼容。
 - **本地数据**：歌单 JSON 原子写入、配置导入导出、授权加密存储和 DataStore 设置。
+- **歌词与播放页 UI**：`AdvancedLyricsView`、`AppleMusicLyric`、
+  `LyricShareSheet`、歌词音译显示、歌词长按分享和 Lyrics 全屏页。
+- **存储与缓存 UI**：`StorageUsageAnalyzer`、缓存清理选项、下载目录索引和 SAF 快照。
 - **一起听**：Android 客户端、Worker 协议字段、角色权限、队列和房主离线恢复。
 - **诊断恢复**：安全模式、JVM/Native 崩溃日志、ANR 记录和 Debug 探针。
 
@@ -172,7 +176,13 @@
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt`
   - 顶层 Compose 应用骨架，负责 `NavHost`、动态底栏、
-    `MiniPlayer`、`Now Playing` 覆盖层、Debug 路由、主题和播放服务同步。
+    `MiniPlayer`、`Now Playing` 覆盖层、Debug 路由、主题、缓存清理和播放服务同步。
+
+- `app/src/main/java/moe/ouom/neriplayer/ui/component/`
+  - `AdvancedLyricsView.kt` 与 `AppleMusicLyric.kt` 负责高级歌词排版、
+    逐字/逐词高亮、翻译/音译显示、点击跳转和长按回调。
+  - `LyricShareSheet.kt` 负责歌词行选择、复制、歌曲分享和歌词卡片生成。
+  - `NeriMiniPlayer.kt` 负责底部迷你播放器、播放暂停和横向滑动切歌。
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/`
   - `LibraryScreen.kt` 负责媒体库顶层分类，本地内容可在歌单/歌手之间切换，
@@ -219,12 +229,16 @@
 - `app/src/main/java/moe/ouom/neriplayer/core/download/`
   - `GlobalDownloadManager.kt` 维护全局下载任务与本地已下载列表。
   - `ManagedDownloadStorage.kt` 管理应用目录/SAF 目录、迁移、快照和 `.nomedia`。
+  - `DownloadTaskStore.kt` 持久化下载任务、状态、进度和 attemptId。
+  - `DownloadLifecyclePolicies.kt` 集中封装下载恢复、取消清理和快速结算策略。
   - `ManagedDownloadNaming.kt` 管理下载文件名模板和历史命名兼容。
   - `DownloadedAudioTagWriter.kt` 写入音频标签。
 
 - `app/src/main/java/moe/ouom/neriplayer/data/`
   - `settings/`：`DataStore` 设置、KSP schema、启动快照、主题快照和播放偏好快照。
   - `auth/`：网易云、Bilibili、YouTube 的 Cookie / Auth 本地存储与校验。
+  - `platform/netease/`：网易云平台侧缓存，当前包含歌单详情本地缓存。
+  - `storage/`：存储占用分析、缓存分组和额外缓存清理。
   - `local/playlist/`：本地歌单 JSON 原子写入、系统歌单兼容和本地艺术家聚合模型。
   - `local/audioimport/`、`local/media/`：本地音频导入、扫描、元数据读取和分享。
   - `playlist/favorite/`、`playlist/usage/`：收藏歌单、收藏艺术家和首页继续播放数据。
@@ -257,12 +271,20 @@
 - `Bilibili` 已支持搜索、收藏夹和音频播放/下载，但不是完整视频发现流或评论区。
 - `YouTube Music` 已支持登录、首页/歌单浏览、详情、搜索、播放与下载。
 - 状态栏歌词依赖厂商私有能力，当前仅适用于部分支持设备。
+- 歌词音译显示依赖平台返回的音译歌词或内嵌逐字歌词的 phonetic 字段；
+  当前没有音译数据时，不应强行合成或展示空的第二行。
+- 歌词分享会通过 `FileProvider` 分享缓存目录中的歌词卡片文件；
+  这类分享产物属于可清理缓存，不是用户下载内容。
 - 网易云播放会在当前音质不可用时自动尝试更低音质；
   无权限、无直链或仅返回试听片段时，可按设置自动匹配 Bilibili 音源兜底。
+- 网易云歌单详情缓存只服务歌单详情页快速展示和失败回退；
+  专辑详情仍保持实时刷新，避免和歌单缓存混用。
 - 本地「我喜欢的音乐」支持将可识别的网易云歌曲同步到网易云我喜欢的音乐；
   该能力依赖网易云登录态，并会跳过不支持或已存在的歌曲。
 - 下载使用共享 `OkHttpClient` 写入应用目录或 SAF 目录，
   **不是**系统 `DownloadManager`；当前已支持自动断点续传与启动恢复。
+- 下载任务队列、取消记录和 attemptId 都参与恢复判断；
+  修改恢复流程时要避免旧请求把新请求的任务状态清掉。
 - 续传按传输类型分别处理：
   - 直链下载通过工作文件大小 + `Range` 头续传
   - 显式分块下载按字节偏移续传
@@ -271,6 +293,10 @@
   恢复元数据；应用启动和网络恢复后会尝试自动找回未完成下载。
 - 手动取消会回滚半成品并删除工作文件；只有网络策略暂停与可恢复错误重试
   才会保留断点。
+- 应用私有下载目录通常比 SAF 自定义目录更快；
+  SAF 快照和索引用于减少遍历，但不能假设 SAF 操作成本和普通文件系统一致。
+- 存储清理只能删除可再生成缓存、下载暂存和分享暂存；
+  不要通过“清缓存”删除用户主动下载的音频、歌词和封面。
 - 流媒体缓存与下载是两套能力：
   缓存使用 `SimpleCache`，下载由 `AudioDownloadManager` 与
   `ManagedDownloadStorage` 写入本地文件。
@@ -343,7 +369,8 @@
 
 #### 7. 修改下载存储
 
-1. 先阅读 `ManagedDownloadStorage.kt`、`ManagedDownloadNaming.kt`
+1. 先阅读 `ManagedDownloadStorage.kt`、`ManagedDownloadNaming.kt`、
+   `DownloadTaskStore.kt`、`DownloadLifecyclePolicies.kt`
    和相关单元测试。
 2. 同时考虑默认应用目录、SAF 自定义目录、迁移、历史命名、元数据文件和 `.nomedia`。
 3. 下载任务先写入 `cache/download_staging/`，再提交到正式目录；
@@ -354,7 +381,37 @@
 5. 修改目录迁移、删除语义、续传检查点或 sidecar 写入时，
    必须补充/更新对应单元测试。
 
-#### 8. 修改词幕适配
+#### 8. 修改歌词显示、分享或音译
+
+1. 播放页歌词主要在 `AdvancedLyricsView.kt`、`AppleMusicLyric.kt`
+   和 `NowPlayingScreen.kt`。
+2. 全屏歌词页在 `LyricsScreen.kt`，歌词分享入口复用 `LyricShareSheet.kt`。
+3. 音译显示通过 `lyric_translation_use_phonetic` 设置控制，
+   需要先开启翻译且当前歌词存在音译数据。
+4. 长按歌词用于打开分享面板；修改手势时要同时检查点击跳转、
+   手动歌词偏移和高级歌词视口滚动。
+5. 歌词卡片通过 `FileProvider` 分享缓存文件；
+   修改输出位置时要同步检查 `file_paths.xml` 和缓存清理。
+
+#### 9. 修改存储占用与缓存清理
+
+1. 入口在 `data/storage/StorageUsageAnalyzer.kt`
+   和 `SettingsStorageCacheSection.kt`。
+2. 新增缓存目录时，要决定它属于可清理缓存、下载内容、诊断文件还是应用数据。
+3. 清理操作只能覆盖可再生成内容；
+   下载歌曲、下载歌词、下载索引和授权数据不能被普通清缓存误删。
+4. 如果清理下载暂存，要尊重当前下载任务状态；
+   活跃任务的暂存文件应等任务结束后再处理。
+
+#### 10. 修改网易云歌单详情缓存
+
+1. 缓存入口是 `NeteasePlaylistCacheRepository.kt`，
+   页面状态在 `NeteaseCollectionDetailViewModel.kt`。
+2. 缓存签名基于曲目数量和最近曲目 ID，主要用于判断是否复用曲目列表。
+3. 网络失败或解析失败可以回退缓存，但手动刷新应保留强制刷新语义。
+4. 专辑详情不使用这套歌单缓存，避免不同数据模型互相污染。
+
+#### 11. 修改词幕适配
 
 1. 词幕适配入口在 `core/lyricon/LyriconManager.kt`。
 2. 开关状态由设置项 `lyricon_enabled` 控制，并由播放器生命周期同步。
@@ -363,7 +420,7 @@
 4. 修改时要保持 Lyricon、SuperLyric、状态栏歌词、播放页高级歌词
    和外部蓝牙歌词的歌词结构兼容。
 
-#### 9. 修改一起听
+#### 12. 修改一起听
 
 1. Android 客户端逻辑在 `listentogether/`。
 2. 服务端逻辑在 `np-submodule/NeriPlayer-LTW`。

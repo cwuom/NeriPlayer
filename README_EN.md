@@ -138,8 +138,10 @@ Current positioning:
   and reacts to `uMusicLevel / uBeat`; it is not just a Gaussian-blurred cover.
 - **Apple Music-style lyrics, backed by the playback pipeline**:
   `AppleMusicLyric` and `AdvancedLyricsView` support word/character-timed
-  highlighting, translated lyrics, lyric offset, click-to-seek, depth blur,
-  edge fade, and a full-screen Lyrics page. Floating lyrics, status-bar lyrics,
+  highlighting, translated lyrics, phonetic display, lyric offset, click-to-seek,
+  long-press sharing, depth blur, edge fade, and a full-screen Lyrics page.
+  `LyricShareSheet` can select lyric lines, copy text, share the song, or render
+  a 1080px lyric card. Floating lyrics, status-bar lyrics,
   SuperLyric, Lyricon, Bluetooth lyrics, and lyric editing reuse the same
   playback data path.
 - **Complete local music management**:
@@ -151,8 +153,13 @@ Current positioning:
 - **Library browsing now has real categories**:
   `Library` is no longer just a playlist list. Local content can switch between
   playlists and artists, while `LocalArtistSummary` groups songs by display
-  artist with stable identity and cover selection. NetEase songs can open an
-  artist page with songs, albums, and follow state.
+  artist, splits common collaboration artist text, and keeps stable identity
+  and cover selection. NetEase songs can open an artist page with songs, albums,
+  and follow state.
+- **Large screens and daily controls are getting real polish**:
+  tablet/landscape Now Playing, Lyrics, Settings, and artist pages use steadier
+  width constraints and bottom control layouts. The `Mini Player` supports
+  horizontal swipe for previous/next without expanding the full player.
 - **Sound controls are tied to the active audio session**:
   `PlaybackEffectsController` applies speed, pitch, Android `Equalizer`, and
   `LoudnessEnhancer` to the current Media3 audio session. Presets, manual bands,
@@ -162,8 +169,14 @@ Current positioning:
   downloads do not use the system `DownloadManager`. They use the shared
   `OkHttpClient`, configurable concurrency, staging files, and sidecar metadata.
   Direct links, YouTube range chunks, and HLS each have a resume strategy.
-  Network-policy pauses can continue later, while manual cancellation cleans up
-  partial artifacts.
+  Network-policy pauses can continue later, startup recovery restores unfinished
+  queues, and already-finalized local hits are settled directly. Manual
+  cancellation cleans up partial artifacts.
+- **Storage usage is visible and cleanup has boundaries**:
+  `StorageUsageAnalyzer` groups audio cache, image cache, download staging,
+  share staging, platform playlist cache, downloaded content, logs, crash
+  reports, and core app data. Cache cleanup targets regenerable cache data and
+  does not treat user-saved downloads as disposable cache.
 - **Self-owned sync plus playback stats**:
   NeriPlayer does not provide a public cloud library or developer-hosted user
   data service. GitHub/WebDAV sync stores playlists, favorites, recent plays,
@@ -281,7 +294,8 @@ For release build and signing details, see
   mixed playback, and preemptive audio focus are configurable.
 - 💾 **Configurable streaming cache**:
   audio cache uses `SimpleCache + LRU`, defaults to **1 GB**, and supports
-  separate audio/image cache cleanup.
+  cleanup for audio cache, image cache, download staging, share staging, and
+  platform playlist cache, with grouped storage usage details.
 - 🛰️ **Offline mode**:
   automatically detects network availability, disables online Explore and remote
   Home refreshes while offline, and uses cached images only for remote artwork.
@@ -290,18 +304,22 @@ For release build and signing details, see
 - ⬇️ **In-app downloads and management**:
   supports multi-platform audio downloads, task progress, cancel/retry, and
   local management with lyrics, covers, metadata, and audio tags. Default
-  download concurrency is **6**, configurable up to **8**.
+  download concurrency is **6**, configurable up to **8**. Download queues are
+  persisted so unfinished work can recover after restart, while complete local
+  files can settle directly as finished.
 - 📁 **Migratable download directory**:
   downloads default to the app-managed directory, but can be moved to a custom
   SAF directory. Existing downloads are migrated when switching directories.
-  Custom filename templates are also supported.
+  Custom filename templates are also supported. For performance, avoid moving
+  to SAF unless an external directory is actually needed.
 - 🎵 **Local audio import and scanning**:
   supports system `VIEW / SEND / SEND_MULTIPLE` for `audio/*`, device music
   scanning, authorized-folder scanning, and nearby sidecar lyrics/covers.
 - 👤 **Local artist grouping and detail pages**:
-  local songs are grouped by display artist automatically. Local artist pages
-  support play-all, multi-select, playlist export, and batch downloads for
-  online-source songs.
+  local songs are grouped by display artist automatically, including common
+  `feat.`, `with`, Chinese conjunction, punctuation, and slash-separated artist
+  forms. Local artist pages support play-all, multi-select, playlist export,
+  and batch downloads for online-source songs.
 - 🩷 **Local playlists and favorites**:
   built-in "My Favorite Music" and "Local Files" system playlists, plus user
   playlists with create/rename/delete/reorder/add-song support. "My Favorite
@@ -310,6 +328,10 @@ For release build and signing details, see
   NetEase songs can open artist pages with artist metadata, paged songs/albums,
   and follow/unfollow support. Followed artists appear in the Library Favorites
   artist category.
+- 🧺 **NetEase playlist detail cache**:
+  playlist detail pages cache headers and track lists. Reopening a playlist can
+  show local data first, and network or parse failures can fall back to the last
+  successful load.
 - ☁️ **GitHub / WebDAV sync**:
   optional sync for local playlists, favorite playlists, recent plays, playback
   stats, and deletion records through `WorkManager`, stored in the user's own
@@ -334,8 +356,12 @@ For release build and signing details, see
 - ✨ **Now Playing visuals and lyrics**:
   `RuntimeShader` / GLSL fluid background, audio-reactive dynamic background,
   cover blur background, Apple Music-style lyrics, advanced lyrics, word-timed
-  lyrics, translated lyrics, lyric offset, lyric editing, font scaling,
-  lyric-aware haptics, and a full Lyrics page.
+  lyrics, translated lyrics, lyric offset, phonetic display, long-press lyric
+  sharing, lyric card generation, lyric editing, font scaling, lyric-aware
+  haptics, and a full Lyrics page.
+- 👆 **Mini Player gestures**:
+  the bottom Mini Player supports horizontal swipe for previous/next while
+  keeping tap-to-expand and play/pause controls.
 - 🪟 **Floating and status-bar lyrics**:
   system overlay lyrics with customizable color, outline, font size, position,
   alignment, and translation display, plus Meizu status-bar lyrics for select
@@ -419,7 +445,7 @@ For release build and signing details, see
 - `Home` is displayed dynamically based on available Home cards. `Debug` appears
   only after enabling developer mode.
 - `Now Playing` is a full-screen layer above main navigation, with a persistent
-  bottom `Mini Player`.
+  bottom `Mini Player`. The Mini Player supports horizontal swipe for previous/next.
 - `Library` uses paged navigation for Local, Favorites, NetEase, YouTube Music,
   Bilibili, and the QQ Music placeholder. It also exposes Recent Plays and
   Playback Stats.
@@ -428,6 +454,9 @@ For release build and signing details, see
 - `LocalArtistDetailScreen` handles local artist pages with play-all,
   multi-select, playlist export, and batch downloads for online songs.
   `NeteaseArtistDetailScreen` handles NetEase artist songs/albums and follow state.
+- Tablet and landscape layouts constrain content width and adjust bottom control
+  areas on Now Playing, Lyrics, artist detail, and Settings pages to avoid overly
+  wide content and scattered controls.
 
 ### Playback, cache, and service
 
@@ -457,7 +486,8 @@ For release build and signing details, see
   lyrics, and track metadata.
 - **Lyrics**:
   besides platform lyrics, LRCLIB is available as an external lyrics client.
-  The player supports original lyrics, translated lyrics, word timing, and manual editing.
+  The player supports original lyrics, translated lyrics, phonetic lyrics,
+  word timing, lyric sharing, and manual editing.
 - **Lyricon integration**:
   `LyriconManager` outputs the current song, playback state, position,
   word-level lyrics, and translated lyrics to Lyricon and SuperLyric.
@@ -465,6 +495,11 @@ For release build and signing details, see
 - **Artist entry points**:
   NetEase search, Home, playlist/album detail pages, and Now Playing try to keep
   `neteaseArtists` metadata so the UI can open NetEase artist detail pages.
+- **NetEase playlist cache**:
+  `NeteasePlaylistCacheRepository` caches playlist headers, tracks, recent-track
+  signatures, and save time. `NeteaseCollectionDetailViewModel` can publish cached
+  data before refreshing the network and reuse the cache when the signature is
+  unchanged or a network/parse failure occurs.
 
 ### Local data and security
 
@@ -488,6 +523,12 @@ For release build and signing details, see
   committed into the app-managed directory or a user-selected SAF directory.
   Audio metadata is prepared before commit, and lyrics, covers, `.npmeta.json`,
   and audio tags are written after the audio file is finalized.
+- `DownloadTaskStore` persists queued work and task state. On startup,
+  `GlobalDownloadManager` waits for active/queued work to settle before restoring
+  unfinished tasks, so stale queues and new requests do not overwrite each other.
+- If completed audio can be found quickly through the download index or cached
+  snapshot, the task is settled as complete without re-fetching the stream or
+  repeatedly probing SAF storage.
 - Downloads support **automatic resume**, but the strategy depends on transport type:
   - **Direct downloads** resume through `Range: bytes=<offset>-`
   - **Chunked range downloads** resume by byte offset, mainly for YouTube flows
@@ -502,6 +543,12 @@ For release build and signing details, see
   continue after network recovery or user confirmation.
 - Manual cancellation is different from pause/resume: it cleans up working files
   and rolls back partially committed audio/sidecar artifacts.
+- Download indexes keep snapshot caches and sidecar references to reduce SAF
+  directory walks. Android SAF access is still much slower than the app-private
+  directory, so custom directories are recommended only when they are really needed.
+- `StorageUsageAnalyzer` groups storage into cleanable cache, downloaded content,
+  diagnostics, and app data. Cache cleanup removes regenerable cache/staging files,
+  not user-saved downloaded songs.
 - `LocalAudioImportManager` imports external audio, scans device music, and copies
   nearby `lrc/txt` lyrics and `cover/folder/front` images.
 - `BackupManager` supports playlist JSON export/import and diff analysis.
@@ -601,6 +648,12 @@ and community feedback. They are not fixed-date commitments.
 
 ### Shipped recently
 
+- [x] Long-press lyric selection, copy, song sharing, and lyric card generation
+- [x] Phonetic lyric display and the lyric behavior sheet
+- [x] Mini Player horizontal swipe for previous/next
+- [x] NetEase playlist detail cache with network-failure fallback
+- [x] Grouped storage usage analysis and expanded cache cleanup
+- [x] Stale download queue recovery on startup, direct settlement for completed downloads, and SAF index performance improvements
 - [x] Redesigned Library navigation with local/favorite/NetEase subcategories
 - [x] Local artist grouping and local artist detail pages
 - [x] NetEase artist details, paged songs/albums, and artist follow support
@@ -668,6 +721,14 @@ We will keep improving the project over time.
 - Downloads do not rely on the system download service. They support automatic
   resume and startup recovery, but they are not a system-level background
   downloader and do not sync downloaded media across devices.
+- Manual download cancellation removes resume checkpoints and partial artifacts.
+  Only network-policy pauses or recoverable errors keep resume state.
+- Custom SAF download directories make files easier to access externally, but
+  scanning, migration, and finalization are usually slower than the app-private directory.
+- Phonetic lyric display depends on phonetic data from the platform or embedded
+  lyrics. The toggle stays unavailable when the current lyric has no phonetics.
+- Lyric cards are written to the app cache for system sharing and can be removed
+  later through cache cleanup.
 - Bilibili mainly provides video search, favorites, collections, and audio playback.
   It is not a full video discovery client.
 - QQ Music is only a playback metadata/lyrics completion source.
