@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.viewmodel.artist
 
 import org.json.JSONArray
+import org.json.JSONObject
 
 internal fun parseNeteaseArtistSummaries(array: JSONArray?): List<NeteaseArtistSummary> {
     if (array == null) return emptyList()
@@ -14,4 +15,17 @@ internal fun parseNeteaseArtistSummaries(array: JSONArray?): List<NeteaseArtistS
         }
     }
     return artists
+}
+
+internal fun parseNeteaseArtistsFromSongJson(song: JSONObject?): List<NeteaseArtistSummary> {
+    if (song == null) return emptyList()
+    return parseNeteaseArtistSummaries(song.optJSONArray("ar"))
+        .ifEmpty { parseNeteaseArtistSummaries(song.optJSONArray("artists")) }
+}
+
+internal fun parseNeteaseArtistsFromSongDetail(raw: String): List<NeteaseArtistSummary> {
+    val root = JSONObject(raw)
+    if (root.optInt("code", -1) != 200) return emptyList()
+    val song = root.optJSONArray("songs")?.optJSONObject(0) ?: return emptyList()
+    return parseNeteaseArtistsFromSongJson(song)
 }

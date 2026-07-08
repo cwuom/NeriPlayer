@@ -43,10 +43,9 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
-import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistSummaries
+import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistsFromSongDetail
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.R
-import org.json.JSONObject
 
 data class ManualSearchState(
     val keyword: String = "",
@@ -346,13 +345,6 @@ class NowPlayingViewModel : ViewModel() {
         }
     }
 
-}
-
-private fun parseNeteaseArtistsFromSongDetail(raw: String): List<NeteaseArtistSummary> {
-    val root = JSONObject(raw)
-    if (root.optInt("code", -1) != 200) return emptyList()
-    val song = root.optJSONArray("songs")?.optJSONObject(0) ?: return emptyList()
-    return parseNeteaseArtistSummaries(song.optJSONArray("ar"))
 }
 
 internal fun buildLocalOriginalSongInfo(song: SongItem): NowPlayingViewModel.OriginalSongInfo {

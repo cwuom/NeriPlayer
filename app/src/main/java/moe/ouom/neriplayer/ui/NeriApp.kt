@@ -1269,6 +1269,29 @@ private fun NeriAppContent(
             val navController = rememberNavController()
             val backEntry by navController.currentBackStackEntryAsState()
             val currentRoute = backEntry?.destination?.route
+            fun navigateToNeteaseArtist(artist: NeteaseArtistSummary) {
+                val json = Uri.encode(Gson().toJson(artist))
+                val currentEntry = navController.currentBackStackEntry
+                val currentIsArtist =
+                    currentEntry?.destination?.route == Destinations.NeteaseArtistDetail.route
+                val currentArtist = currentEntry
+                    ?.arguments
+                    ?.getString("artistJson")
+                    ?.let {
+                        runCatching {
+                            Gson().fromJson(it, NeteaseArtistSummary::class.java)
+                        }.getOrNull()
+                    }
+                if (currentArtist?.id == artist.id) {
+                    return
+                }
+                if (currentIsArtist) {
+                    navController.popBackStack()
+                }
+                navController.navigate("netease_artist_detail/$json") {
+                    launchSingleTop = true
+                }
+            }
             LaunchedEffect(currentRoute, restoreLyricsAfterAlbumBack) {
                 if (!restoreLyricsAfterAlbumBack) {
                     lyricsAlbumRouteObserved = false
@@ -1597,6 +1620,7 @@ private fun NeriAppContent(
                                         onBack = { navController.popBackStack() },
                                         onSongClick = ::playSongsAndOpenNowPlaying,
                                         offlineMode = offlineMode,
+                                        onArtistClick = ::navigateToNeteaseArtist,
                                         onAlbumClick = { album ->
                                             val json = Uri.encode(Gson().toJson(album))
                                             navController.navigate("netease_album_detail/$json")
@@ -2568,29 +2592,7 @@ private fun NeriAppContent(
                                             restoreLyricsAfterAlbumBack = true
                                         }
                                     },
-                                    onEnterArtist = enterArtist@ { artist ->
-                                        val json = Uri.encode(Gson().toJson(artist))
-                                        val currentEntry = navController.currentBackStackEntry
-                                        val currentIsArtist =
-                                            currentEntry?.destination?.route == Destinations.NeteaseArtistDetail.route
-                                        val currentArtist = currentEntry
-                                            ?.arguments
-                                            ?.getString("artistJson")
-                                            ?.let {
-                                                runCatching {
-                                                    Gson().fromJson(it, NeteaseArtistSummary::class.java)
-                                                }.getOrNull()
-                                            }
-                                        if (currentArtist?.id == artist.id) {
-                                            return@enterArtist
-                                        }
-                                        if (currentIsArtist) {
-                                            navController.popBackStack()
-                                        }
-                                        navController.navigate("netease_artist_detail/$json") {
-                                            launchSingleTop = true
-                                        }
-                                    },
+                                    onEnterArtist = ::navigateToNeteaseArtist,
                                     lyricBlurEnabled = lyricBlurEnabled,
                                     lyricBlurAmount = lyricBlurAmount,
                                     lyricFontScale = lyricFontScale,

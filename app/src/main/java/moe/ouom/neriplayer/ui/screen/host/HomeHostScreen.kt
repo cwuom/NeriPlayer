@@ -101,6 +101,13 @@ fun HomeHostScreen(
         selected = null
     }
 
+    fun openLocalArtist(artistName: String) {
+        val currentArtistName = (selected as? HomeSelectedItem.LocalArtist)?.artistName
+        if (currentArtistName == artistName) return
+        skipDetailCloseAnimation = false
+        selected = HomeSelectedItem.LocalArtist(artistName)
+    }
+
     LaunchedEffect(selected) {
         if (selected != null) {
             skipDetailCloseAnimation = false
@@ -202,6 +209,7 @@ fun HomeHostScreen(
                             artistName = current.artistName,
                             onBack = { closeSelectedDetail() },
                             onSongClick = onSongClick,
+                            onArtistClick = ::openLocalArtist,
                             offlineMode = offlineMode
                         )
                     }

@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
 import android.app.Application
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,18 +36,24 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -81,6 +88,7 @@ fun NeteaseArtistDetailScreen(
     artist: NeteaseArtistSummary,
     onBack: () -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
+    onArtistClick: (NeteaseArtistSummary) -> Unit = {},
     onAlbumClick: (AlbumSummary) -> Unit = {},
     offlineMode: Boolean = false
 ) {
@@ -94,12 +102,43 @@ fun NeteaseArtistDetailScreen(
     )
     val ui by viewModel.uiState.collectAsState()
     var selectedTab by rememberSaveable(artist.id) { mutableIntStateOf(0) }
+    var artistPickerCandidates by remember(artist.id) {
+        mutableStateOf<List<NeteaseArtistSummary>>(emptyList())
+    }
+    var resolvingArtistSongId by remember(artist.id) { mutableStateOf<Long?>(null) }
     val listState = rememberSaveable(artist.id, saver = LazyListState.Saver) {
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
 
     LaunchedEffect(artist.id) {
         viewModel.start(artist)
+    }
+
+    fun openArtistCandidates(artists: List<NeteaseArtistSummary>) {
+        val distinctArtists = artists
+            .filter { candidate -> candidate.id > 0L && candidate.name.isNotBlank() }
+            .distinctBy { candidate -> candidate.id }
+        when (distinctArtists.size) {
+            0 -> Unit
+            1 -> onArtistClick(distinctArtists.first())
+            else -> artistPickerCandidates = distinctArtists
+        }
+    }
+
+    fun openSongArtists(song: SongItem) {
+        if (resolvingArtistSongId == song.id) return
+        resolvingArtistSongId = song.id
+        viewModel.resolveSongArtists(
+            song = song,
+            onResult = { artists ->
+                resolvingArtistSongId = null
+                openArtistCandidates(artists)
+            },
+            onError = {
+                resolvingArtistSongId = null
+                openArtistCandidates(song.neteaseArtists.orEmpty())
+            }
+        )
     }
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
@@ -134,8 +173,20 @@ fun NeteaseArtistDetailScreen(
                 onLoadMoreSongs = viewModel::loadMoreSongs,
                 onLoadMoreAlbums = viewModel::loadMoreAlbums,
                 onSongClick = onSongClick,
+                onSongArtistClick = ::openSongArtists,
                 onAlbumClick = onAlbumClick,
                 offlineMode = offlineMode
+            )
+        }
+
+        if (artistPickerCandidates.isNotEmpty()) {
+            NeteaseArtistPickerSheet(
+                artists = artistPickerCandidates,
+                onDismiss = { artistPickerCandidates = emptyList() },
+                onSelect = { selectedArtist ->
+                    artistPickerCandidates = emptyList()
+                    onArtistClick(selectedArtist)
+                }
             )
         }
     }
@@ -153,6 +204,7 @@ private fun ArtistContent(
     onLoadMoreSongs: () -> Unit,
     onLoadMoreAlbums: () -> Unit,
     onSongClick: (List<SongItem>, Int) -> Unit,
+    onSongArtistClick: (SongItem) -> Unit,
     onAlbumClick: (AlbumSummary) -> Unit,
     offlineMode: Boolean
 ) {
@@ -242,6 +294,7 @@ private fun ArtistContent(
                         index = index + 1,
                         song = song,
                         onClick = { onSongClick(ui.songs, index) },
+                        onArtistClick = { onSongArtistClick(song) },
                         offlineMode = offlineMode
                     )
                 }
@@ -273,6 +326,40 @@ private fun ArtistContent(
                         onClick = onLoadMoreAlbums
                     )
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NeteaseArtistPickerSheet(
+    artists: List<NeteaseArtistSummary>,
+    onDismiss: () -> Unit,
+    onSelect: (NeteaseArtistSummary) -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(bottom = 16.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.artist_choose_title),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
+            )
+            artists.forEach { artist ->
+                ListItem(
+                    headlineContent = { Text(artist.name) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    modifier = Modifier.clickable { onSelect(artist) }
+                )
             }
         }
     }

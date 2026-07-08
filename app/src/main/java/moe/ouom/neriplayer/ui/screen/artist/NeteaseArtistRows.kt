@@ -46,10 +46,15 @@ internal fun ArtistSongRow(
     index: Int,
     song: SongItem,
     onClick: () -> Unit,
+    onArtistClick: (() -> Unit)? = null,
     offlineMode: Boolean = false
 ) {
     val context = LocalContext.current
     val coverUrl = rememberSongDisplayCoverUrl(song)
+    val displayArtist = song.displayArtist().takeIf { it.isNotBlank() }
+    val displayAlbum = song.displayAlbum(context)
+        .replace("Netease", "")
+        .takeIf { it.isNotBlank() }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -88,17 +93,10 @@ internal fun ArtistSongRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Text(
-                text = listOfNotNull(
-                    song.displayArtist().takeIf { it.isNotBlank() },
-                    song.displayAlbum(context)
-                        .replace("Netease", "")
-                        .takeIf { it.isNotBlank() }
-                ).joinToString(" · "),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+            ArtistSongSubtitle(
+                artist = displayArtist,
+                album = displayAlbum,
+                onArtistClick = onArtistClick
             )
         }
         Text(
@@ -106,6 +104,52 @@ internal fun ArtistSongRow(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+@Composable
+private fun ArtistSongSubtitle(
+    artist: String?,
+    album: String?,
+    onArtistClick: (() -> Unit)?
+) {
+    if (artist == null && album == null) return
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (artist != null) {
+            Text(
+                text = artist,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (onArtistClick == null) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .then(
+                        if (onArtistClick == null) {
+                            Modifier
+                        } else {
+                            Modifier.clickable(onClick = onArtistClick)
+                        }
+                    )
+            )
+        }
+        if (album != null) {
+            Text(
+                text = if (artist == null) album else " · $album",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 

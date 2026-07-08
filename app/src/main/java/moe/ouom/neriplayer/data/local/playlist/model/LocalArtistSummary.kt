@@ -43,16 +43,26 @@ fun buildLocalArtistSummaries(
         .flatMap { it.songs }
         .distinctBy { it.identity() }
 
-    if (sourceSongs.isEmpty()) return emptyList()
+    return buildLocalArtistSummaries(
+        songs = sourceSongs,
+        unknownArtist = context.getString(R.string.music_unknown_artist)
+    )
+}
 
-    val unknownArtist = context.getString(R.string.music_unknown_artist)
+internal fun buildLocalArtistSummaries(
+    songs: List<SongItem>,
+    unknownArtist: String
+): List<LocalArtistSummary> {
+    if (songs.isEmpty()) return emptyList()
+
     val groups = linkedMapOf<String, MutableLocalArtistGroup>()
-    sourceSongs.forEach { song ->
-        val artistName = song.displayArtist().trim().ifBlank { unknownArtist }
-        val key = localArtistStableKey(artistName)
-        groups.getOrPut(key) { MutableLocalArtistGroup(artistName) }
-            .songs
-            .add(song)
+    songs.forEach { song ->
+        localArtistNamesForSong(song, unknownArtist).forEach { artistName ->
+            val key = localArtistStableKey(artistName)
+            groups.getOrPut(key) { MutableLocalArtistGroup(artistName) }
+                .songs
+                .add(song)
+        }
     }
 
     return groups.values
@@ -66,10 +76,82 @@ fun buildLocalArtistSummaries(
         )
 }
 
+internal fun splitLocalArtistNames(
+    rawArtist: String,
+    unknownArtist: String
+): List<String> {
+    return rawArtist
+        .split(LOCAL_ARTIST_TEXT_SPLIT_PATTERN)
+        .flatMap(::splitSlashSeparatedLocalArtists)
+        .map { artist -> artist.trim() }
+        .filter { artist -> artist.isNotBlank() }
+        .distinctBy { artist -> localArtistStableKey(artist) }
+        .ifEmpty { listOf(unknownArtist) }
+}
+
+private fun localArtistNamesForSong(
+    song: SongItem,
+    unknownArtist: String
+): List<String> {
+    song.customArtist?.takeIf { it.isNotBlank() }?.let { customArtist ->
+        return splitLocalArtistNames(customArtist, unknownArtist)
+    }
+
+    val structuredArtists = song.neteaseArtists.orEmpty()
+        .map { artist -> artist.name.trim() }
+        .filter { artist -> artist.isNotBlank() }
+        .distinctBy { artist -> localArtistStableKey(artist) }
+    if (structuredArtists.isNotEmpty()) {
+        return structuredArtists
+    }
+
+    return splitLocalArtistNames(song.displayArtist(), unknownArtist)
+}
+
 private class MutableLocalArtistGroup(
     val name: String,
     val songs: MutableList<SongItem> = mutableListOf()
 )
+
+private fun splitSlashSeparatedLocalArtists(rawArtist: String): List<String> {
+    val artist = rawArtist.trim()
+    if (artist.isBlank()) return emptyList()
+
+    val spacedParts = SPACED_SLASH_SPLIT_PATTERN.split(artist)
+    if (spacedParts.size > 1) {
+        return spacedParts.flatMap(::splitCompactSlashSeparatedLocalArtists)
+    }
+
+    return splitCompactSlashSeparatedLocalArtists(artist)
+}
+
+private fun splitCompactSlashSeparatedLocalArtists(rawArtist: String): List<String> {
+    val artist = rawArtist.trim()
+    if (artist.isBlank()) return emptyList()
+    val slashParts = artist.split('/', '／')
+    if (slashParts.size <= 1 || shouldKeepCompactSlashArtistName(slashParts)) {
+        return listOf(artist)
+    }
+    return slashParts
+}
+
+private fun shouldKeepCompactSlashArtistName(parts: List<String>): Boolean {
+    if (parts.size != 2) return false
+    return parts.all { part -> part.trim().isShortUpperAsciiArtistToken() }
+}
+
+private fun String.isShortUpperAsciiArtistToken(): Boolean {
+    val token = trim()
+    return token.length in 1..4 &&
+        token.all { char -> char in 'A'..'Z' || char in '0'..'9' }
+}
+
+private val LOCAL_ARTIST_TEXT_SPLIT_PATTERN = Regex(
+    pattern = """\s+(?:feat\.?|ft\.?|with|和|与)\s+|[\u0000;；、，]""",
+    option = RegexOption.IGNORE_CASE
+)
+
+private val SPACED_SLASH_SPLIT_PATTERN = Regex("""\s+[/／]\s+""")
 
 private const val FNV_64_OFFSET_BASIS = -3750763034362895579L
 private const val FNV_64_PRIME = 1099511628211L

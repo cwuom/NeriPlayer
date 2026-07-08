@@ -130,6 +130,20 @@ fun LibraryHostScreen(
         }
     }
 
+    fun openNeteaseArtist(artist: NeteaseArtistSummary) {
+        val currentArtist = (selected as? LibrarySelectedItem.NeteaseArtist)?.artist
+        if (currentArtist?.id == artist.id) return
+        skipDetailCloseAnimation = false
+        selected = LibrarySelectedItem.NeteaseArtist(artist)
+    }
+
+    fun openLocalArtist(artistName: String) {
+        val currentArtistName = (selected as? LibrarySelectedItem.LocalArtist)?.artistName
+        if (currentArtistName == artistName) return
+        skipDetailCloseAnimation = false
+        selected = LibrarySelectedItem.LocalArtist(artistName)
+    }
+
     fun closeDeletedLocalPlaylist() {
         skipDetailCloseAnimation = true
         selected = null
@@ -284,8 +298,7 @@ fun LibraryHostScreen(
                             )
                         },
                         onNeteaseArtistClick = { artist ->
-                            skipDetailCloseAnimation = false
-                            selected = LibrarySelectedItem.NeteaseArtist(artist)
+                            openNeteaseArtist(artist)
                         },
                         onYouTubeMusicPlaylistClick = { playlist ->
                             skipDetailCloseAnimation = false
@@ -335,6 +348,7 @@ fun LibraryHostScreen(
                             artistName = current.artistName,
                             onBack = { closeSelectedDetail() },
                             onSongClick = onSongClick,
+                            onArtistClick = ::openLocalArtist,
                             offlineMode = offlineMode
                         )
                     }
@@ -364,6 +378,7 @@ fun LibraryHostScreen(
                                 onBack = { selected = null },
                                 onSongClick = onSongClick,
                                 offlineMode = offlineMode,
+                                onArtistClick = ::openNeteaseArtist,
                                 onAlbumClick = { album ->
                                     selected = LibrarySelectedItem.NeteaseArtistAlbum(current.artist, album)
                                 }

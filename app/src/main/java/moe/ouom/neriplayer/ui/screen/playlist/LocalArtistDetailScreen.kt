@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.ui.screen.playlist
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,10 +15,12 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,18 +33,21 @@ import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.DownloadDone
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -70,6 +76,7 @@ import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
 import moe.ouom.neriplayer.data.local.playlist.model.buildLocalArtistSummaries
 import moe.ouom.neriplayer.data.local.playlist.model.localArtistStableId
 import moe.ouom.neriplayer.data.local.playlist.model.localArtistStableKey
@@ -82,6 +89,7 @@ import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.PlaylistExportSheet
+import moe.ouom.neriplayer.ui.component.SongDownloadSubtitle
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticIconButton
@@ -100,14 +108,18 @@ fun LocalArtistDetailScreen(
     artistName: String,
     onBack: () -> Unit,
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
+    onArtistClick: ((String) -> Unit)? = null,
     offlineMode: Boolean = false
 ) {
     val context = LocalContext.current
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val playlists by repo.playlists.collectAsState()
     val artistKey = remember(artistName) { localArtistStableKey(artistName) }
-    val artist = remember(playlists, artistKey, context) {
-        buildLocalArtistSummaries(playlists, context).firstOrNull { it.stableKey == artistKey }
+    val localArtists = remember(playlists, context) {
+        buildLocalArtistSummaries(playlists, context)
+    }
+    val artist = remember(localArtists, artistKey) {
+        localArtists.firstOrNull { it.stableKey == artistKey }
     }
     val songs = artist?.songs.orEmpty()
     val displayedSongs = remember(songs) { songs.asReversed() }
@@ -119,6 +131,9 @@ fun LocalArtistDetailScreen(
     var selectedKeys by remember(artistKey) { mutableStateOf<Set<String>>(emptySet()) }
     var showExportSheet by remember(artistKey) { mutableStateOf(false) }
     var showDownloadManager by remember(artistKey) { mutableStateOf(false) }
+    var artistPickerCandidates by remember(artistKey) {
+        mutableStateOf<List<LocalArtistSummary>>(emptyList())
+    }
     val downloadTaskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
     val hasDownloadManagerEntry = downloadTaskSummary.hasPendingTasks
     val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
@@ -143,6 +158,25 @@ fun LocalArtistDetailScreen(
     fun exitSelectionMode() {
         selectionMode = false
         selectedKeys = emptySet()
+    }
+
+    fun openLocalArtistCandidates(song: SongItem) {
+        val navigate = onArtistClick ?: return
+        val songKey = song.stableKey()
+        val candidates = localArtists
+            .filter { candidate ->
+                candidate.songs.any { candidateSong -> candidateSong.stableKey() == songKey }
+            }
+            .distinctBy { candidate -> candidate.stableKey }
+        when (candidates.size) {
+            0 -> Unit
+            1 -> {
+                if (candidates.first().stableKey != artistKey) {
+                    navigate(candidates.first().name)
+                }
+            }
+            else -> artistPickerCandidates = candidates
+        }
     }
 
     LaunchedEffect(displayedSongs) {
@@ -372,6 +406,11 @@ fun LocalArtistDetailScreen(
                             }
                         },
                         onToggleSelect = { toggleSelect(song) },
+                        onArtistClick = {
+                            if (!selectionMode) {
+                                openLocalArtistCandidates(song)
+                            }
+                        },
                         offlineMode = offlineMode
                     )
                 }
@@ -427,6 +466,20 @@ fun LocalArtistDetailScreen(
                     )
                 },
                 onDismiss = { showDownloadManager = false }
+            )
+        }
+
+        if (artistPickerCandidates.isNotEmpty()) {
+            LocalArtistPickerSheet(
+                artists = artistPickerCandidates,
+                currentArtistKey = artistKey,
+                onDismiss = { artistPickerCandidates = emptyList() },
+                onSelect = { selectedArtist ->
+                    artistPickerCandidates = emptyList()
+                    if (selectedArtist.stableKey != artistKey) {
+                        onArtistClick?.invoke(selectedArtist.name)
+                    }
+                }
             )
         }
 
@@ -521,6 +574,7 @@ private fun LocalArtistSongRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onToggleSelect: () -> Unit,
+    onArtistClick: () -> Unit,
     offlineMode: Boolean
 ) {
     val context = LocalContext.current
@@ -587,33 +641,63 @@ private fun LocalArtistSongRow(
         Spacer(Modifier.width(12.dp))
 
         Column(Modifier.weight(1f)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = song.displayName(),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-                if (downloaded) {
-                    Icon(
-                        imageVector = Icons.Outlined.DownloadDone,
-                        contentDescription = stringResource(R.string.downloaded),
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
             Text(
-                text = song.displayArtist(),
+                text = song.displayName(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = MaterialTheme.typography.titleMedium
             )
+            SongDownloadSubtitle(
+                text = song.displayArtist(),
+                downloaded = downloaded,
+                modifier = Modifier.clickable(onClick = onArtistClick)
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LocalArtistPickerSheet(
+    artists: List<LocalArtistSummary>,
+    currentArtistKey: String,
+    onDismiss: () -> Unit,
+    onSelect: (LocalArtistSummary) -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(bottom = 16.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.artist_choose_title),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
+            )
+            artists.forEach { artist ->
+                ListItem(
+                    headlineContent = { Text(artist.name) },
+                    supportingContent = {
+                        Text(
+                            pluralStringResource(
+                                R.plurals.artist_song_count,
+                                artist.songs.size,
+                                artist.songs.size
+                            )
+                        )
+                    },
+                    colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                    modifier = Modifier.clickable(enabled = artist.stableKey != currentArtistKey) {
+                        onSelect(artist)
+                    }
+                )
+            }
         }
     }
 }

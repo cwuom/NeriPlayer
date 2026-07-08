@@ -118,6 +118,41 @@ class NeteaseArtistDetailViewModel(application: Application) : AndroidViewModel(
         start(NeteaseArtistSummary(header.id, header.name), forceRefresh = true)
     }
 
+    fun resolveSongArtists(
+        song: SongItem,
+        onResult: (List<NeteaseArtistSummary>) -> Unit,
+        onError: (Throwable) -> Unit = {}
+    ) {
+        val cachedArtists = song.neteaseArtists.orEmpty()
+            .filter { artist -> artist.id > 0L && artist.name.isNotBlank() }
+            .distinctBy { artist -> artist.id }
+        if (cachedArtists.isNotEmpty()) {
+            onResult(cachedArtists)
+            return
+        }
+
+        val songId = song.matchedSongId?.toLongOrNull()?.takeIf { it > 0L }
+            ?: song.audioId?.toLongOrNull()?.takeIf { it > 0L }
+            ?: song.id.takeIf { it > 0L }
+        if (songId == null) {
+            onResult(emptyList())
+            return
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    parseNeteaseArtistsFromSongDetail(client.getSongDetail(listOf(songId)))
+                }
+            }.onSuccess { artists ->
+                onResult(artists)
+            }.onFailure { error ->
+                NPLogger.e(TAG, "resolve song artists failed", error)
+                onError(error)
+            }
+        }
+    }
+
     private fun shouldKeepCurrentArtist(summaryId: Long): Boolean {
         val current = _uiState.value
         return artistId == summaryId && current.header?.id == summaryId
@@ -314,7 +349,7 @@ class NeteaseArtistDetailViewModel(application: Application) : AndroidViewModel(
         val name = song.optString("name", "")
         if (id <= 0L || name.isBlank()) return null
 
-        val artists = parseNeteaseArtistSummaries(song.optJSONArray("ar"))
+        val artists = parseNeteaseArtistsFromSongJson(song)
         val album = song.optJSONObject("al") ?: song.optJSONObject("album")
         val albumName = album?.optString("name", "").orEmpty()
         val cover = toHttps(album?.optString("picUrl", ""))
