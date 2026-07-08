@@ -46,7 +46,6 @@ internal fun ArtistSongRow(
     index: Int,
     song: SongItem,
     onClick: () -> Unit,
-    onArtistClick: (() -> Unit)? = null,
     offlineMode: Boolean = false
 ) {
     val context = LocalContext.current
@@ -95,8 +94,7 @@ internal fun ArtistSongRow(
             )
             ArtistSongSubtitle(
                 artist = displayArtist,
-                album = displayAlbum,
-                onArtistClick = onArtistClick
+                album = displayAlbum
             )
         }
         Text(
@@ -110,8 +108,7 @@ internal fun ArtistSongRow(
 @Composable
 private fun ArtistSongSubtitle(
     artist: String?,
-    album: String?,
-    onArtistClick: (() -> Unit)?
+    album: String?
 ) {
     if (artist == null && album == null) return
 
@@ -123,22 +120,10 @@ private fun ArtistSongSubtitle(
             Text(
                 text = artist,
                 style = MaterialTheme.typography.bodySmall,
-                color = if (onArtistClick == null) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.primary
-                },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .weight(1f, fill = false)
-                    .then(
-                        if (onArtistClick == null) {
-                            Modifier
-                        } else {
-                            Modifier.clickable(onClick = onArtistClick)
-                        }
-                    )
+                modifier = Modifier.weight(1f, fill = false)
             )
         }
         if (album != null) {

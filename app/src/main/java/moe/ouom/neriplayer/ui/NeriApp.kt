@@ -1001,7 +1001,9 @@ private fun NeriAppContent(
             return@LaunchedEffect
         }
         val cachedSample = CoverArtColorCache.peek(displayCoverUrl)
-        coverSeedHex = cachedSample?.seedHex
+        if (cachedSample != null) {
+            coverSeedHex = cachedSample.seedHex
+        }
 
         if (showNowPlaying && isRemoteImageSource(displayCoverUrl)) {
             coverArtImageLoader.enqueue(
@@ -1024,7 +1026,9 @@ private fun NeriAppContent(
             delay(warmupDelayMillis)
         }
 
-        coverSeedHex = CoverArtColorCache.preload(context, displayCoverUrl, offlineMode)?.seedHex ?: coverSeedHex
+        CoverArtColorCache.preload(context, displayCoverUrl, offlineMode)?.let { sample ->
+            coverSeedHex = sample.seedHex
+        }
     }
 
     // 同步触感反馈设置
@@ -1620,7 +1624,6 @@ private fun NeriAppContent(
                                         onBack = { navController.popBackStack() },
                                         onSongClick = ::playSongsAndOpenNowPlaying,
                                         offlineMode = offlineMode,
-                                        onArtistClick = ::navigateToNeteaseArtist,
                                         onAlbumClick = { album ->
                                             val json = Uri.encode(Gson().toJson(album))
                                             navController.navigate("netease_album_detail/$json")
@@ -2307,6 +2310,8 @@ private fun NeriAppContent(
                                     isPlaying = isPlaybackControlPlaying,
                                     modifier = Modifier,
                                     onPlayPause = { PlayerManager.togglePlayPause() },
+                                    onPrevious = { PlayerManager.previous() },
+                                    onNext = { PlayerManager.next() },
                                     onExpand = { showNowPlaying = true },
                                     hazeState = hazeState,
                                     enableHaze = effectiveAdvancedBlurEnabled,
