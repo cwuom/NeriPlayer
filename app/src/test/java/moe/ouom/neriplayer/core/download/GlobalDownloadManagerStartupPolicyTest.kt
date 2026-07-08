@@ -51,6 +51,60 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `startup managed cleanup is deferred only for available SAF trees`() {
+        assertTrue(
+            shouldDeferStartupManagedCleanup(
+                configuredDirectoryUri = "content://com.android.externalstorage.documents/tree/primary%3AMusic",
+                treeRootAvailable = true
+            )
+        )
+        assertFalse(
+            shouldDeferStartupManagedCleanup(
+                configuredDirectoryUri = null,
+                treeRootAvailable = true
+            )
+        )
+        assertFalse(
+            shouldDeferStartupManagedCleanup(
+                configuredDirectoryUri = "content://com.android.externalstorage.documents/tree/primary%3AMusic",
+                treeRootAvailable = false
+            )
+        )
+    }
+
+    @Test
+    fun `cancel cleanup survives invalidated generation until a new request takes over`() {
+        assertTrue(
+            shouldKeepCancellationCleanup(
+                currentGeneration = 10L,
+                cancellationGeneration = 10L,
+                cancelled = true
+            )
+        )
+        assertTrue(
+            shouldKeepCancellationCleanup(
+                currentGeneration = null,
+                cancellationGeneration = 10L,
+                cancelled = true
+            )
+        )
+        assertFalse(
+            shouldKeepCancellationCleanup(
+                currentGeneration = 11L,
+                cancellationGeneration = 10L,
+                cancelled = true
+            )
+        )
+        assertFalse(
+            shouldKeepCancellationCleanup(
+                currentGeneration = null,
+                cancellationGeneration = 10L,
+                cancelled = false
+            )
+        )
+    }
+
+    @Test
     fun `downloaded song catalog keeps lightweight list fields in json cache`() {
         val song = DownloadedSong(
             id = 42L,

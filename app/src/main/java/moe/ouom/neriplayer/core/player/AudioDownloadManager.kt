@@ -165,8 +165,6 @@ object AudioDownloadManager {
     private val lastPublishedProgressBySongKey = mutableMapOf<String, PublishedProgressState>()
     private val completedAudioReferencesBySongKey =
         ConcurrentHashMap<String, ManagedDownloadStorage.StoredEntry>()
-    private val completedSidecarReferencesBySongKey =
-        ConcurrentHashMap<String, DownloadedSidecarReferences>()
     private val partialSidecarReferencesBySongKey =
         ConcurrentHashMap<String, DownloadedSidecarReferences>()
     private val sharedCoverReferencesByLookupKey = ConcurrentHashMap<String, String>()
@@ -789,12 +787,6 @@ object AudioDownloadManager {
         }
     }
 
-    internal fun consumeCompletedSidecarReferences(
-        songKey: String
-    ): DownloadedSidecarReferences? {
-        return completedSidecarReferencesBySongKey.remove(songKey)
-    }
-
     internal fun consumeCompletedAudioReference(
         songKey: String
     ): ManagedDownloadStorage.StoredEntry? {
@@ -814,17 +806,6 @@ object AudioDownloadManager {
         completedAudioReferencesBySongKey[songKey] = storedAudio
     }
 
-    private fun rememberCompletedSidecarReferences(
-        songKey: String,
-        sidecarReferences: DownloadedSidecarReferences
-    ) {
-        if (sidecarReferences.isEmpty) {
-            completedSidecarReferencesBySongKey.remove(songKey)
-            return
-        }
-        completedSidecarReferencesBySongKey[songKey] = sidecarReferences
-    }
-
     private fun rememberPartialSidecarReferences(
         songKey: String,
         sidecarReferences: DownloadedSidecarReferences
@@ -840,10 +821,6 @@ object AudioDownloadManager {
 
     private fun clearCompletedAudioReference(songKey: String) {
         completedAudioReferencesBySongKey.remove(songKey)
-    }
-
-    private fun clearCompletedSidecarReferences(songKey: String) {
-        completedSidecarReferencesBySongKey.remove(songKey)
     }
 
     private fun clearPartialSidecarReferences(songKey: String) {
@@ -908,15 +885,45 @@ object AudioDownloadManager {
     ): DownloadedSidecarReferences {
         return DownloadedSidecarReferences(
             coverReference = incoming?.coverReference ?: existing?.coverReference,
-            createdCover = incoming?.coverReference?.let { incoming.createdCover } ?: (existing?.createdCover ?: false),
+            createdCover = mergeSidecarCreatedFlag(
+                existingReference = existing?.coverReference,
+                existingCreated = existing?.createdCover ?: false,
+                incomingReference = incoming?.coverReference,
+                incomingCreated = incoming?.createdCover ?: false
+            ),
             lyricReference = incoming?.lyricReference ?: existing?.lyricReference,
-            createdLyric = incoming?.lyricReference?.let { incoming.createdLyric } ?: (existing?.createdLyric ?: false),
+            createdLyric = mergeSidecarCreatedFlag(
+                existingReference = existing?.lyricReference,
+                existingCreated = existing?.createdLyric ?: false,
+                incomingReference = incoming?.lyricReference,
+                incomingCreated = incoming?.createdLyric ?: false
+            ),
             translatedLyricReference = incoming?.translatedLyricReference
                 ?: existing?.translatedLyricReference,
-            createdTranslatedLyric = incoming?.translatedLyricReference
-                ?.let { incoming.createdTranslatedLyric }
-                ?: (existing?.createdTranslatedLyric ?: false)
+            createdTranslatedLyric = mergeSidecarCreatedFlag(
+                existingReference = existing?.translatedLyricReference,
+                existingCreated = existing?.createdTranslatedLyric ?: false,
+                incomingReference = incoming?.translatedLyricReference,
+                incomingCreated = incoming?.createdTranslatedLyric ?: false
+            )
         )
+    }
+
+    private fun mergeSidecarCreatedFlag(
+        existingReference: String?,
+        existingCreated: Boolean,
+        incomingReference: String?,
+        incomingCreated: Boolean
+    ): Boolean {
+        val incoming = incomingReference?.takeIf(String::isNotBlank)
+            ?: return existingCreated
+        val existing = existingReference?.takeIf(String::isNotBlank)
+            ?: return incomingCreated
+        return if (incoming == existing) {
+            existingCreated || incomingCreated
+        } else {
+            incomingCreated
+        }
     }
 
     private fun publishFinalizingProgress(
@@ -969,13 +976,19 @@ object AudioDownloadManager {
         songKey: String,
         stage: String,
         batchSessionId: Long? = null,
-        attemptId: Long? = null
+        attemptId: Long? = null,
+        requireActiveAttempt: Boolean = true
     ) {
+        val attemptAllowsWork = if (requireActiveAttempt) {
+            GlobalDownloadManager.isDownloadAttemptActive(songKey, attemptId)
+        } else {
+            attemptId == null || GlobalDownloadManager.isDownloadAttemptCurrent(songKey, attemptId)
+        }
         if (
             !_isCancelled.value &&
             isBatchSessionCurrent(batchSessionId) &&
             !GlobalDownloadManager.isSongCancelled(songKey) &&
-            GlobalDownloadManager.isDownloadAttemptActive(songKey, attemptId)
+            attemptAllowsWork
         ) {
             return
         }
@@ -997,7 +1010,6 @@ object AudioDownloadManager {
                 var tempFile: File? = null
                 beginSongDownloadOperation(songKey)
                 clearCompletedAudioReference(songKey)
-                clearCompletedSidecarReferences(songKey)
                 clearPartialSidecarReferences(songKey)
                 try {
                     ensureSongDownloadNotCancelled(songKey, "prepare", batchSessionId, attemptId)
@@ -1207,25 +1219,11 @@ object AudioDownloadManager {
                             )
                             NPLogger.d(
                                 TAG,
-                                "音频落盘完成，开始写入 sidecar: song=${song.name}, audioFile=${storedAudio.name}, baseName=${storedAudio.nameWithoutExtension}"
+                                "音频落盘完成，sidecar 转入后台整理: song=${song.name}, audioFile=${storedAudio.name}"
                             )
-                            val sidecarReferences = downloadSidecars(
-                                context = context,
-                                song = song,
-                                songKey = songKey,
-                                baseName = storedAudio.nameWithoutExtension,
-                                storedAudio = storedAudio,
-                                batchSessionId = batchSessionId,
-                                attemptId = attemptId
-                            )
-                            ensureSongDownloadNotCancelled(songKey, "sidecar_completed", batchSessionId, attemptId)
                             rememberCompletedAudioReference(songKey, storedAudio)
-                            rememberCompletedSidecarReferences(songKey, sidecarReferences)
 
                             _progressFlow.value = null
-                            try {
-                                context.contentResolver.openInputStream(storedAudio.playbackUri.toUri())?.close()
-                            } catch (_: Exception) { }
                             clearPartialSidecarReferences(songKey)
                             return@withContext
                         } catch (error: Exception) {
@@ -1270,7 +1268,6 @@ object AudioDownloadManager {
                                 if (!preserveArtifacts) {
                                     clearSongCancelled(songKey)
                                 }
-                                clearCompletedSidecarReferences(songKey)
                                 clearCompletedAudioReference(songKey)
                                 clearPartialSidecarReferences(songKey)
                                 throw java.util.concurrent.CancellationException(
@@ -1278,7 +1275,6 @@ object AudioDownloadManager {
                                 )
                             }
 
-                            clearCompletedSidecarReferences(songKey)
                             clearPartialSidecarReferences(songKey)
                             if (
                                 storedAudio == null &&
@@ -1375,7 +1371,6 @@ object AudioDownloadManager {
                         if (!preserveArtifacts) {
                             clearSongCancelled(songKey)
                         }
-                        clearCompletedSidecarReferences(songKey)
                         clearCompletedAudioReference(songKey)
                         clearPartialSidecarReferences(songKey)
                         throw java.util.concurrent.CancellationException(
@@ -1385,7 +1380,6 @@ object AudioDownloadManager {
                     NPLogger.e(TAG, "下载失败: ${song.name}, 错误: ${e.javaClass.simpleName} - ${e.message}", e)
                     deleteWorkingFile(tempFile)
                     _progressFlow.value = null
-                    clearCompletedSidecarReferences(songKey)
                     clearCompletedAudioReference(songKey)
                     clearPartialSidecarReferences(songKey)
                     throw e  // 重新抛出异常，让调用方知道下载失败
@@ -1395,6 +1389,35 @@ object AudioDownloadManager {
                 }
             }
         }
+    }
+
+    internal suspend fun downloadSidecarsForCompletedAudio(
+        context: Context,
+        song: SongItem,
+        storedAudio: ManagedDownloadStorage.StoredEntry
+    ): DownloadedSidecarReferences = withContext(Dispatchers.IO) {
+        val songKey = song.stableKey()
+        clearPartialSidecarReferences(songKey)
+        val downloadedReferences = runCatching {
+            downloadSidecars(
+                context = context,
+                song = song,
+                songKey = songKey,
+                baseName = storedAudio.nameWithoutExtension,
+                storedAudio = storedAudio,
+                requireActiveAttempt = false
+            )
+        }.getOrElse { error ->
+            if (error is java.util.concurrent.CancellationException) {
+                NPLogger.d(TAG, "后台 sidecar 整理已取消: ${song.name}")
+            } else {
+                NPLogger.w(TAG, "后台 sidecar 整理失败: ${song.name} - ${error.message}")
+            }
+            DownloadedSidecarReferences()
+        }
+        val createdReferences = consumePartialSidecarReferences(songKey)
+            ?.retainCreatedOnly()
+        mergeDownloadedSidecarReferences(downloadedReferences, createdReferences)
     }
 
     private suspend fun <T> withConfiguredDownloadPermit(
@@ -1442,18 +1465,26 @@ object AudioDownloadManager {
         baseName: String,
         storedAudio: ManagedDownloadStorage.StoredEntry,
         batchSessionId: Long? = null,
-        attemptId: Long? = null
+        attemptId: Long? = null,
+        requireActiveAttempt: Boolean = true
     ): DownloadedSidecarReferences {
-        ensureSongDownloadNotCancelled(songKey, "sidecar_prepare", batchSessionId, attemptId)
+        ensureSongDownloadNotCancelled(
+            songKey = songKey,
+            stage = "sidecar_prepare",
+            batchSessionId = batchSessionId,
+            attemptId = attemptId,
+            requireActiveAttempt = requireActiveAttempt
+        )
         val useSequentialSidecarWrites = ManagedDownloadStorage.usesDocumentTree(context)
-        return if (useSequentialSidecarWrites) {
+        val references = if (useSequentialSidecarWrites) {
             val lyricReferences = downloadLyrics(
                 context = context,
                 song = song,
                 songKey = songKey,
                 baseName = baseName,
                 batchSessionId = batchSessionId,
-                attemptId = attemptId
+                attemptId = attemptId,
+                requireActiveAttempt = requireActiveAttempt
             )
             val coverReference = cacheCover(
                 context = context,
@@ -1462,7 +1493,8 @@ object AudioDownloadManager {
                 baseName = baseName,
                 storedAudio = storedAudio,
                 batchSessionId = batchSessionId,
-                attemptId = attemptId
+                attemptId = attemptId,
+                requireActiveAttempt = requireActiveAttempt
             )
             DownloadedSidecarReferences(
                 coverReference = coverReference,
@@ -1472,10 +1504,27 @@ object AudioDownloadManager {
         } else {
             coroutineScope {
                 val lyricJob = async {
-                    downloadLyrics(context, song, songKey, baseName, batchSessionId, attemptId)
+                    downloadLyrics(
+                        context = context,
+                        song = song,
+                        songKey = songKey,
+                        baseName = baseName,
+                        batchSessionId = batchSessionId,
+                        attemptId = attemptId,
+                        requireActiveAttempt = requireActiveAttempt
+                    )
                 }
                 val coverJob = async {
-                    cacheCover(context, song, songKey, baseName, storedAudio, batchSessionId, attemptId)
+                    cacheCover(
+                        context = context,
+                        song = song,
+                        songKey = songKey,
+                        baseName = baseName,
+                        storedAudio = storedAudio,
+                        batchSessionId = batchSessionId,
+                        attemptId = attemptId,
+                        requireActiveAttempt = requireActiveAttempt
+                    )
                 }
                 val lyricReferences = lyricJob.await()
                 val coverReference = coverJob.await()
@@ -1486,6 +1535,10 @@ object AudioDownloadManager {
                 )
             }
         }
+        return mergeDownloadedSidecarReferences(
+            references,
+            partialSidecarReferencesBySongKey[songKey]?.retainCreatedOnly()
+        )
     }
 
     private suspend fun cacheCover(
@@ -1495,7 +1548,8 @@ object AudioDownloadManager {
         baseName: String,
         storedAudio: ManagedDownloadStorage.StoredEntry,
         batchSessionId: Long? = null,
-        attemptId: Long? = null
+        attemptId: Long? = null,
+        requireActiveAttempt: Boolean = true
     ): String? {
         val existingCover = ManagedDownloadStorage.peekCoverReference(storedAudio)
             ?: if (ManagedDownloadStorage.ensureSnapshotCacheReady(context)) {
@@ -1537,7 +1591,13 @@ object AudioDownloadManager {
             val coverFileName = buildCoverSidecarFileName(baseName, songKey)
             coverCandidates.forEachIndexed { candidateIndex, coverUrl ->
                 repeat(COVER_DOWNLOAD_MAX_ATTEMPTS) { retryIndex ->
-                    ensureSongDownloadNotCancelled(songKey, "cover_request", batchSessionId, attemptId)
+                    ensureSongDownloadNotCancelled(
+                        songKey = songKey,
+                        stage = "cover_request",
+                        batchSessionId = batchSessionId,
+                        attemptId = attemptId,
+                        requireActiveAttempt = requireActiveAttempt
+                    )
                     val committedCoverReference = runCatching {
                         downloadCoverCandidate(
                             context = context,
@@ -1545,7 +1605,8 @@ object AudioDownloadManager {
                             coverUrl = coverUrl,
                             coverFileName = coverFileName,
                             batchSessionId = batchSessionId,
-                            attemptId = attemptId
+                            attemptId = attemptId,
+                            requireActiveAttempt = requireActiveAttempt
                         )
                     }.getOrElse { error ->
                         if (error is java.util.concurrent.CancellationException) {
@@ -1598,7 +1659,8 @@ object AudioDownloadManager {
         coverUrl: String,
         coverFileName: String,
         batchSessionId: Long? = null,
-        attemptId: Long? = null
+        attemptId: Long? = null,
+        requireActiveAttempt: Boolean = true
     ): String? {
         val req = Request.Builder().url(coverUrl).build()
         return executeTrackedCall(
@@ -1616,7 +1678,13 @@ object AudioDownloadManager {
             }
             val expectedLength = body.contentLength().takeIf { it > 0L }
             val bytes = body.bytes()
-            ensureSongDownloadNotCancelled(songKey, "cover_downloaded", batchSessionId, attemptId)
+            ensureSongDownloadNotCancelled(
+                songKey = songKey,
+                stage = "cover_downloaded",
+                batchSessionId = batchSessionId,
+                attemptId = attemptId,
+                requireActiveAttempt = requireActiveAttempt
+            )
             val copiedBytes = bytes.size.toLong()
             if (copiedBytes <= 0L) {
                 throw IOException("封面写入为空")
@@ -1627,7 +1695,13 @@ object AudioDownloadManager {
             if (!isUsableCoverBytes(bytes)) {
                 throw IOException("封面文件校验失败")
             }
-            ensureSongDownloadNotCancelled(songKey, "cover_commit", batchSessionId, attemptId)
+            ensureSongDownloadNotCancelled(
+                songKey = songKey,
+                stage = "cover_commit",
+                batchSessionId = batchSessionId,
+                attemptId = attemptId,
+                requireActiveAttempt = requireActiveAttempt
+            )
             ManagedDownloadStorage.commitCoverBytes(
                 context = context,
                 bytes = bytes,
@@ -2228,12 +2302,19 @@ object AudioDownloadManager {
         songKey: String,
         baseName: String,
         batchSessionId: Long? = null,
-        attemptId: Long? = null
+        attemptId: Long? = null,
+        requireActiveAttempt: Boolean = true
     ): DownloadedSidecarReferences {
         var lyricReference: String? = null
         var translatedLyricReference: String? = null
         try {
-            ensureSongDownloadNotCancelled(songKey, "lyrics_prepare", batchSessionId, attemptId)
+            ensureSongDownloadNotCancelled(
+                songKey = songKey,
+                stage = "lyrics_prepare",
+                batchSessionId = batchSessionId,
+                attemptId = attemptId,
+                requireActiveAttempt = requireActiveAttempt
+            )
             var lyricText = resolveLocalLyricForDownload(song.matchedLyric)
             var translatedText = resolveLocalLyricForDownload(song.matchedTranslatedLyric)
             val shouldFetchPrimaryLyric = shouldFetchRemoteLyricForDownload(song.matchedLyric)
@@ -2267,7 +2348,13 @@ object AudioDownloadManager {
                 }
             }
 
-            ensureSongDownloadNotCancelled(songKey, "lyrics_resolved", batchSessionId, attemptId)
+            ensureSongDownloadNotCancelled(
+                songKey = songKey,
+                stage = "lyrics_resolved",
+                batchSessionId = batchSessionId,
+                attemptId = attemptId,
+                requireActiveAttempt = requireActiveAttempt
+            )
             lyricText?.takeIf { it.isNotBlank() }?.let { lyric ->
                 lyricReference = writeManagedLyrics(
                     context = context,
@@ -2287,7 +2374,13 @@ object AudioDownloadManager {
                     NPLogger.d(TAG, "歌词写入完成: song=${song.name}, reference=$reference")
                 }
             }
-            ensureSongDownloadNotCancelled(songKey, "lyrics_primary_written", batchSessionId, attemptId)
+            ensureSongDownloadNotCancelled(
+                songKey = songKey,
+                stage = "lyrics_primary_written",
+                batchSessionId = batchSessionId,
+                attemptId = attemptId,
+                requireActiveAttempt = requireActiveAttempt
+            )
             translatedText?.takeIf { it.isNotBlank() }?.let { lyric ->
                 translatedLyricReference = writeManagedLyrics(
                     context = context,

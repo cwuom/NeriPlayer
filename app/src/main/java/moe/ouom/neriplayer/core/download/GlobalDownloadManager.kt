@@ -183,6 +183,7 @@ object GlobalDownloadManager {
 
         val appContext = context.applicationContext
         observeDownloadProgress()
+        observeStorageStartupRecovery(appContext)
         scope.launch {
             val startupRecovery = ManagedDownloadStorage.consumeStartupRecoveryResult()
             val restoredCatalog = restorePersistedDownloadedSongs(appContext)
@@ -200,6 +201,22 @@ object GlobalDownloadManager {
                 appContext,
                 forceRefresh = startupRecovery.hasRecoveredEntries
             )
+        }
+    }
+
+    private fun observeStorageStartupRecovery(context: Context) {
+        val appContext = context.applicationContext
+        scope.launch {
+            ManagedDownloadStorage.startupRecoveryResults.collect { result ->
+                if (!result.hasRecoveredEntries) {
+                    return@collect
+                }
+                NPLogger.d(
+                    TAG,
+                    "后台下载启动清理完成，安排目录对账: cleaned=${result.cleanedCount}, failed=${result.failedCount}"
+                )
+                scheduleCatalogReconcile(appContext, forceRefresh = true)
+            }
         }
     }
 
@@ -413,7 +430,7 @@ object GlobalDownloadManager {
     ) {
         val songKey = song.stableKey()
         val completedAudio = AudioDownloadManager.consumeCompletedAudioReference(songKey)
-        val sidecarReferences = AudioDownloadManager.consumeCompletedSidecarReferences(songKey)
+        val sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences? = null
         val currentTask = taskStore.findTask(songKey)
         if (!shouldApplyTaskMutation(currentTask, expectedAttemptId)) {
             NPLogger.d(
@@ -469,83 +486,6 @@ object GlobalDownloadManager {
         }
         val resolvedStoredAudio = storedAudio ?: return
 
-        val postProcessingEnabled = isDownloadMetadataPostProcessingEnabled(context)
-        if (!persistDownloadedMetadata(
-            context = context,
-            audio = resolvedStoredAudio,
-            song = song,
-            sidecarReferences = sidecarReferences,
-            downloadFinalized = !postProcessingEnabled
-        )) {
-            completeDownloadWithDegradedMetadata(
-                context = context,
-                song = song,
-                songKey = songKey,
-                storedAudio = resolvedStoredAudio,
-                sidecarReferences = sidecarReferences,
-                expectedAttemptId = expectedAttemptId,
-                refreshCatalog = refreshCatalog,
-                reason = "metadata_write"
-            )
-            return
-        }
-        if (
-            handleCancelledCompletedDownload(
-                context = context,
-                song = song,
-                songKey = songKey,
-                storedAudio = resolvedStoredAudio,
-                sidecarReferences = sidecarReferences,
-                expectedAttemptId = expectedAttemptId
-            )
-        ) {
-            return
-        }
-
-        if (postProcessingEnabled) {
-            if (
-                !runDownloadedAudioMetadataPostProcessing(
-                    context = context,
-                    audio = resolvedStoredAudio,
-                    song = song,
-                    sidecarReferences = sidecarReferences
-                )
-            ) {
-                NPLogger.w(TAG, "音频标签后处理失败，保留已下载音频并继续完成: ${song.name}")
-            }
-            if (
-                handleCancelledCompletedDownload(
-                    context = context,
-                    song = song,
-                    songKey = songKey,
-                    storedAudio = resolvedStoredAudio,
-                    sidecarReferences = sidecarReferences,
-                    expectedAttemptId = expectedAttemptId
-                )
-            ) {
-                return
-            }
-            if (!persistDownloadedMetadata(
-                context = context,
-                audio = resolvedStoredAudio,
-                song = song,
-                sidecarReferences = sidecarReferences,
-                downloadFinalized = true
-            )) {
-                completeDownloadWithDegradedMetadata(
-                    context = context,
-                    song = song,
-                    songKey = songKey,
-                    storedAudio = resolvedStoredAudio,
-                    sidecarReferences = sidecarReferences,
-                    expectedAttemptId = expectedAttemptId,
-                    refreshCatalog = refreshCatalog,
-                    reason = "final_metadata_write"
-                )
-                return
-            }
-        }
-
         publishCompletedDownloadOptimistically(
             context = context,
             song = song,
@@ -571,11 +511,139 @@ object GlobalDownloadManager {
         )
         forgetPendingDownloadQueueEntries(context, setOf(songKey))
         scheduleCompletedTaskRemoval(songKey, expectedAttemptId = expectedAttemptId)
+        scheduleCompletedDownloadPostProcessing(
+            context = context,
+            song = song,
+            storedAudio = resolvedStoredAudio,
+            initialSidecarReferences = sidecarReferences
+        )
         if (refreshCatalog) {
             // 正常完成时前面已经做过 optimistic publish 和 snapshot 增量更新
             // 这里继续走轻量 reconcile，避免非私有目录每首歌都强制全量重扫
             scheduleCatalogReconcile(context, forceRefresh = false)
         }
+    }
+
+    private fun scheduleCompletedDownloadPostProcessing(
+        context: Context,
+        song: SongItem,
+        storedAudio: ManagedDownloadStorage.StoredEntry,
+        initialSidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?
+    ) {
+        val appContext = context.applicationContext
+        scope.launch {
+            val songKey = song.stableKey()
+            var sidecarReferences = initialSidecarReferences ?: AudioDownloadManager.DownloadedSidecarReferences()
+            try {
+                if (!isCompletedAudioStillCurrent(appContext, song, storedAudio)) {
+                    return@launch
+                }
+                sidecarReferences = AudioDownloadManager.mergeDownloadedSidecarReferences(
+                    sidecarReferences,
+                    AudioDownloadManager.downloadSidecarsForCompletedAudio(
+                        context = appContext,
+                        song = song,
+                        storedAudio = storedAudio
+                    )
+                )
+                if (!isCompletedAudioStillCurrent(appContext, song, storedAudio)) {
+                    cleanupOrphanedCompletedSidecars(
+                        context = appContext,
+                        song = song,
+                        sidecarReferences = sidecarReferences.retainCreatedOnly()
+                    )
+                    return@launch
+                }
+
+                val postProcessingEnabled = isDownloadMetadataPostProcessingEnabled(appContext)
+                persistDownloadedMetadata(
+                    context = appContext,
+                    audio = storedAudio,
+                    song = song,
+                    sidecarReferences = sidecarReferences,
+                    downloadFinalized = !postProcessingEnabled,
+                    resolveExistingSidecars = false
+                )
+
+                if (postProcessingEnabled && !isSongCancelled(songKey)) {
+                    if (
+                        !runDownloadedAudioMetadataPostProcessing(
+                            context = appContext,
+                            audio = storedAudio,
+                            song = song,
+                            sidecarReferences = sidecarReferences
+                        )
+                    ) {
+                        NPLogger.w(TAG, "音频标签后台后处理失败，保留已下载音频并继续完成: ${song.name}")
+                    }
+                    persistDownloadedMetadata(
+                        context = appContext,
+                        audio = storedAudio,
+                        song = song,
+                        sidecarReferences = sidecarReferences,
+                        downloadFinalized = true,
+                        resolveExistingSidecars = false
+                    )
+                }
+
+                if (!isCompletedAudioStillCurrent(appContext, song, storedAudio)) {
+                    cleanupOrphanedCompletedSidecars(
+                        context = appContext,
+                        song = song,
+                        sidecarReferences = sidecarReferences.retainCreatedOnly()
+                    )
+                    return@launch
+                }
+                publishCompletedDownloadOptimistically(
+                    context = appContext,
+                    song = song,
+                    storedAudio = storedAudio,
+                    sidecarReferences = sidecarReferences
+                )
+                scheduleCatalogReconcile(appContext, forceRefresh = false)
+            } catch (error: CancellationException) {
+                cleanupOrphanedCompletedSidecars(
+                    context = appContext,
+                    song = song,
+                    sidecarReferences = sidecarReferences.retainCreatedOnly()
+                )
+            } catch (error: Throwable) {
+                NPLogger.w(TAG, "下载后台整理失败但音频已可播放: ${song.name}, ${error.message}")
+                runCatching {
+                    ManagedDownloadStorage.markDownloadedAudioFinalized(appContext, storedAudio)
+                }
+            }
+        }
+    }
+
+    private suspend fun isCompletedAudioStillCurrent(
+        context: Context,
+        song: SongItem,
+        storedAudio: ManagedDownloadStorage.StoredEntry
+    ): Boolean {
+        if (isSongCancelled(song.stableKey())) {
+            return false
+        }
+        val catalogStillPointsToAudio = _downloadedSongs.value.any { downloadedSong ->
+            matchesDownloadedSong(song, downloadedSong) &&
+                resolveDownloadedSongPlaybackReference(downloadedSong) == storedAudio.reference
+        }
+        if (!catalogStillPointsToAudio) {
+            return false
+        }
+        if (ManagedDownloadStorage.exists(context, storedAudio.reference)) {
+            return true
+        }
+        NPLogger.w(TAG, "后台整理发现音频已不可读，移除目录缓存: song=${song.name}, reference=${storedAudio.reference}")
+        val updatedSongs = _downloadedSongs.value.filterNot { downloadedSong ->
+            matchesDownloadedSong(song, downloadedSong) &&
+                resolveDownloadedSongPlaybackReference(downloadedSong) == storedAudio.reference
+        }
+        if (updatedSongs != _downloadedSongs.value) {
+            publishDownloadedSongs(context, updatedSongs, persistCatalog = true)
+        }
+        scheduleCatalogReconcile(context, forceRefresh = true)
+        return false
     }
 
     private suspend fun completeDownloadWithDegradedMetadata(
@@ -1277,31 +1345,44 @@ object GlobalDownloadManager {
         audio: ManagedDownloadStorage.StoredEntry,
         song: SongItem,
         sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences? = null,
-        downloadFinalized: Boolean = true
+        downloadFinalized: Boolean = true,
+        resolveExistingSidecars: Boolean = true
     ): Boolean {
         val identity = song.identity()
         val candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension)
         val coverReference = sidecarReferences?.coverReference
-            ?: ManagedDownloadStorage.findCoverReference(context, audio)
-            ?: ManagedDownloadStorage.findReusableCoverReference(
-                context = context,
-                song = song,
-                excludedAudioName = audio.name
-            )
+            ?: if (resolveExistingSidecars) {
+                ManagedDownloadStorage.findCoverReference(context, audio)
+                    ?: ManagedDownloadStorage.findReusableCoverReference(
+                        context = context,
+                        song = song,
+                        excludedAudioName = audio.name
+                    )
+            } else {
+                null
+            }
         val lyricPath = sidecarReferences?.lyricReference
-            ?: ManagedDownloadStorage.findLyricLocation(
-                context = context,
-                songId = song.id,
-                candidateBaseNames = candidateBaseNames,
-                translated = false
-            )
+            ?: if (resolveExistingSidecars) {
+                ManagedDownloadStorage.findLyricLocation(
+                    context = context,
+                    songId = song.id,
+                    candidateBaseNames = candidateBaseNames,
+                    translated = false
+                )
+            } else {
+                null
+            }
         val translatedLyricPath = sidecarReferences?.translatedLyricReference
-            ?: ManagedDownloadStorage.findLyricLocation(
-                context = context,
-                songId = song.id,
-                candidateBaseNames = candidateBaseNames,
-                translated = true
-            )
+            ?: if (resolveExistingSidecars) {
+                ManagedDownloadStorage.findLyricLocation(
+                    context = context,
+                    songId = song.id,
+                    candidateBaseNames = candidateBaseNames,
+                    translated = true
+                )
+            } else {
+                null
+            }
         val payload = JSONObject().apply {
             put("stableKey", identity.stableKey())
             put("songId", song.id)
@@ -1827,22 +1908,17 @@ object GlobalDownloadManager {
         scope.launch {
             try {
                 val playbackReference = resolveDownloadedSongPlaybackReference(song)
-                if (
-                    playbackReference.isNullOrBlank() ||
-                    !ManagedDownloadStorage.exists(appContext, playbackReference)
-                ) {
+                if (playbackReference.isNullOrBlank()) {
                     NPLogger.w(TAG, "下载文件不存在: ${song.name}, reference=$playbackReference")
-                    val updatedSongs = _downloadedSongs.value.filterNot { candidate ->
-                        matchesDownloadedSongCatalogEntry(candidate, song)
-                    }
-                    if (updatedSongs != _downloadedSongs.value) {
-                        publishDownloadedSongs(appContext, updatedSongs, persistCatalog = true)
-                    }
-                    scheduleCatalogReconcile(appContext, forceRefresh = false)
+                    removeMissingDownloadedSongEntry(appContext, song)
                     return@launch
                 }
 
-                val storedAudio = resolveStoredAudio(appContext, playbackReference)
+                val snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
+                    context = appContext,
+                    restoreFromDisk = false
+                )
+                val storedAudio = snapshot?.audioEntriesByLookupKey?.get(playbackReference)
                 val playbackUri = storedAudio?.playbackUri
                     ?: ManagedDownloadStorage.toPlayableUri(playbackReference)
                     ?: playbackReference
@@ -1851,16 +1927,20 @@ object GlobalDownloadManager {
                     storedAudio = storedAudio,
                     resolvedDurationMs = song.durationMs
                 )
-                withContext(Dispatchers.Main.immediate) {
+                withContext<Unit>(Dispatchers.Main.immediate) {
                     PlayerManager.playPlaylist(listOf(quickSong), 0)
                 }
 
-                val refreshedSong = storedAudio?.let {
-                    val snapshot = ManagedDownloadStorage.buildDownloadLibrarySnapshot(appContext)
+                scheduleDownloadedPlaybackReferenceValidation(appContext, song, playbackReference)
+                val hydratedStoredAudio = storedAudio
+                    ?: resolveStoredAudioFromCache(appContext, playbackReference)
+                val refreshedSong = hydratedStoredAudio?.let {
+                    val hydrationSnapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(appContext)
+                        ?: ManagedDownloadStorage.emptyDownloadLibrarySnapshot()
                     buildDownloadedSong(
                         context = appContext,
                         storedAudio = it,
-                        snapshot = snapshot,
+                        snapshot = hydrationSnapshot,
                         existingDownloadTime = song.downloadTime,
                         loadLyricContents = true,
                         resolveLyricFallbacks = true,
@@ -1873,7 +1953,7 @@ object GlobalDownloadManager {
                     ?: resolveAudioDuration(appContext, playbackUri)
                 val hydratedSong = refreshedSong.toPlaybackSongItem(
                     playbackUri = playbackUri,
-                    storedAudio = storedAudio,
+                    storedAudio = hydratedStoredAudio,
                     resolvedDurationMs = hydratedDurationMs
                 )
                 if (hydratedSong != quickSong) {
@@ -1890,6 +1970,33 @@ object GlobalDownloadManager {
                 NPLogger.e(TAG, "播放下载文件失败: ${error.message}", error)
             }
         }
+    }
+
+    private fun scheduleDownloadedPlaybackReferenceValidation(
+        context: Context,
+        song: DownloadedSong,
+        playbackReference: String
+    ) {
+        scope.launch {
+            if (ManagedDownloadStorage.exists(context, playbackReference)) {
+                return@launch
+            }
+            NPLogger.w(TAG, "下载文件后台校验不可读: ${song.name}, reference=$playbackReference")
+            scheduleCatalogReconcile(context, forceRefresh = true)
+        }
+    }
+
+    private fun removeMissingDownloadedSongEntry(
+        context: Context,
+        song: DownloadedSong
+    ) {
+        val updatedSongs = _downloadedSongs.value.filterNot { candidate ->
+            matchesDownloadedSongCatalogEntry(candidate, song)
+        }
+        if (updatedSongs != _downloadedSongs.value) {
+            publishDownloadedSongs(context, updatedSongs, persistCatalog = true)
+        }
+        scheduleCatalogReconcile(context, forceRefresh = false)
     }
 
     private fun DownloadedSong.toPlaybackSongItem(
@@ -2158,7 +2265,13 @@ object GlobalDownloadManager {
                             attemptId = attemptId
                         )
                         if (!isDownloadRequestGenerationCurrent(songKey, requestGeneration)) {
-                            NPLogger.d(TAG, "单曲下载完成后已过期，跳过入库: song=${song.name}, generation=$requestGeneration")
+                            NPLogger.d(TAG, "单曲下载完成后已过期，转入过期结果回滚: song=${song.name}, generation=$requestGeneration")
+                            finalizeCompletedDownload(
+                                context = appContext,
+                                song = song,
+                                refreshCatalog = false,
+                                expectedAttemptId = attemptId
+                            )
                             return@withSongExecutionLock
                         }
                         finalizeCompletedDownload(
@@ -2390,11 +2503,17 @@ object GlobalDownloadManager {
                     },
                     onSongCompleted = { completedSong ->
                         val songKey = completedSong.stableKey()
+                        val attemptId = pendingAttemptIds[songKey] ?: return@downloadPlaylist
                         if (!isDownloadRequestGenerationCurrent(songKey, requestGeneration)) {
-                            NPLogger.d(TAG, "忽略旧批次完成回调: song=${completedSong.name}, generation=$requestGeneration")
+                            NPLogger.d(TAG, "旧批次完成回调已过期，转入过期结果回滚: song=${completedSong.name}, generation=$requestGeneration")
+                            finalizeCompletedDownload(
+                                context = appContext,
+                                song = completedSong,
+                                refreshCatalog = false,
+                                expectedAttemptId = attemptId
+                            )
                             return@downloadPlaylist
                         }
-                        val attemptId = pendingAttemptIds[songKey] ?: return@downloadPlaylist
                         finalizeCompletedDownload(
                             context = appContext,
                             song = completedSong,
@@ -2879,6 +2998,16 @@ object GlobalDownloadManager {
         return generation
     }
 
+    private fun invalidateDownloadRequestGenerations(songKeys: Collection<String>) {
+        val keys = songKeys.filter(String::isNotBlank).toSet()
+        if (keys.isEmpty()) {
+            return
+        }
+        keys.forEach(songRequestGenerations::remove)
+        downloadRequestGeneration.incrementAndGet()
+        NPLogger.d(TAG, "失效下载请求代际: songs=${keys.size}")
+    }
+
     private fun isDownloadRequestGenerationCurrent(
         songKey: String,
         generation: Long
@@ -2890,7 +3019,11 @@ object GlobalDownloadManager {
         songKey: String,
         cancellationGeneration: Long?
     ): Boolean {
-        return songRequestGenerations[songKey] == cancellationGeneration
+        return shouldKeepCancellationCleanup(
+            currentGeneration = songRequestGenerations[songKey],
+            cancellationGeneration = cancellationGeneration,
+            cancelled = isSongCancelled(songKey)
+        )
     }
 
     private fun forgetPendingDownloadQueueEntries(
@@ -3014,6 +3147,7 @@ object GlobalDownloadManager {
         val cancellationGenerations = activeSongKeys.associateWith { songKey ->
             songRequestGenerations[songKey]
         }
+        invalidateDownloadRequestGenerations(activeSongKeys)
         clearPendingDownloadQueue(appContext)
         NPLogger.d(
             TAG,
@@ -3332,6 +3466,7 @@ object GlobalDownloadManager {
         val cancellationGenerations = activeKeys.associateWith { songKey ->
             songRequestGenerations[songKey]
         }
+        invalidateDownloadRequestGenerations(activeKeys)
         if (activeKeys.isNotEmpty()) {
             activeKeys.forEach(::markSongCancelled)
             persistCancelledDownloadKeys(activeKeys)
@@ -3417,6 +3552,16 @@ object GlobalDownloadManager {
     ): ManagedDownloadStorage.StoredEntry? {
         resolveStoredAudio(context, resolveSongLocation(song))?.let { return it }
         return ManagedDownloadStorage.findDownloadedAudio(context, song)
+    }
+
+    private fun resolveStoredAudioFromCache(
+        context: Context,
+        reference: String?
+    ): ManagedDownloadStorage.StoredEntry? {
+        val normalized = reference?.takeIf(String::isNotBlank) ?: return null
+        val snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(context)
+            ?: return null
+        return snapshot.audioEntriesByLookupKey[normalized]
     }
 
     private suspend fun resolveStoredAudio(

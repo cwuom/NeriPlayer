@@ -12,6 +12,24 @@ internal fun shouldRunInitialDownloadScan(
     return hasRecoveredEntries || !catalogReady
 }
 
+internal fun shouldDeferStartupManagedCleanup(
+    configuredDirectoryUri: String?,
+    treeRootAvailable: Boolean
+): Boolean {
+    return !configuredDirectoryUri.isNullOrBlank() && treeRootAvailable
+}
+
+internal fun shouldKeepCancellationCleanup(
+    currentGeneration: Long?,
+    cancellationGeneration: Long?,
+    cancelled: Boolean
+): Boolean {
+    if (currentGeneration == cancellationGeneration) {
+        return true
+    }
+    return currentGeneration == null && cancelled
+}
+
 internal enum class CompletedDownloadFinalizationAction {
     COMPLETE,
     COMPLETE_WITHOUT_STORED_AUDIO,

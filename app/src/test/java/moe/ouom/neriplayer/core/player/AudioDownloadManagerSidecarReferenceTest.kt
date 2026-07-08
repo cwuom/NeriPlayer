@@ -61,6 +61,40 @@ class AudioDownloadManagerSidecarReferenceTest {
     }
 
     @Test
+    fun `mergeDownloadedSidecarReferences preserves created ownership for same reference`() {
+        val existing = AudioDownloadManager.DownloadedSidecarReferences(
+            coverReference = "content://covers/song.jpg",
+            createdCover = true
+        )
+        val incoming = AudioDownloadManager.DownloadedSidecarReferences(
+            coverReference = "content://covers/song.jpg",
+            createdCover = false
+        )
+
+        val merged = AudioDownloadManager.mergeDownloadedSidecarReferences(existing, incoming)
+
+        assertEquals("content://covers/song.jpg", merged.coverReference)
+        assertEquals(true, merged.createdCover)
+    }
+
+    @Test
+    fun `mergeDownloadedSidecarReferences uses incoming ownership when reference changes`() {
+        val existing = AudioDownloadManager.DownloadedSidecarReferences(
+            coverReference = "content://covers/old.jpg",
+            createdCover = true
+        )
+        val incoming = AudioDownloadManager.DownloadedSidecarReferences(
+            coverReference = "content://covers/new.jpg",
+            createdCover = false
+        )
+
+        val merged = AudioDownloadManager.mergeDownloadedSidecarReferences(existing, incoming)
+
+        assertEquals("content://covers/new.jpg", merged.coverReference)
+        assertEquals(false, merged.createdCover)
+    }
+
+    @Test
     fun `completed audio reference is consumed once`() {
         val songKey = "song-key"
         AudioDownloadManager.consumeCompletedAudioReference(songKey)

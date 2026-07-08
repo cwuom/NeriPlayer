@@ -9,6 +9,9 @@ import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.SupervisorJob
@@ -117,6 +120,13 @@ internal object ManagedDownloadStorage {
     @Volatile
     private var startupRecoveryResult = StartupRecoveryResult()
 
+    private val _startupRecoveryResults = MutableSharedFlow<StartupRecoveryResult>(
+        replay = 1,
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    internal val startupRecoveryResults: SharedFlow<StartupRecoveryResult> = _startupRecoveryResults
+
     @Volatile
     private var cachedTreeRoot: CachedTreeRoot? = null
 
@@ -128,7 +138,7 @@ internal object ManagedDownloadStorage {
         createDefaultRoot(appContext)
         val stagingRecovery = cleanupStagingFiles(appContext)
         val pendingAudioRecovery = resolveStartupPendingAudioRecovery(appContext)
-        val metadataRecovery = cleanupUnfinalizedDownloadArtifacts(appContext)
+        val metadataRecovery = resolveStartupMetadataRecovery(appContext)
         startupRecoveryResult = StartupRecoveryResult(
             cleanedCount = stagingRecovery.cleanedCount +
                 pendingAudioRecovery.cleanedCount +
@@ -142,7 +152,8 @@ internal object ManagedDownloadStorage {
 
     private fun resolveStartupPendingAudioRecovery(context: Context): StartupRecoveryResult {
         val configuredUri = normalizeDirectoryUri(customDirectoryUri)
-        return if (resolveTreeRootBlocking(context, configuredUri) != null) {
+        val treeRootAvailable = resolveTreeRootBlocking(context, configuredUri) != null
+        return if (shouldDeferStartupManagedCleanup(configuredUri, treeRootAvailable)) {
             schedulePendingAudioWriteCleanup(context)
             StartupRecoveryResult()
         } else {
@@ -154,6 +165,26 @@ internal object ManagedDownloadStorage {
         val appContext = context.applicationContext
         snapshotScope.launch {
             cleanupPendingAudioWrites(appContext)
+        }
+    }
+
+    private fun resolveStartupMetadataRecovery(context: Context): StartupRecoveryResult {
+        val configuredUri = normalizeDirectoryUri(customDirectoryUri)
+        val treeRootAvailable = resolveTreeRootBlocking(context, configuredUri) != null
+        if (shouldDeferStartupManagedCleanup(configuredUri, treeRootAvailable)) {
+            scheduleUnfinalizedDownloadArtifactCleanup(context)
+            return StartupRecoveryResult()
+        }
+        return cleanupUnfinalizedDownloadArtifacts(context)
+    }
+
+    private fun scheduleUnfinalizedDownloadArtifactCleanup(context: Context) {
+        val appContext = context.applicationContext
+        snapshotScope.launch {
+            val result = cleanupUnfinalizedDownloadArtifacts(appContext)
+            if (result.hasRecoveredEntries) {
+                _startupRecoveryResults.tryEmit(result)
+            }
         }
     }
 
@@ -3199,7 +3230,7 @@ internal object ManagedDownloadStorage {
         mimeType: String,
         replace: Boolean
     ): DocumentFile {
-        val childNames = cachedTreeChildrenNames(context, parent)
+        val childNames = cachedTreeChildrenNamesForWrite(context, parent)
         val existing = desiredName
             .takeIf { it in childNames }
             ?.let(parent::findFile)
