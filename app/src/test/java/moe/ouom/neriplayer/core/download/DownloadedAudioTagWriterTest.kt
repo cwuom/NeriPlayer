@@ -1,9 +1,33 @@
 package moe.ouom.neriplayer.core.download
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class DownloadedAudioTagWriterTest {
+
+    @Test
+    fun `embedded album name strips netease source prefix`() {
+        assertEquals(
+            "十一月的萧邦",
+            DownloadedAudioTagWriter.normalizeEmbeddedAlbumName("Netease十一月的萧邦")
+        )
+    }
+
+    @Test
+    fun `embedded album name removes source only markers`() {
+        assertNull(DownloadedAudioTagWriter.normalizeEmbeddedAlbumName("Netease"))
+        assertNull(DownloadedAudioTagWriter.normalizeEmbeddedAlbumName("Bilibili"))
+        assertNull(DownloadedAudioTagWriter.normalizeEmbeddedAlbumName("Bilibili|12345"))
+    }
+
+    @Test
+    fun `embedded album name keeps regular album`() {
+        assertEquals(
+            "The Book",
+            DownloadedAudioTagWriter.normalizeEmbeddedAlbumName(" The Book ")
+        )
+    }
 
     @Test
     fun `standardized lyric embedding converts netease word lyric to lrc`() {

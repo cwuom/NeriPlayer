@@ -10,6 +10,7 @@ import com.kyant.taglib.TagLib
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
+import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -115,7 +116,7 @@ internal object DownloadedAudioTagWriter {
 
         putSingleValue(propertyMap, "TITLE", song.displayName())
         putSingleValue(propertyMap, "ARTIST", song.artist)
-        putSingleValue(propertyMap, "ALBUM", song.album)
+        putSingleValue(propertyMap, "ALBUM", normalizeEmbeddedAlbumName(song.album))
         putSingleValue(propertyMap, "ALBUMARTIST", song.artist)
         putSingleValue(propertyMap, "TRACKNUMBER", song.id.takeIf { it > 0L }?.toString())
         putPrimaryLyricValues(propertyMap, audioExtension, embeddedLyric)
@@ -150,6 +151,32 @@ internal object DownloadedAudioTagWriter {
                 }.getOrNull()?.takeIf { it.isNotBlank() }?.let { return it }
             }
         return fallback?.takeIf { it.isNotBlank() }
+    }
+
+    internal fun normalizeEmbeddedAlbumName(album: String): String? {
+        val normalized = album.trim()
+        if (normalized.isBlank()) {
+            return null
+        }
+
+        stripSourcePrefix(normalized, PlayerManager.NETEASE_SOURCE_TAG)?.let { return it }
+        if (normalized.equals(PlayerManager.NETEASE_SOURCE_TAG, ignoreCase = true)) {
+            return null
+        }
+        if (normalized.equals(PlayerManager.BILI_SOURCE_TAG, ignoreCase = true) ||
+            normalized.startsWith("${PlayerManager.BILI_SOURCE_TAG}|", ignoreCase = true)
+        ) {
+            return null
+        }
+
+        return normalized
+    }
+
+    private fun stripSourcePrefix(value: String, prefix: String): String? {
+        if (!value.startsWith(prefix, ignoreCase = true)) {
+            return null
+        }
+        return value.substring(prefix.length).trim().takeIf(String::isNotBlank)
     }
 
     internal fun normalizeLyricForEmbedding(lyric: String?, enabled: Boolean): String? {
