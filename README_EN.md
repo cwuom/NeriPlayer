@@ -95,6 +95,15 @@ Current positioning:
 - **Optional sync**: playlists, favorites, recent plays, and playback stats can
   be synced to your own GitHub repository (repositories created in-app default
   to private) or a WebDAV remote file.
+- **Privacy and account safety first**: sync is intentionally decentralized.
+  Data is written to GitHub/WebDAV storage that you control, not to a centralized
+  service operated by the project maintainer. The app is technically capable of
+  sending playback history back to third-party music platforms, but centralized
+  music clients often have risk-control and behavior-sampling systems. Uploading
+  local playback history directly may be interpreted as abnormal login or playback
+  behavior and could put an account at risk. To protect account safety,
+  NeriPlayer does not upload local playback history or playback stats back to
+  those platforms.
 - **Single Activity + Compose**: `MainActivity` is the only external entry point.
   The UI is organized by Compose `NavHost`, a dynamic bottom bar, Mini Player,
   and the Now Playing overlay.
@@ -530,16 +539,6 @@ the local Listen Together identity from Settings.
 NeriPlayer can sync local metadata to **your own GitHub repository**.
 When created from inside the app, the repository defaults to private, and
 existing repositories are also supported.
-
-We take your privacy and account safety seriously, so sync is intentionally
-decentralized: data is written to GitHub/WebDAV storage that you control, not to
-a centralized service operated by the project maintainer. The app is technically
-capable of sending playback history back to third-party music platforms, but
-centralized music clients often have risk-control and behavior-sampling systems.
-Uploading local playback history directly may be interpreted as abnormal login
-or playback behavior and could put an account at risk. To protect account safety,
-NeriPlayer does not upload local playback history or playback stats back to
-those platforms.
 
 Current sync targets:
 
