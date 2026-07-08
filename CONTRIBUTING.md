@@ -21,6 +21,22 @@
 
 ---
 
+### 文档地图 / Documentation Map
+
+维护文档时建议按用途拆开看：
+
+- `README.md` / `README_EN.md`
+  - 面向用户和新贡献者，说明项目定位、能力边界、安装构建、同步与隐私。
+- `CONTRIBUTING.md` / `CONTRIBUTING_EN.md`
+  - 面向开发者，说明真实模块边界、扩展路径、测试和提交要求。
+- `np-submodule/NeriPlayer-LTW/README.md`
+  - 面向一起听服务端部署者，说明 Worker API、事件模型、部署和本地检查。
+
+行为变更如果影响用户理解，请同步更新 README；
+如果影响扩展方式、测试方式或模块边界，请同步更新 CONTRIBUTING。
+
+---
+
 ### 开发环境 / Development Environment
 
 - **Android Studio**：最新稳定版
@@ -41,6 +57,23 @@
 - 构建脚本会读取 Git 短提交生成版本名，本地请确保已安装 Git。
 - 依赖版本由 `gradle/libs.versions.toml` 与各模块 `build.gradle.kts` 管理。
 - 应用只保留 `zh` 与 `en` 资源，见 `build-logic` 的 locale filter。
+
+---
+
+### 质量护栏 / Quality Guardrails
+
+这个项目功能面比较宽，提交前请优先保护这些链路：
+
+- **播放链路**：`PlayerManager`、取流策略、缓存、失败刷新、自动换源和状态恢复。
+- **下载链路**：`AudioDownloadManager`、`GlobalDownloadManager`、
+  `ManagedDownloadStorage`、续传检查点、sidecar 文件和 SAF 目录迁移。
+- **同步链路**：GitHub / WebDAV 的三路合并、删除记录、播放统计和远端格式兼容。
+- **本地数据**：歌单 JSON 原子写入、配置导入导出、授权加密存储和 DataStore 设置。
+- **一起听**：Android 客户端、Worker 协议字段、角色权限、队列和房主离线恢复。
+- **诊断恢复**：安全模式、JVM/Native 崩溃日志、ANR 记录和 Debug 探针。
+
+对应测试已分布在 `app/src/test/` 与 `app/src/androidTest/`。
+修改上述链路时，优先搜索同名目录或相邻测试类，再补新的覆盖。
 
 ---
 
@@ -134,19 +167,34 @@
   - `MainActivity.kt` 是唯一对外入口，负责安全模式、启动流程、免责声明、
     启动引导、外部音频导入、一起听深链和顶层 Compose 宿主。
   - `NeteaseWebLoginActivity.kt`、`NeteaseQrLoginActivity.kt`、
-    `BiliWebLoginActivity.kt` 与 `YouTubeWebLoginActivity.kt`
+    `BiliWebLoginActivity.kt`、`BiliQrLoginActivity.kt` 与 `YouTubeWebLoginActivity.kt`
     是内部平台登录页。
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt`
   - 顶层 Compose 应用骨架，负责 `NavHost`、动态底栏、
     `MiniPlayer`、`Now Playing` 覆盖层、Debug 路由、主题和播放服务同步。
 
+- `app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/`
+  - `LibraryScreen.kt` 负责媒体库顶层分类，本地内容可在歌单/歌手之间切换，
+    收藏页可展示歌单和已关注艺术家。
+  - `LocalArtistLibraryGrid.kt` 展示本地艺术家网格、空状态和艺术家卡片。
+
+- `app/src/main/java/moe/ouom/neriplayer/ui/screen/playlist/`
+  - `LocalArtistDetailScreen.kt` 展示本地艺术家详情，支持播放全部、
+    多选、导出歌单和批量下载可在线解析的歌曲。
+
+- `app/src/main/java/moe/ouom/neriplayer/ui/screen/artist/`
+  - 网易云艺术家详情页，展示艺术家信息、热门歌曲、分页专辑和关注状态。
+
+- `app/src/main/java/moe/ouom/neriplayer/ui/viewmodel/artist/`
+  - 网易云艺术家摘要、JSON 解析和详情页状态管理。
+
 - `app/src/main/java/moe/ouom/neriplayer/ui/onboarding/`
   - 首次启动引导，覆盖语言、平台账号、GitHub 同步和个性化设置。
 
 - `app/src/main/java/moe/ouom/neriplayer/core/api/`
   - `netease/`：网易云接口、加密和账号能力。
-  - `bili/`：Bilibili 搜索、收藏夹、播放信息和音频拉流。
+  - `bili/`：Bilibili 搜索、二维码登录、收藏夹、合集、播放信息和音频拉流。
   - `youtube/`：YouTube Music 客户端（NewPipe Extractor）、
     首页/歌单/搜索/播放、PoToken 和 JS Challenge 支持。
   - `search/`：播放页元数据/歌词补全接口，
@@ -177,10 +225,10 @@
 - `app/src/main/java/moe/ouom/neriplayer/data/`
   - `settings/`：`DataStore` 设置、KSP schema、启动快照、主题快照和播放偏好快照。
   - `auth/`：网易云、Bilibili、YouTube 的 Cookie / Auth 本地存储与校验。
-  - `local/playlist/`：本地歌单 JSON 原子写入和系统歌单兼容。
+  - `local/playlist/`：本地歌单 JSON 原子写入、系统歌单兼容和本地艺术家聚合模型。
   - `local/audioimport/`、`local/media/`：本地音频导入、扫描、元数据读取和分享。
-  - `playlist/favorite/`、`playlist/usage/`：收藏歌单和首页继续播放数据。
-  - `history/`、`stats/`：最近播放与播放统计。
+  - `playlist/favorite/`、`playlist/usage/`：收藏歌单、收藏艺术家和首页继续播放数据。
+  - `history/`、`stats/`：最近播放、播放统计和日/周/月/年/总计周期聚合。
   - `backup/`：本地歌单 JSON 备份、导入与差异分析。
   - `config/`：完整配置导入/导出。
   - `sync/github/`：GitHub 同步、三路合并、序列化、省流模式和安全存储。
@@ -190,7 +238,8 @@
   - 一起听协议、WebSocket 客户端、Session 管理、邀请链接、同步规划和服务端地址校验。
 
 - `app/src/main/java/moe/ouom/neriplayer/core/lyricon/`
-  - 词幕适配（Lyricon Provider），同步歌曲、播放状态、进度、逐字歌词和翻译。
+  - 词幕适配（Lyricon Provider）与 SuperLyric 输出，
+    同步歌曲、播放状态、进度、逐字歌词和翻译。
 
 ---
 
@@ -201,8 +250,13 @@
 - `Home` 在中文默认模式下主要展示本地继续播放与网易推荐；
   国际化模式下优先展示 YouTube Music 首页货架。
 - `Library` 中 QQ 音乐入口仍为占位，不代表完整平台接入。
+- 本地艺术家分类来自本地已导入/已保存歌曲的展示艺术家聚合，
+  不是在线艺术家资料库。
+- 网易云艺术家详情依赖网易云 artist 元数据和接口；
+  关注状态会保存到本地收藏分类。
 - `Bilibili` 已支持搜索、收藏夹和音频播放/下载，但不是完整视频发现流或评论区。
 - `YouTube Music` 已支持登录、首页/歌单浏览、详情、搜索、播放与下载。
+- 状态栏歌词依赖厂商私有能力，当前仅适用于部分支持设备。
 - 网易云播放会在当前音质不可用时自动尝试更低音质；
   无权限、无直链或仅返回试听片段时，可按设置自动匹配 Bilibili 音源兜底。
 - 本地「我喜欢的音乐」支持将可识别的网易云歌曲同步到网易云我喜欢的音乐；
@@ -292,7 +346,13 @@
 1. 先阅读 `ManagedDownloadStorage.kt`、`ManagedDownloadNaming.kt`
    和相关单元测试。
 2. 同时考虑默认应用目录、SAF 自定义目录、迁移、历史命名、元数据文件和 `.nomedia`。
-3. 修改目录迁移或删除语义时，必须补充/更新对应单元测试。
+3. 下载任务先写入 `cache/download_staging/`，再提交到正式目录；
+   `.resume.json` 与 `.hls.json` 是续传恢复的一部分，不能当普通临时文件随意清理。
+4. 默认下载并发是 **6**，设置允许调整到 **1-8**；
+   修改并发、重试或网络恢复时，请同步检查 `DownloadParallelism.kt`、
+   `AudioDownloadManager.kt` 和 `GlobalDownloadManager.kt`。
+5. 修改目录迁移、删除语义、续传检查点或 sidecar 写入时，
+   必须补充/更新对应单元测试。
 
 #### 8. 修改词幕适配
 
@@ -300,7 +360,8 @@
 2. 开关状态由设置项 `lyricon_enabled` 控制，并由播放器生命周期同步。
 3. 歌词数据使用 `LyricEntry`，逐字信息来自 `WordTiming`；
    翻译行按时间容差匹配到原文行。
-4. 修改时要保持 Lyricon、播放页高级歌词和外部蓝牙歌词的歌词结构兼容。
+4. 修改时要保持 Lyricon、SuperLyric、状态栏歌词、播放页高级歌词
+   和外部蓝牙歌词的歌词结构兼容。
 
 #### 9. 修改一起听
 
@@ -362,6 +423,16 @@ adb logcat | grep NeriPlayer
 6. 新增单元测试放到 `app/src/test/`；
    新增设备或 Compose UI 测试放到 `app/src/androidTest/`。
 7. 行为变更涉及 README、设置文案、用户流程或同步格式时，请同步更新文档。
+
+当前已有测试覆盖的重点包括：
+
+- YouTube 登录、挑战解析、PoToken、取流、Range/Seek 策略与预取
+- 网易云歌词、本地 smoke test、自动换源和播放响应解析
+- 下载元数据、命名、目录迁移、`.nomedia`、删除语义和启动恢复
+- GitHub/WebDAV 同步序列化、删除策略、播放统计合并和上传重试
+- 一起听地址校验、播放同步规划、Session 取消与协议校验
+- 歌词视图、逐词时间、外部蓝牙歌词、播放音效和播放策略
+- 配置备份、设置生成、安全守卫、崩溃日志文件和安全模式相关逻辑
 
 PR 建议包含：
 

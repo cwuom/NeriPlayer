@@ -45,8 +45,8 @@ user-owned data.
 
 > [!WARNING]
 > This project is for learning and research purposes only. Do not use it for illegal purposes.
-> 
->This project and its maintainer do not accept any form of sponsorship, donation, or commercial funding.
+>
+> This project and its maintainer do not accept any form of sponsorship, donation, or commercial funding.
 
 ---
 
@@ -54,6 +54,26 @@ user-owned data.
 > NeriPlayer does not provide a public cloud music library or media distribution service.
 > Online audio capabilities depend on your authorization on third-party platforms.
 > VIP or restricted content still follows the original platform rules.
+
+---
+
+## Start here
+
+If you only want to try the app, start with [Getting Started](#getting-started).
+If you want to understand what makes the project different, read
+[Why it stands out](#why-it-stands-out) and [Key Features](#key-features).
+If you plan to contribute, read [CONTRIBUTING_EN.md](./CONTRIBUTING_EN.md).
+If you want to self-host Listen Together, jump to
+[Listen Together Deployment](#listen-together-deployment).
+
+```text
+NeriPlayer
+├── Multi-source playback: NetEase / Bilibili / YouTube Music
+├── Local-first data: cache, downloads, playlists, history, stats, settings
+├── User-owned sync: GitHub / WebDAV metadata sync
+├── Rich playback: Media3, lyrics, effects, fluid background, floating/status-bar lyrics
+└── Recovery built in: safe mode, crash logs, ANR traces, debug probes
+```
 
 ---
 
@@ -81,6 +101,9 @@ Current positioning:
 - **Startup and recovery flow**: the normal startup path is
   `Loading -> Disclaimer -> Onboarding -> Main`. If the previous launch ended in
   a crash or system ANR, the app enters `Safe Mode` first.
+- **Test guardrails**: download storage, sync merging, YouTube playback,
+  Listen Together, lyrics, playback policies, config backup, and safe mode all
+  have focused unit or device tests.
 
 ---
 
@@ -107,18 +130,31 @@ Current positioning:
 - **Apple Music-style lyrics, backed by the playback pipeline**:
   `AppleMusicLyric` and `AdvancedLyricsView` support word/character-timed
   highlighting, translated lyrics, lyric offset, click-to-seek, depth blur,
-  edge fade, and a full-screen Lyrics page. Floating lyrics, Lyricon, Bluetooth
-  lyrics, and lyric editing reuse the same playback data path.
+  edge fade, and a full-screen Lyrics page. Floating lyrics, status-bar lyrics,
+  SuperLyric, Lyricon, Bluetooth lyrics, and lyric editing reuse the same
+  playback data path.
 - **Complete local music management**:
   `LocalAudioImportManager` supports external share/open imports, authorized
   folder scanning, device media-library scanning, common audio formats, nearby
   `lrc/txt` lyrics, and `cover/folder/front` cover files.
   `LocalPlaylistRepository` manages system local playlists, user playlists,
   favorites, sorting, de-duplication, backup, and sync triggers.
+- **Library browsing now has real categories**:
+  `Library` is no longer just a playlist list. Local content can switch between
+  playlists and artists, while `LocalArtistSummary` groups songs by display
+  artist with stable identity and cover selection. NetEase songs can open an
+  artist page with songs, albums, and follow state.
 - **Sound controls are tied to the active audio session**:
   `PlaybackEffectsController` applies speed, pitch, Android `Equalizer`, and
   `LoudnessEnhancer` to the current Media3 audio session. Presets, manual bands,
-  and loudness gain are all available from Now Playing.
+  loudness gain, fade/crossfade, pause on Bluetooth disconnect, USB exclusive
+  playback, and audio-focus behavior are all available.
+- **Downloads have moved from "can save" to "can recover"**:
+  downloads do not use the system `DownloadManager`. They use the shared
+  `OkHttpClient`, configurable concurrency, staging files, and sidecar metadata.
+  Direct links, YouTube range chunks, and HLS each have a resume strategy.
+  Network-policy pauses can continue later, while manual cancellation cleans up
+  partial artifacts.
 - **Self-owned sync plus playback stats**:
   NeriPlayer does not provide a public cloud library or developer-hosted user
   data service. GitHub/WebDAV sync stores playlists, favorites, recent plays,
@@ -131,14 +167,19 @@ Current positioning:
   mobile or roaming transfers.
 - **Highly personalized, beyond theme colors**:
   `AutoSettingsSchema` covers dynamic colors, seed colors, palette style,
-  UI scaling, custom backgrounds, lyric font size, lyric blur, the fluid Now
-  Playing background, Home card toggles, default start destination, and custom
-  song title/artist/cover metadata.
+  auto/light/dark mode, UI scaling, custom backgrounds, lyric font size,
+  lyric blur, the fluid Now Playing background, Home card toggles, default start
+  destination, haptic feedback, and custom song title/artist/cover metadata.
 - **ANR, crash logs, and safe mode form a diagnostics loop**:
   `AnrWatchdog` reads Android `ApplicationExitInfo.REASON_ANR` and stores the
   system ANR trace. `ExceptionHandler` and `NativeCrashHandler` record JVM and
   native crashes. If the previous startup failed, `SafeModeManager` can skip full
   app initialization and open safe mode for preview, copy, or export.
+- **Listen Together syncs the room, not just a progress bar**:
+  the Android client and Cloudflare Worker maintain rooms, roles, queues,
+  playback state, controller-offline recovery, member control requests,
+  optional stream-link sharing, and custom server URLs. Durable Objects persist
+  room state while WebSocket keeps active members in sync.
 
 ---
 
@@ -200,6 +241,12 @@ For release build and signing details, see
 - 🏠 **Home recommendations and continue listening**:
   the Home page supports recently used playlists and recommendation cards.
   International mode prioritizes YouTube Music home shelves.
+- 🗂️ **Categorized Library browsing**:
+  `Library` includes Local, Favorites, NetEase, YouTube Music, and Bilibili areas.
+  Local content can switch between playlists/artists with search and artist
+  sorting; Favorites can switch between playlists/artists; NetEase can switch
+  between playlists/albums; Bilibili separates created favorites, subscribed
+  favorites, and collections.
 - 🔍 **Layered search**:
   `Explore` searches NetEase / Bilibili / YouTube Music separately.
   Playback metadata completion uses NetEase / QQ Music and integrates LRCLIB
@@ -219,6 +266,10 @@ For release build and signing details, see
 - 🎚️ **Playback sound controls**:
   Now Playing includes speed, pitch, loudness enhancer, Android system equalizer
   presets, and manual EQ bands.
+- 🎛️ **Fine-grained playback behavior**:
+  keep last playback progress, restore playback mode, fade-in/fade-out,
+  crossfade-next, pause on Bluetooth disconnect, USB exclusive playback,
+  mixed playback, and preemptive audio focus are configurable.
 - 💾 **Configurable streaming cache**:
   audio cache uses `SimpleCache + LRU`, defaults to **1 GB**, and supports
   separate audio/image cache cleanup.
@@ -229,26 +280,35 @@ For release build and signing details, see
   playback stats remain available.
 - ⬇️ **In-app downloads and management**:
   supports multi-platform audio downloads, task progress, cancel/retry, and
-  local management with lyrics, covers, metadata, and audio tags.
+  local management with lyrics, covers, metadata, and audio tags. Default
+  download concurrency is **6**, configurable up to **8**.
 - 📁 **Migratable download directory**:
   downloads default to the app-managed directory, but can be moved to a custom
   SAF directory. Existing downloads are migrated when switching directories.
   Custom filename templates are also supported.
 - 🎵 **Local audio import and scanning**:
   supports system `VIEW / SEND / SEND_MULTIPLE` for `audio/*`, device music
-  scanning, and nearby sidecar lyrics/covers.
+  scanning, authorized-folder scanning, and nearby sidecar lyrics/covers.
+- 👤 **Local artist grouping and detail pages**:
+  local songs are grouped by display artist automatically. Local artist pages
+  support play-all, multi-select, playlist export, and batch downloads for
+  online-source songs.
 - 🩷 **Local playlists and favorites**:
   built-in "My Favorite Music" and "Local Files" system playlists, plus user
   playlists with create/rename/delete/reorder/add-song support. "My Favorite
   Music" can sync recognizable songs to NetEase Liked Songs.
+- 🧑‍🎤 **NetEase artist pages**:
+  NetEase songs can open artist pages with artist metadata, paged songs/albums,
+  and follow/unfollow support. Followed artists appear in the Library Favorites
+  artist category.
 - ☁️ **GitHub / WebDAV sync**:
   optional sync for local playlists, favorite playlists, recent plays, playback
   stats, and deletion records through `WorkManager`, stored in the user's own
   remote.
 - 📊 **Playback stats**:
   records play count, accumulated listen time, first/last played time, and daily
-  stat buckets by stable track identity. Stats are persisted locally and can be
-  synced when configured.
+  stat buckets by stable track identity. Day/week/month/year/all-time views are
+  available, and stats can be synced through GitHub/WebDAV when configured.
 - 📶 **Traffic stats and download risk prompts**:
   tracks playback/download bytes, Wi-Fi/mobile/roaming distribution, and cache
   hits, and can warn before downloads on mobile data or roaming.
@@ -259,25 +319,30 @@ For release build and signing details, see
   create or join rooms, sync playback state over WebSocket, support host/listener
   permissions, invite links, deep links, custom server URLs, and host-offline detection.
 - 🌈 **Personalization and themes**:
-  light/dark/follow-system mode, dynamic color, seed colors, theme styles,
-  UI scaling, custom background image, lyric font size, lyric blur, default start
-  destination, and Home card toggles.
+  auto/light/dark mode, dynamic color, seed colors, theme styles, UI scaling,
+  custom background image, haptic feedback, lyric font size, lyric blur,
+  default start destination, and Home card toggles.
 - ✨ **Now Playing visuals and lyrics**:
   `RuntimeShader` / GLSL fluid background, audio-reactive dynamic background,
   cover blur background, Apple Music-style lyrics, advanced lyrics, word-timed
-  lyrics, translated lyrics, lyric offset, lyric editing, font scaling, and a
-  full Lyrics page.
-- 🪟 **Floating lyrics**:
+  lyrics, translated lyrics, lyric offset, lyric editing, font scaling,
+  lyric-aware haptics, and a full Lyrics page.
+- 🪟 **Floating and status-bar lyrics**:
   system overlay lyrics with customizable color, outline, font size, position,
-  alignment, and translation display, plus auto-hide while the app is foregrounded.
+  alignment, and translation display, plus Meizu status-bar lyrics for select
+  devices, SuperLyric output, and auto-hide while the app is foregrounded.
 - 🔌 **External lyrics/device integration**:
-  Lyricon integration, external Bluetooth lyrics, pause on Bluetooth disconnect,
-  and USB exclusive playback toggles. Lyricon receives the current song,
-  playback state, position, word-level lyrics, and translations.
+  Lyricon integration, SuperLyric, external Bluetooth lyrics, pause on Bluetooth
+  disconnect, and USB exclusive playback toggles. The external lyrics path
+  receives the current song, playback state, position, word-level lyrics,
+  and translations.
 - 🛠️ **Developer mode and debug tools**:
   tap the version number **7 times** to reveal the `Debug` tab, including
   YouTube / Bili / NetEase / Search / Listen Together probes, log viewer, and
   crash log viewer.
+- 🧾 **Friendlier sign-in and logging**:
+  NetEase and Bilibili support QR login with web-login fallback. Persistent file
+  logging can also be enabled outside developer mode for hard-to-reproduce bugs.
 - 🛟 **Safe mode and crash logs**:
   if the previous startup hit a JVM/native crash or system ANR, the app can boot
   directly into safe mode so you can inspect or export the log and selectively
@@ -290,20 +355,22 @@ For release build and signing details, see
 - **NetEase Cloud Music**:
   login, song search, curated playlists, albums, playlist/album list search,
   playback, downloads, lyrics, playback metadata completion, auto source switching
-  for restricted playback, plus syncing local favorites to NetEase Liked Songs.
+  for restricted playback, syncing local favorites to NetEase Liked Songs,
+  artist pages, paged artist songs/albums, and artist follow support.
 - **Bilibili**:
-  login, video search, favorites, collections, favorite/collection list search,
-  multi-part video-to-audio playback, and downloads.
+  web login, QR login, video search, created favorites, subscribed favorites,
+  collections, favorite/collection list search, multi-part video-to-audio
+  playback, and downloads.
   It is not a full video discovery or comments client.
 - **YouTube Music**:
-  login, home/playlist browsing, playlist details, search, playback, downloads,
-  PoToken, and JS Challenge support.
+  login, home/library playlist browsing, playlist details, search, playback,
+  downloads, PoToken, and JS Challenge support.
 - **QQ Music**:
   currently used only for playback metadata and lyrics completion. Login,
   playback, and library data are not implemented.
 - **Local audio**:
-  external share/open import, device scanning, local file playback, sharing, and
-  local playlist management.
+  external share/open import, device scanning, authorized-folder scanning,
+  local file playback, local artist grouping, sharing, and local playlist management.
 
 ---
 
@@ -344,7 +411,14 @@ For release build and signing details, see
   only after enabling developer mode.
 - `Now Playing` is a full-screen layer above main navigation, with a persistent
   bottom `Mini Player`.
-- Library also exposes Recent Plays and Playback Stats.
+- `Library` uses paged navigation for Local, Favorites, NetEase, YouTube Music,
+  Bilibili, and the QQ Music placeholder. It also exposes Recent Plays and
+  Playback Stats.
+- Local Library has playlist/artist categories; Favorites has playlist/artist
+  categories; NetEase has playlist/album categories.
+- `LocalArtistDetailScreen` handles local artist pages with play-all,
+  multi-select, playlist export, and batch downloads for online songs.
+  `NeteaseArtistDetailScreen` handles NetEase artist songs/albums and follow state.
 
 ### Playback, cache, and service
 
@@ -361,6 +435,9 @@ For release build and signing details, see
 - Playback state is persisted periodically for queue and state recovery.
 - Sleep timer, fade-in/fade-out, crossfade-next, and playback mode recovery are
   handled in the player layer.
+- Preemptive audio focus, mixed playback, pause on Bluetooth disconnect, and
+  USB exclusive playback are stored in playback preference snapshots so they are
+  available early in player startup.
 
 ### Search and data sources
 
@@ -374,12 +451,18 @@ For release build and signing details, see
   The player supports original lyrics, translated lyrics, word timing, and manual editing.
 - **Lyricon integration**:
   `LyriconManager` outputs the current song, playback state, position,
-  word-level lyrics, and translated lyrics to Lyricon.
+  word-level lyrics, and translated lyrics to Lyricon and SuperLyric.
+  Status-bar lyrics depend on vendor support and currently target select devices.
+- **Artist entry points**:
+  NetEase search, Home, playlist/album detail pages, and Now Playing try to keep
+  `neteaseArtists` metadata so the UI can open NetEase artist detail pages.
 
 ### Local data and security
 
 - General settings use `DataStore`. KSP generates setting keys, backup allowlists,
   and settings UI metadata.
+- Theme mode is represented by `ThemeMode`, with light, dark, and Auto
+  follow-system behavior.
 - Platform cookies, YouTube auth data, GitHub tokens, and WebDAV passwords are
   stored locally with `Android Keystore + EncryptedSharedPreferences`.
 - Play history, playback stats, playlists, favorite snapshots, and mappings are
@@ -391,6 +474,7 @@ For release build and signing details, see
 ### Downloads, local import, and backups
 
 - Downloads use a shared `OkHttpClient`, not the system `DownloadManager`.
+- Default download concurrency is **6**, configurable up to **8** in Settings.
 - Downloads are first written into `cache/download_staging` working files, then
   committed into the app-managed directory or a user-selected SAF directory.
   Audio metadata is prepared before commit, and lyrics, covers, `.npmeta.json`,
@@ -496,7 +580,10 @@ NeriPlayer also supports storing the same sync data in a WebDAV remote file.
 
 ## Roadmap
 
-### In progress
+### Exploring
+
+These directions can change with maintainer bandwidth, platform availability,
+and community feedback. They are not fixed-date commitments.
 
 - [ ] Video playback
 - [ ] Comment section
@@ -505,7 +592,17 @@ NeriPlayer also supports storing the same sync data in a WebDAV remote file.
 
 ### Shipped recently
 
-- [x] Floating lyrics
+- [x] Redesigned Library navigation with local/favorite/NetEase subcategories
+- [x] Local artist grouping and local artist detail pages
+- [x] NetEase artist details, paged songs/albums, and artist follow support
+- [x] Day/week/month/year/all-time playback statistics views
+- [x] NetEase and Bilibili QR login
+- [x] Configurable download concurrency, recovery, and finalization reliability
+- [x] Standardized lyric embedding setting
+- [x] Auto theme mode, redesigned theme settings, and refined dark-mode detection
+- [x] Lyric-seek haptic feedback
+- [x] Preemptive audio focus setting
+- [x] Floating lyrics, status-bar lyrics, and SuperLyric output
 - [x] Clear cache
 - [x] Add to playlist
 - [x] Tablet / landscape Now Playing adaptation
@@ -528,8 +625,8 @@ NeriPlayer also supports storing the same sync data in a WebDAV remote file.
 
 Thank you for using NeriPlayer. Since the project has many features and user
 environments can vary a lot, you may occasionally encounter behavior differences
- or unexpected issues. If you run into any problems, feel free to submit
- feedback at any time. We will keep improving the project over time.
+or unexpected issues. If you run into any problems, feel free to submit feedback.
+We will keep improving the project over time.
 
 ---
 
@@ -559,9 +656,11 @@ environments can vary a lot, you may occasionally encounter behavior differences
 
 ### Limitations
 
-- Downloads do not rely on the system download service and do not support resume.
-- Bilibili mainly provides video search, favorites, collections, and audio playback. It is not a
-  full video discovery client.
+- Downloads do not rely on the system download service. They support automatic
+  resume and startup recovery, but they are not a system-level background
+  downloader and do not sync downloaded media across devices.
+- Bilibili mainly provides video search, favorites, collections, and audio playback.
+  It is not a full video discovery client.
 - QQ Music is only a playback metadata/lyrics completion source.
 - GitHub/WebDAV sync is not end-to-end encrypted. Full config export files may
   contain auth data and must be protected by the user.
@@ -619,9 +718,11 @@ environments can vary a lot, you may occasionally encounter behavior differences
 
 ## Update Cycle
 
-- We maintain only core features. Community contributions are welcome for other capabilities.
-- Development may pause for special reasons.
-- PRs and feedback are welcome.
+- The project is under active iteration. Releases are usually published manually
+  after a batch of features lands.
+- Core playback, local data, sync, and recovery paths are maintained first.
+- Third-party platform support can be affected by platform policy changes.
+  Issues, PRs, and reproducible logs are welcome.
 
 ---
 

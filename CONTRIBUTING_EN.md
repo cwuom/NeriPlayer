@@ -23,6 +23,24 @@ implementation**. Keep documentation aligned with the source code and runtime be
 
 ---
 
+### Documentation Map
+
+When maintaining docs, split them by audience:
+
+- `README.md` / `README_EN.md`
+  - For users and new contributors: project scope, feature boundaries,
+    installation/builds, sync, and privacy.
+- `CONTRIBUTING.md` / `CONTRIBUTING_EN.md`
+  - For developers: module boundaries, extension paths, tests, and PR expectations.
+- `np-submodule/NeriPlayer-LTW/README.md`
+  - For Listen Together server deployers: Worker API, event model, deployment,
+    and local checks.
+
+If a behavior change affects user understanding, update the README.
+If it affects extension paths, tests, or module boundaries, update CONTRIBUTING.
+
+---
+
 ### Development Environment
 
 - **Android Studio**: latest stable version
@@ -45,6 +63,28 @@ Additional notes:
 - Dependency versions are managed by `gradle/libs.versions.toml` and module
   `build.gradle.kts` files.
 - Only `zh` and `en` resources are kept in the app, via the locale filter in `build-logic`.
+
+---
+
+### Quality Guardrails
+
+NeriPlayer covers a broad product surface. Protect these paths first:
+
+- **Playback**: `PlayerManager`, stream resolution, cache, URL refresh,
+  auto source switching, and state recovery.
+- **Downloads**: `AudioDownloadManager`, `GlobalDownloadManager`,
+  `ManagedDownloadStorage`, resume checkpoints, sidecar files, and SAF migration.
+- **Sync**: GitHub / WebDAV three-way merge, deletion records, playback stats,
+  and remote format compatibility.
+- **Local data**: atomic playlist JSON writes, config import/export, encrypted
+  auth storage, and DataStore settings.
+- **Listen Together**: Android client, Worker protocol fields, roles, queues,
+  and controller-offline recovery.
+- **Diagnostics**: safe mode, JVM/native crash logs, ANR capture, and Debug probes.
+
+Related tests live under `app/src/test/` and `app/src/androidTest/`.
+When changing these areas, search for neighboring tests first, then add coverage
+for the new behavior.
 
 ---
 
@@ -144,19 +184,36 @@ Security reminders:
     onboarding, external audio imports, Listen Together deep links, and the top-level
     Compose host.
   - `NeteaseWebLoginActivity.kt`, `NeteaseQrLoginActivity.kt`,
-    `BiliWebLoginActivity.kt`, and `YouTubeWebLoginActivity.kt`:
+    `BiliWebLoginActivity.kt`, `BiliQrLoginActivity.kt`, and `YouTubeWebLoginActivity.kt`:
     internal platform sign-in pages.
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt`
   - Top-level Compose app shell. Handles `NavHost`, dynamic bottom bar, `MiniPlayer`,
     `Now Playing` overlay, Debug routes, themes, and playback service sync.
 
+- `app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/`
+  - `LibraryScreen.kt`: top-level Library categories. Local content can switch
+    between playlists and artists, and Favorites can show playlists and followed artists.
+  - `LocalArtistLibraryGrid.kt`: local artist grid, empty state, and artist cards.
+
+- `app/src/main/java/moe/ouom/neriplayer/ui/screen/playlist/`
+  - `LocalArtistDetailScreen.kt`: local artist details with play-all,
+    multi-select, playlist export, and batch download for resolvable online songs.
+
+- `app/src/main/java/moe/ouom/neriplayer/ui/screen/artist/`
+  - NetEase artist detail screens for artist info, hot songs, paged albums,
+    and follow state.
+
+- `app/src/main/java/moe/ouom/neriplayer/ui/viewmodel/artist/`
+  - NetEase artist summaries, JSON parsing, and detail-screen state management.
+
 - `app/src/main/java/moe/ouom/neriplayer/ui/onboarding/`
   - First-run onboarding for language, platform accounts, GitHub sync, and personalization.
 
 - `app/src/main/java/moe/ouom/neriplayer/core/api/`
   - `netease/`: NetEase endpoints, crypto, and account capabilities.
-  - `bili/`: Bilibili search, favorites, playback info, and audio stream extraction.
+  - `bili/`: Bilibili search, QR login, favorites, collections, playback info,
+    and audio stream extraction.
   - `youtube/`: YouTube Music client based on NewPipe Extractor, home/playlist/search/playback,
     PoToken, and JS Challenge support.
   - `search/`: playback metadata/lyrics completion APIs. Current implementations:
@@ -189,10 +246,12 @@ Security reminders:
   - `settings/`: `DataStore` settings, KSP schema, bootstrap snapshot, theme snapshot,
     and playback preference snapshot.
   - `auth/`: NetEase, Bilibili, and YouTube cookie/auth storage and validation.
-  - `local/playlist/`: local playlist JSON atomic writes and system playlist compatibility.
+  - `local/playlist/`: local playlist JSON atomic writes, system playlist compatibility,
+    and local artist aggregation models.
   - `local/audioimport/`, `local/media/`: local audio import, scanning, metadata reading, and sharing.
-  - `playlist/favorite/`, `playlist/usage/`: favorite playlists and Home continue-listening data.
-  - `history/`, `stats/`: recent plays and playback stats.
+  - `playlist/favorite/`, `playlist/usage/`: favorite playlists, followed artists,
+    and Home continue-listening data.
+  - `history/`, `stats/`: recent plays, playback stats, and day/week/month/year/all-time aggregation.
   - `backup/`: playlist JSON backup/import and diff analysis.
   - `config/`: full app config import/export.
   - `sync/github/`: GitHub sync, three-way merge, serialization, Data Saver, and secure storage.
@@ -203,7 +262,7 @@ Security reminders:
     and server URL validation.
 
 - `app/src/main/java/moe/ouom/neriplayer/core/lyricon/`
-  - Lyricon integration for current song, playback state, position,
+  - Lyricon integration and SuperLyric output for current song, playback state, position,
     word-level lyrics, and translations.
 
 ---
@@ -216,10 +275,15 @@ Security reminders:
   default Chinese mode. International mode prioritizes YouTube Music home shelves.
 - The QQ Music entry in `Library` is still a placeholder and does not represent
   full platform integration.
+- Local artist categories are aggregated from imported/saved local songs by
+  display artist. They are not an online artist directory.
+- NetEase artist detail pages depend on NetEase artist metadata and endpoints;
+  follow state is saved into the local Favorites category.
 - `Bilibili` supports search, favorites, audio playback, and downloads, but is
   not a full video discovery or comments client.
 - `YouTube Music` supports login, home/playlist browsing, details, search,
   playback, and downloads.
+- Status-bar lyrics depend on private vendor support and only work on select devices.
 - NetEase playback tries lower qualities when the current quality is unavailable.
   For restricted, missing-URL, or preview-only tracks, it can auto-match a
   Bilibili fallback source when enabled.
@@ -317,7 +381,14 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 1. Read `ManagedDownloadStorage.kt`, `ManagedDownloadNaming.kt`, and related unit tests first.
 2. Consider app-managed storage, SAF custom directories, migration, legacy names,
    metadata files, and `.nomedia`.
-3. Changes to migration or delete semantics must update or add unit tests.
+3. Download tasks write to `cache/download_staging/` before being committed to
+   the final directory. `.resume.json` and `.hls.json` are part of resume
+   recovery and should not be treated as disposable temp files.
+4. Default download concurrency is **6**, configurable from **1-8**.
+   When changing concurrency, retry, or network recovery, check
+   `DownloadParallelism.kt`, `AudioDownloadManager.kt`, and `GlobalDownloadManager.kt`.
+5. Changes to migration, delete semantics, resume checkpoints, or sidecar writes
+   must update or add unit tests.
 
 #### 8. Modify Lyricon integration
 
@@ -325,8 +396,8 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 2. The setting key is `lyricon_enabled`, and playback lifecycle keeps it in sync.
 3. Lyrics use `LyricEntry`; word-level data comes from `WordTiming`, and
    translations are matched to original lines by timestamp tolerance.
-4. Keep Lyricon, advanced Now Playing lyrics, and external Bluetooth lyrics
-   compatible when changing lyric structures.
+4. Keep Lyricon, SuperLyric, status-bar lyrics, advanced Now Playing lyrics,
+   and external Bluetooth lyrics compatible when changing lyric structures.
 
 #### 9. Modify Listen Together
 
@@ -390,6 +461,16 @@ Before submitting, consider at least these checks:
    Add device or Compose UI tests under `app/src/androidTest/`.
 7. If behavior changes affect README, settings copy, user flows, or sync formats,
    update documentation in the same PR.
+
+Existing focused tests cover areas such as:
+
+- YouTube login, challenge parsing, PoToken, playback, Range/Seek policy, and prefetching
+- NetEase lyrics, local smoke tests, auto source switching, and playback response parsing
+- Download metadata, naming, directory migration, `.nomedia`, delete semantics, and startup recovery
+- GitHub/WebDAV sync serialization, deletion policy, playback-stat merging, and upload retry
+- Listen Together base URL validation, playback sync planning, session cancellation, and protocol validation
+- Lyrics UI, word timing, external Bluetooth lyrics, playback sound controls, and playback policies
+- Config backup, generated settings, security guards, crash log files, and safe-mode behavior
 
 PRs should include:
 
