@@ -608,6 +608,7 @@ fun DetailScreen(
                                             horizontalArrangement = Arrangement.Center
                                         ) {
                                             CircularProgressIndicator()
+                                            Spacer(modifier = Modifier.width(12.dp))
                                             Text(stringResource(R.string.playlist_loading_content))
                                         }
                                     }

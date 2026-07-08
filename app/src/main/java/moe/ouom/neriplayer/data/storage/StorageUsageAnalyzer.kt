@@ -380,6 +380,7 @@ private fun File.isUnder(root: File): Boolean {
 private fun platformCacheDirs(filesDir: File): List<File> {
     return listOf(
         File(filesDir, DIR_BILI_FAVORITE_CACHE),
+        File(filesDir, DIR_NETEASE_PLAYLIST_CACHE),
         File(filesDir, DIR_YOUTUBE_PLAYLIST_CACHE)
     )
 }
@@ -414,6 +415,7 @@ private const val DIR_SHARED_MEDIA_EXPORTS = "shared_media_exports"
 private const val DIR_DOWNLOAD_ROOT = "NeriPlayer"
 private const val DIR_DOWNLOAD_LYRICS = "Lyrics"
 private const val DIR_BILI_FAVORITE_CACHE = "bili_favorite_cache"
+private const val DIR_NETEASE_PLAYLIST_CACHE = "netease_playlist_cache"
 private const val DIR_YOUTUBE_PLAYLIST_CACHE = "youtube_music_playlist_cache"
 private const val DIR_LOCAL_AUDIO_COVERS = "local_audio_covers"
 private const val DIR_CUSTOM_BACKGROUND = "custom_background"

@@ -310,7 +310,7 @@
     <string name="storage_type_image_cache">Image Cache</string>
     <string name="storage_type_download_staging">Download Staging</string>
     <string name="storage_type_shared_media">Share Staging</string>
-    <string name="storage_type_platform_list_cache">Platform List Cache</string>
+    <string name="storage_type_platform_list_cache">Platform Playlist Cache</string>
     <string name="storage_type_downloaded_music">Downloaded Music</string>
     <string name="storage_type_downloaded_lyrics">Downloaded Lyrics</string>
     <string name="storage_type_download_index">Download Index</string>
@@ -326,7 +326,7 @@
     <string name="storage_desc_image_cache">Covers, avatars, and blurred background images that can be loaded again</string>
     <string name="storage_desc_download_staging">Incomplete downloads, resume metadata, and HLS checkpoints</string>
     <string name="storage_desc_shared_media">Temporary copies created when sharing local music</string>
-    <string name="storage_desc_platform_list_cache">Bili favorite folder and YouTube Music playlist detail cache</string>
+    <string name="storage_desc_platform_list_cache">NetEase, Bili, and YouTube Music playlist detail cache</string>
     <string name="storage_desc_other_cache">Files in the cache directory not covered above</string>
     <string name="storage_desc_downloaded_music">Songs saved by the user. These are not removed by clearing cache</string>
     <string name="storage_desc_downloaded_lyrics">Original and translated lyric sidecar files for downloads. These are not removed by clearing cache</string>

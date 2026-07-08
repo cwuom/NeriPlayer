@@ -310,7 +310,7 @@
     <string name="storage_type_image_cache">图片缓存</string>
     <string name="storage_type_download_staging">下载暂存</string>
     <string name="storage_type_shared_media">分享暂存</string>
-    <string name="storage_type_platform_list_cache">平台列表缓存</string>
+    <string name="storage_type_platform_list_cache">平台歌单缓存</string>
     <string name="storage_type_downloaded_music">下载的音乐</string>
     <string name="storage_type_downloaded_lyrics">下载歌词文件</string>
     <string name="storage_type_download_index">下载索引</string>
@@ -326,7 +326,7 @@
     <string name="storage_desc_image_cache">封面、头像和模糊背景图缓存，可重新加载</string>
     <string name="storage_desc_download_staging">未完成下载、断点续传和 HLS 检查点</string>
     <string name="storage_desc_shared_media">分享本地音乐时临时复制出的文件</string>
-    <string name="storage_desc_platform_list_cache">Bili 收藏夹和 YouTube Music 歌单详情缓存</string>
+    <string name="storage_desc_platform_list_cache">网易云、Bili 和 YouTube Music 歌单详情缓存</string>
     <string name="storage_desc_other_cache">缓存目录内未归入上述类型的文件</string>
     <string name="storage_desc_downloaded_music">用户主动下载保存的歌曲，不会通过清缓存删除</string>
     <string name="storage_desc_downloaded_lyrics">下载歌曲附带的原文和翻译歌词文件，不会通过清缓存删除</string>

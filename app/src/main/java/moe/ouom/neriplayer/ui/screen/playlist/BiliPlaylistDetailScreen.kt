@@ -406,6 +406,7 @@ fun BiliPlaylistDetailScreen(
                                         horizontalArrangement = Arrangement.Center
                                     ) {
                                         CircularProgressIndicator()
+                                        Spacer(modifier = Modifier.width(12.dp))
                                         Text(stringResource(R.string.bili_loading_favorites))
                                     }
                                 }
