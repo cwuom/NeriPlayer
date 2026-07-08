@@ -604,6 +604,68 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `fast downloaded catalog hit trusts lightweight cache without accessibility probe`() {
+        assertTrue(
+            shouldTrustFastDownloadedSongCatalogHit(
+                reference = "content://downloads/song",
+                cachedKnownReferences = null
+            )
+        )
+        assertTrue(
+            shouldTrustFastDownloadedSongCatalogHit(
+                reference = "content://downloads/song",
+                cachedKnownReferences = setOf("content://downloads/song")
+            )
+        )
+        assertFalse(
+            shouldTrustFastDownloadedSongCatalogHit(
+                reference = "content://downloads/song",
+                cachedKnownReferences = setOf("content://downloads/other")
+            )
+        )
+        assertFalse(
+            shouldTrustFastDownloadedSongCatalogHit(
+                reference = "",
+                cachedKnownReferences = null
+            )
+        )
+    }
+
+    @Test
+    fun `cancelled artifact recovery yields to active retry`() {
+        assertTrue(
+            shouldSkipCancelledArtifactRecovery(
+                downloadActive = true,
+                taskStatus = null
+            )
+        )
+        assertTrue(
+            shouldSkipCancelledArtifactRecovery(
+                downloadActive = false,
+                taskStatus = DownloadStatus.QUEUED
+            )
+        )
+        assertTrue(
+            shouldSkipCancelledArtifactRecovery(
+                downloadActive = false,
+                taskStatus = DownloadStatus.DOWNLOADING
+            )
+        )
+        assertFalse(
+            shouldSkipCancelledArtifactRecovery(
+                downloadActive = false,
+                taskStatus = DownloadStatus.CANCELLED
+            )
+        )
+        assertFalse(
+            shouldSkipCancelledArtifactRecovery(
+                downloadActive = false,
+                taskStatus = null
+            )
+        )
+    }
+
+    @Test
     fun `detailed inspection stays disabled when slow local inspection is turned off`() {
         assertEquals(
             false,

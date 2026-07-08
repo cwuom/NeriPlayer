@@ -36,7 +36,7 @@ class DownloadManagerViewModel(application: Application) : AndroidViewModel(appl
 
     fun refreshDownloadedSongs() {
         val appContext = getApplication<Application>()
-        GlobalDownloadManager.scanLocalFiles(appContext, forceRefresh = true)
+        GlobalDownloadManager.refreshDownloadedSongsForManager(appContext)
     }
 
     fun deleteDownloadedSong(song: DownloadedSong) {

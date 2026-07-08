@@ -200,7 +200,9 @@ object AudioDownloadManager {
     private var nextBatchSessionId = 0L
 
     @Volatile
-    private var activeBatchSessionId = 0L
+    private var visibleBatchSessionId = 0L
+
+    private val activeBatchSessionIds = linkedSetOf<Long>()
 
     @Volatile
     private var networkRecoveryMonitorRegistered = false
@@ -673,26 +675,48 @@ object AudioDownloadManager {
     private fun startBatchSession(): Long {
         return synchronized(batchSessionLock) {
             val sessionId = ++nextBatchSessionId
-            activeBatchSessionId = sessionId
+            activeBatchSessionIds += sessionId
+            visibleBatchSessionId = sessionId
             sessionId
         }
     }
 
     private fun invalidateBatchSession() {
         synchronized(batchSessionLock) {
-            activeBatchSessionId = ++nextBatchSessionId
+            activeBatchSessionIds.clear()
+            visibleBatchSessionId = 0L
+            nextBatchSessionId++
         }
     }
 
     private fun isBatchSessionCurrent(batchSessionId: Long?): Boolean {
-        return batchSessionId == null || activeBatchSessionId == batchSessionId
+        return batchSessionId == null || synchronized(batchSessionLock) {
+            batchSessionId in activeBatchSessionIds
+        }
+    }
+
+    private fun finishBatchSession(batchSessionId: Long) {
+        val shouldClearProgress = synchronized(batchSessionLock) {
+            val wasVisible = visibleBatchSessionId == batchSessionId
+            activeBatchSessionIds.remove(batchSessionId)
+            if (wasVisible) {
+                visibleBatchSessionId = activeBatchSessionIds.maxOrNull() ?: 0L
+            }
+            wasVisible
+        }
+        if (shouldClearProgress) {
+            _batchProgressFlow.value = null
+        }
     }
 
     private fun updateBatchProgressForSession(
         batchSessionId: Long,
         progress: BatchDownloadProgress?
     ) {
-        if (!isBatchSessionCurrent(batchSessionId)) {
+        val shouldPublish = synchronized(batchSessionLock) {
+            batchSessionId in activeBatchSessionIds && visibleBatchSessionId == batchSessionId
+        }
+        if (!shouldPublish) {
             return
         }
         _batchProgressFlow.value = progress
@@ -977,19 +1001,17 @@ object AudioDownloadManager {
                 clearPartialSidecarReferences(songKey)
                 try {
                     ensureSongDownloadNotCancelled(songKey, "prepare", batchSessionId, attemptId)
-                    // 检查文件是否已存在
                     if (LocalSongSupport.isLocalSong(song, context)) {
                         NPLogger.d(TAG, "Skip local song download: ${song.name}")
                         _progressFlow.value = null
                         return@withContext
                     }
 
-                    if (ManagedDownloadStorage.findDownloadedAudio(context, song) != null) {
+                    if (hasFastCachedManagedDownloadForStart(context, song)) {
                         NPLogger.d(
                             TAG,
                             "${context.getString(R.string.download_file_exists, song.name)}, songKey=$songKey"
                         )
-                        // 文件已存在，设置进度为null触发任务完成
                         _progressFlow.value = null
                         return@withContext
                     }
@@ -1231,6 +1253,7 @@ object AudioDownloadManager {
                                             storedAudio = storedAudio,
                                             sidecarReferences = partialSidecarReferences
                                         )
+                                        storedAudio = null
                                     }.onFailure { rollbackError ->
                                         NPLogger.e(
                                             TAG,
@@ -1336,6 +1359,7 @@ object AudioDownloadManager {
                                     storedAudio = storedAudio,
                                     sidecarReferences = partialSidecarReferences
                                 )
+                                storedAudio = null
                             }.onFailure { rollbackError ->
                                 NPLogger.e(
                                     TAG,
@@ -1859,6 +1883,8 @@ object AudioDownloadManager {
             } catch (e: Exception) {
                 NPLogger.e(TAG, context.getString(R.string.download_batch_failed, e.message ?: ""), e)
                 batchSessionId?.let { updateBatchProgressForSession(it, null) }
+            } finally {
+                batchSessionId?.let(::finishBatchSession)
             }
         }
     }
@@ -2103,15 +2129,17 @@ object AudioDownloadManager {
         if (!canBlockStorageLookup()) {
             return null
         }
-        if (!ManagedDownloadStorage.ensureSnapshotCacheReady(context)) {
+        val snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(context)
+            ?: if (ManagedDownloadStorage.ensureSnapshotCacheReady(context)) {
+                ManagedDownloadStorage.cachedDownloadLibrarySnapshot(context, restoreFromDisk = false)
+            } else {
+                null
+            }
+        if (snapshot == null) {
             return null
         }
 
-        val indexedAudio = ManagedDownloadStorage.findAudio(
-            context,
-            song,
-            forceRefresh = false
-        )
+        val indexedAudio = ManagedDownloadStorage.findDownloadedAudio(snapshot, song)
         if (indexedAudio != null) {
             if (ManagedDownloadStorage.isReferenceAccessible(context, indexedAudio.playbackUri)) {
                 return indexedAudio
@@ -2134,6 +2162,20 @@ object AudioDownloadManager {
         )
         GlobalDownloadManager.scanLocalFiles(context, forceRefresh = false)
         return null
+    }
+
+    private fun hasFastCachedManagedDownloadForStart(
+        context: Context,
+        song: SongItem
+    ): Boolean {
+        if (ManagedDownloadStorage.peekDownloadedAudio(song) != null) {
+            return true
+        }
+        val snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(context)
+        if (snapshot != null && ManagedDownloadStorage.findDownloadedAudio(snapshot, song) != null) {
+            return true
+        }
+        return GlobalDownloadManager.findFastCachedDownloadedSongPlaybackUri(context, song) != null
     }
 
     private fun buildSeedDownloadedMetadataJson(

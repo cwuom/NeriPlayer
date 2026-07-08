@@ -10,12 +10,13 @@ internal data class ManagedDownloadSongDeleteContext(
     val storedAudio: ManagedDownloadStorage.StoredEntry?,
     val candidateBaseNames: List<String>,
     val explicitReferences: List<String>,
-    val requiresSnapshotRefresh: Boolean
+    val requiredReferences: Set<String>
 )
 
 internal data class ManagedDownloadSongDeletePlan(
     val song: DownloadedSong,
-    val requestedReferences: Set<String>
+    val requestedReferences: Set<String>,
+    val requiredReferences: Set<String>
 )
 
 internal fun mergeManagedRequestedReferences(

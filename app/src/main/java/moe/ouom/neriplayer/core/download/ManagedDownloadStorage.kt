@@ -588,6 +588,22 @@ internal object ManagedDownloadStorage {
         return restoreSnapshotCacheFromDisk(context.applicationContext, expectedKey = cacheKey) != null
     }
 
+    internal fun cachedDownloadLibrarySnapshot(
+        context: Context,
+        restoreFromDisk: Boolean = true
+    ): DownloadLibrarySnapshot? {
+        val appContext = context.applicationContext
+        val cacheKey = buildSnapshotCacheKey(appContext)
+        snapshotCache
+            ?.takeIf { it.key == cacheKey }
+            ?.snapshot
+            ?.let { return it }
+        if (!restoreFromDisk) {
+            return null
+        }
+        return restoreSnapshotCacheFromDisk(appContext, expectedKey = cacheKey)
+    }
+
     internal fun directoryIdentity(uriString: String?): String? {
         val normalized = normalizeConfiguredDirectoryUri(uriString) ?: return null
         extractDirectoryDocumentId(normalized, "/tree/")
@@ -1547,6 +1563,16 @@ internal object ManagedDownloadStorage {
         )
     }
 
+    internal fun emptyDownloadLibrarySnapshot(): DownloadLibrarySnapshot {
+        return composeSnapshot(
+            audioEntries = emptyList(),
+            metadataEntries = emptyList(),
+            metadataByAudioName = emptyMap(),
+            coverEntries = emptyList(),
+            lyricEntries = emptyList()
+        )
+    }
+
     private suspend fun rewriteMigratedMetadataReferences(
         context: Context,
         targetRoot: RootHandle,
@@ -1752,6 +1778,11 @@ internal object ManagedDownloadStorage {
         val snapshot = resolveSnapshotForIndexedLookup(context)
         return snapshot?.metadataEntriesByAudioName?.get(audio.name)
             ?: findMetadataByDirectLookup(context, audio)
+    }
+
+    internal fun metadataReferenceForAudio(audio: StoredEntry): String? {
+        val reference = audio.reference.takeIf(String::isNotBlank) ?: return null
+        return "$reference$METADATA_SUFFIX"
     }
 
     private fun findMetadataByDirectLookup(context: Context, audio: StoredEntry): StoredEntry? {

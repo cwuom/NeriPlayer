@@ -55,4 +55,63 @@ class DownloadManagerScreenSelectionTest {
 
         assertEquals(listOf(secondSong), snapshot)
     }
+
+    @Test
+    fun `sanitizeDownloadSelectionState keeps empty selection mode when songs exist`() {
+        val song = testDownloadedSong(id = 1L, name = "First")
+
+        val state = sanitizeDownloadSelectionState(
+            selectionMode = true,
+            selectedSongKeys = emptySet(),
+            downloadedSongs = listOf(song)
+        )
+
+        assertEquals(DownloadSelectionState(selectionMode = true, selectedSongKeys = emptySet()), state)
+    }
+
+    @Test
+    fun `sanitizeDownloadSelectionState exits selection mode when library is empty`() {
+        val state = sanitizeDownloadSelectionState(
+            selectionMode = true,
+            selectedSongKeys = setOf("stale"),
+            downloadedSongs = emptyList()
+        )
+
+        assertEquals(DownloadSelectionState(selectionMode = false, selectedSongKeys = emptySet()), state)
+    }
+
+    @Test
+    fun `sanitizeDownloadSelectionState removes stale selected song keys`() {
+        val song = testDownloadedSong(id = 1L, name = "First")
+
+        val state = sanitizeDownloadSelectionState(
+            selectionMode = true,
+            selectedSongKeys = setOf(song.deletionIdentity(), "stale"),
+            downloadedSongs = listOf(song)
+        )
+
+        assertEquals(
+            DownloadSelectionState(
+                selectionMode = true,
+                selectedSongKeys = setOf(song.deletionIdentity())
+            ),
+            state
+        )
+    }
+
+    private fun testDownloadedSong(
+        id: Long,
+        name: String
+    ): DownloadedSong {
+        return DownloadedSong(
+            id = id,
+            name = name,
+            artist = "Artist",
+            album = "Album",
+            filePath = "/music/$name.flac",
+            fileSize = 10L,
+            downloadTime = 1L,
+            mediaUri = "content://downloads/$name.flac"
+        )
+    }
 }

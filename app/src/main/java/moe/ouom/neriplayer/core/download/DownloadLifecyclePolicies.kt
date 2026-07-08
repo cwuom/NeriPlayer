@@ -164,6 +164,26 @@ internal fun shouldRepairMetadataLessManagedDownload(
         normalizedActualArtist !in normalizedExpectedArtists
 }
 
+internal fun shouldTrustFastDownloadedSongCatalogHit(
+    reference: String?,
+    cachedKnownReferences: Set<String>?
+): Boolean {
+    val normalizedReference = reference?.takeIf(String::isNotBlank) ?: return false
+    return cachedKnownReferences == null || normalizedReference in cachedKnownReferences
+}
+
+internal fun shouldSkipCancelledArtifactRecovery(
+    downloadActive: Boolean,
+    taskStatus: DownloadStatus?
+): Boolean {
+    if (downloadActive) {
+        return true
+    }
+    return taskStatus == DownloadStatus.QUEUED ||
+        taskStatus == DownloadStatus.DOWNLOADING ||
+        taskStatus == DownloadStatus.WAITING_NETWORK
+}
+
 internal fun buildExpectedDownloadTitles(song: SongItem): Set<String> {
     return linkedSetOf<String>().apply {
         add(song.customName ?: song.name)

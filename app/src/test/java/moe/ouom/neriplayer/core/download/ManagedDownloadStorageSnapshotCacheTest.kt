@@ -4,6 +4,7 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
@@ -109,6 +110,53 @@ class ManagedDownloadStorageSnapshotCacheTest {
         assertEquals(metadata, restored?.second?.metadataByAudioName?.get("Artist - Song.mp3"))
         assertEquals(coverEntry, restored?.second?.coverEntriesByName?.get(coverEntry.name))
         assertEquals(lyricEntry, restored?.second?.lyricEntriesByName?.get(lyricEntry.name))
+    }
+
+    @Test
+    fun `empty snapshot keeps all lookup indexes empty`() {
+        val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot()
+
+        assertTrue(snapshot.audioEntries.isEmpty())
+        assertTrue(snapshot.audioEntriesByLookupKey.isEmpty())
+        assertTrue(snapshot.metadataEntriesByAudioName.isEmpty())
+        assertTrue(snapshot.metadataByAudioName.isEmpty())
+        assertTrue(snapshot.knownReferences.isEmpty())
+        assertNull(
+            ManagedDownloadStorage.findDownloadedAudio(
+                snapshot,
+                SongItem(
+                    id = 1L,
+                    name = "Missing",
+                    artist = "Artist",
+                    album = "Album",
+                    albumId = 1L,
+                    durationMs = 1_000L,
+                    coverUrl = null
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `metadata reference is derived from stored audio reference without scanning`() {
+        val audioEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.flac",
+            reference = "/music/Artist - Song.flac",
+            mediaUri = "file:///music/Artist%20-%20Song.flac",
+            localFilePath = "/music/Artist - Song.flac",
+            sizeBytes = 1024L,
+            lastModifiedMs = 99L
+        )
+
+        assertEquals(
+            "/music/Artist - Song.flac.npmeta.json",
+            ManagedDownloadStorage.metadataReferenceForAudio(audioEntry)
+        )
+        assertNull(
+            ManagedDownloadStorage.metadataReferenceForAudio(
+                audioEntry.copy(reference = "")
+            )
+        )
     }
 
     @Test

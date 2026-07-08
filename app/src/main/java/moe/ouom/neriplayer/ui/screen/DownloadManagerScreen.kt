@@ -224,19 +224,16 @@ fun DownloadManagerScreen(
             downloadedSongs.sumOf { it.fileSize }
         }
         LaunchedEffect(downloadedSongs, selectionMode) {
-            if (!selectionMode) {
-                if (selectedSongKeys.isNotEmpty()) {
-                    selectedSongKeys = emptySet()
-                }
-                return@LaunchedEffect
+            val sanitizedState = sanitizeDownloadSelectionState(
+                selectionMode = selectionMode,
+                selectedSongKeys = selectedSongKeys,
+                downloadedSongs = downloadedSongs
+            )
+            if (sanitizedState.selectionMode != selectionMode) {
+                selectionMode = sanitizedState.selectionMode
             }
-            val validKeys = downloadedSongs.mapTo(mutableSetOf(), DownloadedSong::deletionIdentity)
-            val sanitizedKeys = selectedSongKeys.intersect(validKeys)
-            if (sanitizedKeys != selectedSongKeys) {
-                selectedSongKeys = sanitizedKeys
-            }
-            if (sanitizedKeys.isEmpty() && selectedSongKeys.isEmpty()) {
-                selectionMode = false
+            if (sanitizedState.selectedSongKeys != selectedSongKeys) {
+                selectedSongKeys = sanitizedState.selectedSongKeys
             }
         }
 
@@ -719,4 +716,33 @@ internal fun captureSongsPendingDelete(
     return downloadedSongs
         .filter { song -> selectedSongKeys.contains(song.deletionIdentity()) }
         .distinctBy(DownloadedSong::deletionIdentity)
+}
+
+internal data class DownloadSelectionState(
+    val selectionMode: Boolean,
+    val selectedSongKeys: Set<String>
+)
+
+internal fun sanitizeDownloadSelectionState(
+    selectionMode: Boolean,
+    selectedSongKeys: Set<String>,
+    downloadedSongs: List<DownloadedSong>
+): DownloadSelectionState {
+    if (!selectionMode) {
+        return DownloadSelectionState(
+            selectionMode = false,
+            selectedSongKeys = emptySet()
+        )
+    }
+    val validKeys = downloadedSongs.mapTo(mutableSetOf(), DownloadedSong::deletionIdentity)
+    if (validKeys.isEmpty()) {
+        return DownloadSelectionState(
+            selectionMode = false,
+            selectedSongKeys = emptySet()
+        )
+    }
+    return DownloadSelectionState(
+        selectionMode = true,
+        selectedSongKeys = selectedSongKeys.intersect(validKeys)
+    )
 }
