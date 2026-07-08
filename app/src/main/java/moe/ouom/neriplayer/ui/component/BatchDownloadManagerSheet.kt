@@ -51,10 +51,11 @@ fun BatchDownloadManagerSheet(
 ) {
     val taskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
     val activeDownloadOperations by GlobalDownloadManager.activeDownloadOperationsFlow.collectAsState()
-    val pendingTaskCount = taskSummary.pendingTaskCount
-    val visibleProgress = batchDownloadProgress?.takeIf { progress ->
-        pendingTaskCount <= 1 || progress.totalSongs >= pendingTaskCount
+    val taskListPendingCount = remember(downloadTasks) {
+        countPendingDownloadTasks(downloadTasks)
     }
+    val pendingTaskCount = maxOf(taskSummary.pendingTaskCount, taskListPendingCount)
+    val visibleProgress = batchDownloadProgress
     val stableProgressSummaryText = if (visibleProgress != null) {
         progressSummaryText
     } else {

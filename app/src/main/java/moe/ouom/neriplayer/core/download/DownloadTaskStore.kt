@@ -187,6 +187,64 @@ internal class DownloadTaskStore(
         return preparedAttemptId
     }
 
+    fun prepareDownloadTasks(
+        songs: List<SongItem>,
+        status: DownloadStatus = DownloadStatus.DOWNLOADING
+    ): Map<String, Long> {
+        if (songs.isEmpty()) {
+            return emptyMap()
+        }
+        val distinctSongs = songs.distinctBy { it.stableKey() }
+        val preparedAttemptIds = linkedMapOf<String, Long>()
+        mutate { tasks ->
+            val updatedTasks = tasks.toMutableList()
+            val existingIndexesBySongKey = HashMap<String, Int>(tasks.size)
+            tasks.forEachIndexed { index, task ->
+                existingIndexesBySongKey.putIfAbsent(task.song.stableKey(), index)
+            }
+            distinctSongs.forEach { song ->
+                val songKey = song.stableKey()
+                val existingIndex = existingIndexesBySongKey[songKey]
+                if (existingIndex == null) {
+                    val attemptId = nextAttemptId()
+                    preparedAttemptIds[songKey] = attemptId
+                    clearProgressPublishState(songKey)
+                    existingIndexesBySongKey[songKey] = updatedTasks.size
+                    updatedTasks += DownloadTask(
+                        song = song,
+                        progress = null,
+                        status = status,
+                        attemptId = attemptId
+                    )
+                    return@forEach
+                }
+
+                val existingTask = updatedTasks[existingIndex]
+                when (existingTask.status) {
+                    DownloadStatus.QUEUED,
+                    DownloadStatus.DOWNLOADING -> return@forEach
+
+                    DownloadStatus.COMPLETED,
+                    DownloadStatus.CANCELLED,
+                    DownloadStatus.FAILED,
+                    DownloadStatus.WAITING_NETWORK -> {
+                        val attemptId = nextAttemptId()
+                        preparedAttemptIds[songKey] = attemptId
+                        clearProgressPublishState(songKey)
+                        updatedTasks[existingIndex] = DownloadTask(
+                            song = song,
+                            progress = null,
+                            status = status,
+                            attemptId = attemptId
+                        )
+                    }
+                }
+            }
+            updatedTasks
+        }
+        return preparedAttemptIds
+    }
+
     fun registerActiveDownloadTask(
         song: SongItem,
         expectedAttemptId: Long
@@ -274,6 +332,26 @@ internal class DownloadTaskStore(
             clearProgressPublishState(songKey)
             tasks.filterIndexed { index, _ -> index != taskIndex }
         }
+    }
+
+    fun removeDownloadTasks(expectedAttemptIdsBySongKey: Map<String, Long>) {
+        if (expectedAttemptIdsBySongKey.isEmpty()) {
+            return
+        }
+        val removedSongKeys = mutableSetOf<String>()
+        mutate { tasks ->
+            tasks.filterNot { task ->
+                val songKey = task.song.stableKey()
+                val expectedAttemptId = expectedAttemptIdsBySongKey[songKey]
+                    ?: return@filterNot false
+                val shouldRemove = shouldApplyTaskMutation(task, expectedAttemptId)
+                if (shouldRemove) {
+                    removedSongKeys += songKey
+                }
+                shouldRemove
+            }
+        }
+        removedSongKeys.forEach(::clearProgressPublishState)
     }
 
     fun removeActiveDownloadTasks(activeTasks: Collection<DownloadTask>) {
