@@ -1002,6 +1002,18 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `pre existing downloaded audio settles directly instead of finalizing missing completed reference`() {
+        assertEquals(
+            PreExistingDownloadedAudioAction.DIRECT_SETTLE,
+            resolvePreExistingDownloadedAudioAction(hasExistingAudio = true)
+        )
+        assertEquals(
+            PreExistingDownloadedAudioAction.CONTINUE_DOWNLOAD,
+            resolvePreExistingDownloadedAudioAction(hasExistingAudio = false)
+        )
+    }
+
+    @Test
     fun `task mutation ignores stale attempt id but accepts current attempt`() {
         val task = DownloadTask(
             song = SongItem(

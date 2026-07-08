@@ -152,14 +152,14 @@ internal object DownloadedAudioTagWriter {
         return fallback?.takeIf { it.isNotBlank() }
     }
 
-    private fun normalizeLyricForEmbedding(lyric: String?, enabled: Boolean): String? {
+    internal fun normalizeLyricForEmbedding(lyric: String?, enabled: Boolean): String? {
         if (!enabled || lyric.isNullOrBlank()) {
             return lyric
         }
         return convertNeteaseWordLyricToLrc(lyric).takeIf(String::isNotBlank) ?: lyric
     }
 
-    private fun convertNeteaseWordLyricToLrc(lyric: String): String {
+    internal fun convertNeteaseWordLyricToLrc(lyric: String): String {
         val output = mutableListOf<String>()
         var convertedLineCount = 0
 

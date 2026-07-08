@@ -36,6 +36,11 @@ internal enum class CompletedDownloadFinalizationAction {
     ROLLBACK_CANCELLED
 }
 
+internal enum class PreExistingDownloadedAudioAction {
+    DIRECT_SETTLE,
+    CONTINUE_DOWNLOAD
+}
+
 internal fun resolveCompletedDownloadFinalizationAction(
     hasStoredAudio: Boolean,
     cancelled: Boolean
@@ -44,6 +49,16 @@ internal fun resolveCompletedDownloadFinalizationAction(
         cancelled -> CompletedDownloadFinalizationAction.ROLLBACK_CANCELLED
         !hasStoredAudio -> CompletedDownloadFinalizationAction.COMPLETE_WITHOUT_STORED_AUDIO
         else -> CompletedDownloadFinalizationAction.COMPLETE
+    }
+}
+
+internal fun resolvePreExistingDownloadedAudioAction(
+    hasExistingAudio: Boolean
+): PreExistingDownloadedAudioAction {
+    return if (hasExistingAudio) {
+        PreExistingDownloadedAudioAction.DIRECT_SETTLE
+    } else {
+        PreExistingDownloadedAudioAction.CONTINUE_DOWNLOAD
     }
 }
 

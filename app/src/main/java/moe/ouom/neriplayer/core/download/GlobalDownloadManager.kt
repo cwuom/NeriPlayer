@@ -2239,20 +2239,33 @@ object GlobalDownloadManager {
                         snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(appContext),
                         allowStorageLookup = false
                     )
+                    val existingAudioAction = resolvePreExistingDownloadedAudioAction(
+                        hasExistingAudio = existingAudio != null
+                    )
                     if (existingAudio != null) {
                         if (!isDownloadRequestGenerationCurrent(songKey, requestGeneration)) {
                             NPLogger.d(TAG, "单曲下载命中已存在文件时已过期: song=${song.name}, generation=$requestGeneration")
                             removeDownloadTask(songKey, expectedAttemptId = attemptId)
                             return@withSongExecutionLock
                         }
-                        finalizeCompletedDownload(
-                            context = appContext,
-                            song = song,
-                            refreshCatalog = true,
-                            expectedAttemptId = attemptId,
-                            storedAudioHint = existingAudio
-                        )
-                        return@withSongExecutionLock
+                        if (existingAudioAction == PreExistingDownloadedAudioAction.DIRECT_SETTLE) {
+                            publishOptimisticDownloadedSongs(
+                                appContext,
+                                listOf(buildOptimisticDownloadedSong(song, existingAudio))
+                            )
+                            removeDownloadTask(songKey, expectedAttemptId = attemptId)
+                            forgetPendingDownloadQueueEntriesIfCurrent(
+                                appContext,
+                                setOf(songKey),
+                                requestGeneration
+                            )
+                            scheduleCatalogReconcile(appContext, forceRefresh = false)
+                            NPLogger.d(
+                                TAG,
+                                "单曲下载命中已存在音频并直接完成: song=${song.name}, songKey=$songKey, file=${existingAudio.name}"
+                            )
+                            return@withSongExecutionLock
+                        }
                     }
 
                     while (taskStore.isSingleDownloading) {
@@ -2460,18 +2473,23 @@ object GlobalDownloadManager {
                         snapshot = downloadLibrarySnapshot,
                         allowStorageLookup = false
                     )
+                    val existingAudioAction = resolvePreExistingDownloadedAudioAction(
+                        hasExistingAudio = existingAudio != null
+                    )
                     if (existingAudio != null) {
-                        settledSongKeys += songKey
-                        settledAttemptIds[songKey] = attemptId
-                        optimisticDownloadedSongs += buildOptimisticDownloadedSong(
-                            song = song,
-                            storedAudio = existingAudio
-                        )
-                        NPLogger.d(
-                            TAG,
-                            "批量下载命中已存在音频并直接完成: song=${song.name}, songKey=$songKey, file=${existingAudio.name}"
-                        )
-                        return@forEach
+                        if (existingAudioAction == PreExistingDownloadedAudioAction.DIRECT_SETTLE) {
+                            settledSongKeys += songKey
+                            settledAttemptIds[songKey] = attemptId
+                            optimisticDownloadedSongs += buildOptimisticDownloadedSong(
+                                song = song,
+                                storedAudio = existingAudio
+                            )
+                            NPLogger.d(
+                                TAG,
+                                "批量下载命中已存在音频并直接完成: song=${song.name}, songKey=$songKey, file=${existingAudio.name}"
+                            )
+                            return@forEach
+                        }
                     }
                     preparedQueuedSongs++
                     pendingSongs += PreparedDownloadTaskRequest(song = song, attemptId = attemptId)
