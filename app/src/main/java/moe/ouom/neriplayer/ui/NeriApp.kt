@@ -171,6 +171,7 @@ import moe.ouom.neriplayer.data.settings.ThemeMode
 import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotCached
+import moe.ouom.neriplayer.data.storage.clearExtraStorageCaches
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.component.NeriBottomBar
@@ -218,6 +219,7 @@ import moe.ouom.neriplayer.util.NativeCrashHandler
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.adjustedAccentColorArgb
 import moe.ouom.neriplayer.util.HapticTextButton
+import moe.ouom.neriplayer.util.formatFileSize
 import moe.ouom.neriplayer.util.isRemoteImageSource
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.rememberOfflineModeState
@@ -2056,10 +2058,28 @@ private fun NeriAppContent(
                                         onMaxCacheSizeBytesChange = { size ->
                                             scope.launch { repo.setMaxCacheSizeBytes(size) }
                                         },
-                                        onClearCacheClick = { clearAudio, clearImage ->
+                                        onClearCacheClick = { options ->
                                             scope.launch {
-                                                val (_, message) = PlayerManager.clearCache(clearAudio, clearImage)
-                                                snackbarHostState.showSnackbar(message)
+                                                val messages = mutableListOf<String>()
+                                                if (options.needsPlayerCacheClear) {
+                                                    val (_, message) = PlayerManager.clearCache(
+                                                        clearAudio = options.audioCache,
+                                                        clearImage = options.imageCache
+                                                    )
+                                                    messages += message
+                                                }
+                                                if (options.needsExtraCacheClear) {
+                                                    val result = clearExtraStorageCaches(context, options)
+                                                    messages += if (result.success) {
+                                                        context.getString(
+                                                            R.string.storage_extra_cache_clear_complete,
+                                                            formatFileSize(result.freedBytes)
+                                                        )
+                                                    } else {
+                                                        context.getString(R.string.storage_extra_cache_clear_partial)
+                                                    }
+                                                }
+                                                snackbarHostState.showSnackbar(messages.joinToString(" · "))
                                             }
                                         },
                                         onBeforeLanguageRestart = clearThemeRevealState

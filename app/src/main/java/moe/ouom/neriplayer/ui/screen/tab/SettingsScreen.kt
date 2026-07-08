@@ -131,6 +131,8 @@ import moe.ouom.neriplayer.data.settings.normalizeMobileDataBiliAudioQuality
 import moe.ouom.neriplayer.data.settings.normalizeMobileDataNeteaseAudioQuality
 import moe.ouom.neriplayer.data.settings.normalizeMobileDataYouTubeAudioQuality
 import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
+import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
+import moe.ouom.neriplayer.data.storage.StorageUsageSummary
 import moe.ouom.neriplayer.listentogether.configuredListenTogetherBaseUrlOrNull
 import moe.ouom.neriplayer.listentogether.isDefaultListenTogetherBaseUrl
 import moe.ouom.neriplayer.listentogether.resolveListenTogetherBaseUrl
@@ -346,7 +348,7 @@ fun SettingsScreen(
     onNavigateToDownloadManager: () -> Unit = {},
     maxCacheSizeBytes: Long,
     onMaxCacheSizeBytesChange: (Long) -> Unit,
-    onClearCacheClick: (clearAudio: Boolean, clearImage: Boolean) -> Unit,
+    onClearCacheClick: (StorageCacheClearOptions) -> Unit,
     onBeforeLanguageRestart: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -398,10 +400,13 @@ fun SettingsScreen(
     // 缓存类型选择状态
     var clearAudioCache by remember { mutableStateOf(true) }
     var clearImageCache by remember { mutableStateOf(true) }
+    var clearDownloadStagingCache by remember { mutableStateOf(false) }
+    var clearSharedMediaCache by remember { mutableStateOf(false) }
+    var clearPlatformListCache by remember { mutableStateOf(false) }
 
     // 存储占用详情状态
     var showStorageDetails by remember { mutableStateOf(false) }
-    var storageDetails by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
+    var storageDetails by remember { mutableStateOf(StorageUsageSummary.Empty) }
 
 
     // 各种对话框和弹窗的显示状态 //
@@ -1388,6 +1393,13 @@ fun SettingsScreen(
                             onClearAudioCacheChange = { clearAudioCache = it },
                             clearImageCache = clearImageCache,
                             onClearImageCacheChange = { clearImageCache = it },
+                            clearDownloadStagingCache = clearDownloadStagingCache,
+                            onClearDownloadStagingCacheChange = { clearDownloadStagingCache = it },
+                            clearSharedMediaCache = clearSharedMediaCache,
+                            onClearSharedMediaCacheChange = { clearSharedMediaCache = it },
+                            clearPlatformListCache = clearPlatformListCache,
+                            onClearPlatformListCacheChange = { clearPlatformListCache = it },
+                            downloadStagingClearEnabled = !hasActiveDownloadOperations,
                             onClearCacheClick = onClearCacheClick
                         )
                     }

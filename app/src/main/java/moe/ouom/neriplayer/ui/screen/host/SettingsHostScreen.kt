@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.ThemeMode
+import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
 import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
 import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
 import moe.ouom.neriplayer.ui.screen.tab.SettingsScreen
@@ -171,7 +172,7 @@ fun SettingsHostScreen(
     onPreemptAudioFocusChange: (Boolean) -> Unit,
     maxCacheSizeBytes: Long,
     onMaxCacheSizeBytesChange: (Long) -> Unit,
-    onClearCacheClick: (clearAudio: Boolean, clearImage: Boolean) -> Unit,
+    onClearCacheClick: (StorageCacheClearOptions) -> Unit,
     onBeforeLanguageRestart: () -> Unit = {},
 ) {
     var screenState by rememberSaveable { mutableStateOf(SettingsScreenState.Settings) }

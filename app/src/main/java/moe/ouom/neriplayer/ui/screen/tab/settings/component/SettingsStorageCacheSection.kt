@@ -30,6 +30,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
@@ -39,6 +40,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.Info
@@ -67,18 +69,19 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
-import java.io.File
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.normalizeDownloadFileNameTemplate
 import moe.ouom.neriplayer.core.download.renderManagedDownloadBaseName
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
+import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
+import moe.ouom.neriplayer.data.storage.StorageCacheKind
+import moe.ouom.neriplayer.data.storage.StorageUsageItem
+import moe.ouom.neriplayer.data.storage.StorageUsageSummary
+import moe.ouom.neriplayer.data.storage.analyzeStorageUsage
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsCheckbox
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedButton
@@ -104,15 +107,22 @@ internal fun SettingsStorageCacheSection(
     onMaxCacheSizeBytesChange: (Long) -> Unit,
     showStorageDetails: Boolean,
     onShowStorageDetailsChange: (Boolean) -> Unit,
-    storageDetails: Map<String, Long>,
-    onStorageDetailsChange: (Map<String, Long>) -> Unit,
+    storageDetails: StorageUsageSummary,
+    onStorageDetailsChange: (StorageUsageSummary) -> Unit,
     showClearCacheDialog: Boolean,
     onShowClearCacheDialogChange: (Boolean) -> Unit,
     clearAudioCache: Boolean,
     onClearAudioCacheChange: (Boolean) -> Unit,
     clearImageCache: Boolean,
     onClearImageCacheChange: (Boolean) -> Unit,
-    onClearCacheClick: (clearAudio: Boolean, clearImage: Boolean) -> Unit
+    clearDownloadStagingCache: Boolean,
+    onClearDownloadStagingCacheChange: (Boolean) -> Unit,
+    clearSharedMediaCache: Boolean,
+    onClearSharedMediaCacheChange: (Boolean) -> Unit,
+    clearPlatformListCache: Boolean,
+    onClearPlatformListCacheChange: (Boolean) -> Unit,
+    downloadStagingClearEnabled: Boolean,
+    onClearCacheClick: (StorageCacheClearOptions) -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -320,7 +330,7 @@ internal fun SettingsStorageCacheSection(
                                 onShowStorageDetailsChange(true)
                                 isStorageDetailsLoading = true
                                 scope.launch {
-                                    onStorageDetailsChange(calculateStorageDetails(context))
+                                    onStorageDetailsChange(analyzeStorageUsage(context))
                                     isStorageDetailsLoading = false
                                 }
                             }
@@ -355,7 +365,7 @@ internal fun SettingsStorageCacheSection(
             onDismissRequest = { onShowStorageDetailsChange(false) },
             title = { Text(stringResource(R.string.storage_details_title)) },
             text = {
-                Column {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     if (isStorageDetailsLoading) {
                         Text(
                             stringResource(R.string.storage_details_loading),
@@ -368,19 +378,18 @@ internal fun SettingsStorageCacheSection(
                         )
                         Spacer(Modifier.height(12.dp))
 
-                        storageDetails.forEach { (name, size) ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(name, style = MaterialTheme.typography.bodyMedium)
-                                Text(
-                                    formatFileSize(size),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
+                        storageDetails.sections.forEachIndexed { index, section ->
+                            if (index > 0) {
+                                Spacer(Modifier.height(12.dp))
+                            }
+                            Text(
+                                text = section.title,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            section.items.forEach { item ->
+                                StorageUsageRow(item)
                             }
                         }
 
@@ -397,7 +406,7 @@ internal fun SettingsStorageCacheSection(
                                 style = MaterialTheme.typography.titleSmall
                             )
                             Text(
-                                formatFileSize(storageDetails.values.sum()),
+                                formatFileSize(storageDetails.totalSizeBytes),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
@@ -432,7 +441,7 @@ internal fun SettingsStorageCacheSection(
             onDismissRequest = { onShowClearCacheDialogChange(false) },
             title = { Text(stringResource(R.string.settings_confirm_clear_cache)) },
             text = {
-                Column {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     Text(stringResource(R.string.settings_clear_cache_warning))
                     Spacer(Modifier.height(16.dp))
                     Text(
@@ -444,28 +453,78 @@ internal fun SettingsStorageCacheSection(
                     CacheTypeRow(
                         checked = clearAudioCache,
                         title = stringResource(R.string.settings_audio_cache),
-                        description = stringResource(R.string.settings_audio_cache_desc),
+                        description = cacheTypeDescription(
+                            storageDetails = storageDetails,
+                            kind = StorageCacheKind.Audio,
+                            fallback = stringResource(R.string.settings_audio_cache_desc)
+                        ),
                         onCheckedChange = onClearAudioCacheChange
                     )
                     CacheTypeRow(
                         checked = clearImageCache,
                         title = stringResource(R.string.settings_image_cache),
-                        description = stringResource(R.string.settings_image_cache_desc),
+                        description = cacheTypeDescription(
+                            storageDetails = storageDetails,
+                            kind = StorageCacheKind.Image,
+                            fallback = stringResource(R.string.settings_image_cache_desc)
+                        ),
                         onCheckedChange = onClearImageCacheChange
+                    )
+                    CacheTypeRow(
+                        checked = clearDownloadStagingCache,
+                        title = stringResource(R.string.storage_type_download_staging),
+                        description = if (downloadStagingClearEnabled) {
+                            cacheTypeDescription(
+                                storageDetails = storageDetails,
+                                kind = StorageCacheKind.DownloadStaging,
+                                fallback = stringResource(R.string.storage_desc_download_staging)
+                            )
+                        } else {
+                            stringResource(R.string.storage_download_staging_active_desc)
+                        },
+                        enabled = downloadStagingClearEnabled,
+                        onCheckedChange = onClearDownloadStagingCacheChange
+                    )
+                    CacheTypeRow(
+                        checked = clearSharedMediaCache,
+                        title = stringResource(R.string.storage_type_shared_media),
+                        description = cacheTypeDescription(
+                            storageDetails = storageDetails,
+                            kind = StorageCacheKind.SharedMedia,
+                            fallback = stringResource(R.string.storage_desc_shared_media)
+                        ),
+                        onCheckedChange = onClearSharedMediaCacheChange
+                    )
+                    CacheTypeRow(
+                        checked = clearPlatformListCache,
+                        title = stringResource(R.string.storage_type_platform_list_cache),
+                        description = cacheTypeDescription(
+                            storageDetails = storageDetails,
+                            kind = StorageCacheKind.PlatformList,
+                            fallback = stringResource(R.string.storage_desc_platform_list_cache)
+                        ),
+                        onCheckedChange = onClearPlatformListCacheChange
                     )
                 }
             },
             confirmButton = {
+                val clearOptions = StorageCacheClearOptions(
+                    audioCache = clearAudioCache,
+                    imageCache = clearImageCache,
+                    downloadStaging = clearDownloadStagingCache && downloadStagingClearEnabled,
+                    sharedMedia = clearSharedMediaCache,
+                    platformList = clearPlatformListCache
+                )
                 MiuixSettingsTextButton(
                     onClick = {
-                        onClearCacheClick(clearAudioCache, clearImageCache)
+                        onClearCacheClick(clearOptions)
                         onShowClearCacheDialogChange(false)
                     },
-                    enabled = clearAudioCache || clearImageCache
+                    enabled = clearOptions.hasSelection
                 ) {
                     Text(
                         stringResource(R.string.action_confirm_clear),
-                        color = if (clearAudioCache || clearImageCache) {
+                        color = if (clearOptions.hasSelection) {
                             MaterialTheme.colorScheme.error
                         } else {
                             MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
@@ -551,18 +610,20 @@ private fun CacheTypeRow(
     checked: Boolean,
     title: String,
     description: String,
+    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
+            .alpha(if (enabled) 1f else 0.55f)
+            .clickable(enabled = enabled) { onCheckedChange(!checked) }
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         MiuixSettingsCheckbox(
             checked = checked,
-            onCheckedChange = onCheckedChange
+            onCheckedChange = { if (enabled) onCheckedChange(it) }
         )
         Column(modifier = Modifier.padding(start = 8.dp)) {
             Text(
@@ -578,41 +639,55 @@ private fun CacheTypeRow(
     }
 }
 
-private suspend fun calculateStorageDetails(context: android.content.Context): Map<String, Long> = withContext(Dispatchers.IO) {
-    val details = linkedMapOf<String, Long>()
-    runCatching {
-        val mediaCacheDir = File(context.cacheDir, "media_cache")
-        details[context.getString(R.string.storage_type_audio_cache)] =
-            mediaCacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-
-        val imageCacheDir = File(context.cacheDir, "image_cache")
-        details[context.getString(R.string.storage_type_image_cache)] =
-            imageCacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-
-        details[context.getString(R.string.storage_type_downloaded_music)] =
-            ManagedDownloadStorage.listDownloadedAudio(context).sumOf { it.sizeBytes }
-
-        val logDir = context.getExternalFilesDir(null)?.let { File(it, "logs") }
-        details[context.getString(R.string.storage_type_log_files)] =
-            logDir?.walkTopDown()?.filter { it.isFile }?.sumOf { it.length() } ?: 0L
-
-        val crashDir = context.getExternalFilesDir(null)?.let { File(it, "crashes") }
-        details[context.getString(R.string.storage_type_crash_logs)] =
-            crashDir?.walkTopDown()?.filter { it.isFile }?.sumOf { it.length() } ?: 0L
-
-        details[context.getString(R.string.storage_type_other_cache)] = context.cacheDir.walkTopDown()
-            .filter { file ->
-                file.isFile &&
-                    !file.path.contains("media_cache") &&
-                    !file.path.contains("image_cache")
+@Composable
+private fun StorageUsageRow(item: StorageUsageItem) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(item.title, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = item.description,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (!item.path.isNullOrBlank()) {
+                Text(
+                    text = item.path,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
             }
-            .sumOf { it.length() }
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                formatFileSize(item.sizeBytes),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                stringResource(R.string.storage_details_file_count, item.fileCount),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
 
-        details[context.getString(R.string.storage_type_app_data)] =
-            context.filesDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-
-        details
-    }.getOrElse {
-        linkedMapOf(context.getString(R.string.storage_type_error) to 0L)
+@Composable
+private fun cacheTypeDescription(
+    storageDetails: StorageUsageSummary,
+    kind: StorageCacheKind,
+    fallback: String
+): String {
+    val size = storageDetails.sizeOf(kind)
+    return if (size > 0L) {
+        stringResource(R.string.storage_clear_type_size, fallback, formatFileSize(size))
+    } else {
+        fallback
     }
 }
