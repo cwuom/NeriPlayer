@@ -330,7 +330,7 @@ fun AppleMusicLyric(
         ) {
             itemsIndexed(
                 items = lyrics,
-                key = { _, line -> "${line.startTimeMs}:${line.endTimeMs}:${line.text}" }
+                key = { index, line -> lyricListItemKey(index, line) }
             ) { index, line ->
                 Column(
                     modifier = Modifier
@@ -500,6 +500,10 @@ fun AppleMusicLyric(
             }
         }
     }
+}
+
+internal fun lyricListItemKey(index: Int, line: LyricEntry): String {
+    return "$index:${line.startTimeMs}:${line.endTimeMs}:${line.text}"
 }
 
 

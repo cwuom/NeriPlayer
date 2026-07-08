@@ -40,6 +40,17 @@ class AppleMusicLyricTimingTest {
     }
 
     @Test
+    fun `lyricListItemKey stays unique for duplicate metadata lines`() {
+        val duplicateLine = LyricEntry(text = "BPM：180", startTimeMs = 0L, endTimeMs = 0L)
+        val keys = listOf(
+            lyricListItemKey(index = 0, line = duplicateLine),
+            lyricListItemKey(index = 1, line = duplicateLine)
+        )
+
+        assertEquals(keys.size, keys.toSet().size)
+    }
+
+    @Test
     fun `shouldSnapLyricTimeSmoothing only animates small forward deltas`() {
         assertFalse(shouldSnapLyricTimeSmoothing(displayedTimeMs = 1_000L, targetTimeMs = 1_080L))
         assertTrue(shouldSnapLyricTimeSmoothing(displayedTimeMs = 1_000L, targetTimeMs = 1_400L))
