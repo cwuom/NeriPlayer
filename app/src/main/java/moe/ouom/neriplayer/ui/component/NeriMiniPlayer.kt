@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.ui.component
 
 import android.os.Build
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -34,6 +35,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,21 +54,36 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeChild
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.util.fastScrollableImageRequest
 import moe.ouom.neriplayer.util.HapticIconButton
+import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.sign
 
 object NeriMiniPlayerDefaults {
     val Height = 64.dp
@@ -80,6 +97,8 @@ fun NeriMiniPlayer(
     isPlaying: Boolean,
     modifier: Modifier = Modifier,
     onPlayPause: () -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
     onExpand: () -> Unit,
     hazeState: HazeState,
     enableHaze: Boolean = true,
@@ -88,6 +107,35 @@ fun NeriMiniPlayer(
     val shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
     val supportsBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val hazeContainerAlpha = if (supportsBlur && enableHaze) 0.4f else 1f
+    val currentOnPrevious by rememberUpdatedState(onPrevious)
+    val currentOnNext by rememberUpdatedState(onNext)
+    val swipeOffset = remember { Animatable(0f) }
+    val coroutineScope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val swipeThresholdPx = with(density) { 72.dp.toPx() }
+    val reboundPeakPx = with(density) { 52.dp.toPx() }
+    var dragDistancePx by remember { mutableFloatStateOf(0f) }
+    var swipeJob by remember { mutableStateOf<Job?>(null) }
+
+    fun resistedOffset(distancePx: Float): Float {
+        if (distancePx == 0f) return 0f
+        return sign(distancePx) * reboundPeakPx * (1f - exp(-abs(distancePx) / reboundPeakPx))
+    }
+
+    fun animateSwipeRelease(targetDirection: Float, onComplete: () -> Unit) {
+        swipeJob?.cancel()
+        swipeJob = coroutineScope.launch {
+            swipeOffset.animateTo(
+                targetValue = targetDirection * reboundPeakPx,
+                animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing)
+            )
+            swipeOffset.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
+            )
+            onComplete()
+        }
+    }
 
     Card(
         colors = CardDefaults.cardColors(
@@ -100,6 +148,57 @@ fun NeriMiniPlayer(
             .height(NeriMiniPlayerDefaults.Height)
             .padding(start = 16.dp, end = 8.dp)
             .clip(shape)
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragStart = {
+                        swipeJob?.cancel()
+                        dragDistancePx = 0f
+                    },
+                    onHorizontalDrag = { change, dragAmount ->
+                        change.consume()
+                        dragDistancePx += dragAmount
+                        swipeJob?.cancel()
+                        swipeJob = coroutineScope.launch {
+                            swipeOffset.snapTo(resistedOffset(dragDistancePx))
+                        }
+                    },
+                    onDragCancel = {
+                        dragDistancePx = 0f
+                        swipeJob?.cancel()
+                        swipeJob = coroutineScope.launch {
+                            swipeOffset.animateTo(
+                                targetValue = 0f,
+                                animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing)
+                            )
+                        }
+                    },
+                    onDragEnd = {
+                        val finalDistancePx = dragDistancePx
+                        dragDistancePx = 0f
+                        when {
+                            finalDistancePx <= -swipeThresholdPx -> animateSwipeRelease(
+                                targetDirection = -1f,
+                                onComplete = { currentOnNext() }
+                            )
+
+                            finalDistancePx >= swipeThresholdPx -> animateSwipeRelease(
+                                targetDirection = 1f,
+                                onComplete = { currentOnPrevious() }
+                            )
+
+                            else -> {
+                                swipeJob?.cancel()
+                                swipeJob = coroutineScope.launch {
+                                    swipeOffset.animateTo(
+                                        targetValue = 0f,
+                                        animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                )
+            }
             .clickable { onExpand() }
             .then(
                 if (supportsBlur && enableHaze) Modifier.hazeChild(state = hazeState, shape = shape)
@@ -109,7 +208,14 @@ fun NeriMiniPlayer(
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+            modifier = Modifier
+                .graphicsLayer {
+                    translationX = swipeOffset.value
+                    val offsetRatio = (abs(swipeOffset.value) / reboundPeakPx).coerceIn(0f, 1f)
+                    scaleX = 1f - offsetRatio * 0.025f
+                    scaleY = 1f - offsetRatio * 0.025f
+                }
+                .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             Box(
                 modifier = Modifier
