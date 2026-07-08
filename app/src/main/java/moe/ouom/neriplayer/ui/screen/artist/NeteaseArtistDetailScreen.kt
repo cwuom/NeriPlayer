@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -55,6 +56,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -94,6 +96,7 @@ fun NeteaseArtistDetailScreen(
     )
     val ui by viewModel.uiState.collectAsState()
     var selectedTab by rememberSaveable(artist.id) { mutableIntStateOf(0) }
+    val isTabletLayout = LocalConfiguration.current.screenWidthDp >= 720
     val listState = rememberSaveable(artist.id, saver = LazyListState.Saver) {
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
@@ -135,7 +138,8 @@ fun NeteaseArtistDetailScreen(
                 onLoadMoreAlbums = viewModel::loadMoreAlbums,
                 onSongClick = onSongClick,
                 onAlbumClick = onAlbumClick,
-                offlineMode = offlineMode
+                offlineMode = offlineMode,
+                isTabletLayout = isTabletLayout
             )
         }
     }
@@ -154,27 +158,35 @@ private fun ArtistContent(
     onLoadMoreAlbums: () -> Unit,
     onSongClick: (List<SongItem>, Int) -> Unit,
     onAlbumClick: (AlbumSummary) -> Unit,
-    offlineMode: Boolean
+    offlineMode: Boolean,
+    isTabletLayout: Boolean
 ) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
-    LazyColumn(
-        state = listState,
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.navigationBars),
-        contentPadding = PaddingValues(
-            start = 20.dp,
-            end = 20.dp,
-            top = 4.dp,
-            bottom = 40.dp + miniPlayerHeight
-        ),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        contentAlignment = Alignment.TopCenter
     ) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .widthIn(max = 1080.dp)
+                .fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = if (isTabletLayout) 36.dp else 20.dp,
+                end = if (isTabletLayout) 36.dp else 20.dp,
+                top = 4.dp,
+                bottom = 40.dp + miniPlayerHeight
+            ),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
         item {
             ArtistHeaderCard(
                 header = ui.header,
                 followUpdating = ui.followUpdating,
                 offlineMode = offlineMode,
+                isTabletLayout = isTabletLayout,
                 onToggleFollow = onToggleFollow
             )
         }
@@ -276,6 +288,7 @@ private fun ArtistContent(
             }
         }
     }
+    }
 }
 
 @Composable
@@ -283,10 +296,13 @@ private fun ArtistHeaderCard(
     header: NeteaseArtistHeader?,
     followUpdating: Boolean,
     offlineMode: Boolean,
+    isTabletLayout: Boolean,
     onToggleFollow: () -> Unit
 ) {
     val context = LocalContext.current
     val coverUrl = header?.coverUrl?.takeIf { it.isNotBlank() } ?: header?.avatarUrl.orEmpty()
+    val heroHeight = if (isTabletLayout) 300.dp else 240.dp
+    val avatarSize = if (isTabletLayout) 82.dp else 64.dp
     ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -304,12 +320,12 @@ private fun ArtistHeaderCard(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(240.dp)
+                    .height(heroHeight)
             )
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(240.dp)
+                    .height(heroHeight)
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
@@ -334,7 +350,7 @@ private fun ArtistHeaderCard(
                         contentDescription = header?.name,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
-                            .size(64.dp)
+                            .size(avatarSize)
                             .clip(CircleShape)
                     )
                     Spacer(Modifier.width(14.dp))

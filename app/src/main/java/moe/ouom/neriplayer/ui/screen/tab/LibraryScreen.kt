@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -241,6 +242,9 @@ fun LibraryScreen(
         pageCount = { orderedTabs.size }
     )
     val scope = rememberCoroutineScope()
+    val configuration = LocalConfiguration.current
+    val isTabletLayout = configuration.screenWidthDp >= 720
+    val pageHorizontalPadding = if (isTabletLayout) 28.dp else 0.dp
 
     LaunchedEffect(initialTab, orderedTabs) {
         val targetPage = orderedTabs.indexOf(initialTab.asVisibleLibraryTab()).takeIf { it >= 0 } ?: 0
@@ -263,7 +267,8 @@ fun LibraryScreen(
     Column(
         Modifier
             .fillMaxSize()
-            .nestedScroll(scrollBehavior.nestedScrollConnection)
+            .nestedScroll(scrollBehavior.nestedScrollConnection),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         LargeTopAppBar(
             title = { Text(stringResource(R.string.library_title)) },
@@ -295,8 +300,10 @@ fun LibraryScreen(
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             modifier = Modifier
-                .padding(horizontal = 0.dp, vertical = 12.dp)
-                .fillMaxSize()
+                .padding(horizontal = pageHorizontalPadding, vertical = 12.dp)
+                .widthIn(max = 1180.dp)
+                .fillMaxWidth()
+                .weight(1f)
         ) {
             Column(Modifier.fillMaxSize()) {
                 val currentTab = orderedTabs.getOrNull(pagerState.currentPage)

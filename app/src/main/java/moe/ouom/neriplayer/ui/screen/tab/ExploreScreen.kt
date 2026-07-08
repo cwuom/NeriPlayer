@@ -44,6 +44,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -99,6 +100,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.pluralStringResource
@@ -234,6 +236,10 @@ fun ExploreScreen(
         pageCount = { orderedSearchSources.size }
     )
     val miniPlayerHeight = LocalMiniPlayerHeight.current
+    val configuration = LocalConfiguration.current
+    val isTabletLayout = configuration.screenWidthDp >= 720
+    val searchPanelHorizontalPadding = if (isTabletLayout) 28.dp else 16.dp
+    val searchResultHorizontalPadding = if (isTabletLayout) 88.dp else 0.dp
     val tagChipSelectedAlpha = if (backgroundImageUri == null) 1f else 0.86f
     val tagChipUnselectedAlpha = if (backgroundImageUri == null) 1f else 0.74f
     val tagChipBorderAlpha = if (backgroundImageUri == null) 1f else 0.58f
@@ -328,9 +334,15 @@ fun ExploreScreen(
         Column(
             Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(innerPadding),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Column(
+                Modifier
+                    .widthIn(max = 1040.dp)
+                    .fillMaxWidth()
+                    .padding(horizontal = searchPanelHorizontalPadding, vertical = 8.dp)
+            ) {
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = {
@@ -422,9 +434,12 @@ fun ExploreScreen(
                         else -> {
                             LazyColumn(
                                 contentPadding = PaddingValues(
+                                    start = searchResultHorizontalPadding,
+                                    end = searchResultHorizontalPadding,
                                     top = 8.dp,
                                     bottom = 16.dp + miniPlayerHeight
-                                )
+                                ),
+                                modifier = Modifier.fillMaxSize()
                             ) {
                                 itemsIndexed(
                                     items = ui.searchResults,
@@ -494,7 +509,8 @@ fun ExploreScreen(
                                 onPlay = onPlay,
                                 tagChipSelectedAlpha = tagChipSelectedAlpha,
                                 tagChipUnselectedAlpha = tagChipUnselectedAlpha,
-                                tagChipBorderAlpha = tagChipBorderAlpha
+                                tagChipBorderAlpha = tagChipBorderAlpha,
+                                isTabletLayout = isTabletLayout
                             )
                         }
                         SearchSource.BILIBILI -> {
@@ -507,7 +523,8 @@ fun ExploreScreen(
                                 ui = ui,
                                 vm = vm,
                                 onClick = onYouTubeMusicPlaylistClick,
-                                offlineMode = offlineMode
+                                offlineMode = offlineMode,
+                                isTabletLayout = isTabletLayout
                             )
                         }
                     }
@@ -745,17 +762,21 @@ private fun NeteaseDefaultContent(
     onPlay: (PlaylistSummary) -> Unit,
     tagChipSelectedAlpha: Float,
     tagChipUnselectedAlpha: Float,
-    tagChipBorderAlpha: Float
+    tagChipBorderAlpha: Float,
+    isTabletLayout: Boolean = false
 ) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
+    val gridHorizontalPadding = if (isTabletLayout) 56.dp else 16.dp
+    val gridMinCellSize = if (isTabletLayout) 170.dp else 150.dp
+    val gridSpacing = if (isTabletLayout) 16.dp else 12.dp
     LazyVerticalGrid(
         state = gridState,
-        columns = GridCells.Adaptive(150.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        columns = GridCells.Adaptive(gridMinCellSize),
+        verticalArrangement = Arrangement.spacedBy(gridSpacing),
+        horizontalArrangement = Arrangement.spacedBy(gridSpacing),
         contentPadding = PaddingValues(
-            start = 16.dp,
-            end = 16.dp,
+            start = gridHorizontalPadding,
+            end = gridHorizontalPadding,
             top = 16.dp,
             bottom = 16.dp + miniPlayerHeight
         ),
@@ -1019,9 +1040,13 @@ private fun YouTubeMusicExploreContent(
     ui: ExploreUiState,
     vm: ExploreViewModel,
     onClick: (YouTubeMusicPlaylist) -> Unit,
-    offlineMode: Boolean
+    offlineMode: Boolean,
+    isTabletLayout: Boolean = false
 ) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
+    val gridHorizontalPadding = if (isTabletLayout) 56.dp else 16.dp
+    val gridMinCellSize = if (isTabletLayout) 156.dp else 120.dp
+    val gridSpacing = if (isTabletLayout) 14.dp else 10.dp
     when {
         ui.ytMusicPlaylistsLoading -> {
             Box(
@@ -1066,14 +1091,14 @@ private fun YouTubeMusicExploreContent(
         }
         else -> {
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(120.dp),
+                columns = GridCells.Adaptive(gridMinCellSize),
                 contentPadding = PaddingValues(
-                    start = 16.dp, end = 16.dp,
+                    start = gridHorizontalPadding, end = gridHorizontalPadding,
                     top = 8.dp,
                     bottom = 16.dp + miniPlayerHeight
                 ),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(gridSpacing),
+                horizontalArrangement = Arrangement.spacedBy(gridSpacing),
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(

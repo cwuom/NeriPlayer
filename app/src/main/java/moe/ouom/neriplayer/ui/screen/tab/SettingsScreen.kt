@@ -52,6 +52,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.AltRoute
@@ -97,6 +98,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -165,10 +167,10 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
-import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsDetailScaffold
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsHeader
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsHomeScaffold
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsPageGroupCard
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsResponsiveDetailScaffold
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsHomePageGroups
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.miuixSettingsSectionCardItem
@@ -884,16 +886,49 @@ fun SettingsScreen(
         }
     }
 
-
-    var activeSettingsPage by rememberSaveable { mutableStateOf<SettingsPage?>(null) }
+    val isSettingsSplitLayout = LocalConfiguration.current.screenWidthDp >= 840
+    var activeSettingsPage by rememberSaveable {
+        mutableStateOf<SettingsPage?>(if (isSettingsSplitLayout) SettingsPage.General else null)
+    }
     val homeTopAppBarState = rememberTopAppBarState()
     val detailTopAppBarStates = SettingsPage.entries.associateWith { rememberTopAppBarState() }
     val detailListStates = remember {
         SettingsPage.entries.associateWith { LazyListState() }
     }
 
-    BackHandler(enabled = activeSettingsPage != null) {
+    LaunchedEffect(isSettingsSplitLayout) {
+        if (isSettingsSplitLayout && activeSettingsPage == null) {
+            activeSettingsPage = SettingsPage.General
+        }
+    }
+
+    BackHandler(enabled = activeSettingsPage != null && !isSettingsSplitLayout) {
         activeSettingsPage = null
+    }
+
+    val settingsHomeTitle: @Composable () -> Unit = {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(stringResource(R.string.settings_title))
+            ThemeModeActionButton(
+                isDarkTheme = isDarkTheme,
+                onToggleRequest = onThemeToggleRequest
+            )
+        }
+    }
+    val settingsHomeContent: LazyListScope.() -> Unit = {
+        SettingsHomePageGroups.forEachIndexed { groupIndex, pages ->
+            item(key = "settings_group_$groupIndex") {
+                MiuixSettingsPageGroupCard(
+                    pages = pages,
+                    onPageClick = { page -> activeSettingsPage = page },
+                    selectedPage = activeSettingsPage,
+                    modifier = Modifier.animateItem()
+                )
+            }
+        }
     }
 
     AnimatedContent(
@@ -901,7 +936,9 @@ fun SettingsScreen(
         modifier = Modifier.fillMaxSize(),
         label = "settings_page_switch",
         transitionSpec = {
-            if (initialState == null && targetState != null) {
+            if (isSettingsSplitLayout) {
+                fadeIn(animationSpec = tween(0)) togetherWith fadeOut(animationSpec = tween(0))
+            } else if (initialState == null && targetState != null) {
                 (
                     slideInHorizontally(
                         animationSpec = tween(280, easing = FastOutSlowInEasing),
@@ -932,35 +969,21 @@ fun SettingsScreen(
             MiuixSettingsHomeScaffold(
                 listState = listState,
                 topAppBarState = homeTopAppBarState,
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text(stringResource(R.string.settings_title))
-                        ThemeModeActionButton(
-                            isDarkTheme = isDarkTheme,
-                            onToggleRequest = onThemeToggleRequest
-                        )
-                    }
-                }
-            ) {
-                SettingsHomePageGroups.forEachIndexed { groupIndex, pages ->
-                    item(key = "settings_group_$groupIndex") {
-                        MiuixSettingsPageGroupCard(
-                            pages = pages,
-                            onPageClick = { page -> activeSettingsPage = page },
-                            modifier = Modifier.animateItem()
-                        )
-                    }
-                }
-            }
+                title = settingsHomeTitle,
+                content = settingsHomeContent
+            )
         } else {
-            MiuixSettingsDetailScaffold(
+            MiuixSettingsResponsiveDetailScaffold(
                 title = stringResource(selectedPage.titleRes),
                 onBack = { activeSettingsPage = null },
                 listState = detailListStates.getValue(selectedPage),
-                topAppBarState = detailTopAppBarStates.getValue(selectedPage)
+                topAppBarState = detailTopAppBarStates.getValue(selectedPage),
+                splitLayout = isSettingsSplitLayout,
+                selectedPage = selectedPage,
+                homeListState = listState,
+                homeTopAppBarState = homeTopAppBarState,
+                homeTitle = settingsHomeTitle,
+                homeContent = settingsHomeContent
             ) {
                 item(key = "${selectedPage.name}:header") {
                     MiuixSettingsHeader(

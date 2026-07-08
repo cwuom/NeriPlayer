@@ -41,6 +41,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -215,6 +216,12 @@ fun HomeScreen(
     val showNeteaseRadar = showRadarCard && (isInternational || ui.hasLogin)
     val showOnlineFeeds = !offlineMode
     var wasOffline by remember { mutableStateOf(offlineMode) }
+    val configuration = LocalConfiguration.current
+    val isTabletLayout = configuration.screenWidthDp >= 720
+    val pageHorizontalPadding = if (isTabletLayout) 28.dp else 16.dp
+    val gridMinCellSize = if (isTabletLayout) 156.dp else 120.dp
+    val gridContentPadding = if (isTabletLayout) 14.dp else 8.dp
+    val gridSpacing = if (isTabletLayout) 14.dp else 10.dp
 
     LaunchedEffect(offlineMode, isInternational) {
         vm.setOfflineMode(offlineMode)
@@ -281,8 +288,11 @@ fun HomeScreen(
                 ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
-                    .fillMaxSize()
+                    .padding(horizontal = pageHorizontalPadding, vertical = 12.dp)
+                    .widthIn(max = 1240.dp)
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .align(Alignment.CenterHorizontally)
             ) {
                 if (!hasVisibleSections) {
                     Box(
@@ -306,15 +316,15 @@ fun HomeScreen(
                 val homeLoadingText = stringResource(R.string.home_loading)
                 LazyVerticalGrid(
                     state = gridState,
-                    columns = GridCells.Adaptive(120.dp),
+                    columns = GridCells.Adaptive(gridMinCellSize),
                     contentPadding = PaddingValues(
-                        start = 8.dp,
-                        end = 8.dp,
-                        top = 8.dp,
-                        bottom = 8.dp + miniPlayerHeight
+                        start = gridContentPadding,
+                        end = gridContentPadding,
+                        top = gridContentPadding,
+                        bottom = gridContentPadding + miniPlayerHeight
                     ),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(gridSpacing),
+                    horizontalArrangement = Arrangement.spacedBy(gridSpacing),
                     modifier = Modifier.fillMaxSize()
                 ) {
                     if (showContinue) {

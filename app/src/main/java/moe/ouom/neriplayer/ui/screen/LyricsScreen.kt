@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.ui.screen
 
 import android.annotation.SuppressLint
 import android.content.ClipData
+import android.content.res.Configuration
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -36,6 +37,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -53,6 +55,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -97,8 +100,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -205,6 +211,20 @@ fun LyricsScreen(
     // 动画状态
     var isLyricsMode by remember { mutableStateOf(false) }
     var previewPositionOverrideMs by remember(currentSong?.id) { mutableStateOf<Long?>(null) }
+    val configuration = LocalConfiguration.current
+    val windowInfo = LocalWindowInfo.current
+    val density = LocalDensity.current
+    val isTabletLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
+        with(density) { windowInfo.containerSize.width.toDp() } >= 720.dp
+    val horizontalPadding = if (isTabletLandscape) 36.dp else 20.dp
+    val verticalPadding = if (isTabletLandscape) 14.dp else 12.dp
+    val contentWidthFraction = if (isTabletLandscape) 0.86f else 1f
+    val lyricsWidthFraction = if (isTabletLandscape) 0.58f else 1f
+    val controlWidthFraction = if (isTabletLandscape) 0.72f else 1f
+    val toolbarWidthFraction = if (isTabletLandscape) 0.58f else 1f
+    val toolbarIconSize = if (isTabletLandscape) 22.dp else 20.dp
+    val primaryControlSize = if (isTabletLandscape) 50.dp else 42.dp
+    val secondaryControlSize = if (isTabletLandscape) 46.dp else 42.dp
 
     // 启动进入动画
     LaunchedEffect(Unit) {
@@ -254,12 +274,14 @@ fun LyricsScreen(
                     }
                 }
             }
-            .padding(horizontal = 20.dp, vertical = 12.dp)
+            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // 顶部区域 - 包含缩小的封面 + 收藏 + 更多
         Row(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxWidth(contentWidthFraction)
+                .widthIn(max = 1320.dp)
                 .height(56.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Start
@@ -495,7 +517,10 @@ fun LyricsScreen(
 
         // 歌词区域
         Box(
-            modifier = Modifier.weight(1f)
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(lyricsWidthFraction)
+                .widthIn(max = 860.dp)
         ) {
             LyricsContentPane(
                 lyrics = lyrics,
@@ -516,6 +541,7 @@ fun LyricsScreen(
                 rawTranslatedLyrics = rawTranslatedLyrics,
                 playbackSpeed = lyricsPlaybackSoundState.speed,
                 isPlaying = isPlaying,
+                useTabletLayout = isTabletLandscape,
                 onSeekTo = onSeekTo
             )
         }
@@ -523,9 +549,13 @@ fun LyricsScreen(
         // 底部控件 - 使用共享元素动画
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxWidth(controlWidthFraction)
+                .widthIn(max = 980.dp)
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(horizontal = 20.dp, vertical = 10.dp)
+                .padding(
+                    horizontal = if (isTabletLandscape) 8.dp else 20.dp,
+                    vertical = if (isTabletLandscape) 6.dp else 10.dp
+                )
         ) {
             // 进度条
             Row(
@@ -576,7 +606,7 @@ fun LyricsScreen(
                             }
                         } else Modifier
                     )
-                    .size(42.dp)
+                    .size(secondaryControlSize)
                 ) {
                     Icon(
                         Icons.Outlined.SkipPrevious,
@@ -598,7 +628,7 @@ fun LyricsScreen(
                                 }
                             } else Modifier
                         )
-                        .size(42.dp)
+                        .size(primaryControlSize)
                 ) {
                     AnimatedContent(
                         targetState = isPlaybackControlPlaying,
@@ -624,7 +654,7 @@ fun LyricsScreen(
                                 }
                             } else Modifier
                         )
-                        .size(42.dp)
+                        .size(secondaryControlSize)
                 ) {
                     Icon(
                         Icons.Outlined.SkipNext,
@@ -640,9 +670,21 @@ fun LyricsScreen(
         // 底部操作栏（固定在底部，与 NowPlayingScreen 完全一致）
         Row(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxWidth(toolbarWidthFraction)
+                .widthIn(max = 720.dp)
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(horizontal = 16.dp, vertical = 4.dp),
+                .clip(RoundedCornerShape(if (isTabletLandscape) 30.dp else 0.dp))
+                .background(
+                    if (isTabletLandscape) {
+                        MaterialTheme.colorScheme.surface.copy(alpha = 0.34f)
+                    } else {
+                        Color.Transparent
+                    }
+                )
+                .padding(
+                    horizontal = if (isTabletLandscape) 18.dp else 16.dp,
+                    vertical = if (isTabletLandscape) 8.dp else 4.dp
+                ),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -663,7 +705,7 @@ fun LyricsScreen(
                 Icon(
                     Icons.AutoMirrored.Outlined.QueueMusic,
                     contentDescription = stringResource(R.string.lyrics_playlist),
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(toolbarIconSize)
                 )
             }
 
@@ -687,7 +729,7 @@ fun LyricsScreen(
                     Icons.Outlined.Timer,
                     contentDescription = stringResource(R.string.lyrics_timer),
                     tint = if (sleepTimerState.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(toolbarIconSize)
                 )
             }
 
@@ -719,7 +761,7 @@ fun LyricsScreen(
                 Icon(
                     audioDeviceIcon,
                     contentDescription = stringResource(R.string.cd_audio_device),
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(toolbarIconSize)
                 )
             }
 
@@ -749,7 +791,7 @@ fun LyricsScreen(
                         imageVector = Icons.Outlined.LibraryMusic,
                         contentDescription = stringResource(R.string.lyrics_back_to_cover),
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(toolbarIconSize)
                     )
                 }
             }
@@ -775,7 +817,7 @@ fun LyricsScreen(
                 Icon(
                     Icons.AutoMirrored.Outlined.PlaylistAdd,
                     contentDescription = stringResource(R.string.lyrics_add_to_playlist),
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(toolbarIconSize)
                 )
             }
 
@@ -991,6 +1033,7 @@ private fun LyricsContentPane(
     rawTranslatedLyrics: String?,
     playbackSpeed: Float,
     isPlaying: Boolean,
+    useTabletLayout: Boolean = false,
     onSeekTo: (Long) -> Unit
 ) {
     if (lyrics.isEmpty()) {
@@ -1025,14 +1068,13 @@ private fun LyricsContentPane(
     }
     val effectiveRawTranslatedLyrics = if (usePhoneticTranslation) null else rawTranslatedLyrics
 
-    if (advancedLyricsEnabled) {
+    if (advancedLyricsEnabled || useTabletLayout) {
         AdvancedLyricsView(
             lyrics = lyrics,
             currentTimeMs = effectiveLyricTimeMs,
             modifier = Modifier.fillMaxSize(),
             textColor = textColor,
             lyricFontScale = lyricFontScale,
-            baseFontSizeSp = 20f,
             lyricOffsetMs = lyricOffsetMs,
             lyricBlurEnabled = lyricBlurEnabled,
             lyricBlurAmount = lyricBlurAmount,
@@ -1044,6 +1086,13 @@ private fun LyricsContentPane(
             isPlaying = shouldAnimateFromPlayback,
             animateViewportScroll = isPreviewingSeek,
             playbackSpeed = playbackSpeed,
+            baseFontSizeSp = if (useTabletLayout) 22f else 20f,
+            offset = if (useTabletLayout) 72.dp else 48.dp,
+            keepAliveZone = if (useTabletLayout) 128.dp else 108.dp,
+            playedLyricViewportFraction = if (useTabletLayout) 0.36f else 0.30f,
+            topFadeLength = if (useTabletLayout) 132.dp else 112.dp,
+            bottomFadeLength = if (useTabletLayout) 220.dp else 196.dp,
+            bottomContentInset = if (useTabletLayout) 40.dp else 0.dp,
             onSeekTo = onSeekTo
         )
         return

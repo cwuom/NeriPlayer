@@ -1,5 +1,12 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.page
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -7,11 +14,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
@@ -38,6 +47,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,6 +57,7 @@ import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 private val MiuixCardShape = RoundedCornerShape(16.dp)
 private val MiuixSettingsContentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
 private val MiuixPageRowPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+private val MiuixSettingsTabletMaxWidth = 920.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,6 +70,8 @@ internal fun MiuixSettingsHomeScaffold(
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
     val miniPlayerHeight = LocalMiniPlayerHeight.current
+    val isTabletLayout = LocalConfiguration.current.screenWidthDp >= 720
+    val horizontalPadding = if (isTabletLayout) 28.dp else 18.dp
 
     Scaffold(
         modifier = modifier
@@ -77,20 +90,27 @@ internal fun MiuixSettingsHomeScaffold(
             )
         }
     ) { innerPadding ->
-        LazyColumn(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-            state = listState,
-            contentPadding = PaddingValues(
-                start = 18.dp,
-                end = 18.dp,
-                top = 10.dp,
-                bottom = 18.dp + miniPlayerHeight
-            ),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            content = content
-        )
+            contentAlignment = Alignment.TopCenter
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .widthIn(max = MiuixSettingsTabletMaxWidth)
+                    .fillMaxSize(),
+                state = listState,
+                contentPadding = PaddingValues(
+                    start = horizontalPadding,
+                    end = horizontalPadding,
+                    top = 10.dp,
+                    bottom = 18.dp + miniPlayerHeight
+                ),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                content = content
+            )
+        }
     }
 }
 
@@ -98,6 +118,7 @@ internal fun MiuixSettingsHomeScaffold(
 internal fun MiuixSettingsPageGroupCard(
     pages: List<SettingsPage>,
     onPageClick: (SettingsPage) -> Unit,
+    selectedPage: SettingsPage? = null,
     modifier: Modifier = Modifier
 ) {
     if (pages.isEmpty()) {
@@ -122,6 +143,7 @@ internal fun MiuixSettingsPageGroupCard(
                 pages.forEachIndexed { index, page ->
                     MiuixSettingsPageRow(
                         page = page,
+                        selected = selectedPage == page,
                         onClick = { onPageClick(page) }
                     )
                     if (index != pages.lastIndex) {
@@ -139,12 +161,20 @@ internal fun MiuixSettingsPageGroupCard(
 @Composable
 private fun MiuixSettingsPageRow(
     page: SettingsPage,
+    selected: Boolean,
     onClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 76.dp)
+            .background(
+                if (selected) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                } else {
+                    Color.Transparent
+                }
+            )
             .clickable(onClick = onClick)
             .padding(MiuixPageRowPadding),
         verticalAlignment = Alignment.CenterVertically,
@@ -159,7 +189,11 @@ private fun MiuixSettingsPageRow(
                 imageVector = page.icon,
                 contentDescription = stringResource(page.titleRes),
                 modifier = Modifier.size(22.dp),
-                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.86f)
+                tint = if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.86f)
+                }
             )
         }
         Column(
@@ -169,7 +203,11 @@ private fun MiuixSettingsPageRow(
             Text(
                 text = stringResource(page.titleRes),
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface
+                color = if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                }
             )
             Text(
                 text = stringResource(page.descriptionRes),
@@ -196,10 +234,13 @@ internal fun MiuixSettingsDetailScaffold(
     listState: LazyListState,
     topAppBarState: TopAppBarState,
     modifier: Modifier = Modifier,
+    showBackButton: Boolean = true,
     content: LazyListScope.() -> Unit
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
     val miniPlayerHeight = LocalMiniPlayerHeight.current
+    val isTabletLayout = LocalConfiguration.current.screenWidthDp >= 720
+    val horizontalPadding = if (isTabletLayout) 28.dp else 18.dp
 
     Scaffold(
         modifier = modifier
@@ -211,11 +252,13 @@ internal fun MiuixSettingsDetailScaffold(
             LargeTopAppBar(
                 title = { Text(title) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                            contentDescription = stringResource(R.string.action_back)
-                        )
+                    if (showBackButton) {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                                contentDescription = stringResource(R.string.action_back)
+                            )
+                        }
                     }
                 },
                 scrollBehavior = scrollBehavior,
@@ -226,20 +269,122 @@ internal fun MiuixSettingsDetailScaffold(
             )
         }
     ) { innerPadding ->
-        LazyColumn(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-            state = listState,
-            contentPadding = PaddingValues(
-                start = 18.dp,
-                end = 18.dp,
-                top = 10.dp,
-                bottom = 18.dp + miniPlayerHeight
-            ),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .widthIn(max = MiuixSettingsTabletMaxWidth)
+                    .fillMaxSize(),
+                state = listState,
+                contentPadding = PaddingValues(
+                    start = horizontalPadding,
+                    end = horizontalPadding,
+                    top = 10.dp,
+                    bottom = 18.dp + miniPlayerHeight
+                ),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                content = content
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun MiuixSettingsResponsiveDetailScaffold(
+    title: String,
+    onBack: () -> Unit,
+    listState: LazyListState,
+    topAppBarState: TopAppBarState,
+    splitLayout: Boolean,
+    selectedPage: SettingsPage? = null,
+    homeListState: LazyListState,
+    homeTopAppBarState: TopAppBarState,
+    homeTitle: @Composable () -> Unit,
+    homeContent: LazyListScope.() -> Unit,
+    modifier: Modifier = Modifier,
+    detailContent: (LazyListScope.(SettingsPage) -> Unit)? = null,
+    content: LazyListScope.() -> Unit
+) {
+    if (!splitLayout) {
+        MiuixSettingsDetailScaffold(
+            title = title,
+            onBack = onBack,
+            listState = listState,
+            topAppBarState = topAppBarState,
+            modifier = modifier,
             content = content
         )
+        return
+    }
+
+    Row(modifier = modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .weight(0.42f)
+                .fillMaxHeight()
+        ) {
+            MiuixSettingsHomeScaffold(
+                listState = homeListState,
+                topAppBarState = homeTopAppBarState,
+                title = homeTitle,
+                content = homeContent
+            )
+        }
+        Box(
+            modifier = Modifier
+                .weight(0.58f)
+                .fillMaxHeight()
+        ) {
+            val targetPage = selectedPage
+            if (targetPage == null) {
+                MiuixSettingsDetailScaffold(
+                    title = title,
+                    onBack = onBack,
+                    listState = listState,
+                    topAppBarState = topAppBarState,
+                    showBackButton = false,
+                    content = content
+                )
+            } else {
+                AnimatedContent(
+                    targetState = targetPage,
+                    modifier = Modifier.fillMaxSize(),
+                    label = "settings_split_detail_switch",
+                    transitionSpec = {
+                        (
+                            slideInHorizontally(
+                                animationSpec = tween(180),
+                                initialOffsetX = { it / 10 }
+                            ) + fadeIn(animationSpec = tween(160))
+                            ) togetherWith (
+                            slideOutHorizontally(
+                                animationSpec = tween(140),
+                                targetOffsetX = { -it / 12 }
+                            ) + fadeOut(animationSpec = tween(120))
+                            )
+                    }
+                ) { page ->
+                    MiuixSettingsDetailScaffold(
+                        title = stringResource(page.titleRes),
+                        onBack = onBack,
+                        listState = listState,
+                        topAppBarState = topAppBarState,
+                        showBackButton = false
+                    ) {
+                        if (detailContent == null) {
+                            content()
+                        } else {
+                            detailContent(page)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
