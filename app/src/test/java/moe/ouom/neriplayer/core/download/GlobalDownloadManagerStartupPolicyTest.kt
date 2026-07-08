@@ -686,6 +686,50 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `completed download post processing skips access probe for trusted reference`() {
+        assertFalse(
+            shouldProbeCompletedAudioAccessDuringPostProcessing(
+                reference = "content://downloads/song",
+                fastPathTrusted = true
+            )
+        )
+        assertTrue(
+            shouldProbeCompletedAudioAccessDuringPostProcessing(
+                reference = "content://downloads/song",
+                fastPathTrusted = false
+            )
+        )
+        assertFalse(
+            shouldProbeCompletedAudioAccessDuringPostProcessing(
+                reference = "",
+                fastPathTrusted = false
+            )
+        )
+    }
+
+    @Test
+    fun `SAF sidecar lookup avoids indexed scan during fast background finalization`() {
+        assertFalse(
+            shouldUseIndexedSidecarLookup(
+                usesDocumentTree = true,
+                allowSlowLookup = true
+            )
+        )
+        assertTrue(
+            shouldUseIndexedSidecarLookup(
+                usesDocumentTree = false,
+                allowSlowLookup = true
+            )
+        )
+        assertFalse(
+            shouldUseIndexedSidecarLookup(
+                usesDocumentTree = false,
+                allowSlowLookup = false
+            )
+        )
+    }
+
+    @Test
     fun `cancelled artifact recovery yields to active retry`() {
         assertTrue(
             shouldSkipCancelledArtifactRecovery(

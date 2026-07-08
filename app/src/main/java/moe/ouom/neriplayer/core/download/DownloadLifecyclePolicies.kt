@@ -190,6 +190,23 @@ internal fun shouldTrustFastDownloadedSongCatalogHit(
     return cachedKnownReferences == null || normalizedReference in cachedKnownReferences
 }
 
+internal fun shouldProbeCompletedAudioAccessDuringPostProcessing(
+    reference: String?,
+    fastPathTrusted: Boolean
+): Boolean {
+    if (reference.isNullOrBlank()) {
+        return false
+    }
+    return !fastPathTrusted
+}
+
+internal fun shouldUseIndexedSidecarLookup(
+    usesDocumentTree: Boolean,
+    allowSlowLookup: Boolean
+): Boolean {
+    return allowSlowLookup && !usesDocumentTree
+}
+
 internal fun shouldSkipCancelledArtifactRecovery(
     downloadActive: Boolean,
     taskStatus: DownloadStatus?

@@ -57,6 +57,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.clearSongCancelled
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.shouldUseIndexedSidecarLookup
 import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -848,18 +849,44 @@ object AudioDownloadManager {
     private suspend fun findSharedCoverReference(
         context: Context,
         song: SongItem,
-        excludedAudioName: String? = null
+        excludedAudioName: String? = null,
+        allowIndexedLookup: Boolean = true
     ): String? {
         val lookupKeys = buildSharedCoverLookupKeys(song)
         if (lookupKeys.isEmpty()) {
             return null
         }
+        val fastSnapshot = if (allowIndexedLookup) {
+            null
+        } else {
+            ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
+                context = context,
+                restoreFromDisk = false
+            )
+        }
         for (lookupKey in lookupKeys) {
             val rememberedReference = sharedCoverReferencesByLookupKey[lookupKey] ?: continue
+            if (!allowIndexedLookup) {
+                if (rememberedReference in fastSnapshot?.knownReferences.orEmpty()) {
+                    return rememberedReference
+                }
+                sharedCoverReferencesByLookupKey.remove(lookupKey, rememberedReference)
+                continue
+            }
             if (ManagedDownloadStorage.exists(context, rememberedReference)) {
                 return rememberedReference
             }
             sharedCoverReferencesByLookupKey.remove(lookupKey, rememberedReference)
+        }
+        if (!allowIndexedLookup) {
+            val snapshot = fastSnapshot ?: return null
+            return ManagedDownloadStorage.findReusableCoverReference(
+                snapshot = snapshot,
+                song = song,
+                excludedAudioName = excludedAudioName
+            )?.also { indexedReference ->
+                rememberSharedCoverReference(song, indexedReference)
+            }
         }
         val indexedReference = ManagedDownloadStorage.findReusableCoverReference(
             context = context,
@@ -1476,6 +1503,10 @@ object AudioDownloadManager {
             requireActiveAttempt = requireActiveAttempt
         )
         val useSequentialSidecarWrites = ManagedDownloadStorage.usesDocumentTree(context)
+        val allowIndexedSidecarLookup = shouldUseIndexedSidecarLookup(
+            usesDocumentTree = useSequentialSidecarWrites,
+            allowSlowLookup = true
+        )
         val references = if (useSequentialSidecarWrites) {
             val lyricReferences = downloadLyrics(
                 context = context,
@@ -1494,7 +1525,8 @@ object AudioDownloadManager {
                 storedAudio = storedAudio,
                 batchSessionId = batchSessionId,
                 attemptId = attemptId,
-                requireActiveAttempt = requireActiveAttempt
+                requireActiveAttempt = requireActiveAttempt,
+                allowIndexedLookup = allowIndexedSidecarLookup
             )
             DownloadedSidecarReferences(
                 coverReference = coverReference,
@@ -1523,7 +1555,8 @@ object AudioDownloadManager {
                         storedAudio = storedAudio,
                         batchSessionId = batchSessionId,
                         attemptId = attemptId,
-                        requireActiveAttempt = requireActiveAttempt
+                        requireActiveAttempt = requireActiveAttempt,
+                        allowIndexedLookup = allowIndexedSidecarLookup
                     )
                 }
                 val lyricReferences = lyricJob.await()
@@ -1549,10 +1582,11 @@ object AudioDownloadManager {
         storedAudio: ManagedDownloadStorage.StoredEntry,
         batchSessionId: Long? = null,
         attemptId: Long? = null,
-        requireActiveAttempt: Boolean = true
+        requireActiveAttempt: Boolean = true,
+        allowIndexedLookup: Boolean = true
     ): String? {
         val existingCover = ManagedDownloadStorage.peekCoverReference(storedAudio)
-            ?: if (ManagedDownloadStorage.ensureSnapshotCacheReady(context)) {
+            ?: if (allowIndexedLookup && ManagedDownloadStorage.ensureSnapshotCacheReady(context)) {
                 ManagedDownloadStorage.peekCoverReference(storedAudio)
             } else {
                 null
@@ -1572,7 +1606,8 @@ object AudioDownloadManager {
         val sharedCover = findSharedCoverReference(
             context = context,
             song = song,
-            excludedAudioName = storedAudio.name
+            excludedAudioName = storedAudio.name,
+            allowIndexedLookup = allowIndexedLookup
         )
         if (!sharedCover.isNullOrBlank()) {
             rememberSharedCoverReference(song, sharedCover)

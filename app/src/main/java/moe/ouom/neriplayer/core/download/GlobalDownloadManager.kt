@@ -449,6 +449,8 @@ object GlobalDownloadManager {
             ?: completedAudio
             ?: resolveStoredAudio(context, song)
             ?: ManagedDownloadStorage.findDownloadedAudio(context, song, forceRefresh = true)
+        val trustCompletedAudioReference = storedAudio != null &&
+            (storedAudio == completedAudio || storedAudio == storedAudioHint)
         when (
             resolveCompletedDownloadFinalizationAction(
                 hasStoredAudio = storedAudio != null,
@@ -515,7 +517,8 @@ object GlobalDownloadManager {
             context = context,
             song = song,
             storedAudio = resolvedStoredAudio,
-            initialSidecarReferences = sidecarReferences
+            initialSidecarReferences = sidecarReferences,
+            trustCompletedAudioReference = trustCompletedAudioReference
         )
         if (refreshCatalog) {
             // 正常完成时前面已经做过 optimistic publish 和 snapshot 增量更新
@@ -528,14 +531,15 @@ object GlobalDownloadManager {
         context: Context,
         song: SongItem,
         storedAudio: ManagedDownloadStorage.StoredEntry,
-        initialSidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?
+        initialSidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?,
+        trustCompletedAudioReference: Boolean
     ) {
         val appContext = context.applicationContext
         scope.launch {
             val songKey = song.stableKey()
             var sidecarReferences = initialSidecarReferences ?: AudioDownloadManager.DownloadedSidecarReferences()
             try {
-                if (!isCompletedAudioStillCurrent(appContext, song, storedAudio)) {
+                if (!isCompletedAudioStillCurrent(appContext, song, storedAudio, trustCompletedAudioReference)) {
                     return@launch
                 }
                 sidecarReferences = AudioDownloadManager.mergeDownloadedSidecarReferences(
@@ -546,7 +550,7 @@ object GlobalDownloadManager {
                         storedAudio = storedAudio
                     )
                 )
-                if (!isCompletedAudioStillCurrent(appContext, song, storedAudio)) {
+                if (!isCompletedAudioStillCurrent(appContext, song, storedAudio, trustCompletedAudioReference)) {
                     cleanupOrphanedCompletedSidecars(
                         context = appContext,
                         song = song,
@@ -586,7 +590,7 @@ object GlobalDownloadManager {
                     )
                 }
 
-                if (!isCompletedAudioStillCurrent(appContext, song, storedAudio)) {
+                if (!isCompletedAudioStillCurrent(appContext, song, storedAudio, trustCompletedAudioReference)) {
                     cleanupOrphanedCompletedSidecars(
                         context = appContext,
                         song = song,
@@ -619,7 +623,8 @@ object GlobalDownloadManager {
     private suspend fun isCompletedAudioStillCurrent(
         context: Context,
         song: SongItem,
-        storedAudio: ManagedDownloadStorage.StoredEntry
+        storedAudio: ManagedDownloadStorage.StoredEntry,
+        fastPathTrusted: Boolean
     ): Boolean {
         if (isSongCancelled(song.stableKey())) {
             return false
@@ -630,6 +635,20 @@ object GlobalDownloadManager {
         }
         if (!catalogStillPointsToAudio) {
             return false
+        }
+        val cachedKnownReferences = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
+            context = context,
+            restoreFromDisk = false
+        )?.knownReferences
+        val trustedByFastPath = fastPathTrusted ||
+            storedAudio.reference in cachedKnownReferences.orEmpty()
+        if (
+            !shouldProbeCompletedAudioAccessDuringPostProcessing(
+                reference = storedAudio.reference,
+                fastPathTrusted = trustedByFastPath
+            )
+        ) {
+            return true
         }
         if (ManagedDownloadStorage.exists(context, storedAudio.reference)) {
             return true
