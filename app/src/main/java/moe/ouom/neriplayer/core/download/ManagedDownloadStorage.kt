@@ -108,6 +108,7 @@ internal object ManagedDownloadStorage {
     private val treeDirectoryLocks = ConcurrentHashMap<String, Any>()
     private val treeSubdirectoryCache = ConcurrentHashMap<String, DocumentFile>()
     private val treeChildrenNameCache = ConcurrentHashMap<String, CachedChildNames>()
+    private val treeChildrenEntryCache = ConcurrentHashMap<String, CachedTreeChildren>()
     private val fileChildrenNameCache = ConcurrentHashMap<String, CachedChildNames>()
     private val childNameReservationLocks = ConcurrentHashMap<String, Any>()
     private val ensuredNoMediaMarkers = ConcurrentHashMap<String, Boolean>()
@@ -331,12 +332,37 @@ internal object ManagedDownloadStorage {
         var isComplete: Boolean = initialComplete
     }
 
+    private class CachedTreeChildren(
+        initialChildren: Collection<QueriedTreeChild>,
+        initialRefreshedAtMs: Long,
+        initialComplete: Boolean
+    ) {
+        val childrenByName: MutableMap<String, QueriedTreeChild> = ConcurrentHashMap()
+
+        @Volatile
+        var refreshedAtMs: Long = initialRefreshedAtMs
+
+        @Volatile
+        var isComplete: Boolean = initialComplete
+
+        init {
+            initialChildren.forEach { child ->
+                childrenByName[child.name] = child
+            }
+        }
+    }
+
     private data class QueriedTreeChild(
         val name: String,
         val documentUri: Uri,
         val sizeBytes: Long,
         val lastModifiedMs: Long,
         val isDirectory: Boolean
+    )
+
+    internal data class TreeChildNameRefresh(
+        val names: Set<String>,
+        val isComplete: Boolean
     )
 
     private data class CopiedMigrationEntry(
@@ -1824,12 +1850,9 @@ internal object ManagedDownloadStorage {
                 if (metadataFile.exists() && metadataFile.isFile) metadataFile.toStoredEntry() else null
             }
             is RootHandle.TreeRoot -> {
-                val childNames = cachedTreeChildrenNames(context, root.tree)
-                if (metadataName in childNames) {
-                    root.tree.findFile(metadataName)?.takeIf { it.isFile }?.toStoredEntry()
-                } else {
-                    null
-                }
+                cachedTreeChild(context, root.tree, metadataName)
+                    ?.takeUnless(QueriedTreeChild::isDirectory)
+                    ?.toStoredEntry()
             }
         }
     }
@@ -1998,14 +2021,15 @@ internal object ManagedDownloadStorage {
                             if (storedName != finalName) {
                                 forgetTreeChildName(root.tree, finalName)
                             }
-                            rememberTreeChildName(root.tree, storedName)
-                            pendingTarget.toStoredEntry(
+                            val entry = pendingTarget.toStoredEntry(
                                 knownName = storedName,
                                 knownSizeBytes = actualSizeBytes,
                                 knownLastModifiedMs = committedAtMs,
                                 knownIsDirectory = false
                             )
                                 ?: throw IOException("无法读取已写入的下载文件")
+                            rememberTreeChild(root.tree, entry)
+                            entry
                         } else {
                             commitTreeAudioAfterRenameFailure(
                                 context = context,
@@ -2480,18 +2504,11 @@ internal object ManagedDownloadStorage {
             }
 
             is RootHandle.TreeRoot -> {
-                queryTreeChildren(context, root.tree)
-                    .map { child ->
-                        StoredEntry(
-                            name = child.name,
-                            reference = child.documentUri.toString(),
-                            mediaUri = child.documentUri.toString(),
-                            localFilePath = null,
-                            sizeBytes = child.sizeBytes,
-                            lastModifiedMs = child.lastModifiedMs,
-                            isDirectory = child.isDirectory
-                        )
-                    }
+                cachedTreeChildren(
+                    context = context,
+                    parent = root.tree,
+                    maxCacheAgeMs = TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS
+                ).map { child -> child.toStoredEntry() }
             }
         }
     }
@@ -3148,43 +3165,189 @@ internal object ManagedDownloadStorage {
         return cachedTreeChildrenNames(
             context = context,
             parent = parent,
-            maxCacheAgeMs = TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
+            maxCacheAgeMs = TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS,
+            allowReservedNames = true
         )
     }
 
     private fun cachedTreeChildrenNames(
         context: Context,
         parent: DocumentFile,
-        maxCacheAgeMs: Long
+        maxCacheAgeMs: Long,
+        allowReservedNames: Boolean = false
     ): Set<String> {
         val cacheKey = parent.uri.toString()
         val now = System.currentTimeMillis()
-        treeChildrenNameCache[cacheKey]
-            ?.takeIf { it.isComplete && now - it.refreshedAtMs <= maxCacheAgeMs }
-            ?.let { return it.names }
-        val refreshedNames = queryTreeChildren(context, parent)
-            .map(QueriedTreeChild::name)
-        val refreshed = CachedChildNames(
-            initialNames = refreshedNames,
-            initialRefreshedAtMs = now,
-            initialComplete = true
-        )
-        treeChildrenNameCache[cacheKey] = refreshed
-        return refreshed.names
+        val cachedNames = treeChildrenNameCache[cacheKey]
+        val cachedEntries = treeChildrenEntryCache[cacheKey]
+        if (maxCacheAgeMs > 0L) {
+            cachedNames
+                ?.takeIf { cached ->
+                    now - cached.refreshedAtMs <= maxCacheAgeMs &&
+                        (
+                            cached.isComplete ||
+                                (
+                                    allowReservedNames &&
+                                        cachedEntries?.isComplete == true &&
+                                        now - cachedEntries.refreshedAtMs <= maxCacheAgeMs
+                                    )
+                            )
+                }
+                ?.let { return it.names }
+        }
+        val refreshedChildren = queryTreeChildren(context, parent)
+        rememberTreeChildren(parent, refreshedChildren, now, isComplete = true)
+        return treeChildrenNameCache[cacheKey]?.names
+            ?: refreshedChildren.mapTo(linkedSetOf(), QueriedTreeChild::name)
     }
 
-    private fun rememberTreeChildName(parent: DocumentFile, childName: String) {
+    private fun refreshTreeChildren(
+        context: Context,
+        parent: DocumentFile
+    ): Collection<QueriedTreeChild> {
+        val refreshedAtMs = System.currentTimeMillis()
+        return queryTreeChildren(context, parent).also { children ->
+            rememberTreeChildren(parent, children, refreshedAtMs, isComplete = true)
+        }
+    }
+
+    private fun cachedTreeChildren(
+        context: Context,
+        parent: DocumentFile,
+        maxCacheAgeMs: Long
+    ): Collection<QueriedTreeChild> {
+        val cacheKey = parent.uri.toString()
+        val now = System.currentTimeMillis()
+        if (maxCacheAgeMs > 0L) {
+            treeChildrenEntryCache[cacheKey]
+                ?.takeIf { it.isComplete && now - it.refreshedAtMs <= maxCacheAgeMs }
+                ?.let { return it.childrenByName.values }
+        }
+        return refreshTreeChildren(context, parent)
+    }
+
+    private fun cachedTreeChild(
+        context: Context,
+        parent: DocumentFile,
+        childName: String,
+        maxCacheAgeMs: Long = TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
+    ): QueriedTreeChild? {
+        return cachedTreeChildren(context, parent, maxCacheAgeMs)
+            .firstOrNull { child -> child.name == childName }
+    }
+
+    private fun rememberTreeChildren(
+        parent: DocumentFile,
+        children: Collection<QueriedTreeChild>,
+        refreshedAtMs: Long,
+        isComplete: Boolean
+    ) {
+        val cacheKey = parent.uri.toString()
+        val childNames = children.map(QueriedTreeChild::name)
+        val cachedNames = treeChildrenNameCache[cacheKey]
+        val refreshedNames = mergeTreeChildNamesAfterRefresh(
+            refreshedNames = childNames,
+            cachedNames = cachedNames?.names,
+            cachedNamesComplete = cachedNames?.isComplete,
+            refreshedComplete = isComplete
+        )
+        treeChildrenEntryCache[cacheKey] = CachedTreeChildren(
+            initialChildren = children,
+            initialRefreshedAtMs = refreshedAtMs,
+            initialComplete = isComplete
+        )
+        treeChildrenNameCache[cacheKey] = CachedChildNames(
+            initialNames = refreshedNames.names,
+            initialRefreshedAtMs = refreshedAtMs,
+            initialComplete = refreshedNames.isComplete
+        )
+    }
+
+    internal fun mergeTreeChildNamesAfterRefresh(
+        refreshedNames: Collection<String>,
+        cachedNames: Collection<String>?,
+        cachedNamesComplete: Boolean?,
+        refreshedComplete: Boolean
+    ): TreeChildNameRefresh {
+        if (cachedNamesComplete != false) {
+            return TreeChildNameRefresh(
+                names = refreshedNames.toCollection(linkedSetOf()),
+                isComplete = refreshedComplete
+            )
+        }
+        return TreeChildNameRefresh(
+            names = (refreshedNames + cachedNames.orEmpty()).toCollection(linkedSetOf()),
+            isComplete = false
+        )
+    }
+
+    private fun rememberTreeChildName(
+        parent: DocumentFile,
+        childName: String,
+        isReservation: Boolean = true
+    ) {
         val cacheKey = parent.uri.toString()
         val now = System.currentTimeMillis()
         treeChildrenNameCache[cacheKey]?.let { cached ->
             cached.names += childName
             cached.refreshedAtMs = now
+            if (isReservation) {
+                cached.isComplete = false
+            }
             return
         }
         treeChildrenNameCache[cacheKey] = CachedChildNames(
             initialNames = listOf(childName),
             initialRefreshedAtMs = now,
             initialComplete = false
+        )
+    }
+
+    private fun rememberTreeChild(parent: DocumentFile, child: QueriedTreeChild) {
+        rememberTreeChildName(parent, child.name, isReservation = false)
+        val cacheKey = parent.uri.toString()
+        val now = System.currentTimeMillis()
+        treeChildrenEntryCache[cacheKey]?.let { cached ->
+            cached.childrenByName[child.name] = child
+            cached.refreshedAtMs = now
+            return
+        }
+        treeChildrenEntryCache[cacheKey] = CachedTreeChildren(
+            initialChildren = listOf(child),
+            initialRefreshedAtMs = now,
+            initialComplete = false
+        )
+    }
+
+    private fun rememberTreeChild(parent: DocumentFile, entry: StoredEntry) {
+        val childUri = runCatching { entry.reference.toUri() }.getOrNull() ?: return
+        updateRememberedTreeChild(
+            parent = parent,
+            childName = entry.name,
+            documentUri = childUri,
+            sizeBytes = entry.sizeBytes,
+            lastModifiedMs = entry.lastModifiedMs,
+            isDirectory = entry.isDirectory
+        )
+    }
+
+    private fun updateRememberedTreeChild(
+        parent: DocumentFile,
+        childName: String,
+        documentUri: Uri,
+        sizeBytes: Long,
+        lastModifiedMs: Long,
+        isDirectory: Boolean
+    ) {
+        rememberTreeChild(
+            parent = parent,
+            child = QueriedTreeChild(
+                name = childName,
+                documentUri = documentUri,
+                sizeBytes = sizeBytes,
+                lastModifiedMs = lastModifiedMs,
+                isDirectory = isDirectory
+            )
         )
     }
 
@@ -3203,9 +3366,19 @@ internal object ManagedDownloadStorage {
 
     private fun forgetTreeChildName(parent: DocumentFile, childName: String) {
         val cacheKey = parent.uri.toString()
-        val cached = treeChildrenNameCache[cacheKey] ?: return
-        cached.names -= childName
-        cached.refreshedAtMs = System.currentTimeMillis()
+        forgetTreeChildName(cacheKey, childName)
+    }
+
+    private fun forgetTreeChildName(cacheKey: String, childName: String) {
+        val now = System.currentTimeMillis()
+        treeChildrenNameCache[cacheKey]?.let { cached ->
+            cached.names -= childName
+            cached.refreshedAtMs = now
+        }
+        treeChildrenEntryCache[cacheKey]?.let { entries ->
+            entries.childrenByName -= childName
+            entries.refreshedAtMs = now
+        }
     }
 
     internal fun resolveTreeStoredName(actualName: String?, expectedName: String): String {
@@ -3231,14 +3404,19 @@ internal object ManagedDownloadStorage {
         replace: Boolean
     ): DocumentFile {
         val childNames = cachedTreeChildrenNamesForWrite(context, parent)
-        val existing = desiredName
+        val existingChild = desiredName
             .takeIf { it in childNames }
-            ?.let(parent::findFile)
-        if (replace && existing != null && existing.isFile) {
+            ?.let { cachedTreeChild(context, parent, it) }
+        val existing = existingChild?.toDocumentFile(context)
+        if (replace && existingChild != null && !existingChild.isDirectory && existing != null) {
             return existing
         }
-        if (replace && existing != null) {
-            existing.delete()
+        if (replace && existingChild != null) {
+            deleteContentReference(
+                context = context,
+                reference = existingChild.documentUri.toString(),
+                uri = existingChild.documentUri
+            )
             forgetTreeChildName(parent, desiredName)
         }
         val finalName = if (replace) desiredName else createUniqueName(childNames, desiredName)
@@ -3246,7 +3424,17 @@ internal object ManagedDownloadStorage {
             parent.createFile(documentCreateMimeType(finalName, mimeType), finalName)
                 ?: throw IOException("无法在下载目录创建文件: $finalName")
             ).also { created ->
-                rememberTreeChildName(parent, created.resolvedTreeStoredName(finalName))
+                val storedName = created.resolvedTreeStoredName(finalName)
+                rememberTreeChild(
+                    parent = parent,
+                    child = QueriedTreeChild(
+                        name = storedName,
+                        documentUri = created.uri,
+                        sizeBytes = 0L,
+                        lastModifiedMs = System.currentTimeMillis(),
+                        isDirectory = false
+                    )
+                )
             }
     }
 
@@ -3283,13 +3471,14 @@ internal object ManagedDownloadStorage {
             if (storedName != finalName) {
                 forgetTreeChildName(parent, finalName)
             }
-            rememberTreeChildName(parent, storedName)
-            target.toStoredEntry(
+            val entry = target.toStoredEntry(
                 knownName = storedName,
                 knownSizeBytes = actualSizeBytes,
                 knownLastModifiedMs = committedAtMs,
                 knownIsDirectory = false
             ) ?: throw IOException("无法读取已写入的下载文件")
+            rememberTreeChild(parent, entry)
+            entry
         } finally {
             deleteContentReference(context, pendingTarget.uri.toString(), pendingTarget.uri)
             forgetTreeChildName(parent, pendingName)
@@ -3346,12 +3535,14 @@ internal object ManagedDownloadStorage {
                     copiedBytes = input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
                 } ?: throw IOException("无法写入根目录文件: $displayName")
                 val storedName = target.resolvedTreeStoredName(displayName)
-                target.toStoredEntry(
+                val entry = target.toStoredEntry(
                     knownName = storedName,
                     knownSizeBytes = copiedBytes.coerceAtLeast(0L),
                     knownLastModifiedMs = writtenAtMs,
                     knownIsDirectory = false
                 ) ?: throw IOException("无法读取已写入的目录文件: $displayName")
+                rememberTreeChild(root.tree, entry)
+                entry
             }
         }
         if (invalidateSnapshot) {
@@ -3413,13 +3604,15 @@ internal object ManagedDownloadStorage {
                     copiedBytes = copyStreamWithProgress(input, output, onProgress)
                 } ?: throw IOException("无法写入根目录文件: ${targetPlan.entry.name}")
                 val storedName = target.resolvedTreeStoredName(targetPlan.entry.name)
+                val entry = target.toStoredEntry(
+                    knownName = storedName,
+                    knownSizeBytes = copiedBytes.coerceAtLeast(0L),
+                    knownLastModifiedMs = writtenAtMs,
+                    knownIsDirectory = false
+                ) ?: throw IOException("无法读取已写入的目录文件: $displayName")
+                rememberTreeChild(root.tree, entry)
                 StoredWriteResult(
-                    entry = target.toStoredEntry(
-                        knownName = storedName,
-                        knownSizeBytes = copiedBytes.coerceAtLeast(0L),
-                        knownLastModifiedMs = writtenAtMs,
-                        knownIsDirectory = false
-                    ) ?: throw IOException("无法读取已写入的目录文件: $displayName"),
+                    entry = entry,
                     createdNew = true
                 )
             }
@@ -3572,8 +3765,11 @@ internal object ManagedDownloadStorage {
         targetEntry: StoredEntry? = null
     ): StoredWriteResult {
         if (displayName in targetNames) {
+            val existingChildEntry = cachedTreeChild(context, parent, displayName)
+                ?.takeUnless(QueriedTreeChild::isDirectory)
+                ?.toStoredEntry()
             if (sourceEntry.name.endsWith(METADATA_SUFFIX)) {
-                (targetEntry ?: parent.findFile(displayName)?.toStoredEntry())
+                (targetEntry ?: existingChildEntry)
                     ?.let { existingEntry ->
                         NPLogger.d(TAG, "迁移复用目标 SAF metadata: ${existingEntry.name}")
                         return StoredWriteResult(entry = existingEntry, createdNew = false)
@@ -3585,8 +3781,7 @@ internal object ManagedDownloadStorage {
                     NPLogger.d(TAG, "迁移复用目标 SAF 文件: ${existingEntry.name}")
                     return StoredWriteResult(entry = existingEntry, createdNew = false)
                 }
-            parent.findFile(displayName)
-                ?.toStoredEntry()
+            existingChildEntry
                 ?.takeIf { existingEntry -> isEquivalentMigrationTarget(sourceEntry, existingEntry) }
                 ?.let { existingEntry ->
                     NPLogger.d(TAG, "迁移复用目标 SAF 文件: ${existingEntry.name}")
@@ -3598,7 +3793,7 @@ internal object ManagedDownloadStorage {
                 createdNew = true
             )
         }
-        rememberTreeChildName(parent, displayName)
+        rememberTreeChildName(parent, displayName, isReservation = true)
         return StoredWriteResult(
             entry = plannedStoredEntry(displayName),
             createdNew = true
@@ -3641,19 +3836,20 @@ internal object ManagedDownloadStorage {
 
             is RootHandle.TreeRoot -> {
                 val directory = findOrCreateDirectory(context, root.tree, subdirectory) ?: return null
-                ensureManagedMediaScanIsolation(subdirectory, directory)
+                ensureManagedMediaScanIsolation(context, subdirectory, directory)
                 val target = createRootFile(context, directory, displayName, mimeType, replace = true)
                 val writtenAtMs = System.currentTimeMillis()
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                     output.write(bytes)
                 } ?: throw IOException("无法写入目录文件: $displayName")
                 val storedName = target.resolvedTreeStoredName(displayName)
-                target.toStoredEntry(
+                val entry = target.toStoredEntry(
                     knownName = storedName,
                     knownSizeBytes = bytes.size.toLong(),
                     knownLastModifiedMs = writtenAtMs,
                     knownIsDirectory = false
                 )
+                entry?.also { rememberTreeChild(directory, it) }
             }
         }
         storedEntry?.let { entry ->
@@ -3724,7 +3920,7 @@ internal object ManagedDownloadStorage {
             is RootHandle.TreeRoot -> {
                 val directory = findOrCreateDirectory(context, root.tree, subdirectory)
                     ?: throw IOException("无法创建目录: $subdirectory")
-                ensureManagedMediaScanIsolation(subdirectory, directory)
+                ensureManagedMediaScanIsolation(context, subdirectory, directory)
                 val target = createRootFile(context, directory, displayName, mimeType, replace = true)
                 val writtenAtMs = System.currentTimeMillis()
                 var copiedBytes = 0L
@@ -3732,12 +3928,14 @@ internal object ManagedDownloadStorage {
                     copiedBytes = input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
                 } ?: throw IOException("无法写入目录文件: $displayName")
                 val storedName = target.resolvedTreeStoredName(displayName)
-                target.toStoredEntry(
+                val entry = target.toStoredEntry(
                     knownName = storedName,
                     knownSizeBytes = copiedBytes.coerceAtLeast(0L),
                     knownLastModifiedMs = writtenAtMs,
                     knownIsDirectory = false
                 ) ?: throw IOException("无法读取已写入的目录文件: $displayName")
+                rememberTreeChild(directory, entry)
+                entry
             }
         }
         if (invalidateSnapshot) {
@@ -3786,7 +3984,7 @@ internal object ManagedDownloadStorage {
             is RootHandle.TreeRoot -> {
                 val directory = findOrCreateDirectory(context, root.tree, subdirectory)
                     ?: throw IOException("无法创建目录: $subdirectory")
-                ensureManagedMediaScanIsolation(subdirectory, directory)
+                ensureManagedMediaScanIsolation(context, subdirectory, directory)
                 val targetPlan = resolveTreeMigrationTarget(
                     context = context,
                     parent = directory,
@@ -3805,13 +4003,15 @@ internal object ManagedDownloadStorage {
                     copiedBytes = copyStreamWithProgress(input, output, onProgress)
                 } ?: throw IOException("无法写入目录文件: ${targetPlan.entry.name}")
                 val storedName = target.resolvedTreeStoredName(targetPlan.entry.name)
+                val entry = target.toStoredEntry(
+                    knownName = storedName,
+                    knownSizeBytes = copiedBytes.coerceAtLeast(0L),
+                    knownLastModifiedMs = writtenAtMs,
+                    knownIsDirectory = false
+                ) ?: throw IOException("无法读取已写入的目录文件: $displayName")
+                rememberTreeChild(directory, entry)
                 StoredWriteResult(
-                    entry = target.toStoredEntry(
-                        knownName = storedName,
-                        knownSizeBytes = copiedBytes.coerceAtLeast(0L),
-                        knownLastModifiedMs = writtenAtMs,
-                        knownIsDirectory = false
-                    ) ?: throw IOException("无法读取已写入的目录文件: $displayName"),
+                    entry = entry,
                     createdNew = true
                 )
             }
@@ -3840,12 +4040,14 @@ internal object ManagedDownloadStorage {
                     output.write(encoded)
                 } ?: throw IOException("无法写入元数据文件: $displayName")
                 val storedName = target.resolvedTreeStoredName(displayName)
-                target.toStoredEntry(
+                val entry = target.toStoredEntry(
                     knownName = storedName,
                     knownSizeBytes = encoded.size.toLong(),
                     knownLastModifiedMs = writtenAtMs,
                     knownIsDirectory = false
                 ) ?: throw IOException("无法读取已写入的元数据文件: $displayName")
+                rememberTreeChild(root.tree, entry)
+                entry
             }
         }
         if (invalidateSnapshot) {
@@ -3864,49 +4066,32 @@ internal object ManagedDownloadStorage {
             treeSubdirectoryCache[cacheKey]
                 ?.takeIf { it.isDirectory }
                 ?.let { return@synchronized it }
-            queryTreeChildren(context, parent)
-                .filter(QueriedTreeChild::isDirectory)
-                .mapNotNull { child ->
-                    DocumentFile.fromTreeUri(context, child.documentUri)
-                        ?.let { directory -> child.name to directory }
-                }
-                .filter { (name, _) -> matchesManagedSubdirectoryName(name, displayName) }
-                .sortedWith(
-                    compareBy<Pair<String, DocumentFile>>(
-                        { if (it.first == displayName) 0 else 1 },
-                        { managedSubdirectoryOrdinal(it.first, displayName) },
-                        { it.first }
-                    )
-                )
-                .firstOrNull()
-                ?.second
-                ?.also { treeSubdirectoryCache[cacheKey] = it }
-                ?.let { return@synchronized it }
-            parent.listFiles()
-                .filter(DocumentFile::isDirectory)
-                .mapNotNull { file -> file.name?.let { name -> name to file } }
-                .filter { (name, _) -> matchesManagedSubdirectoryName(name, displayName) }
-                .sortedWith(
-                    compareBy<Pair<String, DocumentFile>>(
-                        { if (it.first == displayName) 0 else 1 },
-                        { managedSubdirectoryOrdinal(it.first, displayName) },
-                        { it.first }
-                    )
-                )
-                .firstOrNull()
-                ?.second
+            findCachedManagedSubdirectory(
+                context = context,
+                parent = parent,
+                displayName = displayName,
+                maxCacheAgeMs = TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
+            )
                 ?.also { treeSubdirectoryCache[cacheKey] = it }
                 ?.let { return@synchronized it }
             val createdDirectory = parent.createDirectory(displayName)
-                ?: parent.listFiles()
-                    .firstOrNull { file ->
-                        file.isDirectory && file.name?.let { name ->
-                            matchesManagedSubdirectoryName(name, displayName)
-                        } == true
-                    }
+                ?: findCachedManagedSubdirectory(
+                    context = context,
+                    parent = parent,
+                    displayName = displayName,
+                    maxCacheAgeMs = 0L
+                )
             createdDirectory?.also {
                 treeSubdirectoryCache[cacheKey] = it
-                it.name?.let { createdName -> rememberTreeChildName(parent, createdName) }
+                val createdName = it.resolvedTreeStoredName(displayName)
+                updateRememberedTreeChild(
+                    parent = parent,
+                    childName = createdName,
+                    documentUri = it.uri,
+                    sizeBytes = 0L,
+                    lastModifiedMs = System.currentTimeMillis(),
+                    isDirectory = true
+                )
             }
         }
     }
@@ -3914,10 +4099,34 @@ internal object ManagedDownloadStorage {
     private fun clearTreeDirectoryCache() {
         treeSubdirectoryCache.clear()
         treeChildrenNameCache.clear()
+        treeChildrenEntryCache.clear()
         fileChildrenNameCache.clear()
         childNameReservationLocks.clear()
         ensuredNoMediaMarkers.clear()
         cachedTreeRoot = null
+    }
+
+    private fun findCachedManagedSubdirectory(
+        context: Context,
+        parent: DocumentFile,
+        displayName: String,
+        maxCacheAgeMs: Long
+    ): DocumentFile? {
+        return cachedTreeChildren(
+            context = context,
+            parent = parent,
+            maxCacheAgeMs = maxCacheAgeMs
+        )
+            .filter(QueriedTreeChild::isDirectory)
+            .filter { child -> matchesManagedSubdirectoryName(child.name, displayName) }
+            .sortedWith(
+                compareBy<QueriedTreeChild>(
+                    { if (it.name == displayName) 0 else 1 },
+                    { managedSubdirectoryOrdinal(it.name, displayName) },
+                    QueriedTreeChild::name
+                )
+            )
+            .firstNotNullOfOrNull { child -> child.toDocumentFile(context) }
     }
 
     // 只给封面目录补 .nomedia，避免把用户手选的整个下载根目录从媒体库里隐藏
@@ -3984,24 +4193,17 @@ internal object ManagedDownloadStorage {
                 .orEmpty()
 
             is RootHandle.TreeRoot -> {
-                val queriedDirectories = queryTreeChildren(context, root.tree)
+                cachedTreeChildren(
+                    context = context,
+                    parent = root.tree,
+                    maxCacheAgeMs = TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS
+                )
                     .filter(QueriedTreeChild::isDirectory)
                     .mapNotNull { child ->
-                        DocumentFile.fromTreeUri(context, child.documentUri)?.let { file ->
+                        child.toDocumentFile(context)?.let { file ->
                             NamedDirectoryRoot(name = child.name, root = RootHandle.TreeRoot(file))
                         }
                     }
-                if (queriedDirectories.isNotEmpty()) {
-                    queriedDirectories
-                } else {
-                    root.tree.listFiles()
-                        .filter(DocumentFile::isDirectory)
-                        .mapNotNull { file ->
-                            file.name?.let { name ->
-                                NamedDirectoryRoot(name = name, root = RootHandle.TreeRoot(file))
-                            }
-                        }
-                }
             }
         }
     }
@@ -4015,10 +4217,14 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    private fun ensureManagedMediaScanIsolation(subdirectory: String, directory: DocumentFile) {
+    private fun ensureManagedMediaScanIsolation(
+        context: Context,
+        subdirectory: String,
+        directory: DocumentFile
+    ) {
         if (!shouldCreateNoMediaMarker(subdirectory)) return
         runCatching {
-            ensureNoMediaMarker(directory)
+            ensureNoMediaMarker(context, directory)
         }.onFailure {
             NPLogger.w(TAG, "创建封面目录 .nomedia 失败: ${it.message}")
         }
@@ -4038,15 +4244,24 @@ internal object ManagedDownloadStorage {
         ensuredNoMediaMarkers[cacheKey] = true
     }
 
-    private fun ensureNoMediaMarker(directory: DocumentFile) {
+    private fun ensureNoMediaMarker(context: Context, directory: DocumentFile) {
         val cacheKey = directory.uri.toString()
         if (ensuredNoMediaMarkers[cacheKey] == true) return
-        if (directory.findFile(NO_MEDIA_FILE_NAME) != null) {
+        if (cachedTreeChild(context, directory, NO_MEDIA_FILE_NAME) != null) {
             ensuredNoMediaMarkers[cacheKey] = true
             return
         }
-        directory.createFile("application/octet-stream", NO_MEDIA_FILE_NAME)
+        val marker = directory.createFile("application/octet-stream", NO_MEDIA_FILE_NAME)
             ?: throw IOException("无法创建 $NO_MEDIA_FILE_NAME")
+        val storedName = marker.resolvedTreeStoredName(NO_MEDIA_FILE_NAME)
+        updateRememberedTreeChild(
+            parent = directory,
+            childName = storedName,
+            documentUri = marker.uri,
+            sizeBytes = 0L,
+            lastModifiedMs = System.currentTimeMillis(),
+            isDirectory = false
+        )
         ensuredNoMediaMarkers[cacheKey] = true
     }
 
@@ -4297,7 +4512,7 @@ internal object ManagedDownloadStorage {
             }
         }
         if (invalidateSnapshot) {
-            clearTreeDirectoryCache()
+            forgetDeletedReferencesFromCaches(deletedReferences)
             val hasUnconfirmedDeletes = deletedReferences.size != normalizedReferences.size
             if (hasUnconfirmedDeletes) {
                 invalidateSnapshotCache(context)
@@ -4331,7 +4546,7 @@ internal object ManagedDownloadStorage {
             }.awaitAll().filterNotNull().toSet()
         }
         if (invalidateSnapshot) {
-            clearTreeDirectoryCache()
+            forgetDeletedReferencesFromCaches(deletedReferences)
             val hasUnconfirmedDeletes = deletedReferences.size != normalizedReferences.size
             if (hasUnconfirmedDeletes) {
                 invalidateSnapshotCache(context)
@@ -4344,6 +4559,36 @@ internal object ManagedDownloadStorage {
             "批量删除引用完成: requested=${normalizedReferences.size}, deleted=${deletedReferences.size}, costMs=${System.currentTimeMillis() - startedAtMs}"
         )
         return deletedReferences
+    }
+
+    private fun forgetDeletedReferencesFromCaches(deletedReferences: Set<String>) {
+        if (deletedReferences.isEmpty()) return
+        deletedReferences
+            .filter { reference -> reference.startsWith("/") }
+            .forEach { reference ->
+                val file = File(reference)
+                file.parentFile?.let { parent -> forgetFileChildName(parent, file.name) }
+            }
+
+        val deletedContentReferences = deletedReferences
+            .filterNot { reference -> reference.startsWith("/") }
+            .toSet()
+        if (deletedContentReferences.isEmpty()) return
+
+        treeChildrenEntryCache.forEach { (cacheKey, cachedChildren) ->
+            cachedChildren.childrenByName.values
+                .filter { child -> child.documentUri.toString() in deletedContentReferences }
+                .map(QueriedTreeChild::name)
+                .forEach { childName -> forgetTreeChildName(cacheKey, childName) }
+        }
+        treeSubdirectoryCache.forEach { (cacheKey, directory) ->
+            if (directory.uri.toString() in deletedContentReferences) {
+                treeSubdirectoryCache.remove(cacheKey, directory)
+            }
+        }
+        deletedContentReferences.forEach { reference ->
+            ensuredNoMediaMarkers.remove(reference)
+        }
     }
 
     private fun deleteReferenceBlocking(context: Context, reference: String): Boolean {
@@ -5043,6 +5288,41 @@ internal object ManagedDownloadStorage {
             lastModifiedMs = lastModified(),
             isDirectory = isDirectory
         )
+    }
+
+    private fun QueriedTreeChild.toStoredEntry(): StoredEntry {
+        return storedEntryFromTreeChild(
+            name = name,
+            documentReference = documentUri.toString(),
+            sizeBytes = sizeBytes,
+            lastModifiedMs = lastModifiedMs,
+            isDirectory = isDirectory
+        )
+    }
+
+    internal fun storedEntryFromTreeChild(
+        name: String,
+        documentReference: String,
+        sizeBytes: Long,
+        lastModifiedMs: Long,
+        isDirectory: Boolean
+    ): StoredEntry {
+        return StoredEntry(
+            name = name,
+            reference = documentReference,
+            mediaUri = documentReference,
+            localFilePath = null,
+            sizeBytes = sizeBytes,
+            lastModifiedMs = lastModifiedMs,
+            isDirectory = isDirectory
+        )
+    }
+
+    private fun QueriedTreeChild.toDocumentFile(context: Context): DocumentFile? {
+        return runCatching {
+            DocumentFile.fromTreeUri(context, documentUri)
+                ?: DocumentFile.fromSingleUri(context, documentUri)
+        }.getOrNull()
     }
 
     private fun DocumentFile.toStoredEntry(

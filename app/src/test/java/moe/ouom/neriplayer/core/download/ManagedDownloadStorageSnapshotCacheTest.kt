@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -180,6 +181,126 @@ class ManagedDownloadStorageSnapshotCacheTest {
         assertEquals("new-cover", root.getString("coverPath"))
         assertEquals("new-lyric", root.getString("lyricPath"))
         assertEquals("new-translated", root.getString("translatedLyricPath"))
+    }
+
+    @Test
+    fun `tree child stored entry keeps SAF reference metadata`() {
+        val entry = ManagedDownloadStorage.storedEntryFromTreeChild(
+            name = "Artist - Song.flac",
+            documentReference = "content://downloads/tree/root/document/root%2FArtist%20-%20Song.flac",
+            sizeBytes = 2048L,
+            lastModifiedMs = 1234L,
+            isDirectory = false
+        )
+
+        assertEquals("Artist - Song.flac", entry.name)
+        assertEquals("content://downloads/tree/root/document/root%2FArtist%20-%20Song.flac", entry.reference)
+        assertEquals(entry.reference, entry.mediaUri)
+        assertNull(entry.localFilePath)
+        assertEquals(2048L, entry.sizeBytes)
+        assertEquals(1234L, entry.lastModifiedMs)
+        assertFalse(entry.isDirectory)
+    }
+
+    @Test
+    fun `tree child refresh keeps reserved names until SAF confirms them`() {
+        val refresh = ManagedDownloadStorage.mergeTreeChildNamesAfterRefresh(
+            refreshedNames = listOf("confirmed.flac"),
+            cachedNames = listOf("confirmed.flac", "reserved.flac"),
+            cachedNamesComplete = false,
+            refreshedComplete = true
+        )
+
+        assertEquals(setOf("confirmed.flac", "reserved.flac"), refresh.names)
+        assertFalse(refresh.isComplete)
+
+        val completeRefresh = ManagedDownloadStorage.mergeTreeChildNamesAfterRefresh(
+            refreshedNames = listOf("confirmed.flac"),
+            cachedNames = listOf("confirmed.flac", "stale-reservation.flac"),
+            cachedNamesComplete = true,
+            refreshedComplete = true
+        )
+
+        assertEquals(setOf("confirmed.flac"), completeRefresh.names)
+        assertTrue(completeRefresh.isComplete)
+    }
+
+    @Test
+    fun `reference delete updates snapshot without dropping unrelated SAF indexes`() {
+        val audioEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.flac",
+            reference = "content://downloads/tree/root/document/audio",
+            mediaUri = "content://downloads/tree/root/document/audio",
+            localFilePath = null,
+            sizeBytes = 4096L,
+            lastModifiedMs = 100L
+        )
+        val metadataEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.flac.npmeta.json",
+            reference = "content://downloads/tree/root/document/meta",
+            mediaUri = "content://downloads/tree/root/document/meta",
+            localFilePath = null,
+            sizeBytes = 128L,
+            lastModifiedMs = 101L
+        )
+        val coverEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.jpg",
+            reference = "content://downloads/tree/root/document/cover",
+            mediaUri = "content://downloads/tree/root/document/cover",
+            localFilePath = null,
+            sizeBytes = 64L,
+            lastModifiedMs = 102L
+        )
+        val lyricEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.lrc",
+            reference = "content://downloads/tree/root/document/lyric",
+            mediaUri = "content://downloads/tree/root/document/lyric",
+            localFilePath = null,
+            sizeBytes = 32L,
+            lastModifiedMs = 103L
+        )
+        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "stable",
+            songId = 7L,
+            name = "Song",
+            artist = "Artist",
+            coverPath = coverEntry.reference,
+            lyricPath = lyricEntry.reference
+        )
+        val snapshot = ManagedDownloadStorage.DownloadLibrarySnapshot(
+            audioEntries = listOf(audioEntry),
+            audioEntriesByLookupKey = mapOf(audioEntry.reference to audioEntry),
+            metadataEntriesByAudioName = mapOf(audioEntry.name to metadataEntry),
+            metadataByAudioName = mapOf(audioEntry.name to metadata),
+            audioEntriesWithoutMetadata = emptyList(),
+            audioEntriesByStableKey = mapOf("stable" to listOf(audioEntry)),
+            audioEntriesBySongId = mapOf(7L to listOf(audioEntry)),
+            audioEntriesByMediaUri = emptyMap(),
+            audioEntriesByRemoteTrackKey = emptyMap(),
+            coverEntriesByName = mapOf(coverEntry.name to coverEntry),
+            lyricEntriesByName = mapOf(lyricEntry.name to lyricEntry),
+            knownReferences = setOf(
+                audioEntry.reference,
+                metadataEntry.reference,
+                coverEntry.reference,
+                lyricEntry.reference
+            )
+        )
+
+        val updatedSnapshot = ManagedDownloadStorage.applyReferenceDeletesToSnapshot(
+            snapshot = snapshot,
+            references = setOf(metadataEntry.reference, coverEntry.reference)
+        )
+
+        assertEquals(listOf(audioEntry), updatedSnapshot.audioEntries)
+        assertTrue(updatedSnapshot.metadataEntriesByAudioName.isEmpty())
+        assertTrue(updatedSnapshot.metadataByAudioName.isEmpty())
+        assertFalse(updatedSnapshot.coverEntriesByName.containsKey(coverEntry.name))
+        assertEquals(lyricEntry, updatedSnapshot.lyricEntriesByName[lyricEntry.name])
+        assertFalse(updatedSnapshot.knownReferences.contains(metadataEntry.reference))
+        assertFalse(updatedSnapshot.knownReferences.contains(coverEntry.reference))
+        assertTrue(updatedSnapshot.knownReferences.contains(audioEntry.reference))
+        assertTrue(updatedSnapshot.knownReferences.contains(lyricEntry.reference))
     }
 
     @Test
