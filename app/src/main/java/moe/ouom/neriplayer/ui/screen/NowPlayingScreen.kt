@@ -242,6 +242,7 @@ import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.component.LyricsEditorSeed
 import moe.ouom.neriplayer.ui.component.LyricEntry
+import moe.ouom.neriplayer.ui.component.LyricShareSheet
 import moe.ouom.neriplayer.ui.component.LyricVisualSpec
 import moe.ouom.neriplayer.ui.component.PlaybackSoundSheet
 import moe.ouom.neriplayer.ui.component.PlaybackSourceBadge
@@ -742,6 +743,9 @@ fun NowPlayingScreen(
         phoneticLyrics.isNotEmpty()
     val secondaryPlainLyrics = if (usePhoneticTranslation) phoneticLyrics else plainTranslatedLyrics
     var previewPositionOverrideMs by remember(currentSong?.id) { mutableStateOf<Long?>(null) }
+    var lyricShareInitialLine by remember(currentSong?.stableKey()) {
+        mutableStateOf<LyricEntry?>(null)
+    }
 
     LaunchedEffect(Unit) { contentVisible = true }
     LaunchedEffect(currentSong?.id) { showQualitySwitchDialog = false }
@@ -838,6 +842,19 @@ fun NowPlayingScreen(
             showAudioCodec = showProgressAudioCodec,
             showAudioSpec = showProgressAudioSpec
         )
+    }
+
+    lyricShareInitialLine?.let { initialLine ->
+        val song = currentSong
+        if (song != null) {
+            LyricShareSheet(
+                song = song,
+                lyrics = plainLyrics,
+                initialLine = initialLine,
+                queue = displayedQueue,
+                onDismiss = { lyricShareInitialLine = null }
+            )
+        }
     }
 
     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
@@ -1335,6 +1352,7 @@ fun NowPlayingScreen(
                             lyricBlurEnabled = lyricBlurEnabled,
                             lyricBlurAmount = lyricBlurAmount,
                             onLyricClick = { entry -> PlayerManager.seekTo(entry.startTimeMs) },
+                            onLyricLongClick = { entry -> lyricShareInitialLine = entry },
                             translatedLyrics = if (showLyricTranslation) secondaryPlainLyrics else null
                         )
                     }
@@ -1553,6 +1571,9 @@ fun NowPlayingScreen(
                                         topFadeLength = 132.dp,
                                         bottomFadeLength = 220.dp,
                                         bottomContentInset = 32.dp,
+                                        onLyricLongClick = { line ->
+                                            lyricShareInitialLine = line
+                                        },
                                         onSeekTo = { position -> PlayerManager.seekTo(position) }
                                     )
                                 } else {
@@ -3701,6 +3722,7 @@ private fun NowPlayingLyricsPane(
     lyricBlurEnabled: Boolean,
     lyricBlurAmount: Float,
     onLyricClick: (LyricEntry) -> Unit,
+    onLyricLongClick: (LyricEntry) -> Unit,
     translatedLyrics: List<LyricEntry>? = null
 ) {
     val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
@@ -3717,6 +3739,7 @@ private fun NowPlayingLyricsPane(
         lyricBlurEnabled = lyricBlurEnabled,
         lyricBlurAmount = lyricBlurAmount,
         onLyricClick = onLyricClick,
+        onLyricLongClick = onLyricLongClick,
         translatedLyrics = translatedLyrics
     )
 }

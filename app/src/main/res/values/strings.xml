@@ -1033,6 +1033,14 @@
     <string name="lyrics_favorited">已收藏</string>
     <string name="lyrics_favorite">收藏</string>
     <string name="lyrics_more_options">更多选项</string>
+    <string name="lyric_share_selected_lines">已选择 %1$d 行</string>
+    <string name="lyric_share_character_count">%1$d/%2$d 个字符</string>
+    <string name="lyric_share_copy_lyrics">复制歌词</string>
+    <string name="lyric_share_song">分享歌曲</string>
+    <string name="lyric_share_card">歌词卡片</string>
+    <string name="lyric_share_copied">歌词已复制</string>
+    <string name="lyric_share_character_limit">最多选择 %1$d 个字符</string>
+    <string name="lyric_share_card_failed">歌词卡片生成失败</string>
     <string name="lyrics_previous">上一首</string>
     <string name="lyrics_pause">暂停</string>
     <string name="lyrics_play">播放</string>

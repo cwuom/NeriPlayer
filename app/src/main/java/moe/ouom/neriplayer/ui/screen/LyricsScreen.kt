@@ -129,6 +129,7 @@ import moe.ouom.neriplayer.ui.component.AppleMusicLyric
 import moe.ouom.neriplayer.ui.component.buildPhoneticLyricEntries
 import moe.ouom.neriplayer.ui.component.flattenWordTimedEntries
 import moe.ouom.neriplayer.ui.component.LyricEntry
+import moe.ouom.neriplayer.ui.component.LyricShareSheet
 import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.component.LyricVisualSpec
@@ -174,6 +175,7 @@ fun LyricsScreen(
     androidx.activity.compose.BackHandler(onBack = onNavigateBack)
 
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
+    val queue by PlayerManager.currentQueueFlow.collectAsState()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsState()
     val lyricsPlaybackSoundState by PlayerManager.playbackSoundStateFlow.collectAsState()
@@ -207,6 +209,9 @@ fun LyricsScreen(
     var detailSong by remember { mutableStateOf<SongItem?>(null) }
     var pendingSyncConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var pendingSyncConfirmLabel by remember { mutableStateOf("") }
+    var lyricShareInitialLine by remember(currentSong?.stableKey()) {
+        mutableStateOf<LyricEntry?>(null)
+    }
 
     // 动画状态
     var isLyricsMode by remember { mutableStateOf(false) }
@@ -242,6 +247,19 @@ fun LyricsScreen(
             pendingSyncConfirmAction = action
         } else {
             action()
+        }
+    }
+
+    lyricShareInitialLine?.let { initialLine ->
+        val song = currentSong
+        if (song != null) {
+            LyricShareSheet(
+                song = song,
+                lyrics = plainLyrics,
+                initialLine = initialLine,
+                queue = queue,
+                onDismiss = { lyricShareInitialLine = null }
+            )
         }
     }
 
@@ -542,6 +560,7 @@ fun LyricsScreen(
                 playbackSpeed = lyricsPlaybackSoundState.speed,
                 isPlaying = isPlaying,
                 useTabletLayout = isTabletLandscape,
+                onLyricLongClick = { line -> lyricShareInitialLine = line },
                 onSeekTo = onSeekTo
             )
         }
@@ -1034,6 +1053,7 @@ private fun LyricsContentPane(
     playbackSpeed: Float,
     isPlaying: Boolean,
     useTabletLayout: Boolean = false,
+    onLyricLongClick: (LyricEntry) -> Unit,
     onSeekTo: (Long) -> Unit
 ) {
     if (lyrics.isEmpty()) {
@@ -1093,6 +1113,7 @@ private fun LyricsContentPane(
             topFadeLength = if (useTabletLayout) 132.dp else 112.dp,
             bottomFadeLength = if (useTabletLayout) 220.dp else 196.dp,
             bottomContentInset = if (useTabletLayout) 40.dp else 0.dp,
+            onLyricLongClick = onLyricLongClick,
             onSeekTo = onSeekTo
         )
         return
@@ -1118,6 +1139,7 @@ private fun LyricsContentPane(
         onLyricClick = { lyricEntry ->
             onSeekTo(lyricEntry.startTimeMs)
         },
+        onLyricLongClick = onLyricLongClick,
         translatedLyrics = if (showLyricTranslation) effectivePlainTranslatedLyrics else null,
         translationFontSize = scaledLyricFontSize(16f, lyricFontScale).sp,
     )

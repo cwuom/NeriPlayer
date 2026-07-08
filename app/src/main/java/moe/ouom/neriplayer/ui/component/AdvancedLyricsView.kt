@@ -63,6 +63,7 @@ fun AdvancedLyricsView(
     topFadeLength: Dp = 112.dp,
     bottomFadeLength: Dp = 196.dp,
     bottomContentInset: Dp = 0.dp,
+    onLyricLongClick: ((LyricEntry) -> Unit)? = null,
     onSeekTo: (Long) -> Unit = {}
 ) {
     val effectiveTranslatedLyrics = translatedLyrics.orEmpty()
@@ -134,7 +135,14 @@ fun AdvancedLyricsView(
             currentPosition = { safeCurrentPosition.toInt() },
             renderCurrentPosition = renderPositionProvider,
             onLineClicked = { line -> onSeekTo(line.start.toLong()) },
-            onLinePressed = { line -> onSeekTo(line.start.toLong()) },
+            onLinePressed = { line ->
+                val entry = resolvePressedLyricEntry(line, lyrics)
+                if (onLyricLongClick != null) {
+                    onLyricLongClick(entry)
+                } else {
+                    onSeekTo(line.start.toLong())
+                }
+            },
             modifier = Modifier.fillMaxSize(),
             normalLineTextStyle = normalTextStyle,
             accompanimentLineTextStyle = accompanimentTextStyle,
@@ -150,6 +158,31 @@ fun AdvancedLyricsView(
             topFadeLength = topFadeLength,
             bottomFadeLength = bottomFadeLength
         )
+    }
+}
+
+private fun resolvePressedLyricEntry(
+    line: ISyncedLine,
+    lyrics: List<LyricEntry>
+): LyricEntry {
+    val startTimeMs = line.start.toLong()
+    lyrics.firstOrNull { it.startTimeMs == startTimeMs }?.let { return it }
+    lyrics.minByOrNull { abs(it.startTimeMs - startTimeMs) }
+        ?.takeIf { abs(it.startTimeMs - startTimeMs) <= TranslationAlignmentToleranceMs }
+        ?.let { return it }
+
+    return LyricEntry(
+        text = line.plainText(),
+        startTimeMs = line.start.toLong(),
+        endTimeMs = line.end.toLong()
+    )
+}
+
+private fun ISyncedLine.plainText(): String {
+    return when (this) {
+        is KaraokeLine -> syllables.joinToString(separator = "") { it.content }
+        is SyncedLine -> content
+        else -> ""
     }
 }
 

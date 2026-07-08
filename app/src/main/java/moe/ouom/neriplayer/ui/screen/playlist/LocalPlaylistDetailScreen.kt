@@ -80,7 +80,6 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.DownloadDone
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.AlertDialog
@@ -182,6 +181,7 @@ import moe.ouom.neriplayer.ui.component.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
+import moe.ouom.neriplayer.ui.component.SongDownloadSubtitle
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailUiState
@@ -1424,34 +1424,18 @@ fun LocalPlaylistDetailScreen(
 
                                             // 标题/歌手
                                             Column(Modifier.weight(1f)) {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                                ) {
-                                                    Text(
-                                                        text = song.displayName(),
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis,
-                                                        style = MaterialTheme.typography.titleMedium
-                                                    )
-                                                    // 下载完成标志
-                                                    if (remember(downloadPresenceVersion, song) {
-                                                            hasCachedLocalDownload(song)
-                                                        }) {
-                                                        Icon(
-                                                            imageVector = Icons.Outlined.DownloadDone,
-                                                            contentDescription = stringResource(R.string.downloaded),
-                                                            modifier = Modifier.size(16.dp),
-                                                            tint = MaterialTheme.colorScheme.primary
-                                                        )
-                                                    }
+                                                val downloaded = remember(downloadPresenceVersion, song) {
+                                                    hasCachedLocalDownload(song)
                                                 }
                                                 Text(
-                                                    text = song.displayArtist(),
+                                                    text = song.displayName(),
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    style = MaterialTheme.typography.titleMedium
+                                                )
+                                                SongDownloadSubtitle(
+                                                    text = song.displayArtist(),
+                                                    downloaded = downloaded
                                                 )
                                             }
                                         }

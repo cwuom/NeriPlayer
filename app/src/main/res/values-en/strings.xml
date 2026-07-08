@@ -1033,6 +1033,14 @@
     <string name="lyrics_favorited">Favorited</string>
     <string name="lyrics_favorite">Favorite</string>
     <string name="lyrics_more_options">More Options</string>
+    <string name="lyric_share_selected_lines">Selected lines: %1$d</string>
+    <string name="lyric_share_character_count">Characters: %1$d/%2$d</string>
+    <string name="lyric_share_copy_lyrics">Copy Lyrics</string>
+    <string name="lyric_share_song">Share Song</string>
+    <string name="lyric_share_card">Lyric Card</string>
+    <string name="lyric_share_copied">Lyrics copied</string>
+    <string name="lyric_share_character_limit">Character limit: %1$d</string>
+    <string name="lyric_share_card_failed">Unable to create lyric card</string>
     <string name="lyrics_previous">Previous</string>
     <string name="lyrics_pause">Pause</string>
     <string name="lyrics_play">Play</string>

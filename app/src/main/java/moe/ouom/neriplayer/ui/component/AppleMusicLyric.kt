@@ -33,7 +33,8 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -240,6 +241,7 @@ fun Modifier.verticalEdgeFade(fadeHeight: Dp): Modifier = this
         drawRect(brush = brush, size = size, blendMode = BlendMode.DstIn)
     }
 
+@OptIn(ExperimentalFoundationApi::class)
 @SuppressLint("UnusedBoxWithConstraintsScope")
 @Composable
 fun AppleMusicLyric(
@@ -258,6 +260,7 @@ fun AppleMusicLyric(
     lyricBlurEnabled: Boolean = true,
     lyricBlurAmount: Float = 10f,
     onLyricClick: ((LyricEntry) -> Unit)? = null,
+    onLyricLongClick: ((LyricEntry) -> Unit)? = null,
     translatedLyrics: List<LyricEntry>? = null,
     translationFontSize: TextUnit = 14.sp
 ) {
@@ -311,6 +314,12 @@ fun AppleMusicLyric(
             callback(line)
         }
     }
+    val handleLyricLongClick: ((LyricEntry) -> Unit)? = onLyricLongClick?.let { callback ->
+        { line ->
+            manualClearHoldIndex = null
+            callback(line)
+        }
+    }
 
     BoxWithConstraints(
         modifier = modifier.fillMaxSize(),
@@ -337,9 +346,10 @@ fun AppleMusicLyric(
                         .fillMaxWidth()
                         .padding(vertical = centerPadding / 2, horizontal = 24.dp)
                         .clip(RoundedCornerShape(16.dp))
-                        .clickable(
-                            enabled = handleLyricClick != null,
-                            onClick = { handleLyricClick?.invoke(line) }
+                        .combinedClickable(
+                            enabled = handleLyricClick != null || handleLyricLongClick != null,
+                            onClick = { handleLyricClick?.invoke(line) },
+                            onLongClick = { handleLyricLongClick?.invoke(line) }
                         )
                         .animateItem()
                         .widthIn(max = maxTextWidth)

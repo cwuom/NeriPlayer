@@ -63,7 +63,6 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.DeleteForever
-import androidx.compose.material.icons.outlined.DownloadDone
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -106,6 +105,7 @@ import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.component.SongDownloadSubtitle
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticIconButton
@@ -573,32 +573,19 @@ private fun RecentRowRich(
         Spacer(Modifier.width(12.dp))
 
         Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    primaryTitle,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.titleMedium
-                )
-                // 已下载标志
-                if (remember(downloadPresenceVersion, song) {
-                        GlobalDownloadManager.hasDownloadedSongCached(song)
-                    }) {
-                    Spacer(Modifier.width(6.dp))
-                    Icon(
-                        imageVector = Icons.Outlined.DownloadDone,
-                        contentDescription = stringResource(R.string.cd_downloaded),
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
+            val downloaded = remember(downloadPresenceVersion, song) {
+                GlobalDownloadManager.hasDownloadedSongCached(song)
             }
             Text(
-                secondaryText,
+                primaryTitle,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = MaterialTheme.typography.titleMedium
+            )
+            SongDownloadSubtitle(
+                text = secondaryText,
+                downloaded = downloaded,
+                contentDescription = stringResource(R.string.cd_downloaded)
             )
         }
 
