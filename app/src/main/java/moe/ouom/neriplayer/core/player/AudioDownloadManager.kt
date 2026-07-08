@@ -163,6 +163,8 @@ object AudioDownloadManager {
     private var activeDownloadPermitCount = 0
     private val progressPublishLock = Any()
     private val lastPublishedProgressBySongKey = mutableMapOf<String, PublishedProgressState>()
+    private val completedAudioReferencesBySongKey =
+        ConcurrentHashMap<String, ManagedDownloadStorage.StoredEntry>()
     private val completedSidecarReferencesBySongKey =
         ConcurrentHashMap<String, DownloadedSidecarReferences>()
     private val partialSidecarReferencesBySongKey =
@@ -769,10 +771,23 @@ object AudioDownloadManager {
         return completedSidecarReferencesBySongKey.remove(songKey)
     }
 
+    internal fun consumeCompletedAudioReference(
+        songKey: String
+    ): ManagedDownloadStorage.StoredEntry? {
+        return completedAudioReferencesBySongKey.remove(songKey)
+    }
+
     internal fun consumePartialSidecarReferences(
         songKey: String
     ): DownloadedSidecarReferences? {
         return partialSidecarReferencesBySongKey.remove(songKey)
+    }
+
+    internal fun rememberCompletedAudioReference(
+        songKey: String,
+        storedAudio: ManagedDownloadStorage.StoredEntry
+    ) {
+        completedAudioReferencesBySongKey[songKey] = storedAudio
     }
 
     private fun rememberCompletedSidecarReferences(
@@ -797,6 +812,10 @@ object AudioDownloadManager {
             mergeDownloadedSidecarReferences(existing, sidecarReferences)
                 .takeUnless(DownloadedSidecarReferences::isEmpty)
         }
+    }
+
+    private fun clearCompletedAudioReference(songKey: String) {
+        completedAudioReferencesBySongKey.remove(songKey)
     }
 
     private fun clearCompletedSidecarReferences(songKey: String) {
@@ -953,6 +972,7 @@ object AudioDownloadManager {
                 var storedAudio: ManagedDownloadStorage.StoredEntry? = null
                 var tempFile: File? = null
                 beginSongDownloadOperation(songKey)
+                clearCompletedAudioReference(songKey)
                 clearCompletedSidecarReferences(songKey)
                 clearPartialSidecarReferences(songKey)
                 try {
@@ -1177,6 +1197,7 @@ object AudioDownloadManager {
                                 attemptId = attemptId
                             )
                             ensureSongDownloadNotCancelled(songKey, "sidecar_completed", batchSessionId, attemptId)
+                            rememberCompletedAudioReference(songKey, storedAudio)
                             rememberCompletedSidecarReferences(songKey, sidecarReferences)
 
                             _progressFlow.value = null
@@ -1227,6 +1248,7 @@ object AudioDownloadManager {
                                     clearSongCancelled(songKey)
                                 }
                                 clearCompletedSidecarReferences(songKey)
+                                clearCompletedAudioReference(songKey)
                                 clearPartialSidecarReferences(songKey)
                                 throw java.util.concurrent.CancellationException(
                                     if (preserveArtifacts) "Download paused for network policy" else "Download cancelled"
@@ -1330,6 +1352,7 @@ object AudioDownloadManager {
                             clearSongCancelled(songKey)
                         }
                         clearCompletedSidecarReferences(songKey)
+                        clearCompletedAudioReference(songKey)
                         clearPartialSidecarReferences(songKey)
                         throw java.util.concurrent.CancellationException(
                             if (preserveArtifacts) "Download paused for network policy" else "Download cancelled"
@@ -1339,6 +1362,7 @@ object AudioDownloadManager {
                     deleteWorkingFile(tempFile)
                     _progressFlow.value = null
                     clearCompletedSidecarReferences(songKey)
+                    clearCompletedAudioReference(songKey)
                     clearPartialSidecarReferences(songKey)
                     throw e  // 重新抛出异常，让调用方知道下载失败
                 } finally {

@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.core.player
 
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class AudioDownloadManagerSidecarReferenceTest {
@@ -56,5 +58,24 @@ class AudioDownloadManagerSidecarReferenceTest {
         )
 
         assertEquals(existing, merged)
+    }
+
+    @Test
+    fun `completed audio reference is consumed once`() {
+        val songKey = "song-key"
+        AudioDownloadManager.consumeCompletedAudioReference(songKey)
+        val storedEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.mp3",
+            reference = "/downloads/Artist - Song.mp3",
+            mediaUri = "file:///downloads/Artist%20-%20Song.mp3",
+            localFilePath = "/downloads/Artist - Song.mp3",
+            sizeBytes = 1024L,
+            lastModifiedMs = 42L
+        )
+
+        AudioDownloadManager.rememberCompletedAudioReference(songKey, storedEntry)
+
+        assertEquals(storedEntry, AudioDownloadManager.consumeCompletedAudioReference(songKey))
+        assertNull(AudioDownloadManager.consumeCompletedAudioReference(songKey))
     }
 }

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -30,6 +31,63 @@ class DownloadMetadataValidationTest {
             )
         )
         assertFalse(isUnfinalizedDownloadedMetadata(null))
+    }
+
+    @Test
+    fun `finalized metadata json flips explicit false without losing identity`() {
+        val raw = """
+            {
+              "stableKey": "1|netease|",
+              "songId": 1,
+              "identityAlbum": "netease",
+              "name": "Song",
+              "artist": "Artist",
+              "downloadFinalized": false
+            }
+        """.trimIndent()
+
+        val metadata = ManagedDownloadStorage.finalizedDownloadedMetadataJson(raw)
+            ?.let(ManagedDownloadStorage::parseDownloadedAudioMetadataJson)
+
+        assertEquals("1|netease|", metadata?.stableKey)
+        assertEquals(1L, metadata?.songId)
+        assertEquals("netease", metadata?.identityAlbum)
+        assertEquals("Song", metadata?.name)
+        assertEquals("Artist", metadata?.artist)
+        assertEquals(true, metadata?.downloadFinalized)
+    }
+
+    @Test
+    fun `metadata write verification rejects stale finalized flag`() {
+        val expected = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "1|netease|",
+            songId = 1L,
+            downloadFinalized = true
+        )
+        val stale = expected.copy(downloadFinalized = false)
+
+        assertFalse(
+            ManagedDownloadStorage.isMetadataWriteVerified(
+                expected = expected,
+                actual = stale
+            )
+        )
+    }
+
+    @Test
+    fun `metadata write verification accepts exact readback`() {
+        val expected = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "1|netease|",
+            songId = 1L,
+            downloadFinalized = true
+        )
+
+        assertTrue(
+            ManagedDownloadStorage.isMetadataWriteVerified(
+                expected = expected,
+                actual = expected
+            )
+        )
     }
 
     @Test

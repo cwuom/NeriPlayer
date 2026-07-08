@@ -1715,23 +1715,53 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    suspend fun saveMetadata(context: Context, audio: StoredEntry, json: String) = withContext(Dispatchers.IO) {
-        val root = resolveRootBlocking(context)
+    suspend fun saveMetadata(context: Context, audio: StoredEntry, json: String): Boolean = withContext(Dispatchers.IO) {
+        saveMetadataBlocking(context, audio, json)
+    }
+
+    private fun saveMetadataBlocking(context: Context, audio: StoredEntry, json: String): Boolean {
+        val metadata = parseDownloadedAudioMetadataJson(json)
+        if (metadata == null) {
+            invalidateSnapshotCache(context)
+            return false
+        }
         val metadataEntry = writeRootText(
             context = context,
-            root = root,
+            root = resolveRootBlocking(context),
             displayName = "${audio.name}$METADATA_SUFFIX",
             content = json,
             invalidateSnapshot = false
         )
-        val metadata = parseDownloadedAudioMetadataJson(json)
-        if (metadataEntry == null || metadata == null) {
+        if (metadataEntry == null) {
             invalidateSnapshotCache(context)
-            return@withContext
+            return false
+        }
+        val storedMetadata = readTextInternal(context, metadataEntry.reference)
+            ?.let(::parseDownloadedAudioMetadataJson)
+        if (!isMetadataWriteVerified(expected = metadata, actual = storedMetadata)) {
+            invalidateSnapshotCache(context)
+            NPLogger.w(TAG, "下载元数据写入读回校验失败: ${audio.name}")
+            return false
         }
         if (!updateSnapshotCacheAfterMetadataWrite(context, metadataEntry, metadata)) {
             invalidateSnapshotCache(context)
         }
+        return true
+    }
+
+    suspend fun markDownloadedAudioFinalized(context: Context, audio: StoredEntry): Boolean = withContext(Dispatchers.IO) {
+        markDownloadedAudioFinalizedBlocking(context, audio)
+    }
+
+    private fun markDownloadedAudioFinalizedBlocking(context: Context, audio: StoredEntry): Boolean {
+        val metadataEntry = findMetadataForAudioBlocking(context, audio) ?: return false
+        val raw = readTextInternal(context, metadataEntry.reference) ?: return false
+        val finalized = finalizedDownloadedMetadataJson(raw) ?: return false
+        return runCatching {
+            saveMetadataBlocking(context, audio, finalized)
+        }.onFailure {
+            NPLogger.w(TAG, "恢复下载元数据 finalized 标记失败: ${audio.name}, ${it.message}")
+        }.getOrDefault(false)
     }
 
     suspend fun usesDocumentTree(context: Context): Boolean = withContext(Dispatchers.IO) {
@@ -2778,6 +2808,18 @@ internal object ManagedDownloadStorage {
             if (unfinalizedMetadataEntries.isEmpty()) {
                 return@runCatching StartupRecoveryResult()
             }
+            val recoveredReferences = linkedSetOf<String>()
+            var recoveredCount = 0
+            unfinalizedMetadataEntries.forEach { (entry, _) ->
+                val audio = audioEntriesByName[entry.name.removeSuffix(METADATA_SUFFIX)]
+                    ?.takeIf { it.sizeBytes > 0L }
+                    ?: return@forEach
+                if (markDownloadedAudioFinalizedBlocking(context, audio)) {
+                    recoveredCount++
+                    recoveredReferences += entry.reference
+                    recoveredReferences += audio.reference
+                }
+            }
             val protectedReferences = parsedMetadataEntries
                 .asSequence()
                 .filterNot { (_, metadata) -> isUnfinalizedDownloadedMetadata(metadata) }
@@ -2789,14 +2831,19 @@ internal object ManagedDownloadStorage {
                 .toSet()
             val referencesToDelete = linkedSetOf<String>()
             unfinalizedMetadataEntries.forEach { (entry, metadata) ->
+                if (entry.reference in recoveredReferences) {
+                    return@forEach
+                }
                 referencesToDelete += entry.reference
                 audioEntriesByName[entry.name.removeSuffix(METADATA_SUFFIX)]
                     ?.reference
+                    ?.takeUnless(recoveredReferences::contains)
                     ?.let(referencesToDelete::add)
                 listOf(metadata.coverPath, metadata.lyricPath, metadata.translatedLyricPath)
                     .filterNot(String?::isNullOrBlank)
                     .map(String?::orEmpty)
                     .filterNot(protectedReferences::contains)
+                    .filterNot(recoveredReferences::contains)
                     .forEach(referencesToDelete::add)
             }
             var cleanedCount = 0
@@ -2816,8 +2863,12 @@ internal object ManagedDownloadStorage {
             if (cleanedCount > 0 || failedCount > 0) {
                 NPLogger.d(TAG, "清理未完成下载半成品完成: cleaned=$cleanedCount, failed=$failedCount")
             }
+            if (recoveredCount > 0) {
+                invalidateSnapshotCache(context)
+                NPLogger.d(TAG, "恢复未最终确认下载完成: recovered=$recoveredCount")
+            }
             StartupRecoveryResult(
-                cleanedCount = cleanedCount,
+                cleanedCount = cleanedCount + recoveredCount,
                 failedCount = failedCount
             )
         }.onFailure {
@@ -4502,6 +4553,23 @@ internal object ManagedDownloadStorage {
         }.onFailure {
             NPLogger.w(TAG, "解析写回元数据失败: ${it.message}")
         }.getOrNull()
+    }
+
+    internal fun finalizedDownloadedMetadataJson(rawJson: String): String? {
+        return runCatching {
+            JSONObject(rawJson).apply {
+                put("downloadFinalized", true)
+            }.toString()
+        }.onFailure {
+            NPLogger.w(TAG, "恢复 finalized 元数据失败: ${it.message}")
+        }.getOrNull()
+    }
+
+    internal fun isMetadataWriteVerified(
+        expected: DownloadedAudioMetadata,
+        actual: DownloadedAudioMetadata?
+    ): Boolean {
+        return actual == expected
     }
 
     private fun JSONObject.optPresentString(fieldName: String): String? {

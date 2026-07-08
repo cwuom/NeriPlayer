@@ -831,7 +831,7 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
-    fun `completed download finalization keeps missing audio fallback when not cancelled`() {
+    fun `completed download finalization detects missing audio when not cancelled`() {
         assertEquals(
             CompletedDownloadFinalizationAction.COMPLETE_WITHOUT_STORED_AUDIO,
             resolveCompletedDownloadFinalizationAction(
