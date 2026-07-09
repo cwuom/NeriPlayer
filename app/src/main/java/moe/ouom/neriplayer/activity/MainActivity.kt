@@ -112,6 +112,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.NeriPlayerApplication
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.canUseDirectPlaybackServiceStart
@@ -130,6 +131,7 @@ import moe.ouom.neriplayer.listentogether.configuredListenTogetherBaseUrlOrNull
 import moe.ouom.neriplayer.listentogether.normalizeListenTogetherRoomId
 import moe.ouom.neriplayer.listentogether.parseListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.resolveListenTogetherBaseUrl
+import moe.ouom.neriplayer.ui.MobileDataDownloadInterruptionDialog
 import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.ui.onboarding.StartupOnboardingScreen
 import moe.ouom.neriplayer.ui.screen.safemode.SafeModeScreen
@@ -158,6 +160,45 @@ private data class PendingAudioServiceStart(
     val source: String,
     val forceForeground: Boolean
 )
+
+@Composable
+private fun GitHubSyncWarningDialog(
+    onConfirm: () -> Unit,
+    onDismissReminder: () -> Unit
+) {
+    var countdown by remember { mutableIntStateOf(3) }
+    LaunchedEffect(Unit) {
+        while (countdown > 0) {
+            delay(1000)
+            countdown--
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onConfirm,
+        title = { Text(stringResource(R.string.github_sync_warning_title)) },
+        text = { Text(stringResource(R.string.github_sync_warning_message)) },
+        confirmButton = {
+            HapticTextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.action_confirm))
+            }
+        },
+        dismissButton = {
+            HapticTextButton(
+                onClick = onDismissReminder,
+                enabled = countdown == 0
+            ) {
+                Text(
+                    if (countdown > 0) {
+                        stringResource(R.string.github_sync_no_remind_countdown, countdown)
+                    } else {
+                        stringResource(R.string.github_sync_no_remind)
+                    }
+                )
+            }
+        }
+    )
+}
 
 class MainActivity : ComponentActivity() {
     companion object {
@@ -346,6 +387,59 @@ class MainActivity : ComponentActivity() {
                     }
                     false -> AppStage.Disclaimer
                 }
+                val pendingMobileDataDownloadInterruptionRequest by
+                    GlobalDownloadManager.mobileDataDownloadInterruptionRequest.collectAsState()
+                val rootLifecycleOwner = LocalLifecycleOwner.current
+                var hasShownTokenWarning by rememberSaveable { mutableStateOf(false) }
+                var showTokenWarningDialog by rememberSaveable { mutableStateOf(false) }
+                LaunchedEffect(stage, rootLifecycleOwner.lifecycle) {
+                    if (stage != AppStage.Main) {
+                        return@LaunchedEffect
+                    }
+                    while (!rootLifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                        delay(100L)
+                    }
+                    listOf(300L, 1_200L, 2_500L).forEachIndexed { index, delayMs ->
+                        delay(delayMs)
+                        GlobalDownloadManager.requestPendingDownloadRecoveryDecisionIfNeeded(
+                            context = this@MainActivity,
+                            reason = if (index == 0) {
+                                "activity_main_ready"
+                            } else {
+                                "activity_main_ready_retry_$index"
+                            }
+                        )
+                    }
+                }
+                LaunchedEffect(stage, rootLifecycleOwner.lifecycle) {
+                    if (stage != AppStage.Main) {
+                        return@LaunchedEffect
+                    }
+                    rootLifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                        while (true) {
+                            val warningState = loadGitHubSyncWarningState()
+                            val shouldWarn = (warningState.hasRepoInfo || warningState.hasSyncHistory) &&
+                                !warningState.isConfigured &&
+                                !hasShownTokenWarning &&
+                                !warningState.isDismissed
+
+                            if (shouldWarn) {
+                                NPLogger.d("MainActivity", "显示 GitHub 配置警告")
+                                showTokenWarningDialog = true
+                                hasShownTokenWarning = true
+                            } else if (warningState.isConfigured) {
+                                hasShownTokenWarning = false
+                                if (warningState.isDismissed) {
+                                    withContext(Dispatchers.IO) {
+                                        moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
+                                            .setTokenWarningDismissed(false)
+                                    }
+                                }
+                            }
+                            delay(3_000L)
+                        }
+                    }
+                }
 
                 AnimatedContent(
                     targetState = stage,
@@ -419,36 +513,6 @@ class MainActivity : ComponentActivity() {
                                     errorTitle = event.title
                                     errorMessage = event.message
                                     showErrorDialog = true
-                                }
-                            }
-
-                            // GitHub同步配置检查（每次回到前台时检查，并定期轮询）
-                            var hasShownTokenWarning by remember { mutableStateOf(false) }
-                            var showTokenWarningDialog by remember { mutableStateOf(false) }
-                            LaunchedEffect(lifecycleOwner.lifecycle) {
-                                lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                                    while (true) {
-                                        val warningState = loadGitHubSyncWarningState()
-                                        val shouldWarn = (warningState.hasRepoInfo || warningState.hasSyncHistory) &&
-                                            !warningState.isConfigured &&
-                                            !hasShownTokenWarning &&
-                                            !warningState.isDismissed
-
-                                        if (shouldWarn) {
-                                            NPLogger.d("MainActivity", "显示 GitHub 配置警告")
-                                            showTokenWarningDialog = true
-                                            hasShownTokenWarning = true
-                                        } else if (warningState.isConfigured) {
-                                            hasShownTokenWarning = false
-                                            if (warningState.isDismissed) {
-                                                withContext(Dispatchers.IO) {
-                                                    moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
-                                                        .setTokenWarningDismissed(false)
-                                                }
-                                            }
-                                        }
-                                        delay(3_000L)
-                                    }
                                 }
                             }
 
@@ -647,40 +711,6 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
 
-                            // Token过期警告弹窗（带"不再提醒"按钮）
-                            if (showTokenWarningDialog) {
-                                var countdown by remember { mutableIntStateOf(3) }
-                                LaunchedEffect(Unit) {
-                                    while (countdown > 0) {
-                                        delay(1000)
-                                        countdown--
-                                    }
-                                }
-
-                                AlertDialog(
-                                    onDismissRequest = { showTokenWarningDialog = false },
-                                    title = { Text(stringResource(R.string.github_sync_warning_title)) },
-                                    text = { Text(stringResource(R.string.github_sync_warning_message)) },
-                                    confirmButton = {
-                                        HapticTextButton(onClick = { showTokenWarningDialog = false }) {
-                                            Text(stringResource(R.string.action_confirm))
-                                        }
-                                    },
-                                    dismissButton = {
-                                        HapticTextButton(
-                                            onClick = {
-                                                val storage = moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
-                                                storage.setTokenWarningDismissed(true)
-                                                showTokenWarningDialog = false
-                                            },
-                                            enabled = countdown == 0
-                                        ) {
-                                            Text(if (countdown > 0) stringResource(R.string.github_sync_no_remind_countdown, countdown) else stringResource(R.string.github_sync_no_remind))
-                                        }
-                                    }
-                                )
-                            }
-
                             NeriApp(
                                 initialThemeSnapshot = startupThemeSnapshot,
                                 onIsDarkChanged = { isDark ->
@@ -690,6 +720,36 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
+                }
+
+                pendingMobileDataDownloadInterruptionRequest?.let { request ->
+                    MobileDataDownloadInterruptionDialog(
+                        request = request,
+                        onContinue = {
+                            GlobalDownloadManager.continueDownloadsOnMobileData(this@MainActivity, request)
+                        },
+                        onWaitWifi = {
+                            GlobalDownloadManager.waitDownloadsForWifi(request)
+                        },
+                        onCancelAll = {
+                            GlobalDownloadManager.cancelAllDownloadsForMobileData(request)
+                        }
+                    )
+                }
+
+                if (showTokenWarningDialog) {
+                    GitHubSyncWarningDialog(
+                        onConfirm = {
+                            showTokenWarningDialog = false
+                        },
+                        onDismissReminder = {
+                            showTokenWarningDialog = false
+                            startupScope.launch(Dispatchers.IO) {
+                                moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
+                                    .setTokenWarningDismissed(true)
+                            }
+                        }
+                    )
                 }
 
                 pendingStartupCrashReport?.let { report ->

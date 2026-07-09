@@ -13,6 +13,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
 class GlobalDownloadManagerStartupPolicyTest {
@@ -68,6 +69,66 @@ class GlobalDownloadManagerStartupPolicyTest {
             shouldDeferStartupManagedCleanup(
                 configuredDirectoryUri = "content://com.android.externalstorage.documents/tree/primary%3AMusic",
                 treeRootAvailable = false
+            )
+        )
+    }
+
+    @Test
+    fun `startup download recovery waits for user decision on mobile data`() {
+        assertFalse(
+            shouldDeferPendingDownloadRecoveryForNetwork(
+                networkType = TrafficNetworkType.WIFI,
+                mobileDataOverrideAllowed = false
+            )
+        )
+        assertTrue(
+            shouldDeferPendingDownloadRecoveryForNetwork(
+                networkType = TrafficNetworkType.MOBILE,
+                mobileDataOverrideAllowed = false
+            )
+        )
+        assertTrue(
+            shouldDeferPendingDownloadRecoveryForNetwork(
+                networkType = TrafficNetworkType.ROAMING,
+                mobileDataOverrideAllowed = false
+            )
+        )
+        assertFalse(
+            shouldDeferPendingDownloadRecoveryForNetwork(
+                networkType = TrafficNetworkType.MOBILE,
+                mobileDataOverrideAllowed = true
+            )
+        )
+    }
+
+    @Test
+    fun `prepared recovery download start is blocked on mobile data until user confirms`() {
+        assertFalse(
+            shouldDeferPreparedDownloadStartForNetwork(
+                networkType = TrafficNetworkType.MOBILE,
+                mobileDataOverrideAllowed = false,
+                deferForNetworkPolicy = false
+            )
+        )
+        assertTrue(
+            shouldDeferPreparedDownloadStartForNetwork(
+                networkType = TrafficNetworkType.MOBILE,
+                mobileDataOverrideAllowed = false,
+                deferForNetworkPolicy = true
+            )
+        )
+        assertFalse(
+            shouldDeferPreparedDownloadStartForNetwork(
+                networkType = TrafficNetworkType.MOBILE,
+                mobileDataOverrideAllowed = true,
+                deferForNetworkPolicy = true
+            )
+        )
+        assertFalse(
+            shouldDeferPreparedDownloadStartForNetwork(
+                networkType = TrafficNetworkType.WIFI,
+                mobileDataOverrideAllowed = false,
+                deferForNetworkPolicy = true
             )
         )
     }

@@ -148,5 +148,9 @@ private fun ConnectivityManager.currentTrafficNetworkType(): TrafficNetworkType 
         }
     }
 
-    TrafficNetworkType.WIFI
+    if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+        return@runCatching TrafficNetworkType.WIFI
+    }
+
+    TrafficNetworkType.MOBILE
 }.getOrDefault(TrafficNetworkType.MOBILE)

@@ -319,7 +319,7 @@ private fun TrafficRiskDownloadDialog(
 }
 
 @Composable
-private fun MobileDataDownloadInterruptionDialog(
+internal fun MobileDataDownloadInterruptionDialog(
     request: GlobalDownloadManager.MobileDataDownloadInterruptionRequest,
     onContinue: () -> Unit,
     onWaitWifi: () -> Unit,
@@ -820,9 +820,6 @@ private fun NeriAppContent(
     var pendingTrafficRiskDownloadRequest by remember {
         mutableStateOf<GlobalDownloadManager.TrafficRiskDownloadRequest?>(null)
     }
-    val pendingMobileDataDownloadInterruptionRequest by
-        GlobalDownloadManager.mobileDataDownloadInterruptionRequest.collectAsState()
-
     LaunchedEffect(Unit) {
         GlobalDownloadManager.trafficRiskDownloadRequests.collect { request ->
             pendingTrafficRiskDownloadRequest = request
@@ -2643,20 +2640,6 @@ private fun NeriAppContent(
                     )
                 }
 
-                pendingMobileDataDownloadInterruptionRequest?.let { request ->
-                    MobileDataDownloadInterruptionDialog(
-                        request = request,
-                        onContinue = {
-                            GlobalDownloadManager.continueDownloadsOnMobileData(context, request)
-                        },
-                        onWaitWifi = {
-                            GlobalDownloadManager.waitDownloadsForWifi(request)
-                        },
-                        onCancelAll = {
-                            GlobalDownloadManager.cancelAllDownloadsForMobileData(request)
-                        }
-                    )
-                }
             }
         }
     }

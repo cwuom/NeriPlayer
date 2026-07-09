@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download
 import kotlin.math.abs
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
 internal fun shouldRunInitialDownloadScan(
@@ -17,6 +18,27 @@ internal fun shouldDeferStartupManagedCleanup(
     treeRootAvailable: Boolean
 ): Boolean {
     return !configuredDirectoryUri.isNullOrBlank() && treeRootAvailable
+}
+
+internal fun shouldDeferPendingDownloadRecoveryForNetwork(
+    networkType: TrafficNetworkType,
+    mobileDataOverrideAllowed: Boolean
+): Boolean {
+    return networkType != TrafficNetworkType.WIFI && !mobileDataOverrideAllowed
+}
+
+internal fun shouldDeferPreparedDownloadStartForNetwork(
+    networkType: TrafficNetworkType,
+    mobileDataOverrideAllowed: Boolean,
+    deferForNetworkPolicy: Boolean
+): Boolean {
+    if (!deferForNetworkPolicy) {
+        return false
+    }
+    return shouldDeferPendingDownloadRecoveryForNetwork(
+        networkType = networkType,
+        mobileDataOverrideAllowed = mobileDataOverrideAllowed
+    )
 }
 
 internal fun shouldKeepCancellationCleanup(
