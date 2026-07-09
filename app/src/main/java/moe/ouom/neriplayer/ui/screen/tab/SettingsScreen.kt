@@ -1003,8 +1003,6 @@ fun SettingsScreen(
                             sectionScope = AutoSettingsScopes.general
                         )
                         LanguageSettingItem(onBeforeRestart = onBeforeLanguageRestart)
-                        var checking by remember { mutableStateOf(false) }
-
                         ListItem(
                             leadingContent = {
                                 Icon(
@@ -1017,41 +1015,15 @@ fun SettingsScreen(
                             headlineContent = { Text(stringResource(R.string.settings_internationalization)) },
                             supportingContent = {
                                 Text(
-                                    if (checking) {
-                                        stringResource(R.string.settings_internationalization_checking)
-                                    } else {
-                                        stringResource(R.string.settings_internationalization_desc)
-                                    }
+                                    stringResource(R.string.settings_internationalization_desc)
                                 )
                             },
                             trailingContent = {
                                 MiuixSettingsSwitch(
                                     checked = internationalEnabled,
-                                    enabled = !checking,
                                     onCheckedChange = { enabled ->
-                                        if (!enabled) {
-                                            scope.launch {
-                                                AppContainer.settingsRepo.setInternationalizationEnabled(false)
-                                            }
-                                        } else {
-                                            checking = true
-                                            scope.launch {
-                                                try {
-                                                    if (AppContainer.youtubeMusicClient.hasPersonalizedContent()) {
-                                                        AppContainer.settingsRepo.setInternationalizationEnabled(true)
-                                                    } else {
-                                                        inlineMsg = context.getString(
-                                                            R.string.settings_internationalization_unavailable
-                                                        )
-                                                    }
-                                                } catch (_: Exception) {
-                                                    inlineMsg = context.getString(
-                                                        R.string.settings_internationalization_unavailable
-                                                    )
-                                                } finally {
-                                                    checking = false
-                                                }
-                                            }
+                                        scope.launch {
+                                            AppContainer.settingsRepo.setInternationalizationEnabled(enabled)
                                         }
                                     }
                                 )

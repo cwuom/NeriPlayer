@@ -591,8 +591,6 @@
     <string name="recommend_radar">Personal Radar</string>
     <string name="settings_internationalization">Internationalization</string>
     <string name="settings_internationalization_desc">Switch home recommendations and explore to YouTube Music</string>
-    <string name="settings_internationalization_unavailable">This feature may not be available in your region</string>
-    <string name="settings_internationalization_checking">Checking availability…</string>
     <string name="home_ytmusic_playlists">YouTube Music Playlists</string>
     <string name="home_ytmusic_guess_you_like">Guess You Like</string>
     <string name="home_ytmusic_daily_discover">Daily Discover</string>
@@ -722,8 +720,8 @@
     <string name="settings_youtube_login_methods">Browser/Cookie Import</string>
     <string name="settings_youtube_auth_missing">No usable YouTube / YouTube Music auth information was captured</string>
     <string name="settings_youtube_status_valid">Saved and last refreshed %1$s</string>
-    <string name="settings_youtube_status_saved_invalid">A saved Cookie was found, but it may be invalid. Tap to refresh it or sign out</string>
-    <string name="settings_youtube_status_missing">No usable Cookie detected. Tap to sign in again or import one</string>
+    <string name="settings_youtube_status_saved_invalid">Saved YouTube auth information was found, but it may be invalid. Tap to refresh it or sign out</string>
+    <string name="settings_youtube_status_missing">No usable YouTube sign-in state detected. Tap to sign in again or import one</string>
     <string name="settings_login_platforms">Third-party Sign-in</string>
     <string name="settings_login_platforms_expand">Select platform</string>
     <string name="settings_login_platforms_collapse">Collapse</string>
@@ -767,8 +765,8 @@
     <string name="settings_netease_saved_cookie_title">Saved NetEase Cookie detected</string>
     <string name="settings_netease_saved_cookie_message">A local NetEase Cookie is already saved. You can sign out to clear it, or continue signing in to refresh the Cookie.</string>
     <string name="settings_youtube_login_browser_hint">Tries to open music.youtube.com in the built-in web view and automatically reads cookies after sign-in.</string>
-    <string name="settings_youtube_saved_cookie_title">Saved YouTube Cookie detected</string>
-    <string name="settings_youtube_saved_cookie_message">A local YouTube Cookie is already saved. You can sign out to clear it, or continue signing in to refresh the Cookie.</string>
+    <string name="settings_youtube_saved_cookie_title">Saved YouTube sign-in detected</string>
+    <string name="settings_youtube_saved_cookie_message">Local YouTube auth information is already saved. You can sign out to clear it, or continue signing in to refresh auth.</string>
     <string name="settings_youtube_login_browser_warning">Google may show \"This browser may not be secure\" or block sign-in entirely. If that happens, switch to the \"Cookie Import\" tab above.</string>
     <string name="login_paste_bili_cookie_hint">Paste Cookie (e.g.: SESSDATA=…; bili_jct=…)</string>
     <string name="login_paste_youtube_cookie_hint">Paste Cookie (e.g.: SAPISID=…; __Secure-1PSID=…)</string>
@@ -1603,7 +1601,7 @@
     <string name="debug_youtube_probe_video_required">Please enter Video ID first</string>
     <string name="debug_youtube_probe_browse_required">Please enter Browse ID first</string>
     <string name="debug_youtube_probe_auth_anonymous">Not signed in. Requests will use anonymous mode</string>
-    <string name="debug_youtube_probe_auth_logged_in">User Cookie detected | State: %1$s | Cookie keys: %2$d</string>
+    <string name="debug_youtube_probe_auth_logged_in">YouTube sign-in detected | State: %1$s | Cookie keys: %2$d</string>
     <string name="debug_youtube_probe_auth_state_missing">Missing</string>
     <string name="debug_youtube_probe_auth_state_valid">Valid</string>
     <string name="debug_youtube_probe_home_preview_empty">Home Feed returned no sections</string>

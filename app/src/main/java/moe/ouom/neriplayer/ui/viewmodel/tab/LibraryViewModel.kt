@@ -376,10 +376,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle.hasYouTubeMusicCookieContext(): Boolean {
-        return hasLoginCookies() ||
-            cookieHeader.isNotBlank() ||
-            cookies.isNotEmpty() ||
-            authorization.isNotBlank()
+        return hasSavedAuthMaterial()
     }
 
     private fun mapYouTubeMusicPlaylist(

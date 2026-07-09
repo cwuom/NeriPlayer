@@ -55,8 +55,19 @@ data class YouTubeAuthBundle(
         return YouTubeCookieSupport.isLoggedIn(normalizedCookies)
     }
 
+    fun hasEffectiveAuth(): Boolean {
+        return hasLoginCookies() || authorization.isNotBlank()
+    }
+
+    fun hasSavedAuthMaterial(): Boolean {
+        val normalized = normalized(savedAt = savedAt)
+        return normalized.cookieHeader.isNotBlank() ||
+            normalized.cookies.isNotEmpty() ||
+            normalized.authorization.isNotBlank()
+    }
+
     fun isUsable(): Boolean {
-        return hasLoginCookies()
+        return hasEffectiveAuth()
     }
 
     fun normalized(savedAt: Long = this.savedAt): YouTubeAuthBundle {
@@ -147,7 +158,7 @@ fun evaluateYouTubeAuthHealth(
     val cookies = normalized.cookies.ifEmpty { parseCookieHeader(normalized.cookieHeader) }
     val loginCookieKeys = YouTubeCookieSupport.collectImportantLoginCookieKeys(cookies)
     val activeCookieKeys = YouTubeCookieSupport.collectActiveSessionCookieKeys(cookies)
-    if (loginCookieKeys.isEmpty()) {
+    if (loginCookieKeys.isEmpty() && normalized.authorization.isBlank()) {
         return YouTubeAuthHealth(
             state = YouTubeAuthState.Missing,
             savedAt = normalized.savedAt,

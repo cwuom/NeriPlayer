@@ -41,7 +41,7 @@ class YouTubeAuthBundleTest {
     @Test
     fun isUsable_shouldRequireAuthSignal() {
         assertFalse(YouTubeAuthBundle().isUsable())
-        assertFalse(YouTubeAuthBundle(authorization = "SAPISIDHASH 1_abc").isUsable())
+        assertTrue(YouTubeAuthBundle(authorization = "SAPISIDHASH 1_abc").isUsable())
         assertFalse(
             YouTubeAuthBundle(
                 cookies = mapOf("LOGIN_INFO" to "visitor-token")
@@ -55,6 +55,26 @@ class YouTubeAuthBundleTest {
     }
 
     @Test
+    fun hasEffectiveAuth_acceptsAuthorizationWithoutLoginCookies() {
+        val bundle = YouTubeAuthBundle(
+            authorization = "SAPISIDHASH 123_hash",
+            savedAt = 1_000L
+        )
+
+        assertTrue(bundle.hasEffectiveAuth())
+        assertFalse(bundle.hasLoginCookies())
+    }
+
+    @Test
+    fun hasEffectiveAuth_rejectsVisitorOnlyCookies() {
+        val bundle = YouTubeAuthBundle(
+            cookies = mapOf("VISITOR_INFO1_LIVE" to "visitor")
+        )
+
+        assertFalse(bundle.hasEffectiveAuth())
+    }
+
+    @Test
     fun evaluateYouTubeAuthHealth_shouldReturnMissingWithoutImportantCookies() {
         val health = evaluateYouTubeAuthHealth(
             YouTubeAuthBundle(
@@ -64,6 +84,22 @@ class YouTubeAuthBundleTest {
         )
 
         assertEquals(YouTubeAuthState.Missing, health.state)
+        assertFalse(health.shouldPromptRelogin)
+    }
+
+    @Test
+    fun evaluateYouTubeAuthHealth_shouldReturnValidForAuthorizationOnly() {
+        val health = evaluateYouTubeAuthHealth(
+            YouTubeAuthBundle(
+                authorization = "SAPISIDHASH 123_hash",
+                savedAt = 1_000L
+            ),
+            now = 2_000L
+        )
+
+        assertEquals(YouTubeAuthState.Valid, health.state)
+        assertTrue(health.loginCookieKeys.isEmpty())
+        assertTrue(health.activeCookieKeys.isEmpty())
         assertFalse(health.shouldPromptRelogin)
     }
 

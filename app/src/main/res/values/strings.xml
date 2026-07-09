@@ -591,8 +591,6 @@
     <string name="recommend_radar">私人雷达</string>
     <string name="settings_internationalization">国际化</string>
     <string name="settings_internationalization_desc">开启后首页推荐和探索页将切换为 YouTube Music</string>
-    <string name="settings_internationalization_unavailable">你所在的地区可能无法使用此功能</string>
-    <string name="settings_internationalization_checking">正在检测可用性…</string>
     <string name="home_ytmusic_playlists">YouTube 歌单</string>
     <string name="home_ytmusic_guess_you_like">猜你喜欢</string>
     <string name="home_ytmusic_daily_discover">每日发现</string>
@@ -722,8 +720,8 @@
     <string name="settings_youtube_login_methods">浏览器/Cookie 导入</string>
     <string name="settings_youtube_auth_missing">未读取到可用的 YouTube / YouTube Music 鉴权信息</string>
     <string name="settings_youtube_status_valid">已保存，最近更新于 %1$s</string>
-    <string name="settings_youtube_status_saved_invalid">检测到已保存的 Cookie，但当前可能无效，点击可刷新或退出登录</string>
-    <string name="settings_youtube_status_missing">未检测到可用 Cookie，点击重新登录或导入</string>
+    <string name="settings_youtube_status_saved_invalid">检测到已保存的 YouTube 鉴权信息，但当前可能无效，点击可刷新或退出登录</string>
+    <string name="settings_youtube_status_missing">未检测到可用 YouTube 登录态，点击重新登录或导入</string>
     <string name="settings_login_platforms">第三方平台登录</string>
     <string name="settings_login_platforms_expand">展开以选择登录平台</string>
     <string name="settings_login_platforms_collapse">收起</string>
@@ -767,8 +765,8 @@
     <string name="settings_netease_saved_cookie_title">检测到已保存的网易云 Cookie</string>
     <string name="settings_netease_saved_cookie_message">检测到本地已保存网易云 Cookie。你可以退出登录清空旧 Cookie，或继续登录以刷新 Cookie。</string>
     <string name="settings_youtube_login_browser_hint">将尝试通过内置网页打开 music.youtube.com，并在登录后自动读取 Cookie。</string>
-    <string name="settings_youtube_saved_cookie_title">检测到已保存的 YouTube Cookie</string>
-    <string name="settings_youtube_saved_cookie_message">检测到本地已保存 YouTube Cookie。你可以退出登录清空旧 Cookie，或继续登录以刷新 Cookie。</string>
+    <string name="settings_youtube_saved_cookie_title">检测到已保存的 YouTube 登录态</string>
+    <string name="settings_youtube_saved_cookie_message">检测到本地已保存 YouTube 鉴权信息。你可以退出登录清空旧信息，或继续登录以刷新鉴权。</string>
     <string name="settings_youtube_login_browser_warning">Google 可能提示“此浏览器可能不安全”或直接拦截登录；若失败，请切换到上方的“Cookie 导入”标签。</string>
     <string name="login_paste_bili_cookie_hint">粘贴 Cookie（例如：SESSDATA=…; bili_jct=…）</string>
     <string name="login_paste_youtube_cookie_hint">粘贴 Cookie（例如：SAPISID=…; __Secure-1PSID=…）</string>
@@ -1603,7 +1601,7 @@
     <string name="debug_youtube_probe_video_required">请先填写 Video ID</string>
     <string name="debug_youtube_probe_browse_required">请先填写 Browse ID</string>
     <string name="debug_youtube_probe_auth_anonymous">当前未登录，将以匿名模式请求</string>
-    <string name="debug_youtube_probe_auth_logged_in">当前已读取用户 Cookie | 状态：%1$s | Cookie Key 数：%2$d</string>
+    <string name="debug_youtube_probe_auth_logged_in">当前已读取 YouTube 登录态 | 状态：%1$s | Cookie Key 数：%2$d</string>
     <string name="debug_youtube_probe_auth_state_missing">缺失</string>
     <string name="debug_youtube_probe_auth_state_valid">有效</string>
     <string name="debug_youtube_probe_home_preview_empty">Home Feed 返回为空</string>

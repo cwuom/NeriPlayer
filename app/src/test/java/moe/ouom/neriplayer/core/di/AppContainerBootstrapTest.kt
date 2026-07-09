@@ -119,7 +119,7 @@ class AppContainerBootstrapTest {
     }
 
     @Test
-    fun `warmYouTubePlaybackIfAuthorized triggers warm bootstrap when login cookies exist`() {
+    fun `warmYouTubePlaybackIfAuthorized triggers warm bootstrap when effective auth exists`() {
         var warmCalls = 0
 
         warmYouTubePlaybackIfAuthorized(
@@ -131,7 +131,19 @@ class AppContainerBootstrapTest {
     }
 
     @Test
-    fun `warmYouTubePlaybackIfAuthorized skips warm bootstrap without login cookies`() {
+    fun `warmYouTubePlaybackIfAuthorized triggers warm bootstrap with authorization only`() {
+        var warmCalls = 0
+
+        warmYouTubePlaybackIfAuthorized(
+            bundle = YouTubeAuthBundle(authorization = "SAPISIDHASH 123_hash"),
+            warmBootstrapAsync = { warmCalls += 1 }
+        )
+
+        assertEquals(1, warmCalls)
+    }
+
+    @Test
+    fun `warmYouTubePlaybackIfAuthorized skips warm bootstrap without effective auth`() {
         var warmCalls = 0
 
         warmYouTubePlaybackIfAuthorized(

@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.api.youtube
 
 import java.util.Locale
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -214,6 +215,63 @@ class YouTubeMusicClientParserTest {
         assertEquals("0", bootstrap.sessionIndex)
         assertFalse(bootstrap.loggedIn)
         assertEquals("user-session", bootstrap.userSessionId)
+    }
+
+    @Test
+    fun hasEffectiveLogin_acceptsSavedLoginCookiesWhenBootstrapIsFalse() {
+        val bootstrap = YouTubeMusicParser.parseBootstrapConfig(
+            html = """
+                "INNERTUBE_API_KEY":"api-key"
+                "INNERTUBE_CLIENT_VERSION":"1.20260325.03.00"
+                "VISITOR_DATA":"visitor-data"
+                "LOGGED_IN":false
+            """.trimIndent(),
+            cookieHeader = "SAPISID=sap-value; SID=sid-value",
+            userAgent = "UnitTestAgent/11.0"
+        )
+        val auth = YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value"
+        )
+
+        assertTrue(bootstrap.hasEffectiveLogin(auth))
+    }
+
+    @Test
+    fun hasEffectiveLogin_acceptsAuthorizationWhenBootstrapIsFalse() {
+        val bootstrap = YouTubeMusicParser.parseBootstrapConfig(
+            html = """
+                "INNERTUBE_API_KEY":"api-key"
+                "INNERTUBE_CLIENT_VERSION":"1.20260325.05.00"
+                "VISITOR_DATA":"visitor-data"
+                "LOGGED_IN":false
+            """.trimIndent(),
+            cookieHeader = "SOCS=CAI; VISITOR_INFO1_LIVE=visitor",
+            userAgent = "UnitTestAgent/13.0"
+        )
+        val auth = YouTubeAuthBundle(
+            authorization = "SAPISIDHASH 123_hash"
+        )
+
+        assertTrue(bootstrap.hasEffectiveLogin(auth))
+    }
+
+    @Test
+    fun hasEffectiveLogin_rejectsVisitorOnlyCookiesWhenBootstrapIsFalse() {
+        val bootstrap = YouTubeMusicParser.parseBootstrapConfig(
+            html = """
+                "INNERTUBE_API_KEY":"api-key"
+                "INNERTUBE_CLIENT_VERSION":"1.20260325.04.00"
+                "VISITOR_DATA":"visitor-data"
+                "LOGGED_IN":false
+            """.trimIndent(),
+            cookieHeader = "SOCS=CAI; VISITOR_INFO1_LIVE=visitor",
+            userAgent = "UnitTestAgent/12.0"
+        )
+        val auth = YouTubeAuthBundle(
+            cookieHeader = "SOCS=CAI; VISITOR_INFO1_LIVE=visitor"
+        )
+
+        assertFalse(bootstrap.hasEffectiveLogin(auth))
     }
 
     @Test

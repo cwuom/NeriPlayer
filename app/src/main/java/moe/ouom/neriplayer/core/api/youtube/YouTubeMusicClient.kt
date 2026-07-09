@@ -33,6 +33,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.auth.youtube.isYouTubeAuthRecoverableFailure
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthAutoRefreshManager
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.platform.youtube.buildBootstrapAuthFingerprint
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeInnertubeRequestHeaders
@@ -184,6 +185,10 @@ internal data class YouTubeMusicBootstrapConfig(
     val webUserAgent: String,
     val fetchedAtMs: Long
 )
+
+internal fun YouTubeMusicBootstrapConfig.hasEffectiveLogin(auth: YouTubeAuthBundle): Boolean {
+    return loggedIn || auth.normalized().hasEffectiveAuth()
+}
 
 internal data class YouTubeMusicRequestLocale(
     val hl: String,
@@ -2087,14 +2092,17 @@ class YouTubeMusicClient(
 
     suspend fun hasPersonalizedContent(): Boolean = withContext(Dispatchers.IO) {
         if (!hasYouTubeMusicCookieContext()) {
-            NPLogger.w(TAG, "hasPersonalizedContent false: missing YouTube cookie context")
+            NPLogger.w(TAG, "hasPersonalizedContent false: missing YouTube auth context")
             return@withContext false
         }
 
         val bootstrap = authenticatedBootstrap(reason = "personalized_probe")
-        if (!bootstrap.loggedIn) {
-            NPLogger.w(TAG, "hasPersonalizedContent false: bootstrap is not logged in")
+        if (!bootstrap.hasEffectiveLogin(authRepo.getAuthOnce())) {
+            NPLogger.w(TAG, "hasPersonalizedContent false: no effective YouTube login")
             return@withContext false
+        }
+        if (!bootstrap.loggedIn) {
+            NPLogger.d(TAG, "hasPersonalizedContent continues with saved YouTube cookie context")
         }
 
         val libraryPlaylists = getLibraryPlaylists(resolveMissingTrackCounts = false)
@@ -2345,26 +2353,28 @@ class YouTubeMusicClient(
 
     private fun hasYouTubeMusicCookieContext(): Boolean {
         val auth = authRepo.getAuthOnce().normalized()
-        return auth.hasLoginCookies() ||
-            auth.cookieHeader.isNotBlank() ||
-            auth.cookies.isNotEmpty() ||
-            auth.authorization.isNotBlank()
+        return auth.hasSavedAuthMaterial()
     }
 
     private fun warnIfMissingYouTubeMusicCookieContext(reason: String) {
         if (hasYouTubeMusicCookieContext()) {
             return
         }
-        NPLogger.w(TAG, "$reason has no saved YouTube Music cookie context")
+        NPLogger.w(TAG, "$reason has no saved YouTube Music auth context")
     }
 
     private suspend fun authenticatedBootstrap(reason: String): YouTubeMusicBootstrapConfig {
         val hasCookieContext = hasYouTubeMusicCookieContext()
         if (!hasCookieContext) {
-            NPLogger.w(TAG, "$reason continues without saved YouTube Music cookie context")
+            NPLogger.w(TAG, "$reason continues without saved YouTube Music auth context")
         }
         var config = bootstrap()
-        if (config.loggedIn || !hasCookieContext) {
+        var auth = authRepo.getAuthOnce()
+        var hasEffectiveLogin = config.hasEffectiveLogin(auth)
+        if (hasEffectiveLogin || !hasCookieContext) {
+            if (!config.loggedIn && hasEffectiveLogin) {
+                NPLogger.d(TAG, "$reason bootstrap did not expose LOGGED_IN, using saved YouTube auth")
+            }
             return config
         }
 
@@ -2375,8 +2385,15 @@ class YouTubeMusicClient(
         )
         bootstrapCache = null
         config = bootstrap(forceRefresh = true)
-        if (!config.loggedIn) {
-            NPLogger.w(TAG, "$reason bootstrap still not logged in after refresh")
+        auth = authRepo.getAuthOnce()
+        hasEffectiveLogin = config.hasEffectiveLogin(auth)
+        if (!hasEffectiveLogin) {
+            NPLogger.w(TAG, "$reason still has no effective YouTube login after refresh")
+        } else if (!config.loggedIn) {
+            NPLogger.d(
+                TAG,
+                "$reason bootstrap still did not expose LOGGED_IN after refresh, using saved YouTube auth"
+            )
         }
         return config
     }
@@ -2403,6 +2420,7 @@ class YouTubeMusicClient(
             .put("loginCookieKeys", JSONArray(health.loginCookieKeys))
             .put("cookieCount", auth.cookies.size)
             .put("hasCookieHeader", auth.cookieHeader.isNotBlank())
+            .put("hasAuthorization", auth.authorization.isNotBlank())
             .put("origin", auth.origin)
             .put("xGoogAuthUser", auth.xGoogAuthUser)
             .put("userAgent", auth.resolveRequestUserAgent())

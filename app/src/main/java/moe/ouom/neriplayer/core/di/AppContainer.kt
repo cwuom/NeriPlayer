@@ -126,7 +126,7 @@ internal fun warmYouTubePlaybackIfAuthorized(
     bundle: moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle,
     warmBootstrapAsync: () -> Unit
 ) {
-    if (bundle.hasLoginCookies() && !ForegroundWebLoginGuard.isActive) {
+    if (bundle.hasEffectiveAuth() && !ForegroundWebLoginGuard.isActive) {
         warmBootstrapAsync()
     }
 }

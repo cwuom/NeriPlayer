@@ -60,7 +60,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
     private val _uiState = MutableStateFlow(
         YouTubeAuthUiState(
             health = repo.getAuthHealth(),
-            hasSavedAuth = repo.getAuthOnce().hasPersistedAuth()
+            hasSavedAuth = repo.getAuthOnce().hasEffectiveAuth()
         )
     )
     val uiState: StateFlow<YouTubeAuthUiState>
@@ -79,7 +79,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             repo.authFlow.collect { bundle ->
                 _uiState.update { current ->
-                    current.copy(hasSavedAuth = bundle.hasPersistedAuth())
+                    current.copy(hasSavedAuth = bundle.hasEffectiveAuth())
                 }
             }
         }
@@ -170,9 +170,5 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _events.send(YouTubeAuthEvent.ShowSnack(message))
         }
-    }
-
-    private fun YouTubeAuthBundle.hasPersistedAuth(): Boolean {
-        return evaluateYouTubeAuthHealth(this).state != YouTubeAuthState.Missing
     }
 }

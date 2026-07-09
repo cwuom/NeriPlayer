@@ -129,7 +129,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 lastYouTubeAuthFingerprint = nextFingerprint
                 NPLogger.d(
                     TAG,
-                    "youtube auth changed: hasLogin=${bundle.hasLoginCookies()}, hasCookieContext=${bundle.hasYouTubeMusicCookieContext()}, intl=${_uiState.value.internationalizationEnabled}"
+                    "youtube auth changed: hasEffectiveAuth=${bundle.hasEffectiveAuth()}, hasCookieContext=${bundle.hasYouTubeMusicCookieContext()}, intl=${_uiState.value.internationalizationEnabled}"
                 )
                 if (!_uiState.value.internationalizationEnabled) {
                     return@collect
@@ -515,10 +515,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun YouTubeAuthBundle.hasYouTubeMusicCookieContext(): Boolean {
-        return hasLoginCookies() ||
-            cookieHeader.isNotBlank() ||
-            cookies.isNotEmpty() ||
-            authorization.isNotBlank()
+        return hasSavedAuthMaterial()
     }
 
     private fun parseRecommend(raw: String): List<PlaylistSummary> {
