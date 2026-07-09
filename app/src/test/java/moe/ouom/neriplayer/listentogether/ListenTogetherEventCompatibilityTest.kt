@@ -147,6 +147,43 @@ class ListenTogetherEventCompatibilityTest {
         )
     }
 
+    @Test
+    fun `shareable queue keeps current track inside two thousand item window`() {
+        val tracks = (0 until 2_500).map { index ->
+            track("netease:$index", index.toString())
+        }
+        val bounded = tracks.boundedAroundStableKey("netease:2100")
+
+        assertEquals(LISTEN_TOGETHER_MAX_SHAREABLE_QUEUE_SIZE, bounded.size)
+        assertTrue(bounded.any { it.stableKey == "netease:2100" })
+        assertEquals("netease:500", bounded.first().stableKey)
+        assertEquals("netease:2499", bounded.last().stableKey)
+    }
+
+    @Test
+    fun `member seek request is satisfied by committed base position while playback advances`() {
+        val playback = ListenTogetherPlaybackState(
+            state = "playing",
+            basePositionMs = 60_000L,
+            baseTimestampMs = 1_000L
+        )
+
+        assertTrue(
+            isListenTogetherSeekControlSatisfied(
+                playback = playback,
+                requestedPositionMs = 60_700L,
+                satisfiedDriftMs = 1_500L
+            )
+        )
+        assertFalse(
+            isListenTogetherSeekControlSatisfied(
+                playback = playback,
+                requestedPositionMs = 63_000L,
+                satisfiedDriftMs = 1_500L
+            )
+        )
+    }
+
     private fun track(
         stableKey: String,
         audioId: String

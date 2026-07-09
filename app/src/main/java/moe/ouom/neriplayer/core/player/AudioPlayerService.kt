@@ -73,6 +73,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager.externalBluetoothLyricLineFlow
 import moe.ouom.neriplayer.core.player.PlayerManager.statusBarLyricsEnable
@@ -85,6 +86,8 @@ import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.listentogether.ListenTogetherPlaybackState
+import moe.ouom.neriplayer.listentogether.toSongItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.SafeModeManager
@@ -416,13 +419,15 @@ class AudioPlayerService : Service() {
     private var lastMetadataSnapshot: PlaybackMetadataSnapshot? = null
 
     private fun shouldKeepServiceSticky(): Boolean {
-        return PlayerManager.hasItems() && PlayerManager.shouldRunPlaybackServiceInForeground()
+        return hasPlaybackSurfaceContent() &&
+            (PlayerManager.shouldRunPlaybackServiceInForeground() || isListenTogetherSessionActive())
     }
 
     private fun buildStateSummary(): String {
         return "hasItems=${PlayerManager.hasItems()} currentSong=${PlayerManager.currentSongFlow.value != null} " +
             "isPlaying=${PlayerManager.isPlayingFlow.value} transportActive=${PlayerManager.isTransportActive()} " +
-            "foreground=$isForegroundStarted allowRestart=$allowServiceRestart"
+            "listenTogetherActive=${isListenTogetherSessionActive()} foreground=$isForegroundStarted " +
+            "allowRestart=$allowServiceRestart"
     }
 
     private val mediaSessionCallback = object : MediaSessionCompat.Callback() {
@@ -503,11 +508,11 @@ class AudioPlayerService : Service() {
 
         serviceScope.launch {
             PlayerManager.currentSongFlow.collect {
-                if (it == null && !PlayerManager.hasItems()) {
+                if (it == null && !hasPlaybackSurfaceContent()) {
                     if (!hasReceivedStartCommand) {
                         return@collect
                     }
-                    NPLogger.w("NERI-APS", "currentSongFlow requested self-stop because playlist is empty")
+                    NPLogger.w("NERI-APS", "currentSongFlow requested self-stop because playback surface is empty")
                     stopForegroundIfStarted("playlist_became_empty")
                     stopSelf()
                     return@collect
@@ -515,6 +520,17 @@ class AudioPlayerService : Service() {
                 updateMetadata()
                 updatePlaybackState(force = true)
                 updateNotification()
+            }
+        }
+        val listenTogetherSessionManager = AppContainer.listenTogetherSessionManager
+        serviceScope.launch {
+            listenTogetherSessionManager.sessionState.collect {
+                handleListenTogetherServiceStateChanged("session")
+            }
+        }
+        serviceScope.launch {
+            listenTogetherSessionManager.roomState.collect {
+                handleListenTogetherServiceStateChanged("room")
             }
         }
         serviceScope.launch {
@@ -629,9 +645,9 @@ class AudioPlayerService : Service() {
         if (!isForegroundStarted && action != ACTION_STOP) {
             startForegroundImmediately(buildBootstrapNotification(), "on_start_command:$action:$startSource")
         }
-        if (action == null && !PlayerManager.hasItems()) {
+        if (action == null && !hasPlaybackSurfaceContent()) {
             allowServiceRestart = false
-            NPLogger.w("NERI-APS", "Stopping service because null action arrived without playlist")
+            NPLogger.w("NERI-APS", "Stopping service because null action arrived without playback content")
             stopForegroundIfStarted("null_action_without_items")
             stopSelf()
             return START_NOT_STICKY
@@ -673,9 +689,9 @@ class AudioPlayerService : Service() {
             }
 
             ACTION_SYNC -> {
-                if (!PlayerManager.hasItems()) {
+                if (!hasPlaybackSurfaceContent()) {
                     allowServiceRestart = false
-                    NPLogger.w("NERI-APS", "Ignoring ACTION_SYNC because playlist is empty, source=$startSource")
+                    NPLogger.w("NERI-APS", "Ignoring ACTION_SYNC because playback content is empty, source=$startSource")
                     stopForegroundIfStarted("sync_without_items")
                     stopSelf()
                     return START_NOT_STICKY
@@ -727,9 +743,12 @@ class AudioPlayerService : Service() {
                     updateAll()
                 }
             }
+        } else if (hasPlaybackSurfaceContent()) {
+            ensureForegroundStarted()
+            updateAll()
         } else {
             allowServiceRestart = false
-            NPLogger.w("NERI-APS", "Stopping service because playlist is empty after action handling")
+            NPLogger.w("NERI-APS", "Stopping service because playback content is empty after action handling")
             stopForegroundIfStarted("no_items_after_action")
             stopSelf()
             return START_NOT_STICKY
@@ -749,7 +768,7 @@ class AudioPlayerService : Service() {
 
     private fun buildNotification(): Notification {
         val isPlaybackControlPlaying = PlayerManager.playbackControlPlayingFlow.value
-        val song = PlayerManager.currentSongFlow.value
+        val song = playbackSurfaceSong()
 
         val contentIntent = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java).apply {
@@ -914,7 +933,7 @@ class AudioPlayerService : Service() {
     }
 
     private fun buildNotificationSnapshot(): PlaybackNotificationSnapshot {
-        val song = PlayerManager.currentSongFlow.value
+        val song = playbackSurfaceSong()
         val timerState = PlayerManager.sleepTimerManager.timerState.value
         val text = if (timerState.isActive) {
             val timerInfo = when (timerState.mode) {
@@ -946,7 +965,7 @@ class AudioPlayerService : Service() {
     }
 
     private fun updateMetadata() {
-        val song = PlayerManager.currentSongFlow.value
+        val song = playbackSurfaceSong()
         val songKey = song?.stableKey()
         val duration = song?.durationMs ?: 0L
         val immediateCoverSource = song.effectiveCoverSource()
@@ -1061,8 +1080,8 @@ class AudioPlayerService : Service() {
                 if (coverResolutionInFlightSongKey == songKey) {
                     coverResolutionInFlightSongKey = null
                 }
-                val currentSong = PlayerManager.currentSongFlow.value
-                if (currentSong?.stableKey() != songKey || resolvedCoverSource.isNullOrBlank()) {
+                val currentSurfaceSong = playbackSurfaceSong()
+                if (currentSurfaceSong?.stableKey() != songKey || resolvedCoverSource.isNullOrBlank()) {
                     return@withContext
                 }
                 if (currentCoverSongKey == songKey && currentCoverSource == resolvedCoverSource) {
@@ -1083,9 +1102,14 @@ class AudioPlayerService : Service() {
     private fun updatePlaybackState(force: Boolean = false) {
         val isTransportActive = PlayerManager.isTransportActive()
         val isBuffering = PlayerManager.isTransportBuffering()
-        val pos = PlayerManager.playbackPositionFlow.value
+        val fallbackSongActive = PlayerManager.currentSongFlow.value == null && playbackSurfaceSong() != null
+        val pos = if (fallbackSongActive) {
+            listenTogetherExpectedPositionMs()
+        } else {
+            PlayerManager.playbackPositionFlow.value
+        }
 
-        val song = PlayerManager.currentSongFlow.value
+        val song = playbackSurfaceSong()
         val isFav = isFavoriteSong(song)
 
         val favIconRes = if (isFav) R.drawable.ic_baseline_favorite_24
@@ -1101,6 +1125,7 @@ class AudioPlayerService : Service() {
         val playbackState = when {
             isBuffering -> PlaybackStateCompat.STATE_BUFFERING
             isTransportActive -> PlaybackStateCompat.STATE_PLAYING
+            fallbackSongActive && isListenTogetherRemotePlaying() -> PlaybackStateCompat.STATE_BUFFERING
             else -> PlaybackStateCompat.STATE_PAUSED
         }
         val playbackSpeed = if (playbackState == PlaybackStateCompat.STATE_PLAYING) {
@@ -1293,7 +1318,7 @@ class AudioPlayerService : Service() {
             mediaSession.isActive = false
             mediaSession.release()
         }
-        if (!allowServiceRestart || !PlayerManager.hasItems()) {
+        if (!allowServiceRestart || !hasPlaybackSurfaceContent()) {
             PlayerManager.release()
         }
         super.onDestroy()
@@ -1376,6 +1401,54 @@ class AudioPlayerService : Service() {
         isServiceForegroundActive = false
     }
 
+    private fun handleListenTogetherServiceStateChanged(reason: String) {
+        if (!hasPlaybackSurfaceContent()) {
+            stopSelfIfPlaybackSurfaceEmpty("listen_together_$reason")
+            return
+        }
+        ensureForegroundStarted()
+        updateAll()
+    }
+
+    private fun stopSelfIfPlaybackSurfaceEmpty(reason: String) {
+        if (!hasReceivedStartCommand || hasPlaybackSurfaceContent()) {
+            return
+        }
+        allowServiceRestart = false
+        NPLogger.w("NERI-APS", "Stopping service because playback surface is empty: reason=$reason")
+        stopForegroundIfStarted(reason)
+        stopSelf()
+    }
+
+    private fun playbackSurfaceSong(): SongItem? {
+        return PlayerManager.currentSongFlow.value ?: listenTogetherRoomSong()
+    }
+
+    private fun listenTogetherRoomSong(): SongItem? {
+        val room = AppContainer.listenTogetherSessionManager.roomState.value ?: return null
+        val track = room.track ?: room.queue.getOrNull(room.currentIndex)
+        return track?.toSongItem()
+    }
+
+    private fun hasPlaybackSurfaceContent(): Boolean {
+        return PlayerManager.hasItems() || isListenTogetherSessionActive() || listenTogetherRoomSong() != null
+    }
+
+    private fun isListenTogetherSessionActive(): Boolean {
+        return !AppContainer.listenTogetherSessionManager.sessionState.value.roomId.isNullOrBlank()
+    }
+
+    private fun isListenTogetherRemotePlaying(): Boolean {
+        return AppContainer.listenTogetherSessionManager.roomState.value?.playback?.state == "playing"
+    }
+
+    private fun listenTogetherExpectedPositionMs(): Long {
+        return AppContainer.listenTogetherSessionManager.roomState.value
+            ?.playback
+            ?.expectedPositionMs()
+            ?: 0L
+    }
+
     private fun NotificationPaddedIcon(
         @DrawableRes resId: Int,
         boxDp: Int = 24,
@@ -1399,5 +1472,13 @@ class AudioPlayerService : Service() {
         d.draw(canvas)
 
         return IconCompat.createWithBitmap(bmp)
+    }
+}
+
+private fun ListenTogetherPlaybackState.expectedPositionMs(nowMs: Long = System.currentTimeMillis()): Long {
+    return if (state == "playing") {
+        (basePositionMs + ((nowMs - baseTimestampMs) * playbackRate)).toLong().coerceAtLeast(0L)
+    } else {
+        basePositionMs.coerceAtLeast(0L)
     }
 }

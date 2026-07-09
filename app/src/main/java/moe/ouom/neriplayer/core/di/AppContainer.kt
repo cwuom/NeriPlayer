@@ -282,7 +282,12 @@ object AppContainer {
     val qqMusicSearchApi by lazy { QQMusicSearchApi() }
     val lrcLibClient by lazy { moe.ouom.neriplayer.core.api.lyrics.LrcLibClient(sharedOkHttpClient) }
     val listenTogetherApi by lazy { ListenTogetherApi(sharedOkHttpClient) }
-    val listenTogetherWebSocketClient by lazy { ListenTogetherWebSocketClient(sharedOkHttpClient) }
+    private val listenTogetherOkHttpClient by lazy {
+        sharedOkHttpClient.newBuilder()
+            .pingInterval(15, TimeUnit.SECONDS)
+            .build()
+    }
+    val listenTogetherWebSocketClient by lazy { ListenTogetherWebSocketClient(listenTogetherOkHttpClient) }
     val listenTogetherSessionManager by lazy {
         ListenTogetherSessionManager(
             api = listenTogetherApi,

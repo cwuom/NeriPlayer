@@ -67,6 +67,18 @@ class AudioPlayerServicePolicyTest {
     }
 
     @Test
+    fun `forced listen together sync uses foreground service when caller is not resumed`() {
+        assertTrue(
+            shouldUseForegroundServiceStart(
+                sdkInt = 25,
+                forceForeground = true,
+                shouldRunPlaybackServiceInForeground = false,
+                callerHasResumedUi = false
+            )
+        )
+    }
+
+    @Test
     fun `resumed activity caller avoids foreground service timer`() {
         assertFalse(
             shouldUseForegroundServiceStart(
