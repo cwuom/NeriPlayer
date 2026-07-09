@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.listentogether
 import android.os.Looper
 import android.os.SystemClock
 import androidx.media3.common.Player
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -19,6 +20,8 @@ import moe.ouom.neriplayer.core.player.policy.PlaybackCommand
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.model.SongUrlResult
+import moe.ouom.neriplayer.core.player.resolveShareableListenTogetherStreamUrl
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import java.util.UUID
@@ -91,6 +94,10 @@ class ListenTogetherSessionManager(
     private var listenerBufferingTrackStableKey: String? = null
     @Volatile
     private var lastListenerBufferingRecoveryAtElapsedMs: Long = 0L
+    @Volatile
+    private var controllerLinkResolveStableKey: String? = null
+    @Volatile
+    private var controllerLinkResolveJob: Job? = null
 
     private val _sessionState = MutableStateFlow(ListenTogetherSessionState())
     val sessionState: StateFlow<ListenTogetherSessionState> = _sessionState.asStateFlow()
@@ -376,6 +383,7 @@ class ListenTogetherSessionManager(
         cancelListenTogetherBackgroundJobs(reconnectJob, membershipRecoveryJob)
         reconnectJob = null
         membershipRecoveryJob = null
+        cancelControllerLinkResolve()
         stopHeartbeat()
         stopSyncWatchdog()
         lastOutboundSyncAtMs = 0L
@@ -405,6 +413,7 @@ class ListenTogetherSessionManager(
         cancelListenTogetherBackgroundJobs(reconnectJob, membershipRecoveryJob)
         reconnectJob = null
         membershipRecoveryJob = null
+        cancelControllerLinkResolve()
         stopHeartbeat()
         stopSyncWatchdog()
         lastOutboundSyncAtMs = 0L
@@ -677,7 +686,8 @@ class ListenTogetherSessionManager(
 
     fun buildLinkReadyEvent(
         stableKey: String,
-        positionMs: Long
+        positionMs: Long,
+        streamUrlOverride: String? = null
     ): ListenTogetherEvent? {
         val queue = PlayerManager.currentQueueFlow.value
         val currentSong = PlayerManager.currentSongFlow.value ?: run {
@@ -704,10 +714,20 @@ class ListenTogetherSessionManager(
             )
             return null
         }
-        val resolvedStreamUrl = normalizedDirectStreamUrl(shareableTrack.streamUrl) ?: run {
+        val resolvedStreamUrl = normalizedDirectStreamUrl(streamUrlOverride)
+            ?: normalizedDirectStreamUrl(shareableTrack.streamUrl)
+            ?: run {
+                NPLogger.w(
+                    TAG,
+                    "buildLinkReadyEvent(): direct stream url missing, stableKey=$stableKey, track=${shareableTrack.name}"
+                )
+                return null
+            }
+        val trustedTrack = shareableTrack.withStreamUrl(resolvedStreamUrl)
+        val trustedStreamUrl = normalizedDirectStreamUrl(trustedTrack.streamUrl) ?: run {
             NPLogger.w(
                 TAG,
-                "buildLinkReadyEvent(): direct stream url missing, stableKey=$stableKey, track=${shareableTrack.name}"
+                "buildLinkReadyEvent(): rejected untrusted stream url, stableKey=$stableKey, track=${shareableTrack.name}, url=${resolvedStreamUrl.take(128)}"
             )
             return null
         }
@@ -720,8 +740,11 @@ class ListenTogetherSessionManager(
             eventId = nextEventId(),
             clientTimeMs = System.currentTimeMillis(),
             currentIndex = resolvedCurrentIndex,
-            track = shareableTrack.withStreamUrl(resolvedStreamUrl),
-            queue = shareableQueue,
+            track = trustedTrack,
+            queue = shareableQueue.mergeCurrentTrack(
+                currentIndex = resolvedCurrentIndex,
+                currentTrack = trustedTrack.withStreamUrl(trustedStreamUrl)
+            ),
             state = resolveListenTogetherLinkReadyState(
                 roomPlaybackState = _roomState.value?.playback?.state,
                 localTransportActive = isLocalPlaybackTransportActive(),
@@ -984,7 +1007,16 @@ class ListenTogetherSessionManager(
             TAG,
             "handleLinkRequested(): stableKey=$stableKey, requester=${message.causedBy?.userUuid}"
         )
-        publishControllerLinkReadyIfPossible(stableKey = stableKey, reason = "request:${message.causedBy?.userUuid}")
+        val published = publishControllerLinkReadyIfPossible(
+            stableKey = stableKey,
+            reason = "request:${message.causedBy?.userUuid}"
+        )
+        if (!published) {
+            resolveAndPublishControllerLink(
+                stableKey = stableKey,
+                reason = "request:${message.causedBy?.userUuid}"
+            )
+        }
     }
 
     private fun handleMemberControlRequested(message: ListenTogetherSocketEnvelope) {
@@ -1592,6 +1624,12 @@ class ListenTogetherSessionManager(
         resetListenerBufferingState()
     }
 
+    private fun cancelControllerLinkResolve() {
+        controllerLinkResolveJob?.cancel()
+        controllerLinkResolveJob = null
+        controllerLinkResolveStableKey = null
+    }
+
     private suspend fun handleResolvedStreamUrlChanged(url: String?) {
         val streamUrl = url?.trim().orEmpty()
         if (streamUrl.isBlank()) {
@@ -2038,6 +2076,7 @@ class ListenTogetherSessionManager(
         cancelListenTogetherBackgroundJobs(reconnectJob, membershipRecoveryJob)
         reconnectJob = null
         membershipRecoveryJob = null
+        cancelControllerLinkResolve()
         stopHeartbeat()
         stopSyncWatchdog()
         lastOutboundSyncAtMs = 0L
@@ -2173,21 +2212,23 @@ class ListenTogetherSessionManager(
 
     private fun publishControllerLinkReadyIfPossible(
         stableKey: String,
-        reason: String
-    ) {
+        reason: String,
+        streamUrlOverride: String? = null
+    ): Boolean {
         val snapshot = _sessionState.value
-        if (snapshot.connectionState != ListenTogetherConnectionState.CONNECTED) return
-        if (!isCurrentUserController(snapshot)) return
-        if (!_roomState.value?.settings.normalized().shareAudioLinks) return
+        if (snapshot.connectionState != ListenTogetherConnectionState.CONNECTED) return false
+        if (!isCurrentUserController(snapshot)) return false
+        if (!_roomState.value?.settings.normalized().shareAudioLinks) return false
         val event = buildLinkReadyEvent(
             stableKey = stableKey,
-            positionMs = PlayerManager.playbackPositionFlow.value.coerceAtLeast(0L)
+            positionMs = PlayerManager.playbackPositionFlow.value.coerceAtLeast(0L),
+            streamUrlOverride = streamUrlOverride
         ) ?: run {
             NPLogger.d(
                 TAG,
                 "publishControllerLinkReadyIfPossible(): skipped because buildLinkReadyEvent returned null, stableKey=$stableKey, reason=$reason"
             )
-            return
+            return false
         }
         markOutboundEvent(event.eventId)
         noteOutboundSync()
@@ -2195,7 +2236,87 @@ class ListenTogetherSessionManager(
             TAG,
             "publishControllerLinkReadyIfPossible(): reason=$reason, eventId=${event.eventId}, stableKey=$stableKey"
         )
-        sendControlEventPureWebSocket(event, "publish_link_ready:$reason")
+        return sendControlEventPureWebSocket(event, "publish_link_ready:$reason")
+    }
+
+    private fun resolveAndPublishControllerLink(
+        stableKey: String,
+        reason: String
+    ) {
+        val snapshot = _sessionState.value
+        if (snapshot.connectionState != ListenTogetherConnectionState.CONNECTED) return
+        if (!isCurrentUserController(snapshot)) return
+        if (!_roomState.value?.settings.normalized().shareAudioLinks) return
+        val song = PlayerManager.currentSongFlow.value ?: run {
+            NPLogger.w(
+                TAG,
+                "resolveAndPublishControllerLink(): skipped because currentSong missing, stableKey=$stableKey, reason=$reason"
+            )
+            return
+        }
+        val songStableKey = song.toListenTogetherTrackOrNull()?.stableKey
+        if (songStableKey != stableKey) {
+            NPLogger.d(
+                TAG,
+                "resolveAndPublishControllerLink(): skipped because current stableKey mismatch, expected=$stableKey, actual=$songStableKey, reason=$reason"
+            )
+            return
+        }
+        if (controllerLinkResolveJob?.isActive == true && controllerLinkResolveStableKey == stableKey) {
+            NPLogger.d(
+                TAG,
+                "resolveAndPublishControllerLink(): already resolving, stableKey=$stableKey, reason=$reason"
+            )
+            return
+        }
+        controllerLinkResolveJob?.cancel()
+        controllerLinkResolveStableKey = stableKey
+        controllerLinkResolveJob = scope.launch {
+            try {
+                NPLogger.d(
+                    TAG,
+                    "resolveAndPublishControllerLink(): resolving shareable stream, stableKey=$stableKey, reason=$reason"
+                )
+                val result = PlayerManager.resolveShareableListenTogetherStreamUrl(song)
+                val streamUrl = (result as? SongUrlResult.Success)
+                    ?.url
+                    ?.let(::normalizedDirectStreamUrl)
+                if (streamUrl == null) {
+                    NPLogger.w(
+                        TAG,
+                        "resolveAndPublishControllerLink(): no shareable stream resolved, stableKey=$stableKey, result=${result::class.simpleName}, reason=$reason"
+                    )
+                    return@launch
+                }
+                val latestSongStableKey = PlayerManager.currentSongFlow.value
+                    ?.toListenTogetherTrackOrNull()
+                    ?.stableKey
+                if (latestSongStableKey != stableKey) {
+                    NPLogger.d(
+                        TAG,
+                        "resolveAndPublishControllerLink(): drop stale resolved stream, expected=$stableKey, actual=$latestSongStableKey, reason=$reason"
+                    )
+                    return@launch
+                }
+                publishControllerLinkReadyIfPossible(
+                    stableKey = stableKey,
+                    reason = "resolved:$reason",
+                    streamUrlOverride = streamUrl
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                NPLogger.w(
+                    TAG,
+                    "resolveAndPublishControllerLink(): failed, stableKey=$stableKey, reason=$reason, error=${e.message}"
+                )
+            } finally {
+                if (controllerLinkResolveStableKey == stableKey) {
+                    controllerLinkResolveStableKey = null
+                    controllerLinkResolveJob = null
+                }
+            }
+        }
     }
 
     private fun maybeRequestControllerLink(
@@ -2260,7 +2381,16 @@ class ListenTogetherSessionManager(
                 TAG,
                 "maybePublishControllerRecoveryHeartbeat(): respond with LINK_READY, requester=${cause.userUuid}, stableKey=$stableKey"
             )
-            publishControllerLinkReadyIfPossible(stableKey = stableKey, reason = "recovery:REQUEST_LINK")
+            val published = publishControllerLinkReadyIfPossible(
+                stableKey = stableKey,
+                reason = "recovery:REQUEST_LINK"
+            )
+            if (!published) {
+                resolveAndPublishControllerLink(
+                    stableKey = stableKey,
+                    reason = "recovery:REQUEST_LINK"
+                )
+            }
             return
         }
         if (cause.type !in CONTROLLER_HEARTBEAT_RECOVERY_TYPES) return

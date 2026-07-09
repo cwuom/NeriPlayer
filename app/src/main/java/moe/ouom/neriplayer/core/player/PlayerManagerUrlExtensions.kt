@@ -133,6 +133,53 @@ internal suspend fun PlayerManager.resolveSongUrl(
     }
 }
 
+internal suspend fun PlayerManager.resolveShareableListenTogetherStreamUrl(
+    song: SongItem
+): SongUrlResult {
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "resolveShareableListenTogetherStreamUrl: song=${song.name}, source=${song.album}, streamUrl=${song.streamUrl}, currentUrl=${_currentMediaUrl.value}, stack=[${debugStackHint()}]"
+    )
+    if (isDirectStreamUrl(song.streamUrl)) {
+        return SongUrlResult.Success(song.streamUrl.orEmpty())
+    }
+    if (isLocalSong(song)) {
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "resolveShareableListenTogetherStreamUrl: skip local-only song=${song.name}"
+        )
+        return SongUrlResult.Failure
+    }
+
+    val sideEffects = RefreshResolverSideEffects(RefreshSideEffectGate { false })
+    val result = when {
+        isYouTubeMusicTrack(song) -> getYouTubeMusicAudioUrl(
+            song = song,
+            suppressError = true,
+            forceRefresh = true,
+            sideEffects = sideEffects
+        )
+        isBiliTrack(song) -> getBiliAudioUrl(
+            song = song,
+            suppressError = true,
+            sideEffects = sideEffects
+        )
+        else -> getNeteaseSongUrl(
+            song = song,
+            suppressError = true,
+            sideEffects = sideEffects
+        )
+    }
+    if (result is SongUrlResult.Success && !isDirectStreamUrl(result.url)) {
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "resolveShareableListenTogetherStreamUrl: rejected non-http result song=${song.name}, url=${result.url}"
+        )
+        return SongUrlResult.Failure
+    }
+    return result
+}
+
 private fun String.toLocalPlaybackUri(): Uri? {
     return if (startsWith("/")) {
         Uri.fromFile(File(this))
