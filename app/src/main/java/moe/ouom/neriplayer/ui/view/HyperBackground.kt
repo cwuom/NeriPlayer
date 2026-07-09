@@ -194,9 +194,9 @@ fun HyperBackground(
                     painter.setAnimTime(seconds % 62.831852f)
 
                     val targetLevel = currentLevel.coerceIn(0f, 1f)
-                    val targetBeat = (currentBeat * 0.86f).coerceIn(0f, 1f)
+                    val targetBeat = (currentBeat * 0.94f).coerceIn(0f, 1f)
                     val levelRate = if (targetLevel > smoothLevel) 0.12f else 0.045f
-                    val beatRate = if (targetBeat > smoothBeat) 0.36f else 0.11f
+                    val beatRate = if (targetBeat > smoothBeat) 0.46f else 0.12f
                     smoothLevel += (targetLevel - smoothLevel) * levelRate
                     smoothBeat += (targetBeat - smoothBeat) * beatRate
                     painter.setReactive(smoothLevel, smoothBeat)

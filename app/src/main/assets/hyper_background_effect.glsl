@@ -118,14 +118,19 @@ vec4 main(vec2 fragCoord){
 
     float levelEase = smoothstep(0.04, 0.82, clamp(uMusicLevel, 0., 1.));
     float beatEase = smoothstep(0.03, 0.62, clamp(uBeat, 0., 1.));
-    float zoom = 1.0 + 0.016 * levelEase + 0.045 * beatEase;
+    float motionEase = clamp(0.42 * levelEase + 0.82 * beatEase, 0.0, 1.0);
+    float zoom = 1.0 + 0.024 * levelEase + 0.105 * beatEase;
     vec2  center = vec2(0.5);
     uv = (uv - center) / zoom + center;
 
     float beatWave = sin((vUv.y + uAnimTime * 0.12) * 6.2832) *
         cos((vUv.x - uAnimTime * 0.10) * 6.2832);
-    uv += beatEase * 0.0045 * vec2(beatWave, -beatWave);
-    uv += beatEase * 0.0032 * vec2(sin(uAnimTime * 34.0), cos(uAnimTime * 31.0));
+    float radialPulse = sin((distance(vUv, center) * 5.5 - uAnimTime * 0.18) * 6.2832);
+    float ribbonWave = sin(((vUv.x * 1.7 + vUv.y * 2.3) - uAnimTime * 0.12) * 6.2832);
+    uv += beatEase * 0.0110 * vec2(beatWave, -beatWave);
+    uv += beatEase * 0.0085 * normalize(vUv - center + vec2(1e-4)) * radialPulse;
+    uv += motionEase * 0.0062 * vec2(ribbonWave, -ribbonWave * 0.75);
+    uv += motionEase * 0.0060 * vec2(sin(uAnimTime * 1.9), cos(uAnimTime * 1.6));
 
     uv.xy -= uBound.xy;
     uv.xy /= uBound.zw;
@@ -133,8 +138,8 @@ vec4 main(vec2 fragCoord){
     vec3 hsv;
     vec4 color = vec4(0.0);
 
-    float pointOffset = uPointOffset + 0.014 * levelEase + 0.052 * beatEase;
-    float pointRadiusMulti = uPointRadiusMulti * (1.0 + 0.028 * levelEase + 0.095 * beatEase);
+    float pointOffset = uPointOffset + 0.022 * levelEase + 0.108 * beatEase;
+    float pointRadiusMulti = uPointRadiusMulti * (1.0 + 0.045 * levelEase + 0.220 * beatEase);
 
     vec4 colorAccum = vec4(0.0);
     float weightSum = 0.0;
@@ -149,11 +154,11 @@ vec4 main(vec2 fragCoord){
         point.x += sin(uAnimTime + point.y) * pointOffset;
         point.y += cos(uAnimTime + point.x) * pointOffset;
         vec2 pointPush = point - center;
-        point += normalize(pointPush + vec2(1e-4)) * beatEase * 0.045;
+        point += normalize(pointPush + vec2(1e-4)) * beatEase * 0.118;
 
         vec2 delta = uv - point;
         float radiusSq = max(rad * rad, 1e-4);
-        float weight = 1.0 / (1.0 + dot(delta, delta) / radiusSq * 7.2);
+        float weight = 1.0 / (1.0 + dot(delta, delta) / radiusSq * 9.3);
         weight *= weight;
 
         colorAccum += pointColor * weight;
