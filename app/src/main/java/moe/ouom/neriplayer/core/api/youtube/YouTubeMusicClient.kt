@@ -311,36 +311,69 @@ internal object YouTubeMusicParser {
     }
 
     fun parseLibraryPlaylists(root: JSONObject): List<YouTubeMusicLibraryPlaylist> {
-        val items = findLibraryGridRenderer(root)
-            ?.optJSONArray("items")
-            ?: return emptyList()
+        val gridItems = findLibraryGridRenderer(root)?.optJSONArray("items")
+        val gridPlaylists = parseLibraryPlaylistItems(
+            items = gridItems,
+            requirePlaylistEndpoint = false
+        )
+        if (gridPlaylists.isNotEmpty()) {
+            return gridPlaylists
+        }
 
+        return collectLibraryPlaylistRenderers(root)
+            .mapNotNull { renderer ->
+                parseLibraryPlaylistRenderer(
+                    renderer = renderer,
+                    requirePlaylistEndpoint = true
+                )
+            }
+            .distinctBy { it.browseId }
+    }
+
+    private fun parseLibraryPlaylistItems(
+        items: JSONArray?,
+        requirePlaylistEndpoint: Boolean
+    ): List<YouTubeMusicLibraryPlaylist> {
+        if (items == null) {
+            return emptyList()
+        }
         return buildList {
             for (index in 0 until items.length()) {
                 val renderer = items.optJSONObject(index)
                     ?.optJSONObject("musicTwoRowItemRenderer")
                     ?: continue
-                val browseEndpoint = renderer.optJSONObject("navigationEndpoint")
-                    ?.optJSONObject("browseEndpoint")
-                    ?: continue
-                val browseId = browseEndpoint.optString("browseId", "").trim()
-                val title = extractText(renderer.optJSONObject("title"))
-                if (browseId.isBlank() || title.isBlank()) {
-                    continue
-                }
-                val subtitle = extractText(renderer.optJSONObject("subtitle"))
-                add(
-                    YouTubeMusicLibraryPlaylist(
-                        browseId = browseId,
-                        playlistId = playlistIdFromBrowseId(browseId),
-                        title = title,
-                        subtitle = subtitle,
-                        coverUrl = extractMusicThumbnailUrl(renderer.optJSONObject("thumbnailRenderer")),
-                        trackCount = parseTrackCount(subtitle)
-                    )
-                )
+                parseLibraryPlaylistRenderer(
+                    renderer = renderer,
+                    requirePlaylistEndpoint = requirePlaylistEndpoint
+                )?.let(::add)
             }
         }
+    }
+
+    private fun parseLibraryPlaylistRenderer(
+        renderer: JSONObject,
+        requirePlaylistEndpoint: Boolean
+    ): YouTubeMusicLibraryPlaylist? {
+        val browseEndpoint = renderer.optJSONObject("navigationEndpoint")
+            ?.optJSONObject("browseEndpoint")
+            ?: return null
+        val browseId = browseEndpoint.optString("browseId", "").trim()
+        val title = extractText(renderer.optJSONObject("title"))
+        if (browseId.isBlank() || title.isBlank()) {
+            return null
+        }
+        if (requirePlaylistEndpoint && !isMusicPlaylistBrowseEndpoint(browseId, browseEndpoint)) {
+            return null
+        }
+        val subtitle = extractText(renderer.optJSONObject("subtitle"))
+        return YouTubeMusicLibraryPlaylist(
+            browseId = browseId,
+            playlistId = playlistIdFromBrowseId(browseId),
+            title = title,
+            subtitle = subtitle,
+            coverUrl = extractMusicThumbnailUrl(renderer.optJSONObject("thumbnailRenderer")),
+            trackCount = parseTrackCount(subtitle)
+        )
     }
 
     fun extractLibraryContinuation(root: JSONObject): String? {
@@ -384,6 +417,37 @@ internal object YouTubeMusicParser {
 
     fun extractHomeShelfContinuation(root: JSONObject): String? {
         return extractContinuationToken(findHomeShelfContinuationRenderer(root))
+    }
+
+    fun parseHomePlaylistRecommendations(
+        shelves: List<YouTubeMusicHomeShelf>,
+        limit: Int = YOUTUBE_MUSIC_HOME_PLAYLIST_ITEM_LIMIT
+    ): List<YouTubeMusicLibraryPlaylist> {
+        val resultLimit = limit.coerceAtLeast(1)
+        val seenBrowseIds = linkedSetOf<String>()
+        return buildList {
+            for (shelf in shelves) {
+                for (item in shelf.items) {
+                    val browseId = item.browseId.trim()
+                    if (!item.isHomePlaylistCard(browseId) || !seenBrowseIds.add(browseId)) {
+                        continue
+                    }
+                    add(
+                        YouTubeMusicLibraryPlaylist(
+                            browseId = browseId,
+                            playlistId = playlistIdFromBrowseId(browseId),
+                            title = item.title,
+                            subtitle = item.subtitle.ifBlank { shelf.title },
+                            coverUrl = item.coverUrl,
+                            trackCount = parseTrackCount(item.subtitle)
+                        )
+                    )
+                    if (size >= resultLimit) {
+                        return@buildList
+                    }
+                }
+            }
+        }
     }
 
     fun parseHomeSongMetadata(
@@ -546,7 +610,7 @@ internal object YouTubeMusicParser {
         return seconds * 1000L
     }
 
-    private fun parseTrackCount(subtitle: String): Int? {
+    fun parseTrackCount(subtitle: String): Int? {
         val normalized = subtitle.trim()
         if (normalized.isBlank()) {
             return null
@@ -574,6 +638,28 @@ internal object YouTubeMusicParser {
             }
         }
         return root.optJSONObject("continuationContents")?.optJSONObject("gridContinuation")
+    }
+
+    private fun collectLibraryPlaylistRenderers(root: JSONObject): List<JSONObject> {
+        val renderers = mutableListOf<JSONObject>()
+        fun visit(value: Any?) {
+            when (value) {
+                is JSONObject -> {
+                    value.optJSONObject("musicTwoRowItemRenderer")?.let(renderers::add)
+                    val keys = value.keys()
+                    while (keys.hasNext()) {
+                        visit(value.opt(keys.next()))
+                    }
+                }
+                is JSONArray -> {
+                    for (index in 0 until value.length()) {
+                        visit(value.opt(index))
+                    }
+                }
+            }
+        }
+        visit(root)
+        return renderers
     }
 
     private fun findHomeSectionListRenderer(root: JSONObject): JSONObject? {
@@ -974,6 +1060,43 @@ internal object YouTubeMusicParser {
             "song", "songs", "歌曲", "曲" -> YouTubeMusicSearchResultType.Song
             "video", "videos", "视频", "mv" -> YouTubeMusicSearchResultType.Video
             else -> null
+        }
+    }
+
+    private fun YouTubeMusicHomeItem.isHomePlaylistCard(browseId: String): Boolean {
+        if (browseId.isBlank()) {
+            return false
+        }
+        return isMusicPlaylistBrowse(
+            browseId = browseId,
+            pageType = pageType
+        )
+    }
+
+    private fun isMusicPlaylistBrowseEndpoint(
+        browseId: String,
+        browseEndpoint: JSONObject
+    ): Boolean {
+        val pageType = browseEndpoint
+            .optJSONObject("browseEndpointContextSupportedConfigs")
+            ?.optJSONObject("browseEndpointContextMusicConfig")
+            ?.optString("pageType")
+            .orEmpty()
+        return isMusicPlaylistBrowse(
+            browseId = browseId,
+            pageType = pageType
+        )
+    }
+
+    private fun isMusicPlaylistBrowse(
+        browseId: String,
+        pageType: String
+    ): Boolean {
+        val normalizedPageType = pageType.uppercase(Locale.US)
+        return when {
+            normalizedPageType.contains("PLAYLIST") -> true
+            normalizedPageType.isNotBlank() -> false
+            else -> browseId.startsWith("VL")
         }
     }
 
@@ -1859,10 +1982,12 @@ class YouTubeMusicClient(
         results
     }
 
-    suspend fun getLibraryPlaylists(): List<YouTubeMusicLibraryPlaylist> = withContext(Dispatchers.IO) {
+    suspend fun getLibraryPlaylists(
+        resolveMissingTrackCounts: Boolean = true
+    ): List<YouTubeMusicLibraryPlaylist> = withContext(Dispatchers.IO) {
         NPLogger.d(TAG, "getLibraryPlaylists start")
         authAutoRefreshManager?.refreshIfNeeded(reason = "library_playlists", force = false)
-        var bootstrap = bootstrap()
+        var bootstrap = authenticatedBootstrap(reason = "library_playlists")
         var requestLocale = YouTubeMusicLocaleResolver.preferred()
         val items = mutableListOf<YouTubeMusicLibraryPlaylist>()
         var continuation: String? = null
@@ -1899,32 +2024,34 @@ class YouTubeMusicClient(
         }
 
         val playlists = items.distinctBy { it.browseId }.toMutableList()
-        playlists.indices.forEach { index ->
-            if (index >= YOUTUBE_MUSIC_LIBRARY_TRACK_COUNT_RESOLVE_LIMIT) {
-                return@forEach
-            }
-            if (playlists[index].trackCount != null) {
-                return@forEach
-            }
-            val resolvedTrackCount = try {
-                val response = resolvePlaylistTrackCount(
-                    bootstrap = bootstrap,
-                    browseId = playlists[index].browseId,
-                    requestLocale = requestLocale
+        if (resolveMissingTrackCounts) {
+            playlists.indices.forEach { index ->
+                if (index >= YOUTUBE_MUSIC_LIBRARY_TRACK_COUNT_RESOLVE_LIMIT) {
+                    return@forEach
+                }
+                if (playlists[index].trackCount != null) {
+                    return@forEach
+                }
+                val resolvedTrackCount = try {
+                    val response = resolvePlaylistTrackCount(
+                        bootstrap = bootstrap,
+                        browseId = playlists[index].browseId,
+                        requestLocale = requestLocale
+                    )
+                    bootstrap = response.bootstrap
+                    requestLocale = response.requestLocale
+                    response.root
+                } catch (error: IOException) {
+                    NPLogger.w(
+                        TAG,
+                        "resolve track count failed: browseId=${playlists[index].browseId}, title=${playlists[index].title}, message=${error.message}"
+                    )
+                    null
+                } ?: return@forEach
+                playlists[index] = playlists[index].copy(
+                    trackCount = YouTubeMusicParser.parsePlaylistTrackCount(resolvedTrackCount)
                 )
-                bootstrap = response.bootstrap
-                requestLocale = response.requestLocale
-                response.root
-            } catch (error: IOException) {
-                NPLogger.w(
-                    TAG,
-                    "resolve track count failed: browseId=${playlists[index].browseId}, title=${playlists[index].title}, message=${error.message}"
-                )
-                null
-            } ?: return@forEach
-            playlists[index] = playlists[index].copy(
-                trackCount = YouTubeMusicParser.parsePlaylistTrackCount(resolvedTrackCount)
-            )
+            }
         }
         if (playlists.isEmpty() && authRepo.getAuthOnce().hasLoginCookies()) {
             val refreshResult = authAutoRefreshManager?.refreshIfNeeded(
@@ -1934,18 +2061,72 @@ class YouTubeMusicClient(
             if (refreshResult?.refreshed == true) {
                 NPLogger.w(TAG, "getLibraryPlaylists empty, retry after auth refresh")
                 bootstrapCache = null
-                return@withContext getLibraryPlaylists()
+                return@withContext getLibraryPlaylists(
+                    resolveMissingTrackCounts = resolveMissingTrackCounts
+                )
             }
         }
         NPLogger.d(TAG, "getLibraryPlaylists success: count=${playlists.size}, pages=${page + 1}")
         playlists
     }
 
+    suspend fun getHomePlaylistRecommendations(
+        limit: Int = YOUTUBE_MUSIC_HOME_PLAYLIST_ITEM_LIMIT
+    ): List<YouTubeMusicLibraryPlaylist> = withContext(Dispatchers.IO) {
+        val shelves = getHomeFeed(
+            fillShelfContinuations = false,
+            requireLogin = true
+        )
+        val playlists = YouTubeMusicParser.parseHomePlaylistRecommendations(
+            shelves = shelves,
+            limit = limit
+        )
+        NPLogger.d(TAG, "getHomePlaylistRecommendations success: count=${playlists.size}")
+        playlists
+    }
+
+    suspend fun hasPersonalizedContent(): Boolean = withContext(Dispatchers.IO) {
+        if (!hasYouTubeMusicCookieContext()) {
+            NPLogger.w(TAG, "hasPersonalizedContent false: missing YouTube cookie context")
+            return@withContext false
+        }
+
+        val bootstrap = authenticatedBootstrap(reason = "personalized_probe")
+        if (!bootstrap.loggedIn) {
+            NPLogger.w(TAG, "hasPersonalizedContent false: bootstrap is not logged in")
+            return@withContext false
+        }
+
+        val libraryPlaylists = getLibraryPlaylists(resolveMissingTrackCounts = false)
+        if (libraryPlaylists.isNotEmpty()) {
+            NPLogger.d(TAG, "hasPersonalizedContent true: libraryPlaylists=${libraryPlaylists.size}")
+            return@withContext true
+        }
+
+        val shelves = getHomeFeed(
+            fillShelfContinuations = false,
+            requireLogin = true
+        )
+        val hasFeedItems = shelves.any { shelf -> shelf.items.isNotEmpty() }
+        NPLogger.d(TAG, "hasPersonalizedContent feed fallback: shelves=${shelves.size}, hasItems=$hasFeedItems")
+        hasFeedItems
+    }
+
     /** 获取 YouTube Music 首页推荐 */
-    suspend fun getHomeFeed(): List<YouTubeMusicHomeShelf> = withContext(Dispatchers.IO) {
+    suspend fun getHomeFeed(
+        fillShelfContinuations: Boolean = true,
+        requireLogin: Boolean = false
+    ): List<YouTubeMusicHomeShelf> = withContext(Dispatchers.IO) {
         NPLogger.d(TAG, "getHomeFeed start")
+        if (requireLogin) {
+            warnIfMissingYouTubeMusicCookieContext(reason = "home_feed")
+        }
         authAutoRefreshManager?.refreshIfNeeded(reason = "home_feed", force = false)
-        var bootstrap = bootstrap()
+        var bootstrap = if (requireLogin) {
+            authenticatedBootstrap(reason = "home_feed")
+        } else {
+            bootstrap()
+        }
         var requestLocale = YouTubeMusicLocaleResolver.preferred()
         val result = mutableListOf<YouTubeMusicHomeShelf>()
         var continuation: String? = null
@@ -1980,6 +2161,7 @@ class YouTubeMusicClient(
                 val items = parsedShelf.items.toMutableList()
 
                 while (
+                    fillShelfContinuations &&
                     !shelfContinuation.isNullOrBlank() &&
                     shelfPage < YOUTUBE_MUSIC_HOME_SHELF_CONTINUATION_LIMIT &&
                     items.size < maxItems
@@ -2030,7 +2212,10 @@ class YouTubeMusicClient(
             if (refreshResult?.refreshed == true) {
                 NPLogger.w(TAG, "getHomeFeed empty, retry after auth refresh")
                 bootstrapCache = null
-                return@withContext getHomeFeed()
+                return@withContext getHomeFeed(
+                    fillShelfContinuations = fillShelfContinuations,
+                    requireLogin = requireLogin
+                )
             }
         }
         val shelves = result.take(YOUTUBE_MUSIC_HOME_MAX_SHELVES)
@@ -2072,10 +2257,15 @@ class YouTubeMusicClient(
         pageLimit: Int
     ): YouTubeMusicPlaylistDetail = withContext(Dispatchers.IO) {
         authAutoRefreshManager?.refreshIfNeeded(reason = "playlist_detail", force = false)
-        var bootstrap = bootstrap()
+        val resolvedBrowseId = normalizePlaylistBrowseId(browseId)
+        var bootstrap = if (authRepo.getAuthOnce().hasLoginCookies()) {
+            authenticatedBootstrap(reason = "playlist_detail")
+        } else {
+            bootstrap()
+        }
         var requestLocale = YouTubeMusicLocaleResolver.preferred()
         collectYouTubeMusicPlaylistDetail(
-            browseId = browseId,
+            browseId = resolvedBrowseId,
             fallbackTitle = fallbackTitle,
             fallbackSubtitle = fallbackSubtitle,
             fallbackCoverUrl = fallbackCoverUrl,
@@ -2139,6 +2329,56 @@ class YouTubeMusicClient(
 
     fun clearBootstrapCache() {
         bootstrapCache = null
+    }
+
+    private fun normalizePlaylistBrowseId(browseId: String): String {
+        val trimmed = browseId.trim()
+        if (trimmed.isBlank() ||
+            trimmed.startsWith("VL") ||
+            trimmed.startsWith("MP") ||
+            trimmed.startsWith("FE")
+        ) {
+            return trimmed
+        }
+        return "VL$trimmed"
+    }
+
+    private fun hasYouTubeMusicCookieContext(): Boolean {
+        val auth = authRepo.getAuthOnce().normalized()
+        return auth.hasLoginCookies() ||
+            auth.cookieHeader.isNotBlank() ||
+            auth.cookies.isNotEmpty() ||
+            auth.authorization.isNotBlank()
+    }
+
+    private fun warnIfMissingYouTubeMusicCookieContext(reason: String) {
+        if (hasYouTubeMusicCookieContext()) {
+            return
+        }
+        NPLogger.w(TAG, "$reason has no saved YouTube Music cookie context")
+    }
+
+    private suspend fun authenticatedBootstrap(reason: String): YouTubeMusicBootstrapConfig {
+        val hasCookieContext = hasYouTubeMusicCookieContext()
+        if (!hasCookieContext) {
+            NPLogger.w(TAG, "$reason continues without saved YouTube Music cookie context")
+        }
+        var config = bootstrap()
+        if (config.loggedIn || !hasCookieContext) {
+            return config
+        }
+
+        NPLogger.w(TAG, "$reason bootstrap is not logged in, refresh auth and retry")
+        authAutoRefreshManager?.refreshIfNeeded(
+            reason = "${reason}_bootstrap_not_logged_in",
+            force = true
+        )
+        bootstrapCache = null
+        config = bootstrap(forceRefresh = true)
+        if (!config.loggedIn) {
+            NPLogger.w(TAG, "$reason bootstrap still not logged in after refresh")
+        }
+        return config
     }
 
     private fun resolveDebugLocale(
@@ -2251,11 +2491,7 @@ class YouTubeMusicClient(
             auth = authRepo.getAuthOnce().normalized()
             authHealth = authRepo.getAuthHealthOnce()
         }
-        val cookieHeader = if (authHealth.activeCookieKeys.isEmpty()) {
-            ""
-        } else {
-            auth.effectiveCookieHeader().trim()
-        }
+        val cookieHeader = auth.effectiveCookieHeader().trim()
         val cacheUserAgent = auth.resolveBootstrapUserAgent()
         val authFingerprint = auth.buildBootstrapAuthFingerprint(
             origin = YOUTUBE_MUSIC_MUSIC_ORIGIN
@@ -2284,7 +2520,8 @@ class YouTubeMusicClient(
                 original = linkedMapOf(
                     "Accept-Language" to requestLocale.acceptLanguage
                 ),
-                userAgent = userAgent
+                userAgent = userAgent,
+                includeAuthUser = true
             )
             val requestCookieHeader = requestHeaders["Cookie"].orEmpty()
             var lastError: IOException? = null
@@ -2323,12 +2560,7 @@ class YouTubeMusicClient(
                 force = true
             )
             workingAuth = authRepo.getAuthOnce().normalized()
-            val refreshedHealth = authRepo.getAuthHealthOnce()
-            workingCookieHeader = if (refreshedHealth.activeCookieKeys.isEmpty()) {
-                ""
-            } else {
-                workingAuth.effectiveCookieHeader().trim()
-            }
+            workingCookieHeader = workingAuth.effectiveCookieHeader().trim()
             userAgent = workingAuth.resolveBootstrapUserAgent()
         }
         val parsedConfig = try {
@@ -2498,7 +2730,9 @@ class YouTubeMusicClient(
             ),
             authorizationOrigin = YOUTUBE_MUSIC_MUSIC_ORIGIN,
             includeAuthorization = true,
-            userSessionId = bootstrap.userSessionId.takeIf { bootstrap.loggedIn }.orEmpty()
+            userSessionId = bootstrap.userSessionId
+                .takeIf { it.isNotBlank() && bootstrap.cookieHeader.isNotBlank() }
+                .orEmpty()
         )
         return LinkedHashMap(headers).apply {
             put("Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
@@ -2673,6 +2907,12 @@ class YouTubeMusicClient(
                     .put("platform", "DESKTOP")
             )
             .put("user", JSONObject().put("lockedSafetyMode", false))
+            .put(
+                "request",
+                JSONObject()
+                    .put("internalExperimentFlags", JSONArray())
+                    .put("sessionIndex", bootstrap.sessionIndex)
+            )
     }
 
     private fun executeJson(request: Request): JSONObject {

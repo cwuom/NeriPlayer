@@ -108,6 +108,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
@@ -1180,6 +1181,18 @@ private fun LazyGridScope.addYouTubeMusicSongShelfSection(
         )
     }
     item(span = { GridItemSpan(maxLineSpan) }) {
+        val warmupKey = remember(songs) {
+            songs.joinToString("|") { song ->
+                song.audioId ?: song.mediaUri.orEmpty()
+            }
+        }
+        LaunchedEffect(warmupKey) {
+            PlayerManager.prefetchYouTubePlayableUrlWindow(
+                playlist = songs,
+                startIndex = 0,
+                source = "yt_home_shelf_visible"
+            )
+        }
         ResponsiveSongPagerList(
             songs = songs,
             onSongClick = onSongClick,

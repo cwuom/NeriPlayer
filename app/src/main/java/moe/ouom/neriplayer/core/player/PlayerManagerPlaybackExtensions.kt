@@ -491,6 +491,7 @@ internal fun PlayerManager.playAtIndex(
         "NERI-PlayerManager",
         "playAtIndex: index=$index, song=${song.name}, resumePositionMs=$resumePositionMs, transitionFade=$useTrackTransitionFade, source=$commandSource, forceStartupProtectionFade=$forceStartupProtectionFade, nextToken=${playbackRequestToken + 1}, stack=[${debugStackHint()}]"
     )
+    kickoffYouTubePlaybackIntentWarmup(song, source = "play_at_index")
     cancelPendingPauseRequest()
     setCurrentSongForPlayback(song, syncLyricon = false)
     _currentMediaUrl.value = null
@@ -515,8 +516,7 @@ internal fun PlayerManager.playAtIndex(
     }
 
     playJob?.cancel()
-    currentYouTubePrefetchJob?.cancel()
-    currentYouTubePrefetchJob = null
+    cancelYouTubePrefetchUnlessReusableForSong(song, reason = "play_at_index")
     playbackRequestToken += 1
     val requestToken = playbackRequestToken
     maybeHydrateLocalSongForPlayback(index, song, requestToken)
@@ -1412,6 +1412,7 @@ internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolea
     pendingMediaLoadActive = false
     currentYouTubePrefetchJob?.cancel()
     currentYouTubePrefetchJob = null
+    currentYouTubePrefetchVideoIds = emptySet()
     lastHandledTrackEndKey = null
     updateResumePlaybackRequested(false)
     lastAutoTrackAdvanceAtMs = 0L

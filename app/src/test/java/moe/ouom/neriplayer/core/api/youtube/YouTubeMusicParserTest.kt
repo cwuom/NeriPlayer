@@ -826,6 +826,53 @@ class YouTubeMusicParserTest {
     }
 
     @Test
+    fun parseHomePlaylistRecommendations_keepsOnlyPlayablePlaylistCards() {
+        val shelves = listOf(
+            YouTubeMusicHomeShelf(
+                title = "为你推荐",
+                items = listOf(
+                    YouTubeMusicHomeItem(
+                        title = "Playlist A",
+                        subtitle = "42 songs",
+                        coverUrl = "https://example.com/a.jpg",
+                        browseId = "VLPL-home-playlist",
+                        pageType = "MUSIC_PAGE_TYPE_PLAYLIST"
+                    ),
+                    YouTubeMusicHomeItem(
+                        title = "Artist A",
+                        subtitle = "Artist • 1M subscribers",
+                        coverUrl = "https://example.com/artist.jpg",
+                        browseId = "UC-artist-home",
+                        pageType = "MUSIC_PAGE_TYPE_ARTIST"
+                    ),
+                    YouTubeMusicHomeItem(
+                        title = "Legacy playlist card",
+                        subtitle = "18 首歌",
+                        coverUrl = "https://example.com/legacy.jpg",
+                        browseId = "VLRDCLAK5uy_mix"
+                    ),
+                    YouTubeMusicHomeItem(
+                        title = "Song A",
+                        subtitle = "Artist A • Album A",
+                        coverUrl = "https://example.com/song.jpg",
+                        videoId = "video-a"
+                    )
+                )
+            )
+        )
+
+        val playlists = YouTubeMusicParser.parseHomePlaylistRecommendations(shelves)
+
+        assertEquals(2, playlists.size)
+        assertEquals("Playlist A", playlists[0].title)
+        assertEquals("PL-home-playlist", playlists[0].playlistId)
+        assertEquals(42, playlists[0].trackCount)
+        assertEquals("Legacy playlist card", playlists[1].title)
+        assertEquals("RDCLAK5uy_mix", playlists[1].playlistId)
+        assertEquals(18, playlists[1].trackCount)
+    }
+
+    @Test
     fun parseHomeShelfPages_readsDurationForHomeSongItems() {
         val root = JSONObject(
             """

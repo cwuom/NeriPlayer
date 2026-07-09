@@ -129,12 +129,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 lastYouTubeAuthFingerprint = nextFingerprint
                 NPLogger.d(
                     TAG,
-                    "youtube auth changed: hasLogin=${bundle.hasLoginCookies()}, intl=${_uiState.value.internationalizationEnabled}"
+                    "youtube auth changed: hasLogin=${bundle.hasLoginCookies()}, hasCookieContext=${bundle.hasYouTubeMusicCookieContext()}, intl=${_uiState.value.internationalizationEnabled}"
                 )
                 if (!_uiState.value.internationalizationEnabled) {
                     return@collect
                 }
-                if (!bundle.hasLoginCookies()) {
+                if (!bundle.hasYouTubeMusicCookieContext()) {
                     NPLogger.d(TAG, "youtube auth cleared, reset home YouTube sections")
                     _uiState.value = _uiState.value.copy(
                         ytMusicPlaylists = HomeSectionState(),
@@ -375,12 +375,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         ytMusicPlaylistJob = viewModelScope.launch {
             when (val result = fetchWithRetry("refreshYtMusicPlaylists") {
                 val library = withContext(Dispatchers.IO) {
-                    AppContainer.youtubeMusicClient.getLibraryPlaylists()
+                    AppContainer.youtubeMusicClient.getHomePlaylistRecommendations()
                 }
                 library.map { pl ->
                     YouTubeMusicPlaylist(
                         browseId = pl.browseId,
-                        playlistId = pl.browseId.removePrefix("VL"),
+                        playlistId = pl.playlistId,
                         title = pl.title,
                         subtitle = pl.subtitle,
                         coverUrl = pl.coverUrl,
@@ -420,7 +420,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         ytMusicHomeFeedJob = viewModelScope.launch {
             when (val result = fetchWithRetry("refreshYtMusicHomeFeed") {
                 withContext(Dispatchers.IO) {
-                    AppContainer.youtubeMusicClient.getHomeFeed()
+                    AppContainer.youtubeMusicClient.getHomeFeed(
+                        fillShelfContinuations = false,
+                        requireLogin = true
+                    )
                 }
             }) {
                 is RetryLoadResult.Success -> {
@@ -509,6 +512,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             append('|')
             append(normalized.xGoogAuthUser)
         }
+    }
+
+    private fun YouTubeAuthBundle.hasYouTubeMusicCookieContext(): Boolean {
+        return hasLoginCookies() ||
+            cookieHeader.isNotBlank() ||
+            cookies.isNotEmpty() ||
+            authorization.isNotBlank()
     }
 
     private fun parseRecommend(raw: String): List<PlaylistSummary> {

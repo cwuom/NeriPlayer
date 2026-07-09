@@ -106,9 +106,13 @@ class NeriPlayerApplication : Application() {
             // 提前注册前后台回调，避免等播放器初始化后才开始统计 Activity 状态
             FloatingLyricsOverlayManager.initialize(this)
             ManagedDownloadStorage.initialize(this)
+
+            // 初始化 YouTube Music UI 依赖的库网关
             YouTubeMusicUiDependencies.libraryGateway = object : YouTubeMusicLibraryGateway {
                 override suspend fun getLibraryPlaylists(): List<YouTubeMusicPlaylist> {
-                    return AppContainer.youtubeMusicClient.getLibraryPlaylists().map { playlist ->
+                    return AppContainer.youtubeMusicClient.getLibraryPlaylists(
+                        resolveMissingTrackCounts = false
+                    ).map { playlist ->
                         YouTubeMusicPlaylist(
                             browseId = playlist.browseId,
                             playlistId = playlist.playlistId,
@@ -167,6 +171,8 @@ class NeriPlayerApplication : Application() {
 
             // 初始化全局下载管理器
             GlobalDownloadManager.initialize(this)
+
+            // 初始化 LyriconManager，如果用户启用了 Lyricon 功能
             if (readPlaybackPreferenceSnapshotSync(this).lyriconEnabled) {
                 LyriconManager.initialize(this)
             }

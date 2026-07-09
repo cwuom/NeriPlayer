@@ -1037,8 +1037,13 @@ fun SettingsScreen(
                                             checking = true
                                             scope.launch {
                                                 try {
-                                                    AppContainer.youtubeMusicClient.getLibraryPlaylists()
-                                                    AppContainer.settingsRepo.setInternationalizationEnabled(true)
+                                                    if (AppContainer.youtubeMusicClient.hasPersonalizedContent()) {
+                                                        AppContainer.settingsRepo.setInternationalizationEnabled(true)
+                                                    } else {
+                                                        inlineMsg = context.getString(
+                                                            R.string.settings_internationalization_unavailable
+                                                        )
+                                                    }
                                                 } catch (_: Exception) {
                                                     inlineMsg = context.getString(
                                                         R.string.settings_internationalization_unavailable

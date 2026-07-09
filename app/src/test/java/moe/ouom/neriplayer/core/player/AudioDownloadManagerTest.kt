@@ -86,6 +86,37 @@ class AudioDownloadManagerTest {
     }
 
     @Test
+    fun `youtube download failures refresh source for signed url status codes`() {
+        assertTrue(
+            AudioDownloadManager.shouldRefreshYouTubeDownloadSourceOnFailure(
+                IllegalStateException("HTTP 403")
+            )
+        )
+        assertTrue(
+            AudioDownloadManager.shouldRefreshYouTubeDownloadSourceOnFailure(
+                IllegalStateException("HTTP 416")
+            )
+        )
+        assertTrue(
+            AudioDownloadManager.shouldRetryDownloadFailureForSource(
+                IllegalStateException("HTTP 403"),
+                isYouTubeMusic = true
+            )
+        )
+        assertFalse(
+            AudioDownloadManager.shouldRetryDownloadFailureForSource(
+                IllegalStateException("HTTP 403"),
+                isYouTubeMusic = false
+            )
+        )
+        assertFalse(
+            AudioDownloadManager.shouldRefreshYouTubeDownloadSourceOnFailure(
+                IOException("磁盘写入失败")
+            )
+        )
+    }
+
+    @Test
     fun `cover download candidates keep stable fallback order and de duplicate urls`() {
         val song = SongItem(
             id = 1L,

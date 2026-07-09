@@ -334,6 +334,7 @@ object PlayerManager {
 
     internal var playJob: Job? = null
     internal var currentYouTubePrefetchJob: Job? = null
+    internal var currentYouTubePrefetchVideoIds: Set<String> = emptySet()
     internal val youtubeStreamWarmupJobs = ConcurrentHashMap<String, Job>()
     @Volatile
     internal var playbackRequestToken = 0L
@@ -594,6 +595,7 @@ object PlayerManager {
         pendingMediaLoadActive = false
         currentYouTubePrefetchJob?.cancel()
         currentYouTubePrefetchJob = null
+        currentYouTubePrefetchVideoIds = emptySet()
         updateResumePlaybackRequested(false)
         restoredShouldResumePlayback = false
         restoredResumePositionMs = 0L
@@ -1348,6 +1350,16 @@ internal fun cancelVolumeFade(resetToFull: Boolean = false) =
         startIndex: Int,
         source: String = "manual"
     ) = prefetchYouTubeQueueWindowImpl(
+        playlist = playlist,
+        startIndex = startIndex,
+        source = source
+    )
+
+    internal fun prefetchYouTubePlayableUrlWindow(
+        playlist: List<SongItem>,
+        startIndex: Int,
+        source: String = "manual_url_only"
+    ) = prefetchYouTubePlayableUrlWindowImpl(
         playlist = playlist,
         startIndex = startIndex,
         source = source

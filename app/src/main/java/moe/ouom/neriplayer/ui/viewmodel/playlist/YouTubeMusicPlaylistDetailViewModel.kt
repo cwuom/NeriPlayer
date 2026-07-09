@@ -92,6 +92,7 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
             return
         }
         viewModelScope.launch {
+            var previewPublished = false
             try {
                 val cached = withContext(Dispatchers.IO) {
                     if (forceRefresh) null else playlistCacheRepo.read(playlist.browseId)
@@ -110,36 +111,55 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
                         publishCachedPlaylist(cached, playlist)
                         return@launch
                     }
+                    if (preview.fullyLoaded) {
+                        publishRemotePlaylist(
+                            detail = preview,
+                            fallback = playlist,
+                            loading = false,
+                            prefetchSource = "yt_playlist_detail_complete"
+                        )
+                        return@launch
+                    }
+                    publishRemotePlaylist(
+                        detail = preview,
+                        fallback = playlist,
+                        loading = true,
+                        prefetchSource = "yt_playlist_detail_preview"
+                    )
+                    previewPublished = true
+                } else {
+                    runCatching {
+                        withContext(Dispatchers.IO) {
+                            gateway.getPlaylistDetailPreview(playlist.browseId)
+                        }
+                    }.getOrNull()?.let { preview ->
+                        if (preview.fullyLoaded) {
+                            publishRemotePlaylist(
+                                detail = preview,
+                                fallback = playlist,
+                                loading = false,
+                                prefetchSource = "yt_playlist_detail_complete"
+                            )
+                            return@launch
+                        }
+                        publishRemotePlaylist(
+                            detail = preview,
+                            fallback = playlist,
+                            loading = true,
+                            prefetchSource = "yt_playlist_detail_preview"
+                        )
+                        previewPublished = true
+                    }
                 }
 
                 val detail = withContext(Dispatchers.IO) {
                     gateway.getPlaylistDetail(playlist.browseId)
                 }
-                val resolvedPlaylist = detail.toPlaylist(fallback = playlist)
-                val resolvedTracks = withContext(Dispatchers.Default) {
-                    detail.tracks
-                        .map { it.toSongItem(resolvedPlaylist) }
-                        .map(::overlayUserEdits)
-                }
-                if (detail.fullyLoaded) {
-                    withContext(Dispatchers.IO) {
-                        cacheFullPlaylist(
-                            browseId = playlist.browseId,
-                            detail = detail,
-                            playlist = resolvedPlaylist
-                        )
-                    }
-                    PlayerManager.prefetchYouTubeQueueWindow(
-                        playlist = resolvedTracks,
-                        startIndex = 0,
-                        source = "yt_playlist_detail_load"
-                    )
-                }
-                _uiState.value = YouTubeMusicPlaylistDetailUiState(
+                publishRemotePlaylist(
+                    detail = detail,
+                    fallback = playlist,
                     loading = false,
-                    playlist = resolvedPlaylist,
-                    tracks = resolvedTracks,
-                    allTracksLoaded = detail.fullyLoaded
+                    prefetchSource = "yt_playlist_detail_load"
                 )
             } catch (error: Exception) {
                 val cached = withContext(Dispatchers.IO) {
@@ -147,6 +167,13 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
                 }
                 if (cached != null) {
                     publishCachedPlaylist(cached, playlist)
+                    return@launch
+                }
+                if (previewPublished) {
+                    _uiState.value = _uiState.value.copy(
+                        loading = false,
+                        error = error.message ?: error.javaClass.simpleName
+                    )
                     return@launch
                 }
                 _uiState.value = _uiState.value.copy(
@@ -172,6 +199,51 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
                 playlist = cachedPlaylist,
                 tracks = cachedTracks,
                 allTracksLoaded = true
+            )
+        }
+    }
+
+    private suspend fun publishRemotePlaylist(
+        detail: YouTubeMusicPlaylistDetail,
+        fallback: YouTubeMusicPlaylist,
+        loading: Boolean,
+        prefetchSource: String
+    ) {
+        val resolvedPlaylist = detail.toPlaylist(fallback = fallback)
+        val resolvedTracks = withContext(Dispatchers.Default) {
+            detail.tracks
+                .map { it.toSongItem(resolvedPlaylist) }
+                .map(::overlayUserEdits)
+        }
+        if (detail.fullyLoaded) {
+            withContext(Dispatchers.IO) {
+                cacheFullPlaylist(
+                    browseId = fallback.browseId,
+                    detail = detail,
+                    playlist = resolvedPlaylist
+                )
+            }
+        }
+        _uiState.value = YouTubeMusicPlaylistDetailUiState(
+            loading = loading,
+            playlist = resolvedPlaylist,
+            tracks = resolvedTracks,
+            allTracksLoaded = detail.fullyLoaded
+        )
+        if (resolvedTracks.isEmpty()) {
+            return
+        }
+        if (detail.fullyLoaded && !loading) {
+            PlayerManager.prefetchYouTubeQueueWindow(
+                playlist = resolvedTracks,
+                startIndex = 0,
+                source = prefetchSource
+            )
+        } else {
+            PlayerManager.prefetchYouTubePlayableUrlWindow(
+                playlist = resolvedTracks,
+                startIndex = 0,
+                source = prefetchSource
             )
         }
     }

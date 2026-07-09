@@ -1188,6 +1188,11 @@ private fun NeriAppContent(
     fun playSongsAndOpenNowPlaying(songs: List<SongItem>, index: Int) {
         restoreLyricsAfterAlbumBack = false
         lyricsAlbumRouteObserved = false
+        PlayerManager.prefetchYouTubePlayableUrlWindow(
+            playlist = songs,
+            startIndex = index,
+            source = "ui_click_before_play"
+        )
         showNowPlaying = true
         // 播放队列可能包含歌词等大字段，避免通过 Binder 传整份歌单导致崩溃
         PlayerManager.playPlaylist(songs, index)
@@ -1200,6 +1205,11 @@ private fun NeriAppContent(
     fun playSongPreservingQueueAndOpenNowPlaying(song: SongItem) {
         restoreLyricsAfterAlbumBack = false
         lyricsAlbumRouteObserved = false
+        PlayerManager.prefetchYouTubePlayableUrlWindow(
+            playlist = listOf(song),
+            startIndex = 0,
+            source = "ui_click_preserve_queue_before_play"
+        )
         showNowPlaying = true
         PlayerManager.replaceCurrentInQueueAndPlay(song)
         scheduleAudioServiceStart(

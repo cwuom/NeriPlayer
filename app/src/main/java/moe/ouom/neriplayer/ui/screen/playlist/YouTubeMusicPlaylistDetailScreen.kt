@@ -350,11 +350,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                         if (ui.tracks.isNotEmpty()) {
                             HapticIconButton(
                                 onClick = {
-                                    if (ui.allTracksLoaded) {
-                                        onSongClick(ui.tracks, 0)
-                                    } else {
-                                        showWaitForFullLoadMessage()
-                                    }
+                                    onSongClick(ui.tracks, 0)
                                 }
                             ) {
                                 Icon(
@@ -545,8 +541,6 @@ fun YouTubeMusicPlaylistDetailScreen(
                                     onClick = {
                                         if (selectionMode) {
                                             toggleSelect(song.stableKey())
-                                        } else if (!ui.allTracksLoaded) {
-                                            showWaitForFullLoadMessage()
                                         } else {
                                             val targetIndex = ui.tracks.indexOfFirst {
                                                 it.sameIdentityAs(song)

@@ -68,6 +68,82 @@ class YouTubeMusicClientParserTest {
     }
 
     @Test
+    fun parseLibraryPlaylists_shouldReadNestedPlaylistCards() {
+        val root = JSONObject(
+            """
+            {
+              "contents": {
+                "singleColumnBrowseResultsRenderer": {
+                  "tabs": [
+                    {
+                      "tabRenderer": {
+                        "content": {
+                          "sectionListRenderer": {
+                            "contents": [
+                              {
+                                "itemSectionRenderer": {
+                                  "contents": [
+                                    {
+                                      "musicTwoRowItemRenderer": {
+                                        "navigationEndpoint": {
+                                          "browseEndpoint": {
+                                            "browseId": "VLRDCLAK5uy_user_mix",
+                                            "browseEndpointContextSupportedConfigs": {
+                                              "browseEndpointContextMusicConfig": {
+                                                "pageType": "MUSIC_PAGE_TYPE_PLAYLIST"
+                                              }
+                                            }
+                                          }
+                                        },
+                                        "title": {
+                                          "simpleText": "用户歌单"
+                                        },
+                                        "subtitle": {
+                                          "simpleText": "23 首歌"
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "musicTwoRowItemRenderer": {
+                                        "navigationEndpoint": {
+                                          "browseEndpoint": {
+                                            "browseId": "UC-artist",
+                                            "browseEndpointContextSupportedConfigs": {
+                                              "browseEndpointContextMusicConfig": {
+                                                "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                                              }
+                                            }
+                                          }
+                                        },
+                                        "title": {
+                                          "simpleText": "不是歌单的歌手"
+                                        }
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+
+        val playlists = YouTubeMusicParser.parseLibraryPlaylists(root)
+
+        assertEquals(1, playlists.size)
+        assertEquals("用户歌单", playlists.single().title)
+        assertEquals("RDCLAK5uy_user_mix", playlists.single().playlistId)
+        assertEquals(23, playlists.single().trackCount)
+    }
+
+    @Test
     fun parsePlaylistTrackCount_shouldPreferSecondSubtitleOverYearSubtitle() {
         val root = createLikedPlaylistRoot()
 

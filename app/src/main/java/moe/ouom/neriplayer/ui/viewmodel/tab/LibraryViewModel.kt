@@ -120,7 +120,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         // YouTube Music
         viewModelScope.launch {
             youtubeAuthRepo.authFlow.collect { bundle ->
-                if (!bundle.hasLoginCookies()) {
+                if (!bundle.hasYouTubeMusicCookieContext()) {
                     _uiState.value = _uiState.value.copy(
                         youtubeMusicPlaylists = emptyList(),
                         youtubeMusicError = null
@@ -294,7 +294,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             try {
                 val playlists = withContext(Dispatchers.IO) {
-                    youtubeMusicClient.getLibraryPlaylists()
+                    youtubeMusicClient.getLibraryPlaylists(
+                        resolveMissingTrackCounts = false
+                    )
                 }
                 _uiState.value = _uiState.value.copy(
                     youtubeMusicPlaylists = playlists.map(::mapYouTubeMusicPlaylist),
@@ -371,6 +373,13 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             }
         }
         return result
+    }
+
+    private fun moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle.hasYouTubeMusicCookieContext(): Boolean {
+        return hasLoginCookies() ||
+            cookieHeader.isNotBlank() ||
+            cookies.isNotEmpty() ||
+            authorization.isNotBlank()
     }
 
     private fun mapYouTubeMusicPlaylist(

@@ -16,6 +16,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.prefetch.YouTubePrefetchRunner
 import moe.ouom.neriplayer.core.player.prefetch.YouTubePrefetchTask
 import moe.ouom.neriplayer.core.player.policy.resolveYouTubeWarmupTargets
+import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 
@@ -48,6 +49,11 @@ internal fun PlayerManager.prefetchYouTubeQueueWindowImpl(
         return
     }
     youtubeMusicPlaybackRepository.warmBootstrapAsync()
+    kickoffYouTubePlayableAudioPrefetches(
+        videoIds = targets.prefetchVideoIds,
+        preferredQuality = targets.preferredQuality,
+        source = source
+    )
     NPLogger.d(
         "NERI-PlayerManager",
         "prefetchYouTubeQueueWindow: source=$source, startIndex=$startIndex, ids=${targets.prefetchVideoIds.joinToString()}, preferredQuality=${targets.preferredQuality}"
@@ -62,13 +68,118 @@ internal fun PlayerManager.prefetchYouTubeQueueWindowImpl(
         )
     }.associateBy { it.videoId }
     currentYouTubePrefetchJob?.cancel()
-    currentYouTubePrefetchJob = YouTubePrefetchRunner(
+    currentYouTubePrefetchVideoIds = targets.prefetchVideoIds.toSet()
+    val launchedJob = YouTubePrefetchRunner(
         task = YouTubePrefetchTask { videoId ->
             val spec = specs[videoId] ?: return@YouTubePrefetchTask
             prefetchYouTubePlayableAudio(spec)
         },
         maxConcurrency = YOUTUBE_PREFETCH_MAX_CONCURRENCY
     ).launch(ioScope, targets.prefetchVideoIds)
+    currentYouTubePrefetchJob = launchedJob
+    launchedJob.invokeOnCompletion {
+        if (currentYouTubePrefetchJob === launchedJob) {
+            currentYouTubePrefetchJob = null
+            currentYouTubePrefetchVideoIds = emptySet()
+        }
+    }
+}
+
+internal fun PlayerManager.prefetchYouTubePlayableUrlWindowImpl(
+    playlist: List<SongItem>,
+    startIndex: Int,
+    source: String
+) {
+    val targets = resolveYouTubeWarmupTargets(
+        playlist = playlist,
+        currentSongIndex = startIndex,
+        preferredQuality = effectiveYouTubeQuality()
+    )
+    if (!targets.hasWork) {
+        return
+    }
+    youtubeMusicPlaybackRepository.warmBootstrapAsync()
+    kickoffYouTubePlayableAudioPrefetches(
+        videoIds = targets.prefetchVideoIds,
+        preferredQuality = targets.preferredQuality,
+        source = source
+    )
+}
+
+internal fun PlayerManager.kickoffYouTubePlaybackIntentWarmup(
+    song: SongItem,
+    source: String
+) {
+    if (!isYouTubeMusicTrack(song)) {
+        return
+    }
+    val videoId = song.audioId
+        ?.takeIf(String::isNotBlank)
+        ?: extractYouTubeMusicVideoId(song.mediaUri)
+        ?: return
+    val preferredQuality = effectiveYouTubeQuality()
+    val cacheKey = computeYouTubeCacheKey(videoId, preferredQuality)
+    if (checkExoPlayerCache(cacheKey)) {
+        return
+    }
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "kickoffYouTubePlaybackIntentWarmup: source=$source, videoId=$videoId, preferredQuality=$preferredQuality"
+    )
+    youtubeMusicPlaybackRepository.kickoffPlayableAudioPrefetch(
+        videoId = videoId,
+        preferredQualityOverride = preferredQuality,
+        requireDirect = false,
+        preferM4a = false
+    )
+}
+
+internal fun PlayerManager.cancelYouTubePrefetchUnlessReusableForSong(
+    song: SongItem,
+    reason: String
+) {
+    val activePrefetchJob = currentYouTubePrefetchJob
+    if (!isYouTubeMusicTrack(song)) {
+        activePrefetchJob?.cancel()
+        currentYouTubePrefetchJob = null
+        currentYouTubePrefetchVideoIds = emptySet()
+        return
+    }
+    val videoId = song.audioId
+        ?.takeIf(String::isNotBlank)
+        ?: extractYouTubeMusicVideoId(song.mediaUri)
+    val canReuse = activePrefetchJob?.isActive == true &&
+        !videoId.isNullOrBlank() &&
+        currentYouTubePrefetchVideoIds.contains(videoId)
+    if (canReuse) {
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "keep reusable YouTube prefetch: reason=$reason, videoId=$videoId, ids=${currentYouTubePrefetchVideoIds.joinToString()}"
+        )
+        return
+    }
+    activePrefetchJob?.cancel()
+    currentYouTubePrefetchJob = null
+    currentYouTubePrefetchVideoIds = emptySet()
+}
+
+private fun PlayerManager.kickoffYouTubePlayableAudioPrefetches(
+    videoIds: List<String>,
+    preferredQuality: String,
+    source: String
+) {
+    videoIds.forEach { videoId ->
+        youtubeMusicPlaybackRepository.kickoffPlayableAudioPrefetch(
+            videoId = videoId,
+            preferredQualityOverride = preferredQuality,
+            requireDirect = false,
+            preferM4a = false
+        )
+    }
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "kickoff YouTube playable URL prefetches: source=$source, ids=${videoIds.joinToString()}, preferredQuality=$preferredQuality"
+    )
 }
 
 private suspend fun PlayerManager.prefetchYouTubePlayableAudio(spec: YouTubePrefetchSpec) {

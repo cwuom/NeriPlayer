@@ -1060,11 +1060,15 @@ object AudioDownloadManager {
                     var attemptNumber = 1
                     var activeTransportKind: DownloadTransportKind? = null
                     var activeWorkingFileName: String? = null
+                    var forceRefreshYouTubeSource = false
                     while (true) {
                         ensureSongDownloadNotCancelled(songKey, "prepare", batchSessionId, attemptId)
                         try {
                             val resolved = when {
-                                isYouTubeMusic -> resolveYouTubeMusic(song)
+                                isYouTubeMusic -> resolveYouTubeMusic(
+                                    song = song,
+                                    forceRefresh = forceRefreshYouTubeSource
+                                )
                                 isBili -> resolveBili(song)
                                 else -> resolveNetease(song.id)
                             }
@@ -1088,6 +1092,9 @@ object AudioDownloadManager {
                                         TAG,
                                         "下载链接暂时不可用，准备重试($attemptNumber/$TRANSIENT_DOWNLOAD_MAX_ATTEMPTS): ${song.name}"
                                     )
+                                    if (isYouTubeMusic) {
+                                        forceRefreshYouTubeSource = true
+                                    }
                                     evictDownloadConnections()
                                     waitForRetryOrCancellation(
                                         context = context,
@@ -1101,6 +1108,7 @@ object AudioDownloadManager {
                                 }
                                 throw IOException(context.getString(R.string.download_no_url, song.name))
                             }
+                            forceRefreshYouTubeSource = false
 
                             // song duration 已经从 resolved 获取，不再写入数据库，只保持在当前上下文中
                             // 真正的持久化由 GlobalDownloadManager 完成
@@ -1306,7 +1314,7 @@ object AudioDownloadManager {
                             if (
                                 storedAudio == null &&
                                 attemptNumber < TRANSIENT_DOWNLOAD_MAX_ATTEMPTS &&
-                                shouldRetryTransientDownloadFailure(error)
+                                shouldRetryDownloadFailureForSource(error, isYouTubeMusic)
                             ) {
                                 val partialBytes = resolveWorkingFileBytes(tempFile)
                                 val preservePartial = shouldPreservePartialDownloadForRetry(
@@ -1332,9 +1340,12 @@ object AudioDownloadManager {
                                         ?: 0L,
                                     attemptId = attemptId
                                 )
+                                if (isYouTubeMusic && shouldRefreshYouTubeDownloadSourceOnFailure(error)) {
+                                    forceRefreshYouTubeSource = true
+                                }
                                 NPLogger.w(
                                     TAG,
-                                    "下载遇到网络波动，准备重试($attemptNumber/$TRANSIENT_DOWNLOAD_MAX_ATTEMPTS): ${song.name}, ${error.javaClass.simpleName} - ${error.message}"
+                                    "下载遇到网络波动，准备重试($attemptNumber/$TRANSIENT_DOWNLOAD_MAX_ATTEMPTS): ${song.name}, refreshYouTubeSource=$forceRefreshYouTubeSource, ${error.javaClass.simpleName} - ${error.message}"
                                 )
                                 evictDownloadConnections()
                                 waitForRetryOrCancellation(
@@ -2106,6 +2117,35 @@ object AudioDownloadManager {
         }
     }
 
+    internal fun shouldRetryDownloadFailureForSource(
+        error: Throwable,
+        isYouTubeMusic: Boolean
+    ): Boolean {
+        if (shouldRetryTransientDownloadFailure(error)) {
+            return true
+        }
+        return isYouTubeMusic && shouldRefreshYouTubeDownloadSourceOnFailure(error)
+    }
+
+    internal fun shouldRefreshYouTubeDownloadSourceOnFailure(error: Throwable): Boolean {
+        if (error is java.util.concurrent.CancellationException) {
+            return false
+        }
+        val statusCode = when (error) {
+            is ChunkRequestIOException -> error.responseCode
+            else -> parseHttpStatusCode(error)
+        } ?: return false
+        return isRefreshableYouTubeDownloadStatusCode(statusCode)
+    }
+
+    private fun isRefreshableYouTubeDownloadStatusCode(statusCode: Int): Boolean {
+        return statusCode == 401 ||
+            statusCode == 403 ||
+            statusCode == 410 ||
+            statusCode == 416 ||
+            isTransientHttpStatusCode(statusCode)
+    }
+
     private fun parseHttpStatusCode(error: Throwable): Int? {
         val message = error.message.orEmpty()
         return Regex("""HTTP\s+(\d{3})""")
@@ -2710,7 +2750,10 @@ object AudioDownloadManager {
         } catch (_: Exception) { null }
     }
 
-    private suspend fun resolveYouTubeMusic(song: SongItem): ResolvedDownloadSource? {
+    private suspend fun resolveYouTubeMusic(
+        song: SongItem,
+        forceRefresh: Boolean = false
+    ): ResolvedDownloadSource? {
         val videoId = extractYouTubeMusicVideoId(song.mediaUri) ?: return null
         val playbackRepository = AppContainer.youtubeMusicPlaybackRepository
         suspend fun resolve(forceRefresh: Boolean, requireDirect: Boolean) =
@@ -2720,11 +2763,26 @@ object AudioDownloadManager {
                 requireDirect = requireDirect,
                 preferM4a = true
             )
-        val directPlayableAudio = resolve(forceRefresh = false, requireDirect = true)
-            ?: resolve(forceRefresh = true, requireDirect = true)
-        val playableAudio = directPlayableAudio
-            ?: resolve(forceRefresh = false, requireDirect = false)
-            ?: resolve(forceRefresh = true, requireDirect = false)
+        val firstDirectPlayableAudio = resolve(
+            forceRefresh = forceRefresh,
+            requireDirect = true
+        )
+        val refreshedDirectPlayableAudio = if (forceRefresh || firstDirectPlayableAudio != null) {
+            null
+        } else {
+            resolve(forceRefresh = true, requireDirect = true)
+        }
+        val directPlayableAudio = firstDirectPlayableAudio ?: refreshedDirectPlayableAudio
+        val firstPlayableAudio = directPlayableAudio ?: resolve(
+            forceRefresh = forceRefresh,
+            requireDirect = false
+        )
+        val refreshedPlayableAudio = if (forceRefresh || firstPlayableAudio != null) {
+            null
+        } else {
+            resolve(forceRefresh = true, requireDirect = false)
+        }
+        val playableAudio = firstPlayableAudio ?: refreshedPlayableAudio
             ?: return null
         if (directPlayableAudio == null && playableAudio.streamType == YouTubePlayableStreamType.HLS) {
             NPLogger.w(TAG, "YouTube Music 下载未拿到直链，回退 HLS: videoId=$videoId")

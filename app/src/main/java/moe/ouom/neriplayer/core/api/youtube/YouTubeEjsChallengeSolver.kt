@@ -32,6 +32,7 @@ import java.io.IOException
 import java.util.LinkedHashMap
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -46,7 +47,9 @@ internal enum class YouTubeJsChallengeSolveStatus {
     SUCCESS,
     PLAYER_JS_URL_BLANK,
     JAVASCRIPT_SANDBOX_UNSUPPORTED,
+    JAVASCRIPT_SANDBOX_TEMPORARILY_DISABLED,
     JAVASCRIPT_SANDBOX_CONNECTION_FAILED,
+    JAVASCRIPT_SANDBOX_TIMEOUT,
     MISSING_SANDBOX_FEATURES,
     PLAYER_SCRIPT_FETCH_FAILED,
     SCRIPT_EVALUATION_FAILED,
@@ -95,6 +98,7 @@ internal class YouTubeEjsChallengeSolver(
         private const val CORE_ASSET_PATH = "youtube/yt.solver.core.min.js"
         private const val SCRIPT_TIMEOUT_SECONDS = 45L
         private const val CACHE_CAPACITY = 32
+        private const val SANDBOX_FAILURE_COOLDOWN_MS = 10L * 60L * 1000L
     }
 
     private val appContext = context.applicationContext
@@ -102,6 +106,10 @@ internal class YouTubeEjsChallengeSolver(
     private val playerScriptCache = linkedMapOf<String, String>()
     private val signatureCache = linkedMapOf<String, String>()
     private val throttlingCache = linkedMapOf<String, String>()
+    @Volatile
+    private var sandboxDisabledUntilMs: Long = 0L
+    @Volatile
+    private var sandboxDisabledReason: String = ""
     private val libScript by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         appContext.assets.open(LIB_ASSET_PATH).bufferedReader().use { it.readText() }
     }
@@ -181,8 +189,18 @@ internal class YouTubeEjsChallengeSolver(
                 )
             }
 
-            if (!JavaScriptSandbox.isSupported()) {
+            val nowMs = System.currentTimeMillis()
+            if (nowMs < sandboxDisabledUntilMs) {
                 return@synchronized YouTubeJsChallengeSolveResult(
+                    status = YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_TEMPORARILY_DISABLED,
+                    detail = sandboxDisabledReason.ifBlank {
+                        "JavaScriptSandbox disabled for ${sandboxDisabledUntilMs - nowMs}ms"
+                    }
+                )
+            }
+
+            if (!JavaScriptSandbox.isSupported()) {
+                return@synchronized sandboxFailureResult(
                     status = YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_UNSUPPORTED,
                     detail = "JavaScriptSandbox is not supported on this device"
                 )
@@ -192,8 +210,12 @@ internal class YouTubeEjsChallengeSolver(
                 JavaScriptSandbox.createConnectedInstanceAsync(appContext)
                     .get(SCRIPT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             }.getOrElse { error ->
-                return@synchronized YouTubeJsChallengeSolveResult(
-                    status = YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_CONNECTION_FAILED,
+                return@synchronized sandboxFailureResult(
+                    status = if (error.isTimeoutFailure()) {
+                        YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_TIMEOUT
+                    } else {
+                        YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_CONNECTION_FAILED
+                    },
                     detail = "Failed to connect JavaScriptSandbox",
                     cause = error
                 )
@@ -204,7 +226,7 @@ internal class YouTubeEjsChallengeSolver(
                     JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER
                 )
                 if (!hasPromiseSupport || !hasArrayBufferSupport) {
-                    return@synchronized YouTubeJsChallengeSolveResult(
+                    return@synchronized sandboxFailureResult(
                         status = YouTubeJsChallengeSolveStatus.MISSING_SANDBOX_FEATURES,
                         detail = "promise=$hasPromiseSupport, arrayBuffer=$hasArrayBufferSupport"
                     )
@@ -241,8 +263,12 @@ internal class YouTubeEjsChallengeSolver(
                             )
                         ).get(SCRIPT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                     }.getOrElse { error ->
-                        return@synchronized YouTubeJsChallengeSolveResult(
-                            status = YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED,
+                        return@synchronized sandboxFailureResult(
+                            status = if (error.isTimeoutFailure()) {
+                                YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_TIMEOUT
+                            } else {
+                                YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED
+                            },
                             detail = "playerJsUrl=$resolvedPlayerJsUrl",
                             cause = error
                         )
@@ -416,6 +442,56 @@ internal class YouTubeEjsChallengeSolver(
 
     private fun cacheKey(playerJsUrl: String, challenge: String): String {
         return "$playerJsUrl::$challenge"
+    }
+
+    private fun sandboxFailureResult(
+        status: YouTubeJsChallengeSolveStatus,
+        detail: String,
+        cause: Throwable? = null
+    ): YouTubeJsChallengeSolveResult {
+        val result = YouTubeJsChallengeSolveResult(
+            status = status,
+            detail = detail,
+            cause = cause
+        )
+        if (shouldTemporarilyDisableSandbox(result)) {
+            sandboxDisabledReason = result.summary()
+            sandboxDisabledUntilMs = System.currentTimeMillis() + SANDBOX_FAILURE_COOLDOWN_MS
+        }
+        return result
+    }
+
+    private fun shouldTemporarilyDisableSandbox(result: YouTubeJsChallengeSolveResult): Boolean {
+        return when (result.status) {
+            YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_UNSUPPORTED,
+            YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_CONNECTION_FAILED,
+            YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_TIMEOUT,
+            YouTubeJsChallengeSolveStatus.MISSING_SANDBOX_FEATURES -> true
+            YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED -> {
+                result.cause?.containsSandboxRuntimeFailure() == true
+            }
+            else -> false
+        }
+    }
+
+    private fun Throwable.isTimeoutFailure(): Boolean {
+        return this is TimeoutException || cause?.isTimeoutFailure() == true
+    }
+
+    private fun Throwable.containsSandboxRuntimeFailure(): Boolean {
+        val message = buildString {
+            append(javaClass.name)
+            append(' ')
+            append(this@containsSandboxRuntimeFailure.message.orEmpty())
+        }
+        if (
+            message.contains("VMBridge", ignoreCase = true) ||
+            message.contains("NoClassDefFoundError", ignoreCase = true) ||
+            message.contains("JavaScriptSandbox", ignoreCase = true)
+        ) {
+            return true
+        }
+        return cause?.containsSandboxRuntimeFailure() == true
     }
 
     private fun closeQuietly(isolate: JavaScriptIsolate) {

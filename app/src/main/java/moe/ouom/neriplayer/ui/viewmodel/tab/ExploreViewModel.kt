@@ -484,12 +484,14 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             try {
                 val library = withContext(Dispatchers.IO) {
-                    AppContainer.youtubeMusicClient.getLibraryPlaylists()
+                    AppContainer.youtubeMusicClient.getLibraryPlaylists(
+                        resolveMissingTrackCounts = false
+                    )
                 }
                 val playlists = library.map { pl ->
                     YouTubeMusicPlaylist(
                         browseId = pl.browseId,
-                        playlistId = pl.browseId.removePrefix("VL"),
+                        playlistId = pl.playlistId,
                         title = pl.title,
                         subtitle = pl.subtitle,
                         coverUrl = pl.coverUrl,

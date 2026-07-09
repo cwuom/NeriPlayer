@@ -99,6 +99,11 @@ private const val YOUTUBE_PLAYER_TV_USER_AGENT =
 private const val YOUTUBE_PLAYER_TV_DOWNGRADED_CLIENT_VERSION = "5.20260114"
 private const val YOUTUBE_PLAYER_TV_DOWNGRADED_USER_AGENT =
     "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version"
+private const val YOUTUBE_PLAYER_ANDROID_MUSIC_CLIENT_ID = "21"
+private const val YOUTUBE_PLAYER_ANDROID_MUSIC_CLIENT_NAME = "ANDROID_MUSIC"
+private const val YOUTUBE_PLAYER_ANDROID_MUSIC_CLIENT_VERSION = "8.15.51"
+private const val YOUTUBE_PLAYER_ANDROID_MUSIC_USER_AGENT =
+    "com.google.android.apps.youtube.music/8.15.51 (Linux; U; Android 14) gzip"
 private const val YOUTUBE_PLAYER_WEB_REMIX_USER_AGENT =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
         "(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
@@ -126,6 +131,8 @@ private const val YOUTUBE_PLAYER_PLAYBACK_LACT_MILLISECONDS = "9"
 // 首播更看重尽快落到可播链路，别在 fallback 前白等太久的 PO token
 private const val WEB_REMIX_PO_TOKEN_PREFETCH_JOIN_TIMEOUT_MS = 150L
 private const val PLAYBACK_WARM_AUTH_REFRESH_AGE_MS = 12L * 60L * 60L * 1000L
+private const val PLAYABLE_URL_EXPIRY_SAFETY_MARGIN_MS = 90L * 1000L
+private const val EJS_FALLBACK_START_DELAY_MS = 40L
 
 private const val YOUTUBE_PLAYER_API_FORMAT_VERSION = "2"
 private const val STREAMING_CIPHER_LOG_THRESHOLD_MS = 250L
@@ -250,7 +257,8 @@ private data class YouTubeWebRemixRequestMetadata(
 
 private data class CachedPlayableAudio(
     val audio: YouTubePlayableAudio,
-    val cachedAtMs: Long
+    val cachedAtMs: Long,
+    val expiresAtMs: Long
 )
 
 private data class InFlightPlayableAudioRequest(
@@ -818,6 +826,24 @@ private fun extractStreamQueryParameter(url: String, key: String): String? {
         }
         .firstOrNull { (resolvedKey, _) -> resolvedKey == key }
         ?.second
+}
+
+@VisibleForTesting
+internal fun resolvePlayableAudioCacheExpiresAtMs(
+    url: String,
+    cachedAtMs: Long,
+    defaultTtlMs: Long,
+    safetyMarginMs: Long = PLAYABLE_URL_EXPIRY_SAFETY_MARGIN_MS
+): Long {
+    val defaultExpiresAtMs = cachedAtMs + defaultTtlMs.coerceAtLeast(0L)
+    val streamExpiresAtMs = extractStreamQueryParameter(url, "expire")
+        ?.toLongOrNull()
+        ?.takeIf { it > 0L }
+        ?.let { expireSeconds ->
+            (expireSeconds * 1000L - safetyMarginMs.coerceAtLeast(0L))
+                .coerceAtLeast(cachedAtMs)
+        }
+    return minOf(defaultExpiresAtMs, streamExpiresAtMs ?: defaultExpiresAtMs)
 }
 
 private fun replaceStreamQueryParameter(url: String, key: String, value: String): String {
@@ -1465,15 +1491,16 @@ class YouTubeMusicPlaybackRepository(
                                 bestPlayableAudioClientName = profile.clientName
                             }
                             bestPlayableAudio = resolvedPlayableAudio
-                            if (profile.clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME &&
-                                resolvedPlayableAudio === playableAudio &&
-                                resolvedPlayableAudio.streamType == YouTubePlayableStreamType.DIRECT
+                            if (shouldReturnPlayableAudioImmediately(
+                                    profile = profile,
+                                    playableAudio = resolvedPlayableAudio,
+                                    acceptedFromCurrentProfile = resolvedPlayableAudio === playableAudio
+                                )
                             ) {
-                                // 官方 WEB_REMIX 直链已经足够稳定，命中后立即停止后续 fallback，
-                                // 避免额外触发 IOS/TV 探测而增加风控概率
+                                // 播放首帧比跨 client 继续比质量更重要，direct 命中后直接交给播放器
                                 NPLogger.d(
                                     "YouTubeMusicPlayback",
-                                    "player resolve satisfied by WEB_REMIX direct: videoId=$videoId, elapsedMs=${playbackElapsedMs(resolveStartedAtMs)}"
+                                    "player resolve satisfied by ${profile.clientName} direct: videoId=$videoId, elapsedMs=${playbackElapsedMs(resolveStartedAtMs)}"
                                 )
                                 return PlayerAudioResolution(
                                     playableAudio = resolvedPlayableAudio.mergeMetadataFrom(bestMetadata),
@@ -1913,6 +1940,9 @@ class YouTubeMusicPlaybackRepository(
                         null
                     } else {
                         async(Dispatchers.IO) {
+                            if (!skipSignatureNewPipe) {
+                                delay(EJS_FALLBACK_START_DELAY_MS)
+                            }
                             val startedAtMs = System.currentTimeMillis()
                             val ejsResult = runCatching {
                                 ejsChallengeSolver?.solveDetailed(
@@ -2008,6 +2038,9 @@ class YouTubeMusicPlaybackRepository(
                         null
                     } else {
                         async(Dispatchers.IO) {
+                            if (!skipThrottlingNewPipe) {
+                                delay(EJS_FALLBACK_START_DELAY_MS)
+                            }
                             val startedAtMs = System.currentTimeMillis()
                             val ejsResult = runCatching {
                                 ejsChallengeSolver?.solveDetailed(
@@ -2938,6 +2971,19 @@ class YouTubeMusicPlaybackRepository(
                 userAgent = YOUTUBE_PLAYER_TV_DOWNGRADED_USER_AGENT,
                 endpointPath = "player",
                 platform = "TV"
+            ),
+            YouTubePlayerClientProfile(
+                clientId = YOUTUBE_PLAYER_ANDROID_MUSIC_CLIENT_ID,
+                clientName = YOUTUBE_PLAYER_ANDROID_MUSIC_CLIENT_NAME,
+                clientVersion = YOUTUBE_PLAYER_ANDROID_MUSIC_CLIENT_VERSION,
+                userAgent = YOUTUBE_PLAYER_ANDROID_MUSIC_USER_AGENT,
+                endpointPath = "player",
+                platform = "MOBILE",
+                deviceMake = "Google",
+                deviceModel = "Pixel 8",
+                osName = "Android",
+                osVersion = "14",
+                androidSdkVersion = 34
             )
         )
     }
@@ -3001,6 +3047,7 @@ class YouTubeMusicPlaybackRepository(
             YouTubePlayableStreamType.DIRECT -> when {
                 clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME -> 30
                 clientName?.startsWith(YOUTUBE_PLAYER_TV_CLIENT_NAME, ignoreCase = true) == true -> 20
+                clientName == YOUTUBE_PLAYER_ANDROID_MUSIC_CLIENT_NAME -> 10
                 clientName.isNullOrBlank() -> 0
                 else -> 5
             }
@@ -3010,6 +3057,22 @@ class YouTubeMusicPlaybackRepository(
                 else -> 0
             }
         }
+    }
+
+    private fun shouldReturnPlayableAudioImmediately(
+        profile: YouTubePlayerClientProfile,
+        playableAudio: YouTubePlayableAudio,
+        acceptedFromCurrentProfile: Boolean
+    ): Boolean {
+        if (!acceptedFromCurrentProfile) {
+            return false
+        }
+        if (playableAudio.streamType != YouTubePlayableStreamType.DIRECT) {
+            return false
+        }
+        return profile.clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME ||
+            profile.clientName == YOUTUBE_PLAYER_TV_CLIENT_NAME ||
+            profile.clientName == YOUTUBE_PLAYER_ANDROID_MUSIC_CLIENT_NAME
     }
 
     private fun comparePlayableAudioQuality(
@@ -3072,8 +3135,13 @@ class YouTubeMusicPlaybackRepository(
         val cacheKey = playableAudioCacheKey(videoId, preferredQualityKey)
         synchronized(playableAudioCache) {
             val cached = playableAudioCache[cacheKey] ?: return null
-            if (System.currentTimeMillis() - cached.cachedAtMs > PLAYABLE_URL_CACHE_TTL_MS) {
+            val nowMs = System.currentTimeMillis()
+            if (nowMs >= cached.expiresAtMs) {
                 playableAudioCache.remove(cacheKey)
+                NPLogger.d(
+                    "YouTubeMusicPlayback",
+                    "drop expired playable audio cache: videoId=$videoId, quality=$preferredQualityKey, ageMs=${nowMs - cached.cachedAtMs}, expiresInMs=${cached.expiresAtMs - nowMs}"
+                )
                 return null
             }
             if (requireDirect && cached.audio.streamType != YouTubePlayableStreamType.DIRECT) {
@@ -3090,10 +3158,16 @@ class YouTubeMusicPlaybackRepository(
     ) {
         val cacheKey = playableAudioCacheKey(videoId, preferredQualityKey)
         synchronized(playableAudioCache) {
+            val nowMs = System.currentTimeMillis()
             playableAudioCache.remove(cacheKey)
             playableAudioCache[cacheKey] = CachedPlayableAudio(
                 audio = audio,
-                cachedAtMs = System.currentTimeMillis()
+                cachedAtMs = nowMs,
+                expiresAtMs = resolvePlayableAudioCacheExpiresAtMs(
+                    url = audio.url,
+                    cachedAtMs = nowMs,
+                    defaultTtlMs = PLAYABLE_URL_CACHE_TTL_MS
+                )
             )
             while (playableAudioCache.size > PLAYABLE_URL_CACHE_MAX_SIZE) {
                 val eldestKey = playableAudioCache.entries.firstOrNull()?.key ?: break
