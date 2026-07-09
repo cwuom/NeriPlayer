@@ -117,6 +117,41 @@ class AudioDownloadManagerTest {
     }
 
     @Test
+    fun `youtube download resolve plan starts with short shared probe then isolates refresh`() {
+        val attempts = AudioDownloadManager.resolveYouTubeDownloadResolveAttempts(forceRefresh = false)
+
+        assertEquals(4, attempts.size)
+        assertEquals("shared_direct", attempts[0].logLabel)
+        assertEquals(false, attempts[0].forceRefresh)
+        assertEquals(true, attempts[0].requireDirect)
+        assertEquals(true, attempts[0].shareInFlight)
+        assertEquals("fresh_direct", attempts[1].logLabel)
+        assertEquals(true, attempts[1].forceRefresh)
+        assertEquals(true, attempts[1].requireDirect)
+        assertEquals(false, attempts[1].shareInFlight)
+        assertEquals("shared_playable", attempts[2].logLabel)
+        assertEquals(false, attempts[2].forceRefresh)
+        assertEquals(false, attempts[2].requireDirect)
+        assertEquals(true, attempts[2].shareInFlight)
+        assertEquals("fresh_playable", attempts[3].logLabel)
+        assertEquals(true, attempts[3].forceRefresh)
+        assertEquals(false, attempts[3].requireDirect)
+        assertEquals(false, attempts[3].shareInFlight)
+        assertTrue(attempts[0].timeoutMs < attempts[1].timeoutMs)
+        assertTrue(attempts[2].timeoutMs < attempts[3].timeoutMs)
+    }
+
+    @Test
+    fun `youtube download resolve plan skips shared probes after forced refresh`() {
+        val attempts = AudioDownloadManager.resolveYouTubeDownloadResolveAttempts(forceRefresh = true)
+
+        assertEquals(2, attempts.size)
+        assertEquals(listOf("fresh_direct", "fresh_playable"), attempts.map { it.logLabel })
+        assertTrue(attempts.all { it.forceRefresh })
+        assertTrue(attempts.none { it.shareInFlight })
+    }
+
+    @Test
     fun `cover download candidates keep stable fallback order and de duplicate urls`() {
         val song = SongItem(
             id = 1L,

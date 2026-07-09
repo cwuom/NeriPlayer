@@ -74,6 +74,7 @@ import moe.ouom.neriplayer.data.platform.youtube.isYouTubeInnertubeHost
 import moe.ouom.neriplayer.util.DynamicProxySelector
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.util.concurrent.TimeUnit
 import kotlin.LazyThreadSafetyMode
 
 internal fun resolveInitialBypassProxy(
@@ -140,6 +141,7 @@ object AppContainer {
         get() = application
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private const val YOUTUBE_DOWNLOAD_PLAYBACK_CALL_TIMEOUT_MS = 20_000L
 
     // 基础 Repo
     val settingsRepo by lazy { SettingsRepository(application) }
@@ -264,6 +266,17 @@ object AppContainer {
             applicationContext = application
         )
     }
+    val youtubeMusicDownloadPlaybackRepository by lazy {
+        YouTubeMusicPlaybackRepository(
+            okHttpClient = sharedOkHttpClient.newBuilder()
+                .callTimeout(YOUTUBE_DOWNLOAD_PLAYBACK_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .build(),
+            settings = settingsRepo,
+            authProvider = youtubeAuthRepo::getAuthOnce,
+            authAutoRefreshManager = youtubeAuthAutoRefreshManager,
+            applicationContext = application
+        )
+    }
 
     val cloudMusicSearchApi by lazy { CloudMusicSearchApi(neteaseClient) }
     val qqMusicSearchApi by lazy { QQMusicSearchApi() }
@@ -284,6 +297,7 @@ object AppContainer {
             return
         }
         youtubeMusicPlaybackRepository.clearAuthBoundCaches(cancelInFlightPlayableAudio = false)
+        youtubeMusicDownloadPlaybackRepository.clearAuthBoundCaches(cancelInFlightPlayableAudio = false)
     }
 
     fun initialize(app: Application) {
@@ -324,7 +338,10 @@ object AppContainer {
                 handleYouTubeAuthStateChanged(
                     bundle = bundle,
                     clearBootstrapCache = youtubeMusicClient::clearBootstrapCache,
-                    clearPlaybackAuthBoundCaches = youtubeMusicPlaybackRepository::clearAuthBoundCaches,
+                    clearPlaybackAuthBoundCaches = { cancelInFlight ->
+                        youtubeMusicPlaybackRepository.clearAuthBoundCaches(cancelInFlight)
+                        youtubeMusicDownloadPlaybackRepository.clearAuthBoundCaches(cancelInFlight)
+                    },
                     evictConnections = sharedOkHttpClient.connectionPool::evictAll,
                     warmBootstrapAsync = youtubeMusicPlaybackRepository::warmBootstrapAsync
                 )

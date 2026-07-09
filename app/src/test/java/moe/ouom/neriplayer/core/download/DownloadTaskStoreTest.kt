@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -182,6 +183,75 @@ class DownloadTaskStoreTest {
                 listOf(secondSong.stableKey(), thirdSong.stableKey()),
                 store.currentTasks().map { task -> task.song.stableKey() }
             )
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `clearCompletedTasks keeps active tasks and clears finished tasks`() {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val store = DownloadTaskStore(
+                scope = scope,
+                progressEmitIntervalNs = Long.MAX_VALUE
+            )
+            val queuedSong = song(1L, "Queued")
+            val downloadingSong = song(2L, "Downloading")
+            val waitingSong = song(3L, "Waiting")
+            val failedSong = song(4L, "Failed")
+            val cancelledSong = song(5L, "Cancelled")
+            val completedSong = song(6L, "Completed")
+            val songs = listOf(
+                queuedSong,
+                downloadingSong,
+                waitingSong,
+                failedSong,
+                cancelledSong,
+                completedSong
+            )
+            val attemptIds = store.prepareDownloadTasks(songs, DownloadStatus.QUEUED)
+
+            store.updateTaskStatus(
+                downloadingSong.stableKey(),
+                DownloadStatus.DOWNLOADING,
+                expectedAttemptId = attemptIds.getValue(downloadingSong.stableKey())
+            )
+            store.updateTaskStatus(
+                waitingSong.stableKey(),
+                DownloadStatus.WAITING_NETWORK,
+                expectedAttemptId = attemptIds.getValue(waitingSong.stableKey())
+            )
+            store.updateTaskStatus(
+                failedSong.stableKey(),
+                DownloadStatus.FAILED,
+                expectedAttemptId = attemptIds.getValue(failedSong.stableKey())
+            )
+            store.updateTaskStatus(
+                cancelledSong.stableKey(),
+                DownloadStatus.CANCELLED,
+                expectedAttemptId = attemptIds.getValue(cancelledSong.stableKey())
+            )
+            store.updateTaskStatus(
+                completedSong.stableKey(),
+                DownloadStatus.COMPLETED,
+                expectedAttemptId = attemptIds.getValue(completedSong.stableKey())
+            )
+
+            store.clearCompletedTasks()
+
+            assertEquals(
+                listOf(
+                    queuedSong.stableKey(),
+                    downloadingSong.stableKey(),
+                    waitingSong.stableKey()
+                ),
+                store.currentTasks().map { task -> task.song.stableKey() }
+            )
+            assertEquals(DownloadStatus.QUEUED, store.findTask(queuedSong.stableKey())?.status)
+            assertEquals(DownloadStatus.DOWNLOADING, store.findTask(downloadingSong.stableKey())?.status)
+            assertEquals(DownloadStatus.WAITING_NETWORK, store.findTask(waitingSong.stableKey())?.status)
+            assertNull(store.findTask(failedSong.stableKey()))
         } finally {
             scope.cancel()
         }

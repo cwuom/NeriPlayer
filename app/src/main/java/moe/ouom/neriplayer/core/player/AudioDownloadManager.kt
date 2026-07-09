@@ -52,6 +52,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
+import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableAudio
 import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -129,6 +130,10 @@ object AudioDownloadManager {
     private const val DOWNLOAD_CLIENT_WRITE_TIMEOUT_MS = 45_000L
     private const val COVER_DOWNLOAD_MAX_ATTEMPTS = 3
     private const val COVER_DOWNLOAD_RETRY_DELAY_MS = 250L
+    private const val YOUTUBE_DOWNLOAD_SHARED_DIRECT_RESOLVE_TIMEOUT_MS = 3_500L
+    private const val YOUTUBE_DOWNLOAD_FRESH_DIRECT_RESOLVE_TIMEOUT_MS = 18_000L
+    private const val YOUTUBE_DOWNLOAD_SHARED_PLAYABLE_RESOLVE_TIMEOUT_MS = 6_000L
+    private const val YOUTUBE_DOWNLOAD_FRESH_PLAYABLE_RESOLVE_TIMEOUT_MS = 18_000L
 
     private fun canBlockStorageLookup(): Boolean {
         return Looper.myLooper() != Looper.getMainLooper()
@@ -280,6 +285,20 @@ object AudioDownloadManager {
         DIRECT,
         CHUNKED_RANGE,
         HLS
+    }
+
+    internal data class YouTubeDownloadResolveAttempt(
+        val forceRefresh: Boolean,
+        val requireDirect: Boolean,
+        val timeoutMs: Long,
+        val shareInFlight: Boolean
+    ) {
+        val logLabel: String
+            get() = buildString {
+                append(if (forceRefresh) "fresh" else "shared")
+                append('_')
+                append(if (requireDirect) "direct" else "playable")
+            }
     }
 
     enum class DownloadStage {
@@ -473,6 +492,41 @@ object AudioDownloadManager {
 
     internal fun advanceRetryWakeSignalVersion(currentVersion: Long): Long {
         return if (currentVersion == Long.MAX_VALUE) 0L else currentVersion + 1L
+    }
+
+    internal fun resolveYouTubeDownloadResolveAttempts(
+        forceRefresh: Boolean
+    ): List<YouTubeDownloadResolveAttempt> {
+        val attempts = mutableListOf<YouTubeDownloadResolveAttempt>()
+        if (!forceRefresh) {
+            attempts += YouTubeDownloadResolveAttempt(
+                forceRefresh = false,
+                requireDirect = true,
+                timeoutMs = YOUTUBE_DOWNLOAD_SHARED_DIRECT_RESOLVE_TIMEOUT_MS,
+                shareInFlight = true
+            )
+        }
+        attempts += YouTubeDownloadResolveAttempt(
+            forceRefresh = true,
+            requireDirect = true,
+            timeoutMs = YOUTUBE_DOWNLOAD_FRESH_DIRECT_RESOLVE_TIMEOUT_MS,
+            shareInFlight = false
+        )
+        if (!forceRefresh) {
+            attempts += YouTubeDownloadResolveAttempt(
+                forceRefresh = false,
+                requireDirect = false,
+                timeoutMs = YOUTUBE_DOWNLOAD_SHARED_PLAYABLE_RESOLVE_TIMEOUT_MS,
+                shareInFlight = true
+            )
+        }
+        attempts += YouTubeDownloadResolveAttempt(
+            forceRefresh = true,
+            requireDirect = false,
+            timeoutMs = YOUTUBE_DOWNLOAD_FRESH_PLAYABLE_RESOLVE_TIMEOUT_MS,
+            shareInFlight = false
+        )
+        return attempts
     }
 
     fun notifyRecoveryOpportunity(reason: String) {
@@ -2755,35 +2809,27 @@ object AudioDownloadManager {
         forceRefresh: Boolean = false
     ): ResolvedDownloadSource? {
         val videoId = extractYouTubeMusicVideoId(song.mediaUri) ?: return null
-        val playbackRepository = AppContainer.youtubeMusicPlaybackRepository
-        suspend fun resolve(forceRefresh: Boolean, requireDirect: Boolean) =
-            playbackRepository.getBestPlayableAudio(
+        var directPlayableAudio: YouTubePlayableAudio? = null
+        var fallbackPlayableAudio: YouTubePlayableAudio? = null
+        for (attempt in resolveYouTubeDownloadResolveAttempts(forceRefresh)) {
+            val candidate = resolveYouTubeMusicDownloadAudio(
                 videoId = videoId,
-                forceRefresh = forceRefresh,
-                requireDirect = requireDirect,
-                preferM4a = true
+                attempt = attempt
+            ) ?: continue
+            if (candidate.streamType == YouTubePlayableStreamType.DIRECT) {
+                directPlayableAudio = candidate
+                break
+            }
+            if (!attempt.requireDirect && fallbackPlayableAudio == null) {
+                fallbackPlayableAudio = candidate
+                break
+            }
+            NPLogger.w(
+                TAG,
+                "YouTube Music 下载直链策略返回非直链，继续降级: videoId=$videoId, mode=${attempt.logLabel}, type=${candidate.streamType}"
             )
-        val firstDirectPlayableAudio = resolve(
-            forceRefresh = forceRefresh,
-            requireDirect = true
-        )
-        val refreshedDirectPlayableAudio = if (forceRefresh || firstDirectPlayableAudio != null) {
-            null
-        } else {
-            resolve(forceRefresh = true, requireDirect = true)
         }
-        val directPlayableAudio = firstDirectPlayableAudio ?: refreshedDirectPlayableAudio
-        val firstPlayableAudio = directPlayableAudio ?: resolve(
-            forceRefresh = forceRefresh,
-            requireDirect = false
-        )
-        val refreshedPlayableAudio = if (forceRefresh || firstPlayableAudio != null) {
-            null
-        } else {
-            resolve(forceRefresh = true, requireDirect = false)
-        }
-        val playableAudio = firstPlayableAudio ?: refreshedPlayableAudio
-            ?: return null
+        val playableAudio = directPlayableAudio ?: fallbackPlayableAudio ?: return null
         if (directPlayableAudio == null && playableAudio.streamType == YouTubePlayableStreamType.HLS) {
             NPLogger.w(TAG, "YouTube Music 下载未拿到直链，回退 HLS: videoId=$videoId")
         }
@@ -2804,6 +2850,51 @@ object AudioDownloadManager {
             contentLength = playableAudio.contentLength,
             durationMs = playableAudio.durationMs
         )
+    }
+
+    private suspend fun resolveYouTubeMusicDownloadAudio(
+        videoId: String,
+        attempt: YouTubeDownloadResolveAttempt
+    ): YouTubePlayableAudio? {
+        val startedAtMs = System.currentTimeMillis()
+        return try {
+            val playableAudio = withTimeoutOrNull(attempt.timeoutMs) {
+                val playbackRepository = if (attempt.shareInFlight) {
+                    AppContainer.youtubeMusicPlaybackRepository
+                } else {
+                    AppContainer.youtubeMusicDownloadPlaybackRepository
+                }
+                playbackRepository.getBestPlayableAudio(
+                    videoId = videoId,
+                    forceRefresh = attempt.forceRefresh,
+                    requireDirect = attempt.requireDirect,
+                    preferM4a = true,
+                    shareInFlight = attempt.shareInFlight
+                )
+            }
+            val elapsedMs = System.currentTimeMillis() - startedAtMs
+            if (playableAudio == null) {
+                NPLogger.w(
+                    TAG,
+                    "YouTube Music 下载解析未命中或超时: videoId=$videoId, mode=${attempt.logLabel}, timeoutMs=${attempt.timeoutMs}, elapsedMs=$elapsedMs"
+                )
+            } else {
+                NPLogger.d(
+                    TAG,
+                    "YouTube Music 下载解析命中: videoId=$videoId, mode=${attempt.logLabel}, type=${playableAudio.streamType}, elapsedMs=$elapsedMs"
+                )
+            }
+            playableAudio
+        } catch (error: Exception) {
+            if (error is java.util.concurrent.CancellationException) {
+                throw error
+            }
+            NPLogger.w(
+                TAG,
+                "YouTube Music 下载解析失败，切换下一策略: videoId=$videoId, mode=${attempt.logLabel}, ${error.javaClass.simpleName} - ${error.message}"
+            )
+            null
+        }
     }
 
     // Resolve Bili audio direct url.

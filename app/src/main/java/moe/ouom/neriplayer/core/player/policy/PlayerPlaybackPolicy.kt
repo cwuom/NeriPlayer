@@ -288,8 +288,9 @@ internal fun resolveYouTubeWarmupTargets(
     val warmupWindowSize = when {
         remaining <= 0 -> 0
         remaining <= 3 -> remaining
-        remaining <= 12 -> 3
-        else -> 4
+        remaining <= 8 -> 4
+        remaining <= 20 -> 5
+        else -> 6
     }
     val prefetchVideoIds = buildList {
         var cursor = normalizedIndex

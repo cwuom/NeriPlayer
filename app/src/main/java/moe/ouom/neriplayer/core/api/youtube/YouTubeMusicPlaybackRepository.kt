@@ -89,7 +89,7 @@ import org.schabi.newpipe.extractor.stream.StreamInfo
 private const val YOUTUBE_PLAYER_WEB_REMIX_CLIENT_ID = "67"
 private const val YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME = "WEB_REMIX"
 private const val YOUTUBE_PLAYER_WEB_REMIX_CLIENT_VERSION = "1.20260403.09.00"
-private const val YOUTUBE_PLAYBACK_WARM_BOOTSTRAP_START_DELAY_MS = 1_500L
+private const val YOUTUBE_PLAYBACK_WARM_BOOTSTRAP_START_DELAY_MS = 250L
 private const val YOUTUBE_PLAYER_TV_CLIENT_ID = "7"
 private const val YOUTUBE_PLAYER_TV_CLIENT_NAME = "TVHTML5"
 private const val YOUTUBE_PLAYER_TV_CLIENT_VERSION = "7.20260114.12.00"
@@ -921,7 +921,8 @@ class YouTubeMusicPlaybackRepository(
         preferredQualityOverride: String? = null,
         forceRefresh: Boolean = false,
         requireDirect: Boolean = false,
-        preferM4a: Boolean = false
+        preferM4a: Boolean = false,
+        shareInFlight: Boolean = true
     ): YouTubePlayableAudio? = withContext(Dispatchers.IO) {
         val resolveStartedAtMs = System.currentTimeMillis()
         syncAuthBoundCachesIfNeeded(authProvider().normalized())
@@ -929,7 +930,7 @@ class YouTubeMusicPlaybackRepository(
         val cacheKey = if (preferM4a) "${preferredQualityKey}_m4a" else preferredQualityKey
         NPLogger.d(
             "YouTubeMusicPlayback",
-            "getBestPlayableAudio: videoId=$videoId, quality=$preferredQualityKey, forceRefresh=$forceRefresh, requireDirect=$requireDirect, preferM4a=$preferM4a"
+            "getBestPlayableAudio: videoId=$videoId, quality=$preferredQualityKey, forceRefresh=$forceRefresh, requireDirect=$requireDirect, preferM4a=$preferM4a, shareInFlight=$shareInFlight"
         )
         if (!forceRefresh) {
             getCachedPlayableAudio(
@@ -944,15 +945,27 @@ class YouTubeMusicPlaybackRepository(
                 return@withContext cached
             }
         }
-        resolvePlayableAudioShared(
-            videoId = videoId,
-            preferredQualityKey = preferredQualityKey,
-            requireDirect = requireDirect,
-            logFailure = true,
-            preferM4a = preferM4a,
-            cacheKey = cacheKey,
-            forceRefresh = forceRefresh
-        )
+        if (shareInFlight) {
+            resolvePlayableAudioShared(
+                videoId = videoId,
+                preferredQualityKey = preferredQualityKey,
+                requireDirect = requireDirect,
+                logFailure = true,
+                preferM4a = preferM4a,
+                cacheKey = cacheKey,
+                forceRefresh = forceRefresh
+            )
+        } else {
+            resolvePlayableAudio(
+                videoId = videoId,
+                preferredQualityKey = preferredQualityKey,
+                requireDirect = requireDirect,
+                logFailure = true,
+                preferM4a = preferM4a,
+                cacheKey = cacheKey,
+                forceRefresh = forceRefresh
+            )
+        }
     }
 
     suspend fun prefetchPlayableAudioUrl(
@@ -1036,44 +1049,21 @@ class YouTubeMusicPlaybackRepository(
             return@withContext
         }
         try {
-            coroutineScope {
-                val bootstrapDeferred = async {
-                    bootstrap(auth = auth, forceRefresh = false)
-                }
-                val poTokenWarmJob = poTokenProvider?.let { provider ->
-                    launch {
-                        runCatching { provider.warmSession() }
-                            .onFailure { error ->
-                                if (error is CancellationException) {
-                                    throw error
-                                }
-                                NPLogger.w(
-                                    "YouTubeMusicPlayback",
-                                    "Warm WebPo session failed",
-                                    error
-                                )
-                            }
+            val bootstrap = bootstrap(auth = auth, forceRefresh = false)
+            ejsChallengeSolver?.let { solver ->
+                runCatching { solver.warmPlayerScript(bootstrap.playerJsUrl) }
+                    .onFailure { error ->
+                        if (error is CancellationException) {
+                            throw error
+                        }
+                        NPLogger.w(
+                            "YouTubeMusicPlayback",
+                            "Warm EJS player script failed",
+                            error
+                        )
                     }
-                }
-                val bootstrap = bootstrapDeferred.await()
-                val ejsWarmJob = ejsChallengeSolver?.let { solver ->
-                    launch {
-                        runCatching { solver.warmPlayerScript(bootstrap.playerJsUrl) }
-                            .onFailure { error ->
-                                if (error is CancellationException) {
-                                    throw error
-                                }
-                                NPLogger.w(
-                                    "YouTubeMusicPlayback",
-                                    "Warm EJS player script failed",
-                                    error
-                                )
-                            }
-                    }
-                }
-                poTokenWarmJob?.join()
-                ejsWarmJob?.join()
             }
+            warmWebPoTokenSessionAsync(reason = "playback_warm_bootstrap")
         } catch (error: Exception) {
             if (error is CancellationException) throw error
             NPLogger.w(
@@ -1081,6 +1071,30 @@ class YouTubeMusicPlaybackRepository(
                 "Warm bootstrap failed",
                 error
             )
+        }
+    }
+
+    private fun warmWebPoTokenSessionAsync(reason: String) {
+        val provider = poTokenProvider ?: return
+        inFlightPlayableAudioScope.launch {
+            val startedAtMs = System.currentTimeMillis()
+            runCatching { provider.warmSession() }
+                .onSuccess {
+                    NPLogger.d(
+                        "YouTubeMusicPlayback",
+                        "Warm WebPo session finished in background: reason=$reason, elapsedMs=${playbackElapsedMs(startedAtMs)}"
+                    )
+                }
+                .onFailure { error ->
+                    if (error is CancellationException) {
+                        throw error
+                    }
+                    NPLogger.w(
+                        "YouTubeMusicPlayback",
+                        "Warm WebPo session failed in background: reason=$reason",
+                        error
+                    )
+                }
         }
     }
 
@@ -1647,6 +1661,17 @@ class YouTubeMusicPlaybackRepository(
             .orEmpty()
             .ifBlank {
                 if (existingPoToken.isNullOrBlank()) {
+                    if (!allowBlockingAcquisition) {
+                        NPLogger.d(
+                            "YouTubeMusicPlayback",
+                            "$YOUTUBE_PLAYBACK_DIAG_PREFIX missing_pot_webremix_direct_fast_fallback " +
+                                "videoId=$videoId ${playableAudio.missingPoTokenDiagnosticMetadata(profile.clientName)} " +
+                                "fallbackReason=missing_pot_skip_blocking_verification " +
+                                "fallbackPath=continue_player_clients " +
+                                "branchElapsedMs=${playbackElapsedMs(startedAtMs)}"
+                        )
+                        return null
+                    }
                     val verification = verifyDirectRangeReadable(
                         streamUrl,
                         buildBootstrapRequestAuth(auth, bootstrap)

@@ -28,6 +28,8 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.Buffer
 import java.io.IOException
 import java.util.Locale
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class YouTubeMusicPlaybackRepositoryTest {
@@ -41,13 +43,17 @@ class YouTubeMusicPlaybackRepositoryTest {
 
     private class FakePoTokenProvider(
         private val queuedTokens: MutableList<String?> = mutableListOf(),
-        private val delayMs: Long = 0L
+        private val delayMs: Long = 0L,
+        private val warmSessionDelayMs: Long = 0L
     ) : YouTubePoTokenProvider {
         val forceRefreshCalls = mutableListOf<Boolean>()
         var warmSessionCount = 0
 
         override suspend fun warmSession() {
             warmSessionCount += 1
+            if (warmSessionDelayMs > 0L) {
+                delay(warmSessionDelayMs)
+            }
         }
 
         override suspend fun getWebRemixGvsPoToken(
@@ -66,15 +72,6 @@ class YouTubeMusicPlaybackRepositoryTest {
                 queuedTokens.removeAt(0)
             }
         }
-    }
-
-    private fun firstGoogleVideoRangeProbe(
-        requests: List<okhttp3.Request>
-    ): okhttp3.Request {
-        return requests.firstOrNull { request ->
-            request.url.host == "rr1---sn.googlevideo.com" &&
-                request.header("Range") == "bytes=0-0"
-        } ?: throw AssertionError("missing googlevideo range probe with Range=bytes=0-0")
     }
 
     @Test
@@ -627,6 +624,115 @@ class YouTubeMusicPlaybackRepositoryTest {
         )
         assertEquals(1, bootstrapRequestCount.get())
         assertEquals(1, playerRequestCount.get())
+    }
+
+    @Test
+    fun getBestPlayableAudio_canBypassInflightResolutionForDownloadRefresh() = runBlocking {
+        val playerRequestCount = AtomicInteger(0)
+        val firstPlayerRequestEntered = CountDownLatch(1)
+        val releaseFirstPlayerRequest = CountDownLatch(1)
+        val bootstrapHtml = """
+            <html>
+            <script>
+            ytcfg.set({
+              "INNERTUBE_API_KEY":"test-api-key",
+              "INNERTUBE_CLIENT_VERSION":"1.20260321.00.00",
+              "VISITOR_DATA":"visitor-data-123",
+              "jsUrl":"/s/player/test-player/base.js",
+              "SESSION_INDEX":"7",
+              "remoteHost":"13.114.209.29"
+            });
+            </script>
+            </html>
+        """.trimIndent()
+
+        fun playerResponse(index: Int): String = """
+            {
+              "playabilityStatus":{"status":"OK"},
+              "streamingData":{
+                "adaptiveFormats":[
+                  {
+                    "mimeType":"audio/mp4; codecs=\"mp4a.40.2\"",
+                    "url":"https://example.com/audio-$index.m4a",
+                    "bitrate":128000,
+                    "audioSampleRate":"44100",
+                    "contentLength":"3586688",
+                    "approxDurationMs":"223041"
+                  }
+                ]
+              },
+              "videoDetails":{"lengthSeconds":"223"}
+            }
+        """.trimIndent()
+
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                Interceptor { chain ->
+                    val request = chain.request()
+                    val body = when {
+                        request.url.host == "music.youtube.com" && request.url.encodedPath == "/" -> {
+                            bootstrapHtml to "text/html; charset=utf-8"
+                        }
+
+                        request.url.encodedPath.contains("/youtubei/v1/player") -> {
+                            val requestIndex = playerRequestCount.incrementAndGet()
+                            if (requestIndex == 1) {
+                                firstPlayerRequestEntered.countDown()
+                                assertTrue(releaseFirstPlayerRequest.await(2, TimeUnit.SECONDS))
+                            }
+                            playerResponse(requestIndex) to "application/json; charset=utf-8"
+                        }
+
+                        else -> "{}" to "application/json; charset=utf-8"
+                    }
+                    Response.Builder()
+                        .request(request)
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("OK")
+                        .body(body.first.toResponseBody(body.second.toMediaType()))
+                        .build()
+                }
+            )
+            .build()
+
+        val authBundle = YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value",
+            xGoogAuthUser = "7",
+            userAgent = "RepoUserAgent/1.0"
+        )
+        val playbackRepository = YouTubeMusicPlaybackRepository(
+            okHttpClient = client,
+            authProvider = { authBundle }
+        )
+
+        try {
+            playbackRepository.kickoffPlayableAudioPrefetch(
+                videoId = "download-video",
+                preferredQualityOverride = "very_high",
+                requireDirect = true,
+                preferM4a = true
+            )
+
+            assertTrue(firstPlayerRequestEntered.await(2, TimeUnit.SECONDS))
+
+            val playableAudio = withTimeout(2_000L) {
+                playbackRepository.getBestPlayableAudio(
+                    videoId = "download-video",
+                    preferredQualityOverride = "very_high",
+                    forceRefresh = true,
+                    requireDirect = true,
+                    preferM4a = true,
+                    shareInFlight = false
+                )
+            }
+
+            assertNotNull(playableAudio)
+            assertEquals("https://example.com/audio-2.m4a", playableAudio?.url)
+            assertEquals(2, playerRequestCount.get())
+        } finally {
+            releaseFirstPlayerRequest.countDown()
+        }
     }
 
     @Test
@@ -1232,7 +1338,7 @@ class YouTubeMusicPlaybackRepositoryTest {
     }
 
     @Test
-    fun getBestPlayableAudio_acceptsMissingPotWebRemixDirectWhenRangeVerificationSucceeds() = runBlocking {
+    fun getBestPlayableAudio_skipsMissingPotRangeVerificationOnPlaybackPath() = runBlocking {
         val requests = mutableListOf<okhttp3.Request>()
         val bootstrapHtml = """
             <html>
@@ -1348,26 +1454,23 @@ class YouTubeMusicPlaybackRepositoryTest {
         assertNotNull(playableAudio)
         assertEquals(YouTubePlayableStreamType.DIRECT, playableAudio?.streamType)
         val selectedUrl = playableAudio?.url?.toHttpUrl()
-        assertEquals("rr1---sn.googlevideo.com", selectedUrl?.host)
-        assertEquals("audio-web-remix-missing-pot", selectedUrl?.queryParameter("id"))
-        assertEquals("WEB_REMIX", selectedUrl?.queryParameter("c"))
+        assertEquals("audio-tv-fallback", selectedUrl?.queryParameter("id"))
+        assertEquals("TVHTML5", selectedUrl?.queryParameter("c"))
         assertNull(selectedUrl?.queryParameter("pot"))
-        assertFalse(selectedUrl?.queryParameter("id") == "audio-tv-fallback")
-        assertEquals(1, requests.count { it.url.host == "rr1---sn.googlevideo.com" })
-        val rangeRequest = requests.single { it.url.host == "rr1---sn.googlevideo.com" }
-        assertEquals("bytes=0-0", rangeRequest.header("Range"))
-        assertEquals(1, requests.count { it.url.encodedPath.contains("/youtubei/v1/player") })
-        assertFalse(
+        assertFalse(selectedUrl?.queryParameter("id") == "audio-web-remix-missing-pot")
+        assertFalse(requests.any { it.url.host == "rr1---sn.googlevideo.com" })
+        assertEquals(2, requests.count { it.url.encodedPath.contains("/youtubei/v1/player") })
+        assertTrue(
             requests.any { request ->
                 request.url.encodedPath.contains("/youtubei/v1/player") &&
                     request.header("X-YouTube-Client-Name") == "7"
             }
         )
-        assertTrue(poTokenProvider.forceRefreshCalls.isNotEmpty())
+        assertTrue(poTokenProvider.forceRefreshCalls.any { it })
     }
 
     @Test
-    fun getBestPlayableAudio_fallsBackWhenMissingPotWebRemixRangeVerificationReturnsForbidden() = runBlocking {
+    fun getBestPlayableAudio_fallsBackWithoutRangeProbeWhenMissingPotWebRemixWouldBeForbidden() = runBlocking {
         val requests = mutableListOf<okhttp3.Request>()
         val bootstrapHtml = """
             <html>
@@ -1486,19 +1589,20 @@ class YouTubeMusicPlaybackRepositoryTest {
         assertEquals("audio-tv-fallback", selectedUrl?.queryParameter("id"))
         assertEquals("TVHTML5", selectedUrl?.queryParameter("c"))
         assertFalse(selectedUrl?.queryParameter("id") == "audio-web-remix-forbidden")
-        val rangeRequest = firstGoogleVideoRangeProbe(requests)
-        assertEquals("bytes=0-0", rangeRequest.header("Range"))
-        val rangeProbeIndex = requests.indexOf(rangeRequest)
+        assertFalse(requests.any { it.url.host == "rr1---sn.googlevideo.com" })
+        val webRemixPlayerRequestIndex = requests.indexOfFirst { request ->
+            request.url.encodedPath.contains("/youtubei/v1/player") &&
+                request.header("X-YouTube-Client-Name") == "67"
+        }
         val tvPlayerRequestIndex = requests.indexOfFirst { request ->
             request.url.encodedPath.contains("/youtubei/v1/player") &&
                 request.header("X-YouTube-Client-Name") == "7"
         }
-        assertTrue(rangeProbeIndex >= 0)
-        assertTrue(tvPlayerRequestIndex > rangeProbeIndex)
+        assertTrue(webRemixPlayerRequestIndex in 0 until tvPlayerRequestIndex)
     }
 
     @Test
-    fun getBestPlayableAudio_fallsBackWhenMissingPotWebRemixRangeVerificationReadsZeroBytes() = runBlocking {
+    fun getBestPlayableAudio_fallsBackWithoutRangeProbeWhenMissingPotWebRemixWouldReadZeroBytes() = runBlocking {
         val requests = mutableListOf<okhttp3.Request>()
         val bootstrapHtml = """
             <html>
@@ -1617,15 +1721,16 @@ class YouTubeMusicPlaybackRepositoryTest {
         assertEquals("audio-tv-fallback", selectedUrl?.queryParameter("id"))
         assertEquals("TVHTML5", selectedUrl?.queryParameter("c"))
         assertFalse(selectedUrl?.queryParameter("id") == "audio-web-remix-empty-range")
-        val rangeRequest = firstGoogleVideoRangeProbe(requests)
-        assertEquals("bytes=0-0", rangeRequest.header("Range"))
-        val rangeProbeIndex = requests.indexOf(rangeRequest)
+        assertFalse(requests.any { it.url.host == "rr1---sn.googlevideo.com" })
+        val webRemixPlayerRequestIndex = requests.indexOfFirst { request ->
+            request.url.encodedPath.contains("/youtubei/v1/player") &&
+                request.header("X-YouTube-Client-Name") == "67"
+        }
         val tvPlayerRequestIndex = requests.indexOfFirst { request ->
             request.url.encodedPath.contains("/youtubei/v1/player") &&
                 request.header("X-YouTube-Client-Name") == "7"
         }
-        assertTrue(rangeProbeIndex >= 0)
-        assertTrue(tvPlayerRequestIndex > rangeProbeIndex)
+        assertTrue(webRemixPlayerRequestIndex in 0 until tvPlayerRequestIndex)
     }
 
     @Test
@@ -2466,7 +2571,7 @@ class YouTubeMusicPlaybackRepositoryTest {
     }
 
     @Test
-    fun getBestPlayableAudio_slowWebRemixPoTokenFallsBackToTvDirectWhenRangeVerificationFails() = runBlocking {
+    fun getBestPlayableAudio_slowWebRemixPoTokenFallsBackToTvDirectWithoutRangeProbe() = runBlocking {
         val requests = mutableListOf<okhttp3.Request>()
         val bootstrapHtml = """
             <html>
@@ -2589,25 +2694,21 @@ class YouTubeMusicPlaybackRepositoryTest {
         assertEquals("audio-tv-fast", selectedUrl?.queryParameter("id"))
         assertEquals("TVHTML5", selectedUrl?.queryParameter("c"))
         assertFalse(selectedUrl?.queryParameter("id") == "audio-web-remix-direct")
-        val rangeRequest = firstGoogleVideoRangeProbe(requests)
-        assertEquals("bytes=0-0", rangeRequest.header("Range"))
+        assertFalse(requests.any { it.url.host == "rr1---sn.googlevideo.com" })
         assertFalse(poTokenProvider.forceRefreshCalls.any { it })
         val firstWebRemixRequestIndex = requests.indexOfFirst { request ->
             request.url.encodedPath.contains("/youtubei/v1/player") &&
                 request.header("X-YouTube-Client-Name") == "67"
         }
-        val rangeProbeIndex = requests.indexOf(rangeRequest)
         val firstTvRequestIndex = requests.indexOfFirst { request ->
             request.url.encodedPath.contains("/youtubei/v1/player") &&
                 request.header("X-YouTube-Client-Name") == "7"
         }
         assertTrue(firstWebRemixRequestIndex in 0 until firstTvRequestIndex)
-        assertTrue(rangeProbeIndex > firstWebRemixRequestIndex)
-        assertTrue(firstTvRequestIndex > rangeProbeIndex)
     }
 
     @Test
-    fun getBestPlayableAudio_fallsBackWhenMissingPotWebRemixRangeVerificationThrowsIOException() = runBlocking {
+    fun getBestPlayableAudio_fallsBackWithoutRangeProbeWhenMissingPotWebRemixWouldThrowIOException() = runBlocking {
         val requests = mutableListOf<okhttp3.Request>()
         val bootstrapHtml = """
             <html>
@@ -2720,15 +2821,16 @@ class YouTubeMusicPlaybackRepositoryTest {
         assertEquals("audio-tv-fallback", selectedUrl?.queryParameter("id"))
         assertEquals("TVHTML5", selectedUrl?.queryParameter("c"))
         assertFalse(selectedUrl?.queryParameter("id") == "audio-web-remix-io-failure")
-        val rangeRequest = firstGoogleVideoRangeProbe(requests)
-        assertEquals("bytes=0-0", rangeRequest.header("Range"))
-        val rangeProbeIndex = requests.indexOf(rangeRequest)
+        assertFalse(requests.any { it.url.host == "rr1---sn.googlevideo.com" })
+        val webRemixPlayerRequestIndex = requests.indexOfFirst { request ->
+            request.url.encodedPath.contains("/youtubei/v1/player") &&
+                request.header("X-YouTube-Client-Name") == "67"
+        }
         val tvPlayerRequestIndex = requests.indexOfFirst { request ->
             request.url.encodedPath.contains("/youtubei/v1/player") &&
                 request.header("X-YouTube-Client-Name") == "7"
         }
-        assertTrue(rangeProbeIndex >= 0)
-        assertTrue(tvPlayerRequestIndex > rangeProbeIndex)
+        assertTrue(webRemixPlayerRequestIndex in 0 until tvPlayerRequestIndex)
     }
 
     @Test
@@ -3244,6 +3346,83 @@ class YouTubeMusicPlaybackRepositoryTest {
         }
 
         assertTrue(poSessionWarmed)
+        assertEquals(1, poTokenProvider.warmSessionCount)
+    }
+
+    @Test
+    fun warmBootstrap_doesNotWaitForSlowPoTokenWarmSession() = runBlocking {
+        val bootstrapRequests = AtomicInteger(0)
+        val bootstrapHtml = """
+            <html>
+            <script>
+            ytcfg.set({
+              "INNERTUBE_API_KEY":"test-api-key",
+              "INNERTUBE_CLIENT_VERSION":"1.20260321.00.00",
+              "VISITOR_DATA":"visitor-data-123",
+              "jsUrl":"/s/player/test-player/base.js",
+              "SESSION_INDEX":"0",
+              "remoteHost":"13.114.209.29",
+              "STS":20529,
+              "LOGGED_IN":true,
+              "USER_SESSION_ID":"user-session-123"
+            });
+            </script>
+            </html>
+        """.trimIndent()
+
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                Interceptor { chain ->
+                    val request = chain.request()
+                    val body = when {
+                        request.url.host == "music.youtube.com" && request.url.encodedPath == "/" -> {
+                            bootstrapRequests.incrementAndGet()
+                            bootstrapHtml to "text/html; charset=utf-8"
+                        }
+                        else -> "{}" to "application/json; charset=utf-8"
+                    }
+                    Response.Builder()
+                        .request(request)
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("OK")
+                        .body(body.first.toResponseBody(body.second.toMediaType()))
+                        .build()
+                }
+            )
+            .build()
+
+        val poTokenProvider = FakePoTokenProvider(warmSessionDelayMs = 1_500L)
+        val playbackRepository = YouTubeMusicPlaybackRepository(
+            okHttpClient = client,
+            authProvider = {
+                YouTubeAuthBundle(
+                    cookieHeader = "SAPISID=sap-value; SID=sid-value",
+                    xGoogAuthUser = "0",
+                    userAgent = "RepoUserAgent/1.0"
+                )
+            },
+            poTokenProvider = poTokenProvider
+        )
+
+        val startedAtMs = System.currentTimeMillis()
+        withTimeout(500L) {
+            playbackRepository.warmBootstrap()
+        }
+
+        assertTrue(System.currentTimeMillis() - startedAtMs < 500L)
+        assertEquals(1, bootstrapRequests.get())
+
+        var poSessionStarted = false
+        repeat(100) {
+            if (poTokenProvider.warmSessionCount > 0) {
+                poSessionStarted = true
+                return@repeat
+            }
+            Thread.sleep(20)
+        }
+
+        assertTrue(poSessionStarted)
         assertEquals(1, poTokenProvider.warmSessionCount)
     }
 

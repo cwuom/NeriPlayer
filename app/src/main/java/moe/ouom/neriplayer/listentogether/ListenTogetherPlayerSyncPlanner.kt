@@ -52,6 +52,10 @@ internal fun resolveListenTogetherPlayerSyncPlan(
         context.desiredPlaying -> driftMs > context.playingDriftForceSyncMs
         else -> driftMs > context.pausedDriftForceSyncMs
     }
+    val shouldResumeAfterReload =
+        shouldReloadPlaylist &&
+            context.causeType == "LINK_READY" &&
+            !context.awaitingAuthoritativeStream
     return ListenTogetherPlayerSyncPlan(
         shouldReloadPlaylist = shouldReloadPlaylist,
         effectiveExpectedPositionMs = effectiveExpectedPositionMs,
@@ -60,7 +64,7 @@ internal fun resolveListenTogetherPlayerSyncPlan(
         shouldSeek = shouldSeek,
         shouldIssuePlay = context.desiredPlaying &&
             !context.localPlaying &&
-            !shouldReloadPlaylist &&
+            (!shouldReloadPlaylist || shouldResumeAfterReload) &&
             !context.localPlaybackAlreadyStarting &&
             !context.awaitingAuthoritativeStream,
         shouldForcePauseAfterRemoteLoad = !context.desiredPlaying && shouldReloadPlaylist,

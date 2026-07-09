@@ -401,6 +401,20 @@ internal class DownloadTaskStore(
         progressPublishStates.clear()
     }
 
+    fun clearCompletedTasks() {
+        val removedSongKeys = mutableSetOf<String>()
+        mutate { tasks ->
+            tasks.filterNot { task ->
+                val shouldClear = isDownloadTaskClearable(task)
+                if (shouldClear) {
+                    removedSongKeys += task.song.stableKey()
+                }
+                shouldClear
+            }
+        }
+        removedSongKeys.forEach(::clearProgressPublishState)
+    }
+
     fun isDownloadAttemptCurrent(songKey: String, attemptId: Long?): Boolean {
         if (attemptId == null) {
             return true

@@ -102,6 +102,28 @@ class PlayerManagerYouTubeWarmupTargetTest {
         )
     }
 
+    @Test
+    fun `resolveYouTubeWarmupTargets expands longer queues for playback prefetch`() {
+        val targets = resolveYouTubeWarmupTargets(
+            playlist = (1L..12L).map { index ->
+                testSong(
+                    id = index,
+                    mediaUri = "https://music.youtube.com/watch?v=video$index"
+                )
+            },
+            currentSongIndex = 0,
+            preferredQuality = "very_high"
+        )
+
+        assertTrue(targets.hasWork)
+        assertEquals("video1", targets.currentVideoId)
+        assertEquals("video2", targets.nextVideoId)
+        assertEquals(
+            listOf("video1", "video2", "video3", "video4", "video5"),
+            targets.prefetchVideoIds
+        )
+    }
+
     private fun testSong(id: Long, mediaUri: String): SongItem {
         return SongItem(
             id = id,

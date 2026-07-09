@@ -46,6 +46,12 @@ internal fun isDownloadTaskCancellable(task: DownloadTask?): Boolean {
         task?.status == DownloadStatus.WAITING_NETWORK
 }
 
+internal fun isDownloadTaskClearable(task: DownloadTask): Boolean {
+    return task.status == DownloadStatus.COMPLETED ||
+        task.status == DownloadStatus.CANCELLED ||
+        task.status == DownloadStatus.FAILED
+}
+
 internal fun shouldHideRemoteDownloadAction(
     hasLocalDownload: Boolean,
     task: DownloadTask?

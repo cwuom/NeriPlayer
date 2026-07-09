@@ -135,4 +135,29 @@ class ListenTogetherPlayerSyncPlannerTest {
         assertTrue(plan.shouldReloadPlaylist)
         assertFalse(plan.shouldIssuePlay)
     }
+
+    @Test
+    fun `link ready reload resumes playback after stream arrives`() {
+        val plan = resolveListenTogetherPlayerSyncPlan(
+            ListenTogetherPlayerSyncContext(
+                playbackContextChanged = true,
+                targetIndexChanged = false,
+                desiredPlaying = true,
+                localPlaying = false,
+                localPlaybackAlreadyStarting = false,
+                awaitingAuthoritativeStream = false,
+                expectedPositionMs = 0L,
+                localPositionMs = 0L,
+                ignoreUnexpectedZeroPositionRollback = false,
+                causeType = "LINK_READY",
+                trackSwitchForceSyncMs = 500L,
+                heartbeatDriftForceSyncMs = 5_000L,
+                playingDriftForceSyncMs = 2_500L,
+                pausedDriftForceSyncMs = 800L
+            )
+        )
+
+        assertTrue(plan.shouldReloadPlaylist)
+        assertTrue(plan.shouldIssuePlay)
+    }
 }

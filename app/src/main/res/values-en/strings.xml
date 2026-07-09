@@ -490,9 +490,9 @@
     <string name="downloaded">Downloaded</string>
     <string name="downloaded_songs">Downloaded Songs</string>
     <string name="download_songs_display">Downloaded songs will appear here</string>
-    <string name="download_clear_completed">Clear Completed</string>
+    <string name="download_clear_completed">Clear Finished</string>
     <string name="download_clear_confirm_title">Clear Download Tasks</string>
-    <string name="download_clear_confirm_message">Are you sure you want to clear all completed and canceled download tasks?</string>
+    <string name="download_clear_confirm_message">Are you sure you want to clear all completed, failed, and canceled download tasks?</string>
     <string name="download_confirm">Confirm</string>
     <string name="download_cancel_action">Cancel</string>
     <string name="download_resume">Resume Download</string>

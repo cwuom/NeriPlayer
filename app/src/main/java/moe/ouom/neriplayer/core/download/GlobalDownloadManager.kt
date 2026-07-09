@@ -3839,48 +3839,17 @@ object GlobalDownloadManager {
 
     fun clearCompletedTasks() {
         val appContext = AppContainer.applicationContext
-        val batchJobs = activeBatchDownloadJobs.toList()
-        val persistedQueuedKeys = ManagedDownloadStorage.listPendingQueuedDownloads(appContext)
-            .mapTo(mutableSetOf()) { entry -> entry.stableKey }
-        val downloadingTasks = taskStore.currentTasks().filter { task ->
-            task.status == DownloadStatus.QUEUED ||
-                task.status == DownloadStatus.DOWNLOADING ||
-                task.status == DownloadStatus.WAITING_NETWORK
-        }
-        val activeKeys = downloadingTasks.mapTo(persistedQueuedKeys) { task ->
-            task.song.stableKey()
-        }
-        val cancellationGenerations = activeKeys.associateWith { songKey ->
-            songRequestGenerations[songKey]
-        }
-        invalidateDownloadRequestGenerations(activeKeys)
-        if (activeKeys.isNotEmpty()) {
-            activeKeys.forEach(::markSongCancelled)
-            persistCancelledDownloadKeys(activeKeys)
-        }
-        if (downloadingTasks.isNotEmpty() || batchJobs.isNotEmpty()) {
-            AudioDownloadManager.cancelDownload()
-            batchJobs.forEach { job ->
-                job.cancel(CancellationException("clear download queue"))
-            }
-        }
-
-        taskStore.clearAllTasks()
-        _mobileDataDownloadInterruptionRequest.value = null
-        clearPendingDownloadQueue(appContext)
-        if (activeKeys.isEmpty()) {
-            cancelledSongKeys.clear()
-            clearCancelledDownloadKeys(appContext)
+        val clearableKeys = taskStore.currentTasks()
+            .filter(::isDownloadTaskClearable)
+            .mapTo(linkedSetOf()) { task -> task.song.stableKey() }
+        if (clearableKeys.isEmpty()) {
             return
         }
-        scope.launch {
-            cancelDownloadTasksInBackground(
-                context = appContext,
-                tasks = downloadingTasks,
-                additionalSongKeys = activeKeys,
-                cancellationGenerations = cancellationGenerations
-            )
-        }
+        taskStore.clearCompletedTasks()
+        forgetPendingDownloadQueueEntries(appContext, clearableKeys)
+        ManagedDownloadStorage.removeCancelledDownloadKeys(appContext, clearableKeys)
+        cancelledSongKeys.removeAll(clearableKeys)
+        NPLogger.d(TAG, "清除终态下载任务: count=${clearableKeys.size}")
     }
 
     private suspend fun awaitSongCancellationSettled(

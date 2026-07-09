@@ -22,6 +22,12 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
+private data class PendingTrackFinishedLegacyFallback(
+    val event: ListenTogetherEvent,
+    val createdAtElapsedMs: Long,
+    val attempted: Boolean = false
+)
+
 class ListenTogetherSessionManager(
     private val api: ListenTogetherApi,
     private val webSocketClient: ListenTogetherWebSocketClient
@@ -58,6 +64,8 @@ class ListenTogetherSessionManager(
     private var pendingStateRefreshAfterReconnect = false
     @Volatile
     private var awaitingTrackFinishStableKey: String? = null
+    @Volatile
+    private var pendingTrackFinishedLegacyFallback: PendingTrackFinishedLegacyFallback? = null
 
     private val _sessionState = MutableStateFlow(ListenTogetherSessionState())
     val sessionState: StateFlow<ListenTogetherSessionState> = _sessionState.asStateFlow()
@@ -221,18 +229,23 @@ class ListenTogetherSessionManager(
                         "ack" -> {
                             val error = message.result?.error
                             val applied = message.result?.applied
+                            val appliedCause = applied?.causedBy
+                            val appliedCauseType = appliedCause?.type
+                            if (error.isNullOrBlank() && message.ok != false && appliedCauseType == "TRACK_FINISHED") {
+                                pendingTrackFinishedLegacyFallback = null
+                            }
                             if (
                                 error.isNullOrBlank() &&
                                 applied?.state != null &&
                                 (
-                                            applied.causedBy?.type == "UPDATE_SETTINGS" ||
+                                            appliedCauseType == "UPDATE_SETTINGS" ||
                                         (
-                                            applied.causedBy?.type == "TRACK_FINISHED" &&
-                                                applied.causedBy.userUuid == _sessionState.value.userUuid
+                                            appliedCauseType == "TRACK_FINISHED" &&
+                                                appliedCause?.userUuid == _sessionState.value.userUuid
                                             ) ||
                                         (
-                                            applied.causedBy?.type?.startsWith("REQUEST_") == true &&
-                                                applied.causedBy.userUuid == _sessionState.value.userUuid
+                                            appliedCauseType?.startsWith("REQUEST_") == true &&
+                                                appliedCause?.userUuid == _sessionState.value.userUuid
                                             )
                                     )
                             ) {
@@ -256,6 +269,9 @@ class ListenTogetherSessionManager(
                                 val resolvedError = error
                                     ?: message.message
                                     ?: "control event rejected"
+                                if (trySendTrackFinishedLegacyFallback(resolvedError)) {
+                                    return
+                                }
                                 NPLogger.w(TAG, "websocket.controlResult(): $resolvedError")
                                 _sessionState.value = _sessionState.value.copy(lastError = resolvedError)
                                 if (handleTerminalReconnectFailure(resolvedError, "control_result")) {
@@ -341,6 +357,7 @@ class ListenTogetherSessionManager(
         lastControllerLocalControlAtElapsedMs = 0L
         lastHandledForwardedRequestSequence = 0L
         awaitingTrackFinishStableKey = null
+        pendingTrackFinishedLegacyFallback = null
         PlayerManager.resetListenTogetherSyncPlaybackRate()
         NPLogger.d(TAG, "disconnectWebSocket()")
         webSocketClient.disconnect()
@@ -365,6 +382,7 @@ class ListenTogetherSessionManager(
         lastControllerLocalControlAtElapsedMs = 0L
         lastHandledForwardedRequestSequence = 0L
         awaitingTrackFinishStableKey = null
+        pendingTrackFinishedLegacyFallback = null
         PlayerManager.resetListenTogetherSyncPlaybackRate()
         NPLogger.d(TAG, "leaveRoom(): roomId=${_sessionState.value.roomId}, role=${_sessionState.value.role}")
         webSocketClient.disconnect()
@@ -659,7 +677,11 @@ class ListenTogetherSessionManager(
             currentIndex = resolvedCurrentIndex,
             track = shareableTrack.withStreamUrl(resolvedStreamUrl),
             queue = shareableQueue,
-            state = if (PlayerManager.isPlayingFlow.value) "playing" else "paused",
+            state = resolveListenTogetherLinkReadyState(
+                roomPlaybackState = _roomState.value?.playback?.state,
+                localTransportActive = isLocalPlaybackTransportActive(),
+                localPlaying = PlayerManager.isPlayingFlow.value
+            ),
             positionMs = positionMs.coerceAtLeast(0L),
             requestTrackStableKey = stableKey
         )
@@ -694,7 +716,7 @@ class ListenTogetherSessionManager(
         val resolvedState = when (type.removePrefix("REQUEST_")) {
             "PLAY" -> "playing"
             "PAUSE" -> "paused"
-            else -> if (PlayerManager.isPlayingFlow.value) "playing" else "paused"
+            else -> currentLocalPlaybackStateName()
         }
         return ListenTogetherEvent(
             type = type,
@@ -1007,8 +1029,20 @@ class ListenTogetherSessionManager(
         }
         if (event.type == "TRACK_FINISHED") {
             awaitingTrackFinishStableKey = event.finishedTrackStableKey
+            pendingTrackFinishedLegacyFallback = buildTrackFinishedLegacyFallbackEvent(
+                event = event,
+                isController = isCurrentUserController(),
+                nowMs = System.currentTimeMillis(),
+                eventIdFactory = ::nextEventId
+            )?.let { fallbackEvent ->
+                PendingTrackFinishedLegacyFallback(
+                    event = fallbackEvent,
+                    createdAtElapsedMs = SystemClock.elapsedRealtime()
+                )
+            }
         } else {
             awaitingTrackFinishStableKey = null
+            pendingTrackFinishedLegacyFallback = null
         }
         noteControllerLocalControl(command)
         markOutboundEvent(event.eventId)
@@ -1033,7 +1067,13 @@ class ListenTogetherSessionManager(
             }.takeIf { it >= 0 }
             ?: 0
         val positionMs = command.positionMs ?: PlayerManager.playbackPositionFlow.value.coerceAtLeast(0L)
-        val shouldPlay = PlayerManager.isPlayingFlow.value
+        val localPlaying = PlayerManager.isPlayingFlow.value
+        val shouldPlay = resolveListenTogetherPlaybackCommandShouldPlay(
+            commandType = command.type,
+            commandShouldPlay = command.shouldPlay,
+            localTransportActive = isLocalPlaybackTransportActive(),
+            localPlaying = localPlaying
+        )
         val roomSettings = _roomState.value?.settings
 
         return when (command.type) {
@@ -1213,7 +1253,7 @@ class ListenTogetherSessionManager(
                     continue
                 }
                 val heartbeat = buildHeartbeatEvent(
-                    state = if (PlayerManager.isPlayingFlow.value) "playing" else "paused",
+                    state = currentLocalPlaybackStateName(),
                     positionMs = PlayerManager.playbackPositionFlow.value.coerceAtLeast(0L)
                 )
                 markOutboundEvent(heartbeat.eventId)
@@ -1343,6 +1383,30 @@ class ListenTogetherSessionManager(
                 event = event,
                 reason = "$reason:send_failed"
             )
+        }
+        return sent
+    }
+
+    private fun trySendTrackFinishedLegacyFallback(errorMessage: String): Boolean {
+        if (!isUnsupportedTrackFinishedEventError(errorMessage)) return false
+        val pending = pendingTrackFinishedLegacyFallback ?: return false
+        if (pending.attempted) return false
+        val elapsedMs = SystemClock.elapsedRealtime() - pending.createdAtElapsedMs
+        if (elapsedMs > TRACK_FINISHED_LEGACY_FALLBACK_TTL_MS) {
+            pendingTrackFinishedLegacyFallback = null
+            return false
+        }
+        pendingTrackFinishedLegacyFallback = pending.copy(attempted = true)
+        awaitingTrackFinishStableKey = null
+        markOutboundEvent(pending.event.eventId)
+        noteOutboundSync()
+        NPLogger.w(
+            TAG,
+            "trySendTrackFinishedLegacyFallback(): server rejected TRACK_FINISHED, fallbackType=${pending.event.type}, eventId=${pending.event.eventId}, elapsedMs=$elapsedMs"
+        )
+        val sent = sendControlEventPureWebSocket(pending.event, "track_finished_legacy_fallback")
+        if (sent) {
+            _sessionState.value = _sessionState.value.copy(lastError = null)
         }
         return sent
     }
@@ -1696,7 +1760,7 @@ class ListenTogetherSessionManager(
         val state = _roomState.value ?: return
         if (state.roomStatus == ListenTogetherRoomStatuses.CLOSED) return
         val heartbeat = buildHeartbeatEvent(
-            state = if (PlayerManager.isPlayingFlow.value) "playing" else "paused",
+            state = currentLocalPlaybackStateName(),
             positionMs = PlayerManager.playbackPositionFlow.value.coerceAtLeast(0L)
         )
         if (!force && heartbeat.track == null) return
@@ -1808,6 +1872,19 @@ class ListenTogetherSessionManager(
         publishControllerHeartbeatIfNeeded(force = true, reason = "recovery:${cause.type}")
     }
 
+    private fun isLocalPlaybackTransportActive(): Boolean {
+        return runCatching { PlayerManager.isTransportActive() }
+            .getOrDefault(PlayerManager.isPlayingFlow.value || PlayerManager.playWhenReadyFlow.value)
+    }
+
+    private fun currentLocalPlaybackStateName(): String {
+        return if (isLocalPlaybackTransportActive() || PlayerManager.isPlayingFlow.value) {
+            "playing"
+        } else {
+            "paused"
+        }
+    }
+
     private fun shouldReloadForAuthoritativeStreamUrl(
         targetSong: SongItem,
         currentSong: SongItem?
@@ -1833,6 +1910,7 @@ class ListenTogetherSessionManager(
         private const val HEARTBEAT_IDLE_THRESHOLD_MS = 12_000L
         private const val LINK_REQUEST_THROTTLE_MS = 4_000L
         private const val CONTROLLER_LOCAL_CONTROL_COOLDOWN_MS = 1_200L
+        private const val TRACK_FINISHED_LEGACY_FALLBACK_TTL_MS = 15_000L
         private const val SOFT_SYNC_MIN_DRIFT_MS = 600L
         private const val SOFT_SYNC_FAST_DRIFT_MS = 1_500L
         private const val UNEXPECTED_ZERO_POSITION_ROLLBACK_GUARD_MS = 2_000L
