@@ -131,6 +131,7 @@ fun HyperBackground(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             try {
                 painter.showRuntimeShader(context, v, null, currentIsDark)
+                v.setRenderEffect(painter.renderEffect)
             } catch (_: Throwable) { return@LaunchedEffect }
         }
 
@@ -202,7 +203,7 @@ fun HyperBackground(
                     painter.setReactive(smoothLevel, smoothBeat)
 
                     val w = v.width; val h = v.height
-                    if (w > 0 && h > 0) painter.setResolution(floatArrayOf(w.toFloat(), h.toFloat()))
+                    if (w > 0 && h > 0) painter.setResolution(w.toFloat(), h.toFloat())
                     painter.updateMaterials()
                     v.setRenderEffect(painter.renderEffect)
                 }

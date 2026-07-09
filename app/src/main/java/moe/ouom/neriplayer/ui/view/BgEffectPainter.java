@@ -49,10 +49,12 @@ import moe.ouom.neriplayer.R;
 @RequiresApi(api = Build.VERSION_CODES.TIRAMISU)
 public class BgEffectPainter {
     private static final String TAG = "BgEffectPainter";
+    private static final int POINT_COUNT = 5;
+    private static final int POINT_STRIDE = 3;
     private float[] bound;
     final RuntimeShader mBgRuntimeShader;
     final Context mContext;
-    private float[] uResolution;
+    private final float[] uResolution = {1.0f, 1.0f};
     private float uAnimTime = ((float) System.nanoTime()) / 1.0E9f;
     private float[] uBgBound = {0.0f, 0.4489f, 1.0f, 0.5511f};
     private float[] uPoints = {
@@ -73,6 +75,15 @@ public class BgEffectPainter {
     private float uLightOffset = 0.1f;
     private float uMusicLevel = 0f;
     private float uBeat = 0f;
+    private float uPointOffset = 0.1f;
+    private float uPointRadiusMulti = 1.0f;
+    private float uLevelEase = 0f;
+    private float uBeatEase = 0f;
+    private float uMotionEase = 0f;
+    private float uZoom = 1f;
+    private float uColorPulse = 0f;
+    private final float[] uGlobalMotion = {0f, 0f};
+    private final float[] uAnimatedPoints = new float[POINT_COUNT * POINT_STRIDE];
 
 
     public BgEffectPainter(Context context) {
@@ -80,28 +91,19 @@ public class BgEffectPainter {
         @Language("AGSL") String loadShader = loadShader();
         mBgRuntimeShader = new RuntimeShader(loadShader);
         mBgRuntimeShader.setFloatUniform("uTranslateY", 0.0f);
-        mBgRuntimeShader.setFloatUniform("uPoints", uPoints);
         mBgRuntimeShader.setFloatUniform("uColors", uColors);
-        mBgRuntimeShader.setFloatUniform("uPointOffset", 0.1f);
-        mBgRuntimeShader.setFloatUniform("uPointRadiusMulti", 1.0f);
         mBgRuntimeShader.setFloatUniform("uSaturateOffset", uSaturateOffset);
-        mBgRuntimeShader.setFloatUniform("uShadowColorMulti", 0.3f);
-        mBgRuntimeShader.setFloatUniform("uShadowColorOffset", 0.3f);
-        mBgRuntimeShader.setFloatUniform("uShadowOffset", 0.01f);
         mBgRuntimeShader.setFloatUniform("uBound", uBgBound);
         mBgRuntimeShader.setFloatUniform("uAlphaMulti", 1.0f);
         mBgRuntimeShader.setFloatUniform("uLightOffset", uLightOffset);
-        mBgRuntimeShader.setFloatUniform("uAlphaOffset", 0.5f);
-        mBgRuntimeShader.setFloatUniform("uShadowNoiseScale", 5.0f);
-        mBgRuntimeShader.setFloatUniform("uMusicLevel", uMusicLevel);
-        mBgRuntimeShader.setFloatUniform("uBeat", uBeat);
+        mBgRuntimeShader.setFloatUniform("uResolution", uResolution);
+        updateReactiveUniforms();
+        updateAnimatedPoints();
     }
 
     public void setReactive(float level, float beat) {
         this.uMusicLevel = Math.max(0f, Math.min(1f, level));
         this.uBeat = Math.max(0f, Math.min(1f, beat));
-        mBgRuntimeShader.setFloatUniform("uMusicLevel", this.uMusicLevel);
-        mBgRuntimeShader.setFloatUniform("uBeat", this.uBeat);
     }
 
     public RenderEffect getRenderEffect() {
@@ -110,9 +112,8 @@ public class BgEffectPainter {
 
     public void updateMaterials() {
         mBgRuntimeShader.setFloatUniform("uAnimTime", uAnimTime);
-        mBgRuntimeShader.setFloatUniform("uResolution", uResolution);
-        mBgRuntimeShader.setFloatUniform("uMusicLevel", uMusicLevel);
-        mBgRuntimeShader.setFloatUniform("uBeat", uBeat);
+        updateReactiveUniforms();
+        updateAnimatedPoints();
     }
 
     public void setAnimTime(float f) {
@@ -126,7 +127,7 @@ public class BgEffectPainter {
 
     public void setPoints(float[] fArr) {
         uPoints = fArr;
-        mBgRuntimeShader.setFloatUniform("uPoints", fArr);
+        updateAnimatedPoints();
     }
 
     public void setBound(float[] fArr) {
@@ -185,8 +186,69 @@ public class BgEffectPainter {
     }
 
 
+    public void setResolution(float width, float height) {
+        if (uResolution[0] == width && uResolution[1] == height) {
+            return;
+        }
+        uResolution[0] = width;
+        uResolution[1] = height;
+        mBgRuntimeShader.setFloatUniform("uResolution", uResolution);
+    }
+
     public void setResolution(float[] fArr) {
-        this.uResolution = fArr;
+        if (fArr == null || fArr.length < 2) {
+            return;
+        }
+        setResolution(fArr[0], fArr[1]);
+    }
+
+    private void updateReactiveUniforms() {
+        uLevelEase = smoothStep(0.04f, 0.82f, uMusicLevel);
+        uBeatEase = smoothStep(0.03f, 0.62f, uBeat);
+        uMotionEase = clamp01(0.42f * uLevelEase + 0.82f * uBeatEase);
+        uZoom = 1.0f + 0.024f * uLevelEase + 0.105f * uBeatEase;
+        uColorPulse = clamp01(0.68f * uLevelEase + 0.32f * uBeatEase);
+        uGlobalMotion[0] = uMotionEase * 0.0060f * (float) Math.sin(uAnimTime * 1.9f);
+        uGlobalMotion[1] = uMotionEase * 0.0060f * (float) Math.cos(uAnimTime * 1.6f);
+        mBgRuntimeShader.setFloatUniform("uLevelEase", uLevelEase);
+        mBgRuntimeShader.setFloatUniform("uBeatEase", uBeatEase);
+        mBgRuntimeShader.setFloatUniform("uMotionEase", uMotionEase);
+        mBgRuntimeShader.setFloatUniform("uZoom", uZoom);
+        mBgRuntimeShader.setFloatUniform("uColorPulse", uColorPulse);
+        mBgRuntimeShader.setFloatUniform("uGlobalMotion", uGlobalMotion);
+    }
+
+    private void updateAnimatedPoints() {
+        float pointOffset = uPointOffset + 0.022f * uLevelEase + 0.108f * uBeatEase;
+        float radiusMulti = uPointRadiusMulti * (1.0f + 0.045f * uLevelEase + 0.220f * uBeatEase);
+        for (int i = 0; i < POINT_COUNT; i++) {
+            int offset = i * POINT_STRIDE;
+            float x = uPoints[offset];
+            float y = uPoints[offset + 1];
+            float radius = uPoints[offset + 2] * radiusMulti;
+
+            x += (float) Math.sin(uAnimTime + y) * pointOffset;
+            y += (float) Math.cos(uAnimTime + x) * pointOffset;
+
+            float pushX = x - 0.5f + 1.0e-4f;
+            float pushY = y - 0.5f + 1.0e-4f;
+            float pushLength = (float) Math.sqrt(pushX * pushX + pushY * pushY);
+            float pushScale = pushLength > 0f ? uBeatEase * 0.118f / pushLength : 0f;
+
+            uAnimatedPoints[offset] = x + pushX * pushScale;
+            uAnimatedPoints[offset + 1] = y + pushY * pushScale;
+            uAnimatedPoints[offset + 2] = radius;
+        }
+        mBgRuntimeShader.setFloatUniform("uPoints", uAnimatedPoints);
+    }
+
+    private static float smoothStep(float edge0, float edge1, float value) {
+        float t = clamp01((value - edge0) / (edge1 - edge0));
+        return t * t * (3f - 2f * t);
+    }
+
+    private static float clamp01(float value) {
+        return Math.max(0f, Math.min(1f, value));
     }
 
     private String loadShader() {
