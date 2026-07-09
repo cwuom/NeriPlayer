@@ -1446,10 +1446,16 @@ class YouTubeMusicPlaybackRepositoryTest {
             poTokenProvider = poTokenProvider
         )
 
-        val playableAudio = playbackRepository.getBestPlayableAudio(
-            videoId = "demo-video",
-            forceRefresh = true
-        )
+        val previousLocale = Locale.getDefault()
+        Locale.setDefault(Locale.US)
+        val playableAudio = try {
+            playbackRepository.getBestPlayableAudio(
+                videoId = "demo-video",
+                forceRefresh = true
+            )
+        } finally {
+            Locale.setDefault(previousLocale)
+        }
 
         assertNotNull(playableAudio)
         assertEquals(YouTubePlayableStreamType.DIRECT, playableAudio?.streamType)

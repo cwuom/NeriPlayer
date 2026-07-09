@@ -1429,6 +1429,7 @@ class YouTubeMusicPlaybackRepository(
                             preferM4a = preferM4a
                         )
                         bestMetadata = bestMetadata.mergePreferred(metadata)
+                        var shouldContinueWithNextPlayerClient = false
                         val playableAudio = if (playability.status == "OK") {
                             val webRemixPoTokenPrefetch = if (
                                 profile.clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME &&
@@ -1485,6 +1486,13 @@ class YouTubeMusicPlaybackRepository(
                                 lastError = error as? IOException ?: IOException(error)
                                 null
                             }
+                            shouldContinueWithNextPlayerClient =
+                                shouldSkipRemainingLocalesAfterWebRemixDirectFallback(
+                                    profile = profile,
+                                    parsedDirectPlayableAudio = parsedDirectPlayableAudio,
+                                    directPlayableAudio = directPlayableAudio,
+                                    hlsPlayableAudio = hlsPlayableAudio
+                                )
                             selectPreferredPlayableAudio(
                                 current = hlsPlayableAudio,
                                 incoming = directPlayableAudio,
@@ -1521,6 +1529,13 @@ class YouTubeMusicPlaybackRepository(
                                     metadata = bestMetadata
                                 )
                             }
+                            continue@profileLoop
+                        }
+                        if (playability.status == "OK" && shouldContinueWithNextPlayerClient) {
+                            NPLogger.d(
+                                "YouTubeMusicPlayback",
+                                "skip remaining ${profile.clientName} locales after direct stream fallback: videoId=$videoId, locale=${requestLocale.gl}/${requestLocale.hl}"
+                            )
                             continue@profileLoop
                         }
 
@@ -1617,6 +1632,20 @@ class YouTubeMusicPlaybackRepository(
             return PlayerAudioResolution(metadata = bestMetadata)
         }
         throw lastError ?: IOException("YouTube Music player request failed")
+    }
+
+    private fun shouldSkipRemainingLocalesAfterWebRemixDirectFallback(
+        profile: YouTubePlayerClientProfile,
+        parsedDirectPlayableAudio: YouTubePlayableAudio?,
+        directPlayableAudio: YouTubePlayableAudio?,
+        hlsPlayableAudio: YouTubePlayableAudio?
+    ): Boolean {
+        if (profile.clientName != YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME) return false
+        if (directPlayableAudio != null || hlsPlayableAudio != null) return false
+        if (parsedDirectPlayableAudio?.streamType != YouTubePlayableStreamType.DIRECT) return false
+        val streamUrl = parsedDirectPlayableAudio.url
+        return isYouTubeGoogleVideoStream(streamUrl) &&
+            extractStreamQueryParameter(streamUrl, "pot").isNullOrBlank()
     }
 
     private suspend fun maybeAttachGvsPoToken(
