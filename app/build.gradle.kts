@@ -117,6 +117,10 @@ android {
             // minSdk 28 后 AGP 默认会把 dex 直接存储，恢复 legacy packaging 可显著降低 APK 体积
             useLegacyPackaging = true
         }
+        jniLibs {
+            // 压缩 APK 内的 native so，优先降低 release 下载体积
+            useLegacyPackaging = true
+        }
         resources {
             // Compose instrumentation 依赖 kotlinx.coroutines 的 ServiceLoader，
             // androidTest APK 需要合并同名 service 文件，避免只保留单个实现

@@ -55,8 +55,20 @@ public class BgEffectPainter {
     private float[] uResolution;
     private float uAnimTime = ((float) System.nanoTime()) / 1.0E9f;
     private float[] uBgBound = {0.0f, 0.4489f, 1.0f, 0.5511f};
-    private float[] uPoints = {0.67f, 0.42f, 1.0f, 0.69f, 0.75f, 1.0f, 0.14f, 0.71f, 0.95f, 0.14f, 0.27f, 0.8f};
-    private float[] uColors = {0.57f, 0.76f, 0.98f, 1.0f, 0.98f, 0.85f, 0.68f, 1.0f, 0.98f, 0.75f, 0.93f, 1.0f, 0.73f, 0.7f, 0.98f, 1.0f};
+    private float[] uPoints = {
+            0.52f, 0.46f, 0.92f,
+            0.14f, 0.32f, 0.74f,
+            0.92f, 0.30f, 0.76f,
+            0.26f, 0.88f, 0.80f,
+            0.84f, 0.86f, 0.84f
+    };
+    private float[] uColors = {
+            0.68f, 0.82f, 0.98f, 1.0f,
+            0.96f, 0.85f, 0.74f, 1.0f,
+            0.94f, 0.76f, 0.88f, 1.0f,
+            0.74f, 0.72f, 0.94f, 1.0f,
+            0.80f, 0.88f, 0.92f, 1.0f
+    };
     private float uSaturateOffset = 0.2f;
     private float uLightOffset = 0.1f;
     private float uMusicLevel = 0f;
@@ -70,7 +82,6 @@ public class BgEffectPainter {
         mBgRuntimeShader.setFloatUniform("uTranslateY", 0.0f);
         mBgRuntimeShader.setFloatUniform("uPoints", uPoints);
         mBgRuntimeShader.setFloatUniform("uColors", uColors);
-        mBgRuntimeShader.setFloatUniform("uNoiseScale", 1.5f);
         mBgRuntimeShader.setFloatUniform("uPointOffset", 0.1f);
         mBgRuntimeShader.setFloatUniform("uPointRadiusMulti", 1.0f);
         mBgRuntimeShader.setFloatUniform("uSaturateOffset", uSaturateOffset);
@@ -136,16 +147,40 @@ public class BgEffectPainter {
     public void setPhoneLight(float[] fArr) {
         setLightOffset(0.1f);
         setSaturateOffset(0.2f);
-        setPoints(new float[]{0.67f, 0.42f, 1.0f, 0.69f, 0.75f, 1.0f, 0.14f, 0.71f, 0.95f, 0.14f, 0.27f, 0.8f});
-        setColors(new float[]{0.57f, 0.76f, 0.98f, 1.0f, 0.98f, 0.85f, 0.68f, 1.0f, 0.98f, 0.75f, 0.93f, 1.0f, 0.73f, 0.7f, 0.98f, 1.0f});
+        setPoints(new float[]{
+                0.52f, 0.46f, 0.92f,
+                0.14f, 0.32f, 0.74f,
+                0.92f, 0.30f, 0.76f,
+                0.26f, 0.88f, 0.80f,
+                0.84f, 0.86f, 0.84f
+        });
+        setColors(new float[]{
+                0.68f, 0.82f, 0.98f, 1.0f,
+                0.96f, 0.85f, 0.74f, 1.0f,
+                0.94f, 0.76f, 0.88f, 1.0f,
+                0.74f, 0.72f, 0.94f, 1.0f,
+                0.80f, 0.88f, 0.92f, 1.0f
+        });
         setBound(fArr);
     }
 
     public void setPhoneDark(float[] fArr) {
         setLightOffset(-0.1f);
         setSaturateOffset(0.2f);
-        setPoints(new float[]{0.63f, 0.5f, 0.88f, 0.69f, 0.75f, 0.8f, 0.17f, 0.66f, 0.81f, 0.14f, 0.24f, 0.72f});
-        setColors(new float[]{0.0f, 0.31f, 0.58f, 1.0f, 0.53f, 0.29f, 0.15f, 1.0f, 0.46f, 0.06f, 0.27f, 1.0f, 0.16f, 0.12f, 0.45f, 1.0f});
+        setPoints(new float[]{
+                0.52f, 0.48f, 0.90f,
+                0.14f, 0.32f, 0.72f,
+                0.92f, 0.28f, 0.76f,
+                0.24f, 0.88f, 0.78f,
+                0.86f, 0.86f, 0.82f
+        });
+        setColors(new float[]{
+                0.07f, 0.27f, 0.42f, 1.0f,
+                0.35f, 0.24f, 0.20f, 1.0f,
+                0.34f, 0.12f, 0.26f, 1.0f,
+                0.17f, 0.14f, 0.34f, 1.0f,
+                0.18f, 0.34f, 0.36f, 1.0f
+        });
         setBound(fArr);
     }
 

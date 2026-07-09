@@ -134,8 +134,8 @@ Current positioning:
 - **High-performance GLSL/AGSL fluid background**:
   the Now Playing dynamic background is rendered frame-by-frame by
   `BgEffectPainter`, `RuntimeShader`, and `assets/hyper_background_effect.glsl`.
-  The shader uses `perlin()` and `gradientNoise()` for fluid grain/color motion
-  and reacts to `uMusicLevel / uBeat`; it is not just a Gaussian-blurred cover.
+  The shader combines cover-derived colors, animated color blobs, and lightweight
+  grain while reacting to `uMusicLevel / uBeat`; it is not just a Gaussian-blurred cover.
 - **Apple Music-style lyrics, backed by the playback pipeline**:
   `AppleMusicLyric` and `AdvancedLyricsView` support word/character-timed
   highlighting, translated lyrics, phonetic display, lyric offset, click-to-seek,

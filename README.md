@@ -119,7 +119,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - **GLSL/AGSL 高性能流体背景**：
   播放页动态背景由 `BgEffectPainter` 加载
   `assets/hyper_background_effect.glsl` 并通过 `RuntimeShader` 逐帧渲染；
-  shader 内部使用 `perlin()` 和 `gradientNoise()` 驱动流体颗粒与颜色扰动，
+  shader 内部基于封面取色、动态色块和轻量颗粒噪声生成流体背景，
   并接入 `uMusicLevel / uBeat` 做音频响应，不是简单把封面做高斯模糊。
 - **仿 Apple Music 的深度歌词体验**：
   `AdvancedLyricsView` 支持逐词/逐字高亮、翻译歌词、

@@ -1,17 +1,13 @@
 uniform vec2 uResolution;
 uniform shader uTex;
-uniform shader uTexBitmap;
-uniform vec2 uTexWH;
-//uniform shader uPerlinTex;
 
 // 新版参数
 uniform float uAnimTime;
 uniform vec4 uBound;
 uniform float uTranslateY;
-uniform vec3 uPoints[4];
-uniform vec4 uColors[4];
+uniform vec3 uPoints[5];
+uniform vec4 uColors[5];
 uniform float uAlphaMulti;
-uniform float uNoiseScale;
 uniform float uPointOffset;
 uniform float uPointRadiusMulti;
 uniform float uSaturateOffset;
@@ -88,25 +84,6 @@ vec3 hsv2rgb(vec3 c)
     return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
 }
 
-float hash(vec2 p) {
-    vec3 p3 = fract(vec3(p.xyx) * 0.13);
-    p3 += dot(p3, p3.yzx + 3.333);
-    return fract((p3.x + p3.y) * p3.z);
-}
-
-float perlin(vec2 x) {
-    vec2 i = floor(x);
-    vec2 f = fract(x);
-
-    float a = hash(i);
-    float b = hash(i + vec2(1.0, 0.0));
-    float c = hash(i + vec2(0.0, 1.0));
-    float d = hash(i + vec2(1.0, 1.0));
-
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
-}
-
 vec4 srcOver(vec4 src, vec4 dst){
     return src + dst * (1.0 - src.a);
 }
@@ -139,11 +116,16 @@ vec4 main(vec2 fragCoord){
     vec2 uv = vUv;
     uv -= vec2(0., uTranslateY);
 
-    float zoom = 1.0 + 0.04 * clamp(uMusicLevel, 0., 1.) + 0.10 * uBeat;
+    float levelEase = smoothstep(0.04, 0.82, clamp(uMusicLevel, 0., 1.));
+    float beatEase = smoothstep(0.03, 0.62, clamp(uBeat, 0., 1.));
+    float zoom = 1.0 + 0.016 * levelEase + 0.045 * beatEase;
     vec2  center = vec2(0.5);
     uv = (uv - center) / zoom + center;
 
-    uv += (uBeat * uBeat) * 0.006 * vec2(sin(uAnimTime * 60.0), cos(uAnimTime * 54.0));
+    float beatWave = sin((vUv.y + uAnimTime * 0.12) * 6.2832) *
+        cos((vUv.x - uAnimTime * 0.10) * 6.2832);
+    uv += beatEase * 0.0045 * vec2(beatWave, -beatWave);
+    uv += beatEase * 0.0032 * vec2(sin(uAnimTime * 34.0), cos(uAnimTime * 31.0));
 
     uv.xy -= uBound.xy;
     uv.xy /= uBound.zw;
@@ -151,13 +133,14 @@ vec4 main(vec2 fragCoord){
     vec3 hsv;
     vec4 color = vec4(0.0);
 
-    float noiseValue = perlin(vUv * uNoiseScale + vec2(-uAnimTime, -uAnimTime));
+    float pointOffset = uPointOffset + 0.014 * levelEase + 0.052 * beatEase;
+    float pointRadiusMulti = uPointRadiusMulti * (1.0 + 0.028 * levelEase + 0.095 * beatEase);
 
-    float pointOffset = uPointOffset + 0.02 * uMusicLevel + 0.05 * uBeat;
-    float pointRadiusMulti = uPointRadiusMulti * (1.0 + 0.05 * uMusicLevel + 0.12 * uBeat);
+    vec4 colorAccum = vec4(0.0);
+    float weightSum = 0.0;
 
-    // draw circles
-    for (int i = 0; i < 4; i++){
+    // blend soft color fields
+    for (int i = 0; i < 5; i++){
         vec4 pointColor = uColors[i];
         pointColor.rgb *= pointColor.a;
         vec2 point = uPoints[i].xy;
@@ -165,33 +148,40 @@ vec4 main(vec2 fragCoord){
 
         point.x += sin(uAnimTime + point.y) * pointOffset;
         point.y += cos(uAnimTime + point.x) * pointOffset;
+        vec2 pointPush = point - center;
+        point += normalize(pointPush + vec2(1e-4)) * beatEase * 0.045;
 
-        float d = distance(uv, point);
-        float pct = smoothstep(rad, 0., d);
+        vec2 delta = uv - point;
+        float radiusSq = max(rad * rad, 1e-4);
+        float weight = 1.0 / (1.0 + dot(delta, delta) / radiusSq * 7.2);
+        weight *= weight;
 
-        color.rgb = mix(color.rgb, pointColor.rgb, pct);
-        color.a   = mix(color.a,   pointColor.a,   pct);
+        colorAccum += pointColor * weight;
+        weightSum += weight;
     }
 
-    float oppositeNoise = smoothstep(0., 1., noiseValue);
+    color = colorAccum / max(weightSum, 1e-5);
     color.rgb /= max(color.a, 1e-5);
     hsv = rgb2hsv(color.rgb);
 
-    // 饱和与亮度，level/beat 驱动
-    hsv.y = clamp(hsv.y + (0.12 * uMusicLevel + 0.30 * uBeat) * uSaturateOffset, 0.0, 1.0);
+    // 颜色响应跟随低通后的能量，保留律动但避开高频闪烁
+    float colorPulse = clamp(0.68 * levelEase + 0.32 * beatEase, 0.0, 1.0);
+    hsv.y = clamp(hsv.y * (1.28 + 0.10 * colorPulse) + 0.055 * colorPulse * uSaturateOffset, 0.0, 1.0);
+    hsv.z = clamp((hsv.z - 0.5) * (1.26 + 0.06 * colorPulse) + 0.5 + 0.018 * colorPulse, 0.0, 1.0);
     color.rgb = hsv2rgb(hsv);
-    color.rgb += (0.05 * uMusicLevel + 0.14 * uBeat) * uLightOffset;
+    color.rgb += 0.010 * colorPulse * uLightOffset;
+    color.rgb *= mix(0.68, 1.10, smoothstep(0.10, 0.92, vUv.y));
+    color.rgb = clamp(color.rgb, 0.0, 1.0);
 
-    // 透明度，轻度呼吸
+    // 透明度保持稳定，避免音频脉冲造成整屏闪烁
     color.a = clamp(color.a, 0., 1.);
-    float alphaMod = clamp(1.0 - 0.18 * uMusicLevel - 0.12 * uBeat, 0.55, 1.0);
-    color.a *= uAlphaMulti * alphaMod;
+    color.a *= uAlphaMulti;
 
-    vec4 texColor = uTexBitmap.eval(vec2(vUv.x, 1.0 - vUv.y)*uTexWH);
     vec4 uiColor  = uTex.eval(vec2(vUv.x, 1.0 - vUv.y)*uResolution);
 
     // 颗粒
-    color += (10.0 / 255.0) * gradientNoise(fragCoord.xy) - (5.0 / 255.0);
+    float dither = (gradientNoise(fragCoord.xy) - 0.5) * (5.0 / 255.0);
+    color.rgb = clamp(color.rgb + dither, 0.0, 1.0);
 
     vec4 fragColor = (uiColor.a < 0.01) ? color : uiColor;
     return vec4(fragColor.rgb*fragColor.a, fragColor.a);
