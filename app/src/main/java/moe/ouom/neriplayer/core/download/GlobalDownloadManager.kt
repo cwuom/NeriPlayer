@@ -3507,7 +3507,12 @@ object GlobalDownloadManager {
         }
     }
 
+    fun clearAllDownloadTasks() {
+        cancelAllDownloadTasks()
+    }
+
     fun cancelAllDownloadTasks() {
+        clearCompletedTasks()
         val appContext = AppContainer.applicationContext
         val batchJobs = activeBatchDownloadJobs.toList()
         val activeTasks = taskStore.currentTasks().filter { task ->

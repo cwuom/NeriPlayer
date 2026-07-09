@@ -92,7 +92,7 @@ fun DownloadProgressScreen(
                 TextButton(
                     onClick = {
                         context.performHapticFeedback()
-                        GlobalDownloadManager.clearCompletedTasks()
+                        GlobalDownloadManager.clearAllDownloadTasks()
                         showClearDialog = false
                     }
                 ) {

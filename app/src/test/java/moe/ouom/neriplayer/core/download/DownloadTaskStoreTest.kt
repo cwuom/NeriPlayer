@@ -257,6 +257,41 @@ class DownloadTaskStoreTest {
         }
     }
 
+    @Test
+    fun `clearAllTasks removes every task status`() {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val store = DownloadTaskStore(
+                scope = scope,
+                progressEmitIntervalNs = Long.MAX_VALUE
+            )
+            val songs = (1L..6L).map { id -> song(id) }
+            val attemptIds = store.prepareDownloadTasks(songs, DownloadStatus.QUEUED)
+            val statuses = listOf(
+                DownloadStatus.QUEUED,
+                DownloadStatus.DOWNLOADING,
+                DownloadStatus.WAITING_NETWORK,
+                DownloadStatus.FAILED,
+                DownloadStatus.CANCELLED,
+                DownloadStatus.COMPLETED
+            )
+
+            songs.zip(statuses).forEach { (song, status) ->
+                store.updateTaskStatus(
+                    song.stableKey(),
+                    status,
+                    expectedAttemptId = attemptIds.getValue(song.stableKey())
+                )
+            }
+
+            store.clearAllTasks()
+
+            assertTrue(store.currentTasks().isEmpty())
+        } finally {
+            scope.cancel()
+        }
+    }
+
     private fun song(
         id: Long,
         name: String = "Song $id"
