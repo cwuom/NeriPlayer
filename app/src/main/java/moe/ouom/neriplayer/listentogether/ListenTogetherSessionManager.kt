@@ -540,7 +540,12 @@ class ListenTogetherSessionManager(
         val desiredPlaying = state.playback.state == "playing"
         val localPlaying = PlayerManager.isPlayingFlow.value
         val localPlaybackAlreadyStarting = PlayerManager.playWhenReadyFlow.value
-        val awaitingAuthoritativeStream = PlayerManager.shouldWaitForListenTogetherAuthoritativeStream(targetSong)
+        val awaitingAuthoritativeStream = shouldWaitForListenTogetherAuthoritativeStreamPlayback(
+            playerWaitingForAuthoritativeStream = PlayerManager.shouldWaitForListenTogetherAuthoritativeStream(targetSong),
+            localTrackMatchesTarget = currentSong?.sameTrackAs(targetSong) == true,
+            localTrackStreamUrl = currentSong?.streamUrl,
+            localResolvedStreamUrl = PlayerManager.currentMediaUrlFlow.value
+        )
         val ignoreUnexpectedZeroPositionRollback = shouldIgnoreUnexpectedZeroPositionRollback(
             causeType = causeType,
             desiredPlaying = desiredPlaying,
@@ -2326,6 +2331,13 @@ class ListenTogetherSessionManager(
             )
             return
         }
+        if (!force && hasUsableLocalDirectStreamForListenTogetherTrack(targetTrack)) {
+            NPLogger.d(
+                TAG,
+                "maybeRequestControllerLink(): skip because listener already has direct stream, stableKey=${targetTrack.stableKey}, causeType=$causeType"
+            )
+            return
+        }
         val stableKey = targetTrack.stableKey
         if (stableKey.isBlank()) return
         val nowElapsedMs = SystemClock.elapsedRealtime()
@@ -2410,10 +2422,18 @@ class ListenTogetherSessionManager(
         if (isCurrentUserController()) return false
         if (!_roomState.value?.settings.normalized().shareAudioLinks) return false
         if (currentSong?.sameTrackAs(targetSong) != true) return false
-        val remoteStreamUrl = normalizedDirectStreamUrl(targetSong.streamUrl) ?: return false
-        val localTrackStreamUrl = normalizedDirectStreamUrl(currentSong.streamUrl)
-        val localResolvedStreamUrl = normalizedDirectStreamUrl(PlayerManager.currentMediaUrlFlow.value)
-        return remoteStreamUrl != localTrackStreamUrl && remoteStreamUrl != localResolvedStreamUrl
+        return shouldReloadListenTogetherAuthoritativeStream(
+            remoteStreamUrl = targetSong.streamUrl,
+            localTrackStreamUrl = currentSong.streamUrl,
+            localResolvedStreamUrl = PlayerManager.currentMediaUrlFlow.value
+        )
+    }
+
+    private fun hasUsableLocalDirectStreamForListenTogetherTrack(track: ListenTogetherTrack): Boolean {
+        val currentSong = PlayerManager.currentSongFlow.value ?: return false
+        if (!currentSong.sameTrackAs(track.toSongItem())) return false
+        return normalizedDirectStreamUrl(currentSong.streamUrl) != null ||
+            normalizedDirectStreamUrl(PlayerManager.currentMediaUrlFlow.value) != null
     }
 
     companion object {
@@ -2629,6 +2649,28 @@ private fun normalizedDirectStreamUrl(value: String?): String? {
     } else {
         null
     }
+}
+
+internal fun shouldReloadListenTogetherAuthoritativeStream(
+    remoteStreamUrl: String?,
+    localTrackStreamUrl: String?,
+    localResolvedStreamUrl: String?
+): Boolean {
+    val remote = normalizedDirectStreamUrl(remoteStreamUrl) ?: return false
+    if (normalizedDirectStreamUrl(localTrackStreamUrl) != null) return false
+    return remote != normalizedDirectStreamUrl(localResolvedStreamUrl)
+}
+
+internal fun shouldWaitForListenTogetherAuthoritativeStreamPlayback(
+    playerWaitingForAuthoritativeStream: Boolean,
+    localTrackMatchesTarget: Boolean,
+    localTrackStreamUrl: String?,
+    localResolvedStreamUrl: String?
+): Boolean {
+    if (!playerWaitingForAuthoritativeStream) return false
+    if (!localTrackMatchesTarget) return true
+    return normalizedDirectStreamUrl(localTrackStreamUrl) == null &&
+        normalizedDirectStreamUrl(localResolvedStreamUrl) == null
 }
 
 internal fun cancelListenTogetherBackgroundJobs(vararg jobs: Job?) {

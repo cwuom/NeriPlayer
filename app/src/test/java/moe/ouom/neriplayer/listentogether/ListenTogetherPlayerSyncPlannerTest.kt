@@ -160,4 +160,87 @@ class ListenTogetherPlayerSyncPlannerTest {
         assertTrue(plan.shouldReloadPlaylist)
         assertTrue(plan.shouldIssuePlay)
     }
+
+    @Test
+    fun `authoritative stream reload is skipped after listener already has a direct stream`() {
+        assertFalse(
+            shouldReloadListenTogetherAuthoritativeStream(
+                remoteStreamUrl = "https://upos-sz-mirrorcos.bilivideo.com/audio.m4s?deadline=200",
+                localTrackStreamUrl = "https://upos-sz-mirrorcos.bilivideo.com/audio.m4s?deadline=100",
+                localResolvedStreamUrl = "https://upos-sz-mirrorcos.bilivideo.com/audio.m4s?deadline=100"
+            )
+        )
+    }
+
+    @Test
+    fun `authoritative stream reload is needed before listener receives a direct stream`() {
+        assertTrue(
+            shouldReloadListenTogetherAuthoritativeStream(
+                remoteStreamUrl = "https://upos-sz-mirrorcos.bilivideo.com/audio.m4s?deadline=200",
+                localTrackStreamUrl = null,
+                localResolvedStreamUrl = null
+            )
+        )
+    }
+
+    @Test
+    fun `authoritative stream reload is skipped when resolved stream already matches`() {
+        val url = "https://upos-sz-mirrorcos.bilivideo.com/audio.m4s?deadline=200"
+
+        assertFalse(
+            shouldReloadListenTogetherAuthoritativeStream(
+                remoteStreamUrl = url,
+                localTrackStreamUrl = null,
+                localResolvedStreamUrl = url
+            )
+        )
+    }
+
+    @Test
+    fun `authoritative stream wait is cleared after listener has resolved media url`() {
+        assertFalse(
+            shouldWaitForListenTogetherAuthoritativeStreamPlayback(
+                playerWaitingForAuthoritativeStream = true,
+                localTrackMatchesTarget = true,
+                localTrackStreamUrl = null,
+                localResolvedStreamUrl = "https://upos-sz-mirrorcos.bilivideo.com/audio.m4s?deadline=100"
+            )
+        )
+    }
+
+    @Test
+    fun `authoritative stream wait is cleared after listener has track stream url`() {
+        assertFalse(
+            shouldWaitForListenTogetherAuthoritativeStreamPlayback(
+                playerWaitingForAuthoritativeStream = true,
+                localTrackMatchesTarget = true,
+                localTrackStreamUrl = "https://upos-sz-mirrorcos.bilivideo.com/audio.m4s?deadline=100",
+                localResolvedStreamUrl = null
+            )
+        )
+    }
+
+    @Test
+    fun `authoritative stream wait stays active before listener has any direct url`() {
+        assertTrue(
+            shouldWaitForListenTogetherAuthoritativeStreamPlayback(
+                playerWaitingForAuthoritativeStream = true,
+                localTrackMatchesTarget = true,
+                localTrackStreamUrl = null,
+                localResolvedStreamUrl = null
+            )
+        )
+    }
+
+    @Test
+    fun `authoritative stream wait stays active when local url belongs to another track`() {
+        assertTrue(
+            shouldWaitForListenTogetherAuthoritativeStreamPlayback(
+                playerWaitingForAuthoritativeStream = true,
+                localTrackMatchesTarget = false,
+                localTrackStreamUrl = null,
+                localResolvedStreamUrl = "https://upos-sz-mirrorcos.bilivideo.com/audio.m4s?deadline=100"
+            )
+        )
+    }
 }
