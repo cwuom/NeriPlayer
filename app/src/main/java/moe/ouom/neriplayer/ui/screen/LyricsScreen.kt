@@ -161,6 +161,7 @@ fun LyricsScreen(
     onOpenCurrentNeteaseArtist: () -> Unit = {},
     onNavigateBack: () -> Unit,
     onSeekTo: (Long) -> Unit,
+    progressSeekEnabled: Boolean = true,
     advancedLyricsEnabled: Boolean = true,
     translatedLyrics: List<LyricEntry>? = null,
     phoneticLyrics: List<LyricEntry> = emptyList(),
@@ -600,6 +601,7 @@ fun LyricsScreen(
                     lyricOffsetMs = lyricOffsetMs,
                     isPlaying = isPlaying,
                     onSeekTo = onSeekTo,
+                    seekEnabled = progressSeekEnabled,
                     onPreviewPositionChange = { previewPositionOverrideMs = it },
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -1153,6 +1155,7 @@ private fun LyricsProgressSection(
     lyricOffsetMs: Long,
     isPlaying: Boolean,
     onSeekTo: (Long) -> Unit,
+    seekEnabled: Boolean,
     onPreviewPositionChange: (Long?) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1251,10 +1254,12 @@ private fun LyricsProgressSection(
             },
             onValueChangeCanceled = {
                 sliderPosition = currentPosition.toFloat()
+                pendingSeekPreviewPositionMs = null
                 isUserDraggingSlider = false
                 lyricSeekHaptic.onSeekEnd()
             },
-            isPlaying = isPlaying
+            isPlaying = isPlaying,
+            enabled = seekEnabled
         )
 
         Text(

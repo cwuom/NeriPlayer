@@ -1388,7 +1388,7 @@ class YouTubeMusicPlaybackRepository(
 
         repeat(PLAYER_REQUEST_MAX_ATTEMPTS) { attempt ->
             val poTokenForceRefresh = forceRefresh || attempt > 0
-            val allowBlockingWebRemixPoToken = requireDirect || attempt > 0
+            val allowBlockingWebRemixPoToken = requireDirect
             val cipherResolver = createStreamingCipherResolver(
                 videoId = videoId,
                 playerJsUrl = bootstrap.playerJsUrl

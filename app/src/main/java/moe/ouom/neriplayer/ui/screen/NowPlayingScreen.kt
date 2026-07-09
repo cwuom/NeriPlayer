@@ -407,6 +407,17 @@ fun NowPlayingScreen(
     val sleepTimerState by PlayerManager.sleepTimerManager.timerState.collectAsState()
     val currentPlaybackAudioInfo by PlayerManager.currentPlaybackAudioInfoFlow.collectAsState()
     val settingsRepo = remember { AppContainer.settingsRepo }
+    val listenTogetherSessionManager = remember { AppContainer.listenTogetherSessionManager }
+    val listenTogetherSessionState by listenTogetherSessionManager.sessionState.collectAsState()
+    val listenTogetherRoomState by listenTogetherSessionManager.roomState.collectAsState()
+    val playbackProgressSeekEnabled = resolveListenTogetherProgressSeekEnabled(
+        sessionUserUuid = listenTogetherSessionState.userUuid,
+        fallbackRole = listenTogetherSessionState.role,
+        roomId = listenTogetherSessionState.roomId,
+        controllerUserUuid = listenTogetherRoomState?.controllerUserUuid,
+        controllerUserId = listenTogetherRoomState?.controllerUserId,
+        allowMemberControl = listenTogetherRoomState?.settings?.allowMemberControl
+    )
     val showProgressQualitySwitch by settingsRepo
         .nowPlayingProgressShowQualitySwitchFlow
         .collectAsState(initial = true)
@@ -892,6 +903,7 @@ fun NowPlayingScreen(
                             onExitNowPlaying = onNavigateUp,
                             onNavigateBack = { onShowLyricsScreenChange(false) },
                             onSeekTo = { position -> PlayerManager.seekTo(position) },
+                            progressSeekEnabled = playbackProgressSeekEnabled,
                             advancedLyricsEnabled = advancedLyricsEnabled,
                             translatedLyrics = translatedLyrics,
                             phoneticLyrics = phoneticLyrics,
@@ -1252,6 +1264,7 @@ fun NowPlayingScreen(
                         lyricOffsetMs = totalOffset,
                         isPlaying = isPlaying,
                         progressInfoSegments = progressInfoSegments,
+                        seekEnabled = playbackProgressSeekEnabled,
                         useWideLandscapeLayout = useWideLandscapeLayout,
                         onPreviewPositionChange = { previewPositionOverrideMs = it },
                         modifier = Modifier
@@ -3582,6 +3595,7 @@ private fun NowPlayingProgressSection(
     lyricOffsetMs: Long,
     isPlaying: Boolean,
     progressInfoSegments: List<NowPlayingProgressInfoSegment>,
+    seekEnabled: Boolean,
     useWideLandscapeLayout: Boolean,
     onPreviewPositionChange: (Long?) -> Unit,
     modifier: Modifier = Modifier
@@ -3684,10 +3698,12 @@ private fun NowPlayingProgressSection(
                 },
                 onValueChangeCanceled = {
                     sliderPosition = currentPosition.toFloat()
+                    pendingSeekPreviewPositionMs = null
                     isUserDraggingSlider = false
                     lyricSeekHaptic.onSeekEnd()
                 },
-                isPlaying = isPlaying
+                isPlaying = isPlaying,
+                enabled = seekEnabled
             )
 
             Text(

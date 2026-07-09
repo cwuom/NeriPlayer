@@ -36,10 +36,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -62,11 +64,12 @@ fun WaveformSlider(
     isPlaying: Boolean,
     onValueChangeStarted: (Float) -> Unit = {},
     onValueChangeCanceled: () -> Unit = {},
+    enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
-    val activeColor = MaterialTheme.colorScheme.primary
-    val inactiveColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-    val thumbColor = MaterialTheme.colorScheme.primary
+    val activeColor = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else 0.55f)
+    val inactiveColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 0.3f else 0.18f)
+    val thumbColor = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else 0.55f)
 
     val infiniteTransition = rememberInfiniteTransition(label = "wave_phase")
     val phase by infiniteTransition.animateFloat(
@@ -80,49 +83,61 @@ fun WaveformSlider(
     )
 
     var isDragging by remember { mutableStateOf(false) }
+    val latestOnValueChangeCanceled by rememberUpdatedState(onValueChangeCanceled)
+    LaunchedEffect(enabled, isDragging) {
+        if (!enabled && isDragging) {
+            isDragging = false
+            latestOnValueChangeCanceled()
+        }
+    }
 
     val animatedAmplitude by animateFloatAsState(
-        targetValue = if (isPlaying && !isDragging) WAVE_AMPLITUDE else 0f,
+        targetValue = if (enabled && isPlaying && !isDragging) WAVE_AMPLITUDE else 0f,
         animationSpec = tween(durationMillis = 500, easing = LinearEasing),
         label = "amplitude_animation"
     )
 
     var canvasWidth by remember { mutableFloatStateOf(0f) }
+    val dragModifier = if (enabled) {
+        Modifier.pointerInput(
+            onValueChange,
+            onValueChangeFinished,
+            onValueChangeStarted,
+            onValueChangeCanceled
+        ) {
+            detectDragGestures(
+                onDragStart = { offset ->
+                    isDragging = true
+                    if (canvasWidth > 0f) {
+                        val startValue = (offset.x / canvasWidth).coerceIn(0f, 1f)
+                        onValueChangeStarted(startValue)
+                    }
+                },
+                onDragEnd = {
+                    isDragging = false
+                    onValueChangeFinished()
+                },
+                onDragCancel = {
+                    isDragging = false
+                    onValueChangeCanceled()
+                },
+                onDrag = { change, _ ->
+                    if (canvasWidth > 0) {
+                        val newValue = (change.position.x / canvasWidth).coerceIn(0f, 1f)
+                        onValueChange(newValue)
+                    }
+                }
+            )
+        }
+    } else {
+        Modifier
+    }
 
     Canvas(
         modifier = modifier
             .fillMaxWidth()
             .height(48.dp)
-            .pointerInput(
-                onValueChange,
-                onValueChangeFinished,
-                onValueChangeStarted,
-                onValueChangeCanceled
-            ) {
-                detectDragGestures(
-                    onDragStart = { offset ->
-                        isDragging = true
-                        if (canvasWidth > 0f) {
-                            val startValue = (offset.x / canvasWidth).coerceIn(0f, 1f)
-                            onValueChangeStarted(startValue)
-                        }
-                    },
-                    onDragEnd = {
-                        isDragging = false
-                        onValueChangeFinished()
-                    },
-                    onDragCancel = {
-                        isDragging = false
-                        onValueChangeCanceled()
-                    },
-                    onDrag = { change, _ ->
-                        if (canvasWidth > 0) {
-                            val newValue = (change.position.x / canvasWidth).coerceIn(0f, 1f)
-                            onValueChange(newValue)
-                        }
-                    }
-                )
-            }
+            .then(dragModifier)
     ) {
         canvasWidth = size.width
         val centerY = size.height / 2
