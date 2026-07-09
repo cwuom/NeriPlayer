@@ -302,23 +302,23 @@ private fun softenPaletteColor(
     ColorUtils.colorToHSL(blendedColor, hsl)
 
     val saturationScale = when (role) {
-        DynamicBackgroundColorRole.Base -> 0.96f
-        DynamicBackgroundColorRole.Accent -> 1.30f
-        DynamicBackgroundColorRole.Light -> 1.10f
-        DynamicBackgroundColorRole.Dark -> 0.82f
-        DynamicBackgroundColorRole.Bridge -> 1.02f
+        DynamicBackgroundColorRole.Base -> 0.94f
+        DynamicBackgroundColorRole.Accent -> 1.14f
+        DynamicBackgroundColorRole.Light -> 1.02f
+        DynamicBackgroundColorRole.Dark -> 0.76f
+        DynamicBackgroundColorRole.Bridge -> 0.96f
     }
     val saturationMax = if (role == DynamicBackgroundColorRole.Accent) {
-        if (isDark) 0.82f else 0.72f
-    } else if (isDark) 0.72f else 0.62f
+        if (isDark) 0.70f else 0.64f
+    } else if (isDark) 0.64f else 0.56f
     val saturationFloor = if (hsl[1] < 0.05f) {
-        if (role == DynamicBackgroundColorRole.Accent) 0.34f else 0f
+        if (role == DynamicBackgroundColorRole.Accent) 0.30f else 0f
     } else if (role == DynamicBackgroundColorRole.Dark) {
-        0.12f
+        0.10f
     } else if (role == DynamicBackgroundColorRole.Accent) {
-        0.36f
+        0.30f
     } else {
-        0.16f
+        0.14f
     }
     hsl[1] = (hsl[1] * saturationScale).coerceIn(saturationFloor, saturationMax)
 

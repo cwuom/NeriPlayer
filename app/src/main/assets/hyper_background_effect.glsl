@@ -171,7 +171,9 @@ vec4 main(vec2 fragCoord){
 
     // 颜色响应跟随低通后的能量，保留律动但避开高频闪烁
     float colorPulse = clamp(0.68 * levelEase + 0.32 * beatEase, 0.0, 1.0);
-    hsv.y = clamp(hsv.y * (1.28 + 0.10 * colorPulse) + 0.055 * colorPulse * uSaturateOffset, 0.0, 1.0);
+    float boostedSaturation = hsv.y * (1.16 + 0.06 * colorPulse) + 0.030 * colorPulse * uSaturateOffset;
+    float darkSaturationLimit = mix(0.66, 0.82, smoothstep(0.34, 0.74, hsv.z));
+    hsv.y = clamp(min(boostedSaturation, darkSaturationLimit), 0.0, 1.0);
     hsv.z = clamp((hsv.z - 0.5) * (1.26 + 0.06 * colorPulse) + 0.5 + 0.018 * colorPulse, 0.0, 1.0);
     color.rgb = hsv2rgb(hsv);
     color.rgb += 0.010 * colorPulse * uLightOffset;
