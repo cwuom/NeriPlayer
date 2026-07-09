@@ -191,6 +191,7 @@ import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherDebugScreen
 import moe.ouom.neriplayer.ui.screen.debug.LogListScreen
 import moe.ouom.neriplayer.ui.screen.debug.NeteaseApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.debug.SearchApiProbeScreen
+import moe.ouom.neriplayer.ui.screen.debug.UsbExclusiveDebugScreen
 import moe.ouom.neriplayer.ui.screen.debug.YouTubeApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.artist.NeteaseArtistDetailScreen
 import moe.ouom.neriplayer.ui.screen.host.ExploreHostScreen
@@ -2197,6 +2198,9 @@ private fun NeriAppContent(
                                         onOpenListenTogetherDebug = {
                                             navController.navigate(Destinations.DebugListenTogether.route)
                                         },
+                                        onOpenUsbExclusiveDebug = {
+                                            navController.navigate(Destinations.DebugUsbExclusive.route)
+                                        },
                                         onOpenYouTubeDebug = {
                                             navController.navigate(Destinations.DebugYouTube.route)
                                         },
@@ -2259,6 +2263,7 @@ private fun NeriAppContent(
                                     )
                                 }
                                 composable(Destinations.DebugListenTogether.route) { ListenTogetherDebugScreen() }
+                                composable(Destinations.DebugUsbExclusive.route) { UsbExclusiveDebugScreen() }
                                 composable(Destinations.DebugYouTube.route) { YouTubeApiProbeScreen() }
                                 composable(Destinations.DebugBili.route) { BiliApiProbeScreen() }
                                 composable(Destinations.DebugNetease.route) { NeteaseApiProbeScreen() }

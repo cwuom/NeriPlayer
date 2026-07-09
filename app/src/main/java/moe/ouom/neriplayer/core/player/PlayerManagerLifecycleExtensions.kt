@@ -42,6 +42,8 @@ import moe.ouom.neriplayer.core.player.audio.isHeadsetLikeOutput
 import moe.ouom.neriplayer.core.player.audio.isUsbOutputType
 import moe.ouom.neriplayer.core.player.audio.isWiredOutputType
 import moe.ouom.neriplayer.core.player.audio.requiresDisconnectConfirmation
+import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnostics
+import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDebugLogger
 import moe.ouom.neriplayer.core.player.debug.playWhenReadyChangeReasonName
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.model.AudioDevice
@@ -676,7 +678,12 @@ internal fun PlayerManager.initializeImpl(
         }
         ioScope.launch {
             settingsRepo.usbExclusivePlaybackFlow.collect { enabled ->
+                val changed = usbExclusivePlaybackEnabled != enabled
                 usbExclusivePlaybackEnabled = enabled
+                NPLogger.d(
+                    "NERI-UsbExclusive",
+                    "settingsChanged(): enabled=$enabled, changed=$changed"
+                )
                 applyUsbExclusivePlaybackPolicy()
             }
         }
@@ -854,11 +861,21 @@ private fun PlayerManager.setupAudioDeviceCallback() {
         "NERI-PlayerManager",
         "setupAudioDeviceCallback(): initialDevice=${_currentAudioDevice.value?.type}:${_currentAudioDevice.value?.name}"
     )
+    UsbExclusiveDebugLogger.logSnapshot(
+        context = application,
+        audioManager = audioManager,
+        reason = "setup_initial",
+        enabled = usbExclusivePlaybackEnabled
+    )
     val deviceCallback = object : AudioDeviceCallback() {
         override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
             NPLogger.d(
                 "NERI-PlayerManager",
                 "audioDevicesAdded(): count=${addedDevices?.size ?: 0}, devices=${addedDevices?.joinToString { "${it.type}:${it.productName}" }}"
+            )
+            UsbExclusiveDebugLogger.logAudioDeviceCallback(
+                reason = "audioDevicesAdded",
+                devices = addedDevices
             )
             handleDeviceChange(audioManager)
         }
@@ -867,6 +884,10 @@ private fun PlayerManager.setupAudioDeviceCallback() {
             NPLogger.d(
                 "NERI-PlayerManager",
                 "audioDevicesRemoved(): count=${removedDevices?.size ?: 0}, devices=${removedDevices?.joinToString { "${it.type}:${it.productName}" }}"
+            )
+            UsbExclusiveDebugLogger.logAudioDeviceCallback(
+                reason = "audioDevicesRemoved",
+                devices = removedDevices
             )
             handleDeviceChange(audioManager)
         }
@@ -921,6 +942,12 @@ private fun PlayerManager.handleDeviceChange(audioManager: AudioManager) {
     val newDevice = getCurrentAudioDevice(audioManager)
     _currentAudioDevice.value = newDevice
     applyUsbExclusivePlaybackPolicy()
+    UsbExclusiveDebugLogger.logSnapshot(
+        context = application,
+        audioManager = audioManager,
+        reason = "device_change",
+        enabled = usbExclusivePlaybackEnabled
+    )
     NPLogger.d(
         "NERI-PlayerManager",
         "handleDeviceChange(): ${previousDevice?.type}:${previousDevice?.name} -> ${newDevice.type}:${newDevice.name}, isPlaying=${_isPlayingFlow.value}"
@@ -1045,18 +1072,47 @@ private fun PlayerManager.getCurrentAudioDevice(audioManager: AudioManager): Aud
 private fun PlayerManager.applyUsbExclusivePlaybackPolicy() {
     if (!isPlayerInitialized()) return
     val audioManager: AudioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    if (usbExclusivePlaybackEnabled) {
+        UsbExclusiveDiagnostics.ensureUsbPermissionIfNeeded(
+            context = application,
+            reason = "apply_policy"
+        )
+    }
     val preferredDevice = if (usbExclusivePlaybackEnabled) {
         findPreferredUsbOutputDevice(audioManager)
     } else {
         null
     }
+    UsbExclusiveDebugLogger.logSnapshot(
+        context = application,
+        audioManager = audioManager,
+        reason = "apply_policy_before_set",
+        enabled = usbExclusivePlaybackEnabled,
+        preferredDevice = preferredDevice
+    )
     mainScope.launch {
         if (!isPlayerInitialized()) return@launch
-        player.setPreferredAudioDevice(preferredDevice)
-        NPLogger.d(
-            "NERI-PlayerManager",
-            "applyUsbExclusivePlaybackPolicy(): enabled=$usbExclusivePlaybackEnabled, target=${preferredDevice.describeForLog()}"
-        )
+        runCatching {
+            player.setPreferredAudioDevice(preferredDevice)
+        }.onSuccess {
+            NPLogger.d(
+                "NERI-PlayerManager",
+                "applyUsbExclusivePlaybackPolicy(): enabled=$usbExclusivePlaybackEnabled, target=${preferredDevice.describeForLog()}"
+            )
+            UsbExclusiveDebugLogger.logSnapshot(
+                context = application,
+                audioManager = audioManager,
+                reason = "apply_policy_after_set",
+                enabled = usbExclusivePlaybackEnabled,
+                preferredDevice = preferredDevice
+            )
+        }.onFailure { error ->
+            NPLogger.w(
+                "NERI-UsbExclusive",
+                "applyUsbExclusivePlaybackPolicy(): setPreferredAudioDevice failed, enabled=$usbExclusivePlaybackEnabled, target=${preferredDevice.describeForLog()}",
+                error
+            )
+        }
     }
 }
 

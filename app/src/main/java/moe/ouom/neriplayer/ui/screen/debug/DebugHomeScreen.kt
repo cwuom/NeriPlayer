@@ -47,6 +47,7 @@ import androidx.compose.material.icons.outlined.Error
 import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SettingsBackupRestore
+import androidx.compose.material.icons.outlined.Usb
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -107,6 +108,7 @@ fun DebugHomeScreen(
     alwaysRecordLogsEnabled: Boolean,
     onAlwaysRecordLogsChange: (Boolean) -> Unit,
     onOpenListenTogetherDebug: () -> Unit,
+    onOpenUsbExclusiveDebug: () -> Unit,
     onOpenYouTubeDebug: () -> Unit,
     onOpenBiliDebug: () -> Unit,
     onOpenNeteaseDebug: () -> Unit,
@@ -204,6 +206,23 @@ fun DebugHomeScreen(
                     headlineContent = { Text(stringResource(R.string.listen_together_title)) },
                     supportingContent = { Text(stringResource(R.string.listen_together_debug_entry_desc)) },
                     modifier = Modifier.clickable(onClick = onOpenListenTogetherDebug),
+                    colors = ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    )
+                )
+
+                ListItem(
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Outlined.Usb,
+                            contentDescription = stringResource(R.string.debug_usb_exclusive_title),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    },
+                    headlineContent = { Text(stringResource(R.string.debug_usb_exclusive_title)) },
+                    supportingContent = { Text(stringResource(R.string.debug_usb_exclusive_desc_short)) },
+                    modifier = Modifier.clickable(onClick = onOpenUsbExclusiveDebug),
                     colors = ListItemDefaults.colors(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
                     )

@@ -78,6 +78,7 @@ import moe.ouom.neriplayer.core.player.metadata.NeteaseLyricsCacheEntry
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
+import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDebugLogger
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommand
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.RefreshInFlightController
@@ -547,7 +548,12 @@ object PlayerManager {
 
     internal fun applyAudioFocusPolicyOnMainThread() {
         if (!::player.isInitialized) return
-        val handleFocus = !allowMixedPlaybackEnabled
+        val handleFocus = usbExclusivePlaybackEnabled || !allowMixedPlaybackEnabled
+        UsbExclusiveDebugLogger.logFocusPolicy(
+            usbExclusivePlayback = usbExclusivePlaybackEnabled,
+            allowMixedPlayback = allowMixedPlaybackEnabled,
+            handleFocus = handleFocus
+        )
         val attributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
