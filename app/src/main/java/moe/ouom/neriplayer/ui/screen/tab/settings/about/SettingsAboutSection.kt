@@ -85,7 +85,7 @@ private fun SettingsAboutIntroItem() {
         },
         headlineContent = {
             Text(
-                text = stringResource(R.string.nav_about),
+                text = stringResource(R.string.settings_about),
                 style = MaterialTheme.typography.titleMedium
             )
         },

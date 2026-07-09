@@ -91,7 +91,7 @@ internal enum class SettingsPage(
         icon = Icons.Outlined.Cloud
     ),
     About(
-        titleRes = R.string.nav_about,
+        titleRes = R.string.settings_about,
         descriptionRes = R.string.settings_about_desc,
         icon = Icons.Outlined.Info
     );
