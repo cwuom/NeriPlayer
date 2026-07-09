@@ -201,6 +201,40 @@ class ListenTogetherEventCompatibilityTest {
         )
     }
 
+    @Test
+    fun `join auto pause flag alone does not pause a playing room`() {
+        val state = roomState(playbackState = "playing")
+
+        assertNull(
+            resolveListenTogetherJoinAutoPauseCause(
+                autoPauseOnJoin = true,
+                role = "listener",
+                state = state
+            )
+        )
+    }
+
+    @Test
+    fun `join auto pause cause only marks listener state that is already paused`() {
+        val state = roomState(playbackState = "paused")
+
+        assertEquals(
+            "JOIN_AUTO_PAUSE",
+            resolveListenTogetherJoinAutoPauseCause(
+                autoPauseOnJoin = true,
+                role = "listener",
+                state = state
+            )
+        )
+        assertNull(
+            resolveListenTogetherJoinAutoPauseCause(
+                autoPauseOnJoin = true,
+                role = "controller",
+                state = state
+            )
+        )
+    }
+
     private fun track(
         stableKey: String,
         audioId: String
@@ -222,6 +256,18 @@ class ListenTogetherEventCompatibilityTest {
             subAudioId = "24547973984",
             name = "暗号",
             artist = "周杰伦"
+        )
+    }
+
+    private fun roomState(playbackState: String): ListenTogetherRoomState {
+        return ListenTogetherRoomState(
+            roomId = "ABC123",
+            version = 1L,
+            playback = ListenTogetherPlaybackState(
+                state = playbackState,
+                basePositionMs = 1_000L,
+                baseTimestampMs = 2_000L
+            )
         )
     }
 }

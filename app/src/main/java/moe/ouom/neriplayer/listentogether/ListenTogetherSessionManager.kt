@@ -186,19 +186,14 @@ class ListenTogetherSessionManager(
         NPLogger.d(TAG, "refreshRoomState(): baseUrl=$baseUrl, roomId=$validatedRoomId")
         val response = api.getRoomState(baseUrl, validatedRoomId)
         response.state?.let {
-            val resolvedState = resolveJoinAutoPauseState(
-                state = it,
-                autoPauseOnJoin = response.autoPauseOnJoin,
-                role = _sessionState.value.role
-            )
-            applyRoomState(resolvedState, response.expectedPositionMs)
+            applyRoomState(it, response.expectedPositionMs)
             if (!isCurrentUserController()) {
                 applyRoomStateToPlayer(
-                    resolvedState,
-                    causeType = if (response.autoPauseOnJoin) "JOIN_AUTO_PAUSE" else null,
+                    it,
+                    causeType = null,
                     expectedPositionMs = response.expectedPositionMs
                 )
-                maybeRequestControllerLink(resolvedState, "refresh_room_state")
+                maybeRequestControllerLink(it, "refresh_room_state")
             }
         }
         NPLogger.d(
@@ -868,15 +863,14 @@ class ListenTogetherSessionManager(
             roomNotice = null
         )
         response.state?.let {
-            val resolvedState = resolveJoinAutoPauseState(
-                state = it,
-                autoPauseOnJoin = response.autoPauseOnJoin,
-                role = response.role
-            )
-            applyRoomState(resolvedState, null)
+            applyRoomState(it, null)
             applyRoomStateToPlayer(
-                resolvedState,
-                causeType = if (response.autoPauseOnJoin) "JOIN_AUTO_PAUSE" else null
+                it,
+                causeType = resolveListenTogetherJoinAutoPauseCause(
+                    autoPauseOnJoin = response.autoPauseOnJoin,
+                    role = _sessionState.value.role,
+                    state = it
+                )
             )
         }
     }
@@ -931,15 +925,10 @@ class ListenTogetherSessionManager(
 
     private fun handleSocketRoomState(message: ListenTogetherSocketEnvelope) {
         val state = message.state ?: return
-        val resolvedState = resolveJoinAutoPauseState(
-            state = state,
-            autoPauseOnJoin = message.autoPauseOnJoin,
-            role = message.role ?: _sessionState.value.role
-        )
-        if (shouldIgnoreStaleRoomState(resolvedState, message.causedBy)) {
+        if (shouldIgnoreStaleRoomState(state, message.causedBy)) {
             NPLogger.d(
                 TAG,
-                "handleSocketRoomState(): stale version=${resolvedState.version}, lastApplied=$lastAppliedRoomVersion"
+                "handleSocketRoomState(): stale version=${state.version}, lastApplied=$lastAppliedRoomVersion"
             )
             return
         }
@@ -950,7 +939,7 @@ class ListenTogetherSessionManager(
             )
             return
         }
-        if (shouldDeferIncomingStateForLocalTrackFinish(resolvedState, message.causedBy)) {
+        if (shouldDeferIncomingStateForLocalTrackFinish(state, message.causedBy)) {
             NPLogger.d(
                 TAG,
                 "handleSocketRoomState(): defer while waiting track finish barrier, causedBy=${message.causedBy?.type}:${message.causedBy?.eventId}"
@@ -962,7 +951,7 @@ class ListenTogetherSessionManager(
             awaitingTrackFinishStableKey = null
         }
         markInboundEvent(message.causedBy?.eventId)
-        applyRoomState(resolvedState, message.expectedPositionMs)
+        applyRoomState(state, message.expectedPositionMs)
         val currentUserUuid = _sessionState.value.userUuid
         if (
             isCurrentUserController() &&
@@ -977,11 +966,11 @@ class ListenTogetherSessionManager(
             return
         }
         applyRoomStateToPlayer(
-            resolvedState,
-            message.causedBy?.type ?: if (message.autoPauseOnJoin) "JOIN_AUTO_PAUSE" else null,
+            state,
+            message.causedBy?.type,
             message.expectedPositionMs
         )
-        maybeRequestControllerLink(resolvedState, message.causedBy?.type)
+        maybeRequestControllerLink(state, message.causedBy?.type)
         maybePublishControllerRecoveryHeartbeat(message)
     }
 
@@ -2538,20 +2527,13 @@ private fun ListenTogetherRoomState.targetSongItem(): SongItem? {
     return (track ?: queue.getOrNull(currentIndex))?.toSongItem()
 }
 
-private fun resolveJoinAutoPauseState(
-    state: ListenTogetherRoomState,
+internal fun resolveListenTogetherJoinAutoPauseCause(
     autoPauseOnJoin: Boolean,
-    role: String?
-): ListenTogetherRoomState {
-    if (!autoPauseOnJoin || role == "controller") return state
-    if (state.playback.state == "paused") return state
-    return state.copy(
-        playback = state.playback.copy(
-            state = "paused",
-            basePositionMs = state.playback.expectedPositionMs(),
-            baseTimestampMs = System.currentTimeMillis()
-        )
-    )
+    role: String?,
+    state: ListenTogetherRoomState
+): String? {
+    if (!autoPauseOnJoin || role != "listener") return null
+    return "JOIN_AUTO_PAUSE".takeIf { state.playback.state == "paused" }
 }
 
 private fun SongItem.sameTrackAs(other: SongItem): Boolean {
