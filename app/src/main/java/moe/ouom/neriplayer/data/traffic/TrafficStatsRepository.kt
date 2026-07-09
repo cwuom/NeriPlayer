@@ -15,6 +15,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.stats.playbackStatsDayStartAt
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.currentTrafficNetworkType
 import java.io.File
 
 class TrafficStatsRepository private constructor(
@@ -28,6 +29,8 @@ class TrafficStatsRepository private constructor(
     private var persistJob: Job? = null
 
     val dailyStatsFlow: StateFlow<List<TrafficStatsBucket>> = _dailyStats
+
+    fun currentNetworkType(): TrafficNetworkType = app.currentTrafficNetworkType()
 
     fun recordNetworkBytes(
         networkType: TrafficNetworkType,

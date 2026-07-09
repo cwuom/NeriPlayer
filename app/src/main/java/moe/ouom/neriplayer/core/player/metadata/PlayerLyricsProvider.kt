@@ -44,8 +44,8 @@ import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 
 internal fun extractPreferredNeteaseLyricContent(rawResponse: String): String {
-    val payload = JSONObject(rawResponse)
-    val yrc = payload.optJSONObject("yrc")?.optString("lyric").orEmpty()
+    val payload: JSONObject = JSONObject(rawResponse)
+    val yrc: String = payload.optJSONObject("yrc")?.optString("lyric").orEmpty()
     if (yrc.isNotBlank()) {
         return yrc
     }
@@ -55,14 +55,14 @@ internal fun extractPreferredNeteaseLyricContent(rawResponse: String): String {
 }
 
 internal fun extractTranslatedNeteaseLyricContent(rawResponse: String): String {
-    val payload = JSONObject(rawResponse)
+    val payload: JSONObject = JSONObject(rawResponse)
     return payload.optJSONObject("ytlrc")?.optString("lyric")
         ?: payload.optJSONObject("tlyric")?.optString("lyric")
         ?: ""
 }
 
 internal fun extractRomanizedNeteaseLyricContent(rawResponse: String): String {
-    val payload = JSONObject(rawResponse)
+    val payload: JSONObject = JSONObject(rawResponse)
     return normalizeLegacyLrcTimestamps(
         payload.optJSONObject("romalrc")?.optString("lyric").orEmpty()
     )

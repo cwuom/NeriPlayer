@@ -1,19 +1,17 @@
 package moe.ouom.neriplayer.core.player
 
-import android.content.Context
 import android.net.Uri
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.TransferListener
 import moe.ouom.neriplayer.data.traffic.TrafficByteAccumulator
+import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.TrafficStatsRepository
 import moe.ouom.neriplayer.data.traffic.TrafficUsageSource
-import moe.ouom.neriplayer.util.currentTrafficNetworkType
 
 @UnstableApi
 internal class TrafficCountingHttpDataSource(
-    private val context: Context,
     private val delegate: HttpDataSource,
     private val trafficStatsRepository: TrafficStatsRepository,
     private val usageSource: TrafficUsageSource = TrafficUsageSource.PLAYBACK
@@ -67,7 +65,7 @@ internal class TrafficCountingHttpDataSource(
     override fun getResponseCode(): Int = delegate.responseCode
 
     private fun newAccumulator(): TrafficByteAccumulator {
-        val networkType = context.currentTrafficNetworkType()
+        val networkType: TrafficNetworkType = trafficStatsRepository.currentNetworkType()
         return TrafficByteAccumulator {
             trafficStatsRepository.recordNetworkBytes(
                 networkType = networkType,

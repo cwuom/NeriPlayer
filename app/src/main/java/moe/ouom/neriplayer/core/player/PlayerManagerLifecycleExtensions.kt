@@ -142,7 +142,6 @@ internal fun PlayerManager.initializeImpl(
             upstreamFactory,
             biliCookieRepo,
             AppContainer.youtubeAuthRepo,
-            context = app,
             trafficStatsRepository = AppContainer.trafficStatsRepo
         )
         conditionalHttpFactory = conditionalFactory
@@ -849,7 +848,7 @@ internal fun PlayerManager.ensureInitializedImpl() {
 }
 
 private fun PlayerManager.setupAudioDeviceCallback() {
-    val audioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    val audioManager: AudioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     _currentAudioDevice.value = getCurrentAudioDevice(audioManager)
     NPLogger.d(
         "NERI-PlayerManager",
@@ -980,7 +979,7 @@ private fun PlayerManager.schedulePauseForBluetoothDisconnect(
             return@launch
         }
 
-        val audioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val audioManager: AudioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val confirmedDevice = getCurrentAudioDevice(audioManager)
         _currentAudioDevice.value = confirmedDevice
         if (confirmedDevice.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
@@ -1045,7 +1044,7 @@ private fun PlayerManager.getCurrentAudioDevice(audioManager: AudioManager): Aud
 
 private fun PlayerManager.applyUsbExclusivePlaybackPolicy() {
     if (!isPlayerInitialized()) return
-    val audioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    val audioManager: AudioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     val preferredDevice = if (usbExclusivePlaybackEnabled) {
         findPreferredUsbOutputDevice(audioManager)
     } else {
@@ -1102,7 +1101,7 @@ internal fun PlayerManager.releaseImpl() {
     StartupAudioFocusController.release("player_release")
 
     try {
-        val audioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val audioManager: AudioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         audioDeviceCallback?.let { audioManager.unregisterAudioDeviceCallback(it) }
     } catch (e: Exception) {
         NPLogger.w("NERI-PlayerManager", "release(): unregisterAudioDeviceCallback failed", e)

@@ -280,7 +280,7 @@ private fun Context.findActivityReadyForDirectServiceStart(): Activity? {
     var current: Context? = this
     while (current is ContextWrapper) {
         if (current is Activity) {
-            val isDestroyed = Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 &&
+            val isDestroyed: Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 &&
                 current.isDestroyed
             val lifecycleState = (current as? LifecycleOwner)?.lifecycle?.currentState
             return current.takeIf {
@@ -484,7 +484,7 @@ class AudioPlayerService : Service() {
         }
         isServiceInstanceActive = true
         NPLogger.d("NERI-APS", "onCreate begin ${buildStateSummary()}")
-        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        val nm: NotificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         val channel = NotificationChannel(
             CHANNEL_ID,
             "NeriPlayer Playback",
@@ -909,7 +909,7 @@ class AudioPlayerService : Service() {
             return
         }
         lastNotificationSnapshot = snapshot
-        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        val nm: NotificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         nm.notify(NOTIFICATION_ID, buildNotification())
     }
 

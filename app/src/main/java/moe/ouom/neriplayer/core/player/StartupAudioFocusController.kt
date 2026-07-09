@@ -63,7 +63,7 @@ internal object StartupAudioFocusController {
             return
         }
         val appContext = context.applicationContext
-        val manager = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val manager: AudioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val request = synchronized(lock) {
             audioManager = manager
             focusRequest ?: buildFocusRequest().also { focusRequest = it }

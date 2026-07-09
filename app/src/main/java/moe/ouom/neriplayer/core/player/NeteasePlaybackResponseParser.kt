@@ -78,10 +78,10 @@ internal object NeteasePlaybackResponseParser {
     }
 
     private fun classifyFailure(data: JSONObject): FailureReason {
-        val dataCode = data.optInt("code", -1)
-        val cannotListenReason = data.optJSONObject("freeTrialPrivilege")
+        val dataCode: Int = data.optInt("code", -1)
+        val cannotListenReason: Int? = data.optJSONObject("freeTrialPrivilege")
             ?.optIntOrNull("cannotListenReason")
-        val fee = data.optInt("fee", 0)
+        val fee: Int = data.optInt("fee", 0)
 
         return when {
             dataCode == 404 || cannotListenReason == 1 || fee > 0 -> FailureReason.NO_PERMISSION

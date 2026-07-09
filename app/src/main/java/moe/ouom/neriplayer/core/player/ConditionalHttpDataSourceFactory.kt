@@ -28,7 +28,6 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.C
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.DataSpec
-import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -56,7 +55,6 @@ class ConditionalHttpDataSourceFactory(
     private val baseFactory: HttpDataSource.Factory,
     cookieRepo: BiliCookieRepository,
     youtubeAuthRepo: YouTubeAuthRepository,
-    private val context: Context? = null,
     private val trafficStatsRepository: TrafficStatsRepository? = null
 ) : HttpDataSource.Factory {
 
@@ -106,10 +104,8 @@ class ConditionalHttpDataSourceFactory(
             }
         )
         val statsRepository = trafficStatsRepository
-        val appContext = context
-        return if (statsRepository != null && appContext != null) {
+        return if (statsRepository != null) {
             TrafficCountingHttpDataSource(
-                context = appContext,
                 delegate = dataSource,
                 trafficStatsRepository = statsRepository
             )

@@ -274,7 +274,7 @@ object PlayerManager {
 
     /**
      * 播放/暂停按钮使用的视觉状态
-     * 它跟随用户最近一次播放控制意图，避免淡入/淡出期间图标滞后
+     * 它跟随用户最近一次播放控制意图，避免淡入/淡出时播放图标滞后
      */
     internal val _playbackControlPlayingFlow = MutableStateFlow(false)
     val playbackControlPlayingFlow: StateFlow<Boolean> = _playbackControlPlayingFlow
@@ -792,8 +792,7 @@ object PlayerManager {
             localFilePath = song.localFilePath,
             mediaUri = song.mediaUri
         )
-        return listOf(preferred, song.localFilePath, song.mediaUri)
-            .filterNotNull()
+        return listOfNotNull(preferred, song.localFilePath, song.mediaUri)
             .distinct()
             .firstOrNull(::isReadableLocalMediaUri)
             ?: preferred
@@ -851,12 +850,12 @@ object PlayerManager {
             localFilePath = song.localFilePath,
             mediaUri = song.mediaUri
         )
-        return listOf(preferred, song.localFilePath, song.mediaUri)
-            .filterNotNull()
+        return listOfNotNull(preferred, song.localFilePath, song.mediaUri)
             .distinct()
             .any { isRestorableLocalMediaUri(it, context) }
     }
 
+    @Suppress("unused")
     internal fun sanitizeRestoredPlaylist(playlist: List<SongItem>): List<SongItem> {
         return playlist.filter { song ->
             !isLocalSong(song) || isRestorableLocalSong(song)
@@ -1317,11 +1316,11 @@ object PlayerManager {
             .build()
     }
 
-internal fun cancelVolumeFade(resetToFull: Boolean = false) =
-        cancelVolumeFadeImpl(resetToFull)
+    internal fun cancelVolumeFade(resetToFull: Boolean = false) =
+        this.cancelVolumeFadeImpl(resetToFull)
 
     internal fun cancelPendingPauseRequest(resetVolumeToFull: Boolean = false) =
-        cancelPendingPauseRequestImpl(resetVolumeToFull)
+        this.cancelPendingPauseRequestImpl(resetVolumeToFull)
 
     fun initialize(app: Application, maxCacheSize: Long = 1024L * 1024 * 1024) =
         initializeImpl(app, maxCacheSize)
@@ -1386,7 +1385,7 @@ internal fun cancelVolumeFade(resetToFull: Boolean = false) =
     )
 
     internal fun handleTrackEndedIfNeeded(source: String) =
-        handleTrackEndedIfNeededImpl(source)
+        this.handleTrackEndedIfNeededImpl(source)
 
     internal fun flushPlaybackStatsBlocking(
         reason: String,
@@ -1397,44 +1396,44 @@ internal fun cancelVolumeFade(resetToFull: Boolean = false) =
         songs: List<SongItem>,
         startIndex: Int,
         commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
-    ): Unit = playPlaylistImpl(songs, startIndex, commandSource)
+    ): Unit = this.playPlaylistImpl(songs, startIndex, commandSource)
 
     fun playBiliVideoParts(videoInfo: BiliClient.VideoBasicInfo, startIndex: Int, coverUrl: String) =
-        playBiliVideoPartsImpl(videoInfo, startIndex, coverUrl)
+        this.playBiliVideoPartsImpl(videoInfo, startIndex, coverUrl)
 
     fun play(commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL) =
-        playImpl(commandSource)
+        this.playImpl(commandSource)
 
     fun pause(
         forcePersist: Boolean = false,
         commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
-    ) = pauseImpl(forcePersist, commandSource)
+    ) = this.pauseImpl(forcePersist, commandSource)
 
-    fun togglePlayPause() = togglePlayPauseImpl()
+    fun togglePlayPause() = this.togglePlayPauseImpl()
 
     fun seekTo(
         positionMs: Long,
         commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
-    ) = seekToImpl(positionMs, commandSource)
+    ) = this.seekToImpl(positionMs, commandSource)
 
     fun next(
         force: Boolean = false,
         commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
-    ) = nextImpl(force, commandSource)
+    ) = this.nextImpl(force, commandSource)
 
     fun previous(commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL) =
-        previousImpl(commandSource)
+        this.previousImpl(commandSource)
 
-    fun cycleRepeatMode() = cycleRepeatModeImpl()
+    fun cycleRepeatMode() = this.cycleRepeatModeImpl()
 
     fun release() = releaseImpl()
 
-    fun setShuffle(enabled: Boolean) = setShuffleImpl(enabled)
+    fun setShuffle(enabled: Boolean) = this.setShuffleImpl(enabled)
 
-    internal fun stopProgressUpdates() = stopProgressUpdatesImpl()
+    internal fun stopProgressUpdates() = this.stopProgressUpdatesImpl()
 
     internal fun stopPlaybackPreservingQueue(clearMediaUrl: Boolean = false) =
-        stopPlaybackPreservingQueueImpl(clearMediaUrl)
+        this.stopPlaybackPreservingQueueImpl(clearMediaUrl)
 
     fun hasItems(): Boolean = hasItemsImpl()
 
@@ -1529,13 +1528,15 @@ internal fun cancelVolumeFade(resetToFull: Boolean = false) =
         newDefaultOffsetMs = newDefaultOffsetMs
     )
 
+    @Suppress("unused")
     suspend fun updateSongLyrics(songToUpdate: SongItem, newLyrics: String?) =
-        updateSongLyricsImpl(songToUpdate, newLyrics)
+        this.updateSongLyricsImpl(songToUpdate, newLyrics)
 
+    @Suppress("unused")
     suspend fun updateSongTranslatedLyrics(
         songToUpdate: SongItem,
         newTranslatedLyrics: String?
-    ) = updateSongTranslatedLyricsImpl(songToUpdate, newTranslatedLyrics)
+    ) = this.updateSongTranslatedLyricsImpl(songToUpdate, newTranslatedLyrics)
 
     suspend fun updateSongLyricsAndTranslation(
         songToUpdate: SongItem,

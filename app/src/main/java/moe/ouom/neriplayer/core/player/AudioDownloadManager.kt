@@ -81,7 +81,9 @@ import moe.ouom.neriplayer.util.currentTrafficNetworkType
 import moe.ouom.neriplayer.util.hasLikelyInternetAccess
 import okhttp3.Dispatcher
 import okhttp3.Request
+import okhttp3.ResponseBody
 import okio.Buffer
+import okio.BufferedSource
 import okio.buffer
 import okio.sink
 import org.json.JSONObject
@@ -224,8 +226,8 @@ object AudioDownloadManager {
             if (networkRecoveryMonitorRegistered) {
                 return
             }
-            val connectivityManager = appContext.getSystemService(ConnectivityManager::class.java)
-                ?: return
+            val connectivityManager: ConnectivityManager =
+                appContext.getSystemService(ConnectivityManager::class.java) ?: return
             lastObservedTrafficNetworkType = appContext.currentTrafficNetworkType()
             val callback = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
@@ -1771,8 +1773,8 @@ object AudioDownloadManager {
             if (!response.isSuccessful) {
                 throw IOException("封面请求失败: HTTP ${response.code}")
             }
-            val body = response.body ?: throw IOException("封面响应为空")
-            val contentType = body.contentType()?.toString().orEmpty()
+            val body: ResponseBody = response.body ?: throw IOException("封面响应为空")
+            val contentType: String = body.contentType()?.toString().orEmpty()
             if (contentType.isNotBlank() && !contentType.startsWith("image/", ignoreCase = true)) {
                 throw IOException("封面响应不是图片: $contentType")
             }
@@ -2599,7 +2601,7 @@ object AudioDownloadManager {
                 val lyrics = AppContainer.neteaseClient.getLyricNew(song.id)
                 val root = JSONObject(lyrics)
                 if (root.optInt("code") == 200) {
-                    val tlyric = root.optJSONObject("tlyric")?.optString("lyric").orEmpty()
+                    val tlyric: String = root.optJSONObject("tlyric")?.optString("lyric").orEmpty()
                     if (shouldFetchTranslatedLyric && tlyric.isNotBlank()) {
                         NPLogger.d(TAG, "翻译歌词保存: ${song.name}")
                         return DownloadedLyrics(translatedText = tlyric)
@@ -2616,9 +2618,9 @@ object AudioDownloadManager {
             val root = JSONObject(lyrics)
             if (root.optInt("code") != 200) return DownloadedLyrics()
 
-            val yrc = root.optJSONObject("yrc")?.optString("lyric") ?: ""
-            val lrc = root.optJSONObject("lrc")?.optString("lyric") ?: ""
-            val translated = root.optJSONObject("tlyric")?.optString("lyric") ?: ""
+            val yrc: String = root.optJSONObject("yrc")?.optString("lyric") ?: ""
+            val lrc: String = root.optJSONObject("lrc")?.optString("lyric") ?: ""
+            val translated: String = root.optJSONObject("tlyric")?.optString("lyric") ?: ""
             val preferredLyric = if (shouldFetchPrimaryLyric) {
                 yrc.takeIf { it.isNotBlank() } ?: lrc.takeIf { it.isNotBlank() }
             } else {
@@ -3011,7 +3013,7 @@ object AudioDownloadManager {
                         songKey = songKey
                     ) { response ->
                         if (!response.isSuccessful) throw IllegalStateException("HTTP ${response.code}")
-                        val rawPayload = response.body.bytes()
+                        val rawPayload: ByteArray = response.body.bytes()
                         trafficAccumulator.add(rawPayload.size.toLong())
                         val payload = stripLeadingId3(rawPayload)
                         sink.write(payload)
@@ -3379,7 +3381,7 @@ object AudioDownloadManager {
                     delegateOpenLength = response.body.contentLength()
                 )
 
-                val source = response.body.source()
+                val source: BufferedSource = response.body.source()
                 val buffer = Buffer()
                 var chunkRead = 0L
                 while (true) {
