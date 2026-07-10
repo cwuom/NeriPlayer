@@ -34,6 +34,8 @@ import moe.ouom.neriplayer.core.player.policy.resolveManualResumePlaybackDecisio
 import moe.ouom.neriplayer.core.player.policy.shouldApplyResolvedMedia
 import moe.ouom.neriplayer.core.player.policy.shouldApplyResolvedMediaSideEffects
 import moe.ouom.neriplayer.core.player.policy.shouldPausePlaybackWhenToggling
+import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathState
+import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
@@ -211,6 +213,9 @@ internal fun PlayerManager.startPlayerPlaybackWithFade(plan: PlaybackStartPlan) 
     )
     runPlayerActionOnMainThread {
         if (!isPlayerInitialized()) return@runPlayerActionOnMainThread
+        if (!prepareUsbExclusiveRouteForManualPlayback("playback_start")) {
+            return@runPlayerActionOnMainThread
+        }
         applyAudioFocusPolicyOnMainThread()
         player.volume = plan.initialVolume
         player.playWhenReady = true
@@ -977,8 +982,9 @@ internal fun PlayerManager.pauseImpl(
     playbackRequestToken += 1
     playJob?.cancel()
     playJob = null
+    val effectiveAllowFadeOut = allowFadeOut && !shouldBypassUsbExclusivePauseFade(debugReason)
     val pauseVolumePlan = resolvePauseVolumePlan(
-        allowFadeOut = allowFadeOut,
+        allowFadeOut = effectiveAllowFadeOut,
         preserveMutedVolume = preserveMutedVolume,
         playbackFadeInEnabled = playbackFadeInEnabled,
         playbackFadeOutDurationMs = playbackFadeOutDurationMs,
@@ -1027,6 +1033,17 @@ internal fun PlayerManager.pauseImpl(
         positionMs = _playbackPositionMs.value,
         currentIndex = currentIndex
     )
+}
+
+private fun PlayerManager.shouldBypassUsbExclusivePauseFade(debugReason: String): Boolean {
+    if (!usbExclusivePlaybackEnabled && !debugReason.contains("usb", ignoreCase = true)) {
+        return false
+    }
+    val pathState = UsbExclusiveAudioPathTracker.state.value
+    return pathState.effectivePath == UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB ||
+        pathState.fallbackReason?.contains("native", ignoreCase = true) == true ||
+        pathState.fallbackReason?.contains("usb", ignoreCase = true) == true ||
+        debugReason.contains("usb", ignoreCase = true)
 }
 
 private fun PlayerManager.pauseInternal(

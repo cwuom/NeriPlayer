@@ -40,6 +40,7 @@ object UsbExclusiveAudioPathTracker {
                 } else {
                     UsbExclusiveAudioPathState.REQUESTED_SYSTEM
                 },
+                fallbackReason = null,
                 generation = current.generation + 1L
             )
         }
@@ -52,6 +53,7 @@ object UsbExclusiveAudioPathTracker {
 
     fun clearForcedSystemFallback() {
         forcedSystemFallbackReason = null
+        _state.update { current -> current.copy(fallbackReason = null) }
     }
 
     fun forcedSystemFallbackReason(): String? = forcedSystemFallbackReason

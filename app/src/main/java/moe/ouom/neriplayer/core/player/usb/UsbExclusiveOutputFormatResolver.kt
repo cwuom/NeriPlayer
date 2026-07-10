@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+
 package moe.ouom.neriplayer.core.player.usb
 
 import android.content.Context
@@ -76,14 +78,12 @@ internal object UsbExclusiveOutputFormatResolver {
             )
 
         val reportedChannels = output.channelCounts.filter { it > 0 }
-        val resolvedChannels = when {
-            2 in reportedChannels -> 2
-            reportedChannels.isEmpty() -> 2
-            inputChannelCount in reportedChannels && inputChannelCount in 1..2 -> inputChannelCount
-            else -> return failure(
-                "channel_count_unsupported:input=$inputChannelCount supported=$reportedChannels"
-            )
-        }
+        val resolvedChannels = preferences.resolveChannelCount(
+            sourceChannelCount = inputChannelCount,
+            supportedChannelCounts = reportedChannels
+        ) ?: return failure(
+            "channel_count_unsupported:input=$inputChannelCount supported=$reportedChannels"
+        )
         val subslotBytes = when (resolvedBitDepth) {
             16 -> 2
             24 -> 3
@@ -96,7 +96,9 @@ internal object UsbExclusiveOutputFormatResolver {
                 channelCount = resolvedChannels,
                 bitDepth = resolvedBitDepth,
                 subslotBytes = subslotBytes,
-                bufferDurationMs = preferences.bufferProfile.bufferDurationMs,
+                bufferDurationMs = preferences.bufferDurationMs(
+                    appInForeground = PlayerManager.usbExclusiveAppInForeground
+                ),
                 description = buildDescription(
                     sampleRate = resolvedRate,
                     channelCount = resolvedChannels,

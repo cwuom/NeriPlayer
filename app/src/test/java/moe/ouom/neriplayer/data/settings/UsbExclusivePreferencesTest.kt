@@ -29,6 +29,11 @@ class UsbExclusivePreferencesTest {
         assertEquals(80, UsbExclusiveBufferProfile.LOW_LATENCY.bufferDurationMs)
         assertEquals(250, UsbExclusiveBufferProfile.BALANCED.bufferDurationMs)
         assertEquals(750, UsbExclusiveBufferProfile.STABLE.bufferDurationMs)
+        assertEquals(true, preferences.sampleRateCompatibilityEnabled)
+        assertEquals(true, preferences.bitDepthCompatibilityEnabled)
+        assertEquals(true, preferences.channelCompatibilityEnabled)
+        assertEquals(DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS, preferences.foregroundBufferMs)
+        assertEquals(DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS, preferences.backgroundBufferMs)
         assertEquals(
             DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_MODE,
             preferences.sampleRateMode.storageValue
@@ -92,7 +97,7 @@ class UsbExclusivePreferencesTest {
     }
 
     @Test
-    fun `legacy default fallback policy migrates to closest supported`() {
+    fun `explicit system fallback policy is preserved`() {
         val parsed = UsbExclusivePreferences.fromStorageValues(
             sampleRateMode = "follow_source",
             bitDepthMode = "auto",
@@ -100,7 +105,10 @@ class UsbExclusivePreferencesTest {
             unsupportedFormatPolicy = "system_fallback"
         )
 
-        assertEquals(UsbExclusivePreferences(), parsed)
+        assertEquals(
+            UsbExclusiveUnsupportedFormatPolicy.SYSTEM_FALLBACK,
+            parsed.unsupportedFormatPolicy
+        )
     }
 
     @Test
@@ -150,6 +158,23 @@ class UsbExclusivePreferencesTest {
             assertEquals(profile, UsbExclusiveBufferProfile.fromStorageValue(profile.storageValue))
             assertEquals(profile, UsbExclusiveBufferProfile.fromStorageValue(profile.name))
         }
+    }
+
+    @Test
+    fun `buffer values are normalized and follow foreground state`() {
+        val preferences = UsbExclusivePreferences.fromStorageValues(
+            sampleRateMode = null,
+            bitDepthMode = null,
+            bufferProfile = "stable",
+            unsupportedFormatPolicy = null,
+            foregroundBufferMs = 233,
+            backgroundBufferMs = 10_000
+        )
+
+        assertEquals(200, preferences.foregroundBufferMs)
+        assertEquals(MAX_USB_EXCLUSIVE_BUFFER_MS, preferences.backgroundBufferMs)
+        assertEquals(200, preferences.bufferDurationMs(appInForeground = true))
+        assertEquals(MAX_USB_EXCLUSIVE_BUFFER_MS, preferences.bufferDurationMs(appInForeground = false))
     }
 
     @Test
@@ -279,6 +304,24 @@ class UsbExclusivePreferencesTest {
     }
 
     @Test
+    fun `compatibility switches can require exact usb formats`() {
+        val preferences = UsbExclusivePreferences(
+            sampleRateMode = UsbExclusiveSampleRateMode.RATE_192000,
+            bitDepthMode = UsbExclusiveBitDepthMode.BIT_32,
+            sampleRateCompatibilityEnabled = false,
+            bitDepthCompatibilityEnabled = false,
+            channelCompatibilityEnabled = false
+        )
+
+        assertNull(preferences.resolveSampleRateHz(48_000, listOf(48_000)))
+        assertNull(preferences.resolveBitDepth(16, listOf(16, 24)))
+        assertNull(preferences.resolveChannelCount(6, listOf(2)))
+        assertEquals(192_000, preferences.resolveSampleRateHz(48_000, listOf(192_000)))
+        assertEquals(32, preferences.resolveBitDepth(16, listOf(32)))
+        assertEquals(2, preferences.resolveChannelCount(2, listOf(2)))
+    }
+
+    @Test
     fun `snapshot sanitizes invalid stored selections`() {
         val snapshot = PlaybackPreferenceSnapshot(
             usbExclusiveDeviceKey = "  ",
@@ -300,7 +343,7 @@ class UsbExclusivePreferencesTest {
     }
 
     @Test
-    fun `snapshot migrates legacy default fallback policy`() {
+    fun `snapshot preserves explicit fallback policy`() {
         val snapshot = PlaybackPreferenceSnapshot(
             usbExclusiveSampleRateMode = "follow_source",
             usbExclusiveBitDepthMode = "auto",
@@ -309,8 +352,8 @@ class UsbExclusivePreferencesTest {
         ).sanitized()
 
         assertEquals(
-            UsbExclusivePreferences(),
-            snapshot.toUsbExclusivePreferences()
+            UsbExclusiveUnsupportedFormatPolicy.SYSTEM_FALLBACK,
+            snapshot.toUsbExclusivePreferences().unsupportedFormatPolicy
         )
     }
 

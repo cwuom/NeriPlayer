@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.component
 
+import android.content.Context
+import android.media.AudioFormat
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,23 +18,33 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnosticsSnapshot
+import moe.ouom.neriplayer.data.settings.MAX_USB_EXCLUSIVE_BUFFER_MS
+import moe.ouom.neriplayer.data.settings.MIN_USB_EXCLUSIVE_BUFFER_MS
+import moe.ouom.neriplayer.data.settings.USB_EXCLUSIVE_BUFFER_STEP_MS
 import moe.ouom.neriplayer.data.settings.UsbExclusiveBitDepthMode
 import moe.ouom.neriplayer.data.settings.UsbExclusiveBufferProfile
 import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.settings.UsbExclusiveSampleRateMode
 import moe.ouom.neriplayer.data.settings.UsbExclusiveUnsupportedFormatPolicy
+import moe.ouom.neriplayer.data.settings.normalizeUsbExclusiveBufferMs
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 
 @Composable
@@ -41,8 +54,14 @@ internal fun UsbExclusiveQualityContent(
     onSampleRateModeChange: (UsbExclusiveSampleRateMode) -> Unit,
     onBitDepthModeChange: (UsbExclusiveBitDepthMode) -> Unit,
     onBufferProfileChange: (UsbExclusiveBufferProfile) -> Unit,
-    onUnsupportedFormatPolicyChange: (UsbExclusiveUnsupportedFormatPolicy) -> Unit
+    onUnsupportedFormatPolicyChange: (UsbExclusiveUnsupportedFormatPolicy) -> Unit,
+    onSampleRateCompatibilityChange: (Boolean) -> Unit,
+    onBitDepthCompatibilityChange: (Boolean) -> Unit,
+    onChannelCompatibilityChange: (Boolean) -> Unit,
+    onForegroundBufferMsChange: (Int) -> Unit,
+    onBackgroundBufferMsChange: (Int) -> Unit
 ) {
+    val context = LocalContext.current
     var activeDialog by remember { mutableStateOf<UsbQualityDialog?>(null) }
     val sampleRateMode = preferences.sampleRateMode
     val bitDepthMode = preferences.bitDepthMode
@@ -76,6 +95,39 @@ internal fun UsbExclusiveQualityContent(
         detail = unsupportedPolicyDescription(unsupportedPolicy),
         onClick = { activeDialog = UsbQualityDialog.UnsupportedPolicy }
     )
+    SettingsDivider()
+    UsbCompatibilitySwitchItem(
+        title = stringResource(R.string.settings_usb_exclusive_bit_depth_compatibility),
+        detail = stringResource(R.string.settings_usb_exclusive_bit_depth_compatibility_desc),
+        checked = preferences.bitDepthCompatibilityEnabled,
+        onCheckedChange = onBitDepthCompatibilityChange
+    )
+    SettingsDivider()
+    UsbCompatibilitySwitchItem(
+        title = stringResource(R.string.settings_usb_exclusive_sample_rate_compatibility),
+        detail = stringResource(R.string.settings_usb_exclusive_sample_rate_compatibility_desc),
+        checked = preferences.sampleRateCompatibilityEnabled,
+        onCheckedChange = onSampleRateCompatibilityChange
+    )
+    SettingsDivider()
+    UsbCompatibilitySwitchItem(
+        title = stringResource(R.string.settings_usb_exclusive_channel_compatibility),
+        detail = stringResource(R.string.settings_usb_exclusive_channel_compatibility_desc),
+        checked = preferences.channelCompatibilityEnabled,
+        onCheckedChange = onChannelCompatibilityChange
+    )
+    SettingsDivider()
+    UsbBufferSliderItem(
+        title = stringResource(R.string.settings_usb_exclusive_foreground_buffer),
+        bufferMs = preferences.foregroundBufferMs,
+        onBufferChange = onForegroundBufferMsChange
+    )
+    SettingsDivider()
+    UsbBufferSliderItem(
+        title = stringResource(R.string.settings_usb_exclusive_background_buffer),
+        bufferMs = preferences.backgroundBufferMs,
+        onBufferChange = onBackgroundBufferMsChange
+    )
     UsbDeviceCapabilities(snapshot)
 
     when (activeDialog) {
@@ -86,6 +138,7 @@ internal fun UsbExclusiveQualityContent(
             optionLabel = { sampleRateLabel(it) },
             optionDescription = { sampleRateDescription(it) },
             onSelect = { mode ->
+                showUnsupportedSampleRateWarning(context, snapshot, mode)
                 onSampleRateModeChange(mode)
                 activeDialog = null
             },
@@ -98,6 +151,7 @@ internal fun UsbExclusiveQualityContent(
             optionLabel = { bitDepthLabel(it) },
             optionDescription = { bitDepthDescription(it) },
             onSelect = { mode ->
+                showUnsupportedBitDepthWarning(context, snapshot, mode)
                 onBitDepthModeChange(mode)
                 activeDialog = null
             },
@@ -128,6 +182,130 @@ internal fun UsbExclusiveQualityContent(
             onDismiss = { activeDialog = null }
         )
         null -> Unit
+    }
+}
+
+@Composable
+private fun UsbCompatibilitySwitchItem(
+    title: String,
+    detail: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    ListItem(
+        modifier = Modifier.settingsItemClickable(onClick = { onCheckedChange(!checked) }),
+        headlineContent = { Text(title) },
+        supportingContent = {
+            Text(
+                text = detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
+        trailingContent = {
+            MiuixSettingsSwitch(
+                checked = checked,
+                onCheckedChange = onCheckedChange
+            )
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
+
+@Composable
+private fun UsbBufferSliderItem(
+    title: String,
+    bufferMs: Int,
+    onBufferChange: (Int) -> Unit
+) {
+    var sliderValue by remember { mutableFloatStateOf(bufferMs.toFloat()) }
+    LaunchedEffect(bufferMs) {
+        if (sliderValue.roundToInt() != bufferMs) {
+            sliderValue = bufferMs.toFloat()
+        }
+    }
+    val displayValue = normalizeUsbExclusiveBufferMs(sliderValue.roundToInt())
+    ListItem(
+        headlineContent = {
+            Text(title)
+        },
+        supportingContent = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = stringResource(
+                        R.string.settings_usb_exclusive_buffer_ms,
+                        displayValue
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                MiuixSettingsSlider(
+                    value = sliderValue,
+                    onValueChange = { value ->
+                        sliderValue = normalizeUsbExclusiveBufferMs(value.roundToInt()).toFloat()
+                    },
+                    valueRange = MIN_USB_EXCLUSIVE_BUFFER_MS.toFloat()..
+                        MAX_USB_EXCLUSIVE_BUFFER_MS.toFloat(),
+                    steps = ((MAX_USB_EXCLUSIVE_BUFFER_MS - MIN_USB_EXCLUSIVE_BUFFER_MS) /
+                        USB_EXCLUSIVE_BUFFER_STEP_MS - 1).coerceAtLeast(0),
+                    onValueChangeFinished = {
+                        onBufferChange(normalizeUsbExclusiveBufferMs(sliderValue.roundToInt()))
+                    }
+                )
+            }
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
+
+private fun showUnsupportedSampleRateWarning(
+    context: Context,
+    snapshot: UsbExclusiveDiagnosticsSnapshot,
+    mode: UsbExclusiveSampleRateMode
+) {
+    val requestedRate = mode.sampleRateHz ?: return
+    val supportedRates = snapshot.selectedUsbOutput?.sampleRates
+        ?.filter { it > 0 }
+        ?.takeIf { it.isNotEmpty() }
+        ?: return
+    if (requestedRate in supportedRates) return
+    Toast.makeText(
+        context,
+        context.getString(
+            R.string.settings_usb_exclusive_sample_rate_not_supported,
+            requestedRate.formatSampleRate()
+        ),
+        Toast.LENGTH_LONG
+    ).show()
+}
+
+private fun showUnsupportedBitDepthWarning(
+    context: Context,
+    snapshot: UsbExclusiveDiagnosticsSnapshot,
+    mode: UsbExclusiveBitDepthMode
+) {
+    val requestedBitDepth = mode.bitDepth ?: return
+    val supportedBitDepths = snapshot.selectedUsbOutput?.encodings
+        ?.mapNotNull(::bitDepthForAudioEncoding)
+        ?.takeIf { it.isNotEmpty() }
+        ?: return
+    if (requestedBitDepth in supportedBitDepths) return
+    Toast.makeText(
+        context,
+        context.getString(
+            R.string.settings_usb_exclusive_bit_depth_not_supported,
+            requestedBitDepth
+        ),
+        Toast.LENGTH_LONG
+    ).show()
+}
+
+private fun bitDepthForAudioEncoding(encoding: Int): Int? {
+    return when (encoding) {
+        AudioFormat.ENCODING_PCM_16BIT -> 16
+        AudioFormat.ENCODING_PCM_24BIT_PACKED -> 24
+        AudioFormat.ENCODING_PCM_32BIT -> 32
+        else -> null
     }
 }
 

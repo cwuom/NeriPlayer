@@ -155,6 +155,7 @@ import moe.ouom.neriplayer.core.player.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.recoverUsbExclusivePlaybackOnForeground
 import moe.ouom.neriplayer.core.player.StartupAudioFocusController
+import moe.ouom.neriplayer.core.player.updateUsbExclusiveForegroundState
 import moe.ouom.neriplayer.core.player.preloadRestoredStateSnapshot
 import moe.ouom.neriplayer.core.player.shouldSkipLocalPlaybackSyncServiceStart
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -866,11 +867,13 @@ private fun NeriAppContent(
         if (!PlayerManager.isPlayerInitialized()) return
         val transportActive = runCatching { PlayerManager.isTransportActive() }
             .getOrDefault(false)
+        val usbExclusiveNativeActive = PlayerManager.shouldUseUsbExclusiveFocusGuard()
         StartupAudioFocusController.updateForForeground(
             context = context,
-            enabled = preemptAudioFocus || usbExclusivePlayback,
+            enabled = preemptAudioFocus || usbExclusiveNativeActive,
             allowMixedPlayback = allowMixedPlayback,
             usbExclusivePlayback = usbExclusivePlayback,
+            usbExclusiveNativeActive = usbExclusiveNativeActive,
             transportActive = transportActive,
             reason = reason
         )
@@ -908,9 +911,10 @@ private fun NeriAppContent(
         StartupAudioFocusController.updateForForeground(
             context = context,
             enabled = exactStartupPlaybackPreferences.preemptAudioFocus ||
-                exactStartupPlaybackPreferences.usbExclusivePlayback,
+                PlayerManager.shouldUseUsbExclusiveFocusGuard(),
             allowMixedPlayback = exactStartupPlaybackPreferences.allowMixedPlayback,
             usbExclusivePlayback = exactStartupPlaybackPreferences.usbExclusivePlayback,
+            usbExclusiveNativeActive = PlayerManager.shouldUseUsbExclusiveFocusGuard(),
             transportActive = PlayerManager.isTransportActive() || shouldBootstrapPlaybackService,
             reason = "app_bootstrap"
         )
@@ -1168,16 +1172,24 @@ private fun NeriAppContent(
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> {
+                    PlayerManager.updateUsbExclusiveForegroundState(
+                        foreground = true,
+                        reason = "lifecycle_resume"
+                    )
                     coverArtRefreshToken += 1
                     updateStartupAudioFocus("lifecycle_resume")
                     PlayerManager.recoverUsbExclusivePlaybackOnForeground("lifecycle_resume")
                 }
                 Lifecycle.Event.ON_PAUSE,
                 Lifecycle.Event.ON_STOP -> {
+                    PlayerManager.updateUsbExclusiveForegroundState(
+                        foreground = false,
+                        reason = "lifecycle_${event.name.lowercase()}"
+                    )
                     clearThemeRevealState()
                     val keepUsbExclusiveFocus = PlayerManager.isPlayerInitialized() &&
                         PlayerManager.usbExclusivePlaybackEnabled &&
-                        PlayerManager.isTransportActive()
+                        PlayerManager.shouldUseUsbExclusiveFocusGuard()
                     if (keepUsbExclusiveFocus) {
                         updateStartupAudioFocus("lifecycle_${event.name.lowercase()}_keep_usb")
                     } else {

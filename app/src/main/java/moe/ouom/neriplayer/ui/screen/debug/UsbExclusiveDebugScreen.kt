@@ -32,32 +32,59 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.debug.UsbAudioOutputDebugInfo
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnostics
 import moe.ouom.neriplayer.core.player.debug.UsbHostDeviceDebugInfo
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveSessionController
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.util.NPLogger
 
 @Composable
 fun UsbExclusiveDebugScreen() {
     val context = LocalContext.current
+    val appContext = context.applicationContext
+    val scope = rememberCoroutineScope()
     var snapshot by remember { mutableStateOf(UsbExclusiveDiagnostics.snapshot(context)) }
     var nativeState by remember { mutableStateOf(UsbExclusiveSessionController.state.value) }
     var copied by remember { mutableStateOf(false) }
+    var debugActionRunning by remember { mutableStateOf(false) }
     val miniH = LocalMiniPlayerHeight.current
 
-    fun refresh(reason: String) {
-        UsbExclusiveDiagnostics.logSnapshot(context, reason)
-        UsbExclusiveSessionController.refresh(context)
-        snapshot = UsbExclusiveDiagnostics.snapshot(context)
-        nativeState = UsbExclusiveSessionController.state.value
+    fun runDebugAction(
+        reason: String,
+        action: () -> Unit = {}
+    ) {
+        if (debugActionRunning) return
+        debugActionRunning = true
+        scope.launch {
+            val refreshed = withContext(Dispatchers.IO) {
+                runCatching {
+                    action()
+                    UsbExclusiveDiagnostics.logSnapshot(appContext, reason)
+                    UsbExclusiveSessionController.refresh(appContext)
+                    UsbExclusiveDiagnostics.snapshot(appContext) to
+                        UsbExclusiveSessionController.state.value
+                }
+            }
+            refreshed.onSuccess { (nextSnapshot, nextNativeState) ->
+                snapshot = nextSnapshot
+                nativeState = nextNativeState
+            }.onFailure { error ->
+                NPLogger.e("NERI-UsbExclusive", "debug action failed: reason=$reason", error)
+            }
+            debugActionRunning = false
+        }
     }
 
     Column(
@@ -82,8 +109,9 @@ fun UsbExclusiveDebugScreen() {
             OutlinedButton(
                 onClick = {
                     copied = false
-                    refresh("debug_refresh")
+                    runDebugAction("debug_refresh")
                 },
+                enabled = !debugActionRunning,
                 modifier = Modifier.weight(1f)
             ) {
                 Icon(
@@ -109,13 +137,14 @@ fun UsbExclusiveDebugScreen() {
 
         Button(
             onClick = {
-                UsbExclusiveDiagnostics.ensureUsbPermissionIfNeeded(
-                    context = context,
-                    reason = "debug_button"
-                )
-                refresh("debug_request_permission")
+                runDebugAction("debug_request_permission") {
+                    UsbExclusiveDiagnostics.ensureUsbPermissionIfNeeded(
+                        context = appContext,
+                        reason = "debug_button"
+                    )
+                }
             },
-            enabled = snapshot.canRequestPermission,
+            enabled = snapshot.canRequestPermission && !debugActionRunning,
             modifier = Modifier.fillMaxWidth()
         ) {
             Icon(
@@ -132,10 +161,12 @@ fun UsbExclusiveDebugScreen() {
             Button(
                 onClick = {
                     copied = false
-                    UsbExclusiveSessionController.startGeneratedTone(context)
-                    refresh("debug_start_native_generated_tone")
+                    runDebugAction("debug_start_native_generated_tone") {
+                        UsbExclusiveSessionController.startGeneratedTone(appContext)
+                    }
                 },
                 enabled = snapshot.hasUsbPermission &&
+                    !debugActionRunning &&
                     !nativeState.transitioning &&
                     !nativeState.streaming &&
                     nativeState.source != "player_pcm",
@@ -149,10 +180,13 @@ fun UsbExclusiveDebugScreen() {
             }
             OutlinedButton(
                 onClick = {
-                    UsbExclusiveSessionController.stopGeneratedTone()
-                    refresh("debug_stop_native_generated_tone")
+                    runDebugAction("debug_stop_native_generated_tone") {
+                        UsbExclusiveSessionController.stopGeneratedTone()
+                    }
                 },
-                enabled = !nativeState.transitioning && nativeState.source == "tone",
+                enabled = !debugActionRunning &&
+                    !nativeState.transitioning &&
+                    nativeState.source == "tone",
                 modifier = Modifier.weight(1f)
             ) {
                 Icon(

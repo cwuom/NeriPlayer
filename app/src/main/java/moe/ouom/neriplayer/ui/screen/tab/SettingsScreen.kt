@@ -1328,6 +1328,36 @@ fun SettingsScreen(
                                         .setUsbExclusiveUnsupportedFormatPolicy(policy)
                                 }
                             },
+                            onSampleRateCompatibilityChange = { enabled ->
+                                scope.launch {
+                                    AppContainer.settingsRepo
+                                        .setUsbExclusiveSampleRateCompatibility(enabled)
+                                }
+                            },
+                            onBitDepthCompatibilityChange = { enabled ->
+                                scope.launch {
+                                    AppContainer.settingsRepo
+                                        .setUsbExclusiveBitDepthCompatibility(enabled)
+                                }
+                            },
+                            onChannelCompatibilityChange = { enabled ->
+                                scope.launch {
+                                    AppContainer.settingsRepo
+                                        .setUsbExclusiveChannelCompatibility(enabled)
+                                }
+                            },
+                            onForegroundBufferMsChange = { bufferMs ->
+                                scope.launch {
+                                    AppContainer.settingsRepo
+                                        .setUsbExclusiveForegroundBufferMs(bufferMs)
+                                }
+                            },
+                            onBackgroundBufferMsChange = { bufferMs ->
+                                scope.launch {
+                                    AppContainer.settingsRepo
+                                        .setUsbExclusiveBackgroundBufferMs(bufferMs)
+                                }
+                            },
                             modifier = Modifier.animateItem()
                         )
                     }

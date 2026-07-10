@@ -10,7 +10,9 @@ import moe.ouom.neriplayer.util.NPLogger
 
 internal object StartupAudioFocusController {
     private const val TAG = "NERI-StartupFocus"
-    private const val USB_EXCLUSIVE_RECLAIM_FOCUS_DELAY_MS = 180L
+    private const val USB_EXCLUSIVE_RECLAIM_FOCUS_DELAY_MS = 120L
+    private const val USB_EXCLUSIVE_RECLAIM_FOCUS_CONFIRM_DELAY_MS = 520L
+    private const val USB_EXCLUSIVE_SUSTAINED_LOSS_PAUSE_MS = 2_400L
 
     private val lock = Any()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -21,23 +23,63 @@ internal object StartupAudioFocusController {
     private var usbExclusiveGuardEnabled = false
 
     private val focusChangeListener = AudioManager.OnAudioFocusChangeListener { change ->
-        val shouldReclaimUsbFocus = synchronized(lock) {
+        val action = synchronized(lock) {
             when (change) {
                 AudioManager.AUDIOFOCUS_GAIN -> hasFocus = true
                 AudioManager.AUDIOFOCUS_LOSS,
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> hasFocus = false
             }
-            usbExclusiveGuardEnabled && change != AudioManager.AUDIOFOCUS_GAIN
+            when {
+                !usbExclusiveGuardEnabled || change == AudioManager.AUDIOFOCUS_GAIN ->
+                    FocusLossAction.None
+                change == AudioManager.AUDIOFOCUS_LOSS &&
+                    PlayerManager.isRecentUsbExclusiveFocusDisruption() ->
+                    FocusLossAction.ReclaimThenConfirmExternalAudio
+                change == AudioManager.AUDIOFOCUS_LOSS ->
+                    FocusLossAction.PauseForExternalAudio
+                else ->
+                    FocusLossAction.ReclaimShortSystemSound
+            }
         }
         NPLogger.d(TAG, "focus change=$change hasFocus=${isFocused()}")
-        if (shouldReclaimUsbFocus) {
-            mainHandler.removeCallbacksAndMessages(RECLAIM_FOCUS_TOKEN)
-            mainHandler.postDelayed(
-                { requestWithStoredManager("usb_exclusive_focus_loss:$change") },
-                RECLAIM_FOCUS_TOKEN,
-                USB_EXCLUSIVE_RECLAIM_FOCUS_DELAY_MS
-            )
+        when (action) {
+            FocusLossAction.None -> {
+                if (change == AudioManager.AUDIOFOCUS_GAIN) {
+                    mainHandler.removeCallbacksAndMessages(RECLAIM_FOCUS_TOKEN)
+                }
+            }
+            FocusLossAction.ReclaimShortSystemSound,
+            FocusLossAction.ReclaimThenConfirmExternalAudio -> {
+                PlayerManager.markUsbExclusiveFocusDisrupted(change)
+                mainHandler.removeCallbacksAndMessages(RECLAIM_FOCUS_TOKEN)
+                mainHandler.postDelayed(
+                    { requestWithStoredManager("usb_exclusive_focus_loss:$change:immediate") },
+                    RECLAIM_FOCUS_TOKEN,
+                    0L
+                )
+                mainHandler.postDelayed(
+                    { requestWithStoredManager("usb_exclusive_focus_loss:$change") },
+                    RECLAIM_FOCUS_TOKEN,
+                    USB_EXCLUSIVE_RECLAIM_FOCUS_DELAY_MS
+                )
+                mainHandler.postDelayed(
+                    { requestWithStoredManager("usb_exclusive_focus_loss:$change:confirm") },
+                    RECLAIM_FOCUS_TOKEN,
+                    USB_EXCLUSIVE_RECLAIM_FOCUS_CONFIRM_DELAY_MS
+                )
+                if (action == FocusLossAction.ReclaimThenConfirmExternalAudio) {
+                    mainHandler.postDelayed(
+                        { pauseForSustainedUsbExclusiveFocusLoss(change) },
+                        RECLAIM_FOCUS_TOKEN,
+                        USB_EXCLUSIVE_SUSTAINED_LOSS_PAUSE_MS
+                    )
+                }
+            }
+            FocusLossAction.PauseForExternalAudio -> {
+                mainHandler.removeCallbacksAndMessages(RECLAIM_FOCUS_TOKEN)
+                PlayerManager.pauseForUsbExclusiveFocusLoss("audio_focus_loss")
+            }
         }
     }
 
@@ -67,10 +109,14 @@ internal object StartupAudioFocusController {
         enabled: Boolean,
         allowMixedPlayback: Boolean,
         usbExclusivePlayback: Boolean,
+        usbExclusiveNativeActive: Boolean,
         transportActive: Boolean,
         reason: String
     ) {
-        val shouldUseUsbExclusiveGuard = enabled && usbExclusivePlayback && !allowMixedPlayback
+        val shouldUseUsbExclusiveGuard = enabled &&
+            usbExclusivePlayback &&
+            usbExclusiveNativeActive &&
+            !allowMixedPlayback
         if (shouldUseUsbExclusiveGuard) {
             updateForUsbExclusivePlayback(
                 context = context,
@@ -86,15 +132,22 @@ internal object StartupAudioFocusController {
                 reason = reason
             )
         }
-        when {
-            !enabled -> release("disabled:$reason")
-            allowMixedPlayback -> release("mixed_playback:$reason")
-            transportActive -> release("transport_active:$reason")
-            else -> request(
+        val releaseReason = when {
+            !enabled -> "disabled:$reason"
+            allowMixedPlayback -> "mixed_playback:$reason"
+            !usbExclusivePlayback -> "usb_exclusive_off:$reason"
+            !usbExclusiveNativeActive -> "usb_exclusive_not_native:$reason"
+            transportActive -> "transport_active:$reason"
+            else -> "usb_exclusive_guard_idle:$reason"
+        }
+        if (enabled && !allowMixedPlayback && !transportActive) {
+            request(
                 context = context,
                 reason = reason,
                 requestedFocusGain = AudioManager.AUDIOFOCUS_GAIN
             )
+        } else {
+            release(releaseReason)
         }
     }
 
@@ -191,6 +244,19 @@ internal object StartupAudioFocusController {
         )
     }
 
+    private fun pauseForSustainedUsbExclusiveFocusLoss(change: Int) {
+        val shouldPause = synchronized(lock) {
+            usbExclusiveGuardEnabled && !hasFocus
+        }
+        if (!shouldPause) return
+        if (PlayerManager.usbExclusiveAppInForeground) {
+            requestWithStoredManager("usb_exclusive_focus_loss:$change:foreground_confirm")
+            return
+        }
+        NPLogger.w(TAG, "sustained USB exclusive focus loss, pause for external audio change=$change")
+        PlayerManager.pauseForUsbExclusiveFocusLoss("sustained_audio_focus_loss:$change")
+    }
+
     private fun buildFocusRequest(requestedFocusGain: Int): AudioFocusRequest {
         val attributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -221,6 +287,13 @@ internal object StartupAudioFocusController {
         val manager: AudioManager,
         val request: AudioFocusRequest
     )
+
+    private enum class FocusLossAction {
+        None,
+        ReclaimShortSystemSound,
+        ReclaimThenConfirmExternalAudio,
+        PauseForExternalAudio
+    }
 
     private object RECLAIM_FOCUS_TOKEN
 }

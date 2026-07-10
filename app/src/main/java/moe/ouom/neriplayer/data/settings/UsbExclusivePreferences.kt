@@ -7,6 +7,14 @@ const val DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_MODE = "auto"
 const val DEFAULT_USB_EXCLUSIVE_BUFFER_PROFILE = "balanced"
 const val DEFAULT_USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY = "closest_supported"
 const val DEFAULT_USB_EXCLUSIVE_DEVICE_KEY = "auto"
+const val DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_COMPATIBILITY = true
+const val DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_COMPATIBILITY = true
+const val DEFAULT_USB_EXCLUSIVE_CHANNEL_COMPATIBILITY = true
+const val DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS = 250
+const val DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS = 1500
+const val MIN_USB_EXCLUSIVE_BUFFER_MS = 80
+const val MAX_USB_EXCLUSIVE_BUFFER_MS = 3000
+const val USB_EXCLUSIVE_BUFFER_STEP_MS = 50
 
 enum class UsbExclusiveSampleRateMode(
     val storageValue: String,
@@ -88,7 +96,15 @@ data class UsbExclusivePreferences(
     val bitDepthMode: UsbExclusiveBitDepthMode = UsbExclusiveBitDepthMode.AUTO,
     val bufferProfile: UsbExclusiveBufferProfile = UsbExclusiveBufferProfile.BALANCED,
     val unsupportedFormatPolicy: UsbExclusiveUnsupportedFormatPolicy =
-        UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED
+        UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED,
+    val sampleRateCompatibilityEnabled: Boolean =
+        DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_COMPATIBILITY,
+    val bitDepthCompatibilityEnabled: Boolean =
+        DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_COMPATIBILITY,
+    val channelCompatibilityEnabled: Boolean =
+        DEFAULT_USB_EXCLUSIVE_CHANNEL_COMPATIBILITY,
+    val foregroundBufferMs: Int = DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS,
+    val backgroundBufferMs: Int = DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
 ) {
     fun resolveSampleRateHz(
         sourceSampleRateHz: Int,
@@ -100,6 +116,9 @@ data class UsbExclusivePreferences(
             .filter { it > 0 }
             .distinct()
             .toList()
+        if (!sampleRateCompatibilityEnabled) {
+            return requested.takeIf { it in normalizedSupported }
+        }
         if (
             sampleRateMode == UsbExclusiveSampleRateMode.FOLLOW_SOURCE &&
             unsupportedFormatPolicy == UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED &&
@@ -130,6 +149,9 @@ data class UsbExclusivePreferences(
             .filter { it > 0 }
             .distinct()
             .toList()
+        if (!bitDepthCompatibilityEnabled) {
+            return requested.takeIf { it in normalizedSupported }
+        }
         if (bitDepthMode == UsbExclusiveBitDepthMode.AUTO) {
             normalizedSupported
                 .filter { it >= requested }
@@ -143,24 +165,71 @@ data class UsbExclusivePreferences(
         )
     }
 
+    fun resolveChannelCount(
+        sourceChannelCount: Int,
+        supportedChannelCounts: Collection<Int>
+    ): Int? {
+        val normalizedSupported = supportedChannelCounts
+            .asSequence()
+            .filter { it > 0 }
+            .distinct()
+            .toList()
+        if (normalizedSupported.isEmpty()) {
+            return sourceChannelCount.takeIf { it in 1..2 } ?: 2
+        }
+        if (!channelCompatibilityEnabled) {
+            return sourceChannelCount.takeIf { it in normalizedSupported && it in 1..2 }
+        }
+        return when {
+            2 in normalizedSupported -> 2
+            sourceChannelCount in normalizedSupported && sourceChannelCount in 1..2 ->
+                sourceChannelCount
+            else -> null
+        }
+    }
+
+    fun bufferDurationMs(appInForeground: Boolean): Int {
+        val requested = if (appInForeground) foregroundBufferMs else backgroundBufferMs
+        return normalizeUsbExclusiveBufferMs(requested)
+    }
+
     companion object {
         fun fromStorageValues(
             sampleRateMode: String?,
             bitDepthMode: String?,
             bufferProfile: String?,
             unsupportedFormatPolicy: String?,
-            selectedDeviceKey: String? = null
+            selectedDeviceKey: String? = null,
+            sampleRateCompatibilityEnabled: Boolean? = null,
+            bitDepthCompatibilityEnabled: Boolean? = null,
+            channelCompatibilityEnabled: Boolean? = null,
+            foregroundBufferMs: Int? = null,
+            backgroundBufferMs: Int? = null
         ): UsbExclusivePreferences {
+            val parsedBufferProfile = UsbExclusiveBufferProfile.fromStorageValue(bufferProfile)
             val parsed = UsbExclusivePreferences(
                 selectedDeviceKey = normalizeUsbExclusiveDeviceKey(selectedDeviceKey),
                 sampleRateMode = UsbExclusiveSampleRateMode.fromStorageValue(sampleRateMode),
                 bitDepthMode = UsbExclusiveBitDepthMode.fromStorageValue(bitDepthMode),
-                bufferProfile = UsbExclusiveBufferProfile.fromStorageValue(bufferProfile),
+                bufferProfile = parsedBufferProfile,
                 unsupportedFormatPolicy = UsbExclusiveUnsupportedFormatPolicy.fromStorageValue(
                     unsupportedFormatPolicy
+                ),
+                sampleRateCompatibilityEnabled = sampleRateCompatibilityEnabled
+                    ?: DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_COMPATIBILITY,
+                bitDepthCompatibilityEnabled = bitDepthCompatibilityEnabled
+                    ?: DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_COMPATIBILITY,
+                channelCompatibilityEnabled = channelCompatibilityEnabled
+                    ?: DEFAULT_USB_EXCLUSIVE_CHANNEL_COMPATIBILITY,
+                foregroundBufferMs = normalizeUsbExclusiveBufferMs(
+                    foregroundBufferMs ?: parsedBufferProfile.bufferDurationMs
+                ),
+                backgroundBufferMs = normalizeUsbExclusiveBufferMs(
+                    backgroundBufferMs ?: DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
                 )
             )
-            val legacyDefaultPolicy = parsed.sampleRateMode == UsbExclusiveSampleRateMode.FOLLOW_SOURCE &&
+            val legacyDefaultPolicy = unsupportedFormatPolicy == null &&
+                parsed.sampleRateMode == UsbExclusiveSampleRateMode.FOLLOW_SOURCE &&
                 parsed.bitDepthMode == UsbExclusiveBitDepthMode.AUTO &&
                 parsed.bufferProfile == UsbExclusiveBufferProfile.BALANCED &&
                 parsed.unsupportedFormatPolicy == UsbExclusiveUnsupportedFormatPolicy.SYSTEM_FALLBACK
@@ -182,7 +251,15 @@ fun PlaybackPreferenceSnapshot.toUsbExclusivePreferences(): UsbExclusivePreferen
         sampleRateMode = normalizedSnapshot.usbExclusiveSampleRateMode,
         bitDepthMode = normalizedSnapshot.usbExclusiveBitDepthMode,
         bufferProfile = normalizedSnapshot.usbExclusiveBufferProfile,
-        unsupportedFormatPolicy = normalizedSnapshot.usbExclusiveUnsupportedFormatPolicy
+        unsupportedFormatPolicy = normalizedSnapshot.usbExclusiveUnsupportedFormatPolicy,
+        sampleRateCompatibilityEnabled =
+            normalizedSnapshot.usbExclusiveSampleRateCompatibility,
+        bitDepthCompatibilityEnabled =
+            normalizedSnapshot.usbExclusiveBitDepthCompatibility,
+        channelCompatibilityEnabled =
+            normalizedSnapshot.usbExclusiveChannelCompatibility,
+        foregroundBufferMs = normalizedSnapshot.usbExclusiveForegroundBufferMs,
+        backgroundBufferMs = normalizedSnapshot.usbExclusiveBackgroundBufferMs
     )
 }
 
@@ -190,6 +267,12 @@ fun normalizeUsbExclusiveDeviceKey(value: String?): String {
     return value?.trim()
         ?.takeIf { it.isNotBlank() && !it.equals(DEFAULT_USB_EXCLUSIVE_DEVICE_KEY, ignoreCase = true) }
         ?: DEFAULT_USB_EXCLUSIVE_DEVICE_KEY
+}
+
+fun normalizeUsbExclusiveBufferMs(value: Int): Int {
+    val clamped = value.coerceIn(MIN_USB_EXCLUSIVE_BUFFER_MS, MAX_USB_EXCLUSIVE_BUFFER_MS)
+    val rounded = (clamped / USB_EXCLUSIVE_BUFFER_STEP_MS) * USB_EXCLUSIVE_BUFFER_STEP_MS
+    return rounded.coerceIn(MIN_USB_EXCLUSIVE_BUFFER_MS, MAX_USB_EXCLUSIVE_BUFFER_MS)
 }
 
 private fun resolveSupportedValue(

@@ -1444,10 +1444,55 @@ object AutoSettingsSchema {
         val usbExclusiveUnsupportedFormatPolicy = Unit
 
         @AutoSetting(
+            key = "usb_exclusive_sample_rate_compatibility",
+            type = SettingValueType.Boolean,
+            defaultBoolean = DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_COMPATIBILITY,
+            order = 166,
+            access = SettingAccessMode.KeyOnly
+        )
+        val usbExclusiveSampleRateCompatibility = Unit
+
+        @AutoSetting(
+            key = "usb_exclusive_bit_depth_compatibility",
+            type = SettingValueType.Boolean,
+            defaultBoolean = DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_COMPATIBILITY,
+            order = 167,
+            access = SettingAccessMode.KeyOnly
+        )
+        val usbExclusiveBitDepthCompatibility = Unit
+
+        @AutoSetting(
+            key = "usb_exclusive_channel_compatibility",
+            type = SettingValueType.Boolean,
+            defaultBoolean = DEFAULT_USB_EXCLUSIVE_CHANNEL_COMPATIBILITY,
+            order = 168,
+            access = SettingAccessMode.KeyOnly
+        )
+        val usbExclusiveChannelCompatibility = Unit
+
+        @AutoSetting(
+            key = "usb_exclusive_foreground_buffer_ms",
+            type = SettingValueType.Int,
+            defaultInt = DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS,
+            order = 169,
+            access = SettingAccessMode.KeyOnly
+        )
+        val usbExclusiveForegroundBufferMs = Unit
+
+        @AutoSetting(
+            key = "usb_exclusive_background_buffer_ms",
+            type = SettingValueType.Int,
+            defaultInt = DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
+            order = 170,
+            access = SettingAccessMode.KeyOnly
+        )
+        val usbExclusiveBackgroundBufferMs = Unit
+
+        @AutoSetting(
             key = "allow_mixed_playback",
             type = SettingValueType.Boolean,
             defaultBoolean = false,
-            order = 170,
+            order = 180,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )

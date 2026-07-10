@@ -69,6 +69,11 @@ internal fun UsbExclusiveSettingsSection(
     onBitDepthModeChange: (UsbExclusiveBitDepthMode) -> Unit,
     onBufferProfileChange: (UsbExclusiveBufferProfile) -> Unit,
     onUnsupportedFormatPolicyChange: (UsbExclusiveUnsupportedFormatPolicy) -> Unit,
+    onSampleRateCompatibilityChange: (Boolean) -> Unit,
+    onBitDepthCompatibilityChange: (Boolean) -> Unit,
+    onChannelCompatibilityChange: (Boolean) -> Unit,
+    onForegroundBufferMsChange: (Int) -> Unit,
+    onBackgroundBufferMsChange: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current.applicationContext
@@ -129,7 +134,12 @@ internal fun UsbExclusiveSettingsSection(
                 onSampleRateModeChange = onSampleRateModeChange,
                 onBitDepthModeChange = onBitDepthModeChange,
                 onBufferProfileChange = onBufferProfileChange,
-                onUnsupportedFormatPolicyChange = onUnsupportedFormatPolicyChange
+                onUnsupportedFormatPolicyChange = onUnsupportedFormatPolicyChange,
+                onSampleRateCompatibilityChange = onSampleRateCompatibilityChange,
+                onBitDepthCompatibilityChange = onBitDepthCompatibilityChange,
+                onChannelCompatibilityChange = onChannelCompatibilityChange,
+                onForegroundBufferMsChange = onForegroundBufferMsChange,
+                onBackgroundBufferMsChange = onBackgroundBufferMsChange
             )
         }
 

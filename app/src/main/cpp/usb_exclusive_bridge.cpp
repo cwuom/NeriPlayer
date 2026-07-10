@@ -14,6 +14,7 @@
 #include <chrono>
 #include <limits>
 #include <memory>
+#include <sys/resource.h>
 #include <unordered_map>
 
 #include "libusb/libusb.h"
@@ -115,6 +116,7 @@ struct UsbExclusiveHandle {
     std::atomic<int> packetFramesMin { std::numeric_limits<int>::max() };
     std::atomic<int> packetFramesMax { 0 };
     std::atomic<int> lastTransferBytes { 0 };
+    std::atomic<int> shortWriteWarnings { 0 };
     std::string lastError;
 };
 
@@ -126,6 +128,16 @@ bool allocateTransfers(UsbExclusiveHandle* handle);
 void freeTransfers(UsbExclusiveHandle* handle);
 void eventLoopThread(UsbExclusiveHandle* handle);
 void stopStreamingInternal(UsbExclusiveHandle* handle);
+
+void configureUsbEventThreadPriority() {
+    errno = 0;
+    const int rc = setpriority(PRIO_PROCESS, 0, -16);
+    if (rc == 0) {
+        LOGI("USB event thread priority raised for audio stability");
+        return;
+    }
+    LOGW("USB event thread priority unchanged: errno=%d %s", errno, strerror(errno));
+}
 
 std::shared_ptr<UsbExclusiveHandle> acquireHandle(jlong token) {
     if (token <= 0) {
@@ -720,12 +732,30 @@ bool startStreamingInternal(
     StreamSource source
 ) {
     if (handle == nullptr || handle->devh == nullptr) {
+        LOGW("startStreamingInternal rejected: invalid handle");
         return false;
     }
+    LOGI(
+        "startStreamingInternal request: source=%s running=%d failed=%d playback=%d "
+        "transferBytes=%d transferCount=%d packets=%d",
+        sourceName(source),
+        handle->running.load() ? 1 : 0,
+        handle->transportFailed.load() ? 1 : 0,
+        handle->playbackEnabled.load() ? 1 : 0,
+        handle->transferBytes,
+        handle->transferCount,
+        handle->packetsPerTransfer
+    );
     if (handle->running.load()) {
         if (!handle->transportFailed.load() && handle->streamSource.load() == source) {
             return true;
         }
+        LOGW(
+            "startStreamingInternal restarts active stream: oldSource=%s newSource=%s failed=%d",
+            sourceName(handle->streamSource.load()),
+            sourceName(source),
+            handle->transportFailed.load() ? 1 : 0
+        );
         stopStreamingInternal(handle);
     }
 
@@ -738,11 +768,13 @@ bool startStreamingInternal(
     handle->packetFramesMin.store(std::numeric_limits<int>::max());
     handle->packetFramesMax.store(0);
     handle->lastTransferBytes.store(0);
+    handle->shortWriteWarnings.store(0);
     handle->packetScheduler.reset();
     handle->stopRequested.store(false);
     handle->transportFailed.store(false);
     handle->inFlightTransfers.store(0);
     if (!allocateTransfers(handle)) {
+        LOGE("allocateTransfers failed before stream start: error=%s", getErrorCopy(handle).c_str());
         freeTransfers(handle);
         return false;
     }
@@ -761,7 +793,13 @@ bool startStreamingInternal(
     }
     handle->eventThread = std::thread(eventLoopThread, handle);
 
-    LOGI("native stream started: source=%s", sourceName(source));
+    LOGI(
+        "native stream started: source=%s inFlight=%d transferBytes=%d packetBytes=%d",
+        sourceName(source),
+        handle->inFlightTransfers.load(),
+        handle->transferBytes,
+        handle->bytesPerUsbFrame
+    );
     return true;
 }
 
@@ -879,7 +917,14 @@ void LIBUSB_CALL transferCallback(libusb_transfer* transfer) {
         handle->submitErrors.fetch_add(1);
         handle->transportFailed.store(true);
         setError(handle, std::string("transfer_status=") + std::to_string(transfer->status));
-        LOGW("USB transfer callback status=%d", transfer->status);
+        LOGW(
+            "USB transfer callback status=%d completed=%d submitErrors=%d inFlight=%d actual=%d",
+            transfer->status,
+            handle->completedTransfers.load(),
+            handle->submitErrors.load(),
+            handle->inFlightTransfers.load(),
+            transfer->actual_length
+        );
     }
 
     if (handle->stopRequested.load()) {
@@ -900,7 +945,13 @@ void LIBUSB_CALL transferCallback(libusb_transfer* transfer) {
         handle->transportFailed.store(true);
         handle->inFlightTransfers.fetch_sub(1);
         setError(handle, std::string("resubmit_failed:") + libusbErrName(rc));
-        LOGE("libusb_submit_transfer resubmit failed: %s", libusbErrName(rc));
+        LOGE(
+            "libusb_submit_transfer resubmit failed: %s completed=%d submitErrors=%d inFlight=%d",
+            libusbErrName(rc),
+            handle->completedTransfers.load(),
+            handle->submitErrors.load(),
+            handle->inFlightTransfers.load()
+        );
         return;
     }
     handle->transportFailed.store(false);
@@ -968,6 +1019,7 @@ void freeTransfers(UsbExclusiveHandle* handle) {
 }
 
 void eventLoopThread(UsbExclusiveHandle* handle) {
+    configureUsbEventThreadPriority();
     while (!handle->stopRequested.load()) {
         timeval timeout {};
         timeout.tv_sec = 0;
@@ -991,6 +1043,13 @@ void stopStreamingInternal(UsbExclusiveHandle* handle) {
         return;
     }
 
+    LOGI(
+        "stopStreamingInternal begin: source=%s inFlight=%d completed=%d errors=%d",
+        sourceName(handle->streamSource.load()),
+        handle->inFlightTransfers.load(),
+        handle->completedTransfers.load(),
+        handle->submitErrors.load()
+    );
     handle->stopRequested.store(true);
     for (libusb_transfer* transfer : handle->transfers) {
         if (transfer != nullptr) {
@@ -1024,6 +1083,12 @@ void stopStreamingInternal(UsbExclusiveHandle* handle) {
         }
     }
     freeTransfers(handle);
+    LOGI(
+        "stopStreamingInternal done: completed=%d errors=%d transportFailed=%d",
+        handle->completedTransfers.load(),
+        handle->submitErrors.load(),
+        handle->transportFailed.load() ? 1 : 0
+    );
 }
 
 void closeHandleInternal(UsbExclusiveHandle* handle) {
@@ -1032,16 +1097,43 @@ void closeHandleInternal(UsbExclusiveHandle* handle) {
     }
     bool expected = false;
     if (!handle->closing.compare_exchange_strong(expected, true)) {
+        LOGW("closeHandleInternal ignored duplicate close");
         return;
     }
+    LOGI(
+        "closeHandleInternal begin: iface=%d alt=%d claimed=%d running=%d source=%s",
+        handle->audioStreamingInterface,
+        handle->alternateSetting,
+        handle->interfaceClaimed ? 1 : 0,
+        handle->running.load() ? 1 : 0,
+        sourceName(handle->streamSource.load())
+    );
     stopStreamingInternal(handle);
 
     if (handle->devh != nullptr) {
         if (handle->audioStreamingInterface >= 0) {
             if (handle->interfaceClaimed) {
+                if (handle->alternateSetting > 0) {
+                    const int idleAltRc = libusb_set_interface_alt_setting(
+                        handle->devh,
+                        handle->audioStreamingInterface,
+                        0
+                    );
+                    if (idleAltRc == LIBUSB_SUCCESS) {
+                        markInterfaceTransitionLocked();
+                        LOGI(
+                            "restored idle alt setting: iface=%d alt=0",
+                            handle->audioStreamingInterface
+                        );
+                    } else {
+                        LOGW("restore idle alt setting failed: %s", libusbErrName(idleAltRc));
+                    }
+                }
                 const int releaseRc = libusb_release_interface(handle->devh, handle->audioStreamingInterface);
                 if (releaseRc != LIBUSB_SUCCESS) {
                     LOGW("release interface failed: %s", libusbErrName(releaseRc));
+                } else {
+                    LOGI("released interface: iface=%d", handle->audioStreamingInterface);
                 }
                 handle->interfaceClaimed = false;
             }
@@ -1069,6 +1161,7 @@ void closeHandleInternal(UsbExclusiveHandle* handle) {
         close(handle->dupFd);
         handle->dupFd = -1;
     }
+    LOGI("closeHandleInternal done");
 }
 
 } // namespace
@@ -1085,7 +1178,16 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativeOpen(
     jint subslotBytes
 ) {
     (void) env;
+    LOGI(
+        "nativeOpen request: fd=%d sampleRate=%d channels=%d bits=%d subslot=%d",
+        fd,
+        sampleRate,
+        channelCount,
+        bitsPerSample,
+        subslotBytes
+    );
     if (fd < 0) {
+        LOGE("nativeOpen rejected invalid fd=%d", fd);
         rememberLastOpenError("invalid_fd");
         return 0L;
     }
@@ -1101,6 +1203,13 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativeOpen(
         handle->bitsPerSample < 8 || handle->bitsPerSample > 32 ||
         handle->subslotBytes < 1 || handle->subslotBytes > 4 ||
         handle->bitsPerSample > handle->subslotBytes * 8) {
+        LOGE(
+            "nativeOpen rejected invalid output format: sr=%d ch=%d bits=%d subslot=%d",
+            handle->sampleRate,
+            handle->channelCount,
+            handle->bitsPerSample,
+            handle->subslotBytes
+        );
         rememberLastOpenError("invalid_output_format");
         return 0L;
     }
@@ -1353,16 +1462,24 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativeConfigur
     (void) env;
     const auto holder = acquireHandle(handleValue);
     if (holder == nullptr) {
+        LOGW("nativeConfigurePlayerBufferDuration rejected: invalid handle=%lld", static_cast<long long>(handleValue));
         return JNI_FALSE;
     }
     std::lock_guard<std::mutex> apiGuard(holder->apiLock);
     if (holder->closing.load() || holder->devh == nullptr) {
+        LOGW("nativeConfigurePlayerBufferDuration rejected: closing handle=%lld", static_cast<long long>(handleValue));
         return JNI_FALSE;
     }
     holder->pcmRingDurationMs = std::clamp(
         static_cast<int>(durationMs),
         kMinimumPcmRingDurationMs,
         kMaximumPcmRingDurationMs
+    );
+    LOGI(
+        "nativeConfigurePlayerBufferDuration: handle=%lld requested=%d applied=%d",
+        static_cast<long long>(handleValue),
+        durationMs,
+        holder->pcmRingDurationMs
     );
     return JNI_TRUE;
 }
@@ -1380,12 +1497,27 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativePrepareP
     (void) env;
     const auto holder = acquireHandle(handleValue);
     if (holder == nullptr) {
+        LOGW("nativePreparePlayerPcm rejected: invalid handle=%lld", static_cast<long long>(handleValue));
         return JNI_FALSE;
     }
     std::lock_guard<std::mutex> apiGuard(holder->apiLock);
     if (holder->closing.load() || holder->devh == nullptr) {
+        LOGW("nativePreparePlayerPcm rejected: closing handle=%lld", static_cast<long long>(handleValue));
         return JNI_FALSE;
     }
+    LOGI(
+        "nativePreparePlayerPcm request: handle=%lld inputSr=%d inputCh=%d inputEncoding=%d "
+        "outputSr=%d outputCh=%d bits=%d bufferMs=%d running=%d",
+        static_cast<long long>(handleValue),
+        inputSampleRate,
+        inputChannelCount,
+        inputEncoding,
+        holder->sampleRate,
+        holder->channelCount,
+        holder->bitsPerSample,
+        holder->pcmRingDurationMs,
+        holder->running.load() ? 1 : 0
+    );
     if (holder->running.load()) {
         holder->playbackEnabled.store(false);
         stopStreamingInternal(holder.get());
@@ -1394,6 +1526,12 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativePrepareP
     if (bytesPerSample <= 0 || inputSampleRate < 8000 || inputSampleRate > 768000 ||
         inputChannelCount < 1 || inputChannelCount > 8) {
         setError(holder.get(), "unsupported_player_pcm_format");
+        LOGE(
+            "nativePreparePlayerPcm unsupported input: sr=%d ch=%d encoding=%d",
+            inputSampleRate,
+            inputChannelCount,
+            inputEncoding
+        );
         return JNI_FALSE;
     }
     const neri::usb::PcmPipelineConfig config {
@@ -1416,6 +1554,7 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativePrepareP
     std::string pipelineError;
     if (!holder->pcmPipeline.configure(config, &pipelineError)) {
         setError(holder.get(), pipelineError);
+        LOGE("nativePreparePlayerPcm pipeline configure failed: %s", pipelineError.c_str());
         return JNI_FALSE;
     }
     holder->streamSource.store(StreamSource::PlayerPcm);
@@ -1423,6 +1562,13 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativePrepareP
     holder->stagedPlayerFrames.store(0);
     holder->completedAudioFrames.store(0);
     clearError(holder.get());
+    LOGI(
+        "nativePreparePlayerPcm ok: handle=%lld ringMs=%d transferBytes=%d transferCount=%d",
+        static_cast<long long>(handleValue),
+        holder->pcmRingDurationMs,
+        holder->transferBytes,
+        holder->transferCount
+    );
     return JNI_TRUE;
 }
 
@@ -1439,17 +1585,38 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativeWritePla
 ) {
     const auto holder = acquireHandle(handleValue);
     if (holder == nullptr || buffer == nullptr || size <= 0 || offset < 0) {
+        LOGW(
+            "nativeWritePlayerPcm rejected: handle=%lld buffer=%d offset=%d size=%d",
+            static_cast<long long>(handleValue),
+            buffer != nullptr ? 1 : 0,
+            offset,
+            size
+        );
         return 0;
     }
     std::lock_guard<std::mutex> apiGuard(holder->apiLock);
     if (holder->closing.load() || holder->devh == nullptr ||
         holder->streamSource.load() != StreamSource::PlayerPcm) {
+        LOGW(
+            "nativeWritePlayerPcm rejected by state: handle=%lld closing=%d devh=%d source=%s",
+            static_cast<long long>(handleValue),
+            holder->closing.load() ? 1 : 0,
+            holder->devh != nullptr ? 1 : 0,
+            sourceName(holder->streamSource.load())
+        );
         return 0;
     }
     auto* data = static_cast<uint8_t*>(env->GetDirectBufferAddress(buffer));
     const jlong capacity = env->GetDirectBufferCapacity(buffer);
     if (data == nullptr || capacity < 0 || static_cast<jlong>(offset) + size > capacity) {
         setError(holder.get(), "invalid_direct_pcm_buffer");
+        LOGE(
+            "nativeWritePlayerPcm invalid direct buffer: handle=%lld capacity=%lld offset=%d size=%d",
+            static_cast<long long>(handleValue),
+            static_cast<long long>(capacity),
+            offset,
+            size
+        );
         return 0;
     }
     holder->pcmPipeline.setTargetGain(std::clamp(volume, 0.0f, 1.0f));
@@ -1461,6 +1628,28 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativeWritePla
     );
     if (!pipelineError.empty()) {
         setError(holder.get(), pipelineError);
+        LOGW("nativeWritePlayerPcm pipeline warning: %s", pipelineError.c_str());
+    }
+    if (written == 0 || written < static_cast<size_t>(size)) {
+        const int warningIndex = holder->shortWriteWarnings.fetch_add(1);
+        if (warningIndex < 8) {
+            const neri::usb::PcmPipelineSnapshot pcm = holder->pcmPipeline.snapshot();
+            LOGW(
+                "nativeWritePlayerPcm short write: handle=%lld requested=%d written=%zu "
+                "level=%zu/%zu running=%d playback=%d input=%lld output=%lld dropped=%lld underrun=%lld",
+                static_cast<long long>(handleValue),
+                size,
+                written,
+                pcm.levelBytes,
+                pcm.capacityBytes,
+                holder->running.load() ? 1 : 0,
+                holder->playbackEnabled.load() ? 1 : 0,
+                static_cast<long long>(pcm.inputBytes),
+                static_cast<long long>(pcm.outputBytes),
+                static_cast<long long>(pcm.droppedBytes),
+                static_cast<long long>(pcm.underrunBytes)
+            );
+        }
     }
     return static_cast<jint>(written);
 }
@@ -1475,18 +1664,41 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativePlayPlay
     (void) env;
     const auto holder = acquireHandle(handleValue);
     if (holder == nullptr) {
+        LOGW("nativePlayPlayerPcm rejected: invalid handle=%lld", static_cast<long long>(handleValue));
         return JNI_FALSE;
     }
     std::lock_guard<std::mutex> apiGuard(holder->apiLock);
     if (holder->closing.load() || holder->devh == nullptr ||
         holder->streamSource.load() != StreamSource::PlayerPcm) {
+        LOGW(
+            "nativePlayPlayerPcm rejected by state: handle=%lld closing=%d devh=%d source=%s",
+            static_cast<long long>(handleValue),
+            holder->closing.load() ? 1 : 0,
+            holder->devh != nullptr ? 1 : 0,
+            sourceName(holder->streamSource.load())
+        );
         return JNI_FALSE;
     }
+    const neri::usb::PcmPipelineSnapshot before = holder->pcmPipeline.snapshot();
+    LOGI(
+        "nativePlayPlayerPcm request: handle=%lld running=%d queued=%zu/%zu completed=%lld",
+        static_cast<long long>(handleValue),
+        holder->running.load() ? 1 : 0,
+        before.levelBytes,
+        before.capacityBytes,
+        static_cast<long long>(holder->completedAudioFrames.load())
+    );
     holder->playbackEnabled.store(true);
     if (startStreamingInternal(holder.get(), StreamSource::PlayerPcm)) {
+        LOGI("nativePlayPlayerPcm ok: handle=%lld", static_cast<long long>(handleValue));
         return JNI_TRUE;
     }
     holder->playbackEnabled.store(false);
+    LOGE(
+        "nativePlayPlayerPcm failed: handle=%lld error=%s",
+        static_cast<long long>(handleValue),
+        getErrorCopy(holder.get()).c_str()
+    );
     return JNI_FALSE;
 }
 
@@ -1514,14 +1726,36 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativePausePla
     (void) env;
     const auto holder = acquireHandle(handleValue);
     if (holder == nullptr) {
+        LOGW("nativePausePlayerPcm rejected: invalid handle=%lld", static_cast<long long>(handleValue));
         return JNI_FALSE;
     }
     std::lock_guard<std::mutex> apiGuard(holder->apiLock);
     if (holder->closing.load() || holder->devh == nullptr ||
         holder->streamSource.load() != StreamSource::PlayerPcm) {
+        LOGW(
+            "nativePausePlayerPcm rejected by state: handle=%lld closing=%d devh=%d source=%s",
+            static_cast<long long>(handleValue),
+            holder->closing.load() ? 1 : 0,
+            holder->devh != nullptr ? 1 : 0,
+            sourceName(holder->streamSource.load())
+        );
         return JNI_FALSE;
     }
+    const neri::usb::PcmPipelineSnapshot before = holder->pcmPipeline.snapshot();
     holder->playbackEnabled.store(false);
+    if (holder->running.load()) {
+        stopStreamingInternal(holder.get());
+    }
+    holder->pcmPipeline.clear();
+    holder->stagedPlayerFrames.store(0);
+    LOGI(
+        "nativePausePlayerPcm ok: handle=%lld running=%d level=%zu/%zu queued=%lld",
+        static_cast<long long>(handleValue),
+        holder->running.load() ? 1 : 0,
+        before.levelBytes,
+        before.capacityBytes,
+        static_cast<long long>(holder->pcmPipeline.queuedFrames())
+    );
     return JNI_TRUE;
 }
 
@@ -1535,16 +1769,34 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativeFlushPla
     (void) env;
     const auto holder = acquireHandle(handleValue);
     if (holder == nullptr) {
+        LOGW("nativeFlushPlayerPcm rejected: invalid handle=%lld", static_cast<long long>(handleValue));
         return JNI_FALSE;
     }
     std::lock_guard<std::mutex> apiGuard(holder->apiLock);
     if (holder->closing.load() || holder->devh == nullptr ||
         holder->streamSource.load() != StreamSource::PlayerPcm) {
+        LOGW(
+            "nativeFlushPlayerPcm rejected by state: handle=%lld closing=%d devh=%d source=%s",
+            static_cast<long long>(handleValue),
+            holder->closing.load() ? 1 : 0,
+            holder->devh != nullptr ? 1 : 0,
+            sourceName(holder->streamSource.load())
+        );
         return JNI_FALSE;
     }
 
     const bool restartTransport = holder->running.load();
     const bool resumePlayback = holder->playbackEnabled.exchange(false);
+    const neri::usb::PcmPipelineSnapshot before = holder->pcmPipeline.snapshot();
+    LOGI(
+        "nativeFlushPlayerPcm begin: handle=%lld restart=%d resume=%d level=%zu/%zu completed=%lld",
+        static_cast<long long>(handleValue),
+        restartTransport ? 1 : 0,
+        resumePlayback ? 1 : 0,
+        before.levelBytes,
+        before.capacityBytes,
+        static_cast<long long>(holder->completedAudioFrames.load())
+    );
     if (restartTransport) {
         stopStreamingInternal(holder.get());
     }
@@ -1553,11 +1805,23 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativeFlushPla
     holder->stagedPlayerFrames.store(0);
     holder->completedAudioFrames.store(0);
 
-    if (restartTransport && !startStreamingInternal(holder.get(), StreamSource::PlayerPcm)) {
+    if (restartTransport && resumePlayback &&
+        !startStreamingInternal(holder.get(), StreamSource::PlayerPcm)) {
+        LOGE(
+            "nativeFlushPlayerPcm restart failed: handle=%lld error=%s",
+            static_cast<long long>(handleValue),
+            getErrorCopy(holder.get()).c_str()
+        );
         return JNI_FALSE;
     }
     holder->playbackEnabled.store(resumePlayback);
     clearError(holder.get());
+    LOGI(
+        "nativeFlushPlayerPcm done: handle=%lld running=%d playback=%d",
+        static_cast<long long>(handleValue),
+        holder->running.load() ? 1 : 0,
+        holder->playbackEnabled.load() ? 1 : 0
+    );
     return JNI_TRUE;
 }
 
@@ -1616,9 +1880,16 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativeStop(
     (void) env;
     const auto holder = acquireHandle(handleValue);
     if (holder == nullptr) {
+        LOGW("nativeStop ignored invalid handle=%lld", static_cast<long long>(handleValue));
         return;
     }
     std::lock_guard<std::mutex> apiGuard(holder->apiLock);
+    LOGI(
+        "nativeStop: handle=%lld running=%d source=%s",
+        static_cast<long long>(handleValue),
+        holder->running.load() ? 1 : 0,
+        sourceName(holder->streamSource.load())
+    );
     holder->playbackEnabled.store(false);
     stopStreamingInternal(holder.get());
 }
@@ -1633,10 +1904,17 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativeClose(
     (void) env;
     const auto holder = takeHandle(handleValue);
     if (holder == nullptr) {
+        LOGW("nativeClose ignored invalid handle=%lld", static_cast<long long>(handleValue));
         return;
     }
     std::lock_guard<std::mutex> transitionGuard(g_usbInterfaceTransitionLock);
     std::lock_guard<std::mutex> apiGuard(holder->apiLock);
+    LOGI(
+        "nativeClose: handle=%lld running=%d source=%s",
+        static_cast<long long>(handleValue),
+        holder->running.load() ? 1 : 0,
+        sourceName(holder->streamSource.load())
+    );
     holder->playbackEnabled.store(false);
     closeHandleInternal(holder.get());
     markInterfaceTransitionLocked();

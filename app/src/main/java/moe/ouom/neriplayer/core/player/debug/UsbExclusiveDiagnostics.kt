@@ -36,6 +36,11 @@ data class UsbExclusiveDiagnosticsSnapshot(
     val bitDepthMode: String,
     val bufferProfile: String,
     val unsupportedFormatPolicy: String,
+    val sampleRateCompatibility: Boolean,
+    val bitDepthCompatibility: Boolean,
+    val channelCompatibility: Boolean,
+    val foregroundBufferMs: Int,
+    val backgroundBufferMs: Int,
     val playerInitialized: Boolean,
     val playerPlaying: Boolean,
     val currentPlayerDeviceName: String?,
@@ -85,7 +90,9 @@ data class UsbExclusiveDiagnosticsSnapshot(
         appendLine("usbDeviceSelection=$selectedDeviceKey")
         appendLine(
             "usbFormatSettings: sampleRate=$sampleRateMode bitDepth=$bitDepthMode " +
-                "buffer=$bufferProfile unsupported=$unsupportedFormatPolicy"
+                "buffer=$bufferProfile foregroundBufferMs=$foregroundBufferMs " +
+                "backgroundBufferMs=$backgroundBufferMs unsupported=$unsupportedFormatPolicy " +
+                "compat(rate=$sampleRateCompatibility,bit=$bitDepthCompatibility,channels=$channelCompatibility)"
         )
         appendLine(
             "player: initialized=$playerInitialized, playing=$playerPlaying, " +
@@ -254,6 +261,11 @@ object UsbExclusiveDiagnostics {
             bitDepthMode = usbPreferences.bitDepthMode.storageValue,
             bufferProfile = usbPreferences.bufferProfile.storageValue,
             unsupportedFormatPolicy = usbPreferences.unsupportedFormatPolicy.storageValue,
+            sampleRateCompatibility = usbPreferences.sampleRateCompatibilityEnabled,
+            bitDepthCompatibility = usbPreferences.bitDepthCompatibilityEnabled,
+            channelCompatibility = usbPreferences.channelCompatibilityEnabled,
+            foregroundBufferMs = usbPreferences.foregroundBufferMs,
+            backgroundBufferMs = usbPreferences.backgroundBufferMs,
             playerInitialized = PlayerManager.isPlayerInitialized(),
             playerPlaying = PlayerManager.isPlayingFlow.value,
             currentPlayerDeviceName = currentDevice?.name,

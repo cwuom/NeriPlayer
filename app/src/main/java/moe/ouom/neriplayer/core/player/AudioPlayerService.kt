@@ -455,10 +455,10 @@ class AudioPlayerService : Service() {
 
     private fun handleExternalPauseCommand(source: String, stopService: Boolean = false) {
         NPLogger.d("NERI-APS", "Received external pause command: source=$source")
-        if (PlayerManager.shouldIgnoreExternalPauseCommand()) {
+        if (PlayerManager.shouldIgnoreExternalPauseCommand(source)) {
             NPLogger.w(
                 "NERI-APS",
-                "Ignored stale external pause during auto track transition: source=$source"
+                "Ignored guarded external pause command: source=$source"
             )
             updatePlaybackState(force = true)
             updateNotification()

@@ -120,6 +120,14 @@ data class PlaybackPreferenceSnapshot(
     val usbExclusiveBufferProfile: String = DEFAULT_USB_EXCLUSIVE_BUFFER_PROFILE,
     val usbExclusiveUnsupportedFormatPolicy: String =
         DEFAULT_USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY,
+    val usbExclusiveSampleRateCompatibility: Boolean =
+        DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_COMPATIBILITY,
+    val usbExclusiveBitDepthCompatibility: Boolean =
+        DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_COMPATIBILITY,
+    val usbExclusiveChannelCompatibility: Boolean =
+        DEFAULT_USB_EXCLUSIVE_CHANNEL_COMPATIBILITY,
+    val usbExclusiveForegroundBufferMs: Int = DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS,
+    val usbExclusiveBackgroundBufferMs: Int = DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
     val allowMixedPlayback: Boolean = false,
     val preemptAudioFocus: Boolean = false,
     val cloudMusicLyricDefaultOffsetMs: Long = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS,
@@ -160,6 +168,12 @@ data class PlaybackPreferenceSnapshot(
             usbExclusiveUnsupportedFormatPolicy = UsbExclusiveUnsupportedFormatPolicy
                 .fromStorageValue(usbExclusiveUnsupportedFormatPolicy)
                 .storageValue,
+            usbExclusiveForegroundBufferMs = normalizeUsbExclusiveBufferMs(
+                usbExclusiveForegroundBufferMs
+            ),
+            usbExclusiveBackgroundBufferMs = normalizeUsbExclusiveBufferMs(
+                usbExclusiveBackgroundBufferMs
+            ),
             cloudMusicLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(cloudMusicLyricDefaultOffsetMs),
             qqMusicLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(qqMusicLyricDefaultOffsetMs),
             maxCacheSizeBytes = maxCacheSizeBytes.coerceAtLeast(0L)
@@ -391,6 +405,21 @@ internal fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnaps
         usbExclusiveUnsupportedFormatPolicy =
             this[SettingsKeys.USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY]
                 ?: DEFAULT_USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY,
+        usbExclusiveSampleRateCompatibility =
+            this[SettingsKeys.USB_EXCLUSIVE_SAMPLE_RATE_COMPATIBILITY]
+                ?: DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_COMPATIBILITY,
+        usbExclusiveBitDepthCompatibility =
+            this[SettingsKeys.USB_EXCLUSIVE_BIT_DEPTH_COMPATIBILITY]
+                ?: DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_COMPATIBILITY,
+        usbExclusiveChannelCompatibility =
+            this[SettingsKeys.USB_EXCLUSIVE_CHANNEL_COMPATIBILITY]
+                ?: DEFAULT_USB_EXCLUSIVE_CHANNEL_COMPATIBILITY,
+        usbExclusiveForegroundBufferMs =
+            this[SettingsKeys.USB_EXCLUSIVE_FOREGROUND_BUFFER_MS]
+                ?: DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS,
+        usbExclusiveBackgroundBufferMs =
+            this[SettingsKeys.USB_EXCLUSIVE_BACKGROUND_BUFFER_MS]
+                ?: DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
         allowMixedPlayback = this[SettingsKeys.ALLOW_MIXED_PLAYBACK] ?: false,
         preemptAudioFocus = this[SettingsKeys.PREEMPT_AUDIO_FOCUS] ?: false,
         cloudMusicLyricDefaultOffsetMs =
@@ -500,6 +529,14 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
         usbExclusiveBufferProfile = usbExclusivePreferences.bufferProfile.storageValue,
         usbExclusiveUnsupportedFormatPolicy =
             usbExclusivePreferences.unsupportedFormatPolicy.storageValue,
+        usbExclusiveSampleRateCompatibility =
+            usbExclusivePreferences.sampleRateCompatibilityEnabled,
+        usbExclusiveBitDepthCompatibility =
+            usbExclusivePreferences.bitDepthCompatibilityEnabled,
+        usbExclusiveChannelCompatibility =
+            usbExclusivePreferences.channelCompatibilityEnabled,
+        usbExclusiveForegroundBufferMs = usbExclusivePreferences.foregroundBufferMs,
+        usbExclusiveBackgroundBufferMs = usbExclusivePreferences.backgroundBufferMs,
         allowMixedPlayback = prefs.getBoolean(PLAYBACK_ALLOW_MIXED_KEY, false),
         preemptAudioFocus = prefs.getBoolean(PLAYBACK_PREEMPT_AUDIO_FOCUS_KEY, false),
         cloudMusicLyricDefaultOffsetMs = prefs.getLong(

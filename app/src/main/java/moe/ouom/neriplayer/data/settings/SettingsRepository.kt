@@ -414,6 +414,21 @@ class SettingsRepository(private val context: Context) {
     val usbExclusiveUnsupportedFormatPolicyFlow: Flow<UsbExclusiveUnsupportedFormatPolicy> =
         usbExclusiveSettingsStore.unsupportedFormatPolicyFlow
 
+    val usbExclusiveSampleRateCompatibilityFlow: Flow<Boolean> =
+        usbExclusiveSettingsStore.sampleRateCompatibilityFlow
+
+    val usbExclusiveBitDepthCompatibilityFlow: Flow<Boolean> =
+        usbExclusiveSettingsStore.bitDepthCompatibilityFlow
+
+    val usbExclusiveChannelCompatibilityFlow: Flow<Boolean> =
+        usbExclusiveSettingsStore.channelCompatibilityFlow
+
+    val usbExclusiveForegroundBufferMsFlow: Flow<Int> =
+        usbExclusiveSettingsStore.foregroundBufferMsFlow
+
+    val usbExclusiveBackgroundBufferMsFlow: Flow<Int> =
+        usbExclusiveSettingsStore.backgroundBufferMsFlow
+
     val allowMixedPlaybackFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.ALLOW_MIXED_PLAYBACK] ?: false }
 
@@ -992,6 +1007,26 @@ class SettingsRepository(private val context: Context) {
         policy: UsbExclusiveUnsupportedFormatPolicy
     ) {
         usbExclusiveSettingsStore.setUnsupportedFormatPolicy(policy)
+    }
+
+    suspend fun setUsbExclusiveSampleRateCompatibility(enabled: Boolean) {
+        usbExclusiveSettingsStore.setSampleRateCompatibilityEnabled(enabled)
+    }
+
+    suspend fun setUsbExclusiveBitDepthCompatibility(enabled: Boolean) {
+        usbExclusiveSettingsStore.setBitDepthCompatibilityEnabled(enabled)
+    }
+
+    suspend fun setUsbExclusiveChannelCompatibility(enabled: Boolean) {
+        usbExclusiveSettingsStore.setChannelCompatibilityEnabled(enabled)
+    }
+
+    suspend fun setUsbExclusiveForegroundBufferMs(bufferMs: Int) {
+        usbExclusiveSettingsStore.setForegroundBufferMs(bufferMs)
+    }
+
+    suspend fun setUsbExclusiveBackgroundBufferMs(bufferMs: Int) {
+        usbExclusiveSettingsStore.setBackgroundBufferMs(bufferMs)
     }
 
     suspend fun setUsbExclusivePreferences(preferences: UsbExclusivePreferences) {
