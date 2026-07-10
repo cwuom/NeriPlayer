@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material.icons.outlined.Usb
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -41,18 +42,22 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.debug.UsbAudioOutputDebugInfo
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnostics
 import moe.ouom.neriplayer.core.player.debug.UsbHostDeviceDebugInfo
+import moe.ouom.neriplayer.core.player.usb.UsbExclusiveSessionController
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 
 @Composable
 fun UsbExclusiveDebugScreen() {
     val context = LocalContext.current
     var snapshot by remember { mutableStateOf(UsbExclusiveDiagnostics.snapshot(context)) }
+    var nativeState by remember { mutableStateOf(UsbExclusiveSessionController.state.value) }
     var copied by remember { mutableStateOf(false) }
     val miniH = LocalMiniPlayerHeight.current
 
     fun refresh(reason: String) {
         UsbExclusiveDiagnostics.logSnapshot(context, reason)
+        UsbExclusiveSessionController.refresh(context)
         snapshot = UsbExclusiveDiagnostics.snapshot(context)
+        nativeState = UsbExclusiveSessionController.state.value
     }
 
     Column(
@@ -120,6 +125,44 @@ fun UsbExclusiveDebugScreen() {
             Text(stringResource(R.string.debug_usb_exclusive_request_permission))
         }
 
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                onClick = {
+                    copied = false
+                    UsbExclusiveSessionController.startGeneratedTone(context)
+                    refresh("debug_start_native_generated_tone")
+                },
+                enabled = snapshot.hasUsbPermission &&
+                    !nativeState.transitioning &&
+                    !nativeState.streaming &&
+                    nativeState.source != "player_pcm",
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Usb,
+                    contentDescription = stringResource(R.string.debug_usb_exclusive_start_native_tone)
+                )
+                Text(stringResource(R.string.debug_usb_exclusive_start_native_tone))
+            }
+            OutlinedButton(
+                onClick = {
+                    UsbExclusiveSessionController.stopGeneratedTone()
+                    refresh("debug_stop_native_generated_tone")
+                },
+                enabled = !nativeState.transitioning && nativeState.source == "tone",
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Stop,
+                    contentDescription = stringResource(R.string.debug_usb_exclusive_stop_native_tone)
+                )
+                Text(stringResource(R.string.debug_usb_exclusive_stop_native_tone))
+            }
+        }
+
         if (copied) {
             Text(
                 text = stringResource(R.string.log_copied),
@@ -129,10 +172,10 @@ fun UsbExclusiveDebugScreen() {
         }
 
         DebugCard(title = stringResource(R.string.debug_usb_exclusive_section_summary)) {
-            DebugRow(stringResource(R.string.debug_usb_exclusive_mode), snapshot.modeSummary)
+            DebugRow(stringResource(R.string.debug_usb_exclusive_mode), snapshot.systemRouteSummary)
             DebugRow(
                 stringResource(R.string.debug_usb_exclusive_limitation),
-                snapshot.limitationSummary
+                snapshot.systemRouteLimitation
             )
             DebugRow(
                 stringResource(R.string.settings_usb_exclusive_playback),
@@ -154,6 +197,27 @@ fun UsbExclusiveDebugScreen() {
                 stringResource(R.string.debug_usb_exclusive_last_permission),
                 snapshot.lastPermissionEvent?.compactLine() ?: "none"
             )
+        }
+
+        DebugCard(title = stringResource(R.string.debug_usb_exclusive_section_native_runtime)) {
+            DebugRow("Native", snapshot.nativeExclusiveSummary)
+            DebugRow("Available", nativeState.available.yesNoText())
+            DebugRow("Opened", nativeState.opened.yesNoText())
+            DebugRow("Streaming", nativeState.streaming.yesNoText())
+            DebugRow("Paused", nativeState.paused.yesNoText())
+            DebugRow("Transitioning", nativeState.transitioning.yesNoText())
+            DebugRow("Source", nativeState.source)
+            DebugRow("Device", nativeState.selectedDeviceName ?: "none")
+            DebugRow("Requested path", snapshot.requestedPath)
+            DebugRow("Effective path", snapshot.effectivePath)
+            DebugRow("Fallback reason", snapshot.fallbackReason ?: "none")
+            DebugRow("Input format", nativeState.inputFormat)
+            DebugRow("Output format", nativeState.outputFormat)
+            DebugRow("Buffer", "${nativeState.bufferDurationMs}ms")
+            DebugRow("Completed frames", nativeState.completedAudioFrames.toString())
+            DebugRow("Queued frames", nativeState.queuedAudioFrames.toString())
+            DebugRow("Runtime", nativeState.runtimeReport)
+            DebugRow("Error", nativeState.lastError ?: "none")
         }
 
         DebugCard(title = stringResource(R.string.debug_usb_exclusive_section_audio_outputs)) {

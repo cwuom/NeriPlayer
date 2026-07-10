@@ -100,6 +100,7 @@ import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.settings.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
 import moe.ouom.neriplayer.listentogether.ListenTogetherChannels
 import moe.ouom.neriplayer.listentogether.buildStableTrackKey
 import moe.ouom.neriplayer.listentogether.resolvedAudioId
@@ -122,7 +123,12 @@ object PlayerManager {
     const val BILI_SOURCE_TAG = "Bilibili"
     const val NETEASE_SOURCE_TAG = "Netease"
 
+    @Volatile
     internal var initialized = false
+
+    @Volatile
+    internal var initializationInProgress = false
+    internal val initializationLock = Any()
     internal lateinit var application: Application
     internal lateinit var player: ExoPlayer
 
@@ -166,6 +172,13 @@ object PlayerManager {
     internal var audioRouteMuteRestoreVolume: Float? = null
     internal var playbackSoundPersistJob: Job? = null
     internal var playbackSoundApplyJob: Job? = null
+    internal var usbAudioSinkReconfigureJob: Job? = null
+    internal var usbExclusiveRecoveryJob: Job? = null
+    internal var usbExclusiveForegroundRecoveryJob: Job? = null
+    internal var usbExclusiveRecoveryAttempts = 0
+    @Volatile
+    internal var pendingUsbExclusivePreferenceReconfigure = false
+    internal var lastUsbExclusiveAudioSinkReconfigureAtMs = 0L
     internal var pendingPlaybackSoundConfig: PlaybackSoundConfig? = null
     internal var neteaseQualityRefreshJob: Job? = null
     internal var youtubeQualityRefreshJob: Job? = null
@@ -192,6 +205,7 @@ object PlayerManager {
     internal var playbackFadeOutDurationMs = DEFAULT_FADE_DURATION_MS
     internal var playbackCrossfadeInDurationMs = DEFAULT_FADE_DURATION_MS
     internal var playbackCrossfadeOutDurationMs = DEFAULT_FADE_DURATION_MS
+    @Volatile
     internal var playbackSoundConfig = PlaybackSoundConfig()
     internal var lyriconEnabled = false
     internal var statusBarLyricsEnable = false
@@ -204,7 +218,10 @@ object PlayerManager {
     internal var keepPlaybackModeStateEnabled = true
     internal var neteaseAutoSourceSwitchEnabled = true
     internal var stopOnBluetoothDisconnectEnabled = true
+    @Volatile
     internal var usbExclusivePlaybackEnabled = false
+    @Volatile
+    internal var usbExclusivePreferences = UsbExclusivePreferences()
     internal var allowMixedPlaybackEnabled = false
 
     @Volatile
@@ -443,6 +460,10 @@ object PlayerManager {
 
     fun isTransportActive(): Boolean {
         ensureInitialized()
+        return isTransportActiveWithoutInitialization()
+    }
+
+    internal fun isTransportActiveWithoutInitialization(): Boolean {
         if (!initialized || _currentSongFlow.value == null) return false
         return resumePlaybackRequested ||
             playJob?.isActive == true ||
@@ -548,7 +569,7 @@ object PlayerManager {
 
     internal fun applyAudioFocusPolicyOnMainThread() {
         if (!::player.isInitialized) return
-        val handleFocus = usbExclusivePlaybackEnabled || !allowMixedPlaybackEnabled
+        val handleFocus = !usbExclusivePlaybackEnabled && !allowMixedPlaybackEnabled
         UsbExclusiveDebugLogger.logFocusPolicy(
             usbExclusivePlayback = usbExclusivePlaybackEnabled,
             allowMixedPlayback = allowMixedPlaybackEnabled,
@@ -559,6 +580,14 @@ object PlayerManager {
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
         player.setAudioAttributes(attributes, handleFocus)
+        StartupAudioFocusController.updateForForeground(
+            context = application,
+            enabled = usbExclusivePlaybackEnabled,
+            allowMixedPlayback = allowMixedPlaybackEnabled,
+            usbExclusivePlayback = usbExclusivePlaybackEnabled,
+            transportActive = isTransportActiveWithoutInitialization(),
+            reason = "apply_audio_focus_policy"
+        )
     }
 
     internal fun isPreparedInPlayer(): Boolean =
@@ -1038,7 +1067,8 @@ object PlayerManager {
     ) {
         pendingPlaybackSoundConfig = resolvePlaybackSoundConfigForEngine(
             baseConfig = newConfig,
-            listenTogetherSyncPlaybackRate = listenTogetherSyncPlaybackRate
+            listenTogetherSyncPlaybackRate = listenTogetherSyncPlaybackRate,
+            usbExclusivePlaybackEnabled = usbExclusivePlaybackEnabled
         )
         playbackSoundApplyJob?.cancel()
 

@@ -15,14 +15,27 @@ import android.media.AudioManager
 import android.os.Build
 import androidx.core.content.ContextCompat
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.retryUsbExclusivePlayback
 import moe.ouom.neriplayer.core.player.audio.isUsbOutputType
+import moe.ouom.neriplayer.core.player.usb.UsbExclusiveSessionController
+import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathTracker
+import moe.ouom.neriplayer.core.player.usb.usbExclusiveDeviceKey
+import moe.ouom.neriplayer.core.player.usb.usbExclusiveDeviceKeyMatchesLabel
+import moe.ouom.neriplayer.core.player.usb.matchesUsbExclusiveDeviceKey
+import moe.ouom.neriplayer.data.settings.DEFAULT_USB_EXCLUSIVE_DEVICE_KEY
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
+import moe.ouom.neriplayer.data.settings.toUsbExclusivePreferences
 import moe.ouom.neriplayer.util.NPLogger
 import java.util.concurrent.atomic.AtomicBoolean
 
 data class UsbExclusiveDiagnosticsSnapshot(
     val usbExclusivePlaybackEnabled: Boolean,
     val allowMixedPlaybackEnabled: Boolean,
+    val selectedDeviceKey: String,
+    val sampleRateMode: String,
+    val bitDepthMode: String,
+    val bufferProfile: String,
+    val unsupportedFormatPolicy: String,
     val playerInitialized: Boolean,
     val playerPlaying: Boolean,
     val currentPlayerDeviceName: String?,
@@ -32,8 +45,21 @@ data class UsbExclusiveDiagnosticsSnapshot(
     val selectedUsbOutput: UsbAudioOutputDebugInfo?,
     val selectedUsbHostDevice: UsbHostDeviceDebugInfo?,
     val lastPermissionEvent: UsbPermissionDebugEvent?,
-    val modeSummary: String,
-    val limitationSummary: String
+    val systemRouteSummary: String,
+    val systemRouteLimitation: String,
+    val nativeExclusiveSummary: String,
+    val nativeExclusiveSource: String,
+    val nativeExclusiveRuntime: String,
+    val nativeExclusiveStreaming: Boolean,
+    val nativeExclusiveError: String?,
+    val requestedPath: String,
+    val effectivePath: String,
+    val fallbackReason: String?,
+    val sinkPlaying: Boolean,
+    val nativePaused: Boolean,
+    val inputFormat: String,
+    val requestedPlaybackParameters: String,
+    val requestedVolume: Float
 ) {
     val hasUsbAudioOutput: Boolean get() = audioOutputs.any { it.isUsbOutput }
     val hasUsbHostAudioDevice: Boolean get() = usbHostDevices.any { it.hasAudioInterface }
@@ -42,9 +68,25 @@ data class UsbExclusiveDiagnosticsSnapshot(
 
     fun toReport(): String = buildString {
         appendLine("USB Exclusive Diagnostics")
-        appendLine("mode=$modeSummary")
-        appendLine("limitation=$limitationSummary")
+        appendLine("systemRoute=$systemRouteSummary")
+        appendLine("systemRouteLimitation=$systemRouteLimitation")
+        appendLine("nativeExclusive=$nativeExclusiveSummary")
+        appendLine("nativeSource=$nativeExclusiveSource")
+        appendLine("nativeRuntime=$nativeExclusiveRuntime")
+        appendLine("nativeStreaming=$nativeExclusiveStreaming")
+        appendLine("nativeError=${nativeExclusiveError ?: "none"}")
+        appendLine("requestedPath=$requestedPath")
+        appendLine("effectivePath=$effectivePath")
+        appendLine("fallbackReason=${fallbackReason ?: "none"}")
+        appendLine("sinkPlaying=$sinkPlaying nativePaused=$nativePaused")
+        appendLine("inputFormat=$inputFormat")
+        appendLine("playbackParameters=$requestedPlaybackParameters volume=$requestedVolume")
         appendLine("settings: usbExclusive=$usbExclusivePlaybackEnabled, allowMixed=$allowMixedPlaybackEnabled")
+        appendLine("usbDeviceSelection=$selectedDeviceKey")
+        appendLine(
+            "usbFormatSettings: sampleRate=$sampleRateMode bitDepth=$bitDepthMode " +
+                "buffer=$bufferProfile unsupported=$unsupportedFormatPolicy"
+        )
         appendLine(
             "player: initialized=$playerInitialized, playing=$playerPlaying, " +
                 "current=$currentPlayerDeviceType:$currentPlayerDeviceName"
@@ -90,6 +132,7 @@ data class UsbAudioOutputDebugInfo(
 }
 
 data class UsbHostDeviceDebugInfo(
+    val deviceKey: String,
     val deviceName: String,
     val productName: String,
     val manufacturerName: String,
@@ -163,6 +206,13 @@ object UsbExclusiveDiagnostics {
             .map { it.toDebugInfo() }
         val usbHostDevices = queryUsbHostDevices(appContext)
         val currentDevice = PlayerManager.currentAudioDeviceFlow.value
+        val nativeState = UsbExclusiveSessionController.state.value
+        val pathState = UsbExclusiveAudioPathTracker.state.value
+        val usbPreferences = if (PlayerManager.isPlayerInitialized()) {
+            PlayerManager.usbExclusivePreferences
+        } else {
+            settings.toUsbExclusivePreferences()
+        }
         val usbExclusiveEnabled = if (PlayerManager.isPlayerInitialized()) {
             PlayerManager.usbExclusivePlaybackEnabled
         } else {
@@ -173,19 +223,37 @@ object UsbExclusiveDiagnostics {
         } else {
             settings.allowMixedPlayback
         }
-        val selectedUsbOutput = audioOutputs.firstOrNull { it.isUsbOutput }
-        val selectedUsbHostDevice = usbHostDevices.firstOrNull { it.hasAudioInterface }
-        val modeSummary = if (selectedUsbOutput != null && usbExclusiveEnabled) {
+        val selectedDeviceKey = usbPreferences.selectedDeviceKey
+        val usbAudioOutputs = audioOutputs.filter { it.isUsbOutput }
+        val selectedUsbOutput = usbAudioOutputs.firstOrNull {
+            it.isUsbOutput && usbExclusiveDeviceKeyMatchesLabel(selectedDeviceKey, it.productName)
+        } ?: usbAudioOutputs.singleOrNull()
+        val selectedUsbHostDevice = usbHostDevices.firstOrNull {
+            it.hasAudioInterface &&
+                (selectedDeviceKey == DEFAULT_USB_EXCLUSIVE_DEVICE_KEY || it.deviceKey == selectedDeviceKey)
+        }
+        val systemRouteSummary = if (selectedUsbOutput != null && usbExclusiveEnabled) {
             "SYSTEM_USB_AUDIO_ROUTE"
         } else if (usbExclusiveEnabled) {
             "WAITING_FOR_USB_AUDIO_OUTPUT"
         } else {
             "DISABLED"
         }
+        val nativeExclusiveSummary = when {
+            nativeState.streaming -> "NATIVE_EXCLUSIVE_STREAMING"
+            nativeState.opened -> "NATIVE_EXCLUSIVE_OPENED"
+            nativeState.available -> "NATIVE_EXCLUSIVE_IDLE"
+            else -> "NATIVE_EXCLUSIVE_UNAVAILABLE"
+        }
 
         return UsbExclusiveDiagnosticsSnapshot(
             usbExclusivePlaybackEnabled = usbExclusiveEnabled,
             allowMixedPlaybackEnabled = allowMixedPlayback,
+            selectedDeviceKey = selectedDeviceKey,
+            sampleRateMode = usbPreferences.sampleRateMode.storageValue,
+            bitDepthMode = usbPreferences.bitDepthMode.storageValue,
+            bufferProfile = usbPreferences.bufferProfile.storageValue,
+            unsupportedFormatPolicy = usbPreferences.unsupportedFormatPolicy.storageValue,
             playerInitialized = PlayerManager.isPlayerInitialized(),
             playerPlaying = PlayerManager.isPlayingFlow.value,
             currentPlayerDeviceName = currentDevice?.name,
@@ -195,8 +263,21 @@ object UsbExclusiveDiagnostics {
             selectedUsbOutput = selectedUsbOutput,
             selectedUsbHostDevice = selectedUsbHostDevice,
             lastPermissionEvent = lastPermissionEvent,
-            modeSummary = modeSummary,
-            limitationSummary = "system route only; native USB Audio Class exclusive engine is not active"
+            systemRouteSummary = systemRouteSummary,
+            systemRouteLimitation = "system route only; this does not prove mixer bypass",
+            nativeExclusiveSummary = nativeExclusiveSummary,
+            nativeExclusiveSource = nativeState.source,
+            nativeExclusiveRuntime = nativeState.runtimeReport,
+            nativeExclusiveStreaming = nativeState.streaming,
+            nativeExclusiveError = nativeState.lastError,
+            requestedPath = pathState.requestedPath,
+            effectivePath = pathState.effectivePath,
+            fallbackReason = pathState.fallbackReason,
+            sinkPlaying = pathState.sinkPlaying,
+            nativePaused = pathState.nativePaused,
+            inputFormat = pathState.inputFormat,
+            requestedPlaybackParameters = pathState.requestedPlaybackParameters,
+            requestedVolume = pathState.requestedVolume
         )
     }
 
@@ -212,10 +293,17 @@ object UsbExclusiveDiagnostics {
         }
         ensurePermissionReceiverRegistered(appContext)
 
+        val selectedDeviceKey = if (PlayerManager.isPlayerInitialized()) {
+            PlayerManager.usbExclusivePreferences.selectedDeviceKey
+        } else {
+            readPlaybackPreferenceSnapshotSync(appContext)
+                .toUsbExclusivePreferences()
+                .selectedDeviceKey
+        }
         val device = usbManager.deviceList.values
             .filter { it.hasAudioInterface() }
             .sortedWith(compareByDescending<UsbDevice> { it.hasAudioStreamingInterface() }.thenBy { it.deviceName })
-            .firstOrNull()
+            .firstOrNull { it.matchesUsbExclusiveDeviceKey(selectedDeviceKey) }
         if (device == null) {
             NPLogger.d(TAG, "ensureUsbPermissionIfNeeded($reason): no USB audio host device")
             return false
@@ -291,6 +379,9 @@ object UsbExclusiveDiagnostics {
                 TAG,
                 "USB permission result: granted=$granted, device=${device?.describeForLog() ?: "none"}"
             )
+            if (granted) {
+                PlayerManager.retryUsbExclusivePlayback("usb_permission_granted")
+            }
             logSnapshot(context, "permission_result")
         }
     }
@@ -323,6 +414,7 @@ object UsbExclusiveDiagnostics {
         val interfaces = (0 until interfaceCount)
             .map { index -> getInterface(index).toDebugInfo() }
         return UsbHostDeviceDebugInfo(
+            deviceKey = usbExclusiveDeviceKey(),
             deviceName = deviceName,
             productName = productName ?: "unknown",
             manufacturerName = manufacturerName ?: "unknown",

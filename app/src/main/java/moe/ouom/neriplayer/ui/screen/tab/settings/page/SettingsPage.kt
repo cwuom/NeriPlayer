@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Usb
 import androidx.compose.ui.graphics.vector.ImageVector
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
@@ -59,6 +60,11 @@ internal enum class SettingsPage(
     Playback(
         AutoSettingsSchema.playback.metadata,
         Icons.AutoMirrored.Outlined.PlaylistPlay
+    ),
+    UsbExclusive(
+        titleRes = R.string.settings_usb_exclusive_playback,
+        descriptionRes = R.string.settings_usb_exclusive_page_desc,
+        icon = Icons.Outlined.Usb
     ),
     PlaybackSource(
         titleRes = R.string.settings_playback_source,

@@ -312,13 +312,22 @@ internal fun resolveYouTubeWarmupTargets(
 
 internal fun resolvePlaybackSoundConfigForEngine(
     baseConfig: PlaybackSoundConfig,
-    listenTogetherSyncPlaybackRate: Float
+    listenTogetherSyncPlaybackRate: Float,
+    usbExclusivePlaybackEnabled: Boolean = false
 ): PlaybackSoundConfig {
     val normalizedBaseConfig = baseConfig.copy(
         speed = normalizePlaybackSpeed(baseConfig.speed),
         pitch = normalizePlaybackPitch(baseConfig.pitch),
         loudnessGainMb = normalizePlaybackLoudnessGainMb(baseConfig.loudnessGainMb)
     )
+    if (usbExclusivePlaybackEnabled) {
+        return normalizedBaseConfig.copy(
+            speed = 1f,
+            pitch = 1f,
+            loudnessGainMb = 0,
+            equalizerEnabled = false
+        )
+    }
     val resolvedSyncRate = listenTogetherSyncPlaybackRate.coerceIn(0.95f, 1.05f)
     return normalizedBaseConfig.copy(
         speed = normalizePlaybackSpeed(normalizedBaseConfig.speed * resolvedSyncRate)

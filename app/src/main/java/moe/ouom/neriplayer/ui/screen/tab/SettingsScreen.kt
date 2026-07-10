@@ -120,6 +120,7 @@ import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.ThemeMode
+import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
@@ -154,6 +155,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsStorageCache
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsTrafficManagementSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeModeActionButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeSeedListItem
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.UsbExclusiveSettingsSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.maskCookieValue
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsGitHubDialogs
@@ -382,6 +384,8 @@ fun SettingsScreen(
 
     val internationalEnabled by AppContainer.settingsRepo.internationalizationEnabledFlow
         .collectAsState(initial = false)
+    val usbExclusivePreferences by AppContainer.settingsRepo.usbExclusivePreferencesFlow
+        .collectAsState(initial = UsbExclusivePreferences())
 
     LaunchedEffect(nowPlayingDynamicBackgroundEnabled, nowPlayingCoverBlurBackgroundEnabled) {
         if (nowPlayingCoverBlurBackgroundEnabled) {
@@ -903,7 +907,10 @@ fun SettingsScreen(
     }
 
     BackHandler(enabled = activeSettingsPage != null && !isSettingsSplitLayout) {
-        activeSettingsPage = null
+        activeSettingsPage = when (activeSettingsPage) {
+            SettingsPage.UsbExclusive -> SettingsPage.Playback
+            else -> null
+        }
     }
 
     val settingsHomeTitle: @Composable () -> Unit = {
@@ -975,7 +982,12 @@ fun SettingsScreen(
         } else {
             MiuixSettingsResponsiveDetailScaffold(
                 title = stringResource(selectedPage.titleRes),
-                onBack = { activeSettingsPage = null },
+                onBack = {
+                    activeSettingsPage = when (activeSettingsPage) {
+                        SettingsPage.UsbExclusive -> SettingsPage.Playback
+                        else -> null
+                    }
+                },
                 listState = detailListStates.getValue(selectedPage),
                 topAppBarState = detailTopAppBarStates.getValue(selectedPage),
                 splitLayout = isSettingsSplitLayout,
@@ -1273,11 +1285,50 @@ fun SettingsScreen(
                             stopOnBluetoothDisconnect = stopOnBluetoothDisconnect,
                             onStopOnBluetoothDisconnectChange = onStopOnBluetoothDisconnectChange,
                             usbExclusivePlayback = usbExclusivePlayback,
-                            onUsbExclusivePlaybackChange = onUsbExclusivePlaybackChange,
+                            onUsbExclusiveSettingsClick = {
+                                activeSettingsPage = SettingsPage.UsbExclusive
+                            },
                             allowMixedPlayback = allowMixedPlayback,
                             onAllowMixedPlaybackChange = onAllowMixedPlaybackChange,
                             preemptAudioFocus = preemptAudioFocus,
                             onPreemptAudioFocusChange = onPreemptAudioFocusChange
+                        )
+                    }
+                }
+
+                SettingsPage.UsbExclusive -> {
+                    item(key = "${selectedPage.name}:content") {
+                        UsbExclusiveSettingsSection(
+                            usbExclusivePlayback = usbExclusivePlayback,
+                            onUsbExclusivePlaybackChange = onUsbExclusivePlaybackChange,
+                            preferences = usbExclusivePreferences,
+                            onDeviceKeyChange = { deviceKey ->
+                                scope.launch {
+                                    AppContainer.settingsRepo.setUsbExclusiveDeviceKey(deviceKey)
+                                }
+                            },
+                            onSampleRateModeChange = { mode ->
+                                scope.launch {
+                                    AppContainer.settingsRepo.setUsbExclusiveSampleRateMode(mode)
+                                }
+                            },
+                            onBitDepthModeChange = { mode ->
+                                scope.launch {
+                                    AppContainer.settingsRepo.setUsbExclusiveBitDepthMode(mode)
+                                }
+                            },
+                            onBufferProfileChange = { profile ->
+                                scope.launch {
+                                    AppContainer.settingsRepo.setUsbExclusiveBufferProfile(profile)
+                                }
+                            },
+                            onUnsupportedFormatPolicyChange = { policy ->
+                                scope.launch {
+                                    AppContainer.settingsRepo
+                                        .setUsbExclusiveUnsupportedFormatPolicy(policy)
+                                }
+                            },
+                            modifier = Modifier.animateItem()
                         )
                     }
                 }

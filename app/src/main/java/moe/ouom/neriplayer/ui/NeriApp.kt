@@ -153,6 +153,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.recoverUsbExclusivePlaybackOnForeground
 import moe.ouom.neriplayer.core.player.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.preloadRestoredStateSnapshot
 import moe.ouom.neriplayer.core.player.shouldSkipLocalPlaybackSyncServiceStart
@@ -867,8 +868,9 @@ private fun NeriAppContent(
             .getOrDefault(false)
         StartupAudioFocusController.updateForForeground(
             context = context,
-            enabled = preemptAudioFocus,
+            enabled = preemptAudioFocus || usbExclusivePlayback,
             allowMixedPlayback = allowMixedPlayback,
+            usbExclusivePlayback = usbExclusivePlayback,
             transportActive = transportActive,
             reason = reason
         )
@@ -905,8 +907,10 @@ private fun NeriAppContent(
                 PlayerManager.hasItems()
         StartupAudioFocusController.updateForForeground(
             context = context,
-            enabled = exactStartupPlaybackPreferences.preemptAudioFocus,
+            enabled = exactStartupPlaybackPreferences.preemptAudioFocus ||
+                exactStartupPlaybackPreferences.usbExclusivePlayback,
             allowMixedPlayback = exactStartupPlaybackPreferences.allowMixedPlayback,
+            usbExclusivePlayback = exactStartupPlaybackPreferences.usbExclusivePlayback,
             transportActive = PlayerManager.isTransportActive() || shouldBootstrapPlaybackService,
             reason = "app_bootstrap"
         )
@@ -965,10 +969,10 @@ private fun NeriAppContent(
 
     }
 
-    LaunchedEffect(preemptAudioFocus, allowMixedPlayback) {
+    LaunchedEffect(preemptAudioFocus, allowMixedPlayback, usbExclusivePlayback) {
         if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
             updateStartupAudioFocus("settings_changed")
-        } else if (!preemptAudioFocus || allowMixedPlayback) {
+        } else if ((!preemptAudioFocus && !usbExclusivePlayback) || allowMixedPlayback) {
             StartupAudioFocusController.release("settings_changed_inactive")
         }
     }
@@ -1160,15 +1164,26 @@ private fun NeriAppContent(
         )
     }
 
-    DisposableEffect(lifecycleOwner, preemptAudioFocus, allowMixedPlayback) {
+    DisposableEffect(lifecycleOwner, preemptAudioFocus, allowMixedPlayback, usbExclusivePlayback) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> {
                     coverArtRefreshToken += 1
                     updateStartupAudioFocus("lifecycle_resume")
+                    PlayerManager.recoverUsbExclusivePlaybackOnForeground("lifecycle_resume")
                 }
                 Lifecycle.Event.ON_PAUSE,
-                Lifecycle.Event.ON_STOP,
+                Lifecycle.Event.ON_STOP -> {
+                    clearThemeRevealState()
+                    val keepUsbExclusiveFocus = PlayerManager.isPlayerInitialized() &&
+                        PlayerManager.usbExclusivePlaybackEnabled &&
+                        PlayerManager.isTransportActive()
+                    if (keepUsbExclusiveFocus) {
+                        updateStartupAudioFocus("lifecycle_${event.name.lowercase()}_keep_usb")
+                    } else {
+                        StartupAudioFocusController.release("lifecycle_${event.name.lowercase()}")
+                    }
+                }
                 Lifecycle.Event.ON_DESTROY -> {
                     clearThemeRevealState()
                     StartupAudioFocusController.release("lifecycle_${event.name.lowercase()}")

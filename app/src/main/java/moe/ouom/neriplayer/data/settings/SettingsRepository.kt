@@ -48,6 +48,7 @@ import java.util.Locale
 class SettingsRepository(private val context: Context) {
     private val autoSettingsRepository = AutoSettingsRepository(context)
     private val autoSettingSpecRepository = AutoSettingSpecRepository(context)
+    private val usbExclusiveSettingsStore = UsbExclusiveSettingsStore(context)
 
     fun <T> settingFlow(setting: AutoSettingSpec<T>): Flow<T> {
         return autoSettingSpecRepository.flow(setting)
@@ -394,6 +395,24 @@ class SettingsRepository(private val context: Context) {
 
     val usbExclusivePlaybackFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.USB_EXCLUSIVE_PLAYBACK] ?: false }
+
+    val usbExclusivePreferencesFlow: Flow<UsbExclusivePreferences> =
+        usbExclusiveSettingsStore.preferencesFlow
+
+    val usbExclusiveSampleRateModeFlow: Flow<UsbExclusiveSampleRateMode> =
+        usbExclusiveSettingsStore.sampleRateModeFlow
+
+    val usbExclusiveDeviceKeyFlow: Flow<String> =
+        usbExclusiveSettingsStore.selectedDeviceKeyFlow
+
+    val usbExclusiveBitDepthModeFlow: Flow<UsbExclusiveBitDepthMode> =
+        usbExclusiveSettingsStore.bitDepthModeFlow
+
+    val usbExclusiveBufferProfileFlow: Flow<UsbExclusiveBufferProfile> =
+        usbExclusiveSettingsStore.bufferProfileFlow
+
+    val usbExclusiveUnsupportedFormatPolicyFlow: Flow<UsbExclusiveUnsupportedFormatPolicy> =
+        usbExclusiveSettingsStore.unsupportedFormatPolicyFlow
 
     val allowMixedPlaybackFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.ALLOW_MIXED_PLAYBACK] ?: false }
@@ -951,6 +970,32 @@ class SettingsRepository(private val context: Context) {
         updatePlaybackPreferenceSnapshot(context) {
             it.copy(usbExclusivePlayback = enabled)
         }
+    }
+
+    suspend fun setUsbExclusiveSampleRateMode(mode: UsbExclusiveSampleRateMode) {
+        usbExclusiveSettingsStore.setSampleRateMode(mode)
+    }
+
+    suspend fun setUsbExclusiveDeviceKey(deviceKey: String) {
+        usbExclusiveSettingsStore.setSelectedDeviceKey(deviceKey)
+    }
+
+    suspend fun setUsbExclusiveBitDepthMode(mode: UsbExclusiveBitDepthMode) {
+        usbExclusiveSettingsStore.setBitDepthMode(mode)
+    }
+
+    suspend fun setUsbExclusiveBufferProfile(profile: UsbExclusiveBufferProfile) {
+        usbExclusiveSettingsStore.setBufferProfile(profile)
+    }
+
+    suspend fun setUsbExclusiveUnsupportedFormatPolicy(
+        policy: UsbExclusiveUnsupportedFormatPolicy
+    ) {
+        usbExclusiveSettingsStore.setUnsupportedFormatPolicy(policy)
+    }
+
+    suspend fun setUsbExclusivePreferences(preferences: UsbExclusivePreferences) {
+        usbExclusiveSettingsStore.setPreferences(preferences)
     }
 
     suspend fun setAllowMixedPlayback(enabled: Boolean) {

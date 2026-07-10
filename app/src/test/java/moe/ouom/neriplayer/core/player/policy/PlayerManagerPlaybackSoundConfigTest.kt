@@ -41,4 +41,27 @@ class PlayerManagerPlaybackSoundConfigTest {
 
         assertEquals(1.05f, effectiveConfig.speed, 0.0001f)
     }
+
+    @Test
+    fun `usb exclusive disables processing for the active engine only`() {
+        val effectiveConfig = resolvePlaybackSoundConfigForEngine(
+            baseConfig = PlaybackSoundConfig(
+                speed = 1.25f,
+                pitch = 0.9f,
+                loudnessGainMb = 600,
+                equalizerEnabled = true,
+                presetId = PlaybackEqualizerPresetId.CUSTOM,
+                customBandLevelsMb = listOf(100, -100)
+            ),
+            listenTogetherSyncPlaybackRate = 1.03f,
+            usbExclusivePlaybackEnabled = true
+        )
+
+        assertEquals(1.0f, effectiveConfig.speed, 0.0001f)
+        assertEquals(1.0f, effectiveConfig.pitch, 0.0001f)
+        assertEquals(0, effectiveConfig.loudnessGainMb)
+        assertEquals(false, effectiveConfig.equalizerEnabled)
+        assertEquals(PlaybackEqualizerPresetId.CUSTOM, effectiveConfig.presetId)
+        assertEquals(listOf(100, -100), effectiveConfig.customBandLevelsMb)
+    }
 }

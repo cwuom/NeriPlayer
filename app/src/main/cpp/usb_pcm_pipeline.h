@@ -1,0 +1,91 @@
+#pragma once
+
+#include "usb_pcm_codec.h"
+
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <mutex>
+#include <string>
+#include <vector>
+
+namespace neri::usb {
+
+struct PcmOutputFormat {
+    int sampleRate = 0;
+    int channelCount = 0;
+    int subslotBytes = 0;
+    int bitsPerSample = 0;
+    int frameBytes = 0;
+};
+
+struct PcmInputFormat {
+    int sampleRate = 0;
+    int channelCount = 0;
+    int encoding = 0;
+};
+
+struct PcmPipelineConfig {
+    PcmOutputFormat output;
+    PcmInputFormat input;
+    int ringDurationMs = 0;
+    int transferBytes = 0;
+    int transferCount = 0;
+};
+
+struct PcmPipelineSnapshot {
+    size_t levelBytes = 0;
+    size_t capacityBytes = 0;
+    int64_t inputBytes = 0;
+    int64_t outputBytes = 0;
+    int64_t droppedBytes = 0;
+    int64_t underrunBytes = 0;
+    int64_t zeroFillBytes = 0;
+    int64_t pausedZeroFillBytes = 0;
+    float targetGain = 1.0f;
+    float appliedGain = 1.0f;
+};
+
+class PcmPipeline final {
+public:
+    bool configure(const PcmPipelineConfig& config, std::string* error);
+    size_t write(const uint8_t* input, size_t inputBytes, std::string* error);
+    size_t fill(uint8_t* output, size_t bytes, bool playbackEnabled);
+
+    void clear();
+    void resetCounters();
+    void addDroppedFrames(int64_t frames);
+    void setTargetGain(float gain);
+
+    [[nodiscard]] size_t queuedFrames() const;
+    [[nodiscard]] PcmPipelineSnapshot snapshot() const;
+
+private:
+    [[nodiscard]] size_t freeBytesLocked() const;
+    size_t writeRingLocked(const uint8_t* input, size_t bytes);
+    size_t readRingLocked(uint8_t* output, size_t bytes);
+    void applyGain(uint8_t* output, size_t bytes);
+
+    mutable std::mutex lock_;
+    PcmOutputFormat outputFormat_;
+    PcmInputFormat inputFormat_;
+    std::vector<uint8_t> ring_;
+    size_t readIndex_ = 0;
+    size_t writeIndex_ = 0;
+    size_t levelBytes_ = 0;
+    double resamplePosition_ = 0.0;
+    bool hasPreviousInputFrame_ = false;
+    std::vector<float> previousInputFrame_;
+    int64_t inputBytes_ = 0;
+    int64_t outputBytes_ = 0;
+    int64_t droppedBytes_ = 0;
+    int64_t underrunBytes_ = 0;
+    int64_t zeroFillBytes_ = 0;
+    int64_t pausedZeroFillBytes_ = 0;
+    std::atomic<float> targetGain_ { 1.0f };
+    std::atomic<float> appliedGain_ { 1.0f };
+    float gainRampTarget_ = 1.0f;
+    int gainRampFramesRemaining_ = 0;
+};
+
+} // namespace neri::usb

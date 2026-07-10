@@ -28,12 +28,15 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.BluetoothAudio
 import androidx.compose.material.icons.outlined.GraphicEq
@@ -53,6 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -92,7 +96,7 @@ internal fun SettingsPlaybackSection(
     stopOnBluetoothDisconnect: Boolean,
     onStopOnBluetoothDisconnectChange: (Boolean) -> Unit,
     usbExclusivePlayback: Boolean,
-    onUsbExclusivePlaybackChange: (Boolean) -> Unit,
+    onUsbExclusiveSettingsClick: () -> Unit,
     allowMixedPlayback: Boolean,
     onAllowMixedPlaybackChange: (Boolean) -> Unit,
     preemptAudioFocus: Boolean,
@@ -238,19 +242,10 @@ internal fun SettingsPlaybackSection(
                 onCheckedChange = onStopOnBluetoothDisconnectChange
             )
 
-            PlaybackSwitchItem(
+            UsbExclusiveSettingsEntry(
                 setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.USB_EXCLUSIVE_PLAYBACK),
-                checked = usbExclusivePlayback,
-                icon = {
-                    Icon(
-                        imageVector = Icons.Outlined.Usb,
-                        contentDescription = stringResource(R.string.settings_usb_exclusive_playback),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                onToggle = { onUsbExclusivePlaybackChange(!usbExclusivePlayback) },
-                onCheckedChange = onUsbExclusivePlaybackChange
+                enabled = usbExclusivePlayback,
+                onClick = onUsbExclusiveSettingsClick
             )
 
             PlaybackSwitchItem(
@@ -284,6 +279,50 @@ internal fun SettingsPlaybackSection(
             )
         }
     }
+}
+
+@Composable
+private fun UsbExclusiveSettingsEntry(
+    setting: AutoSettingInfo,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    AutoSettingsListItem(
+        setting = setting,
+        leadingContent = {
+            Icon(
+                imageVector = Icons.Outlined.Usb,
+                contentDescription = stringResource(R.string.settings_usb_exclusive_playback),
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        trailingContent = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = stringResource(
+                        if (enabled) {
+                            R.string.settings_usb_exclusive_state_enabled
+                        } else {
+                            R.string.settings_usb_exclusive_state_disabled
+                        }
+                    ),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.64f)
+                )
+            }
+        },
+        onClick = onClick
+    )
 }
 
 @Composable

@@ -43,6 +43,8 @@ import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
 import androidx.core.content.edit
 
 private const val PLAYBACK_SNAPSHOT_PREFS = "playback_snapshot_cache"
+private const val PLAYBACK_SNAPSHOT_SCHEMA_VERSION = 2
+private const val PLAYBACK_SNAPSHOT_SCHEMA_VERSION_KEY = "schema_version"
 private const val PLAYBACK_SNAPSHOT_READY_KEY = "ready"
 private const val PLAYBACK_AUDIO_QUALITY_KEY = "audio_quality"
 private const val PLAYBACK_YOUTUBE_AUDIO_QUALITY_KEY = "youtube_audio_quality"
@@ -73,6 +75,7 @@ private const val PLAYBACK_EQUALIZER_PRESET_KEY = "playback_equalizer_preset"
 private const val PLAYBACK_EQUALIZER_LEVELS_KEY = "playback_equalizer_custom_band_levels"
 private const val PLAYBACK_STOP_ON_BLUETOOTH_KEY = "stop_on_bluetooth_disconnect"
 private const val PLAYBACK_USB_EXCLUSIVE_KEY = "usb_exclusive_playback"
+private const val PLAYBACK_USB_EXCLUSIVE_DEVICE_KEY = "usb_exclusive_device_key"
 private const val PLAYBACK_ALLOW_MIXED_KEY = "allow_mixed_playback"
 private const val PLAYBACK_PREEMPT_AUDIO_FOCUS_KEY = "preempt_audio_focus"
 private const val PLAYBACK_MAX_CACHE_SIZE_BYTES_KEY = "max_cache_size_bytes"
@@ -111,6 +114,12 @@ data class PlaybackPreferenceSnapshot(
     val playbackEqualizerCustomBandLevels: List<Int> = emptyList(),
     val stopOnBluetoothDisconnect: Boolean = true,
     val usbExclusivePlayback: Boolean = false,
+    val usbExclusiveDeviceKey: String = DEFAULT_USB_EXCLUSIVE_DEVICE_KEY,
+    val usbExclusiveSampleRateMode: String = DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_MODE,
+    val usbExclusiveBitDepthMode: String = DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_MODE,
+    val usbExclusiveBufferProfile: String = DEFAULT_USB_EXCLUSIVE_BUFFER_PROFILE,
+    val usbExclusiveUnsupportedFormatPolicy: String =
+        DEFAULT_USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY,
     val allowMixedPlayback: Boolean = false,
     val preemptAudioFocus: Boolean = false,
     val cloudMusicLyricDefaultOffsetMs: Long = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS,
@@ -138,6 +147,19 @@ data class PlaybackPreferenceSnapshot(
             playbackLoudnessGainMb = normalizePlaybackLoudnessGainMb(playbackLoudnessGainMb),
             playbackEqualizerPreset = playbackEqualizerPreset.trim()
                 .ifBlank { PlaybackEqualizerPresetId.FLAT },
+            usbExclusiveSampleRateMode = UsbExclusiveSampleRateMode
+                .fromStorageValue(usbExclusiveSampleRateMode)
+                .storageValue,
+            usbExclusiveDeviceKey = normalizeUsbExclusiveDeviceKey(usbExclusiveDeviceKey),
+            usbExclusiveBitDepthMode = UsbExclusiveBitDepthMode
+                .fromStorageValue(usbExclusiveBitDepthMode)
+                .storageValue,
+            usbExclusiveBufferProfile = UsbExclusiveBufferProfile
+                .fromStorageValue(usbExclusiveBufferProfile)
+                .storageValue,
+            usbExclusiveUnsupportedFormatPolicy = UsbExclusiveUnsupportedFormatPolicy
+                .fromStorageValue(usbExclusiveUnsupportedFormatPolicy)
+                .storageValue,
             cloudMusicLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(cloudMusicLyricDefaultOffsetMs),
             qqMusicLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(qqMusicLyricDefaultOffsetMs),
             maxCacheSizeBytes = maxCacheSizeBytes.coerceAtLeast(0L)
@@ -155,6 +177,7 @@ data class PlaybackPreferenceSnapshot(
             customBandLevelsMb = normalizedSnapshot.playbackEqualizerCustomBandLevels
         )
     }
+
 }
 
 suspend fun readPlaybackPreferenceSnapshot(context: Context): PlaybackPreferenceSnapshot {
@@ -221,6 +244,7 @@ internal fun persistPlaybackPreferenceSnapshot(
     context.getSharedPreferences(PLAYBACK_SNAPSHOT_PREFS, Context.MODE_PRIVATE)
         .edit {
             putBoolean(PLAYBACK_SNAPSHOT_READY_KEY, true)
+                .putInt(PLAYBACK_SNAPSHOT_SCHEMA_VERSION_KEY, PLAYBACK_SNAPSHOT_SCHEMA_VERSION)
                 .putString(PLAYBACK_AUDIO_QUALITY_KEY, normalizedSnapshot.audioQuality)
                 .putString(
                     PLAYBACK_YOUTUBE_AUDIO_QUALITY_KEY,
@@ -284,6 +308,11 @@ internal fun persistPlaybackPreferenceSnapshot(
                     PLAYBACK_USB_EXCLUSIVE_KEY,
                     normalizedSnapshot.usbExclusivePlayback
                 )
+                .putString(
+                    PLAYBACK_USB_EXCLUSIVE_DEVICE_KEY,
+                    normalizedSnapshot.usbExclusiveDeviceKey
+                )
+                .putUsbExclusivePreferences(normalizedSnapshot.toUsbExclusivePreferences())
                 .putBoolean(PLAYBACK_ALLOW_MIXED_KEY, normalizedSnapshot.allowMixedPlayback)
                 .putBoolean(
                     PLAYBACK_PREEMPT_AUDIO_FOCUS_KEY,
@@ -347,6 +376,21 @@ internal fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnaps
         ),
         stopOnBluetoothDisconnect = this[SettingsKeys.STOP_ON_BLUETOOTH_DISCONNECT] ?: true,
         usbExclusivePlayback = this[SettingsKeys.USB_EXCLUSIVE_PLAYBACK] ?: false,
+        usbExclusiveDeviceKey = normalizeUsbExclusiveDeviceKey(
+            this[SettingsKeys.USB_EXCLUSIVE_DEVICE_KEY]
+        ),
+        usbExclusiveSampleRateMode =
+            this[SettingsKeys.USB_EXCLUSIVE_SAMPLE_RATE_MODE]
+                ?: DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_MODE,
+        usbExclusiveBitDepthMode =
+            this[SettingsKeys.USB_EXCLUSIVE_BIT_DEPTH_MODE]
+                ?: DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_MODE,
+        usbExclusiveBufferProfile =
+            this[SettingsKeys.USB_EXCLUSIVE_BUFFER_PROFILE]
+                ?: DEFAULT_USB_EXCLUSIVE_BUFFER_PROFILE,
+        usbExclusiveUnsupportedFormatPolicy =
+            this[SettingsKeys.USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY]
+                ?: DEFAULT_USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY,
         allowMixedPlayback = this[SettingsKeys.ALLOW_MIXED_PLAYBACK] ?: false,
         preemptAudioFocus = this[SettingsKeys.PREEMPT_AUDIO_FOCUS] ?: false,
         cloudMusicLyricDefaultOffsetMs =
@@ -366,9 +410,14 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
     if (!prefs.getBoolean(PLAYBACK_SNAPSHOT_READY_KEY, false)) {
         return null
     }
+    val cacheVersion = prefs.getInt(PLAYBACK_SNAPSHOT_SCHEMA_VERSION_KEY, 1)
     val legacyMobileDataQuality = prefs.getString(
         PLAYBACK_MOBILE_DATA_DOWNGRADE_QUALITY_KEY,
         null
+    )
+    val usbExclusivePreferences = migrateCachedUsbExclusivePreferencesIfNeeded(
+        prefs = prefs,
+        cacheVersion = cacheVersion
     )
     return PlaybackPreferenceSnapshot(
         audioQuality = prefs.getString(PLAYBACK_AUDIO_QUALITY_KEY, "exhigh") ?: "exhigh",
@@ -440,6 +489,17 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
         ),
         stopOnBluetoothDisconnect = prefs.getBoolean(PLAYBACK_STOP_ON_BLUETOOTH_KEY, true),
         usbExclusivePlayback = prefs.getBoolean(PLAYBACK_USB_EXCLUSIVE_KEY, false),
+        usbExclusiveDeviceKey = normalizeUsbExclusiveDeviceKey(
+            prefs.getString(
+                PLAYBACK_USB_EXCLUSIVE_DEVICE_KEY,
+                usbExclusivePreferences.selectedDeviceKey
+            )
+        ),
+        usbExclusiveSampleRateMode = usbExclusivePreferences.sampleRateMode.storageValue,
+        usbExclusiveBitDepthMode = usbExclusivePreferences.bitDepthMode.storageValue,
+        usbExclusiveBufferProfile = usbExclusivePreferences.bufferProfile.storageValue,
+        usbExclusiveUnsupportedFormatPolicy =
+            usbExclusivePreferences.unsupportedFormatPolicy.storageValue,
         allowMixedPlayback = prefs.getBoolean(PLAYBACK_ALLOW_MIXED_KEY, false),
         preemptAudioFocus = prefs.getBoolean(PLAYBACK_PREEMPT_AUDIO_FOCUS_KEY, false),
         cloudMusicLyricDefaultOffsetMs = prefs.getLong(
@@ -456,4 +516,30 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
             DEFAULT_MAX_CACHE_SIZE_BYTES
         )
     ).sanitized()
+}
+
+private fun migrateCachedUsbExclusivePreferencesIfNeeded(
+    prefs: android.content.SharedPreferences,
+    cacheVersion: Int
+): UsbExclusivePreferences {
+    val preferences = prefs.readUsbExclusivePreferences()
+    val shouldMigrateLegacyDefault = cacheVersion < PLAYBACK_SNAPSHOT_SCHEMA_VERSION &&
+        preferences.sampleRateMode == UsbExclusiveSampleRateMode.FOLLOW_SOURCE &&
+        preferences.bitDepthMode == UsbExclusiveBitDepthMode.AUTO &&
+        preferences.bufferProfile == UsbExclusiveBufferProfile.BALANCED &&
+        preferences.unsupportedFormatPolicy == UsbExclusiveUnsupportedFormatPolicy.SYSTEM_FALLBACK
+    val migrated = if (shouldMigrateLegacyDefault) {
+        preferences.copy(
+            unsupportedFormatPolicy = UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED
+        )
+    } else {
+        preferences
+    }
+    if (cacheVersion < PLAYBACK_SNAPSHOT_SCHEMA_VERSION) {
+        prefs.edit {
+            putInt(PLAYBACK_SNAPSHOT_SCHEMA_VERSION_KEY, PLAYBACK_SNAPSHOT_SCHEMA_VERSION)
+            putUsbExclusivePreferences(migrated)
+        }
+    }
+    return migrated
 }

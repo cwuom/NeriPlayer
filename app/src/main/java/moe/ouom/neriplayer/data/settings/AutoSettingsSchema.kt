@@ -1399,6 +1399,51 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
+            key = "usb_exclusive_device_key",
+            type = SettingValueType.String,
+            defaultString = DEFAULT_USB_EXCLUSIVE_DEVICE_KEY,
+            order = 161,
+            access = SettingAccessMode.KeyOnly
+        )
+        val usbExclusiveDeviceKey = Unit
+
+        @AutoSetting(
+            key = "usb_exclusive_sample_rate_mode",
+            type = SettingValueType.String,
+            defaultString = DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_MODE,
+            order = 162,
+            access = SettingAccessMode.KeyOnly
+        )
+        val usbExclusiveSampleRateMode = Unit
+
+        @AutoSetting(
+            key = "usb_exclusive_bit_depth_mode",
+            type = SettingValueType.String,
+            defaultString = DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_MODE,
+            order = 163,
+            access = SettingAccessMode.KeyOnly
+        )
+        val usbExclusiveBitDepthMode = Unit
+
+        @AutoSetting(
+            key = "usb_exclusive_buffer_profile",
+            type = SettingValueType.String,
+            defaultString = DEFAULT_USB_EXCLUSIVE_BUFFER_PROFILE,
+            order = 164,
+            access = SettingAccessMode.KeyOnly
+        )
+        val usbExclusiveBufferProfile = Unit
+
+        @AutoSetting(
+            key = "usb_exclusive_unsupported_format_policy",
+            type = SettingValueType.String,
+            defaultString = DEFAULT_USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY,
+            order = 165,
+            access = SettingAccessMode.KeyOnly
+        )
+        val usbExclusiveUnsupportedFormatPolicy = Unit
+
+        @AutoSetting(
             key = "allow_mixed_playback",
             type = SettingValueType.Boolean,
             defaultBoolean = false,
