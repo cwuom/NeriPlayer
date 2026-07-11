@@ -112,6 +112,10 @@ private fun PlayerManager.recoverPlaybackStartupStall(requestToken: Long) {
     if (requestToken != playbackRequestToken) return
     startupStallRecoveryAttempts += 1
 
+    if (tryRestartSystemFallbackSinkForStartupStall(requestToken)) {
+        return
+    }
+
     if (startupStallRecoveryAttempts > STARTUP_STALL_MAX_RECOVERY_ATTEMPTS) {
         consecutivePlayFailures++
         advanceAfterPlaybackFailure(source = "startup_stall")
@@ -142,6 +146,37 @@ private fun PlayerManager.recoverPlaybackStartupStall(requestToken: Long) {
 
     consecutivePlayFailures++
     advanceAfterPlaybackFailure(source = "startup_stall")
+}
+
+private fun PlayerManager.tryRestartSystemFallbackSinkForStartupStall(requestToken: Long): Boolean {
+    if (usbExclusivePlaybackEnabled) return false
+    if (!isPlayerInitialized()) return false
+    if (player.playbackState != Player.STATE_READY || !player.playWhenReady) return false
+    if (player.currentMediaItem == null) return false
+    if (startupStallRecoveryAttempts > 1) return false
+    val positionMs = player.currentPosition.coerceAtLeast(0L)
+    NPLogger.w(
+        "NERI-PlayerManager",
+        "restart system fallback sink after startup stall: positionMs=$positionMs " +
+            "state=${playbackStateName(player.playbackState)}"
+    )
+    mainScope.launch {
+        if (requestToken != playbackRequestToken || !isPlayerInitialized()) return@launch
+        runCatching {
+            player.pause()
+            player.playWhenReady = true
+            player.play()
+        }.onSuccess {
+            schedulePlaybackStartupWatchdog(reason = "system_fallback_restart")
+        }.onFailure { error ->
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "restart system fallback sink failed after startup stall",
+                error
+            )
+        }
+    }
+    return true
 }
 
 internal fun PlayerManager.trySwitchToNextPlaybackCandidateForRecovery(reason: String): Boolean {

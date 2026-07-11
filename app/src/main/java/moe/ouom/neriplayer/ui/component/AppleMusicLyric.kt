@@ -274,6 +274,12 @@ fun AppleMusicLyric(
     val currentIndex = remember(lyrics, smoothedLyricTimeMs) {
         findCurrentLineIndex(lyrics, smoothedLyricTimeMs)
     }
+    val translationMatchesByIndex = remember(lyrics, translatedLyrics) {
+        translatedLyrics
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { matchTranslationsToLineIndices(lyrics, it) }
+            .orEmpty()
+    }
 
     LaunchedEffect(currentIndex, lyrics.size) {
         if (currentIndex in lyrics.indices && !listState.isScrollInProgress) {
@@ -471,15 +477,7 @@ fun AppleMusicLyric(
                         }
                     }
 
-                    val transText = translatedLyrics?.let { list ->
-                        // 封面页这里继续沿用重叠优先的老策略
-                        // 一对一重映射会让长句换行时翻译归属切得太硬，视觉上更容易抖
-                        findBestMatchingTranslation(
-                            translations = list,
-                            lineStartMs = line.startTimeMs,
-                            lineEndMs = line.endTimeMs
-                        )?.text
-                    }
+                    val transText = translationMatchesByIndex[index]?.text
                     val shouldShowTranslation = (shouldUseClearText || isActive) && !transText.isNullOrBlank()
 
                     Crossfade(

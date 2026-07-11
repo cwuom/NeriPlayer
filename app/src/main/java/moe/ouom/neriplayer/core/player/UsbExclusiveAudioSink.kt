@@ -44,7 +44,8 @@ import moe.ouom.neriplayer.util.NPLogger
 @UnstableApi
 internal class UsbExclusiveAudioSink(
     private val context: Context,
-    private val fallbackSink: AudioSink
+    private val fallbackSink: AudioSink,
+    private val observeSystemVolume: Boolean = true
 ) : ForwardingAudioSink(fallbackSink) {
     private companion object {
         const val PARAMETER_EPSILON = 0.0001f
@@ -129,7 +130,9 @@ internal class UsbExclusiveAudioSink(
 
     init {
         cachedMusicVolumeFraction = readMusicVolumeFractionFromSystem()
-        registerSystemVolumeObserver()
+        if (observeSystemVolume) {
+            registerSystemVolumeObserver()
+        }
     }
 
     override fun setListener(listener: AudioSink.Listener) {
@@ -207,8 +210,10 @@ internal class UsbExclusiveAudioSink(
         UsbExclusiveAudioPathTracker.updatePlaying(playing = true, usingNative = usingNative)
         if (!usingNative) {
             if (!fallbackConfigured) {
-                playing = false
-                UsbExclusiveAudioPathTracker.updatePlaying(playing = false, usingNative = false)
+                NPLogger.d(
+                    "NERI-UsbExclusive",
+                    "defer system fallback play until AudioTrack is configured"
+                )
                 return
             }
             if (shouldSuppressSystemFallbackPlayback()) {
@@ -728,6 +733,7 @@ internal class UsbExclusiveAudioSink(
                 fallbackSink.reset()
                 fallbackConfigured = false
             }
+            playing = false
             UsbExclusiveAudioPathTracker.updateConfigured(
                 usingNative = false,
                 fallbackReason = fallbackReason,

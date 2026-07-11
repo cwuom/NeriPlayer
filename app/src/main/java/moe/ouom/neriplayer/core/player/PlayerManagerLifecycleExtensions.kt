@@ -772,6 +772,7 @@ internal fun PlayerManager.initializeImpl(
             settingsRepo.allowMixedPlaybackFlow.collect { enabled ->
                 allowMixedPlaybackEnabled = enabled
                 if (enabled) {
+                    clearUsbExclusiveInterruptedPlaybackIntent("allow_mixed_playback_enabled")
                     StartupAudioFocusController.release("allow_mixed_playback_enabled")
                     UsbExclusiveSystemSoundGuard.forceRelease(
                         application,
@@ -1444,7 +1445,10 @@ internal fun PlayerManager.releaseUsbExclusivePlaybackRoute(
     releaseCommandToken: Long = playbackRequestToken
 ) {
     val disablingUsbExclusive = reason == "usb_exclusive_disabled"
-    val playbackShouldContinue = playbackWasActiveBeforeRelease
+    val interruptedIntent = usbExclusiveInterruptedPlaybackIntent.takeIf { disablingUsbExclusive }
+    val playbackShouldContinue = playbackWasActiveBeforeRelease || interruptedIntent != null
+    val effectiveReleaseMediaItemIndex = releaseMediaItemIndex ?: interruptedIntent?.mediaItemIndex
+    val effectiveReleasePositionMs = releasePositionMs ?: interruptedIntent?.positionMs
     cancelUsbExclusiveRecovery("release:$reason")
     usbExclusiveSystemAudioResumeJob?.cancel()
     usbExclusiveSystemAudioResumeJob = null
@@ -1545,8 +1549,8 @@ internal fun PlayerManager.releaseUsbExclusivePlaybackRoute(
                             reason = "native_close_timeout:$reason",
                             routeGeneration = routeGeneration,
                             resumePlayback = true,
-                            releaseMediaItemIndex = releaseMediaItemIndex,
-                            releasePositionMs = releasePositionMs
+                            releaseMediaItemIndex = effectiveReleaseMediaItemIndex,
+                            releasePositionMs = effectiveReleasePositionMs
                         )
                     } else {
                         pendingUsbExclusivePreferenceReconfigure = false
@@ -1594,8 +1598,8 @@ internal fun PlayerManager.releaseUsbExclusivePlaybackRoute(
                     reason = reason,
                     routeGeneration = routeGeneration,
                     resumePlayback = true,
-                    releaseMediaItemIndex = releaseMediaItemIndex,
-                    releasePositionMs = releasePositionMs
+                    releaseMediaItemIndex = effectiveReleaseMediaItemIndex,
+                    releasePositionMs = effectiveReleasePositionMs
                 )
                 return@launch
             }
@@ -1638,7 +1642,12 @@ private fun PlayerManager.forceSystemAudioResetAfterUsbExclusiveRelease(
         return
     }
     val mediaItemCount = player.mediaItemCount
-    if (mediaItemCount <= 0 || player.currentMediaItem == null) return
+    if (mediaItemCount <= 0 || player.currentMediaItem == null) {
+        if (resumePlayback) {
+            resumeInterruptedUsbExclusivePlaybackIfNeeded("system_audio_reset_no_media:$reason")
+        }
+        return
+    }
     val mediaItemIndex = (releaseMediaItemIndex ?: player.currentMediaItemIndex)
         .coerceIn(0, mediaItemCount - 1)
     val positionMs = (releasePositionMs ?: player.currentPosition).coerceAtLeast(0L)
@@ -1683,6 +1692,9 @@ private fun PlayerManager.forceSystemAudioResetAfterUsbExclusiveRelease(
         pendingUsbExclusivePreferenceReconfigure = false
         UsbExclusiveAudioPathTracker.clearForcedSystemFallback()
         applyAudioFocusPolicyOnMainThread()
+        if (resumePlayback) {
+            clearUsbExclusiveInterruptedPlaybackIntent("system_audio_reset:$reason")
+        }
         usbExclusiveToggleTransitionActive = false
         usbExclusiveToggleTransitionReason = ""
         markUsbExclusivePlaybackPreparing(false, "usb_system_audio_reset:$reason")
@@ -1764,7 +1776,6 @@ internal fun PlayerManager.stopPlaybackAfterUsbExclusiveNativeFailure(reason: St
         return
     }
     markUsbExclusivePlaybackPreparing(false, "native_failure:$reason")
-    updateResumePlaybackRequested(false)
     cancelUsbExclusiveRecovery("native_failure:$reason")
     usbAudioSinkReconfigureJob?.cancel()
     usbAudioSinkReconfigureJob = null
@@ -1786,9 +1797,21 @@ internal fun PlayerManager.stopPlaybackAfterUsbExclusiveNativeFailure(reason: St
         val mediaItemIndex = player.currentMediaItemIndex
             .coerceIn(0, (mediaItemCount - 1).coerceAtLeast(0))
         val positionMs = player.currentPosition.coerceAtLeast(0L)
+        val keepPlaybackIntent = shouldKeepPlaybackIntentAfterUsbNativeFailure()
+        if (keepPlaybackIntent) {
+            rememberUsbExclusiveInterruptedPlaybackIntent(
+                reason = reason,
+                mediaItemIndex = mediaItemIndex,
+                positionMs = positionMs
+            )
+        } else {
+            clearUsbExclusiveInterruptedPlaybackIntent("native_failure_idle:$reason")
+            updateResumePlaybackRequested(false)
+        }
         NPLogger.w(
             "NERI-UsbExclusive",
-            "stop playback after native USB failure: reason=$reason index=$mediaItemIndex positionMs=$positionMs"
+            "stop playback after native USB failure: reason=$reason index=$mediaItemIndex " +
+                "positionMs=$positionMs keepIntent=$keepPlaybackIntent"
         )
         cancelPendingPauseRequest(resetVolumeToFull = true)
         cancelVolumeFade(resetToFull = true)
@@ -1816,7 +1839,7 @@ internal fun PlayerManager.stopPlaybackAfterUsbExclusiveNativeFailure(reason: St
         _playWhenReadyFlow.value = false
         _playbackPositionMs.value = positionMs
         stopProgressUpdates()
-        scheduleStatePersist(positionMs = positionMs, shouldResumePlayback = false)
+        scheduleStatePersist(positionMs = positionMs, shouldResumePlayback = keepPlaybackIntent)
         postPlayerEvent(
             PlayerEvent.ShowError(
                 getLocalizedString(R.string.settings_usb_exclusive_issue_transport)
@@ -1845,7 +1868,11 @@ internal fun PlayerManager.prepareUsbExclusiveRouteForManualPlayback(reason: Str
                 "hasUsbHostAudioDevice=${diagnostics.hasUsbHostAudioDevice}"
         )
         markUsbExclusivePlaybackPreparing(false, "manual_play_no_usb:$reason")
-        updateResumePlaybackRequested(false)
+        rememberUsbExclusiveInterruptedPlaybackIntent(
+            reason = "manual_play_no_usb:$reason",
+            mediaItemIndex = player.currentMediaItemIndex.coerceIn(0, mediaItemCount - 1),
+            positionMs = player.currentPosition.coerceAtLeast(0L)
+        )
         usbExclusiveOpenGatePlaybackJob?.cancel()
         usbExclusiveOpenGatePlaybackJob = null
         usbExclusiveToggleTransitionActive = false
@@ -1855,6 +1882,10 @@ internal fun PlayerManager.prepareUsbExclusiveRouteForManualPlayback(reason: Str
         player.pause()
         _isPlayingFlow.value = false
         _playWhenReadyFlow.value = false
+        scheduleStatePersist(
+            positionMs = player.currentPosition.coerceAtLeast(0L),
+            shouldResumePlayback = true
+        )
         postPlayerEvent(
             PlayerEvent.ShowError(
                 getLocalizedString(R.string.settings_usb_exclusive_issue_device)
@@ -1944,6 +1975,9 @@ private fun PlayerManager.scheduleUsbExclusivePlaybackAfterOpenGate(
         }
         if (!usbExclusivePlaybackEnabled || !resumePlaybackRequested) {
             markUsbExclusivePlaybackPreparing(false, "manual_play_cancelled:$reason")
+            if (!usbExclusivePlaybackEnabled) {
+                resumeInterruptedUsbExclusivePlaybackIfNeeded("open_gate_cancelled:$reason")
+            }
             return@launch
         }
         if (gateReason != null) {
@@ -2173,12 +2207,80 @@ private fun PlayerManager.cancelUsbExclusiveSystemAudioRelease(reason: String) {
 private fun PlayerManager.shouldKeepPlaybackActiveForUsbRouteSwitch(): Boolean {
     if (!isPlayerInitialized()) return false
     if (resumePlaybackRequested) return true
+    if (usbExclusiveInterruptedPlaybackIntent != null) return true
     if (playJob?.isActive == true) return true
     return if (Looper.myLooper() == Looper.getMainLooper()) {
         player.isPlaying || player.playWhenReady
     } else {
         _isPlayingFlow.value || _playWhenReadyFlow.value
     }
+}
+
+internal fun PlayerManager.resumeInterruptedUsbExclusivePlaybackIfNeeded(reason: String): Boolean {
+    val intent = usbExclusiveInterruptedPlaybackIntent ?: return false
+    if (usbExclusivePlaybackEnabled || currentPlaylist.isEmpty()) return false
+    if (intent.mediaItemIndex !in currentPlaylist.indices) {
+        clearUsbExclusiveInterruptedPlaybackIntent("invalid_index:$reason")
+        return false
+    }
+    clearUsbExclusiveInterruptedPlaybackIntent("resume:$reason")
+    NPLogger.i(
+        "NERI-UsbExclusive",
+        "resume playback interrupted by USB exclusive failure: reason=$reason " +
+            "index=${intent.mediaItemIndex} positionMs=${intent.positionMs} " +
+            "failure=${intent.reason}"
+    )
+    updateResumePlaybackRequested(true)
+    playAtIndex(
+        intent.mediaItemIndex,
+        resumePositionMs = intent.positionMs.coerceAtLeast(0L),
+        forceStartupProtectionFade = intent.positionMs > 0L
+    )
+    return true
+}
+
+private fun PlayerManager.shouldKeepPlaybackIntentAfterUsbNativeFailure(): Boolean {
+    if (!isPlayerInitialized()) return false
+    if (currentPlaylist.isEmpty()) return false
+    return resumePlaybackRequested ||
+        playJob?.isActive == true ||
+        player.playWhenReady ||
+        player.isPlaying ||
+        _playWhenReadyFlow.value ||
+        _isPlayingFlow.value
+}
+
+private fun PlayerManager.rememberUsbExclusiveInterruptedPlaybackIntent(
+    reason: String,
+    mediaItemIndex: Int,
+    positionMs: Long
+) {
+    val safeIndex = mediaItemIndex.takeIf { it in currentPlaylist.indices } ?: return
+    val intent = PlayerManager.UsbExclusiveInterruptedPlaybackIntent(
+        mediaItemIndex = safeIndex,
+        positionMs = positionMs.coerceAtLeast(0L),
+        requestToken = playbackRequestToken,
+        reason = reason
+    )
+    usbExclusiveInterruptedPlaybackIntent = intent
+    updateResumePlaybackRequested(true)
+    NPLogger.i(
+        "NERI-UsbExclusive",
+        "remember playback intent after USB exclusive interruption: reason=$reason " +
+            "index=${intent.mediaItemIndex} positionMs=${intent.positionMs} " +
+            "token=${intent.requestToken}"
+    )
+}
+
+internal fun PlayerManager.clearUsbExclusiveInterruptedPlaybackIntent(reason: String) {
+    val intent = usbExclusiveInterruptedPlaybackIntent ?: return
+    usbExclusiveInterruptedPlaybackIntent = null
+    NPLogger.d(
+        "NERI-UsbExclusive",
+        "clear interrupted USB playback intent: reason=$reason " +
+            "index=${intent.mediaItemIndex} positionMs=${intent.positionMs} " +
+            "failure=${intent.reason}"
+    )
 }
 
 private const val USB_EXCLUSIVE_RECONFIGURE_DEBOUNCE_MS = 120L

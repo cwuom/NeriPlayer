@@ -112,6 +112,25 @@ class AppleMusicLyricTimingTest {
     }
 
     @Test
+    fun `cover lyric translation matcher does not reuse long translation for later lines`() {
+        val lyrics = listOf(
+            LyricEntry(text = "My Baby", startTimeMs = 29_440L, endTimeMs = 30_180L),
+            LyricEntry(text = "Let It Go", startTimeMs = 30_180L, endTimeMs = 30_860L),
+            LyricEntry(text = "我们去过的每个角落像寄托", startTimeMs = 30_860L, endTimeMs = 32_780L)
+        )
+        val translations = listOf(
+            LyricEntry(text = "我的宝贝", startTimeMs = 29_440L, endTimeMs = 30_180L),
+            LyricEntry(text = "放手吧", startTimeMs = 30_180L, endTimeMs = 56_040L)
+        )
+
+        val matchedTranslations = matchTranslationsToLineIndices(lyrics, translations)
+
+        assertEquals("我的宝贝", matchedTranslations[0]?.text)
+        assertEquals("放手吧", matchedTranslations[1]?.text)
+        assertEquals(null, matchedTranslations[2]?.text)
+    }
+
+    @Test
     fun `matchTranslationsToLineIndices keeps early overlapping translation on current line`() {
         val lyrics = listOf(
             LyricEntry(text = "The road gets cold", startTimeMs = 68_020L, endTimeMs = 70_480L),

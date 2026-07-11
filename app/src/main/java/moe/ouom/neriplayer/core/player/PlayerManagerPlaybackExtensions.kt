@@ -526,6 +526,7 @@ internal fun PlayerManager.playAtIndex(
         stopCurrentPlaybackForListenTogetherAwaitingStream()
     }
     updateResumePlaybackRequested(true)
+    clearUsbExclusiveInterruptedPlaybackIntent("play_at_index")
     restoredShouldResumePlayback = false
     restoredResumePositionMs = 0L
     scheduleStatePersist(
@@ -842,6 +843,9 @@ internal fun PlayerManager.playImpl(
     cancelPendingPauseRequest(resetVolumeToFull = resumeVolumeFromPendingPause == null)
     suppressAutoResumeForCurrentSession = false
     updateResumePlaybackRequested(true)
+    if (!usbExclusivePlaybackEnabled) {
+        clearUsbExclusiveInterruptedPlaybackIntent("manual_play")
+    }
     val song = _currentSongFlow.value
     val preparedInPlayer = isPreparedInPlayer()
     NPLogger.d(
@@ -986,6 +990,9 @@ internal fun PlayerManager.pauseImpl(
         cancelPlaybackStartupWatchdog(reason = debugReason)
         cancelPendingPauseRequest(resetVolumeToFull = true)
         updateResumePlaybackRequested(action.resumePlaybackRequested)
+        if (!internalUsbTransition) {
+            clearUsbExclusiveInterruptedPlaybackIntent("pending_pause:$debugReason")
+        }
         playbackRequestToken += 1
         playJob?.cancel()
         playJob = null
@@ -1014,6 +1021,9 @@ internal fun PlayerManager.pauseImpl(
     cancelPendingPauseRequest()
     cancelPlaybackStartupWatchdog(reason = debugReason)
     updateResumePlaybackRequested(false)
+    if (!internalUsbTransition) {
+        clearUsbExclusiveInterruptedPlaybackIntent("pause:$debugReason")
+    }
     playbackRequestToken += 1
     playJob?.cancel()
     playJob = null

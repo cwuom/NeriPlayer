@@ -195,6 +195,7 @@ object PlayerManager {
     internal var usbExclusiveForegroundRecoveryJob: Job? = null
     internal var usbExclusiveBackgroundAuditJob: Job? = null
     internal var usbExclusiveRecoveryAttempts = 0
+    internal var usbExclusiveInterruptedPlaybackIntent: UsbExclusiveInterruptedPlaybackIntent? = null
     @Volatile
     internal var usbExclusiveRouteGeneration = 0L
     @Volatile
@@ -246,6 +247,14 @@ object PlayerManager {
     @Volatile
     internal var usbExclusivePreferences = UsbExclusivePreferences()
     internal var allowMixedPlaybackEnabled = false
+
+    internal data class UsbExclusiveInterruptedPlaybackIntent(
+        val mediaItemIndex: Int,
+        val positionMs: Long,
+        val requestToken: Long,
+        val reason: String,
+        val recordedAtMs: Long = SystemClock.elapsedRealtime()
+    )
 
     @Volatile
     internal var currentPlaylist: List<SongItem> = emptyList()
@@ -946,6 +955,20 @@ object PlayerManager {
             "usb_exclusive_disabled"
         }
         markUsbExclusivePlaybackPreparing(true, usbExclusiveToggleTransitionReason)
+        usbExclusiveToggleTransitionJob?.cancel()
+        val pendingReason = usbExclusiveToggleTransitionReason
+        usbExclusiveToggleTransitionJob = mainScope.launch {
+            delay(8_000L)
+            if (usbExclusiveToggleTransitionActive && usbExclusiveToggleTransitionReason == pendingReason) {
+                NPLogger.w(
+                    "NERI-UsbExclusive",
+                    "unlock stale USB toggle transition before settings flow update: reason=$pendingReason"
+                )
+                usbExclusiveToggleTransitionActive = false
+                usbExclusiveToggleTransitionReason = ""
+                markUsbExclusivePlaybackPreparing(false, "usb_toggle_ui_timeout:$pendingReason")
+            }
+        }
         return true
     }
 

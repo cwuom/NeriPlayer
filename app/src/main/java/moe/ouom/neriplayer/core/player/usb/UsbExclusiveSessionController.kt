@@ -1153,7 +1153,16 @@ object UsbExclusiveSessionController {
                     "native close begin: handle=${request.handle} source=${request.source} " +
                         "reason=${request.reason}"
                 )
-                runCatching { ioGate.awaitDrained() }
+                runCatching { ioGate.awaitDrained(timeoutMs = EMERGENCY_CLOSE_WAIT_MS) }
+                    .onSuccess { drained ->
+                        if (!drained) {
+                            NPLogger.w(
+                                TAG,
+                                "writer drain timed out before native close: " +
+                                    "handle=${request.handle} reason=${request.reason}"
+                            )
+                        }
+                    }
                     .onFailure { error ->
                         Thread.currentThread().interrupt()
                         NPLogger.w(TAG, "writer drain interrupted for handle=${request.handle}", error)
