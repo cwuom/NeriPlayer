@@ -256,7 +256,7 @@ class GitHubSyncWorker(
         }
 
         val notification = NotificationCompat.Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_statusbar)
+            .setSmallIcon(R.drawable.ic_notification_small)
             .setContentTitle(applicationContext.getString(R.string.github_sync_failed_title))
             .setContentText(errorMessage)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
