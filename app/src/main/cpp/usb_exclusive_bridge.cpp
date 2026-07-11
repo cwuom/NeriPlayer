@@ -44,6 +44,7 @@ constexpr int kDefaultPcmRingDurationMs = 5000;
 constexpr int kMinimumPcmRingDurationMs = 3000;
 constexpr int kMaximumPcmRingDurationMs = 12000;
 constexpr int kCancelDrainWarningMs = 1200;
+constexpr int kFirstTransferCompletionTimeoutMs = 750;
 constexpr int kInterfaceTransitionCooldownMs = 1500;
 constexpr int kUrgentAudioThreadPriority = -19;
 
@@ -1006,7 +1007,11 @@ bool startStreamingInternal(
         handle->transferCount,
         handle->packetsPerTransfer
     );
-    if (handle->running.load()) {
+    if (
+        handle->running.load() ||
+        !handle->transfers.empty() ||
+        handle->eventThread.joinable()
+    ) {
         {
             std::lock_guard<std::mutex> submitGuard(handle->transferSubmitLock);
             if (!handle->deviceOnline.load() || handle->stopRequested.load() ||
@@ -1295,15 +1300,14 @@ void LIBUSB_CALL transferCallback(libusb_transfer* transfer) noexcept {
         if (transferCompleted) {
             for (int packetIndex = 0; packetIndex < transfer->num_iso_packets; ++packetIndex) {
                 const libusb_iso_packet_descriptor& packet = transfer->iso_packet_desc[packetIndex];
-                if (packet.status != LIBUSB_TRANSFER_COMPLETED ||
-                    packet.actual_length != packet.length) {
+                if (packet.status != LIBUSB_TRANSFER_COMPLETED) {
                     packetsCompleted = false;
                 }
                 if (packet.status == LIBUSB_TRANSFER_NO_DEVICE) {
                     packetReportedNoDevice = true;
                 }
                 if (packet.status == LIBUSB_TRANSFER_COMPLETED) {
-                    completedPacketBytes += std::min(packet.actual_length, packet.length);
+                    completedPacketBytes += packet.length;
                 }
             }
         }
@@ -1312,7 +1316,15 @@ void LIBUSB_CALL transferCallback(libusb_transfer* transfer) noexcept {
             : 0;
         settlePreparedPlayerFrames(handle, userData, completedPacketFrames);
         if (packetsCompleted) {
-            handle->completedTransfers.fetch_add(1);
+            const int completedBefore = handle->completedTransfers.fetch_add(1);
+            if (completedBefore == 0) {
+                LOGI(
+                    "first USB transfer completed: packets=%d requested=%d actual=%d",
+                    transfer->num_iso_packets,
+                    transfer->length,
+                    transfer->actual_length
+                );
+            }
         } else if (transfer->status != LIBUSB_TRANSFER_CANCELLED) {
             if (transfer->status == LIBUSB_TRANSFER_NO_DEVICE || packetReportedNoDevice) {
                 requestNoDeviceStop(handle);
@@ -1469,6 +1481,8 @@ void freeTransfers(UsbExclusiveHandle* handle) {
 void eventLoopThread(UsbExclusiveHandle* handle) noexcept {
     try {
         configureUsbEventThreadPriority();
+        const auto startedAt = std::chrono::steady_clock::now();
+        LOGI("USB event loop entered");
         while (handle->deviceOnline.load() && !handle->stopRequested.load()) {
             timeval timeout {};
             timeout.tv_sec = 0;
@@ -1484,7 +1498,39 @@ void eventLoopThread(UsbExclusiveHandle* handle) noexcept {
                 LOGE("libusb_handle_events_timeout_completed failed: %s", libusbErrName(rc));
                 std::this_thread::sleep_for(std::chrono::milliseconds(4));
             }
+            if (
+                handle->completedTransfers.load() == 0 &&
+                handle->inFlightTransfers.load() > 0 &&
+                std::chrono::steady_clock::now() - startedAt >=
+                    std::chrono::milliseconds(kFirstTransferCompletionTimeoutMs)
+            ) {
+                handle->transportFailed.store(true);
+                handle->running.store(false);
+                handle->stopRequested.store(true);
+                setError(handle, "event_loop_first_completion_timeout");
+                LOGE(
+                    "USB event loop timed out before first completion: inFlight=%d",
+                    handle->inFlightTransfers.load()
+                );
+                break;
+            }
+            if (
+                handle->transportFailed.load() &&
+                handle->inFlightTransfers.load() == 0
+            ) {
+                handle->running.store(false);
+                handle->stopRequested.store(true);
+                break;
+            }
         }
+        LOGI(
+            "USB event loop exited: running=%d stop=%d completed=%d errors=%d inFlight=%d",
+            handle->running.load() ? 1 : 0,
+            handle->stopRequested.load() ? 1 : 0,
+            handle->completedTransfers.load(),
+            handle->submitErrors.load(),
+            handle->inFlightTransfers.load()
+        );
     } catch (const std::exception& error) {
         handle->submitErrors.fetch_add(1);
         handle->transportFailed.store(true);
@@ -1508,7 +1554,8 @@ void stopStreamingInternal(UsbExclusiveHandle* handle) {
     if (handle == nullptr) {
         return;
     }
-    if (!handle->running.exchange(false) && handle->transfers.empty()) {
+    const bool wasRunning = handle->running.exchange(false);
+    if (!wasRunning && handle->transfers.empty() && !handle->eventThread.joinable()) {
         return;
     }
 
@@ -2334,9 +2381,6 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativePausePla
     }
     const neri::usb::PcmPipelineSnapshot before = holder->pcmPipeline.snapshot();
     holder->playbackEnabled.store(false);
-    stopStreamingInternal(holder.get());
-    holder->pcmPipeline.clear();
-    holder->stagedPlayerFrames.store(0);
     LOGI(
         "nativePausePlayerPcm ok: handle=%lld running=%d level=%zu/%zu queued=%lld",
         static_cast<long long>(handleValue),

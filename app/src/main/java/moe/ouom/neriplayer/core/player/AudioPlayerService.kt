@@ -639,6 +639,7 @@ class AudioPlayerService : Service() {
                             "active USB audio device detached id=${detachedDevice?.deviceId} " +
                                 "name=${detachedDevice?.deviceName}"
                         )
+                        StartupAudioFocusController.forceRelease("usb_device_detached")
                         PlayerManager.stopPlaybackAfterUsbExclusiveNativeFailure(
                             "usb_device_detached"
                         )
