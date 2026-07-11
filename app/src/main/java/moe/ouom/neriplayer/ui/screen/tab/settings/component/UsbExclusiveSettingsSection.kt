@@ -440,10 +440,17 @@ private fun summarizeNativeBuffer(
     val fifoMs = runtimeReport.valueAfter("fifoMs")?.toIntOrNull()
     val bufferMs = runtimeReport.valueAfter("bufferMs")?.toIntOrNull()
         ?: nativeState.bufferDurationMs.takeIf { it > 0 }
-    return when {
+    val bufferSummary = when {
         fifoMs != null && bufferMs != null -> "$fifoMs / $bufferMs ms"
         bufferMs != null -> "$bufferMs ms"
         else -> null
+    }
+    val backpressureMs = nativeState.pcmBackpressureCurrentMs.takeIf { it > 0L }
+        ?: runtimeReport.valueAfter("pcmBackpressureCurrentMs")?.toLongOrNull()?.takeIf { it > 0L }
+    return if (bufferSummary != null && backpressureMs != null) {
+        "$bufferSummary · backpressure ${backpressureMs}ms"
+    } else {
+        bufferSummary
     }
 }
 

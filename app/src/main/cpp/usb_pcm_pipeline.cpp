@@ -1,6 +1,7 @@
 #include "usb_pcm_pipeline.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -79,6 +80,13 @@ size_t countOutputFrames(
     return outputFrames;
 }
 
+int64_t monotonicMicros() {
+    using Clock = std::chrono::steady_clock;
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+        Clock::now().time_since_epoch()
+    ).count();
+}
+
 } // namespace
 
 bool PcmPipeline::configure(const PcmPipelineConfig& config, std::string* error) {
@@ -136,6 +144,16 @@ bool PcmPipeline::configure(const PcmPipelineConfig& config, std::string* error)
     underrunBytes_ = 0;
     zeroFillBytes_ = 0;
     pausedZeroFillBytes_ = 0;
+    signalOutputFrames_ = 0;
+    silentOutputFrames_ = 0;
+    signalOutputBytes_ = 0;
+    backpressureEvents_ = 0;
+    backpressureTotalUs_ = 0;
+    backpressureStartedAtUs_ = 0;
+    backpressureMaxUs_ = 0;
+    maxLevelBytes_ = 0;
+    outputPeak_ = 0.0f;
+    lastOutputPeak_ = 0.0f;
     const float target = std::clamp(targetGain_.load(), 0.0f, 1.0f);
     appliedGain_.store(target);
     gainRampTarget_ = target;
@@ -199,11 +217,34 @@ bool PcmPipeline::resizeRingDuration(
     readIndex_ = 0;
     writeIndex_ = retainedBytes % ring_.size();
     levelBytes_ = retainedBytes;
+    maxLevelBytes_ = std::max(retainedBytes, std::min(maxLevelBytes_, ring_.size()));
+    if (freeBytesLocked() > 0) {
+        endBackpressureLocked(monotonicMicros());
+    }
     return true;
 }
 
 size_t PcmPipeline::freeBytesLocked() const {
     return ring_.empty() ? 0 : ring_.size() - levelBytes_;
+}
+
+void PcmPipeline::beginBackpressureLocked(int64_t nowUs) {
+    if (backpressureStartedAtUs_ > 0) {
+        return;
+    }
+    backpressureStartedAtUs_ = nowUs;
+    ++backpressureEvents_;
+    maxLevelBytes_ = std::max(maxLevelBytes_, levelBytes_);
+}
+
+void PcmPipeline::endBackpressureLocked(int64_t nowUs) {
+    if (backpressureStartedAtUs_ <= 0) {
+        return;
+    }
+    const int64_t elapsedUs = std::max<int64_t>(0, nowUs - backpressureStartedAtUs_);
+    backpressureTotalUs_ += elapsedUs;
+    backpressureMaxUs_ = std::max(backpressureMaxUs_, elapsedUs);
+    backpressureStartedAtUs_ = 0;
 }
 
 size_t PcmPipeline::writeRingLocked(const uint8_t* input, size_t bytes) {
@@ -219,6 +260,7 @@ size_t PcmPipeline::writeRingLocked(const uint8_t* input, size_t bytes) {
     }
     writeIndex_ = (writeIndex_ + writable) % ring_.size();
     levelBytes_ += writable;
+    maxLevelBytes_ = std::max(maxLevelBytes_, levelBytes_);
     return writable;
 }
 
@@ -235,6 +277,9 @@ size_t PcmPipeline::readRingLocked(uint8_t* output, size_t bytes) {
     }
     readIndex_ = (readIndex_ + readable) % ring_.size();
     levelBytes_ -= readable;
+    if (freeBytesLocked() > 0) {
+        endBackpressureLocked(monotonicMicros());
+    }
     return readable;
 }
 
@@ -263,6 +308,11 @@ size_t PcmPipeline::write(const uint8_t* input, size_t inputBytes, std::string* 
     {
         std::lock_guard<std::mutex> guard(lock_);
         freeOutputFrames = freeBytesLocked() / static_cast<size_t>(outputFormat_.frameBytes);
+        if (freeOutputFrames == 0) {
+            beginBackpressureLocked(monotonicMicros());
+        } else {
+            endBackpressureLocked(monotonicMicros());
+        }
     }
     if (freeOutputFrames == 0) {
         return 0;
@@ -400,8 +450,10 @@ size_t PcmPipeline::write(const uint8_t* input, size_t inputBytes, std::string* 
 
     std::lock_guard<std::mutex> guard(lock_);
     if (freeBytesLocked() < output.size()) {
+        beginBackpressureLocked(monotonicMicros());
         return 0;
     }
+    endBackpressureLocked(monotonicMicros());
     const size_t written = output.empty() ? 0 : writeRingLocked(output.data(), output.size());
     resamplePosition_ = localPosition;
     previousInputFrame_ = std::move(localPrevious);
@@ -452,6 +504,45 @@ void PcmPipeline::applyGain(uint8_t* output, size_t bytes) {
     appliedGain_.store(applied);
 }
 
+void PcmPipeline::updateOutputSignalStatsLocked(const uint8_t* output, size_t bytes) {
+    const int frames = outputFormat_.frameBytes > 0
+        ? static_cast<int>(bytes / static_cast<size_t>(outputFormat_.frameBytes))
+        : 0;
+    if (output == nullptr || frames <= 0) {
+        lastOutputPeak_ = 0.0f;
+        return;
+    }
+
+    int64_t signalFrames = 0;
+    int64_t signalBytes = 0;
+    float peak = 0.0f;
+    for (int frame = 0; frame < frames; ++frame) {
+        bool frameHasSignal = false;
+        const uint8_t* outputFrame = output + static_cast<size_t>(frame) * outputFormat_.frameBytes;
+        for (int channel = 0; channel < outputFormat_.channelCount; ++channel) {
+            const uint8_t* sample = outputFrame + channel * outputFormat_.subslotBytes;
+            const float value = readIntegerPcmSample(
+                sample,
+                outputFormat_.subslotBytes,
+                outputFormat_.bitsPerSample
+            );
+            peak = std::max(peak, std::abs(value));
+            if (std::abs(value) > 0.000001f) {
+                frameHasSignal = true;
+            }
+        }
+        if (frameHasSignal) {
+            ++signalFrames;
+            signalBytes += outputFormat_.frameBytes;
+        }
+    }
+    signalOutputFrames_ += signalFrames;
+    silentOutputFrames_ += frames - signalFrames;
+    signalOutputBytes_ += signalBytes;
+    lastOutputPeak_ = peak;
+    outputPeak_ = std::max(outputPeak_, peak);
+}
+
 size_t PcmPipeline::fill(uint8_t* output, size_t bytes, bool playbackEnabled) {
     if (output == nullptr || bytes == 0) {
         return 0;
@@ -468,6 +559,7 @@ size_t PcmPipeline::fill(uint8_t* output, size_t bytes, bool playbackEnabled) {
     }
     outputBytes_ += static_cast<int64_t>(bytes);
     applyGain(output, bytes);
+    updateOutputSignalStatsLocked(output, bytes);
     return read;
 }
 
@@ -477,6 +569,7 @@ void PcmPipeline::clear() {
     readIndex_ = 0;
     writeIndex_ = 0;
     levelBytes_ = 0;
+    endBackpressureLocked(monotonicMicros());
     resamplePosition_ = 0.0;
     hasPreviousInputFrame_ = false;
     std::fill(previousInputFrame_.begin(), previousInputFrame_.end(), 0.0f);
@@ -490,6 +583,16 @@ void PcmPipeline::resetCounters() {
     underrunBytes_ = 0;
     zeroFillBytes_ = 0;
     pausedZeroFillBytes_ = 0;
+    signalOutputFrames_ = 0;
+    silentOutputFrames_ = 0;
+    signalOutputBytes_ = 0;
+    backpressureEvents_ = 0;
+    backpressureTotalUs_ = 0;
+    backpressureStartedAtUs_ = 0;
+    backpressureMaxUs_ = 0;
+    maxLevelBytes_ = levelBytes_;
+    outputPeak_ = 0.0f;
+    lastOutputPeak_ = 0.0f;
 }
 
 void PcmPipeline::addDroppedFrames(int64_t frames) {
@@ -513,15 +616,32 @@ size_t PcmPipeline::queuedFrames() const {
 
 PcmPipelineSnapshot PcmPipeline::snapshot() const {
     std::lock_guard<std::mutex> guard(lock_);
+    const int64_t nowUs = monotonicMicros();
+    const int64_t currentBackpressureUs = backpressureStartedAtUs_ > 0
+        ? std::max<int64_t>(0, nowUs - backpressureStartedAtUs_)
+        : 0;
+    const int64_t totalBackpressureUs = backpressureTotalUs_ + currentBackpressureUs;
+    const int64_t maxBackpressureUs = std::max(backpressureMaxUs_, currentBackpressureUs);
     return {
         levelBytes_,
         ring_.size(),
+        freeBytesLocked(),
+        maxLevelBytes_,
         inputBytes_,
         outputBytes_,
         droppedBytes_,
         underrunBytes_,
         zeroFillBytes_,
         pausedZeroFillBytes_,
+        signalOutputFrames_,
+        silentOutputFrames_,
+        signalOutputBytes_,
+        backpressureEvents_,
+        totalBackpressureUs,
+        currentBackpressureUs,
+        maxBackpressureUs,
+        outputPeak_,
+        lastOutputPeak_,
         targetGain_.load(),
         appliedGain_.load()
     };

@@ -844,12 +844,18 @@ private fun NeriAppContent(
                     hasItems = PlayerManager.hasItems(),
                     hasLocalCurrentSong = PlayerManager.currentSongFlow.value?.let {
                         LocalSongSupport.isLocalSong(it, context)
-                    } == true
+                    } == true,
+                    usbExclusivePlaybackActive = PlayerManager
+                        .isUsbExclusivePlaybackActiveForForegroundService()
                 )
             ) {
                 NPLogger.d(
                     "NERI-App",
-                    "Skipping audio service sync because active playback service is already tracking source=$source"
+                    "Skipping audio service sync because active playback service is already tracking " +
+                        "source=$source serviceInstance=" +
+                        AudioPlayerService.isInstanceActiveForDiagnostics() +
+                        " serviceForeground=" +
+                        AudioPlayerService.isForegroundActiveForDiagnostics()
                 )
                 return@launch
             }

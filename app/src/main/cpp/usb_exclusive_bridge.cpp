@@ -2282,12 +2282,16 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativeWritePla
             const neri::usb::PcmPipelineSnapshot pcm = holder->pcmPipeline.snapshot();
             LOGW(
                 "nativeWritePlayerPcm short write: handle=%lld requested=%d written=%zu "
-                "level=%zu/%zu running=%d playback=%d input=%lld output=%lld dropped=%lld underrun=%lld",
+                "level=%zu/%zu free=%zu backpressureEvents=%lld backpressureCurrentMs=%lld "
+                "running=%d playback=%d input=%lld output=%lld dropped=%lld underrun=%lld",
                 static_cast<long long>(handleValue),
                 size,
                 written,
                 pcm.levelBytes,
                 pcm.capacityBytes,
+                pcm.freeBytes,
+                static_cast<long long>(pcm.backpressureEvents),
+                static_cast<long long>(pcm.backpressureCurrentUs / 1000),
                 holder->running.load() ? 1 : 0,
                 holder->playbackEnabled.load() ? 1 : 0,
                 static_cast<long long>(pcm.inputBytes),
@@ -2685,6 +2689,12 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativeRuntimeR
             " scheduledFrames=" + std::to_string(holder->scheduledFrames.load()) +
             " pcmLevel=" + std::to_string(pcm.levelBytes) + "/" +
                 std::to_string(pcm.capacityBytes) +
+            " pcmFreeBytes=" + std::to_string(pcm.freeBytes) +
+            " pcmMaxLevelBytes=" + std::to_string(pcm.maxLevelBytes) +
+            " pcmBackpressureEvents=" + std::to_string(pcm.backpressureEvents) +
+            " pcmBackpressureTotalMs=" + std::to_string(pcm.backpressureTotalUs / 1000) +
+            " pcmBackpressureCurrentMs=" + std::to_string(pcm.backpressureCurrentUs / 1000) +
+            " pcmBackpressureMaxMs=" + std::to_string(pcm.backpressureMaxUs / 1000) +
             " bufferMs=" + std::to_string(bufferMs) +
             " requestedBufferMs=" + std::to_string(holder->pcmRingDurationMs) +
             " fifoMs=" + std::to_string(fifoMs) +
@@ -2697,6 +2707,11 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativeRuntimeR
             " playerUnderrunBytes=" + std::to_string(pcm.underrunBytes) +
             " playerZeroFillBytes=" + std::to_string(pcm.zeroFillBytes) +
             " playerPausedZeroFillBytes=" + std::to_string(pcm.pausedZeroFillBytes) +
+            " playerSignalFrames=" + std::to_string(pcm.signalOutputFrames) +
+            " playerSilentFrames=" + std::to_string(pcm.silentOutputFrames) +
+            " playerSignalBytes=" + std::to_string(pcm.signalOutputBytes) +
+            " outputPeak=" + std::to_string(pcm.outputPeak) +
+            " lastOutputPeak=" + std::to_string(pcm.lastOutputPeak) +
             " targetGain=" + std::to_string(pcm.targetGain) +
             " appliedGain=" + std::to_string(pcm.appliedGain) +
             " lastError=" + (lastError.empty() ? "none" : lastError);

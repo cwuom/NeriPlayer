@@ -36,12 +36,23 @@ struct PcmPipelineConfig {
 struct PcmPipelineSnapshot {
     size_t levelBytes = 0;
     size_t capacityBytes = 0;
+    size_t freeBytes = 0;
+    size_t maxLevelBytes = 0;
     int64_t inputBytes = 0;
     int64_t outputBytes = 0;
     int64_t droppedBytes = 0;
     int64_t underrunBytes = 0;
     int64_t zeroFillBytes = 0;
     int64_t pausedZeroFillBytes = 0;
+    int64_t signalOutputFrames = 0;
+    int64_t silentOutputFrames = 0;
+    int64_t signalOutputBytes = 0;
+    int64_t backpressureEvents = 0;
+    int64_t backpressureTotalUs = 0;
+    int64_t backpressureCurrentUs = 0;
+    int64_t backpressureMaxUs = 0;
+    float outputPeak = 0.0f;
+    float lastOutputPeak = 0.0f;
     float targetGain = 1.0f;
     float appliedGain = 1.0f;
 };
@@ -68,9 +79,12 @@ public:
 
 private:
     [[nodiscard]] size_t freeBytesLocked() const;
+    void beginBackpressureLocked(int64_t nowUs);
+    void endBackpressureLocked(int64_t nowUs);
     size_t writeRingLocked(const uint8_t* input, size_t bytes);
     size_t readRingLocked(uint8_t* output, size_t bytes);
     void applyGain(uint8_t* output, size_t bytes);
+    void updateOutputSignalStatsLocked(const uint8_t* output, size_t bytes);
 
     mutable std::mutex writeLock_;
     mutable std::mutex lock_;
@@ -90,6 +104,16 @@ private:
     int64_t underrunBytes_ = 0;
     int64_t zeroFillBytes_ = 0;
     int64_t pausedZeroFillBytes_ = 0;
+    int64_t signalOutputFrames_ = 0;
+    int64_t silentOutputFrames_ = 0;
+    int64_t signalOutputBytes_ = 0;
+    int64_t backpressureEvents_ = 0;
+    int64_t backpressureTotalUs_ = 0;
+    int64_t backpressureStartedAtUs_ = 0;
+    int64_t backpressureMaxUs_ = 0;
+    size_t maxLevelBytes_ = 0;
+    float outputPeak_ = 0.0f;
+    float lastOutputPeak_ = 0.0f;
     std::atomic<float> targetGain_ { 1.0f };
     std::atomic<float> appliedGain_ { 1.0f };
     float gainRampTarget_ = 1.0f;

@@ -63,6 +63,7 @@ import moe.ouom.neriplayer.core.player.policy.shouldClearResumePlaybackRequestOn
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveSessionController
+import moe.ouom.neriplayer.core.player.usb.UsbExclusiveWakeLock
 import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
@@ -1972,9 +1973,61 @@ internal fun PlayerManager.updateUsbExclusiveForegroundState(
     if (!foreground) {
         usbExclusiveForegroundRecoveryJob?.cancel()
         usbExclusiveForegroundRecoveryJob = null
+        scheduleUsbExclusiveBackgroundAudit(reason)
+    } else {
+        usbExclusiveBackgroundAuditJob?.cancel()
+        usbExclusiveBackgroundAuditJob = null
     }
     if (!usbExclusivePlaybackEnabled) return
     applyActiveUsbExclusiveBuffer(reason)
+}
+
+private fun PlayerManager.scheduleUsbExclusiveBackgroundAudit(reason: String) {
+    usbExclusiveBackgroundAuditJob?.cancel()
+    if (!usbExclusivePlaybackEnabled || !isPlayerInitialized()) return
+    val routeGeneration = usbExclusiveRouteGeneration
+    val checkpointsMs = listOf(1_000L, 5_000L, 15_000L)
+    usbExclusiveBackgroundAuditJob = mainScope.launch {
+        var elapsedMs = 0L
+        for (checkpointMs in checkpointsMs) {
+            delay((checkpointMs - elapsedMs).coerceAtLeast(0L))
+            elapsedMs = checkpointMs
+            if (usbExclusiveBackgroundAuditJob == null) return@launch
+            if (usbExclusiveAppInForeground || !usbExclusivePlaybackEnabled || !isPlayerInitialized()) {
+                return@launch
+            }
+            if (routeGeneration != usbExclusiveRouteGeneration) return@launch
+            UsbExclusiveSessionController.refresh(application)
+            val nativeState = UsbExclusiveSessionController.state.value
+            val pathState = UsbExclusiveAudioPathTracker.state.value
+            val playerPosition = runCatching { player.currentPosition }.getOrDefault(-1L)
+            val playerState = runCatching { player.playbackState }.getOrDefault(Player.STATE_IDLE)
+            NPLogger.i(
+                "NERI-UsbExclusive",
+                "background USB audit: reason=$reason elapsedMs=$checkpointMs " +
+                    "serviceInstance=${AudioPlayerService.isInstanceActiveForDiagnostics()} " +
+                    "serviceForeground=${AudioPlayerService.isForegroundActiveForDiagnostics()} " +
+                    "wakeLock=${UsbExclusiveWakeLock.isHeld()} path=${pathState.effectivePath} " +
+                    "sinkPlaying=${pathState.sinkPlaying} nativeStreaming=${nativeState.streaming} " +
+                    "completedFrames=${nativeState.completedAudioFrames} " +
+                    "queuedFrames=${nativeState.queuedAudioFrames} " +
+                    "pcm=${nativeState.pcmLevelBytes}/${nativeState.pcmCapacityBytes} " +
+                    "pcmFree=${nativeState.pcmFreeBytes} " +
+                    "backpressureEvents=${nativeState.pcmBackpressureEvents} " +
+                    "backpressureCurrentMs=${nativeState.pcmBackpressureCurrentMs} " +
+                    "signalFrames=${nativeState.playerSignalFrames} " +
+                    "silentFrames=${nativeState.playerSilentFrames} " +
+                    "outputPeak=${nativeState.outputPeak} " +
+                    "lastOutputPeak=${nativeState.lastOutputPeak} " +
+                    "playerState=${playbackStateName(playerState)} " +
+                    "playWhenReady=${player.playWhenReady} isPlaying=${player.isPlaying} " +
+                    "positionMs=$playerPosition runtime=${nativeState.runtimeReport}"
+            )
+        }
+        if (usbExclusiveBackgroundAuditJob === coroutineContext[kotlinx.coroutines.Job]) {
+            usbExclusiveBackgroundAuditJob = null
+        }
+    }
 }
 
 private fun PlayerManager.applyActiveUsbExclusiveBuffer(reason: String) {
@@ -2091,6 +2144,8 @@ private fun PlayerManager.cancelUsbExclusiveRecovery(reason: String) {
     usbExclusiveRecoveryJob = null
     usbExclusiveForegroundRecoveryJob?.cancel()
     usbExclusiveForegroundRecoveryJob = null
+    usbExclusiveBackgroundAuditJob?.cancel()
+    usbExclusiveBackgroundAuditJob = null
     NPLogger.d("NERI-UsbExclusive", "cancelUsbExclusiveRecovery(): reason=$reason")
 }
 
@@ -2633,6 +2688,8 @@ internal fun PlayerManager.releaseImpl() {
     usbExclusiveRecoveryJob = null
     usbExclusiveForegroundRecoveryJob?.cancel()
     usbExclusiveForegroundRecoveryJob = null
+    usbExclusiveBackgroundAuditJob?.cancel()
+    usbExclusiveBackgroundAuditJob = null
     UsbExclusiveSessionController.forceStopAllSessions("player_release")
     UsbExclusiveSystemSoundGuard.releaseWhenNativeIdle(application, "player_release")
     playJob?.cancel()

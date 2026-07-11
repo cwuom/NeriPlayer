@@ -24,16 +24,21 @@ import androidx.media3.exoplayer.audio.AudioOffloadSupport
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.ForwardingAudioSink
 import java.nio.ByteBuffer
+import java.util.concurrent.locks.LockSupport
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathTracker
+import moe.ouom.neriplayer.core.player.usb.UsbExclusivePcmWritePlanner
+import moe.ouom.neriplayer.core.player.usb.UsbExclusiveRuntimeMetrics
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.policy.isTransientUsbExclusiveOpenGate
 import moe.ouom.neriplayer.core.player.policy.resolvePlaybackSoundConfigForEngine
 import moe.ouom.neriplayer.core.player.policy.shouldSuppressSystemFallbackForUsbExclusiveFailure
+import moe.ouom.neriplayer.core.player.usb.usbRuntimeMetrics
+import moe.ouom.neriplayer.core.player.usb.valueAfter
 import moe.ouom.neriplayer.util.NPLogger
 
 @UnstableApi
@@ -53,11 +58,16 @@ internal class UsbExclusiveAudioSink(
         const val FIRST_COMPLETION_STALL_RECOVERY_MAX_ATTEMPTS = 1
         const val NATIVE_START_PREROLL_MS = 300L
         const val DIRECT_SCRATCH_CAPACITY_BYTES = 256 * 1024
+        const val NATIVE_BACKPRESSURE_REFRESH_INTERVAL_MS = 250L
+        const val NATIVE_BACKPRESSURE_LOG_INTERVAL_MS = 2_000L
+        const val NATIVE_BACKPRESSURE_PARK_MAX_US = 4_000L
         val audioThreadPriorityConfigured = ThreadLocal<Boolean>()
     }
 
     private val appContext = context.applicationContext
     private val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    @Volatile
+    private var cachedMusicVolumeFraction = 1f
     private val systemVolumeObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean, uri: Uri?) {
             applySystemVolumeChange()
@@ -109,12 +119,16 @@ internal class UsbExclusiveAudioSink(
     private var suppressedSystemFallbackReason: String? = null
     private var lastSuppressedFallbackStopRequestAtMs = 0L
     private var lastNativeWriteFailureLogAtMs = 0L
+    private var lastNativeBackpressureLogAtMs = 0L
+    private var lastNativeBackpressureRefreshAtMs = 0L
+    private var nativeBackpressureStartedAtMs = 0L
     private var lastReleaseBarrierHoldLogAtMs = 0L
     private var systemVolumeObserverRegistered = false
     private var lastReportedNativeVolume = Float.NaN
     private var lastSystemVolumeReadFailureLogAtMs = 0L
 
     init {
+        cachedMusicVolumeFraction = readMusicVolumeFractionFromSystem()
         registerSystemVolumeObserver()
     }
 
@@ -208,7 +222,7 @@ internal class UsbExclusiveAudioSink(
             return
         }
         nativeHasQueuedPcm = UsbExclusiveSessionController.queuedPlayerFrames(nativeHandle) > 0L
-        if (!startNativeTransportIfReady(allowShortPreroll = true)) {
+        if (!startNativeTransportIfReady()) {
             requestSystemFailover("native_play_failed")
         }
     }
@@ -290,26 +304,19 @@ internal class UsbExclusiveAudioSink(
 
         val original = buffer.duplicate()
         val remaining = buffer.remaining()
-        val transportWriteSize = nativeWriteSizeForCurrentTransport(remaining)
-        val requestedWriteSize = if (buffer.isDirect) {
-            transportWriteSize
+        val requestedWriteSize = nativeWriteSizeForAvailablePcmSpace(
+            remaining = remaining,
+            directBuffer = buffer.isDirect
+        )
+        val written = if (requestedWriteSize > 0) {
+            writeNative(buffer, requestedWriteSize)
         } else {
-            transportWriteSize.coerceAtMost(directScratch?.capacity() ?: 0)
+            0
         }
-        val written = writeNative(buffer, requestedWriteSize)
         if (written <= 0) {
-            UsbExclusiveSessionController.refreshRuntime(nativeHandle)
-            val runtimeReport = UsbExclusiveSessionController.state.value.runtimeReport
             val nowMs = SystemClock.elapsedRealtime()
-            if (nowMs - lastNativeWriteFailureLogAtMs >= 1_000L) {
-                lastNativeWriteFailureLogAtMs = nowMs
-                NPLogger.w(
-                    "NERI-UsbExclusive",
-                    "native PCM write stalled: requested=$remaining written=$written " +
-                        "playing=$playing transportStarted=$nativeTransportStarted " +
-                        "hasQueued=$nativeHasQueuedPcm runtime=$runtimeReport"
-                )
-            }
+            val runtimeReport = refreshRuntimeAfterStalledWrite(nowMs)
+            val metrics = runtimeReport.usbRuntimeMetrics()
             if (shouldFlushIdleNativeQueueAfterStalledWrite(runtimeReport)) {
                 flushIdleNativeQueueAfterStalledWrite(runtimeReport)
                 return false
@@ -322,11 +329,31 @@ internal class UsbExclusiveAudioSink(
                 )
                 return false
             }
+            if (metrics.isBenignBackpressure) {
+                recordBenignNativeBackpressure(
+                    nowMs = nowMs,
+                    pendingBytes = remaining,
+                    attemptedBytes = requestedWriteSize,
+                    runtimeReport = runtimeReport
+                )
+                return false
+            }
+            if (nowMs - lastNativeWriteFailureLogAtMs >= 1_000L) {
+                lastNativeWriteFailureLogAtMs = nowMs
+                NPLogger.w(
+                    "NERI-UsbExclusive",
+                    "native PCM write stalled: pending=$remaining requested=$requestedWriteSize " +
+                        "written=$written " +
+                        "playing=$playing transportStarted=$nativeTransportStarted " +
+                        "hasQueued=$nativeHasQueuedPcm runtime=$runtimeReport"
+                )
+            }
             if (isFatalNativeRuntime(runtimeReport)) {
                 requestSystemFailover("native_transport_failed")
             }
             return false
         }
+        clearNativeBackpressureState()
         shortFocusNativeFailureStartedAtMs = 0L
         shortFocusNativeRestartAttempts = 0
         lastShortFocusNativeRestartAtMs = 0L
@@ -875,16 +902,48 @@ internal class UsbExclusiveAudioSink(
         )
     }
 
-    private fun nativeWriteSizeForCurrentTransport(remaining: Int): Int {
-        if (nativeTransportStarted || !playing || frameBytes <= 0 || sampleRate <= 0) {
-            return remaining
+    private fun nativeWriteSizeForAvailablePcmSpace(
+        remaining: Int,
+        directBuffer: Boolean
+    ): Int {
+        val cachedMetrics = UsbExclusiveSessionController.state.value.runtimeReport
+            .usbRuntimeMetrics()
+        var size = planNativeWriteSize(remaining, cachedMetrics)
+        if (size <= 0 && cachedMetrics.hasPcmQueue && cachedMetrics.hasHealthyTransport) {
+            val nowMs = SystemClock.elapsedRealtime()
+            if (nowMs - lastNativeBackpressureRefreshAtMs >= NATIVE_BACKPRESSURE_REFRESH_INTERVAL_MS) {
+                UsbExclusiveSessionController.refreshRuntime(nativeHandle)
+                lastNativeBackpressureRefreshAtMs = nowMs
+                size = planNativeWriteSize(
+                    remaining,
+                    UsbExclusiveSessionController.state.value.runtimeReport.usbRuntimeMetrics()
+                )
+            }
         }
-        val prerollFrames = (sampleRate * NATIVE_START_PREROLL_MS / 1_000L)
-            .coerceAtLeast(1L)
-        val prerollBytes = (prerollFrames * frameBytes)
-            .coerceIn(frameBytes.toLong(), Int.MAX_VALUE.toLong())
-            .toInt()
-        return remaining.coerceAtMost(prerollBytes)
+        if (!directBuffer) {
+            size = size.coerceAtMost(directScratch?.capacity() ?: 0)
+        }
+        return alignToInputFrame(size)
+    }
+
+    private fun planNativeWriteSize(
+        remaining: Int,
+        metrics: UsbExclusiveRuntimeMetrics
+    ): Int {
+        return UsbExclusivePcmWritePlanner.chooseWriteSize(
+            remainingBytes = remaining,
+            inputSampleRate = sampleRate,
+            inputFrameBytes = frameBytes,
+            nativeTransportStarted = nativeTransportStarted,
+            playing = playing,
+            prerollMs = NATIVE_START_PREROLL_MS,
+            metrics = metrics
+        )
+    }
+
+    private fun alignToInputFrame(size: Int): Int {
+        if (size <= 0 || frameBytes <= 1) return size.coerceAtLeast(0)
+        return size - size % frameBytes
     }
 
     private fun prepareDirectScratch() {
@@ -894,6 +953,62 @@ internal class UsbExclusiveAudioSink(
         }.onFailure { error ->
             NPLogger.w("NERI-UsbExclusive", "direct scratch allocation failed", error)
         }.getOrNull()
+    }
+
+    private fun refreshRuntimeAfterStalledWrite(nowMs: Long): String {
+        val cachedReport = UsbExclusiveSessionController.state.value.runtimeReport
+        val cachedMetrics = cachedReport.usbRuntimeMetrics()
+        val shouldRefresh = !cachedMetrics.isBenignBackpressure ||
+            nowMs - lastNativeBackpressureRefreshAtMs >= NATIVE_BACKPRESSURE_REFRESH_INTERVAL_MS
+        if (!shouldRefresh) {
+            return cachedReport
+        }
+        UsbExclusiveSessionController.refreshRuntime(nativeHandle)
+        lastNativeBackpressureRefreshAtMs = nowMs
+        return UsbExclusiveSessionController.state.value.runtimeReport
+    }
+
+    private fun recordBenignNativeBackpressure(
+        nowMs: Long,
+        pendingBytes: Int,
+        attemptedBytes: Int,
+        runtimeReport: String
+    ) {
+        if (nativeBackpressureStartedAtMs == 0L) {
+            nativeBackpressureStartedAtMs = nowMs
+        }
+        val heldMs = nowMs - nativeBackpressureStartedAtMs
+        if (nowMs - lastNativeBackpressureLogAtMs >= NATIVE_BACKPRESSURE_LOG_INTERVAL_MS) {
+            lastNativeBackpressureLogAtMs = nowMs
+            NPLogger.i(
+                "NERI-UsbExclusive",
+                "native PCM queue full, applying backpressure: pending=$pendingBytes " +
+                    "requested=$attemptedBytes " +
+                    "heldMs=$heldMs playing=$playing transportStarted=$nativeTransportStarted " +
+                    "hasQueued=$nativeHasQueuedPcm runtime=$runtimeReport"
+            )
+        }
+        parkForNativeBackpressure(runtimeReport)
+    }
+
+    private fun clearNativeBackpressureState() {
+        nativeBackpressureStartedAtMs = 0L
+        lastNativeBackpressureRefreshAtMs = 0L
+    }
+
+    private fun parkForNativeBackpressure(runtimeReport: String) {
+        if (Thread.currentThread() === Looper.getMainLooper().thread) return
+        val metrics = runtimeReport.usbRuntimeMetrics()
+        val freeBytes = metrics.pcmFreeBytes ?: return
+        if (freeBytes > 0L || sampleRate <= 0 || frameBytes <= 0) return
+        val backpressureUs = metrics.pcmBackpressureCurrentMs
+            ?.coerceAtLeast(0L)
+            ?.times(1_000L)
+            ?: 0L
+        val oneFrameUs = 1_000_000L / sampleRate.coerceAtLeast(1)
+        val parkUs = max(oneFrameUs, backpressureUs / 8L)
+            .coerceIn(500L, NATIVE_BACKPRESSURE_PARK_MAX_US)
+        LockSupport.parkNanos(parkUs * 1_000L)
     }
 
     private fun ensureUrgentAudioThreadPriority() {
@@ -914,7 +1029,7 @@ internal class UsbExclusiveAudioSink(
     private fun effectiveNativeVolume(): Float {
         return usbExclusiveEffectiveNativeVolume(
             playerVolume = volume,
-            systemVolumeFraction = currentMusicVolumeFraction()
+            systemVolumeFraction = cachedMusicVolumeFraction
         )
     }
 
@@ -937,7 +1052,7 @@ internal class UsbExclusiveAudioSink(
         }
     }
 
-    private fun currentMusicVolumeFraction(): Float {
+    private fun readMusicVolumeFractionFromSystem(): Float {
         val manager = audioManager ?: return 1f
         return runCatching {
             val minVolume = manager.getStreamMinVolume(AudioManager.STREAM_MUSIC)
@@ -955,7 +1070,7 @@ internal class UsbExclusiveAudioSink(
                 lastSystemVolumeReadFailureLogAtMs = nowMs
                 NPLogger.w("NERI-UsbExclusive", "failed to read system media volume", error)
             }
-            1f
+            cachedMusicVolumeFraction
         }
     }
 
@@ -984,6 +1099,7 @@ internal class UsbExclusiveAudioSink(
     }
 
     private fun applySystemVolumeChange() {
+        cachedMusicVolumeFraction = readMusicVolumeFractionFromSystem()
         if (!usingNative || nativeHandle == 0L) return
         applyEffectiveNativeVolume()
     }
@@ -1181,7 +1297,7 @@ internal class UsbExclusiveAudioSink(
         nativeTransportStartedAtMs = 0L
         nativeHasQueuedPcm = UsbExclusiveSessionController.queuedPlayerFrames(nativeHandle) > 0L
         if (!nativeHasQueuedPcm) return true
-        return startNativeTransportIfReady(allowShortPreroll = true)
+        return startNativeTransportIfReady()
     }
 
     private fun requestSystemFailover(reason: String) {
@@ -1504,25 +1620,18 @@ internal class UsbExclusiveAudioSink(
     }
 
     private fun isFatalNativeRuntime(runtimeReport: String): Boolean {
-        if (runtimeReport.isBenignPcmBackpressure()) return false
+        val metrics = runtimeReport.usbRuntimeMetrics()
+        if (metrics.isBenignBackpressure) return false
         if (runtimeReport.contains("transportFailed=true")) return true
-        val lastError = runtimeReport.lastNativeRuntimeError()
+        val lastError = metrics.lastError
         return lastError != "none" && lastError.isNotBlank()
     }
 
     private fun shouldFlushIdleNativeQueueAfterStalledWrite(runtimeReport: String): Boolean {
         if (playing) return false
         if (!runtimeReport.contains("source=player_pcm")) return false
-        val running = runtimeReport.booleanField("running")
-        val transportFailed = runtimeReport.booleanField("transportFailed")
-        return running == false && transportFailed != true && runtimeReport.isPcmQueueFull()
-    }
-
-    private fun String.isBenignPcmBackpressure(): Boolean {
-        if (!contains("source=player_pcm")) return false
-        if (!isPcmQueueFull()) return false
-        if (booleanField("transportFailed") == true) return false
-        return lastNativeRuntimeError() == "none"
+        val metrics = runtimeReport.usbRuntimeMetrics()
+        return metrics.running == false && metrics.transportFailed != true && metrics.isQueueFull
     }
 
     private fun shouldRecoverNativeTransportBeforeFirstCompletion(
@@ -1537,13 +1646,14 @@ internal class UsbExclusiveAudioSink(
         if (nowMs - nativeTransportStartedAtMs < FIRST_COMPLETION_STALL_RECOVERY_MIN_MS) {
             return false
         }
+        val metrics = runtimeReport.usbRuntimeMetrics()
         if (!runtimeReport.contains("source=player_pcm")) return false
-        if (runtimeReport.intField("completedTransfers") != 0) return false
-        if (runtimeReport.intField("inFlight") == 0) return false
-        if (runtimeReport.booleanField("running") != true) return false
-        if (runtimeReport.booleanField("transportFailed") == true) return false
-        if (!runtimeReport.isPcmQueueFull()) return false
-        return runtimeReport.lastNativeRuntimeError() == "none"
+        if (runtimeReport.valueAfter("completedTransfers")?.toIntOrNull() != 0) return false
+        if (runtimeReport.valueAfter("inFlight")?.toIntOrNull() == 0) return false
+        if (metrics.running != true) return false
+        if (metrics.transportFailed == true) return false
+        if (!metrics.isQueueFull) return false
+        return metrics.lastError == "none"
     }
 
     private fun flushIdleNativeQueueAfterStalledWrite(runtimeReport: String) {
@@ -1576,42 +1686,6 @@ internal class UsbExclusiveAudioSink(
                     contains("LIBUSB", ignoreCase = true) ||
                     contains("transfer", ignoreCase = true)
                 )
-    }
-
-    private fun String.booleanField(name: String): Boolean? {
-        val value = substringAfter("$name=", missingDelimiterValue = "")
-            .takeIf { it.isNotEmpty() }
-            ?.substringBefore(' ')
-            ?: return null
-        return when (value) {
-            "true", "1" -> true
-            "false", "0" -> false
-            else -> null
-        }
-    }
-
-    private fun String.intField(name: String): Int? {
-        return substringAfter("$name=", missingDelimiterValue = "")
-            .takeIf { it.isNotEmpty() }
-            ?.substringBefore(' ')
-            ?.toIntOrNull()
-    }
-
-    private fun String.isPcmQueueFull(): Boolean {
-        val levelPart = substringAfter("pcmLevel=", missingDelimiterValue = "")
-            .takeIf { it.isNotEmpty() }
-            ?.substringBefore(' ')
-            ?: return false
-        val level = levelPart.substringBefore('/').toLongOrNull() ?: return false
-        val capacity = levelPart.substringAfter('/', missingDelimiterValue = "")
-            .toLongOrNull()
-            ?: return false
-        return capacity > 0L && level >= capacity
-    }
-
-    private fun String.lastNativeRuntimeError(): String {
-        return substringAfter("lastError=", missingDelimiterValue = "none")
-            .substringBefore(' ')
     }
 
     private fun shouldRetryNativeFailure(reason: String): Boolean {

@@ -58,6 +58,8 @@ object UsbExclusiveSessionController {
     private var playerPcmFreshOpenRequiredReason: String? = null
     @Volatile
     private var lastPlayerPcmWriteIssueLogAtMs = 0L
+    @Volatile
+    private var lastPlayerPcmBackpressureLogAtMs = 0L
 
     private data class PendingPlayerPcmOpenBlock(
         val reason: String,
@@ -175,7 +177,6 @@ object UsbExclusiveSessionController {
             _state.value = current.copy(
                 available = UsbExclusiveNativeBridge.ensureLoaded(),
                 transitioning = false,
-                runtimeReport = runtimeReport,
                 lastError = lastError,
                 completedAudioFrames = if (current.handle != 0L) {
                     UsbExclusiveNativeBridge.completedAudioFrames(current.handle)
@@ -187,7 +188,7 @@ object UsbExclusiveSessionController {
                 } else {
                     0L
                 }
-            )
+            ).withRuntimeReport(runtimeReport)
         } finally {
             sessionLock.unlock()
         }
@@ -323,9 +324,8 @@ object UsbExclusiveSessionController {
                     source = "tone",
                     handle = handle,
                     selectedDeviceName = targetDevice.productName?.toString() ?: targetDevice.deviceName,
-                    runtimeReport = UsbExclusiveNativeBridge.runtimeReport(handle),
                     lastError = null
-                )
+                ).withRuntimeReport(UsbExclusiveNativeBridge.runtimeReport(handle))
                 startedHandle = handle
             }
         } finally {
@@ -467,11 +467,10 @@ object UsbExclusiveSessionController {
                             inputEncoding
                         ),
                         bufferDurationMs = resolvedOutput.bufferDurationMs,
-                        runtimeReport = UsbExclusiveNativeBridge.runtimeReport(current.handle),
                         lastError = null,
                         completedAudioFrames = 0L,
                         queuedAudioFrames = 0L
-                    )
+                    ).withRuntimeReport(UsbExclusiveNativeBridge.runtimeReport(current.handle))
                     NPLogger.d(
                         TAG,
                         "openPlayerPcm(): reused native handle=${current.handle} " +
@@ -674,9 +673,8 @@ object UsbExclusiveSessionController {
                     outputFormat = resolvedOutput.description,
                     outputSampleRate = resolvedOutput.sampleRate,
                     bufferDurationMs = resolvedOutput.bufferDurationMs,
-                    runtimeReport = UsbExclusiveNativeBridge.runtimeReport(handle),
                     lastError = null
-                )
+                ).withRuntimeReport(UsbExclusiveNativeBridge.runtimeReport(handle))
                 NPLogger.i(
                     TAG,
                     "openPlayerPcm(): opened handle=$handle device=" +
@@ -832,17 +830,14 @@ object UsbExclusiveSessionController {
                     "configureActivePlayerBufferDuration(): native rejected durationMs=$normalizedDurationMs " +
                         "handle=${current.handle} report=$runtimeReport"
                 )
-                _state.value = current.copy(
-                    runtimeReport = runtimeReport,
-                    lastError = runtimeReport
-                )
+                _state.value = current.copy(lastError = runtimeReport)
+                    .withRuntimeReport(runtimeReport)
                 return false
             }
             _state.value = current.copy(
                 bufferDurationMs = normalizedDurationMs,
-                runtimeReport = UsbExclusiveNativeBridge.runtimeReport(current.handle),
                 lastError = null
-            )
+            ).withRuntimeReport(UsbExclusiveNativeBridge.runtimeReport(current.handle))
             NPLogger.d(
                 TAG,
                 "configureActivePlayerBufferDuration(): applied durationMs=$normalizedDurationMs " +
@@ -874,9 +869,23 @@ object UsbExclusiveSessionController {
             )
             if (written <= 0 || written < size) {
                 val nowMs = SystemClock.elapsedRealtime()
-                if (nowMs - lastPlayerPcmWriteIssueLogAtMs >= 1_000L) {
+                val report = UsbExclusiveNativeBridge.runtimeReport(handle)
+                val metrics = report.usbRuntimeMetrics()
+                _state.value = current.copy(
+                    completedAudioFrames = UsbExclusiveNativeBridge.completedAudioFrames(handle),
+                    queuedAudioFrames = UsbExclusiveNativeBridge.queuedPlayerFrames(handle)
+                ).withRuntimeReport(report)
+                if (metrics.isBenignBackpressure) {
+                    if (nowMs - lastPlayerPcmBackpressureLogAtMs >= 5_000L) {
+                        lastPlayerPcmBackpressureLogAtMs = nowMs
+                        NPLogger.d(
+                            TAG,
+                            "writePlayerPcm(): native queue backpressure handle=$handle " +
+                                "requested=$size written=$written report=$report"
+                        )
+                    }
+                } else if (nowMs - lastPlayerPcmWriteIssueLogAtMs >= 1_000L) {
                     lastPlayerPcmWriteIssueLogAtMs = nowMs
-                    val report = UsbExclusiveNativeBridge.runtimeReport(handle)
                     NPLogger.w(
                         TAG,
                         "writePlayerPcm(): short write handle=$handle requested=$size " +
@@ -911,11 +920,10 @@ object UsbExclusiveSessionController {
             _state.value = current.copy(
                 streaming = started,
                 paused = false,
-                runtimeReport = report,
                 lastError = if (started) null else report,
                 completedAudioFrames = UsbExclusiveNativeBridge.completedAudioFrames(handle),
                 queuedAudioFrames = UsbExclusiveNativeBridge.queuedPlayerFrames(handle)
-            )
+            ).withRuntimeReport(report)
             if (started) {
                 NPLogger.d(TAG, "playPlayerPcm(): started handle=$handle report=$report")
             } else {
@@ -934,13 +942,12 @@ object UsbExclusiveSessionController {
             val paused = UsbExclusiveNativeBridge.pausePlayerPcm(handle)
             val report = UsbExclusiveNativeBridge.runtimeReport(handle)
             _state.value = current.copy(
-                streaming = report.nativeBooleanField("running") ?: current.streaming,
+                streaming = report.booleanField("running") ?: current.streaming,
                 paused = paused,
-                runtimeReport = report,
                 lastError = if (paused) null else report,
                 completedAudioFrames = UsbExclusiveNativeBridge.completedAudioFrames(handle),
                 queuedAudioFrames = UsbExclusiveNativeBridge.queuedPlayerFrames(handle)
-            )
+            ).withRuntimeReport(report)
             if (paused) {
                 NPLogger.d(TAG, "pausePlayerPcm(): paused handle=$handle report=$report")
             } else {
@@ -959,13 +966,12 @@ object UsbExclusiveSessionController {
             val flushed = UsbExclusiveNativeBridge.flushPlayerPcm(handle)
             val report = UsbExclusiveNativeBridge.runtimeReport(handle)
             _state.value = current.copy(
-                streaming = report.nativeBooleanField("running") ?: current.streaming,
+                streaming = report.booleanField("running") ?: current.streaming,
                 paused = false,
-                runtimeReport = report,
                 lastError = if (flushed) null else report,
                 completedAudioFrames = 0L,
                 queuedAudioFrames = 0L
-            )
+            ).withRuntimeReport(report)
             if (flushed) {
                 NPLogger.d(TAG, "flushPlayerPcm(): flushed handle=$handle report=$report")
             } else {
@@ -1072,11 +1078,11 @@ object UsbExclusiveSessionController {
         sessionLock.withLock {
             val current = _state.value
             if (current.handle != handle) return
+            val runtimeReport = UsbExclusiveNativeBridge.runtimeReport(handle)
             _state.value = current.copy(
-                runtimeReport = UsbExclusiveNativeBridge.runtimeReport(handle),
                 completedAudioFrames = UsbExclusiveNativeBridge.completedAudioFrames(handle),
                 queuedAudioFrames = UsbExclusiveNativeBridge.queuedPlayerFrames(handle)
-            )
+            ).withRuntimeReport(runtimeReport)
         }
     }
 
@@ -1373,18 +1379,6 @@ object UsbExclusiveSessionController {
             contains("stalled", ignoreCase = true)
     }
 
-    private fun String.nativeBooleanField(name: String): Boolean? {
-        val value = substringAfter("$name=", missingDelimiterValue = "")
-            .takeIf { it.isNotEmpty() }
-            ?.substringBefore(' ')
-            ?: return null
-        return when (value) {
-            "true", "1" -> true
-            "false", "0" -> false
-            else -> null
-        }
-    }
-
     private fun beginDeviceSession(device: UsbDevice) {
         activeDeviceName.set(device.deviceName)
         activeDeviceId.set(device.deviceId)
@@ -1417,6 +1411,28 @@ object UsbExclusiveSessionController {
         if (currentId == NO_ACTIVE_USB_DEVICE_ID && currentName == null) return false
         if (device == null) return true
         return device.deviceId == currentId || device.deviceName == currentName
+    }
+
+    private fun UsbExclusiveNativeState.withRuntimeReport(
+        runtimeReport: String
+    ): UsbExclusiveNativeState {
+        val metrics = runtimeReport.usbRuntimeMetrics()
+        return copy(
+            runtimeReport = runtimeReport,
+            pcmLevelBytes = metrics.pcmLevelBytes ?: pcmLevelBytes,
+            pcmCapacityBytes = metrics.pcmCapacityBytes ?: pcmCapacityBytes,
+            pcmFreeBytes = metrics.pcmFreeBytes ?: pcmFreeBytes,
+            pcmBackpressureEvents = metrics.pcmBackpressureEvents ?: pcmBackpressureEvents,
+            pcmBackpressureTotalMs = metrics.pcmBackpressureTotalMs ?: pcmBackpressureTotalMs,
+            pcmBackpressureCurrentMs = metrics.pcmBackpressureCurrentMs
+                ?: pcmBackpressureCurrentMs,
+            pcmBackpressureMaxMs = metrics.pcmBackpressureMaxMs ?: pcmBackpressureMaxMs,
+            playerSignalFrames = metrics.playerSignalFrames ?: playerSignalFrames,
+            playerSilentFrames = metrics.playerSilentFrames ?: playerSilentFrames,
+            playerSignalBytes = metrics.playerSignalBytes ?: playerSignalBytes,
+            outputPeak = metrics.outputPeak ?: outputPeak,
+            lastOutputPeak = metrics.lastOutputPeak ?: lastOutputPeak
+        )
     }
 
     private fun selectedDeviceKey(context: Context): String {

@@ -14,11 +14,13 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
 import androidx.core.content.ContextCompat
+import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.retryUsbExclusivePlayback
 import moe.ouom.neriplayer.core.player.audio.isUsbOutputType
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathTracker
+import moe.ouom.neriplayer.core.player.usb.UsbExclusiveWakeLock
 import moe.ouom.neriplayer.core.player.usb.usbExclusiveDeviceKey
 import moe.ouom.neriplayer.core.player.usb.usbExclusiveDeviceKeyMatchesLabel
 import moe.ouom.neriplayer.core.player.usb.matchesUsbExclusiveDeviceKey
@@ -57,6 +59,20 @@ data class UsbExclusiveDiagnosticsSnapshot(
     val nativeExclusiveRuntime: String,
     val nativeExclusiveStreaming: Boolean,
     val nativeExclusiveError: String?,
+    val audioServiceInstanceActive: Boolean,
+    val audioServiceForegroundActive: Boolean,
+    val usbWakeLockHeld: Boolean,
+    val nativePcmLevelBytes: Long,
+    val nativePcmCapacityBytes: Long,
+    val nativePcmFreeBytes: Long,
+    val nativePcmBackpressureEvents: Long,
+    val nativePcmBackpressureCurrentMs: Long,
+    val nativePcmBackpressureMaxMs: Long,
+    val nativePlayerSignalFrames: Long,
+    val nativePlayerSilentFrames: Long,
+    val nativePlayerSignalBytes: Long,
+    val nativeOutputPeak: Float,
+    val nativeLastOutputPeak: Float,
     val requestedPath: String,
     val effectivePath: String,
     val fallbackReason: String?,
@@ -80,6 +96,21 @@ data class UsbExclusiveDiagnosticsSnapshot(
         appendLine("nativeRuntime=$nativeExclusiveRuntime")
         appendLine("nativeStreaming=$nativeExclusiveStreaming")
         appendLine("nativeError=${nativeExclusiveError ?: "none"}")
+        appendLine(
+            "service: instance=$audioServiceInstanceActive foreground=$audioServiceForegroundActive " +
+                "wakeLock=$usbWakeLockHeld"
+        )
+        appendLine(
+            "nativePcm: level=$nativePcmLevelBytes/$nativePcmCapacityBytes " +
+                "free=$nativePcmFreeBytes backpressureEvents=$nativePcmBackpressureEvents " +
+                "backpressureCurrentMs=$nativePcmBackpressureCurrentMs " +
+                "backpressureMaxMs=$nativePcmBackpressureMaxMs"
+        )
+        appendLine(
+            "nativeSignal: signalFrames=$nativePlayerSignalFrames " +
+                "silentFrames=$nativePlayerSilentFrames signalBytes=$nativePlayerSignalBytes " +
+                "outputPeak=$nativeOutputPeak lastOutputPeak=$nativeLastOutputPeak"
+        )
         appendLine("requestedPath=$requestedPath")
         appendLine("effectivePath=$effectivePath")
         appendLine("fallbackReason=${fallbackReason ?: "none"}")
@@ -282,6 +313,20 @@ object UsbExclusiveDiagnostics {
             nativeExclusiveRuntime = nativeState.runtimeReport,
             nativeExclusiveStreaming = nativeState.streaming,
             nativeExclusiveError = nativeState.lastError,
+            audioServiceInstanceActive = AudioPlayerService.isInstanceActiveForDiagnostics(),
+            audioServiceForegroundActive = AudioPlayerService.isForegroundActiveForDiagnostics(),
+            usbWakeLockHeld = UsbExclusiveWakeLock.isHeld(),
+            nativePcmLevelBytes = nativeState.pcmLevelBytes,
+            nativePcmCapacityBytes = nativeState.pcmCapacityBytes,
+            nativePcmFreeBytes = nativeState.pcmFreeBytes,
+            nativePcmBackpressureEvents = nativeState.pcmBackpressureEvents,
+            nativePcmBackpressureCurrentMs = nativeState.pcmBackpressureCurrentMs,
+            nativePcmBackpressureMaxMs = nativeState.pcmBackpressureMaxMs,
+            nativePlayerSignalFrames = nativeState.playerSignalFrames,
+            nativePlayerSilentFrames = nativeState.playerSilentFrames,
+            nativePlayerSignalBytes = nativeState.playerSignalBytes,
+            nativeOutputPeak = nativeState.outputPeak,
+            nativeLastOutputPeak = nativeState.lastOutputPeak,
             requestedPath = pathState.requestedPath,
             effectivePath = pathState.effectivePath,
             fallbackReason = pathState.fallbackReason,

@@ -199,6 +199,18 @@ class AudioPlayerServicePolicyTest {
     }
 
     @Test
+    fun `local playback sync is kept alive during usb exclusive playback`() {
+        assertFalse(
+            shouldSkipLocalPlaybackSyncServiceStart(
+                source = "local_playback_command_play_playlist",
+                serviceReady = true,
+                hasItems = true,
+                usbExclusivePlaybackActive = true
+            )
+        )
+    }
+
+    @Test
     fun `opening now playing from local playback is treated as local sync start only for local songs`() {
         assertTrue(
             shouldSkipLocalPlaybackSyncServiceStart(
@@ -250,6 +262,19 @@ class AudioPlayerServicePolicyTest {
                 foregroundStarted = true,
                 hasItems = true,
                 hasCurrentSong = true
+            )
+        )
+    }
+
+    @Test
+    fun `full local playback sync is not skipped during usb exclusive playback`() {
+        assertFalse(
+            shouldSkipFullSyncForLocalPlaybackAction(
+                source = "local_playback_command_play_playlist",
+                foregroundStarted = true,
+                hasItems = true,
+                hasCurrentSong = true,
+                usbExclusivePlaybackActive = true
             )
         )
     }

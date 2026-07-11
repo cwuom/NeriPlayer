@@ -2,8 +2,11 @@
 
 #include <array>
 #include <cassert>
+#include <chrono>
+#include <cstring>
 #include <cstdint>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -16,6 +19,10 @@ neri::usb::PcmPipelineConfig configFor(int inputRate, int outputRate) {
         768,
         6
     };
+}
+
+void writeFloatSample(std::vector<uint8_t>& output, size_t byteOffset, float value) {
+    std::memcpy(output.data() + byteOffset, &value, sizeof(value));
 }
 
 void verifiesExactRatePassThroughAcrossWrites() {
@@ -99,6 +106,78 @@ void verifiesHighResolutionRingUsesBoundedAllocation() {
     assert(snapshot.capacityBytes % 32U == 0U);
 }
 
+void verifiesBackpressureSnapshotTracksFullRing() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    auto config = configFor(48000, 48000);
+    config.ringDurationMs = 1;
+    config.transferBytes = 4;
+    config.transferCount = 1;
+    assert(pipeline.configure(config, &error));
+
+    const auto initial = pipeline.snapshot();
+    std::vector<uint8_t> input(initial.capacityBytes, 0);
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+    assert(pipeline.write(input.data(), 4, &error) == 0);
+
+    const auto full = pipeline.snapshot();
+    assert(full.freeBytes == 0);
+    assert(full.maxLevelBytes == full.capacityBytes);
+    assert(full.backpressureEvents == 1);
+    assert(full.backpressureCurrentUs >= 0);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    std::array<uint8_t, 4> output {};
+    assert(pipeline.fill(output.data(), output.size(), true) == output.size());
+
+    const auto recovered = pipeline.snapshot();
+    assert(recovered.freeBytes >= output.size());
+    assert(recovered.backpressureEvents == 1);
+    assert(recovered.backpressureCurrentUs == 0);
+    assert(recovered.backpressureTotalUs >= full.backpressureCurrentUs);
+}
+
+void verifiesFloatInputResampleProducesUsbSignalStats() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    auto config = configFor(96000, 48000);
+    config.input.encoding = 4;
+    assert(pipeline.configure(config, &error));
+
+    constexpr int inputFrames = 960;
+    constexpr int inputChannels = 2;
+    constexpr int inputSampleBytes = 4;
+    std::vector<uint8_t> input(
+        static_cast<size_t>(inputFrames * inputChannels * inputSampleBytes),
+        0
+    );
+    for (int frame = 0; frame < inputFrames; ++frame) {
+        const float value = (frame % 2 == 0) ? 0.25f : -0.25f;
+        const size_t frameOffset = static_cast<size_t>(frame * inputChannels * inputSampleBytes);
+        writeFloatSample(input, frameOffset, value);
+        writeFloatSample(input, frameOffset + inputSampleBytes, value);
+    }
+
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+    std::vector<uint8_t> output(480U * 4U, 0);
+    assert(pipeline.fill(output.data(), output.size(), true) == output.size());
+
+    const auto snapshot = pipeline.snapshot();
+    assert(snapshot.signalOutputFrames > 0);
+    assert(snapshot.signalOutputBytes > 0);
+    assert(snapshot.outputPeak > 0.0f);
+    assert(snapshot.lastOutputPeak > 0.0f);
+
+    bool hasNonZeroOutput = false;
+    for (const uint8_t byte : output) {
+        if (byte != 0U) {
+            hasNonZeroOutput = true;
+            break;
+        }
+    }
+    assert(hasNonZeroOutput);
+}
+
 void verifiesIntegerCodecDepthsAndEndianInputs() {
     std::array<uint8_t, 4> output {};
     neri::usb::writeIntegerPcmSample(output.data(), 3, 24, -1.0f);
@@ -125,6 +204,8 @@ int main() {
     verifiesUnsupportedEncodingIsRejected();
     verifiesRuntimeRingResizePreservesQueuedAudio();
     verifiesHighResolutionRingUsesBoundedAllocation();
+    verifiesBackpressureSnapshotTracksFullRing();
+    verifiesFloatInputResampleProducesUsbSignalStats();
     verifiesIntegerCodecDepthsAndEndianInputs();
     return 0;
 }

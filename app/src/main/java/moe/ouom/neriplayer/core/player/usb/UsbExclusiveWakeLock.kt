@@ -36,6 +36,12 @@ internal object UsbExclusiveWakeLock {
         }
     }
 
+    fun isHeld(): Boolean {
+        return synchronized(lock) {
+            wakeLock?.let { runCatching { it.isHeld }.getOrDefault(false) } == true
+        }
+    }
+
     private fun createWakeLock(context: Context): PowerManager.WakeLock {
         val powerManager = context.applicationContext
             .getSystemService(Context.POWER_SERVICE) as PowerManager

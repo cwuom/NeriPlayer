@@ -250,6 +250,10 @@ fun UsbExclusiveDebugScreen() {
             DebugRow("Buffer", "${nativeState.bufferDurationMs}ms")
             DebugRow("Completed frames", nativeState.completedAudioFrames.toString())
             DebugRow("Queued frames", nativeState.queuedAudioFrames.toString())
+            DebugRow("PCM bytes", "${nativeState.pcmLevelBytes}/${nativeState.pcmCapacityBytes}")
+            DebugRow("PCM free", nativeState.pcmFreeBytes.toString())
+            DebugRow("Backpressure", "events=${nativeState.pcmBackpressureEvents}, current=${nativeState.pcmBackpressureCurrentMs}ms, max=${nativeState.pcmBackpressureMaxMs}ms")
+            DebugRow("Service", "instance=${snapshot.audioServiceInstanceActive.yesNoText()}, foreground=${snapshot.audioServiceForegroundActive.yesNoText()}, wakeLock=${snapshot.usbWakeLockHeld.yesNoText()}")
             DebugRow("Runtime", nativeState.runtimeReport)
             DebugRow("Error", nativeState.lastError ?: "none")
         }

@@ -193,6 +193,7 @@ object PlayerManager {
     internal var usbExclusiveRecoveryJob: Job? = null
     internal var usbExclusiveOpenGatePlaybackJob: Job? = null
     internal var usbExclusiveForegroundRecoveryJob: Job? = null
+    internal var usbExclusiveBackgroundAuditJob: Job? = null
     internal var usbExclusiveRecoveryAttempts = 0
     @Volatile
     internal var usbExclusiveRouteGeneration = 0L
@@ -719,6 +720,18 @@ object PlayerManager {
             nativeState.opened &&
             nativeState.streaming &&
             !nativeState.transitioning
+    }
+
+    internal fun isUsbExclusivePlaybackActiveForForegroundService(): Boolean {
+        if (!isPlayerInitialized()) return false
+        if (!usbExclusivePlaybackEnabled) return false
+        if (!isTransportActiveWithoutInitialization()) return false
+        val nativeState = UsbExclusiveSessionController.state.value
+        val pathState = UsbExclusiveAudioPathTracker.state.value
+        return nativeState.streaming ||
+            nativeState.opened ||
+            pathState.effectivePath == UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB ||
+            pathState.requestedPath == UsbExclusiveAudioPathState.REQUESTED_NATIVE_USB
     }
 
     internal fun isPreparedInPlayer(): Boolean =
