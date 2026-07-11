@@ -939,6 +939,8 @@ fun LocalPlaylistDetailScreen(
                     songs = scanPreviewState.songs,
                     query = scanPreviewState.query,
                     onQueryChange = vm::updateScanPreviewQuery,
+                    metadataOnly = scanPreviewState.metadataOnly,
+                    onMetadataOnlyChange = vm::updateScanPreviewMetadataOnly,
                     selectedKeys = scanPreviewState.selectedKeys,
                     onSelectedKeysChange = vm::updateScanPreviewSelection,
                     snackbarHostState = snackbarHostState,
@@ -1790,9 +1792,11 @@ fun LocalPlaylistDetailScreen(
 private data class LocalScanPreviewItem(
     val song: SongItem,
     val stableKey: String,
+    val title: String,
     val fileName: String,
     val filePath: String,
     val subtitle: String,
+    val hasMetadata: Boolean,
     val searchText: String
 )
 
@@ -1810,21 +1814,38 @@ private fun SongItem.toLocalScanPreviewItem(context: Context): LocalScanPreviewI
         ?.name
         ?: localFileName?.takeIf { it.isNotBlank() }
         ?: displayName
+    val hasMetadata = hasMeaningfulPreviewMetadata(context, resolvedFileName)
     val subtitle = buildList {
-        displayName.takeIf { it.isNotBlank() && it != resolvedFileName }?.let(::add)
         displayArtist.takeIf { it.isNotBlank() }?.let(::add)
         displayAlbum.takeIf { it.isNotBlank() }?.let(::add)
+        resolvedFileName.takeIf { it.isNotBlank() && it != displayName }?.let(::add)
         durationMs.takeIf { it > 0L }?.let { add(formatDuration(it)) }
     }.joinToString(" · ")
     return LocalScanPreviewItem(
         song = this,
         stableKey = stableKey(),
+        title = displayName,
         fileName = resolvedFileName,
         filePath = resolvedPath,
         subtitle = subtitle,
+        hasMetadata = hasMetadata,
         searchText = listOf(resolvedFileName, resolvedPath, displayName, displayArtist, displayAlbum)
             .joinToString("\n")
     )
+}
+
+private fun SongItem.hasMeaningfulPreviewMetadata(context: Context, fileName: String): Boolean {
+    val fileTitle = fileName.substringBeforeLast('.', fileName).trim()
+    val unknownArtist = context.getString(R.string.music_unknown_artist)
+    val hasTitleMetadata = name.isNotBlank() &&
+        (fileTitle.isBlank() || !name.equals(fileTitle, ignoreCase = true))
+    val hasArtistMetadata = artist.trim().isNotBlank() &&
+        !artist.equals(unknownArtist, ignoreCase = true)
+    val hasAlbumMetadata = album.trim().isNotBlank() &&
+        album != moe.ouom.neriplayer.data.local.media.LocalSongSupport.LOCAL_ALBUM_IDENTITY &&
+        !LocalFilesPlaylist.matches(album, context)
+    return hasTitleMetadata || hasArtistMetadata || hasAlbumMetadata ||
+        !coverUrl.isNullOrBlank() || !originalCoverUrl.isNullOrBlank()
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -1834,6 +1855,8 @@ private fun LocalScanPreviewScreen(
     songs: List<SongItem>,
     query: String,
     onQueryChange: (String) -> Unit,
+    metadataOnly: Boolean = false,
+    onMetadataOnlyChange: ((Boolean) -> Unit)? = null,
     selectedKeys: Set<String>,
     onSelectedKeysChange: (Set<String>) -> Unit,
     snackbarHostState: SnackbarHostState,
@@ -1862,25 +1885,42 @@ private fun LocalScanPreviewScreen(
     val displayedItems by produceState<List<LocalScanPreviewItem>>(
         initialValue = emptyList(),
         previewItems,
-        query
+        query,
+        metadataOnly
     ) {
         val keyword = query.trim()
-        value = if (keyword.isBlank()) {
+        value = withContext(Dispatchers.Default) {
             previewItems
-        } else {
-            withContext(Dispatchers.Default) {
-                previewItems.filter { item ->
-                    item.searchText.contains(keyword, ignoreCase = true)
-                }
+                .asSequence()
+                .filter { item -> !metadataOnly || item.hasMetadata }
+                .filter { item -> keyword.isBlank() || item.searchText.contains(keyword, ignoreCase = true) }
+                .toList()
+        }
+    }
+    LaunchedEffect(metadataOnly, previewItems) {
+        if (metadataOnly) {
+            val metadataKeys = previewItems
+                .asSequence()
+                .filter { it.hasMetadata }
+                .mapTo(LinkedHashSet()) { it.stableKey }
+            val nextSelectedKeys = selectedKeys.intersect(metadataKeys)
+            if (nextSelectedKeys != selectedKeys) {
+                onSelectedKeysChange(nextSelectedKeys)
             }
         }
     }
+    var showMoreMenu by remember { mutableStateOf(false) }
+    val metadataFilterAvailable = onMetadataOnlyChange != null
     val allDisplayedSelected = displayedItems.isNotEmpty() &&
         displayedItems.all { it.stableKey in selectedKeys }
     val resolvedTitle = title ?: stringResource(R.string.local_playlist_scan_preview_title)
     val resolvedSearchPlaceholder =
         searchPlaceholder ?: stringResource(R.string.local_playlist_scan_preview_search)
-    val resolvedEmptyText = emptyText ?: stringResource(R.string.download_scan_empty)
+    val resolvedEmptyText = emptyText ?: if (metadataOnly) {
+        stringResource(R.string.local_playlist_scan_metadata_empty)
+    } else {
+        stringResource(R.string.download_scan_empty)
+    }
     val resolvedActionLabel = actionLabel?.invoke(selectedKeys.size)
         ?: stringResource(R.string.download_scan_add_selected, selectedKeys.size)
     val showBusy = isScanning || isBusy
@@ -1914,6 +1954,36 @@ private fun LocalScanPreviewScreen(
                                 .size(18.dp),
                             strokeWidth = 2.dp
                         )
+                    }
+                    if (metadataFilterAvailable) {
+                        Box {
+                            HapticIconButton(onClick = { showMoreMenu = true }) {
+                                Icon(
+                                    Icons.Filled.MoreVert,
+                                    contentDescription = stringResource(R.string.common_more_options)
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showMoreMenu,
+                                onDismissRequest = { showMoreMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(stringResource(R.string.local_playlist_scan_filter_metadata))
+                                    },
+                                    trailingIcon = {
+                                        Checkbox(
+                                            checked = metadataOnly,
+                                            onCheckedChange = null
+                                        )
+                                    },
+                                    onClick = {
+                                        onMetadataOnlyChange?.invoke(!metadataOnly)
+                                        showMoreMenu = false
+                                    }
+                                )
+                            }
+                        }
                     }
                 },
                 windowInsets = WindowInsets.statusBars,
@@ -2099,7 +2169,7 @@ private fun LocalScanPreviewScreen(
                                 Spacer(Modifier.width(8.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(
-                                        text = item.fileName,
+                                        text = item.title,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         style = MaterialTheme.typography.bodyLarge

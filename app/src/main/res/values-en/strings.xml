@@ -448,6 +448,8 @@
     <string name="local_playlist_scan_preview_title">Preview Local Files</string>
     <string name="local_playlist_scan_preview_search">Search local files</string>
     <string name="local_playlist_scan_preview_apply">Import Selected Songs</string>
+    <string name="local_playlist_scan_filter_metadata">Hide tracks without metadata</string>
+    <string name="local_playlist_scan_metadata_empty">No local audio with metadata</string>
     <string name="local_playlist_import_audio_no_new">No new local tracks to import</string>
     <string name="local_playlist_add_scanned_no_new">Selected tracks are already in the target playlist</string>
     <string name="local_playlist_rename">Rename Playlist</string>

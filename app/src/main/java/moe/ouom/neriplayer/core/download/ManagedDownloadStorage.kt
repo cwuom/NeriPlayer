@@ -2944,18 +2944,6 @@ internal object ManagedDownloadStorage {
             if (unfinalizedMetadataEntries.isEmpty()) {
                 return@runCatching StartupRecoveryResult()
             }
-            val recoveredReferences = linkedSetOf<String>()
-            var recoveredCount = 0
-            unfinalizedMetadataEntries.forEach { (entry, _) ->
-                val audio = audioEntriesByName[entry.name.removeSuffix(METADATA_SUFFIX)]
-                    ?.takeIf { it.sizeBytes > 0L }
-                    ?: return@forEach
-                if (markDownloadedAudioFinalizedBlocking(context, audio)) {
-                    recoveredCount++
-                    recoveredReferences += entry.reference
-                    recoveredReferences += audio.reference
-                }
-            }
             val protectedReferences = parsedMetadataEntries
                 .asSequence()
                 .filterNot { (_, metadata) -> isUnfinalizedDownloadedMetadata(metadata) }
@@ -2967,19 +2955,16 @@ internal object ManagedDownloadStorage {
                 .toSet()
             val referencesToDelete = linkedSetOf<String>()
             unfinalizedMetadataEntries.forEach { (entry, metadata) ->
-                if (entry.reference in recoveredReferences) {
+                val audio = audioEntriesByName[entry.name.removeSuffix(METADATA_SUFFIX)]
+                if (audio?.sizeBytes?.let { it > 0L } == true) {
                     return@forEach
                 }
                 referencesToDelete += entry.reference
-                audioEntriesByName[entry.name.removeSuffix(METADATA_SUFFIX)]
-                    ?.reference
-                    ?.takeUnless(recoveredReferences::contains)
-                    ?.let(referencesToDelete::add)
+                audio?.reference?.let(referencesToDelete::add)
                 listOf(metadata.coverPath, metadata.lyricPath, metadata.translatedLyricPath)
                     .filterNot(String?::isNullOrBlank)
                     .map(String?::orEmpty)
                     .filterNot(protectedReferences::contains)
-                    .filterNot(recoveredReferences::contains)
                     .forEach(referencesToDelete::add)
             }
             var cleanedCount = 0
@@ -2999,12 +2984,8 @@ internal object ManagedDownloadStorage {
             if (cleanedCount > 0 || failedCount > 0) {
                 NPLogger.d(TAG, "清理未完成下载半成品完成: cleaned=$cleanedCount, failed=$failedCount")
             }
-            if (recoveredCount > 0) {
-                invalidateSnapshotCache(context)
-                NPLogger.d(TAG, "恢复未最终确认下载完成: recovered=$recoveredCount")
-            }
             StartupRecoveryResult(
-                cleanedCount = cleanedCount + recoveredCount,
+                cleanedCount = cleanedCount,
                 failedCount = failedCount
             )
         }.onFailure {

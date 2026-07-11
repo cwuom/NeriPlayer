@@ -1,8 +1,11 @@
 package moe.ouom.neriplayer.core.download
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
 class DownloadedAudioTagWriterTest {
 
@@ -79,4 +82,49 @@ class DownloadedAudioTagWriterTest {
             )
         )
     }
+
+    @Test
+    fun `required embedded metadata accepts matching title and artist`() {
+        val song = testSong(name = "Song", artist = "Artist")
+        val propertyMap = hashMapOf(
+            "TITLE" to arrayOf("Song"),
+            "ARTIST" to arrayOf("Artist")
+        )
+
+        assertTrue(DownloadedAudioTagWriter.hasRequiredEmbeddedMetadata(propertyMap, song))
+    }
+
+    @Test
+    fun `required embedded metadata rejects missing title`() {
+        val song = testSong(name = "Song", artist = "Artist")
+        val propertyMap = hashMapOf(
+            "ARTIST" to arrayOf("Artist")
+        )
+
+        assertFalse(DownloadedAudioTagWriter.hasRequiredEmbeddedMetadata(propertyMap, song))
+    }
+
+    @Test
+    fun `required embedded metadata rejects wrong artist`() {
+        val song = testSong(name = "Song", artist = "Artist")
+        val propertyMap = hashMapOf(
+            "TITLE" to arrayOf("Song"),
+            "ARTIST" to arrayOf("Other")
+        )
+
+        assertFalse(DownloadedAudioTagWriter.hasRequiredEmbeddedMetadata(propertyMap, song))
+    }
+
+    private fun testSong(
+        name: String,
+        artist: String
+    ): SongItem = SongItem(
+        id = 1L,
+        name = name,
+        artist = artist,
+        album = "",
+        albumId = 0L,
+        durationMs = 180_000L,
+        coverUrl = null
+    )
 }

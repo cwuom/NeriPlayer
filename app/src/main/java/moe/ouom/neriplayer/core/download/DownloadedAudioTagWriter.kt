@@ -73,7 +73,12 @@ internal object DownloadedAudioTagWriter {
                 }
             } ?: true
 
-            val successful = propertySaved && coverSaved
+            val metadataVerified = if (propertySaved) {
+                verifyRequiredEmbeddedMetadata(target, song)
+            } else {
+                false
+            }
+            val successful = propertySaved && coverSaved && metadataVerified
             if (successful) {
                 NPLogger.d(
                     TAG,
@@ -82,7 +87,7 @@ internal object DownloadedAudioTagWriter {
             } else {
                 NPLogger.w(
                     TAG,
-                    "音频内嵌标签写入未完成: file=${audio.name}, propertySaved=$propertySaved, coverSaved=$coverSaved"
+                    "音频内嵌标签写入未完成: file=${audio.name}, propertySaved=$propertySaved, coverSaved=$coverSaved, metadataVerified=$metadataVerified"
                 )
             }
             successful
@@ -293,6 +298,35 @@ internal object DownloadedAudioTagWriter {
             val rightValue = right[key] ?: return@all false
             leftValue.contentEquals(rightValue)
         }
+    }
+
+    private fun verifyRequiredEmbeddedMetadata(
+        descriptor: ParcelFileDescriptor,
+        song: SongItem
+    ): Boolean {
+        val propertyMap = loadExistingPropertyMap(descriptor) ?: return false
+        return hasRequiredEmbeddedMetadata(propertyMap, song)
+    }
+
+    internal fun hasRequiredEmbeddedMetadata(
+        propertyMap: PropertyMap,
+        song: SongItem
+    ): Boolean {
+        val expectedTitle = song.displayName().trim()
+        val expectedArtist = song.artist.trim()
+        return hasExpectedPropertyValue(propertyMap, "TITLE", expectedTitle) &&
+            (expectedArtist.isBlank() || hasExpectedPropertyValue(propertyMap, "ARTIST", expectedArtist))
+    }
+
+    private fun hasExpectedPropertyValue(
+        propertyMap: PropertyMap,
+        key: String,
+        expectedValue: String
+    ): Boolean {
+        if (expectedValue.isBlank()) {
+            return true
+        }
+        return propertyMap[key]?.any { value -> value.trim() == expectedValue } == true
     }
 
     private fun buildPicturesWithFrontCover(

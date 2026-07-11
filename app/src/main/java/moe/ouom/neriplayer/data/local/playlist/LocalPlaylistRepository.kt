@@ -268,7 +268,13 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             .toList()
     }
 
-    private suspend fun hydrateLocalSongsForPersistence(songs: List<SongItem>): List<SongItem> {
+    private suspend fun hydrateLocalSongsForPersistence(
+        songs: List<SongItem>,
+        hydrateLocalMetadata: Boolean = true
+    ): List<SongItem> {
+        if (!hydrateLocalMetadata) {
+            return songs
+        }
         if (songs.none { LocalSongSupport.isLocalSong(it, context) }) {
             return songs
         }
@@ -356,12 +362,32 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     }
 
     suspend fun createPlaylistWithSongs(name: String, songs: List<SongItem>): LocalPlaylist {
+        return createPlaylistWithSongs(
+            name = name,
+            songs = songs,
+            hydrateLocalMetadata = true
+        )
+    }
+
+    suspend fun createPlaylistWithScannedSongs(name: String, songs: List<SongItem>): LocalPlaylist {
+        return createPlaylistWithSongs(
+            name = name,
+            songs = songs,
+            hydrateLocalMetadata = false
+        )
+    }
+
+    private suspend fun createPlaylistWithSongs(
+        name: String,
+        songs: List<SongItem>,
+        hydrateLocalMetadata: Boolean
+    ): LocalPlaylist {
         return withContext(Dispatchers.IO) {
             val list = _playlists.value.toMutableList()
             val now = System.currentTimeMillis()
             val distinctSongs = distinctPlaylistSongs(
                 stampSongsForPlaylistInsert(
-                    songs = hydrateLocalSongsForPersistence(songs),
+                    songs = hydrateLocalSongsForPersistence(songs, hydrateLocalMetadata),
                     addedAt = now
                 )
             )
@@ -550,11 +576,31 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     }
 
     suspend fun addSongsToPlaylistAndCount(playlistId: Long, songs: List<SongItem>): Int {
+        return addSongsToPlaylistAndCount(
+            playlistId = playlistId,
+            songs = songs,
+            hydrateLocalMetadata = true
+        )
+    }
+
+    suspend fun addScannedSongsToPlaylistAndCount(playlistId: Long, songs: List<SongItem>): Int {
+        return addSongsToPlaylistAndCount(
+            playlistId = playlistId,
+            songs = songs,
+            hydrateLocalMetadata = false
+        )
+    }
+
+    private suspend fun addSongsToPlaylistAndCount(
+        playlistId: Long,
+        songs: List<SongItem>,
+        hydrateLocalMetadata: Boolean
+    ): Int {
         return withContext(Dispatchers.IO) {
             if (songs.isEmpty()) return@withContext 0
             val now = System.currentTimeMillis()
             val hydratedSongs = stampSongsForPlaylistInsert(
-                songs = hydrateLocalSongsForPersistence(songs),
+                songs = hydrateLocalSongsForPersistence(songs, hydrateLocalMetadata),
                 addedAt = now
             )
             var addedCount = 0
@@ -623,11 +669,28 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     }
 
     suspend fun addSongsToLocalFilesPlaylistAndCount(songs: List<SongItem>): Int {
+        return addSongsToLocalFilesPlaylistAndCount(
+            songs = songs,
+            hydrateLocalMetadata = true
+        )
+    }
+
+    suspend fun addScannedSongsToLocalFilesPlaylistAndCount(songs: List<SongItem>): Int {
+        return addSongsToLocalFilesPlaylistAndCount(
+            songs = songs,
+            hydrateLocalMetadata = false
+        )
+    }
+
+    private suspend fun addSongsToLocalFilesPlaylistAndCount(
+        songs: List<SongItem>,
+        hydrateLocalMetadata: Boolean
+    ): Int {
         return withContext(Dispatchers.IO) {
             if (songs.isEmpty()) return@withContext 0
             val now = System.currentTimeMillis()
             val hydratedSongs = stampSongsForPlaylistInsert(
-                songs = hydrateLocalSongsForPersistence(songs),
+                songs = hydrateLocalSongsForPersistence(songs, hydrateLocalMetadata),
                 addedAt = now
             )
             var addedCount = 0

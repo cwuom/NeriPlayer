@@ -448,6 +448,8 @@
     <string name="local_playlist_scan_preview_title">预览本地文件</string>
     <string name="local_playlist_scan_preview_search">搜索本地文件</string>
     <string name="local_playlist_scan_preview_apply">导入所选歌曲</string>
+    <string name="local_playlist_scan_filter_metadata">隐藏无元数据歌曲</string>
+    <string name="local_playlist_scan_metadata_empty">没有带元数据的本地音频</string>
     <string name="local_playlist_import_audio_no_new">没有新的本地音频需要导入</string>
     <string name="local_playlist_add_scanned_no_new">所选歌曲已在目标歌单中</string>
     <string name="local_playlist_rename">重命名歌单</string>

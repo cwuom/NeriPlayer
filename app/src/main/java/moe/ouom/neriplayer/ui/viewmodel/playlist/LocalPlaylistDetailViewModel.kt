@@ -65,6 +65,7 @@ data class LocalScanPreviewState(
     val isScanning: Boolean = false,
     val songs: List<SongItem> = emptyList(),
     val query: String = "",
+    val metadataOnly: Boolean = false,
     val selectedKeys: Set<String> = emptySet()
 )
 
@@ -206,6 +207,24 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         _scanPreviewState.value = _scanPreviewState.value.copy(selectedKeys = selectedKeys)
     }
 
+    fun updateScanPreviewMetadataOnly(metadataOnly: Boolean) {
+        val current = _scanPreviewState.value
+        if (current.metadataOnly == metadataOnly) return
+        val selectedKeys = if (metadataOnly) {
+            val metadataKeys = current.songs
+                .asSequence()
+                .filter(::hasMeaningfulScanMetadata)
+                .mapTo(LinkedHashSet()) { it.stableKey() }
+            current.selectedKeys.intersect(metadataKeys)
+        } else {
+            current.selectedKeys
+        }
+        _scanPreviewState.value = current.copy(
+            metadataOnly = metadataOnly,
+            selectedKeys = selectedKeys
+        )
+    }
+
     fun clearScanPreview(cancelScan: Boolean) {
         if (cancelScan) {
             cancelDeviceSongScan()
@@ -218,7 +237,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         onResult: (LocalAudioImportUiResult) -> Unit
     ) {
         viewModelScope.launch {
-            val importedCount = repo.addSongsToLocalFilesPlaylistAndCount(songs)
+            val importedCount = repo.addScannedSongsToLocalFilesPlaylistAndCount(songs)
             onResult(
                 LocalAudioImportUiResult(
                     importedCount = importedCount,
@@ -234,7 +253,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         onResult: (LocalAudioImportUiResult) -> Unit
     ) {
         viewModelScope.launch {
-            val playlist = repo.createPlaylistWithSongs(name, songs)
+            val playlist = repo.createPlaylistWithScannedSongs(name, songs)
             onResult(
                 LocalAudioImportUiResult(
                     importedCount = playlist.songs.size,
@@ -250,7 +269,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         onResult: (LocalAudioImportUiResult) -> Unit
     ) {
         viewModelScope.launch {
-            val importedCount = repo.addSongsToPlaylistAndCount(targetPlaylistId, songs)
+            val importedCount = repo.addScannedSongsToPlaylistAndCount(targetPlaylistId, songs)
             onResult(
                 LocalAudioImportUiResult(
                     importedCount = importedCount,
@@ -359,6 +378,21 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         }
 
         return score
+    }
+
+    private fun hasMeaningfulScanMetadata(song: SongItem): Boolean {
+        val unknownArtist = app.getString(moe.ouom.neriplayer.R.string.music_unknown_artist)
+        val fileTitle = song.localFileName
+            ?.substringBeforeLast('.', song.localFileName)
+            ?.trim()
+            .orEmpty()
+        val hasTitleMetadata = song.name.isNotBlank() &&
+            (fileTitle.isBlank() || !song.name.equals(fileTitle, ignoreCase = true))
+        return hasTitleMetadata ||
+            song.artist.isMeaningfulMetadata(unknownArtist) ||
+            song.album.isMeaningfulAlbum(app) ||
+            !song.coverUrl.isNullOrBlank() ||
+            !song.originalCoverUrl.isNullOrBlank()
     }
 }
 
