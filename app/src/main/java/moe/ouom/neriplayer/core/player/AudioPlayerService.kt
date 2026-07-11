@@ -843,7 +843,7 @@ class AudioPlayerService : Service() {
         }
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_neriplayer_round)
+            .setSmallIcon(R.drawable.ic_notification_small)
             .setContentIntent(contentIntent)
             .setCategory(Notification.CATEGORY_TRANSPORT)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -927,7 +927,7 @@ class AudioPlayerService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_neriplayer_round)
+            .setSmallIcon(R.drawable.ic_notification_small)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(getString(R.string.player_notification_preparing))
             .setContentIntent(contentIntent)
