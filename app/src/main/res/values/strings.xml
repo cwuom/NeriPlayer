@@ -833,6 +833,12 @@
     <string name="settings_stop_on_bluetooth_disconnect_desc">蓝牙设备断开时自动暂停播放</string>
     <string name="settings_usb_exclusive_playback">USB 独占播放</string>
     <string name="settings_usb_exclusive_playback_desc">连接 USB DAC 时尝试直连独占输出</string>
+    <string name="settings_usb_exclusive_background_permission_title">允许 USB 独占后台播放</string>
+    <string name="settings_usb_exclusive_background_permission_desc">USB 独占需要前台服务和唤醒锁持续运行。为了避免息屏后被系统限制，建议在系统设置中把 NeriPlayer 的电池/后台行为改为不限制或完全允许。</string>
+    <string name="settings_usb_exclusive_background_permission_battery">请求忽略电池优化</string>
+    <string name="settings_usb_exclusive_background_permission_app_settings">打开应用设置</string>
+    <string name="settings_usb_exclusive_background_permission_never">不再提示</string>
+    <string name="settings_usb_exclusive_background_permission_later">稍后</string>
     <string name="settings_usb_exclusive_page_desc">USB 独占输出设置</string>
     <string name="settings_usb_exclusive_state_enabled">已开启</string>
     <string name="settings_usb_exclusive_state_disabled">已关闭</string>

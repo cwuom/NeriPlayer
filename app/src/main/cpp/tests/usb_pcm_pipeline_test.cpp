@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstring>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <thread>
 #include <vector>
@@ -23,6 +24,12 @@ neri::usb::PcmPipelineConfig configFor(int inputRate, int outputRate) {
 
 void writeFloatSample(std::vector<uint8_t>& output, size_t byteOffset, float value) {
     std::memcpy(output.data() + byteOffset, &value, sizeof(value));
+}
+
+int16_t readInt16Sample(const std::vector<uint8_t>& output, size_t byteOffset) {
+    int16_t value = 0;
+    std::memcpy(&value, output.data() + byteOffset, sizeof(value));
+    return value;
 }
 
 void verifiesExactRatePassThroughAcrossWrites() {
@@ -68,6 +75,36 @@ void verifiesPausePreservesQueuedAudio() {
     assert(pipeline.queuedFrames() == 2);
     const auto snapshot = pipeline.snapshot();
     assert(snapshot.pausedZeroFillBytes == 4);
+}
+
+void verifiesResumeAfterSilentOutputRampsFromZero() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    assert(pipeline.configure(configFor(48000, 48000), &error));
+    pipeline.setTargetGain(1.0f);
+
+    const std::array<uint8_t, 8> input {
+        0xff, 0x7f, 0xff, 0x7f,
+        0xff, 0x7f, 0xff, 0x7f
+    };
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+
+    std::array<uint8_t, 4> pausedOutput { 1, 1, 1, 1 };
+    assert(pipeline.fill(pausedOutput.data(), pausedOutput.size(), false) == 0);
+    assert((pausedOutput == std::array<uint8_t, 4> {}));
+
+    std::vector<uint8_t> resumedOutput(8U, 0);
+    assert(pipeline.fill(resumedOutput.data(), resumedOutput.size(), true) == input.size());
+
+    const int16_t firstSample = readInt16Sample(resumedOutput, 0);
+    const int16_t secondSample = readInt16Sample(resumedOutput, 4);
+    assert(firstSample >= 0);
+    assert(firstSample < 64);
+    assert(secondSample > firstSample);
+
+    const auto snapshot = pipeline.snapshot();
+    assert(snapshot.appliedGain > 0.0f);
+    assert(snapshot.appliedGain < 0.01f);
 }
 
 void verifiesUnsupportedEncodingIsRejected() {
@@ -193,6 +230,20 @@ void verifiesIntegerCodecDepthsAndEndianInputs() {
         bigEndianHalf.data(),
         0x10000000
     ) == 0.5f);
+
+    std::array<uint8_t, 4> floatInfinity {};
+    const float infinity = std::numeric_limits<float>::infinity();
+    std::memcpy(floatInfinity.data(), &infinity, sizeof(infinity));
+    assert(neri::usb::readEncodedPcmSample(floatInfinity.data(), 4) == 0.0f);
+
+    std::array<uint8_t, 2> finiteGuardOutput {};
+    neri::usb::writeIntegerPcmSample(
+        finiteGuardOutput.data(),
+        2,
+        16,
+        std::numeric_limits<float>::infinity()
+    );
+    assert((finiteGuardOutput == std::array<uint8_t, 2> {}));
 }
 
 } // namespace
@@ -201,6 +252,7 @@ int main() {
     verifiesExactRatePassThroughAcrossWrites();
     verifiesStreamingResampleKeepsLongTermFrameCount();
     verifiesPausePreservesQueuedAudio();
+    verifiesResumeAfterSilentOutputRampsFromZero();
     verifiesUnsupportedEncodingIsRejected();
     verifiesRuntimeRingResizePreservesQueuedAudio();
     verifiesHighResolutionRingUsesBoundedAllocation();

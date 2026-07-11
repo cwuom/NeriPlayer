@@ -1,11 +1,14 @@
 package moe.ouom.neriplayer.core.player.usb
 
 import kotlin.math.min
+import kotlin.math.max
 
 internal object UsbExclusivePcmWritePlanner {
     private const val DEFAULT_MAX_WRITE_CHUNK_BYTES = 12 * 1024
     private const val HARD_MAX_WRITE_CHUNK_BYTES = 16 * 1024
     private const val TRANSFERS_PER_WRITE = 4L
+    private const val RUNNING_TARGET_QUEUE_MS = 120L
+    private const val RUNNING_TARGET_TRANSFERS = 6L
 
     fun chooseWriteSize(
         remainingBytes: Int,
@@ -32,7 +35,15 @@ internal object UsbExclusivePcmWritePlanner {
         }
 
         limit = min(limit, writeChunkLimit(metrics, frameBytes))
-        limit = min(limit, availablePcmInputBytes(metrics, inputSampleRate, frameBytes))
+        limit = min(
+            limit,
+            availablePcmInputBytes(
+                metrics = metrics,
+                inputSampleRate = inputSampleRate,
+                inputFrameBytes = frameBytes,
+                nativeTransportStarted = nativeTransportStarted
+            )
+        )
         return alignDown(limit, frameBytes)
     }
 
@@ -64,21 +75,25 @@ internal object UsbExclusivePcmWritePlanner {
     private fun availablePcmInputBytes(
         metrics: UsbExclusiveRuntimeMetrics,
         inputSampleRate: Int,
-        inputFrameBytes: Int
+        inputFrameBytes: Int,
+        nativeTransportStarted: Boolean
     ): Int {
         val freeOutputBytes = explicitFreeBytes(metrics) ?: return Int.MAX_VALUE
         if (freeOutputBytes <= 0L) {
-            return if (metrics.hasHealthyTransport && metrics.hasPcmQueue) {
-                queueProbeInputBytes(metrics, inputFrameBytes)
-            } else {
-                0
-            }
+            return 0
         }
 
         val outputFrameBytes = metrics.outputFrameBytes ?: inputFrameBytes
         if (outputFrameBytes <= 0) return Int.MAX_VALUE
 
-        val freeOutputFrames = freeOutputBytes / outputFrameBytes
+        val usableOutputBytes = runningQueueHeadroomBytes(
+            metrics = metrics,
+            freeOutputBytes = freeOutputBytes,
+            outputFrameBytes = outputFrameBytes,
+            inputSampleRate = inputSampleRate,
+            nativeTransportStarted = nativeTransportStarted
+        )
+        val freeOutputFrames = usableOutputBytes / outputFrameBytes
         if (freeOutputFrames <= 0L) return 0
 
         val outputSampleRate = metrics.sampleRate?.takeIf { it > 0 } ?: inputSampleRate
@@ -102,26 +117,52 @@ internal object UsbExclusivePcmWritePlanner {
         return (boundedFrames * inputFrameBytes).toInt()
     }
 
+    private fun runningQueueHeadroomBytes(
+        metrics: UsbExclusiveRuntimeMetrics,
+        freeOutputBytes: Long,
+        outputFrameBytes: Int,
+        inputSampleRate: Int,
+        nativeTransportStarted: Boolean
+    ): Long {
+        if (!nativeTransportStarted) return freeOutputBytes
+        val capacity = metrics.pcmCapacityBytes?.takeIf { it > 0L } ?: return freeOutputBytes
+        val level = metrics.pcmLevelBytes ?: return freeOutputBytes
+        val target = runningQueueTargetBytes(
+            metrics = metrics,
+            capacity = capacity,
+            outputFrameBytes = outputFrameBytes,
+            inputSampleRate = inputSampleRate
+        )
+        return min(freeOutputBytes, target - level).coerceAtLeast(0L)
+    }
+
+    private fun runningQueueTargetBytes(
+        metrics: UsbExclusiveRuntimeMetrics,
+        capacity: Long,
+        outputFrameBytes: Int,
+        inputSampleRate: Int
+    ): Long {
+        val outputSampleRate = metrics.sampleRate?.takeIf { it > 0 } ?: inputSampleRate
+        val timedBytes = if (outputSampleRate > 0) {
+            outputSampleRate.toLong() * outputFrameBytes * RUNNING_TARGET_QUEUE_MS / 1_000L
+        } else {
+            0L
+        }
+        val transferBytes = metrics.transferBytes
+            ?.takeIf { it > 0L }
+            ?: metrics.lastTransferBytes?.takeIf { it > 0L }
+            ?: 0L
+        val transferFloor = transferBytes * RUNNING_TARGET_TRANSFERS
+        val target = max(max(timedBytes, transferFloor), outputFrameBytes.toLong())
+        return target.coerceAtMost(capacity - capacity % outputFrameBytes)
+    }
+
     private fun explicitFreeBytes(metrics: UsbExclusiveRuntimeMetrics): Long? {
         metrics.pcmFreeBytes?.let { return it }
         val capacity = metrics.pcmCapacityBytes ?: return null
         val level = metrics.pcmLevelBytes ?: return null
         if (capacity <= 0L) return null
         return (capacity - level).coerceAtLeast(0L)
-    }
-
-    private fun queueProbeInputBytes(
-        metrics: UsbExclusiveRuntimeMetrics,
-        inputFrameBytes: Int
-    ): Int {
-        val transferBytes = metrics.transferBytes
-            ?.takeIf { it > 0L }
-            ?: metrics.lastTransferBytes?.takeIf { it > 0L }
-        val probeBytes = transferBytes
-            ?.coerceAtMost(HARD_MAX_WRITE_CHUNK_BYTES.toLong())
-            ?.toInt()
-            ?: DEFAULT_MAX_WRITE_CHUNK_BYTES
-        return alignDown(probeBytes.coerceAtLeast(inputFrameBytes), inputFrameBytes)
     }
 
     private fun alignDown(value: Int, frameBytes: Int): Int {

@@ -892,6 +892,12 @@ object UsbExclusiveSessionController {
                             "written=$written report=$report"
                     )
                 }
+            } else {
+                val report = UsbExclusiveNativeBridge.runtimeReport(handle)
+                _state.value = current.copy(
+                    completedAudioFrames = UsbExclusiveNativeBridge.completedAudioFrames(handle),
+                    queuedAudioFrames = UsbExclusiveNativeBridge.queuedPlayerFrames(handle)
+                ).withRuntimeReport(report)
             }
             return written
         } finally {

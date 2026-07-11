@@ -833,6 +833,12 @@
     <string name="settings_stop_on_bluetooth_disconnect_desc">Pause playback when a Bluetooth device disconnects</string>
     <string name="settings_usb_exclusive_playback">USB Exclusive Playback</string>
     <string name="settings_usb_exclusive_playback_desc">Use direct exclusive output for USB DACs</string>
+    <string name="settings_usb_exclusive_background_permission_title">Allow USB exclusive background playback</string>
+    <string name="settings_usb_exclusive_background_permission_desc">USB exclusive output needs the foreground service and wake lock to keep running. To avoid screen-off limits, set NeriPlayer battery/background behavior to unrestricted or fully allowed in system settings.</string>
+    <string name="settings_usb_exclusive_background_permission_battery">Request battery optimization exemption</string>
+    <string name="settings_usb_exclusive_background_permission_app_settings">Open app settings</string>
+    <string name="settings_usb_exclusive_background_permission_never">Don\'t show again</string>
+    <string name="settings_usb_exclusive_background_permission_later">Later</string>
     <string name="settings_usb_exclusive_page_desc">USB exclusive output settings</string>
     <string name="settings_usb_exclusive_state_enabled">On</string>
     <string name="settings_usb_exclusive_state_disabled">Off</string>

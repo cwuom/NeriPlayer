@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.data.settings
 
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
@@ -44,6 +45,9 @@ import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingSpec
 import java.util.Locale
+
+private val USB_EXCLUSIVE_BACKGROUND_PERMISSION_PROMPT_SUPPRESSED =
+    booleanPreferencesKey("usb_exclusive_background_permission_prompt_suppressed")
 
 class SettingsRepository(private val context: Context) {
     private val autoSettingsRepository = AutoSettingsRepository(context)
@@ -395,6 +399,11 @@ class SettingsRepository(private val context: Context) {
 
     val usbExclusivePlaybackFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.USB_EXCLUSIVE_PLAYBACK] ?: false }
+
+    val usbExclusiveBackgroundPermissionPromptSuppressedFlow: Flow<Boolean> =
+        context.dataStore.data.map {
+            it[USB_EXCLUSIVE_BACKGROUND_PERMISSION_PROMPT_SUPPRESSED] ?: false
+        }
 
     val usbExclusivePreferencesFlow: Flow<UsbExclusivePreferences> =
         usbExclusiveSettingsStore.preferencesFlow
@@ -984,6 +993,12 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[SettingsKeys.USB_EXCLUSIVE_PLAYBACK] = enabled }
         updatePlaybackPreferenceSnapshot(context) {
             it.copy(usbExclusivePlayback = enabled)
+        }
+    }
+
+    suspend fun setUsbExclusiveBackgroundPermissionPromptSuppressed(suppressed: Boolean) {
+        context.dataStore.edit {
+            it[USB_EXCLUSIVE_BACKGROUND_PERMISSION_PROMPT_SUPPRESSED] = suppressed
         }
     }
 

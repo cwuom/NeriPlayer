@@ -21,7 +21,7 @@ class UsbExclusivePcmWritePlannerTest {
     }
 
     @Test
-    fun `uses available pcm free space when it is smaller than transfer window`() {
+    fun `uses available pcm target headroom when it is smaller than transfer window`() {
         val writeSize = UsbExclusivePcmWritePlanner.chooseWriteSize(
             remainingBytes = 65_536,
             inputSampleRate = 48_000,
@@ -29,14 +29,14 @@ class UsbExclusivePcmWritePlannerTest {
             nativeTransportStarted = true,
             playing = true,
             prerollMs = 300L,
-            metrics = metrics(pcmFreeBytes = 3_072L)
+            metrics = metrics(pcmFreeBytes = 265_200L)
         )
 
-        assertEquals(3_072, writeSize)
+        assertEquals(240, writeSize)
     }
 
     @Test
-    fun `uses one transfer probe when cached healthy queue is full`() {
+    fun `waits when cached healthy queue is full`() {
         val writeSize = UsbExclusivePcmWritePlanner.chooseWriteSize(
             remainingBytes = 65_536,
             inputSampleRate = 48_000,
@@ -47,7 +47,22 @@ class UsbExclusivePcmWritePlannerTest {
             metrics = metrics(pcmFreeBytes = 0L)
         )
 
-        assertEquals(3_072, writeSize)
+        assertEquals(0, writeSize)
+    }
+
+    @Test
+    fun `waits when running queue is already above target waterline`() {
+        val writeSize = UsbExclusivePcmWritePlanner.chooseWriteSize(
+            remainingBytes = 65_536,
+            inputSampleRate = 96_000,
+            inputFrameBytes = 8,
+            nativeTransportStarted = true,
+            playing = true,
+            prerollMs = 300L,
+            metrics = metrics(pcmFreeBytes = 177_408L)
+        )
+
+        assertEquals(0, writeSize)
     }
 
     @Test

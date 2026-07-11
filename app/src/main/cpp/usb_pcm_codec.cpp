@@ -94,7 +94,7 @@ float readEncodedPcmSample(const uint8_t* input, int encoding) {
             float value = 0.0f;
             static_assert(sizeof(value) == sizeof(raw));
             std::memcpy(&value, &raw, sizeof(value));
-            return std::isnan(value) ? 0.0f : std::clamp(value, -1.0f, 1.0f);
+            return std::isfinite(value) ? std::clamp(value, -1.0f, 1.0f) : 0.0f;
         }
         default:
             return 0.0f;
@@ -140,7 +140,7 @@ void writeIntegerPcmSample(
         return;
     }
     const int validBits = std::clamp(bitsPerSample, 1, std::min(32, subslotBytes * 8));
-    const float clipped = std::clamp(sample, -1.0f, 1.0f);
+    const float clipped = std::isfinite(sample) ? std::clamp(sample, -1.0f, 1.0f) : 0.0f;
     const int64_t negativeScale = int64_t { 1 } << (validBits - 1);
     const int64_t positiveScale = negativeScale - 1;
     const int64_t value = clipped >= 0.0f

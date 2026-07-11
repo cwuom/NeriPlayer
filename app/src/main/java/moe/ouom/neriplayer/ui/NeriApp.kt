@@ -222,6 +222,9 @@ import moe.ouom.neriplayer.util.NativeCrashHandler
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.adjustedAccentColorArgb
 import moe.ouom.neriplayer.util.HapticTextButton
+import moe.ouom.neriplayer.util.openAppBackgroundSettings
+import moe.ouom.neriplayer.util.readBackgroundBehaviorAllowance
+import moe.ouom.neriplayer.util.requestIgnoreBatteryOptimizationsCompat
 import moe.ouom.neriplayer.util.formatFileSize
 import moe.ouom.neriplayer.util.isRemoteImageSource
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
@@ -371,6 +374,54 @@ internal fun MobileDataDownloadInterruptionDialog(
                             stringResource(R.string.mobile_data_download_cancel_all),
                             color = MaterialTheme.colorScheme.error
                         )
+                    }
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun UsbExclusiveBackgroundPermissionDialog(
+    batteryOptimizationAllowed: Boolean,
+    onRequestBatteryOptimization: () -> Unit,
+    onOpenAppSettings: () -> Unit,
+    onNeverShowAgain: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(stringResource(R.string.settings_usb_exclusive_background_permission_title))
+        },
+        confirmButton = {},
+        dismissButton = {},
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(stringResource(R.string.settings_usb_exclusive_background_permission_desc))
+                if (!batteryOptimizationAllowed) {
+                    HapticTextButton(
+                        onClick = onRequestBatteryOptimization,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.settings_usb_exclusive_background_permission_battery))
+                    }
+                }
+                HapticTextButton(
+                    onClick = onOpenAppSettings,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.settings_usb_exclusive_background_permission_app_settings))
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    HapticTextButton(onClick = onNeverShowAgain) {
+                        Text(stringResource(R.string.settings_usb_exclusive_background_permission_never))
+                    }
+                    HapticTextButton(onClick = onDismiss) {
+                        Text(stringResource(R.string.settings_usb_exclusive_background_permission_later))
                     }
                 }
             }
@@ -765,6 +816,9 @@ private fun NeriAppContent(
     val usbExclusivePlayback by repo.usbExclusivePlaybackFlow.collectAsState(
         initial = startupPlaybackPreferences.usbExclusivePlayback
     )
+    val usbExclusiveBackgroundPermissionPromptSuppressed by repo
+        .usbExclusiveBackgroundPermissionPromptSuppressedFlow
+        .collectAsState(initial = false)
     val allowMixedPlayback by repo.allowMixedPlaybackFlow.collectAsState(initial = false)
     val preemptAudioFocus by repo.preemptAudioFocusFlow.collectAsState(
         initial = startupPlaybackPreferences.preemptAudioFocus
@@ -784,6 +838,7 @@ private fun NeriAppContent(
     var themeRevealCaptureToken by remember { mutableIntStateOf(0) }
     var pendingBackgroundImageAlpha by remember { mutableStateOf<Float?>(null) }
     var coverArtRefreshToken by remember { mutableIntStateOf(0) }
+    var showUsbExclusiveBackgroundPermissionDialog by rememberSaveable { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val followSystemDark = pendingFollowSystemDark ?: storedFollowSystemDark
@@ -2128,6 +2183,14 @@ private fun NeriAppContent(
                                         onUsbExclusivePlaybackChange = { enabled ->
                                             if (PlayerManager.beginUsbExclusiveToggleTransitionFromUi(enabled)) {
                                                 scope.launch { repo.setUsbExclusivePlayback(enabled) }
+                                                if (
+                                                    enabled &&
+                                                    !usbExclusivePlayback &&
+                                                    !usbExclusiveBackgroundPermissionPromptSuppressed &&
+                                                    !context.readBackgroundBehaviorAllowance().fullyAllowed
+                                                ) {
+                                                    showUsbExclusiveBackgroundPermissionDialog = true
+                                                }
                                             }
                                         },
                                         allowMixedPlayback = allowMixedPlayback,
@@ -2701,6 +2764,31 @@ private fun NeriAppContent(
                         },
                         onDismiss = {
                             pendingTrafficRiskDownloadRequest = null
+                        }
+                    )
+                }
+
+                if (showUsbExclusiveBackgroundPermissionDialog) {
+                    UsbExclusiveBackgroundPermissionDialog(
+                        batteryOptimizationAllowed = context
+                            .readBackgroundBehaviorAllowance()
+                            .ignoringBatteryOptimizations,
+                        onRequestBatteryOptimization = {
+                            showUsbExclusiveBackgroundPermissionDialog = false
+                            context.requestIgnoreBatteryOptimizationsCompat()
+                        },
+                        onOpenAppSettings = {
+                            showUsbExclusiveBackgroundPermissionDialog = false
+                            context.openAppBackgroundSettings()
+                        },
+                        onNeverShowAgain = {
+                            showUsbExclusiveBackgroundPermissionDialog = false
+                            scope.launch {
+                                repo.setUsbExclusiveBackgroundPermissionPromptSuppressed(true)
+                            }
+                        },
+                        onDismiss = {
+                            showUsbExclusiveBackgroundPermissionDialog = false
                         }
                     )
                 }

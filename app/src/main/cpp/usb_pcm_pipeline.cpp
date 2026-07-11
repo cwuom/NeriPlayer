@@ -10,7 +10,7 @@
 namespace neri::usb {
 namespace {
 
-constexpr int kGainRampDurationMs = 5;
+constexpr int kGainRampDurationMs = 80;
 constexpr double kPositionEpsilon = 0.000000001;
 constexpr int64_t kMaximumRingBufferBytes = 64LL * 1024LL * 1024LL;
 
@@ -504,6 +504,12 @@ void PcmPipeline::applyGain(uint8_t* output, size_t bytes) {
     appliedGain_.store(applied);
 }
 
+void PcmPipeline::markSilentOutputLocked() {
+    appliedGain_.store(0.0f);
+    gainRampTarget_ = 0.0f;
+    gainRampFramesRemaining_ = 0;
+}
+
 void PcmPipeline::updateOutputSignalStatsLocked(const uint8_t* output, size_t bytes) {
     const int frames = outputFormat_.frameBytes > 0
         ? static_cast<int>(bytes / static_cast<size_t>(outputFormat_.frameBytes))
@@ -558,7 +564,12 @@ size_t PcmPipeline::fill(uint8_t* output, size_t bytes, bool playbackEnabled) {
         pausedZeroFillBytes_ += static_cast<int64_t>(bytes);
     }
     outputBytes_ += static_cast<int64_t>(bytes);
-    applyGain(output, bytes);
+    const bool silentOutput = !playbackEnabled || read == 0;
+    if (silentOutput) {
+        markSilentOutputLocked();
+    } else {
+        applyGain(output, bytes);
+    }
     updateOutputSignalStatsLocked(output, bytes);
     return read;
 }
