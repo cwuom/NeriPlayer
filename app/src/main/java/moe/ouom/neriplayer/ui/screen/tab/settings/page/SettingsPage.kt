@@ -133,3 +133,8 @@ internal val SettingsHomePageGroups: List<List<SettingsPage>> = listOf(
         SettingsPage.About
     )
 )
+
+internal fun SettingsPage.backTargetPage(): SettingsPage? = when (this) {
+    SettingsPage.UsbExclusive -> SettingsPage.Playback
+    else -> null
+}

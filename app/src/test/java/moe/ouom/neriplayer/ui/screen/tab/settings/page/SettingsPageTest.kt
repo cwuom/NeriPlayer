@@ -23,4 +23,10 @@ class SettingsPageTest {
         assertEquals(AutoSettingsSchema.backup.metadata.titleRes, SettingsPage.Backup.titleRes)
         assertEquals(AutoSettingsSchema.backup.metadata.descriptionRes, SettingsPage.Backup.descriptionRes)
     }
+
+    @Test
+    fun usbExclusiveBackTargetReturnsPlaybackPage() {
+        assertEquals(SettingsPage.Playback, SettingsPage.UsbExclusive.backTargetPage())
+        assertEquals(null, SettingsPage.Playback.backTargetPage())
+    }
 }

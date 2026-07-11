@@ -301,6 +301,7 @@ internal fun MiuixSettingsResponsiveDetailScaffold(
     listState: LazyListState,
     topAppBarState: TopAppBarState,
     splitLayout: Boolean,
+    showSplitDetailBackButton: Boolean = false,
     selectedPage: SettingsPage? = null,
     homeListState: LazyListState,
     homeTopAppBarState: TopAppBarState,
@@ -374,7 +375,7 @@ internal fun MiuixSettingsResponsiveDetailScaffold(
                         onBack = onBack,
                         listState = listState,
                         topAppBarState = topAppBarState,
-                        showBackButton = false
+                        showBackButton = showSplitDetailBackButton
                     ) {
                         if (detailContent == null) {
                             content()

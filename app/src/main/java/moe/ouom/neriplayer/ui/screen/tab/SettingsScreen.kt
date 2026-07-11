@@ -175,6 +175,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsPageGroupCar
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsResponsiveDetailScaffold
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsHomePageGroups
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.backTargetPage
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.miuixSettingsSectionCardItem
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
@@ -906,11 +907,16 @@ fun SettingsScreen(
         }
     }
 
-    BackHandler(enabled = activeSettingsPage != null && !isSettingsSplitLayout) {
-        activeSettingsPage = when (activeSettingsPage) {
-            SettingsPage.UsbExclusive -> SettingsPage.Playback
-            else -> null
-        }
+    fun navigateBackFromActiveSettingsPage() {
+        activeSettingsPage = activeSettingsPage?.backTargetPage()
+    }
+
+    val settingsPageBackTarget = activeSettingsPage?.backTargetPage()
+    BackHandler(
+        enabled = activeSettingsPage != null &&
+            (!isSettingsSplitLayout || settingsPageBackTarget != null)
+    ) {
+        navigateBackFromActiveSettingsPage()
     }
 
     val settingsHomeTitle: @Composable () -> Unit = {
@@ -931,7 +937,7 @@ fun SettingsScreen(
                 MiuixSettingsPageGroupCard(
                     pages = pages,
                     onPageClick = { page -> activeSettingsPage = page },
-                    selectedPage = activeSettingsPage,
+                    selectedPage = activeSettingsPage?.backTargetPage() ?: activeSettingsPage,
                     modifier = Modifier.animateItem()
                 )
             }
@@ -982,15 +988,11 @@ fun SettingsScreen(
         } else {
             MiuixSettingsResponsiveDetailScaffold(
                 title = stringResource(selectedPage.titleRes),
-                onBack = {
-                    activeSettingsPage = when (activeSettingsPage) {
-                        SettingsPage.UsbExclusive -> SettingsPage.Playback
-                        else -> null
-                    }
-                },
+                onBack = ::navigateBackFromActiveSettingsPage,
                 listState = detailListStates.getValue(selectedPage),
                 topAppBarState = detailTopAppBarStates.getValue(selectedPage),
                 splitLayout = isSettingsSplitLayout,
+                showSplitDetailBackButton = settingsPageBackTarget != null,
                 selectedPage = selectedPage,
                 homeListState = listState,
                 homeTopAppBarState = homeTopAppBarState,
