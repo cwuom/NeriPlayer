@@ -42,9 +42,9 @@ constexpr int kDefaultPacketsPerTransfer = 16;
 constexpr int kDefaultTransferCount = 12;
 constexpr int kDefaultPcmRingDurationMs = 250;
 constexpr int kMinimumPcmRingDurationMs = 100;
-constexpr int kMaximumPcmRingDurationMs = 12000;
+constexpr int kMaximumPcmRingDurationMs = 3000;
 constexpr int kCancelDrainWarningMs = 1200;
-constexpr int kFirstTransferCompletionTimeoutMs = 750;
+constexpr int kFirstTransferCompletionTimeoutMs = 1500;
 constexpr int kInterfaceTransitionCooldownMs = 1500;
 constexpr int kUrgentAudioThreadPriority = -19;
 

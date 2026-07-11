@@ -1367,6 +1367,38 @@ internal fun PlayerManager.tryRecoverUsbExclusivePlaybackAfterNativeTransferFail
         usbExclusivePlaybackEnabled &&
         !allowMixedPlaybackEnabled &&
         (
+            reason.isUsbExclusiveFirstCompletionTimeout() ||
+                runtimeReport.isUsbExclusiveFirstCompletionTimeout()
+            )
+    ) {
+        if (usbExclusiveRecoveryAttempts >= USB_EXCLUSIVE_FIRST_COMPLETION_RECOVERY_MAX_ATTEMPTS) {
+            NPLogger.w(
+                "NERI-UsbExclusive",
+                "first completion timeout recovery limit reached: reason=$reason " +
+                    "runtime=$runtimeReport"
+            )
+            return false
+        }
+        usbExclusiveRecoveryAttempts += 1
+        UsbExclusiveSessionController.requireFreshPlayerPcmOpen(
+            reason = "first_completion_timeout_recovery"
+        )
+        scheduleUsbAudioSinkReconfiguration(
+            reason = "usb_exclusive_first_completion_timeout_recovery",
+            allowWhilePlaybackActive = true,
+            bypassCooldown = true
+        )
+        NPLogger.w(
+            "NERI-UsbExclusive",
+            "recover native USB playback after first completion timeout: " +
+                "attempt=$usbExclusiveRecoveryAttempts reason=$reason runtime=$runtimeReport"
+        )
+        return true
+    }
+    if (
+        usbExclusivePlaybackEnabled &&
+        !allowMixedPlaybackEnabled &&
+        (
             reason.isRecoverableUsbExclusiveNativeTransferFailure() ||
                 runtimeReport.isRecoverableUsbExclusiveNativeTransferFailure()
             )
@@ -2088,6 +2120,7 @@ private const val USB_EXCLUSIVE_NATIVE_CLOSE_WAIT_TIMEOUT_MS = 4_000L
 private const val USB_EXCLUSIVE_NATIVE_CLOSE_WAIT_POLL_MS = 50L
 private const val USB_EXCLUSIVE_SYSTEM_AUDIO_RESUME_WATCHDOG_MS = 1_600L
 private const val USB_EXCLUSIVE_SYSTEM_AUDIO_STALL_TOLERANCE_MS = 50L
+private const val USB_EXCLUSIVE_FIRST_COMPLETION_RECOVERY_MAX_ATTEMPTS = 1
 
 private fun PlayerManager.shouldPauseForBluetoothDisconnect(
     previousDevice: AudioDevice?,
@@ -2474,12 +2507,17 @@ private fun String.isNativeTransitionInFlightGate(): Boolean {
 private fun String.isRecoverableUsbExclusiveNativeTransferFailure(): Boolean {
     if (contains("LIBUSB_ERROR_NO_DEVICE", ignoreCase = true)) return false
     if (contains("permission", ignoreCase = true)) return false
-    return contains("native_transport_failed", ignoreCase = true) ||
+    return isUsbExclusiveFirstCompletionTimeout() ||
+        contains("native_transport_failed", ignoreCase = true) ||
         contains("transportFailed=true", ignoreCase = true) ||
         contains("LIBUSB_ERROR_IO", ignoreCase = true) ||
         contains("transfer_status=5", ignoreCase = true) ||
         contains("resubmit_failed", ignoreCase = true) ||
         contains("submiturb failed", ignoreCase = true)
+}
+
+private fun String.isUsbExclusiveFirstCompletionTimeout(): Boolean {
+    return contains("event_loop_first_completion_timeout", ignoreCase = true)
 }
 
 private fun String.isLifecycleForegroundRecoveryReason(): Boolean {

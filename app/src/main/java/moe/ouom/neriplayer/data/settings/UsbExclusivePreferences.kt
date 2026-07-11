@@ -15,7 +15,9 @@ const val DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS = 1500
 const val MIN_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS = 100
 const val MIN_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS = 200
 const val MIN_USB_EXCLUSIVE_BUFFER_MS = MIN_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS
-const val MAX_USB_EXCLUSIVE_BUFFER_MS = 12000
+const val MAX_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS = 1000
+const val MAX_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS = 3000
+const val MAX_USB_EXCLUSIVE_BUFFER_MS = MAX_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
 const val USB_EXCLUSIVE_BUFFER_STEP_MS = 50
 
 enum class UsbExclusiveSampleRateMode(
@@ -288,21 +290,33 @@ fun normalizeUsbExclusiveDeviceKey(value: String?): String {
 }
 
 fun normalizeUsbExclusiveForegroundBufferMs(value: Int): Int {
-    return normalizeUsbExclusiveBufferMs(value, MIN_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS)
+    return normalizeUsbExclusiveBufferMs(
+        value = value,
+        minBufferMs = MIN_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS,
+        maxBufferMs = MAX_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS
+    )
 }
 
 fun normalizeUsbExclusiveBackgroundBufferMs(value: Int): Int {
-    return normalizeUsbExclusiveBufferMs(value, MIN_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS)
+    return normalizeUsbExclusiveBufferMs(
+        value = value,
+        minBufferMs = MIN_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
+        maxBufferMs = MAX_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
+    )
 }
 
 fun normalizeUsbExclusiveBufferMs(value: Int): Int {
     return normalizeUsbExclusiveForegroundBufferMs(value)
 }
 
-private fun normalizeUsbExclusiveBufferMs(value: Int, minBufferMs: Int): Int {
-    val clamped = value.coerceIn(minBufferMs, MAX_USB_EXCLUSIVE_BUFFER_MS)
+private fun normalizeUsbExclusiveBufferMs(
+    value: Int,
+    minBufferMs: Int,
+    maxBufferMs: Int
+): Int {
+    val clamped = value.coerceIn(minBufferMs, maxBufferMs)
     val rounded = (clamped / USB_EXCLUSIVE_BUFFER_STEP_MS) * USB_EXCLUSIVE_BUFFER_STEP_MS
-    return rounded.coerceIn(minBufferMs, MAX_USB_EXCLUSIVE_BUFFER_MS)
+    return rounded.coerceIn(minBufferMs, maxBufferMs)
 }
 
 private fun resolveSupportedValue(

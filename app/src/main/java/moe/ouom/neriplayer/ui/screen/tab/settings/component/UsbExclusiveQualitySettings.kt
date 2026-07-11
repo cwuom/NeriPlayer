@@ -32,7 +32,8 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnosticsSnapshot
-import moe.ouom.neriplayer.data.settings.MAX_USB_EXCLUSIVE_BUFFER_MS
+import moe.ouom.neriplayer.data.settings.MAX_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
+import moe.ouom.neriplayer.data.settings.MAX_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS
 import moe.ouom.neriplayer.data.settings.MIN_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
 import moe.ouom.neriplayer.data.settings.MIN_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS
 import moe.ouom.neriplayer.data.settings.USB_EXCLUSIVE_BUFFER_STEP_MS
@@ -123,6 +124,7 @@ internal fun UsbExclusiveQualityContent(
         title = stringResource(R.string.settings_usb_exclusive_foreground_buffer),
         bufferMs = preferences.foregroundBufferMs,
         minBufferMs = MIN_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS,
+        maxBufferMs = MAX_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS,
         normalizeBufferMs = ::normalizeUsbExclusiveForegroundBufferMs,
         onBufferChange = onForegroundBufferMsChange
     )
@@ -131,6 +133,7 @@ internal fun UsbExclusiveQualityContent(
         title = stringResource(R.string.settings_usb_exclusive_background_buffer),
         bufferMs = preferences.backgroundBufferMs,
         minBufferMs = MIN_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
+        maxBufferMs = MAX_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
         normalizeBufferMs = ::normalizeUsbExclusiveBackgroundBufferMs,
         onBufferChange = onBackgroundBufferMsChange
     )
@@ -223,6 +226,7 @@ private fun UsbBufferSliderItem(
     title: String,
     bufferMs: Int,
     minBufferMs: Int,
+    maxBufferMs: Int,
     normalizeBufferMs: (Int) -> Int,
     onBufferChange: (Int) -> Unit
 ) {
@@ -253,8 +257,8 @@ private fun UsbBufferSliderItem(
                         sliderValue = normalizeBufferMs(value.roundToInt()).toFloat()
                     },
                     valueRange = minBufferMs.toFloat()..
-                        MAX_USB_EXCLUSIVE_BUFFER_MS.toFloat(),
-                    steps = ((MAX_USB_EXCLUSIVE_BUFFER_MS - minBufferMs) /
+                        maxBufferMs.toFloat(),
+                    steps = ((maxBufferMs - minBufferMs) /
                         USB_EXCLUSIVE_BUFFER_STEP_MS - 1).coerceAtLeast(0),
                     onValueChangeFinished = {
                         onBufferChange(normalizeBufferMs(sliderValue.roundToInt()))

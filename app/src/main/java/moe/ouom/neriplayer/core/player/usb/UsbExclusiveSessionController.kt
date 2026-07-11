@@ -54,6 +54,7 @@ object UsbExclusiveSessionController {
     private var lastPlayerPcmNativeCloseAtMs = 0L
     private var playerPcmOpenBlockedUntilMs = 0L
     private var playerPcmOpenBlockReason = ""
+    private var playerPcmFreshOpenRequiredReason: String? = null
     @Volatile
     private var lastPlayerPcmWriteIssueLogAtMs = 0L
 
@@ -431,6 +432,14 @@ object UsbExclusiveSessionController {
             sessionLock.withLock {
                 val current = _state.value
                 if (
+                    playerPcmFreshOpenRequiredReason != null &&
+                    (current.handle == 0L || current.source != "player_pcm")
+                ) {
+                    playerPcmFreshOpenRequiredReason = null
+                }
+                val freshOpenReason = playerPcmFreshOpenRequiredReason
+                if (
+                    freshOpenReason == null &&
                     current.handle != 0L &&
                     current.source == "player_pcm" &&
                     current.opened &&
@@ -469,6 +478,17 @@ object UsbExclusiveSessionController {
                     )
                     openedHandle = current.handle
                     return@withLock
+                }
+                if (
+                    freshOpenReason != null &&
+                    current.handle != 0L &&
+                    current.source == "player_pcm"
+                ) {
+                    NPLogger.i(
+                        TAG,
+                        "openPlayerPcm(): skip native handle reuse because fresh open is " +
+                            "required reason=$freshOpenReason handle=${current.handle}"
+                    )
                 }
 
                 openGateErrorLocked(SystemClock.elapsedRealtime())?.let { gateError ->
@@ -631,6 +651,7 @@ object UsbExclusiveSessionController {
                 lastPlayerPcmNativeOpenAtMs = SystemClock.elapsedRealtime()
                 playerPcmOpenBlockedUntilMs = 0L
                 playerPcmOpenBlockReason = ""
+                playerPcmFreshOpenRequiredReason = null
                 _state.value = UsbExclusiveNativeState(
                     available = true,
                     opened = true,
@@ -721,6 +742,19 @@ object UsbExclusiveSessionController {
         }
         sessionLock.withLock {
             return openGateErrorLocked(SystemClock.elapsedRealtime())
+        }
+    }
+
+    fun requireFreshPlayerPcmOpen(reason: String) {
+        sessionLock.withLock {
+            val current = _state.value
+            if (current.handle == 0L || current.source != "player_pcm") return
+            playerPcmFreshOpenRequiredReason = reason
+            NPLogger.i(
+                TAG,
+                "requireFreshPlayerPcmOpen(): reason=$reason handle=${current.handle} " +
+                    "streaming=${current.streaming} paused=${current.paused}"
+            )
         }
     }
 

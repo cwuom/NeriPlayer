@@ -34,6 +34,9 @@ class UsbExclusivePreferencesTest {
         assertEquals(true, preferences.channelCompatibilityEnabled)
         assertEquals(250, DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS)
         assertEquals(1500, DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS)
+        assertEquals(1000, MAX_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS)
+        assertEquals(3000, MAX_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS)
+        assertEquals(MAX_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS, MAX_USB_EXCLUSIVE_BUFFER_MS)
         assertEquals(DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS, preferences.foregroundBufferMs)
         assertEquals(DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS, preferences.backgroundBufferMs)
         assertEquals(
@@ -182,6 +185,14 @@ class UsbExclusivePreferencesTest {
         )
         assertEquals(250, normalizeUsbExclusiveForegroundBufferMs(260))
         assertEquals(1500, normalizeUsbExclusiveBackgroundBufferMs(1530))
+        assertEquals(
+            MAX_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS,
+            normalizeUsbExclusiveForegroundBufferMs(12_000)
+        )
+        assertEquals(
+            MAX_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
+            normalizeUsbExclusiveBackgroundBufferMs(12_000)
+        )
     }
 
     @Test

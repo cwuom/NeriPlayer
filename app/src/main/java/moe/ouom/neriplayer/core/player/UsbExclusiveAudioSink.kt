@@ -3,9 +3,15 @@
 package moe.ouom.neriplayer.core.player
 
 import android.content.Context
+import android.database.ContentObserver
 import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.os.Process
 import android.os.SystemClock
+import android.provider.Settings
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.AuxEffectInfo
 import androidx.media3.common.C
@@ -48,6 +54,13 @@ internal class UsbExclusiveAudioSink(
         val audioThreadPriorityConfigured = ThreadLocal<Boolean>()
     }
 
+    private val appContext = context.applicationContext
+    private val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    private val systemVolumeObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean, uri: Uri?) {
+            applySystemVolumeChange()
+        }
+    }
     private var listener: AudioSink.Listener? = null
     private var nativeHandle: Long = 0L
     private var usingNative = false
@@ -93,6 +106,13 @@ internal class UsbExclusiveAudioSink(
     private var lastSuppressedFallbackStopRequestAtMs = 0L
     private var lastNativeWriteFailureLogAtMs = 0L
     private var lastReleaseBarrierHoldLogAtMs = 0L
+    private var systemVolumeObserverRegistered = false
+    private var lastReportedNativeVolume = Float.NaN
+    private var lastSystemVolumeReadFailureLogAtMs = 0L
+
+    init {
+        registerSystemVolumeObserver()
+    }
 
     override fun setListener(listener: AudioSink.Listener) {
         this.listener = listener
@@ -500,12 +520,12 @@ internal class UsbExclusiveAudioSink(
 
     override fun setVolume(volume: Float) {
         this.volume = volume.coerceIn(0f, 1f)
-        val effectiveVolume = effectiveNativeVolume()
-        UsbExclusiveAudioPathTracker.updateVolume(effectiveVolume)
         if (!usingNative) {
+            lastReportedNativeVolume = Float.NaN
+            UsbExclusiveAudioPathTracker.updateVolume(this.volume)
             fallbackSink.setVolume(this.volume)
         } else {
-            UsbExclusiveSessionController.setPlayerVolume(nativeHandle, effectiveVolume)
+            applyEffectiveNativeVolume()
         }
     }
 
@@ -562,6 +582,7 @@ internal class UsbExclusiveAudioSink(
 
     override fun release() {
         clearSystemFallbackPlaybackSuppression()
+        unregisterSystemVolumeObserver()
         closeNative()
         directScratch = null
         fallbackConfigured = false
@@ -631,7 +652,7 @@ internal class UsbExclusiveAudioSink(
         if (PlayerManager.shouldStartUsbExclusiveTransportFromSink()) {
             playing = true
         }
-        UsbExclusiveSessionController.setPlayerVolume(nativeHandle, effectiveNativeVolume())
+        applyEffectiveNativeVolume()
         AudioReactive.teeSink.flush(sampleRate, channelCount, pcmEncoding)
         UsbExclusiveAudioPathTracker.updateConfigured(
             usingNative = true,
@@ -813,13 +834,15 @@ internal class UsbExclusiveAudioSink(
 
     private fun writeNative(buffer: ByteBuffer, size: Int): Int {
         if (nativeHandle == 0L || size <= 0) return 0
+        val nativeVolume = effectiveNativeVolume()
+        publishNativeVolume(nativeVolume)
         if (buffer.isDirect) {
             return UsbExclusiveSessionController.writePlayerPcm(
                 handle = nativeHandle,
                 buffer = buffer,
                 offset = buffer.position(),
                 size = size,
-                volume = effectiveNativeVolume()
+                volume = nativeVolume
             )
         }
 
@@ -834,7 +857,7 @@ internal class UsbExclusiveAudioSink(
             buffer = scratch,
             offset = 0,
             size = size,
-            volume = effectiveNativeVolume()
+            volume = nativeVolume
         )
     }
 
@@ -875,9 +898,80 @@ internal class UsbExclusiveAudioSink(
     }
 
     private fun effectiveNativeVolume(): Float {
-        val effectiveVolume = volume.coerceIn(0f, 1f)
-        UsbExclusiveAudioPathTracker.updateVolume(effectiveVolume)
+        return usbExclusiveEffectiveNativeVolume(
+            playerVolume = volume,
+            systemVolumeFraction = currentMusicVolumeFraction()
+        )
+    }
+
+    private fun applyEffectiveNativeVolume(): Float {
+        val effectiveVolume = effectiveNativeVolume()
+        publishNativeVolume(effectiveVolume)
+        if (usingNative && nativeHandle != 0L) {
+            UsbExclusiveSessionController.setPlayerVolume(nativeHandle, effectiveVolume)
+        }
         return effectiveVolume
+    }
+
+    private fun publishNativeVolume(effectiveVolume: Float) {
+        if (
+            lastReportedNativeVolume.isNaN() ||
+            abs(lastReportedNativeVolume - effectiveVolume) > PARAMETER_EPSILON
+        ) {
+            lastReportedNativeVolume = effectiveVolume
+            UsbExclusiveAudioPathTracker.updateVolume(effectiveVolume)
+        }
+    }
+
+    private fun currentMusicVolumeFraction(): Float {
+        val manager = audioManager ?: return 1f
+        return runCatching {
+            val minVolume = manager.getStreamMinVolume(AudioManager.STREAM_MUSIC)
+            val maxVolume = manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            val currentVolume = manager.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val range = maxVolume - minVolume
+            if (range <= 0) {
+                1f
+            } else {
+                ((currentVolume - minVolume).toFloat() / range.toFloat()).coerceIn(0f, 1f)
+            }
+        }.getOrElse { error ->
+            val nowMs = SystemClock.elapsedRealtime()
+            if (nowMs - lastSystemVolumeReadFailureLogAtMs >= 5_000L) {
+                lastSystemVolumeReadFailureLogAtMs = nowMs
+                NPLogger.w("NERI-UsbExclusive", "failed to read system media volume", error)
+            }
+            1f
+        }
+    }
+
+    private fun registerSystemVolumeObserver() {
+        if (systemVolumeObserverRegistered) return
+        runCatching {
+            appContext.contentResolver.registerContentObserver(
+                Settings.System.CONTENT_URI,
+                true,
+                systemVolumeObserver
+            )
+            systemVolumeObserverRegistered = true
+        }.onFailure { error ->
+            NPLogger.w("NERI-UsbExclusive", "system volume observer registration failed", error)
+        }
+    }
+
+    private fun unregisterSystemVolumeObserver() {
+        if (!systemVolumeObserverRegistered) return
+        runCatching {
+            appContext.contentResolver.unregisterContentObserver(systemVolumeObserver)
+        }.onFailure { error ->
+            NPLogger.w("NERI-UsbExclusive", "system volume observer unregistration failed", error)
+        }
+        systemVolumeObserverRegistered = false
+    }
+
+    private fun applySystemVolumeChange() {
+        if (!usingNative || nativeHandle == 0L) return
+        applyEffectiveNativeVolume()
     }
 
     private fun currentNativePositionUs(): Long {
@@ -953,8 +1047,12 @@ internal class UsbExclusiveAudioSink(
     private fun retainNativeSessionForReset(): Boolean {
         if (!shouldRetainNativeSessionForReset()) return false
         val retainedHandle = nativeHandle
-        val flushed = if (nativeTransportStarted || nativeHasQueuedPcm) {
+        val hadActiveNativePcm = nativeTransportStarted || nativeHasQueuedPcm
+        val flushed = if (hadActiveNativePcm) {
             pauseNativeTransport()
+            UsbExclusiveSessionController.requireFreshPlayerPcmOpen(
+                reason = "sink_reset_after_active_stream"
+            )
             shouldRetainNativeSessionForReset(retainedHandle)
         } else {
             UsbExclusiveSessionController.flushPlayerPcm(retainedHandle)
@@ -1379,9 +1477,9 @@ internal class UsbExclusiveAudioSink(
     }
 
     private fun isFatalNativeRuntime(runtimeReport: String): Boolean {
+        if (runtimeReport.isBenignPcmBackpressure()) return false
         if (runtimeReport.contains("transportFailed=true")) return true
-        val lastError = runtimeReport.substringAfter("lastError=", missingDelimiterValue = "none")
-            .substringBefore(' ')
+        val lastError = runtimeReport.lastNativeRuntimeError()
         return lastError != "none" && lastError.isNotBlank()
     }
 
@@ -1391,6 +1489,13 @@ internal class UsbExclusiveAudioSink(
         val running = runtimeReport.booleanField("running")
         val transportFailed = runtimeReport.booleanField("transportFailed")
         return running == false && transportFailed != true && runtimeReport.isPcmQueueFull()
+    }
+
+    private fun String.isBenignPcmBackpressure(): Boolean {
+        if (!contains("source=player_pcm")) return false
+        if (!isPcmQueueFull()) return false
+        if (booleanField("transportFailed") == true) return false
+        return lastNativeRuntimeError() == "none"
     }
 
     private fun flushIdleNativeQueueAfterStalledWrite(runtimeReport: String) {
@@ -1446,6 +1551,11 @@ internal class UsbExclusiveAudioSink(
             .toLongOrNull()
             ?: return false
         return capacity > 0L && level >= capacity
+    }
+
+    private fun String.lastNativeRuntimeError(): String {
+        return substringAfter("lastError=", missingDelimiterValue = "none")
+            .substringBefore(' ')
     }
 
     private fun shouldRetryNativeFailure(reason: String): Boolean {
