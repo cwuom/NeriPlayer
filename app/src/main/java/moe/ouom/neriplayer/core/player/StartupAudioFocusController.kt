@@ -6,101 +6,43 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
+import moe.ouom.neriplayer.core.player.usb.UsbExclusiveSessionController
 import moe.ouom.neriplayer.util.NPLogger
 
 internal object StartupAudioFocusController {
     private const val TAG = "NERI-StartupFocus"
-    private const val USB_EXCLUSIVE_RECLAIM_FOCUS_DELAY_MS = 120L
-    private const val USB_EXCLUSIVE_RECLAIM_FOCUS_CONFIRM_DELAY_MS = 520L
-    private const val USB_EXCLUSIVE_SUSTAINED_LOSS_PAUSE_MS = 2_400L
-
     private val lock = Any()
-    private val mainHandler = Handler(Looper.getMainLooper())
     private var audioManager: AudioManager? = null
     private var focusRequest: AudioFocusRequest? = null
-    private var focusGain = AudioManager.AUDIOFOCUS_GAIN
     private var hasFocus = false
     private var usbExclusiveGuardEnabled = false
-
-    private val focusChangeListener = AudioManager.OnAudioFocusChangeListener { change ->
-        val action = synchronized(lock) {
-            when (change) {
-                AudioManager.AUDIOFOCUS_GAIN -> hasFocus = true
-                AudioManager.AUDIOFOCUS_LOSS,
-                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> hasFocus = false
-            }
-            when {
-                !usbExclusiveGuardEnabled || change == AudioManager.AUDIOFOCUS_GAIN ->
-                    FocusLossAction.None
-                change == AudioManager.AUDIOFOCUS_LOSS &&
-                    PlayerManager.isRecentUsbExclusiveFocusDisruption() ->
-                    FocusLossAction.ReclaimThenConfirmExternalAudio
-                change == AudioManager.AUDIOFOCUS_LOSS ->
-                    FocusLossAction.PauseForExternalAudio
-                else ->
-                    FocusLossAction.ReclaimShortSystemSound
-            }
-        }
-        NPLogger.d(TAG, "focus change=$change hasFocus=${isFocused()}")
-        when (action) {
-            FocusLossAction.None -> {
-                if (change == AudioManager.AUDIOFOCUS_GAIN) {
-                    mainHandler.removeCallbacksAndMessages(RECLAIM_FOCUS_TOKEN)
-                }
-            }
-            FocusLossAction.ReclaimShortSystemSound,
-            FocusLossAction.ReclaimThenConfirmExternalAudio -> {
-                PlayerManager.markUsbExclusiveFocusDisrupted(change)
-                mainHandler.removeCallbacksAndMessages(RECLAIM_FOCUS_TOKEN)
-                mainHandler.postDelayed(
-                    { requestWithStoredManager("usb_exclusive_focus_loss:$change:immediate") },
-                    RECLAIM_FOCUS_TOKEN,
-                    0L
-                )
-                mainHandler.postDelayed(
-                    { requestWithStoredManager("usb_exclusive_focus_loss:$change") },
-                    RECLAIM_FOCUS_TOKEN,
-                    USB_EXCLUSIVE_RECLAIM_FOCUS_DELAY_MS
-                )
-                mainHandler.postDelayed(
-                    { requestWithStoredManager("usb_exclusive_focus_loss:$change:confirm") },
-                    RECLAIM_FOCUS_TOKEN,
-                    USB_EXCLUSIVE_RECLAIM_FOCUS_CONFIRM_DELAY_MS
-                )
-                if (action == FocusLossAction.ReclaimThenConfirmExternalAudio) {
-                    mainHandler.postDelayed(
-                        { pauseForSustainedUsbExclusiveFocusLoss(change) },
-                        RECLAIM_FOCUS_TOKEN,
-                        USB_EXCLUSIVE_SUSTAINED_LOSS_PAUSE_MS
-                    )
-                }
-            }
-            FocusLossAction.PauseForExternalAudio -> {
-                mainHandler.removeCallbacksAndMessages(RECLAIM_FOCUS_TOKEN)
-                PlayerManager.pauseForUsbExclusiveFocusLoss("audio_focus_loss")
-            }
-        }
-    }
+    private var requestedFocusGain = 0
+    private var focusLeaseGeneration = 0L
 
     fun updateForUsbExclusivePlayback(
         context: Context,
         enabled: Boolean,
         reason: String
     ) {
-        val hadGuard = synchronized(lock) {
-            val wasEnabled = usbExclusiveGuardEnabled
-            usbExclusiveGuardEnabled = enabled
-            wasEnabled
-        }
+        val hadGuard = synchronized(lock) { usbExclusiveGuardEnabled }
         if (enabled) {
             request(
                 context = context,
-                reason = "usb_exclusive:$reason",
-                requestedFocusGain = AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE
+                reason = "usb_exclusive_guard:$reason",
+                focusGain = AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,
+                usbExclusiveGuard = true
+            )
+            UsbExclusiveSessionController.setPlayerFocusSuppressed(
+                suppressed = false,
+                reason = "usb_exclusive_guard:$reason"
+            )
+            NPLogger.d(
+                TAG,
+                "USB exclusive holds transient exclusive audio focus reason=$reason " +
+                    "package=${context.applicationContext.packageName}"
             )
         } else if (hadGuard) {
-            releaseInternal("usb_exclusive_disabled:$reason", force = true)
+            releaseInternal("usb_exclusive_disabled:$reason", clearUsbGuard = true)
         }
     }
 
@@ -113,15 +55,14 @@ internal object StartupAudioFocusController {
         transportActive: Boolean,
         reason: String
     ) {
-        val shouldUseUsbExclusiveGuard = enabled &&
-            usbExclusivePlayback &&
+        val shouldUseUsbExclusiveGuard = usbExclusivePlayback &&
             usbExclusiveNativeActive &&
             !allowMixedPlayback
         if (shouldUseUsbExclusiveGuard) {
             updateForUsbExclusivePlayback(
                 context = context,
                 enabled = true,
-                reason = reason
+                reason = "$reason:native=$usbExclusiveNativeActive"
             )
             return
         }
@@ -132,142 +73,123 @@ internal object StartupAudioFocusController {
                 reason = reason
             )
         }
-        val releaseReason = when {
-            !enabled -> "disabled:$reason"
-            allowMixedPlayback -> "mixed_playback:$reason"
-            !usbExclusivePlayback -> "usb_exclusive_off:$reason"
-            !usbExclusiveNativeActive -> "usb_exclusive_not_native:$reason"
-            transportActive -> "transport_active:$reason"
-            else -> "usb_exclusive_guard_idle:$reason"
-        }
         if (enabled && !allowMixedPlayback && !transportActive) {
             request(
                 context = context,
                 reason = reason,
-                requestedFocusGain = AudioManager.AUDIOFOCUS_GAIN
+                focusGain = AudioManager.AUDIOFOCUS_GAIN,
+                usbExclusiveGuard = false
             )
         } else {
-            release(releaseReason)
+            release("focus_not_owned:$reason:transport=$transportActive")
         }
     }
 
     fun release(reason: String) {
-        releaseInternal(reason, force = reason == "player_release")
+        releaseInternal(reason, clearUsbGuard = true)
     }
 
     fun forceRelease(reason: String) {
-        releaseInternal(reason, force = true)
-    }
-
-    private fun releaseInternal(reason: String, force: Boolean) {
-        val manager: AudioManager
-        val request: AudioFocusRequest
-        synchronized(lock) {
-            if (!force && usbExclusiveGuardEnabled) {
-                NPLogger.d(TAG, "release skipped for USB exclusive guard reason=$reason")
-                return
-            }
-            if (force) {
-                usbExclusiveGuardEnabled = false
-                mainHandler.removeCallbacksAndMessages(RECLAIM_FOCUS_TOKEN)
-            }
-            manager = audioManager ?: return
-            request = focusRequest ?: return
-            hasFocus = false
-            focusRequest = null
-            audioManager = null
-        }
-
-        val result = manager.abandonAudioFocusRequest(request)
-        NPLogger.d(TAG, "release reason=$reason result=$result")
+        release(reason)
     }
 
     private fun request(
         context: Context,
         reason: String,
-        requestedFocusGain: Int
+        focusGain: Int,
+        usbExclusiveGuard: Boolean
     ) {
-        if (isFocused(requestedFocusGain)) {
-            NPLogger.d(TAG, "request skipped reason=$reason alreadyFocused=true gain=$requestedFocusGain")
-            return
+        val matchingLeaseExists = synchronized(lock) {
+            focusRequest != null &&
+                requestedFocusGain == focusGain &&
+                usbExclusiveGuardEnabled == usbExclusiveGuard
         }
-        val appContext = context.applicationContext
-        val manager: AudioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val previousLease = synchronized(lock) {
-            if (focusRequest != null && focusGain != requestedFocusGain) {
-                val previousManager = audioManager
-                val previousRequest = focusRequest
-                hasFocus = false
-                focusRequest = null
-                audioManager = null
-                if (previousManager != null && previousRequest != null) {
-                    FocusLease(previousManager, previousRequest)
-                } else {
-                    null
-                }
+        if (matchingLeaseExists) return
+        releaseInternal("replace_focus:$reason", clearUsbGuard = false)
+        val manager = context.applicationContext
+            .getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val lease = synchronized(lock) {
+            usbExclusiveGuardEnabled = usbExclusiveGuard
+            requestedFocusGain = focusGain
+            focusLeaseGeneration += 1L
+            val generation = focusLeaseGeneration
+            val request = buildFocusRequest(
+                generation = generation,
+                focusGain = focusGain,
+                usbExclusiveGuard = usbExclusiveGuard
+            )
+            audioManager = manager
+            focusRequest = request
+            generation to request
+        }
+        val (generation, request) = lease
+        val result = manager.requestAudioFocus(request)
+        val stillCurrent = synchronized(lock) {
+            if (focusLeaseGeneration != generation || focusRequest !== request) {
+                false
             } else {
-                null
+                hasFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+                true
             }
         }
-        previousLease?.manager?.abandonAudioFocusRequest(previousLease.request)
-        val request = synchronized(lock) {
-            audioManager = manager
-            focusGain = requestedFocusGain
-            focusRequest ?: buildFocusRequest(requestedFocusGain).also { focusRequest = it }
+        if (!stillCurrent && result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+            runCatching { manager.abandonAudioFocusRequest(request) }
         }
-
-        val result = manager.requestAudioFocus(request)
-        synchronized(lock) {
-            hasFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        }
-        NPLogger.d(
-            TAG,
-            "request reason=$reason gain=$requestedFocusGain result=$result hasFocus=${isFocused()}"
-        )
+        NPLogger.d(TAG, "request reason=$reason result=$result owned=${isFocused()}")
     }
 
-    private fun requestWithStoredManager(reason: String) {
-        val manager: AudioManager
-        val request: AudioFocusRequest
-        synchronized(lock) {
-            if (!usbExclusiveGuardEnabled) return
-            manager = audioManager ?: return
-            request = focusRequest ?: return
+    private fun releaseInternal(reason: String, clearUsbGuard: Boolean) {
+        val lease = synchronized(lock) {
+            if (clearUsbGuard) {
+                usbExclusiveGuardEnabled = false
+            }
+            focusLeaseGeneration += 1L
+            hasFocus = false
+            requestedFocusGain = 0
+            val manager = audioManager
+            val request = focusRequest
+            audioManager = null
+            focusRequest = null
+            if (manager != null && request != null) manager to request else null
         }
-        val result = manager.requestAudioFocus(request)
-        synchronized(lock) {
-            hasFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        UsbExclusiveSessionController.setPlayerFocusSuppressed(false, reason)
+        val result = lease?.let { (manager, request) ->
+            manager.abandonAudioFocusRequest(request)
         }
-        NPLogger.d(
-            TAG,
-            "request reason=$reason gain=$focusGain result=$result hasFocus=${isFocused()}"
-        )
+        NPLogger.d(TAG, "release reason=$reason result=${result ?: "not_owned"}")
     }
 
-    private fun pauseForSustainedUsbExclusiveFocusLoss(change: Int) {
-        val shouldPause = synchronized(lock) {
-            usbExclusiveGuardEnabled && !hasFocus
-        }
-        if (!shouldPause) return
-        if (PlayerManager.usbExclusiveAppInForeground) {
-            requestWithStoredManager("usb_exclusive_focus_loss:$change:foreground_confirm")
-            return
-        }
-        NPLogger.w(TAG, "sustained USB exclusive focus loss, pause for external audio change=$change")
-        PlayerManager.pauseForUsbExclusiveFocusLoss("sustained_audio_focus_loss:$change")
-    }
-
-    private fun buildFocusRequest(requestedFocusGain: Int): AudioFocusRequest {
+    private fun buildFocusRequest(
+        generation: Long,
+        focusGain: Int,
+        usbExclusiveGuard: Boolean
+    ): AudioFocusRequest {
         val attributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_MEDIA)
             .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
             .build()
-        return AudioFocusRequest.Builder(requestedFocusGain)
+        val listener = AudioManager.OnAudioFocusChangeListener listener@{ change ->
+            val focusOwned = synchronized(lock) {
+                if (focusLeaseGeneration != generation || focusRequest == null) {
+                    return@listener
+                }
+                hasFocus = change == AudioManager.AUDIOFOCUS_GAIN
+                hasFocus
+            }
+            if (usbExclusiveGuard) {
+                UsbExclusiveSessionController.setPlayerFocusSuppressed(
+                    suppressed = false,
+                    reason = "audio_focus_change:$change"
+                )
+            }
+            NPLogger.d(TAG, "focus change=$change owned=$focusOwned generation=$generation")
+        }
+        return AudioFocusRequest.Builder(focusGain)
             .setAudioAttributes(attributes)
             .setAcceptsDelayedFocusGain(false)
-            .setWillPauseWhenDucked(false)
+            .setWillPauseWhenDucked(!usbExclusiveGuard)
             .setOnAudioFocusChangeListener(
-                focusChangeListener,
+                listener,
                 Handler(Looper.getMainLooper())
             )
             .build()
@@ -279,21 +201,4 @@ internal object StartupAudioFocusController {
         usbExclusiveGuardEnabled
     }
 
-    private fun isFocused(requestedFocusGain: Int): Boolean = synchronized(lock) {
-        hasFocus && focusGain == requestedFocusGain
-    }
-
-    private data class FocusLease(
-        val manager: AudioManager,
-        val request: AudioFocusRequest
-    )
-
-    private enum class FocusLossAction {
-        None,
-        ReclaimShortSystemSound,
-        ReclaimThenConfirmExternalAudio,
-        PauseForExternalAudio
-    }
-
-    private object RECLAIM_FOCUS_TOKEN
 }

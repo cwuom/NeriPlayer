@@ -34,6 +34,7 @@ import moe.ouom.neriplayer.core.player.policy.resolveManualResumePlaybackDecisio
 import moe.ouom.neriplayer.core.player.policy.shouldApplyResolvedMedia
 import moe.ouom.neriplayer.core.player.policy.shouldApplyResolvedMediaSideEffects
 import moe.ouom.neriplayer.core.player.policy.shouldPausePlaybackWhenToggling
+import moe.ouom.neriplayer.core.player.policy.shouldRunPlaybackProgressUpdates
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
@@ -143,12 +144,17 @@ internal fun PlayerManager.pauseForAudioRouteLoss(reason: String) {
 internal fun PlayerManager.preparePlayerForManagedStart(plan: PlaybackStartPlan) {
     if (!isPlayerInitialized()) return
     cancelVolumeFade()
+    val effectivePlan = if (usbExclusivePlaybackEnabled) {
+        plan.copy(useFadeIn = false, fadeDurationMs = 0L, initialVolume = 1f)
+    } else {
+        plan
+    }
     NPLogger.d(
         "NERI-PlayerManager",
-        "preparePlayerForManagedStart: useFadeIn=${plan.useFadeIn}, fadeDurationMs=${plan.fadeDurationMs}, initialVolume=${plan.initialVolume}, currentSong=${_currentSongFlow.value?.name}"
+        "preparePlayerForManagedStart: useFadeIn=${effectivePlan.useFadeIn}, fadeDurationMs=${effectivePlan.fadeDurationMs}, initialVolume=${effectivePlan.initialVolume}, currentSong=${_currentSongFlow.value?.name}"
     )
     player.playWhenReady = false
-    player.volume = plan.initialVolume
+    player.volume = effectivePlan.initialVolume
 }
 
 internal suspend fun PlayerManager.fadeOutCurrentPlaybackIfNeeded(
@@ -207,27 +213,35 @@ internal suspend fun PlayerManager.fadeOutCurrentPlaybackIfNeeded(
 internal fun PlayerManager.startPlayerPlaybackWithFade(plan: PlaybackStartPlan) {
     cancelVolumeFade()
     StartupAudioFocusController.release("playback_start")
+    val effectivePlan = if (usbExclusivePlaybackEnabled) {
+        plan.copy(useFadeIn = false, fadeDurationMs = 0L, initialVolume = 1f)
+    } else {
+        plan
+    }
     NPLogger.d(
         "NERI-PlayerManager",
-        "startPlayerPlaybackWithFade: useFadeIn=${plan.useFadeIn}, fadeDurationMs=${plan.fadeDurationMs}, initialVolume=${plan.initialVolume}, currentSong=${_currentSongFlow.value?.name}"
+        "startPlayerPlaybackWithFade: useFadeIn=${effectivePlan.useFadeIn}, fadeDurationMs=${effectivePlan.fadeDurationMs}, initialVolume=${effectivePlan.initialVolume}, currentSong=${_currentSongFlow.value?.name}"
     )
     runPlayerActionOnMainThread {
         if (!isPlayerInitialized()) return@runPlayerActionOnMainThread
+        if (usbExclusivePlaybackEnabled && !isUsbExclusiveNativePlaybackStable()) {
+            markUsbExclusivePlaybackPreparing(true, "playback_start")
+        }
         if (!prepareUsbExclusiveRouteForManualPlayback("playback_start")) {
             return@runPlayerActionOnMainThread
         }
         applyAudioFocusPolicyOnMainThread()
-        player.volume = plan.initialVolume
+        player.volume = effectivePlan.initialVolume
         player.playWhenReady = true
         player.play()
     }
-    if (!plan.useFadeIn) {
+    if (!effectivePlan.useFadeIn) {
         return
     }
 
-    val steps = fadeStepsFor(plan.fadeDurationMs)
+    val steps = fadeStepsFor(effectivePlan.fadeDurationMs)
     if (steps <= 0) return
-    val stepDelay = (plan.fadeDurationMs / steps).coerceAtLeast(1L)
+    val stepDelay = (effectivePlan.fadeDurationMs / steps).coerceAtLeast(1L)
     volumeFadeJob = mainScope.launch {
         repeat(steps) { step ->
             delay(stepDelay)
@@ -620,6 +634,7 @@ internal fun PlayerManager.playAtIndex(
                     player.prepare()
                     if (resumePlaybackRequested) {
                         startPlayerPlaybackWithFade(startPlan)
+                        startProgressUpdates()
                     } else {
                         player.playWhenReady = false
                         player.pause()
@@ -944,7 +959,8 @@ internal fun PlayerManager.pauseImpl(
 ) {
     ensureInitialized()
     if (!initialized) return
-    if (shouldBlockLocalRoomControl(commandSource)) return
+    val internalUsbTransition = debugReason.startsWith("usb_toggle_")
+    if (!internalUsbTransition && shouldBlockLocalRoomControl(commandSource)) return
     if (isPendingMediaLoadActive()) {
         val action = resolvePendingPauseAction(
             pendingLoadActive = true,
@@ -1345,7 +1361,17 @@ internal fun PlayerManager.setShuffleImpl(enabled: Boolean) {
 }
 
 internal fun PlayerManager.startProgressUpdates() {
-    stopProgressUpdates()
+    if (!shouldRunPlaybackProgressUpdates(
+            initialized = initialized,
+            pendingMediaLoad = isPendingMediaLoadActive(),
+            hasMediaItem = player.currentMediaItem != null,
+            isPlaying = player.isPlaying,
+            playWhenReady = player.playWhenReady
+        )
+    ) {
+        return
+    }
+    if (progressJob?.isActive == true) return
     syncPlaybackStatsPlayingState(
         playing = true,
         reason = "progress_updates_start"
@@ -1356,12 +1382,27 @@ internal fun PlayerManager.startProgressUpdates() {
     )
     progressJob = mainScope.launch {
         while (isActive) {
-            val positionMs = resolveDisplayedPlaybackPosition(
-                player.currentPosition.coerceAtLeast(0L)
-            )
+            val positionMs = runCatching {
+                resolveDisplayedPlaybackPosition(player.currentPosition.coerceAtLeast(0L))
+            }.onFailure { error ->
+                NPLogger.w(
+                    "NERI-PlayerManager",
+                    "progress update read failed for ${_currentSongFlow.value?.name}",
+                    error
+                )
+            }.getOrNull()
+            if (positionMs == null) {
+                delay(PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS)
+                continue
+            }
             _playbackPositionMs.value = positionMs
-            val lyriconPositionMs = if (player.duration > 0L) {
-                (positionMs + PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS).coerceAtMost(player.duration)
+            val durationMs = runCatching { player.duration.coerceAtLeast(0L) }
+                .getOrDefault(_playbackDurationMs.value)
+            if (durationMs > 0L) {
+                _playbackDurationMs.value = durationMs
+            }
+            val lyriconPositionMs = if (durationMs > 0L) {
+                (positionMs + PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS).coerceAtMost(durationMs)
             } else {
                 positionMs + PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS
             }

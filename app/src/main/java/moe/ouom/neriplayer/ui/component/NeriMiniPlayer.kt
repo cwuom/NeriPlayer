@@ -96,6 +96,7 @@ fun NeriMiniPlayer(
     coverUrl: String?,
     isPlaying: Boolean,
     modifier: Modifier = Modifier,
+    playPauseEnabled: Boolean = true,
     onPlayPause: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
@@ -274,7 +275,10 @@ fun NeriMiniPlayer(
                 )
             }
 
-            HapticIconButton(onClick = { onPlayPause() }) {
+            HapticIconButton(
+                onClick = { onPlayPause() },
+                enabled = playPauseEnabled
+            ) {
                 AnimatedContent(
                     targetState = isPlaying,
                     label = "mini_play_pause_icon",

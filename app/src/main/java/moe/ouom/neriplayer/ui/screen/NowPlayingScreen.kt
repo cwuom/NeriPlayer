@@ -401,9 +401,10 @@ fun NowPlayingScreen(
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsState()
+    val usbPlaybackPreparing by PlayerManager.usbExclusivePlaybackPreparingFlow.collectAsState()
     val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsState()
     val repeatMode by PlayerManager.repeatModeFlow.collectAsState()
-    val durationMs = currentSong?.durationMs ?: 0L
+    val durationMs by PlayerManager.playbackDurationFlow.collectAsState()
     val sleepTimerState by PlayerManager.sleepTimerManager.timerState.collectAsState()
     val currentPlaybackAudioInfo by PlayerManager.currentPlaybackAudioInfoFlow.collectAsState()
     val settingsRepo = remember { AppContainer.settingsRepo }
@@ -1307,6 +1308,7 @@ fun NowPlayingScreen(
 
                         HapticFilledIconButton(
                             onClick = { PlayerManager.togglePlayPause() },
+                            enabled = !usbPlaybackPreparing,
                             modifier = Modifier
                                 .sharedElement(
                                     rememberSharedContentState(key = "play_button"),

@@ -12,6 +12,9 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.player.StartupAudioFocusController
+import moe.ouom.neriplayer.core.player.UsbExclusiveSystemSoundGuard
+import moe.ouom.neriplayer.core.player.usb.UsbExclusiveSessionController
 import java.io.File
 import java.io.FileOutputStream
 import java.io.PrintWriter
@@ -85,6 +88,7 @@ object ExceptionHandler {
         // 设置全局未捕获异常处理器
         previousHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            releaseUsbExclusiveRuntimeBeforeCrash(thread.name)
             runCatching {
                 handleException(thread.name, throwable, isUncaught = true)
             }.onFailure { loggingError ->
@@ -98,6 +102,18 @@ object ExceptionHandler {
         crashLogFile?.let {
             NPLogger.i("ExceptionHandler", "Crash logs will be saved to: ${it.absolutePath}")
         }
+    }
+
+    private fun releaseUsbExclusiveRuntimeBeforeCrash(source: String) {
+        val reason = "uncaught_exception:$source"
+        runCatching { UsbExclusiveSessionController.emergencyShutdown(reason) }
+            .onFailure { NPLogger.e("ExceptionHandler", "USB emergency shutdown failed", it) }
+        applicationRef?.get()?.let { application ->
+            runCatching { UsbExclusiveSystemSoundGuard.forceRelease(application, reason) }
+                .onFailure { NPLogger.e("ExceptionHandler", "system audio restore failed", it) }
+        }
+        runCatching { StartupAudioFocusController.forceRelease(reason) }
+            .onFailure { NPLogger.e("ExceptionHandler", "audio focus release failed", it) }
     }
 
     /**

@@ -49,6 +49,12 @@ struct PcmPipelineSnapshot {
 class PcmPipeline final {
 public:
     bool configure(const PcmPipelineConfig& config, std::string* error);
+    bool resizeRingDuration(
+        int ringDurationMs,
+        int transferBytes,
+        int transferCount,
+        std::string* error
+    );
     size_t write(const uint8_t* input, size_t inputBytes, std::string* error);
     size_t fill(uint8_t* output, size_t bytes, bool playbackEnabled);
 
@@ -66,6 +72,7 @@ private:
     size_t readRingLocked(uint8_t* output, size_t bytes);
     void applyGain(uint8_t* output, size_t bytes);
 
+    mutable std::mutex writeLock_;
     mutable std::mutex lock_;
     PcmOutputFormat outputFormat_;
     PcmInputFormat inputFormat_;
@@ -76,6 +83,7 @@ private:
     double resamplePosition_ = 0.0;
     bool hasPreviousInputFrame_ = false;
     std::vector<float> previousInputFrame_;
+    std::vector<uint8_t> conversionBuffer_;
     int64_t inputBytes_ = 0;
     int64_t outputBytes_ = 0;
     int64_t droppedBytes_ = 0;

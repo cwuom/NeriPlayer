@@ -4,17 +4,17 @@ import kotlin.math.abs
 
 const val DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_MODE = "follow_source"
 const val DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_MODE = "auto"
-const val DEFAULT_USB_EXCLUSIVE_BUFFER_PROFILE = "balanced"
+const val DEFAULT_USB_EXCLUSIVE_BUFFER_PROFILE = "stable"
 const val DEFAULT_USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY = "closest_supported"
 const val DEFAULT_USB_EXCLUSIVE_DEVICE_KEY = "auto"
 const val DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_COMPATIBILITY = true
 const val DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_COMPATIBILITY = true
 const val DEFAULT_USB_EXCLUSIVE_CHANNEL_COMPATIBILITY = true
-const val DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS = 250
-const val DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS = 1500
-const val MIN_USB_EXCLUSIVE_BUFFER_MS = 80
-const val MAX_USB_EXCLUSIVE_BUFFER_MS = 3000
-const val USB_EXCLUSIVE_BUFFER_STEP_MS = 50
+const val DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS = 5000
+const val DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS = 12000
+const val MIN_USB_EXCLUSIVE_BUFFER_MS = 3000
+const val MAX_USB_EXCLUSIVE_BUFFER_MS = 12000
+const val USB_EXCLUSIVE_BUFFER_STEP_MS = 500
 
 enum class UsbExclusiveSampleRateMode(
     val storageValue: String,
@@ -64,14 +64,14 @@ enum class UsbExclusiveBufferProfile(
     val storageValue: String,
     val bufferDurationMs: Int
 ) {
-    LOW_LATENCY("low_latency", 80),
-    BALANCED("balanced", 250),
-    STABLE("stable", 750);
+    LOW_LATENCY("low_latency", 3000),
+    BALANCED("balanced", 5000),
+    STABLE("stable", 12000);
 
     companion object {
         fun fromStorageValue(value: String?): UsbExclusiveBufferProfile {
             return entries.findStoredValue(value, UsbExclusiveBufferProfile::storageValue)
-                ?: BALANCED
+                ?: STABLE
         }
     }
 }
@@ -94,7 +94,7 @@ data class UsbExclusivePreferences(
     val selectedDeviceKey: String = DEFAULT_USB_EXCLUSIVE_DEVICE_KEY,
     val sampleRateMode: UsbExclusiveSampleRateMode = UsbExclusiveSampleRateMode.FOLLOW_SOURCE,
     val bitDepthMode: UsbExclusiveBitDepthMode = UsbExclusiveBitDepthMode.AUTO,
-    val bufferProfile: UsbExclusiveBufferProfile = UsbExclusiveBufferProfile.BALANCED,
+    val bufferProfile: UsbExclusiveBufferProfile = UsbExclusiveBufferProfile.STABLE,
     val unsupportedFormatPolicy: UsbExclusiveUnsupportedFormatPolicy =
         UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED,
     val sampleRateCompatibilityEnabled: Boolean =
@@ -207,6 +207,14 @@ data class UsbExclusivePreferences(
             backgroundBufferMs: Int? = null
         ): UsbExclusivePreferences {
             val parsedBufferProfile = UsbExclusiveBufferProfile.fromStorageValue(bufferProfile)
+            val hasValidStoredBufferProfile = bufferProfile
+                ?.trim()
+                ?.let { storedValue ->
+                    UsbExclusiveBufferProfile.entries.any { profile ->
+                        profile.storageValue.equals(storedValue, ignoreCase = true) ||
+                            profile.name.equals(storedValue, ignoreCase = true)
+                    }
+                } == true
             val parsed = UsbExclusivePreferences(
                 selectedDeviceKey = normalizeUsbExclusiveDeviceKey(selectedDeviceKey),
                 sampleRateMode = UsbExclusiveSampleRateMode.fromStorageValue(sampleRateMode),
@@ -222,7 +230,11 @@ data class UsbExclusivePreferences(
                 channelCompatibilityEnabled = channelCompatibilityEnabled
                     ?: DEFAULT_USB_EXCLUSIVE_CHANNEL_COMPATIBILITY,
                 foregroundBufferMs = normalizeUsbExclusiveBufferMs(
-                    foregroundBufferMs ?: parsedBufferProfile.bufferDurationMs
+                    foregroundBufferMs ?: if (hasValidStoredBufferProfile) {
+                        parsedBufferProfile.bufferDurationMs
+                    } else {
+                        DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS
+                    }
                 ),
                 backgroundBufferMs = normalizeUsbExclusiveBufferMs(
                     backgroundBufferMs ?: DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS

@@ -865,6 +865,16 @@ private fun NeriAppContent(
     fun updateStartupAudioFocus(reason: String) {
         if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return
         if (!PlayerManager.isPlayerInitialized()) return
+        if (
+            reason == "lifecycle_resume" &&
+            PlayerManager.isUsbExclusiveNativePlaybackStable()
+        ) {
+            NPLogger.d(
+                "NERI-App",
+                "Skipping startup audio focus refresh during stable USB native playback"
+            )
+            return
+        }
         val transportActive = runCatching { PlayerManager.isTransportActive() }
             .getOrDefault(false)
         val usbExclusiveNativeActive = PlayerManager.shouldUseUsbExclusiveFocusGuard()
@@ -1177,8 +1187,10 @@ private fun NeriAppContent(
                         reason = "lifecycle_resume"
                     )
                     coverArtRefreshToken += 1
-                    updateStartupAudioFocus("lifecycle_resume")
-                    PlayerManager.recoverUsbExclusivePlaybackOnForeground("lifecycle_resume")
+                    if (!PlayerManager.isUsbExclusiveNativePlaybackStable()) {
+                        updateStartupAudioFocus("lifecycle_resume")
+                        PlayerManager.recoverUsbExclusivePlaybackOnForeground("lifecycle_resume")
+                    }
                 }
                 Lifecycle.Event.ON_PAUSE,
                 Lifecycle.Event.ON_STOP -> {
@@ -1428,6 +1440,8 @@ private fun NeriAppContent(
                 val currentSong by PlayerManager.currentSongFlow.collectAsState()
                 val isMiniPlayerVisible = currentSong != null && !showNowPlaying
                 val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsState()
+                val usbPlaybackPreparing by PlayerManager.usbExclusivePlaybackPreparingFlow
+                    .collectAsState()
                 val reservedMiniPlayerHeightDp = if (isMiniPlayerVisible) {
                     moe.ouom.neriplayer.ui.component.NeriMiniPlayerDefaults.Height
                 } else {
@@ -2106,7 +2120,9 @@ private fun NeriAppContent(
                                         },
                                         usbExclusivePlayback = usbExclusivePlayback,
                                         onUsbExclusivePlaybackChange = { enabled ->
-                                            scope.launch { repo.setUsbExclusivePlayback(enabled) }
+                                            if (PlayerManager.beginUsbExclusiveToggleTransitionFromUi(enabled)) {
+                                                scope.launch { repo.setUsbExclusivePlayback(enabled) }
+                                            }
                                         },
                                         allowMixedPlayback = allowMixedPlayback,
                                         onAllowMixedPlaybackChange = { enabled ->
@@ -2347,6 +2363,7 @@ private fun NeriAppContent(
                                     artist = currentSong?.displayArtist() ?: "",
                                     coverUrl = displayCoverUrl,
                                     isPlaying = isPlaybackControlPlaying,
+                                    playPauseEnabled = !usbPlaybackPreparing,
                                     modifier = Modifier,
                                     onPlayPause = { PlayerManager.togglePlayPause() },
                                     onPrevious = { PlayerManager.previous() },

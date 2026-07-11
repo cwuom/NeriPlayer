@@ -72,6 +72,33 @@ void verifiesUnsupportedEncodingIsRejected() {
     assert(error == "unsupported_player_pcm_format");
 }
 
+void verifiesRuntimeRingResizePreservesQueuedAudio() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    assert(pipeline.configure(configFor(48000, 48000), &error));
+    const std::array<uint8_t, 8> input { 1, 0, 2, 0, 3, 0, 4, 0 };
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+    assert(pipeline.resizeRingDuration(1000, 768, 6, &error));
+    assert(pipeline.queuedFrames() == 2);
+
+    std::array<uint8_t, 8> output {};
+    assert(pipeline.fill(output.data(), output.size(), true) == output.size());
+    assert(output == input);
+}
+
+void verifiesHighResolutionRingUsesBoundedAllocation() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    auto config = configFor(768000, 768000);
+    config.output = { 768000, 8, 4, 32, 32 };
+    config.input = { 768000, 8, 2 };
+    config.ringDurationMs = 12000;
+    assert(pipeline.configure(config, &error));
+    const auto snapshot = pipeline.snapshot();
+    assert(snapshot.capacityBytes <= 64U * 1024U * 1024U);
+    assert(snapshot.capacityBytes % 32U == 0U);
+}
+
 void verifiesIntegerCodecDepthsAndEndianInputs() {
     std::array<uint8_t, 4> output {};
     neri::usb::writeIntegerPcmSample(output.data(), 3, 24, -1.0f);
@@ -96,6 +123,8 @@ int main() {
     verifiesStreamingResampleKeepsLongTermFrameCount();
     verifiesPausePreservesQueuedAudio();
     verifiesUnsupportedEncodingIsRejected();
+    verifiesRuntimeRingResizePreservesQueuedAudio();
+    verifiesHighResolutionRingUsesBoundedAllocation();
     verifiesIntegerCodecDepthsAndEndianInputs();
     return 0;
 }

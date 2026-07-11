@@ -39,6 +39,8 @@ import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbManager
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
@@ -79,6 +81,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager.externalBluetoothLyricLineF
 import moe.ouom.neriplayer.core.player.PlayerManager.statusBarLyricsEnable
 import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothMetadataText
 import moe.ouom.neriplayer.core.player.metadata.shouldUseExternalBluetoothLyrics
+import moe.ouom.neriplayer.core.player.usb.UsbExclusiveSessionController
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.displayArtist
@@ -162,6 +165,15 @@ internal fun shouldUseForegroundServiceStart(
     return sdkInt >= Build.VERSION_CODES.O ||
         forceForeground ||
         shouldRunPlaybackServiceInForeground
+}
+
+private fun Intent.usbDeviceExtra(): UsbDevice? {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
+    } else {
+        @Suppress("DEPRECATION")
+        getParcelableExtra(UsbManager.EXTRA_DEVICE)
+    }
 }
 
 internal fun canUseDirectPlaybackServiceStart(
@@ -501,7 +513,10 @@ class AudioPlayerService : Service() {
             setCallback(mediaSessionCallback)
             isActive = true
         }
-        startForegroundImmediately(buildBootstrapNotification(), "service_create")
+        if (!startForegroundImmediately(buildBootstrapNotification(), "service_create")) {
+            handleForegroundPromotionFailure("service_create")
+            return
+        }
 
         // 服务必须尽快进入前台，不能在这里阻塞前台通知启动
         PlayerManager.initialize(application as Application)
@@ -606,16 +621,41 @@ class AudioPlayerService : Service() {
 
         becomingNoisyReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
-                    if (PlayerManager.handleAudioBecomingNoisy()) {
-                        NPLogger.d("NERI-APS", "Handled audio becoming noisy according to playback policy.")
+                when (intent.action) {
+                    AudioManager.ACTION_AUDIO_BECOMING_NOISY -> {
+                        if (PlayerManager.handleAudioBecomingNoisy()) {
+                            NPLogger.d("NERI-APS", "Handled audio becoming noisy according to playback policy.")
+                            updatePlaybackState(force = true)
+                            updateNotification()
+                        }
+                    }
+                    UsbManager.ACTION_USB_DEVICE_DETACHED -> {
+                        val detachedDevice = intent.usbDeviceExtra()
+                        if (!UsbExclusiveSessionController.handleUsbDeviceDetached(detachedDevice)) {
+                            return
+                        }
+                        NPLogger.w(
+                            "NERI-APS",
+                            "active USB audio device detached id=${detachedDevice?.deviceId} " +
+                                "name=${detachedDevice?.deviceName}"
+                        )
+                        PlayerManager.stopPlaybackAfterUsbExclusiveNativeFailure(
+                            "usb_device_detached"
+                        )
+                        UsbExclusiveSystemSoundGuard.forceRelease(
+                            this@AudioPlayerService,
+                            "usb_device_detached"
+                        )
                         updatePlaybackState(force = true)
                         updateNotification()
                     }
                 }
             }
         }
-        val noisyIntentFilter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+        val noisyIntentFilter = IntentFilter().apply {
+            addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+            addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(
                 becomingNoisyReceiver,
@@ -643,7 +683,15 @@ class AudioPlayerService : Service() {
         hasReceivedStartCommand = true
 
         if (!isForegroundStarted && action != ACTION_STOP) {
-            startForegroundImmediately(buildBootstrapNotification(), "on_start_command:$action:$startSource")
+            if (!startForegroundImmediately(
+                    buildBootstrapNotification(),
+                    "on_start_command:$action:$startSource"
+                )) {
+                return handleForegroundPromotionFailure(
+                    reason = "on_start_command:$action:$startSource",
+                    startId = startId
+                )
+            }
         }
         if (action == null && !hasPlaybackSurfaceContent()) {
             allowServiceRestart = false
@@ -654,7 +702,12 @@ class AudioPlayerService : Service() {
         }
 
         if (action != ACTION_STOP && action != null) {
-            ensureForegroundStarted()
+            if (!ensureForegroundStarted()) {
+                return handleForegroundPromotionFailure(
+                    reason = "ensure_foreground:$action:$startSource",
+                    startId = startId
+                )
+            }
         }
 
         // 处理媒体按钮
@@ -1306,22 +1359,41 @@ class AudioPlayerService : Service() {
             "NERI-APS",
             "onDestroy ${buildStateSummary()}"
         )
-        isServiceForegroundActive = false
-        isServiceInstanceActive = false
-        PlayerManager.flushPlaybackStatsBlocking("service_destroy")
-        if (this::becomingNoisyReceiver.isInitialized) {
-            runCatching { unregisterReceiver(becomingNoisyReceiver) }
-                .onFailure { NPLogger.w("NERI-APS", "unregisterReceiver failed during destroy", it) }
+        val preservePlaybackForRestart = allowServiceRestart && shouldKeepServiceSticky()
+        try {
+            isServiceForegroundActive = false
+            isServiceInstanceActive = false
+            runCatching { PlayerManager.flushPlaybackStatsBlocking("service_destroy") }
+                .onFailure { NPLogger.w("NERI-APS", "playback stats flush failed during destroy", it) }
+            if (this::becomingNoisyReceiver.isInitialized) {
+                runCatching { unregisterReceiver(becomingNoisyReceiver) }
+                    .onFailure { NPLogger.w("NERI-APS", "unregisterReceiver failed during destroy", it) }
+            }
+            serviceScope.cancel()
+            if (this::mediaSession.isInitialized) {
+                runCatching {
+                    mediaSession.isActive = false
+                    mediaSession.release()
+                }.onFailure { NPLogger.w("NERI-APS", "media session release failed", it) }
+            }
+            if (preservePlaybackForRestart) {
+                runCatching {
+                    PlayerManager.suspendPlaybackForServiceRestart("service_destroy")
+                }.onFailure { error ->
+                    NPLogger.w(
+                        "NERI-APS",
+                        "player suspend failed during restartable destroy",
+                        error
+                    )
+                }
+            } else {
+                runCatching { PlayerManager.release() }
+                    .onFailure { NPLogger.w("NERI-APS", "player release failed during destroy", it) }
+            }
+        } finally {
+            shutdownUsbRuntime("service_destroy")
+            super.onDestroy()
         }
-        serviceScope.cancel()
-        if (this::mediaSession.isInitialized) {
-            mediaSession.isActive = false
-            mediaSession.release()
-        }
-        if (!allowServiceRestart || !hasPlaybackSurfaceContent()) {
-            PlayerManager.release()
-        }
-        super.onDestroy()
     }
 
     override fun onTrimMemory(level: Int) {
@@ -1355,6 +1427,28 @@ class AudioPlayerService : Service() {
         val notification = buildNotification()
         NPLogger.d("NERI-APS", "ensureForegroundStarted requested ${buildStateSummary()}")
         return startForegroundImmediately(notification, "ensure_foreground")
+    }
+
+    private fun handleForegroundPromotionFailure(
+        reason: String,
+        startId: Int? = null
+    ): Int {
+        NPLogger.e("NERI-APS", "foreground promotion failed reason=$reason")
+        allowServiceRestart = false
+        isServiceForegroundActive = false
+        shutdownUsbRuntime("foreground_promotion_failed:$reason")
+        if (startId != null) {
+            stopSelfResult(startId)
+        } else {
+            stopSelf()
+        }
+        return START_NOT_STICKY
+    }
+
+    private fun shutdownUsbRuntime(reason: String) {
+        UsbExclusiveSessionController.emergencyShutdown(reason)
+        UsbExclusiveSystemSoundGuard.forceRelease(this, reason)
+        StartupAudioFocusController.forceRelease(reason)
     }
 
     private fun startForegroundImmediately(notification: Notification, reason: String): Boolean {

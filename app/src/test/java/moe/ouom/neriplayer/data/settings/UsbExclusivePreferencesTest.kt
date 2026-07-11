@@ -13,7 +13,7 @@ class UsbExclusivePreferencesTest {
 
         assertEquals(UsbExclusiveSampleRateMode.FOLLOW_SOURCE, preferences.sampleRateMode)
         assertEquals(UsbExclusiveBitDepthMode.AUTO, preferences.bitDepthMode)
-        assertEquals(UsbExclusiveBufferProfile.BALANCED, preferences.bufferProfile)
+        assertEquals(UsbExclusiveBufferProfile.STABLE, preferences.bufferProfile)
         assertEquals(
             UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED,
             preferences.unsupportedFormatPolicy
@@ -26,9 +26,9 @@ class UsbExclusivePreferencesTest {
             listOf(16, 24, 32),
             UsbExclusiveBitDepthMode.entries.mapNotNull { it.bitDepth }
         )
-        assertEquals(80, UsbExclusiveBufferProfile.LOW_LATENCY.bufferDurationMs)
-        assertEquals(250, UsbExclusiveBufferProfile.BALANCED.bufferDurationMs)
-        assertEquals(750, UsbExclusiveBufferProfile.STABLE.bufferDurationMs)
+        assertEquals(3000, UsbExclusiveBufferProfile.LOW_LATENCY.bufferDurationMs)
+        assertEquals(5000, UsbExclusiveBufferProfile.BALANCED.bufferDurationMs)
+        assertEquals(12000, UsbExclusiveBufferProfile.STABLE.bufferDurationMs)
         assertEquals(true, preferences.sampleRateCompatibilityEnabled)
         assertEquals(true, preferences.bitDepthCompatibilityEnabled)
         assertEquals(true, preferences.channelCompatibilityEnabled)
@@ -125,7 +125,7 @@ class UsbExclusivePreferencesTest {
                 UsbExclusiveBitDepthMode.fromStorageValue(value)
             )
             assertEquals(
-                UsbExclusiveBufferProfile.BALANCED,
+                UsbExclusiveBufferProfile.STABLE,
                 UsbExclusiveBufferProfile.fromStorageValue(value)
             )
             assertEquals(
@@ -148,9 +148,9 @@ class UsbExclusivePreferencesTest {
     @Test
     fun `buffer profiles keep stable durations and storage round trips`() {
         val expectedDurationsMs = mapOf(
-            UsbExclusiveBufferProfile.LOW_LATENCY to 80,
-            UsbExclusiveBufferProfile.BALANCED to 250,
-            UsbExclusiveBufferProfile.STABLE to 750
+            UsbExclusiveBufferProfile.LOW_LATENCY to 3000,
+            UsbExclusiveBufferProfile.BALANCED to 5000,
+            UsbExclusiveBufferProfile.STABLE to 12000
         )
 
         expectedDurationsMs.forEach { (profile, durationMs) ->
@@ -171,10 +171,10 @@ class UsbExclusivePreferencesTest {
             backgroundBufferMs = 10_000
         )
 
-        assertEquals(200, preferences.foregroundBufferMs)
-        assertEquals(MAX_USB_EXCLUSIVE_BUFFER_MS, preferences.backgroundBufferMs)
-        assertEquals(200, preferences.bufferDurationMs(appInForeground = true))
-        assertEquals(MAX_USB_EXCLUSIVE_BUFFER_MS, preferences.bufferDurationMs(appInForeground = false))
+        assertEquals(MIN_USB_EXCLUSIVE_BUFFER_MS, preferences.foregroundBufferMs)
+        assertEquals(10_000, preferences.backgroundBufferMs)
+        assertEquals(MIN_USB_EXCLUSIVE_BUFFER_MS, preferences.bufferDurationMs(appInForeground = true))
+        assertEquals(10_000, preferences.bufferDurationMs(appInForeground = false))
     }
 
     @Test

@@ -4,12 +4,46 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <new>
 
 namespace neri::usb {
 namespace {
 
 constexpr int kGainRampDurationMs = 5;
 constexpr double kPositionEpsilon = 0.000000001;
+constexpr int64_t kMaximumRingBufferBytes = 64LL * 1024LL * 1024LL;
+
+bool calculateRingBytes(
+    const PcmOutputFormat& output,
+    int ringDurationMs,
+    int transferBytes,
+    int transferCount,
+    size_t* ringBytes,
+    std::string* error
+) {
+    if (ringBytes == nullptr || output.sampleRate <= 0 || output.frameBytes <= 0 ||
+        ringDurationMs <= 0 || transferBytes <= 0 || transferCount <= 0) {
+        if (error != nullptr) {
+            *error = "invalid_pcm_ring_configuration";
+        }
+        return false;
+    }
+    const int64_t requestedBytes =
+        static_cast<int64_t>(output.sampleRate) * output.frameBytes * ringDurationMs / 1000;
+    const int64_t transferFloor =
+        static_cast<int64_t>(transferBytes) * transferCount * 3;
+    int64_t boundedBytes = std::max<int64_t>(
+        output.frameBytes,
+        std::max(transferFloor, requestedBytes)
+    );
+    boundedBytes = std::min(boundedBytes, kMaximumRingBufferBytes);
+    boundedBytes -= boundedBytes % output.frameBytes;
+    if (boundedBytes < output.frameBytes) {
+        boundedBytes = output.frameBytes;
+    }
+    *ringBytes = static_cast<size_t>(boundedBytes);
+    return true;
+}
 
 bool canRender(double position, int inputFrames, bool hasPreviousFrame) {
     if (inputFrames <= 0 || position < -1.0 - kPositionEpsilon) {
@@ -61,27 +95,41 @@ bool PcmPipeline::configure(const PcmPipelineConfig& config, std::string* error)
         }
         return false;
     }
-    const int64_t requestedBytes =
-        static_cast<int64_t>(config.output.sampleRate) * config.output.frameBytes *
-        config.ringDurationMs / 1000;
-    const int64_t transferFloor =
-        static_cast<int64_t>(config.transferBytes) * config.transferCount * 3;
-    const size_t ringBytes = static_cast<size_t>(std::max<int64_t>(
-        config.output.frameBytes,
-        std::min<int64_t>(std::numeric_limits<int32_t>::max(),
-            std::max(transferFloor, requestedBytes))
-    ));
+    size_t ringBytes = 0;
+    if (!calculateRingBytes(
+            config.output,
+            config.ringDurationMs,
+            config.transferBytes,
+            config.transferCount,
+            &ringBytes,
+            error
+        )) {
+        return false;
+    }
+    std::vector<uint8_t> newRing;
+    std::vector<float> newPreviousInputFrame;
+    try {
+        newRing.assign(ringBytes, 0);
+        newPreviousInputFrame.assign(static_cast<size_t>(config.input.channelCount), 0.0f);
+    } catch (const std::bad_alloc&) {
+        if (error != nullptr) {
+            *error = "pcm_ring_allocation_failed";
+        }
+        return false;
+    }
 
+    std::lock_guard<std::mutex> writeGuard(writeLock_);
     std::lock_guard<std::mutex> guard(lock_);
     outputFormat_ = config.output;
     inputFormat_ = config.input;
-    ring_.assign(ringBytes, 0);
+    ring_.swap(newRing);
     readIndex_ = 0;
     writeIndex_ = 0;
     levelBytes_ = 0;
     resamplePosition_ = 0.0;
     hasPreviousInputFrame_ = false;
-    previousInputFrame_.assign(static_cast<size_t>(config.input.channelCount), 0.0f);
+    previousInputFrame_.swap(newPreviousInputFrame);
+    conversionBuffer_.clear();
     inputBytes_ = 0;
     outputBytes_ = 0;
     droppedBytes_ = 0;
@@ -92,6 +140,65 @@ bool PcmPipeline::configure(const PcmPipelineConfig& config, std::string* error)
     appliedGain_.store(target);
     gainRampTarget_ = target;
     gainRampFramesRemaining_ = 0;
+    return true;
+}
+
+bool PcmPipeline::resizeRingDuration(
+    int ringDurationMs,
+    int transferBytes,
+    int transferCount,
+    std::string* error
+) {
+    if (error != nullptr) {
+        error->clear();
+    }
+    std::lock_guard<std::mutex> writeGuard(writeLock_);
+    PcmOutputFormat outputFormat;
+    size_t currentRingBytes = 0;
+    {
+        std::lock_guard<std::mutex> guard(lock_);
+        outputFormat = outputFormat_;
+        currentRingBytes = ring_.size();
+    }
+    size_t ringBytes = 0;
+    if (!calculateRingBytes(
+            outputFormat,
+            ringDurationMs,
+            transferBytes,
+            transferCount,
+            &ringBytes,
+            error
+        )) {
+        return false;
+    }
+    if (ringBytes == currentRingBytes) {
+        return true;
+    }
+
+    std::vector<uint8_t> resizedRing;
+    try {
+        resizedRing.assign(ringBytes, 0);
+    } catch (const std::bad_alloc&) {
+        if (error != nullptr) {
+            *error = "pcm_ring_allocation_failed";
+        }
+        return false;
+    }
+    std::lock_guard<std::mutex> guard(lock_);
+    const size_t retainedBytes = std::min(levelBytes_, ringBytes);
+    if (retainedBytes > 0 && !ring_.empty()) {
+        const size_t first = std::min(retainedBytes, ring_.size() - readIndex_);
+        std::memcpy(resizedRing.data(), ring_.data() + readIndex_, first);
+        const size_t second = retainedBytes - first;
+        if (second > 0) {
+            std::memcpy(resizedRing.data() + first, ring_.data(), second);
+        }
+    }
+    droppedBytes_ += static_cast<int64_t>(levelBytes_ - retainedBytes);
+    ring_.swap(resizedRing);
+    readIndex_ = 0;
+    writeIndex_ = retainedBytes % ring_.size();
+    levelBytes_ = retainedBytes;
     return true;
 }
 
@@ -132,6 +239,7 @@ size_t PcmPipeline::readRingLocked(uint8_t* output, size_t bytes) {
 }
 
 size_t PcmPipeline::write(const uint8_t* input, size_t inputBytes, std::string* error) {
+    std::lock_guard<std::mutex> writeGuard(writeLock_);
     if (error != nullptr) {
         error->clear();
     }
@@ -199,8 +307,30 @@ size_t PcmPipeline::write(const uint8_t* input, size_t inputBytes, std::string* 
     double localPosition = resamplePosition_;
     bool localHasPrevious = hasPreviousInputFrame_;
     std::vector<float> localPrevious = previousInputFrame_;
-    std::vector<uint8_t> output;
-    output.reserve(freeOutputFrames * static_cast<size_t>(outputFormat_.frameBytes));
+    const size_t outputFrameCapacity = inputFormat_.sampleRate == outputFormat_.sampleRate
+        ? static_cast<size_t>(inputFrames)
+        : std::min(
+            freeOutputFrames,
+            countOutputFrames(
+                inputFrames,
+                localPosition,
+                localHasPrevious,
+                ratio,
+                freeOutputFrames
+            )
+        );
+    const size_t requiredOutputBytes =
+        outputFrameCapacity * static_cast<size_t>(outputFormat_.frameBytes);
+    try {
+        conversionBuffer_.clear();
+        conversionBuffer_.reserve(requiredOutputBytes);
+    } catch (const std::bad_alloc&) {
+        if (error != nullptr) {
+            *error = "pcm_conversion_allocation_failed";
+        }
+        return 0;
+    }
+    auto& output = conversionBuffer_;
 
     auto readFrameSample = [&](int frameIndex, int channel) {
         const int mappedChannel = std::min(channel, inputChannels - 1);
@@ -328,22 +458,21 @@ size_t PcmPipeline::fill(uint8_t* output, size_t bytes, bool playbackEnabled) {
     }
     std::memset(output, 0, bytes);
     size_t read = 0;
-    {
-        std::lock_guard<std::mutex> guard(lock_);
-        if (playbackEnabled) {
-            read = readRingLocked(output, bytes);
-            underrunBytes_ += static_cast<int64_t>(bytes - read);
-            zeroFillBytes_ += static_cast<int64_t>(bytes - read);
-        } else {
-            pausedZeroFillBytes_ += static_cast<int64_t>(bytes);
-        }
-        outputBytes_ += static_cast<int64_t>(bytes);
+    std::lock_guard<std::mutex> guard(lock_);
+    if (playbackEnabled) {
+        read = readRingLocked(output, bytes);
+        underrunBytes_ += static_cast<int64_t>(bytes - read);
+        zeroFillBytes_ += static_cast<int64_t>(bytes - read);
+    } else {
+        pausedZeroFillBytes_ += static_cast<int64_t>(bytes);
     }
+    outputBytes_ += static_cast<int64_t>(bytes);
     applyGain(output, bytes);
     return read;
 }
 
 void PcmPipeline::clear() {
+    std::lock_guard<std::mutex> writeGuard(writeLock_);
     std::lock_guard<std::mutex> guard(lock_);
     readIndex_ = 0;
     writeIndex_ = 0;

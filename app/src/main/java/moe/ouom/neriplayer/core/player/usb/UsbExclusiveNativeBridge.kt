@@ -110,6 +110,11 @@ internal object UsbExclusiveNativeBridge {
         return nativeSetPlayerVolume(handle, volume.coerceIn(0f, 1f))
     }
 
+    fun setPlayerFocusMuted(handle: Long, muted: Boolean): Boolean {
+        if (handle == 0L || !ensureLoaded()) return false
+        return nativeSetPlayerFocusMuted(handle, muted)
+    }
+
     fun configurePlayerBufferDuration(handle: Long, durationMs: Int): Boolean {
         if (handle == 0L || !ensureLoaded()) return false
         return nativeConfigurePlayerBufferDuration(handle, durationMs)
@@ -128,6 +133,11 @@ internal object UsbExclusiveNativeBridge {
     fun stop(handle: Long) {
         if (handle == 0L || !ensureLoaded()) return
         nativeStop(handle)
+    }
+
+    fun markDeviceDetached(handle: Long) {
+        if (handle == 0L || !ensureLoaded()) return
+        nativeMarkDeviceDetached(handle)
     }
 
     fun close(handle: Long) {
@@ -190,6 +200,9 @@ internal object UsbExclusiveNativeBridge {
     private external fun nativeSetPlayerVolume(handle: Long, volume: Float): Boolean
 
     @JvmStatic
+    private external fun nativeSetPlayerFocusMuted(handle: Long, muted: Boolean): Boolean
+
+    @JvmStatic
     private external fun nativeConfigurePlayerBufferDuration(handle: Long, durationMs: Int): Boolean
 
     @JvmStatic
@@ -200,6 +213,9 @@ internal object UsbExclusiveNativeBridge {
 
     @JvmStatic
     private external fun nativeStop(handle: Long)
+
+    @JvmStatic
+    private external fun nativeMarkDeviceDetached(handle: Long)
 
     @JvmStatic
     private external fun nativeClose(handle: Long)

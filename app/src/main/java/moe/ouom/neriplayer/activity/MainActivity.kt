@@ -865,8 +865,6 @@ class MainActivity : ComponentActivity() {
         if (hasFocus) {
             startPendingExternalAudioServiceIfNeeded()
             scheduleClipboardInviteInspection()
-        } else {
-            PlayerManager.markUsbExclusiveShortDisruption("window_focus_lost")
         }
     }
 

@@ -145,6 +145,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   `LoudnessEnhancer` 绑定到当前 Media3 音频会话；
   内置多种均衡器预设，也支持手动频段、响度增强、淡入淡出、
   交叉淡入淡出、蓝牙断连暂停、USB 独占播放和音频焦点策略。
+  USB 独占会由 native 驱动接管完整 UAC 音频功能，避免系统音和其他应用共用 USB 通道。
 - **下载链路已从“能下”进化到“能恢复”**：
   下载不走系统 `DownloadManager`，而是用共享 `OkHttpClient`、
   可调并发、工作文件和 sidecar 元数据管理完整落盘流程；

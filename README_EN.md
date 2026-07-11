@@ -164,7 +164,9 @@ Current positioning:
   `PlaybackEffectsController` applies speed, pitch, Android `Equalizer`, and
   `LoudnessEnhancer` to the current Media3 audio session. Presets, manual bands,
   loudness gain, fade/crossfade, pause on Bluetooth disconnect, USB exclusive
-  playback, and audio-focus behavior are all available.
+  playback, and audio-focus behavior are all available. Native USB exclusive
+  playback claims the complete UAC audio function so system sounds and other
+  apps cannot share the USB transport.
 - **Downloads have moved from "can save" to "can recover"**:
   downloads do not use the system `DownloadManager`. They use the shared
   `OkHttpClient`, configurable concurrency, staging files, and sidecar metadata.

@@ -1,15 +1,20 @@
 package moe.ouom.neriplayer.core.player.usb
 
 import android.content.Context
+import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
 import android.os.SystemClock
 import java.nio.ByteBuffer
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import moe.ouom.neriplayer.core.player.UsbExclusiveSystemSoundGuard
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnostics
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnosticsSnapshot
@@ -25,7 +30,17 @@ object UsbExclusiveSessionController {
     private const val PLAYER_PCM_FOCUS_COOLDOWN_MS = 8_000L
     private const val PLAYER_PCM_FAILURE_FUSE_MS = 18_000L
     private const val PLAYER_PCM_TRANSIENT_FUSE_MS = 5_000L
+    private const val EMERGENCY_CLOSE_WAIT_MS = 1_500L
+    private const val NO_ACTIVE_USB_DEVICE_ID = -1
     private val transitionInFlight = AtomicBoolean(false)
+    private val nativeCloseInFlight = AtomicInteger(0)
+    private val ioGate = UsbExclusiveIoGate()
+    private val focusSuppressed = AtomicBoolean(false)
+    private val activeDeviceId = AtomicInteger(NO_ACTIVE_USB_DEVICE_ID)
+    private val activeDeviceName = AtomicReference<String?>(null)
+    private val nativeCloseExecutor = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "NeriUsbExclusiveClose").apply { isDaemon = true }
+    }
     private val sessionLock = ReentrantLock()
     private var activeConnection: UsbDeviceConnection? = null
     @Volatile
@@ -38,11 +53,19 @@ object UsbExclusiveSessionController {
     private var lastPlayerPcmNativeCloseAtMs = 0L
     private var playerPcmOpenBlockedUntilMs = 0L
     private var playerPcmOpenBlockReason = ""
+    @Volatile
     private var lastPlayerPcmWriteIssueLogAtMs = 0L
 
     private data class PendingPlayerPcmOpenBlock(
         val reason: String,
         val delayMs: Long
+    )
+
+    private data class NativeCloseRequest(
+        val handle: Long,
+        val connection: UsbDeviceConnection?,
+        val source: String,
+        val reason: String
     )
 
     private val _state = MutableStateFlow(
@@ -51,6 +74,68 @@ object UsbExclusiveSessionController {
         )
     )
     val state: StateFlow<UsbExclusiveNativeState> = _state.asStateFlow()
+
+    fun nativeCloseInFlightCount(): Int = nativeCloseInFlight.get()
+
+    fun handleUsbDeviceDetached(device: UsbDevice?): Boolean {
+        if (!matchesActiveDevice(device)) return false
+        val reason = "usb_device_detached"
+        ioGate.close()
+        focusSuppressed.set(false)
+        val currentHandle = _state.value.handle
+        if (currentHandle != 0L) {
+            runCatching { UsbExclusiveNativeBridge.markDeviceDetached(currentHandle) }
+        }
+        val closeRequest = sessionLock.withLock {
+            val request = stopInternalLocked(
+                reason = reason,
+                terminalError = "deviceOnline=false lastError=$reason"
+            )
+            blockNativeOpenLocked(reason, PLAYER_PCM_FAILURE_FUSE_MS)
+            pendingPlayerPcmStopReason = null
+            request
+        }
+        scheduleNativeClose(closeRequest)
+        NPLogger.w(
+            TAG,
+            "handled USB detach deviceId=${device?.deviceId} deviceName=${device?.deviceName}"
+        )
+        return true
+    }
+
+    fun setPlayerFocusSuppressed(suppressed: Boolean, reason: String) {
+        focusSuppressed.set(suppressed)
+        val current = _state.value
+        if (current.handle == 0L || current.source != "player_pcm" || !current.opened) return
+        val applied = UsbExclusiveNativeBridge.setPlayerFocusMuted(current.handle, suppressed)
+        NPLogger.d(
+            TAG,
+            "setPlayerFocusSuppressed(): suppressed=$suppressed applied=$applied reason=$reason"
+        )
+    }
+
+    fun emergencyShutdown(reason: String) {
+        try {
+            forceStopAllSessions("emergency:$reason")
+            val deadlineMs = SystemClock.elapsedRealtime() + EMERGENCY_CLOSE_WAIT_MS
+            while (
+                (transitionInFlight.get() || nativeCloseInFlight.get() > 0) &&
+                SystemClock.elapsedRealtime() < deadlineMs
+            ) {
+                SystemClock.sleep(5L)
+            }
+        } finally {
+            if (!transitionInFlight.get() && nativeCloseInFlight.get() == 0) {
+                UsbExclusiveWakeLock.release("emergency:$reason")
+            } else {
+                NPLogger.w(
+                    TAG,
+                    "emergency shutdown keeps WakeLock until native close finishes reason=$reason " +
+                        "transition=${transitionInFlight.get()} closeInFlight=${nativeCloseInFlight.get()}"
+                )
+            }
+        }
+    }
 
     fun refresh(context: Context) {
         if (transitionInFlight.get()) {
@@ -114,102 +199,150 @@ object UsbExclusiveSessionController {
             return false
         }
         _state.value = _state.value.copy(transitioning = true)
-        sessionLock.withLock {
-            val current = _state.value
-            if (current.source == "player_pcm" && current.opened) {
-                _state.value = current.copy(
-                    transitioning = false,
-                    runtimeReport = "player_pcm_session_active",
-                    lastError = "player_pcm_session_active"
-                )
-                transitionInFlight.set(false)
+        var startedHandle = 0L
+        try {
+            val closeRequest = sessionLock.withLock {
+                val current = _state.value
+                if (current.source == "player_pcm" && current.opened) {
+                    _state.value = current.copy(
+                        transitioning = false,
+                        runtimeReport = "player_pcm_session_active",
+                        lastError = "player_pcm_session_active"
+                    )
+                    return false
+                }
+                stopInternalLocked("start_generated_tone")
+            }
+            if (closeRequest != null) {
+                scheduleNativeClose(closeRequest)
+                sessionLock.withLock {
+                    blockNativeOpenLocked("start_generated_tone", PLAYER_PCM_OPEN_MIN_INTERVAL_MS)
+                    _state.value = _state.value.copy(
+                        transitioning = false,
+                        runtimeReport = "native_open_deferred:start_generated_tone",
+                        lastError = "native_open_deferred:start_generated_tone"
+                    )
+                }
                 return false
             }
-            stopInternalLocked()
-        }
+            val openGateError = sessionLock.withLock {
+                openGateErrorLocked(SystemClock.elapsedRealtime())
+            }
+            if (openGateError != null) {
+                _state.value = _state.value.copy(
+                    transitioning = false,
+                    runtimeReport = openGateError,
+                    lastError = openGateError
+                )
+                return false
+            }
 
-        val appContext = context.applicationContext
-        val openedDevice = openPermittedUsbAudioDevice(
-            context = appContext,
-            selectedDeviceKey = selectedDeviceKey(appContext)
-        )
-        if (openedDevice == null) {
-            _state.value = _state.value.copy(
-                available = UsbExclusiveNativeBridge.ensureLoaded(),
-                transitioning = false,
-                runtimeReport = "No permitted USB audio streaming device",
-                lastError = "No permitted USB audio streaming device"
+            val appContext = context.applicationContext
+            val openedDevice = openPermittedUsbAudioDevice(
+                context = appContext,
+                selectedDeviceKey = selectedDeviceKey(appContext)
             )
+            if (openedDevice == null) {
+                _state.value = _state.value.copy(
+                    available = UsbExclusiveNativeBridge.ensureLoaded(),
+                    transitioning = false,
+                    runtimeReport = "No permitted USB audio streaming device",
+                    lastError = "No permitted USB audio streaming device"
+                )
+                return false
+            }
+            val (targetDevice, connection) = openedDevice
+            beginDeviceSession(targetDevice)
+
+            UsbExclusiveSystemSoundGuard.activate(appContext, "tone_open_start")
+            val handle = runCatching {
+                UsbExclusiveNativeBridge.open(connection)
+            }.getOrElse { error ->
+                NPLogger.e(TAG, "Failed to open USB exclusive native session", error)
+                0L
+            }
+
+            if (handle == 0L) {
+                val openError = runCatching {
+                    UsbExclusiveNativeBridge.lastOpenError()
+                }.getOrDefault("nativeOpen failed")
+                NPLogger.e(
+                    TAG,
+                    "nativeOpen failed for device=${targetDevice.productName ?: targetDevice.deviceName}, fd=${connection.fileDescriptor}, error=$openError"
+                )
+                runCatching { connection.close() }
+                endDeviceSession()
+                UsbExclusiveSystemSoundGuard.releaseWhenNativeIdle(appContext, "tone_open_failed")
+                _state.value = _state.value.copy(
+                    available = UsbExclusiveNativeBridge.ensureLoaded(),
+                    transitioning = false,
+                    selectedDeviceName = targetDevice.productName?.toString(),
+                    runtimeReport = openError,
+                    lastError = openError
+                )
+                return false
+            }
+            if (!ioGate.isOpen()) {
+                closeHandleAndConnection(handle, connection, "tone_detached_during_open")
+                return false
+            }
+
+            val started = runCatching {
+                UsbExclusiveNativeBridge.startGeneratedTone(handle)
+            }.getOrDefault(false)
+
+            if (!started || !ioGate.isOpen()) {
+                val startError = if (started) {
+                    "deviceOnline=false lastError=usb_device_detached"
+                } else {
+                    UsbExclusiveNativeBridge.runtimeReport(handle)
+                }
+                closeHandleAndConnection(handle, connection, "tone_start_failed")
+                UsbExclusiveSystemSoundGuard.releaseWhenNativeIdle(appContext, "tone_start_failed")
+                _state.value = _state.value.copy(
+                    available = UsbExclusiveNativeBridge.ensureLoaded(),
+                    transitioning = false,
+                    selectedDeviceName = targetDevice.productName?.toString(),
+                    runtimeReport = startError,
+                    lastError = startError
+                )
+                return false
+            }
+
+            sessionLock.withLock {
+                activeConnection = connection
+                UsbExclusiveWakeLock.acquire(appContext, "tone_started")
+                _state.value = UsbExclusiveNativeState(
+                    available = true,
+                    opened = true,
+                    streaming = true,
+                    transitioning = false,
+                    source = "tone",
+                    handle = handle,
+                    selectedDeviceName = targetDevice.productName?.toString() ?: targetDevice.deviceName,
+                    runtimeReport = UsbExclusiveNativeBridge.runtimeReport(handle),
+                    lastError = null
+                )
+                startedHandle = handle
+            }
+        } finally {
+            drainPendingPlayerPcmStopIfNeeded()
+            drainPendingPlayerPcmOpenBlockIfNeeded()
             transitionInFlight.set(false)
-            return false
+            val current = _state.value
+            if (current.transitioning) {
+                _state.value = current.copy(transitioning = false)
+            }
         }
-        val (targetDevice, connection) = openedDevice
-
-        val handle = runCatching {
-            UsbExclusiveNativeBridge.open(connection)
-        }.getOrElse { error ->
-            NPLogger.e(TAG, "Failed to open USB exclusive native session", error)
-            0L
-        }
-
-        if (handle == 0L) {
-            val openError = runCatching {
-                UsbExclusiveNativeBridge.lastOpenError()
-            }.getOrDefault("nativeOpen failed")
-            NPLogger.e(
-                TAG,
-                "nativeOpen failed for device=${targetDevice.productName ?: targetDevice.deviceName}, fd=${connection.fileDescriptor}, error=$openError"
-            )
-            runCatching { connection.close() }
-            _state.value = _state.value.copy(
-                available = UsbExclusiveNativeBridge.ensureLoaded(),
-                transitioning = false,
-                selectedDeviceName = targetDevice.productName?.toString(),
-                runtimeReport = openError,
-                lastError = openError
-            )
-            transitionInFlight.set(false)
-            return false
-        }
-
-        val started = runCatching {
-            UsbExclusiveNativeBridge.startGeneratedTone(handle)
-        }.getOrDefault(false)
-
-        if (!started) {
-            val startError = UsbExclusiveNativeBridge.runtimeReport(handle)
-            closeHandleAndConnection(handle, connection)
-            _state.value = _state.value.copy(
-                available = UsbExclusiveNativeBridge.ensureLoaded(),
-                transitioning = false,
-                selectedDeviceName = targetDevice.productName?.toString(),
-                runtimeReport = startError,
-                lastError = startError
-            )
-            transitionInFlight.set(false)
-            return false
-        }
-
-        sessionLock.withLock {
-            activeConnection = connection
-            _state.value = UsbExclusiveNativeState(
-                available = true,
-                opened = true,
-                streaming = true,
-                transitioning = false,
-                source = "tone",
-                handle = handle,
-                selectedDeviceName = targetDevice.productName?.toString() ?: targetDevice.deviceName,
-                runtimeReport = UsbExclusiveNativeBridge.runtimeReport(handle),
-                lastError = null
-            )
-        }
-        transitionInFlight.set(false)
-        return true
+        return startedHandle != 0L &&
+            ioGate.isOpen() &&
+            _state.value.handle == startedHandle
     }
 
     fun stopGeneratedTone() {
+        blockWritesImmediately()
         if (!transitionInFlight.compareAndSet(false, true)) {
+            pendingPlayerPcmStopReason = "stop_generated_tone"
             return
         }
         try {
@@ -218,12 +351,18 @@ object UsbExclusiveSessionController {
                 return
             }
             _state.value = current.copy(transitioning = true)
-            sessionLock.withLock {
-                stopInternalLocked()
+            val closeRequest = sessionLock.withLock {
+                val request = stopInternalLocked("stop_generated_tone")
                 _state.value = _state.value.copy(
                     transitioning = false
                 )
+                request
             }
+            scheduleNativeClose(closeRequest)
+            UsbExclusiveSystemSoundGuard.releaseWhenNativeIdle(
+                PlayerManager.application,
+                "stop_generated_tone"
+            )
         } finally {
             transitionInFlight.set(false)
         }
@@ -251,6 +390,7 @@ object UsbExclusiveSessionController {
             return 0L
         }
         _state.value = _state.value.copy(transitioning = true)
+        var openedHandle = 0L
         try {
             val appContext = context.applicationContext
             val formatResolution = UsbExclusiveOutputFormatResolver.resolve(
@@ -262,8 +402,8 @@ object UsbExclusiveSessionController {
             val resolvedOutput = formatResolution.format
             if (resolvedOutput == null) {
                 val resolutionError = formatResolution.error ?: "output_format_unresolved"
-                sessionLock.withLock {
-                    stopInternalLocked()
+                val closeRequest = sessionLock.withLock {
+                    val request = stopInternalLocked("output_format_unresolved:$resolutionError")
                     _state.value = _state.value.copy(
                         opened = false,
                         streaming = false,
@@ -279,7 +419,9 @@ object UsbExclusiveSessionController {
                         runtimeReport = resolutionError,
                         lastError = resolutionError
                     )
+                    request
                 }
+                scheduleNativeClose(closeRequest)
                 NPLogger.w(TAG, "resolveOutputFormat(): $resolutionError input=$inputFormat")
                 return 0L
             }
@@ -291,6 +433,7 @@ object UsbExclusiveSessionController {
                     current.handle != 0L &&
                     current.source == "player_pcm" &&
                     current.opened &&
+                    ioGate.isOpen() &&
                     current.outputFormat == resolvedOutput.description &&
                     UsbExclusiveNativeBridge.configurePlayerBufferDuration(
                         current.handle,
@@ -323,12 +466,15 @@ object UsbExclusiveSessionController {
                         "openPlayerPcm(): reused native handle=${current.handle} " +
                             "output=${resolvedOutput.description}"
                     )
-                    return current.handle
+                    openedHandle = current.handle
+                    return@withLock
                 }
 
                 openGateErrorLocked(SystemClock.elapsedRealtime())?.let { gateError ->
-                    if (current.handle != 0L) {
-                        stopInternalLocked()
+                    val closeRequest = if (current.handle != 0L) {
+                        stopInternalLocked("open_gate:$gateError")
+                    } else {
+                        null
                     }
                     _state.value = _state.value.copy(
                         opened = false,
@@ -346,10 +492,33 @@ object UsbExclusiveSessionController {
                         lastError = gateError
                     )
                     NPLogger.w(TAG, "openPlayerPcm(): deferred by native open gate: $gateError")
+                    scheduleNativeClose(closeRequest)
                     return 0L
                 }
 
-                stopInternalLocked()
+                val closeRequest = stopInternalLocked("open_player_pcm_reconfigure")
+                if (closeRequest != null) {
+                    scheduleNativeClose(closeRequest)
+                    val gateError = "native_open_deferred:native_close_in_flight"
+                    blockNativeOpenLocked("native_close_in_flight", PLAYER_PCM_OPEN_MIN_INTERVAL_MS)
+                    _state.value = _state.value.copy(
+                        opened = false,
+                        streaming = false,
+                        paused = false,
+                        source = "idle",
+                        handle = 0L,
+                        inputFormat = describeUsbInputFormat(
+                            inputSampleRate,
+                            inputChannelCount,
+                            inputEncoding
+                        ),
+                        outputFormat = "deferred",
+                        runtimeReport = gateError,
+                        lastError = gateError
+                    )
+                    NPLogger.w(TAG, "openPlayerPcm(): deferred while previous native session closes")
+                    return 0L
+                }
                 val openedDevice = openPermittedUsbAudioDevice(
                     context = appContext,
                     selectedDeviceKey = selectedDeviceKey(appContext)
@@ -365,12 +534,16 @@ object UsbExclusiveSessionController {
                     return 0L
                 }
                 val (targetDevice, connection) = openedDevice
+                beginDeviceSession(targetDevice)
                 NPLogger.i(
                     TAG,
                     "openPlayerPcm(): opening device=" +
                         "${targetDevice.productName ?: targetDevice.deviceName} " +
                         "fd=${connection.fileDescriptor} output=${resolvedOutput.description}"
                 )
+                if (!PlayerManager.allowMixedPlaybackEnabled) {
+                    UsbExclusiveSystemSoundGuard.activate(appContext, "player_pcm_open_start")
+                }
                 val handle = runCatching {
                     UsbExclusiveNativeBridge.open(
                         connection = connection,
@@ -393,6 +566,11 @@ object UsbExclusiveSessionController {
                             "${targetDevice.productName ?: targetDevice.deviceName} error=$openError"
                     )
                     runCatching { connection.close() }
+                    endDeviceSession()
+                    UsbExclusiveSystemSoundGuard.releaseWhenNativeIdle(
+                        appContext,
+                        "player_pcm_open_failed"
+                    )
                     _state.value = _state.value.copy(
                         available = UsbExclusiveNativeBridge.ensureLoaded(),
                         source = "idle",
@@ -401,6 +579,14 @@ object UsbExclusiveSessionController {
                         lastError = openError
                     )
                     recordNativeOpenFailureLocked(openError)
+                    return 0L
+                }
+                if (!ioGate.isOpen()) {
+                    closeHandleAndConnection(
+                        handle = handle,
+                        connection = connection,
+                        reason = "player_pcm_detached_during_open"
+                    )
                     return 0L
                 }
                 val bufferConfigured = UsbExclusiveNativeBridge.configurePlayerBufferDuration(
@@ -413,13 +599,21 @@ object UsbExclusiveSessionController {
                     inputChannelCount = inputChannelCount,
                     inputEncoding = inputEncoding
                 )
-                if (!prepared) {
-                    val prepareError = UsbExclusiveNativeBridge.runtimeReport(handle)
+                if (!prepared || !ioGate.isOpen()) {
+                    val prepareError = if (prepared) {
+                        "deviceOnline=false lastError=usb_device_detached"
+                    } else {
+                        UsbExclusiveNativeBridge.runtimeReport(handle)
+                    }
                     NPLogger.e(
                         TAG,
                         "openPlayerPcm(): native prepare failed handle=$handle error=$prepareError"
                     )
-                    closeHandleAndConnection(handle, connection)
+                    closeHandleAndConnection(handle, connection, "player_pcm_prepare_failed")
+                    UsbExclusiveSystemSoundGuard.releaseWhenNativeIdle(
+                        appContext,
+                        "player_pcm_prepare_failed"
+                    )
                     _state.value = _state.value.copy(
                         available = UsbExclusiveNativeBridge.ensureLoaded(),
                         source = "idle",
@@ -431,6 +625,8 @@ object UsbExclusiveSessionController {
                     return 0L
                 }
                 activeConnection = connection
+                UsbExclusiveNativeBridge.setPlayerFocusMuted(handle, focusSuppressed.get())
+                UsbExclusiveWakeLock.acquire(appContext, "player_pcm_opened")
                 lastPlayerPcmNativeOpenAtMs = SystemClock.elapsedRealtime()
                 playerPcmOpenBlockedUntilMs = 0L
                 playerPcmOpenBlockReason = ""
@@ -460,16 +656,27 @@ object UsbExclusiveSessionController {
                         "${targetDevice.productName ?: targetDevice.deviceName} " +
                         "runtime=${_state.value.runtimeReport}"
                 )
-                return handle
+                openedHandle = handle
             }
         } finally {
-            transitionInFlight.set(false)
             drainPendingPlayerPcmStopIfNeeded()
             drainPendingPlayerPcmOpenBlockIfNeeded()
+            transitionInFlight.set(false)
             val current = _state.value
             if (current.transitioning) {
                 _state.value = current.copy(transitioning = false)
             }
+        }
+        val current = _state.value
+        return if (
+            openedHandle != 0L &&
+            ioGate.isOpen() &&
+            current.handle == openedHandle &&
+            current.opened
+        ) {
+            openedHandle
+        } else {
+            0L
         }
     }
 
@@ -605,9 +812,10 @@ object UsbExclusiveSessionController {
         size: Int,
         volume: Float
     ): Int {
-        sessionLock.withLock {
+        if (!ioGate.tryEnterWrite()) return 0
+        try {
             val current = _state.value
-            if (current.handle != handle || current.source != "player_pcm") {
+            if (current.handle != handle || current.source != "player_pcm" || !current.opened) {
                 return 0
             }
             val written = UsbExclusiveNativeBridge.writePlayerPcm(
@@ -630,13 +838,20 @@ object UsbExclusiveSessionController {
                 }
             }
             return written
+        } finally {
+            ioGate.exitWrite()
         }
     }
 
     fun playPlayerPcm(handle: Long): Boolean {
         sessionLock.withLock {
             val current = _state.value
-            if (current.handle != handle || current.source != "player_pcm" || !current.opened) {
+            if (
+                current.handle != handle ||
+                current.source != "player_pcm" ||
+                !current.opened ||
+                !ioGate.isOpen()
+            ) {
                 NPLogger.w(
                     TAG,
                     "playPlayerPcm(): ignored stale handle=$handle currentHandle=${current.handle} " +
@@ -672,7 +887,7 @@ object UsbExclusiveSessionController {
             val paused = UsbExclusiveNativeBridge.pausePlayerPcm(handle)
             val report = UsbExclusiveNativeBridge.runtimeReport(handle)
             _state.value = current.copy(
-                streaming = false,
+                streaming = report.nativeBooleanField("running") ?: current.streaming,
                 paused = paused,
                 runtimeReport = report,
                 lastError = if (paused) null else report,
@@ -697,7 +912,7 @@ object UsbExclusiveSessionController {
             val flushed = UsbExclusiveNativeBridge.flushPlayerPcm(handle)
             val report = UsbExclusiveNativeBridge.runtimeReport(handle)
             _state.value = current.copy(
-                streaming = false,
+                streaming = report.nativeBooleanField("running") ?: current.streaming,
                 paused = false,
                 runtimeReport = report,
                 lastError = if (flushed) null else report,
@@ -714,38 +929,38 @@ object UsbExclusiveSessionController {
     }
 
     fun setPlayerVolume(handle: Long, volume: Float): Boolean {
-        sessionLock.withLock {
-            val current = _state.value
-            if (current.handle != handle || current.source != "player_pcm" || !current.opened) {
-                return false
-            }
-            return UsbExclusiveNativeBridge.setPlayerVolume(handle, volume)
+        val current = _state.value
+        if (current.handle != handle || current.source != "player_pcm" || !current.opened) {
+            return false
         }
+        return UsbExclusiveNativeBridge.setPlayerVolume(handle, volume)
     }
 
     fun completedAudioFrames(handle: Long): Long {
-        sessionLock.withLock {
-            if (_state.value.handle != handle || _state.value.source != "player_pcm") return 0L
-            return UsbExclusiveNativeBridge.completedAudioFrames(handle)
-        }
+        val current = _state.value
+        if (current.handle != handle || current.source != "player_pcm") return 0L
+        return UsbExclusiveNativeBridge.completedAudioFrames(handle)
     }
 
     fun queuedPlayerFrames(handle: Long): Long {
-        sessionLock.withLock {
-            if (_state.value.handle != handle || _state.value.source != "player_pcm") return 0L
-            return UsbExclusiveNativeBridge.queuedPlayerFrames(handle)
-        }
+        val current = _state.value
+        if (current.handle != handle || current.source != "player_pcm") return 0L
+        return UsbExclusiveNativeBridge.queuedPlayerFrames(handle)
     }
 
     fun closePlayerPcm(handle: Long) {
-        sessionLock.withLock {
+        val closeRequest = sessionLock.withLock {
             if (_state.value.handle == handle && _state.value.source == "player_pcm") {
-                stopInternalLocked()
+                stopInternalLocked("close_player_pcm")
+            } else {
+                null
             }
         }
+        scheduleNativeClose(closeRequest)
     }
 
     fun stopPlayerPcmSession(reason: String) {
+        blockWritesImmediately()
         if (transitionInFlight.get()) {
             pendingPlayerPcmStopReason = reason
             pendingPlayerPcmStopShouldBlockOpen = true
@@ -757,20 +972,23 @@ object UsbExclusiveSessionController {
             NPLogger.d(TAG, "stopPlayerPcmSession(): deferred while transition is active, reason=$reason")
             return
         }
-        sessionLock.withLock {
+        val closeRequest = sessionLock.withLock {
             val current = _state.value
             if (current.source != "player_pcm") {
                 pendingPlayerPcmStopReason = null
-                return
+                return@withLock null
             }
             pendingPlayerPcmStopReason = null
             NPLogger.d(TAG, "stopPlayerPcmSession(): reason=$reason")
-            stopInternalLocked()
+            val request = stopInternalLocked("stop_player_pcm_session:$reason")
             blockNativeOpenLocked(reason, PLAYER_PCM_OPEN_MIN_INTERVAL_MS)
+            request
         }
+        scheduleNativeClose(closeRequest)
     }
 
     fun forceStopAllSessions(reason: String, blockOpen: Boolean = true) {
+        blockWritesImmediately()
         if (transitionInFlight.get()) {
             pendingPlayerPcmStopReason = reason
             pendingPlayerPcmStopShouldBlockOpen = blockOpen
@@ -785,7 +1003,7 @@ object UsbExclusiveSessionController {
             )
             return
         }
-        sessionLock.withLock {
+        val closeRequest = sessionLock.withLock {
             pendingPlayerPcmStopReason = null
             pendingPlayerPcmStopShouldBlockOpen = true
             NPLogger.w(
@@ -793,11 +1011,13 @@ object UsbExclusiveSessionController {
                 "forceStopAllSessions(): reason=$reason source=${_state.value.source} " +
                     "handle=${_state.value.handle} opened=${_state.value.opened} blockOpen=$blockOpen"
             )
-            stopInternalLocked()
+            val request = stopInternalLocked("force_stop_all:$reason")
             if (blockOpen) {
                 blockNativeOpenLocked(reason, PLAYER_PCM_OPEN_MIN_INTERVAL_MS)
             }
+            request
         }
+        scheduleNativeClose(closeRequest)
     }
 
     fun refreshRuntime(handle: Long) {
@@ -813,24 +1033,34 @@ object UsbExclusiveSessionController {
         }
     }
 
-    private fun stopInternalLocked() {
+    private fun stopInternalLocked(reason: String = "stop_internal"): NativeCloseRequest? {
+        return stopInternalLocked(reason, terminalError = null)
+    }
+
+    private fun stopInternalLocked(
+        reason: String,
+        terminalError: String?
+    ): NativeCloseRequest? {
         val current = _state.value
+        val connection = activeConnection
+        ioGate.close()
+        focusSuppressed.set(false)
         if (current.handle != 0L) {
             NPLogger.d(
                 TAG,
-                "stopInternalLocked(): closing handle=${current.handle} source=${current.source} " +
-                    "streaming=${current.streaming} runtime=${current.runtimeReport}"
+                "stopInternalLocked(): queue close handle=${current.handle} source=${current.source} " +
+                    "reason=$reason streaming=${current.streaming} runtime=${current.runtimeReport}"
             )
             runCatching { UsbExclusiveNativeBridge.stop(current.handle) }
-            runCatching { UsbExclusiveNativeBridge.close(current.handle) }
             lastPlayerPcmNativeCloseAtMs = SystemClock.elapsedRealtime()
         }
-        runCatching { activeConnection?.close() }
         activeConnection = null
+        clearActiveDeviceIdentity()
         _state.value = _state.value.copy(
             opened = false,
             streaming = false,
             paused = false,
+            transitioning = false,
             source = "idle",
             handle = 0L,
             inputFormat = "none",
@@ -838,25 +1068,75 @@ object UsbExclusiveSessionController {
             outputSampleRate = 0,
             completedAudioFrames = 0L,
             queuedAudioFrames = 0L,
-            runtimeReport = "idle",
-            lastError = null
+            runtimeReport = terminalError ?: "idle",
+            lastError = terminalError
         )
+        if (current.handle == 0L) {
+            runCatching { connection?.close() }
+            UsbExclusiveWakeLock.release(reason)
+            return null
+        }
+        return NativeCloseRequest(
+            handle = current.handle,
+            connection = connection,
+            source = current.source,
+            reason = reason
+        )
+    }
+
+    private fun scheduleNativeClose(request: NativeCloseRequest?) {
+        if (request == null) return
+        nativeCloseInFlight.incrementAndGet()
+        nativeCloseExecutor.execute {
+            try {
+                NPLogger.d(
+                    TAG,
+                    "native close begin: handle=${request.handle} source=${request.source} " +
+                        "reason=${request.reason}"
+                )
+                runCatching { ioGate.awaitDrained() }
+                    .onFailure { error ->
+                        Thread.currentThread().interrupt()
+                        NPLogger.w(TAG, "writer drain interrupted for handle=${request.handle}", error)
+                    }
+                runCatching { UsbExclusiveNativeBridge.close(request.handle) }
+                    .onFailure { error ->
+                        NPLogger.w(
+                            TAG,
+                            "native close failed: handle=${request.handle} reason=${request.reason}",
+                            error
+                        )
+                    }
+                runCatching { request.connection?.close() }
+                lastPlayerPcmNativeCloseAtMs = SystemClock.elapsedRealtime()
+                NPLogger.d(
+                    TAG,
+                    "native close done: handle=${request.handle} source=${request.source} " +
+                        "reason=${request.reason}"
+                )
+            } finally {
+                UsbExclusiveWakeLock.release(request.reason)
+                nativeCloseInFlight.decrementAndGet()
+            }
+        }
     }
 
     private fun drainPendingPlayerPcmStopIfNeeded() {
         val reason = pendingPlayerPcmStopReason ?: return
-        sessionLock.withLock {
+        val closeRequest = sessionLock.withLock {
             val pendingReason = pendingPlayerPcmStopReason ?: return
             val shouldBlockOpen = pendingPlayerPcmStopShouldBlockOpen
             pendingPlayerPcmStopReason = null
             pendingPlayerPcmStopShouldBlockOpen = true
             val current = _state.value
-            if (current.handle != 0L || activeConnection != null) {
+            val request = if (current.handle != 0L || activeConnection != null) {
                 NPLogger.d(
                     TAG,
                     "drainPendingPlayerPcmStopIfNeeded(): reason=$pendingReason"
                 )
-                stopInternalLocked()
+                stopInternalLocked("pending_stop:$pendingReason")
+            } else {
+                null
             }
             if (shouldBlockOpen) {
                 blockNativeOpenLocked(pendingReason, PLAYER_PCM_OPEN_MIN_INTERVAL_MS)
@@ -865,7 +1145,9 @@ object UsbExclusiveSessionController {
                 transitioning = false,
                 runtimeReport = "stop_applied:$pendingReason"
             )
+            request
         }
+        scheduleNativeClose(closeRequest)
     }
 
     private fun drainPendingPlayerPcmOpenBlockIfNeeded() {
@@ -920,10 +1202,23 @@ object UsbExclusiveSessionController {
         )
     }
 
-    private fun closeHandleAndConnection(handle: Long, connection: UsbDeviceConnection) {
-        NPLogger.d(TAG, "closeHandleAndConnection(): handle=$handle fd=${connection.fileDescriptor}")
-        runCatching { UsbExclusiveNativeBridge.close(handle) }
-        runCatching { connection.close() }
+    private fun closeHandleAndConnection(
+        handle: Long,
+        connection: UsbDeviceConnection,
+        reason: String = "open_failed_cleanup"
+    ) {
+        ioGate.close()
+        runCatching { UsbExclusiveNativeBridge.stop(handle) }
+        clearActiveDeviceIdentity()
+        NPLogger.d(TAG, "closeHandleAndConnection(): queue handle=$handle fd=${connection.fileDescriptor}")
+        scheduleNativeClose(
+            NativeCloseRequest(
+                handle = handle,
+                connection = connection,
+                source = "opening",
+                reason = reason
+            )
+        )
         lastPlayerPcmNativeCloseAtMs = SystemClock.elapsedRealtime()
         sessionLock.withLock {
             if (activeConnection === connection) {
@@ -937,6 +1232,10 @@ object UsbExclusiveSessionController {
         val remainingBlockMs = playerPcmOpenBlockedUntilMs - nowMs
         if (remainingBlockMs > 0L) {
             return "native_open_deferred:$playerPcmOpenBlockReason remainingMs=$remainingBlockMs"
+        }
+        val closingCount = nativeCloseInFlight.get()
+        if (closingCount > 0) {
+            return "native_open_deferred:native_close_in_flight count=$closingCount"
         }
         return null
     }
@@ -1020,6 +1319,52 @@ object UsbExclusiveSessionController {
             contains("transport", ignoreCase = true) ||
             contains("foreground", ignoreCase = true) ||
             contains("stalled", ignoreCase = true)
+    }
+
+    private fun String.nativeBooleanField(name: String): Boolean? {
+        val value = substringAfter("$name=", missingDelimiterValue = "")
+            .takeIf { it.isNotEmpty() }
+            ?.substringBefore(' ')
+            ?: return null
+        return when (value) {
+            "true", "1" -> true
+            "false", "0" -> false
+            else -> null
+        }
+    }
+
+    private fun beginDeviceSession(device: UsbDevice) {
+        activeDeviceName.set(device.deviceName)
+        activeDeviceId.set(device.deviceId)
+        focusSuppressed.set(false)
+        ioGate.open()
+    }
+
+    private fun endDeviceSession() {
+        ioGate.close()
+        focusSuppressed.set(false)
+        clearActiveDeviceIdentity()
+    }
+
+    private fun clearActiveDeviceIdentity() {
+        activeDeviceId.set(NO_ACTIVE_USB_DEVICE_ID)
+        activeDeviceName.set(null)
+    }
+
+    private fun blockWritesImmediately() {
+        ioGate.close()
+        val handle = _state.value.handle
+        if (handle != 0L) {
+            runCatching { UsbExclusiveNativeBridge.stop(handle) }
+        }
+    }
+
+    private fun matchesActiveDevice(device: UsbDevice?): Boolean {
+        val currentId = activeDeviceId.get()
+        val currentName = activeDeviceName.get()
+        if (currentId == NO_ACTIVE_USB_DEVICE_ID && currentName == null) return false
+        if (device == null) return true
+        return device.deviceId == currentId || device.deviceName == currentName
     }
 
     private fun selectedDeviceKey(context: Context): String {

@@ -177,13 +177,18 @@ object PlayerManager {
     internal var playbackSoundApplyJob: Job? = null
     internal var usbAudioSinkReconfigureJob: Job? = null
     internal var usbExclusiveSystemAudioReleaseJob: Job? = null
+    internal var usbExclusiveSystemAudioResumeJob: Job? = null
+    internal var usbExclusiveToggleTransitionJob: Job? = null
     @Volatile
     internal var usbExclusiveSystemAudioReleaseInProgress = false
+    @Volatile
+    internal var usbExclusiveToggleTransitionActive = false
+    @Volatile
+    internal var usbExclusiveToggleTransitionReason = ""
     internal var usbExclusiveRecoveryJob: Job? = null
+    internal var usbExclusiveOpenGatePlaybackJob: Job? = null
     internal var usbExclusiveForegroundRecoveryJob: Job? = null
     internal var usbExclusiveRecoveryAttempts = 0
-    internal var usbExclusiveImmediateRecoveryAttempts = 0
-    internal var lastUsbExclusiveImmediateRecoveryAtMs = 0L
     @Volatile
     internal var usbExclusiveRouteGeneration = 0L
     @Volatile
@@ -257,7 +262,7 @@ object PlayerManager {
     internal const val BLUETOOTH_DISCONNECT_CONFIRM_DELAY_MS = 1200L
     internal const val AUTO_TRANSITION_EXTERNAL_PAUSE_GUARD_MS = 2_000L
     internal const val AUTO_TRANSITION_BUFFER_POSITION_GUARD_MS = 1_500L
-    internal const val USB_EXCLUSIVE_FOCUS_PAUSE_GUARD_MS = 5_000L
+    internal const val USB_EXCLUSIVE_FOCUS_PAUSE_GUARD_MS = 3_000L
     internal const val PENDING_SEEK_POSITION_TOLERANCE_MS = 1_500L
     internal const val QUALITY_CHANGE_REFRESH_DEBOUNCE_MS = 0L
     internal const val MIN_FADE_STEPS = 4
@@ -320,6 +325,13 @@ object PlayerManager {
 
     internal val _playbackPositionMs = MutableStateFlow(0L)
     val playbackPositionFlow: StateFlow<Long> = _playbackPositionMs
+
+    internal val _playbackDurationMs = MutableStateFlow(0L)
+    val playbackDurationFlow: StateFlow<Long> = _playbackDurationMs
+
+    internal val _usbExclusivePlaybackPreparingFlow = MutableStateFlow(false)
+    val usbExclusivePlaybackPreparingFlow: StateFlow<Boolean> =
+        _usbExclusivePlaybackPreparingFlow
 
     internal val _shuffleModeFlow = MutableStateFlow(false)
     val shuffleModeFlow: StateFlow<Boolean> = _shuffleModeFlow
@@ -421,6 +433,7 @@ object PlayerManager {
     internal fun setCurrentSongForPlayback(song: SongItem?, syncLyricon: Boolean = true) {
         val previousSong = _currentSongFlow.value
         _currentSongFlow.value = song
+        _playbackDurationMs.value = song?.durationMs?.coerceAtLeast(0L) ?: 0L
         if (previousSong === song) return
         if (syncLyricon) {
             syncLyriconSong(song)
@@ -626,7 +639,8 @@ object PlayerManager {
     internal fun applyAudioFocusPolicyOnMainThread() {
         if (!::player.isInitialized) return
         val useUsbExclusiveFocusGuard = shouldUseUsbExclusiveFocusGuard()
-        val handleFocus = !allowMixedPlaybackEnabled && !useUsbExclusiveFocusGuard
+        val bypassPlatformFocus = shouldBypassPlatformAudioFocusForUsbExclusive()
+        val handleFocus = !allowMixedPlaybackEnabled && !bypassPlatformFocus
         UsbExclusiveDebugLogger.logFocusPolicy(
             usbExclusivePlayback = usbExclusivePlaybackEnabled,
             allowMixedPlayback = allowMixedPlaybackEnabled,
@@ -656,6 +670,38 @@ object PlayerManager {
             pathState.sinkPlaying &&
             nativeState.source == "player_pcm" &&
             nativeState.streaming
+    }
+
+    internal fun shouldBypassPlatformAudioFocusForUsbExclusive(): Boolean {
+        if (!usbExclusivePlaybackEnabled || allowMixedPlaybackEnabled) return false
+        val pathState = UsbExclusiveAudioPathTracker.state.value
+        val nativeState = UsbExclusiveSessionController.state.value
+        if (
+            nativeState.transitioning ||
+            (nativeState.opened && nativeState.source == "player_pcm") ||
+            pathState.effectivePath == UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB
+        ) {
+            return true
+        }
+        val fallbackReason = pathState.fallbackReason ?: return true
+        return fallbackReason.startsWith("native_open_deferred") ||
+            fallbackReason.startsWith("native_reopen_cooling_down") ||
+            fallbackReason.contains("transport", ignoreCase = true) ||
+            fallbackReason.contains("start", ignoreCase = true) ||
+            fallbackReason.contains("play", ignoreCase = true)
+    }
+
+    internal fun isUsbExclusiveNativePlaybackStable(): Boolean {
+        if (!usbExclusivePlaybackEnabled || allowMixedPlaybackEnabled) return false
+        val pathState = UsbExclusiveAudioPathTracker.state.value
+        val nativeState = UsbExclusiveSessionController.state.value
+        return pathState.effectivePath == UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB &&
+            pathState.sinkPlaying &&
+            pathState.fallbackReason == null &&
+            nativeState.source == "player_pcm" &&
+            nativeState.opened &&
+            nativeState.streaming &&
+            !nativeState.transitioning
     }
 
     internal fun isPreparedInPlayer(): Boolean =
@@ -842,8 +888,39 @@ object PlayerManager {
         return true
     }
 
+    internal fun rejectUsbExclusiveToggleControl(): Boolean {
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "rejectUsbExclusiveToggleControl(): reason=$usbExclusiveToggleTransitionReason, stack=[${debugStackHint()}]"
+        )
+        postPlayerEvent(
+            PlayerEvent.ShowError(
+                getLocalizedString(R.string.settings_usb_exclusive_status_transitioning)
+            )
+        )
+        return true
+    }
+
+    fun beginUsbExclusiveToggleTransitionFromUi(targetEnabled: Boolean): Boolean {
+        if (usbExclusiveToggleTransitionActive) {
+            rejectUsbExclusiveToggleControl()
+            return false
+        }
+        usbExclusiveToggleTransitionActive = true
+        usbExclusiveToggleTransitionReason = if (targetEnabled) {
+            "usb_exclusive_enabled"
+        } else {
+            "usb_exclusive_disabled"
+        }
+        markUsbExclusivePlaybackPreparing(true, usbExclusiveToggleTransitionReason)
+        return true
+    }
+
     internal fun shouldBlockLocalRoomControl(commandSource: PlaybackCommandSource): Boolean {
         if (commandSource != PlaybackCommandSource.LOCAL) return false
+        if (usbExclusiveToggleTransitionActive) {
+            return rejectUsbExclusiveToggleControl()
+        }
         if (!isListenTogetherActive()) return false
         val room = activeListenTogetherRoomState()
         if (room?.roomStatus == "controller_offline" && !isCurrentUserControllerInListenTogether()) {
@@ -999,6 +1076,9 @@ object PlayerManager {
             setCurrentSongForPlayback(currentSong.copy(durationMs = resolvedDurationMs))
             changed = true
         }
+        if (currentSong?.sameIdentityAs(song) == true) {
+            _playbackDurationMs.value = resolvedDurationMs
+        }
 
         if (changed) {
             ioScope.launch { persistState() }
@@ -1011,7 +1091,24 @@ object PlayerManager {
         }
         val currentSong = _currentSongFlow.value ?: return
         val playerDurationMs = player.duration.takeIf { it > 0L } ?: return
+        _playbackDurationMs.value = playerDurationMs
         maybeUpdateSongDuration(currentSong, playerDurationMs)
+    }
+
+    internal fun shouldStartUsbExclusiveTransportFromSink(): Boolean {
+        if (!usbExclusivePlaybackEnabled) return false
+        return resumePlaybackRequested ||
+            _playWhenReadyFlow.value ||
+            _playbackControlPlayingFlow.value
+    }
+
+    internal fun markUsbExclusivePlaybackPreparing(preparing: Boolean, reason: String) {
+        if (_usbExclusivePlaybackPreparingFlow.value == preparing) return
+        _usbExclusivePlaybackPreparingFlow.value = preparing
+        NPLogger.d(
+            "NERI-UsbExclusive",
+            "playback preparing=$preparing reason=$reason"
+        )
     }
 
     fun changeCurrentPlaybackQuality(optionKey: String) {
