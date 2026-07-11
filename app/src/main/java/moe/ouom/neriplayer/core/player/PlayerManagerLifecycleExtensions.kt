@@ -819,6 +819,14 @@ internal fun PlayerManager.initializeImpl(
             "initialize(): rollback begin, playerInitialized=${isPlayerInitialized()}, cacheInitialized=${isCacheInitialized()}, conditionalFactoryPresent=${conditionalHttpFactory != null}"
         )
         runCatching {
+            val audioManager: AudioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            audioDeviceCallback?.let { audioManager.unregisterAudioDeviceCallback(it) }
+            audioDeviceCallback = null
+            NPLogger.d("NERI-PlayerManager", "initialize(): rollback unregistered audio device callback")
+        }.onFailure {
+            NPLogger.w("NERI-PlayerManager", "initialize(): rollback unregister audio callback failed: ${it.message}")
+        }
+        runCatching {
             conditionalHttpFactory?.close()
             NPLogger.d("NERI-PlayerManager", "initialize(): rollback closed conditional http factory")
         }.onFailure {

@@ -362,6 +362,8 @@ private suspend fun PlayerManager.runRefreshOperation(
         RefreshDeferredCompletion(deferred).cancel(error)
     } catch (error: Exception) {
         RefreshDeferredCompletion(deferred).completeExceptionally(error)
+        NPLogger.e("NERI-PlayerManager", "refresh stream url failed (${semantics.reason})", error)
+        handleRefreshResult(semantics, song, SongUrlResult.Failure)
     } finally {
         if (urlRefreshController.isCurrent(semantics)) {
             urlRefreshController.clear(semantics)

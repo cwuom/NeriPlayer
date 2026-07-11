@@ -25,12 +25,14 @@ package moe.ouom.neriplayer.core.api.netease
 
 import moe.ouom.neriplayer.util.JsonUtil.jsonQuote
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.isTransientHttp2StreamReset
 import moe.ouom.neriplayer.util.readBytesLimited
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.FormBody
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.brotli.dec.BrotliInputStream
@@ -48,6 +50,7 @@ class NeteaseClient {
     }
 
     private val okHttpClient: OkHttpClient
+    private val http1RetryClient: OkHttpClient
     private val cookieStore: MutableMap<String, MutableList<Cookie>> = mutableMapOf()
     private val cookieLock = Any()
 
@@ -84,6 +87,9 @@ class NeteaseClient {
             })
             // use a dynamic ProxySelector so bypass can be toggled at runtime
             .proxySelector(DynamicProxySelector)
+            .build()
+        http1RetryClient = okHttpClient.newBuilder()
+            .protocols(listOf(Protocol.HTTP_1_1))
             .build()
     }
 
@@ -191,7 +197,8 @@ class NeteaseClient {
         params: Map<String, Any>,
         mode: CryptoMode = CryptoMode.WEAPI,
         method: String = "POST",
-        usePersistedCookies: Boolean = true
+        usePersistedCookies: Boolean = true,
+        retryHttp1OnStreamReset: Boolean = false
     ): String {
         val requestUrl = url.toHttpUrl()
 
@@ -244,7 +251,22 @@ class NeteaseClient {
             else -> throw IllegalArgumentException("不支持的请求方法: $method")
         }
 
-        okHttpClient.newCall(builder.build()).execute().use { resp ->
+        val request = builder.build()
+        return try {
+            executeRequest(okHttpClient, request)
+        } catch (error: IOException) {
+            if (!retryHttp1OnStreamReset || !error.isTransientHttp2StreamReset()) throw error
+            NPLogger.w(
+                "NERI-NeteaseClient",
+                "HTTP/2 stream reset for $url, retrying with HTTP/1.1: ${error.message.orEmpty()}"
+            )
+            executeRequest(http1RetryClient, request)
+        }
+    }
+
+    @Throws(IOException::class)
+    private fun executeRequest(client: OkHttpClient, request: Request): String {
+        client.newCall(request).execute().use { resp ->
             val responseBody = resp.body ?: throw IOException("Empty response body")
             val encoding = resp.header("Content-Encoding")?.lowercase(Locale.getDefault())
             val bytes = when (encoding) {
@@ -268,10 +290,22 @@ class NeteaseClient {
     }
 
     @Throws(IOException::class)
-    fun callEApi(path: String, params: Map<String, Any>, usePersistedCookies: Boolean = true): String {
+    fun callEApi(
+        path: String,
+        params: Map<String, Any>,
+        usePersistedCookies: Boolean = true,
+        retryHttp1OnStreamReset: Boolean = false
+    ): String {
         val p = if (path.startsWith("/")) path else "/$path"
         val url = "https://interface.music.163.com/eapi$p"
-        return request(url, params, CryptoMode.EAPI, "POST", usePersistedCookies)
+        return request(
+            url = url,
+            params = params,
+            mode = CryptoMode.EAPI,
+            method = "POST",
+            usePersistedCookies = usePersistedCookies,
+            retryHttp1OnStreamReset = retryHttp1OnStreamReset
+        )
     }
 
     @Throws(IOException::class)
@@ -367,7 +401,8 @@ class NeteaseClient {
             return callEApi(
                 "/song/enhance/player/url/v1",
                 params,
-                usePersistedCookies = usePersistedCookies
+                usePersistedCookies = usePersistedCookies,
+                retryHttp1OnStreamReset = true
             )
         }
 
@@ -791,7 +826,12 @@ class NeteaseClient {
             "yrv" to 0,
         )
 
-        fun call(): String = this.callEApi("/song/lyric/v1", params, usePersistedCookies = true)
+        fun call(): String = this.callEApi(
+            "/song/lyric/v1",
+            params,
+            usePersistedCookies = true,
+            retryHttp1OnStreamReset = true
+        )
 
         var resp = call()
         try {

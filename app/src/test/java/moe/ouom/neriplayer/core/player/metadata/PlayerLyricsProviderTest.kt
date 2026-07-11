@@ -1,10 +1,14 @@
 package moe.ouom.neriplayer.core.player.metadata
 
 import moe.ouom.neriplayer.ui.component.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.util.isTransientHttp2StreamReset
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 
 class PlayerLyricsProviderTest {
 
@@ -14,6 +18,22 @@ class PlayerLyricsProviderTest {
         assertEquals(LocalLyricOverrideState.CLEARED, resolveLocalLyricOverrideState(""))
         assertEquals(LocalLyricOverrideState.CLEARED, resolveLocalLyricOverrideState("   "))
         assertEquals(LocalLyricOverrideState.PRESENT, resolveLocalLyricOverrideState("[00:00.00]歌词"))
+    }
+
+    @Test
+    fun `isTransientHttp2StreamReset detects cancel and refused stream failures`() {
+        assertTrue(IOException("stream was reset: CANCEL").isTransientHttp2StreamReset())
+
+        val wrapped = IOException("lyric request failed").apply {
+            addSuppressed(IOException("stream was reset: REFUSED_STREAM"))
+        }
+        assertTrue(wrapped.isTransientHttp2StreamReset())
+    }
+
+    @Test
+    fun `isTransientHttp2StreamReset keeps normal network failures visible`() {
+        assertFalse(IOException("timeout").isTransientHttp2StreamReset())
+        assertFalse(IOException("stream was reset: INTERNAL_ERROR").isTransientHttp2StreamReset())
     }
 
     @Test

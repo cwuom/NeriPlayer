@@ -41,6 +41,7 @@ import moe.ouom.neriplayer.ui.component.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.ui.component.resolveStoredLyricText
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.isTransientHttp2StreamReset
 import org.json.JSONObject
 
 internal fun extractPreferredNeteaseLyricContent(rawResponse: String): String {
@@ -109,6 +110,17 @@ internal object PlayerLyricsProvider {
             NPLogger.w("NERI-PlayerManager", "$logPrefix: ${error.message}")
             emptyList()
         }
+    }
+
+    private fun logNeteaseLyricLoadFailure(operation: String, error: Exception) {
+        if (error.isTransientHttp2StreamReset()) {
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "$operation skipped after transient HTTP/2 reset: ${error.message.orEmpty()}"
+            )
+            return
+        }
+        NPLogger.e("NERI-PlayerManager", "$operation failed: ${error.message}", error)
     }
 
     internal fun buildNeteaseLyricsCacheEntry(rawResponse: String): NeteaseLyricsCacheEntry {
@@ -206,7 +218,7 @@ internal object PlayerLyricsProvider {
                 getCachedNeteaseLyricsEntry(songId, neteaseClient, neteaseLyricsCache)
                     .preferredLyricEntries
             } catch (error: Exception) {
-                NPLogger.e("NERI-PlayerManager", "getNeteaseLyrics failed: ${error.message}", error)
+                logNeteaseLyricLoadFailure("getNeteaseLyrics", error)
                 emptyList()
             }
         }
@@ -222,11 +234,7 @@ internal object PlayerLyricsProvider {
                 getCachedNeteaseLyricsEntry(songId, neteaseClient, neteaseLyricsCache)
                     .translatedLyricEntries
             } catch (error: Exception) {
-                NPLogger.e(
-                    "NERI-PlayerManager",
-                    "getNeteaseTranslatedLyrics failed: ${error.message}",
-                    error
-                )
+                logNeteaseLyricLoadFailure("getNeteaseTranslatedLyrics", error)
                 emptyList()
             }
         }
@@ -242,11 +250,7 @@ internal object PlayerLyricsProvider {
                 getCachedNeteaseLyricsEntry(songId, neteaseClient, neteaseLyricsCache)
                     .romanizedLyricEntries
             } catch (error: Exception) {
-                NPLogger.e(
-                    "NERI-PlayerManager",
-                    "getNeteaseRomanizedLyrics failed: ${error.message}",
-                    error
-                )
+                logNeteaseLyricLoadFailure("getNeteaseRomanizedLyrics", error)
                 emptyList()
             }
         }
@@ -262,11 +266,7 @@ internal object PlayerLyricsProvider {
                 getCachedNeteaseLyricsEntry(songId, neteaseClient, neteaseLyricsCache)
                     .preferredLyricText
             } catch (error: Exception) {
-                NPLogger.e(
-                    "NERI-PlayerManager",
-                    "getPreferredNeteaseLyricContent failed: ${error.message}",
-                    error
-                )
+                logNeteaseLyricLoadFailure("getPreferredNeteaseLyricContent", error)
                 ""
             }
         }
@@ -282,11 +282,7 @@ internal object PlayerLyricsProvider {
                 getCachedNeteaseLyricsEntry(songId, neteaseClient, neteaseLyricsCache)
                     .romanizedLyricText
             } catch (error: Exception) {
-                NPLogger.e(
-                    "NERI-PlayerManager",
-                    "getPreferredNeteaseRomanizedLyricContent failed: ${error.message}",
-                    error
-                )
+                logNeteaseLyricLoadFailure("getPreferredNeteaseRomanizedLyricContent", error)
                 ""
             }
         }

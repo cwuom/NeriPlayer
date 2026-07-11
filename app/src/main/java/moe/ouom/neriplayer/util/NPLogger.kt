@@ -2,8 +2,11 @@ package moe.ouom.neriplayer.util
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.BuildConfig
 import org.json.JSONArray
@@ -41,12 +44,26 @@ import java.util.Locale
 
 object NPLogger {
 
+    private data class LogFileEntry(
+        val file: File,
+        val level: Int,
+        val tag: String,
+        val message: String,
+        val throwable: Throwable?
+    )
+
     private var appTag: String = BuildConfig.TAG
     private var isFileLoggingEnabled = false
     private var logFile: File? = null
     private var initialized = false
 
     private val logScope = CoroutineScope(Dispatchers.IO)
+    private val fileLogChannel = Channel<LogFileEntry>(
+        capacity = 512,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    private val fileLogWriterLock = Any()
+    private var fileLogWriterJob: Job? = null
 
     /**
      * Initializes the logger. Prefer calling once early (e.g., Application.onCreate).
@@ -84,6 +101,7 @@ object NPLogger {
             }
             val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
             logFile = File(logDir, "log_$timestamp.txt")
+            ensureFileLogWriterStarted()
             Log.i(appTag, "File logging enabled. Logs will be saved to: ${logFile?.absolutePath}")
         } catch (t: Throwable) {
             Log.e(appTag, "Failed to setup log file", t)
@@ -159,28 +177,60 @@ object NPLogger {
 
     private fun writeToFile(level: Int, tag: String, message: String, tr: Throwable?) {
         val currentLogFile = logFile ?: return
+        ensureFileLogWriterStarted()
+        fileLogChannel.trySend(
+            LogFileEntry(
+                file = currentLogFile,
+                level = level,
+                tag = tag,
+                message = message,
+                throwable = tr
+            )
+        )
+    }
 
-        logScope.launch {
-            try {
-                FileOutputStream(currentLogFile, true).use { fos ->
-                    val levelChar = when (level) {
-                        Log.DEBUG -> "D"
-                        Log.INFO -> "I"
-                        Log.WARN -> "W"
-                        Log.ERROR -> "E"
-                        else -> "U" // Unknown
-                    }
-                    val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
-
-                    var logEntry = "$timestamp $levelChar/$tag: $message\n"
-                    tr?.let {
-                        logEntry += "${Log.getStackTraceString(it)}\n"
-                    }
-
-                    fos.write(logEntry.toByteArray())
+    private fun ensureFileLogWriterStarted() {
+        synchronized(fileLogWriterLock) {
+            if (fileLogWriterJob?.isActive == true) return
+            fileLogWriterJob = logScope.launch {
+                for (entry in fileLogChannel) {
+                    writeLogEntryNow(entry)
                 }
-            } catch (e: IOException) {
-                Log.e(appTag, "Failed to write to log file", e)
+            }
+        }
+    }
+
+    private fun writeLogEntryNow(entry: LogFileEntry) {
+        try {
+            FileOutputStream(entry.file, true).use { fos ->
+                fos.write(formatFileLogEntry(entry).toByteArray())
+            }
+        } catch (e: IOException) {
+            Log.e(appTag, "Failed to write to log file", e)
+        }
+    }
+
+    private fun formatFileLogEntry(entry: LogFileEntry): String {
+        val levelChar = when (entry.level) {
+            Log.DEBUG -> "D"
+            Log.INFO -> "I"
+            Log.WARN -> "W"
+            Log.ERROR -> "E"
+            else -> "U"
+        }
+        val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+        return buildString {
+            append(timestamp)
+            append(' ')
+            append(levelChar)
+            append('/')
+            append(entry.tag)
+            append(": ")
+            append(entry.message)
+            append('\n')
+            entry.throwable?.let {
+                append(Log.getStackTraceString(it))
+                append('\n')
             }
         }
     }

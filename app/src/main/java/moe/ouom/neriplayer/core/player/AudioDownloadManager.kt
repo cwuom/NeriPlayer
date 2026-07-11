@@ -79,6 +79,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.currentTrafficNetworkType
 import moe.ouom.neriplayer.util.hasLikelyInternetAccess
+import moe.ouom.neriplayer.util.readBytesLimited
 import okhttp3.Dispatcher
 import okhttp3.Request
 import okhttp3.ResponseBody
@@ -142,6 +143,8 @@ object AudioDownloadManager {
     }
     private const val DOWNLOAD_READ_BUFFER_BYTES = 64L * 1024L
     private const val YOUTUBE_DOWNLOAD_PREFERRED_CHUNK_SIZE_BYTES = 4L * 1024L * 1024L
+    private const val MAX_HLS_PLAYLIST_BYTES = 1L * 1024L * 1024L
+    private const val MAX_HLS_SEGMENT_BYTES = 64L * 1024L * 1024L
 
     private val backgroundDownloadClient by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         AppContainer.sharedOkHttpClient.newBuilder()
@@ -2962,7 +2965,9 @@ object AudioDownloadManager {
             songKey = songKey
         ) { response ->
             if (!response.isSuccessful) throw IllegalStateException("HTTP ${response.code}")
-            response.body.string()
+            response.body.byteStream().use { input ->
+                input.readBytesLimited(MAX_HLS_PLAYLIST_BYTES).toString(Charsets.UTF_8)
+            }
         }
         val segmentUrls = parseHlsSegmentUrls(playlistRequest.url.toString(), playlistText)
         if (segmentUrls.isEmpty()) {
@@ -3013,7 +3018,9 @@ object AudioDownloadManager {
                         songKey = songKey
                     ) { response ->
                         if (!response.isSuccessful) throw IllegalStateException("HTTP ${response.code}")
-                        val rawPayload: ByteArray = response.body.bytes()
+                        val rawPayload = response.body.byteStream().use { input ->
+                            input.readBytesLimited(MAX_HLS_SEGMENT_BYTES)
+                        }
                         trafficAccumulator.add(rawPayload.size.toLong())
                         val payload = stripLeadingId3(rawPayload)
                         sink.write(payload)
@@ -3062,14 +3069,27 @@ object AudioDownloadManager {
     }
 
     private fun parseHlsSegmentUrls(playlistUrl: String, playlistText: String): List<String> {
-        return playlistText.lineSequence()
+        val lines = playlistText.lineSequence()
             .map(String::trim)
-            .filter { it.isNotBlank() && !it.startsWith('#') }
+            .filter(String::isNotBlank)
+            .toList()
+        require(lines.any { it == "#EXTM3U" }) { "HLS playlist is missing EXTM3U header" }
+        val unsupportedTag = lines.firstOrNull { line ->
+            line.startsWith("#EXT-X-KEY", ignoreCase = true) ||
+                line.startsWith("#EXT-X-MAP", ignoreCase = true) ||
+                line.startsWith("#EXT-X-BYTERANGE", ignoreCase = true) ||
+                line.startsWith("#EXT-X-I-FRAMES-ONLY", ignoreCase = true)
+        }
+        require(unsupportedTag == null) { "Unsupported HLS tag: ${unsupportedTag?.substringBefore(':')}" }
+        require(lines.none { it.startsWith("#EXT-X-STREAM-INF", ignoreCase = true) }) {
+            "HLS master playlists are not supported"
+        }
+        return lines
+            .filter { !it.startsWith('#') }
             .map { segment ->
                 runCatching { java.net.URI(playlistUrl).resolve(segment).toString() }
                     .getOrElse { segment }
             }
-            .toList()
     }
 
     private fun stripLeadingId3(bytes: ByteArray): ByteArray {
