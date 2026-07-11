@@ -19,7 +19,8 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnostics
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnosticsSnapshot
 import moe.ouom.neriplayer.data.settings.DEFAULT_USB_EXCLUSIVE_DEVICE_KEY
-import moe.ouom.neriplayer.data.settings.normalizeUsbExclusiveBufferMs
+import moe.ouom.neriplayer.data.settings.normalizeUsbExclusiveBackgroundBufferMs
+import moe.ouom.neriplayer.data.settings.normalizeUsbExclusiveForegroundBufferMs
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.data.settings.toUsbExclusivePreferences
 import moe.ouom.neriplayer.util.NPLogger
@@ -755,8 +756,15 @@ object UsbExclusiveSessionController {
         }
     }
 
-    fun configureActivePlayerBufferDuration(durationMs: Int): Boolean {
-        val normalizedDurationMs = normalizeUsbExclusiveBufferMs(durationMs)
+    fun configureActivePlayerBufferDuration(
+        durationMs: Int,
+        appInForeground: Boolean
+    ): Boolean {
+        val normalizedDurationMs = if (appInForeground) {
+            normalizeUsbExclusiveForegroundBufferMs(durationMs)
+        } else {
+            normalizeUsbExclusiveBackgroundBufferMs(durationMs)
+        }
         if (transitionInFlight.get()) {
             NPLogger.w(
                 TAG,

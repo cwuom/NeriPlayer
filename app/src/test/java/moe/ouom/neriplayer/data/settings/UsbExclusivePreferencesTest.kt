@@ -32,6 +32,8 @@ class UsbExclusivePreferencesTest {
         assertEquals(true, preferences.sampleRateCompatibilityEnabled)
         assertEquals(true, preferences.bitDepthCompatibilityEnabled)
         assertEquals(true, preferences.channelCompatibilityEnabled)
+        assertEquals(250, DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS)
+        assertEquals(1500, DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS)
         assertEquals(DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS, preferences.foregroundBufferMs)
         assertEquals(DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS, preferences.backgroundBufferMs)
         assertEquals(
@@ -168,13 +170,18 @@ class UsbExclusivePreferencesTest {
             bufferProfile = "stable",
             unsupportedFormatPolicy = null,
             foregroundBufferMs = 233,
-            backgroundBufferMs = 10_000
+            backgroundBufferMs = 175
         )
 
-        assertEquals(MIN_USB_EXCLUSIVE_BUFFER_MS, preferences.foregroundBufferMs)
-        assertEquals(10_000, preferences.backgroundBufferMs)
-        assertEquals(MIN_USB_EXCLUSIVE_BUFFER_MS, preferences.bufferDurationMs(appInForeground = true))
-        assertEquals(10_000, preferences.bufferDurationMs(appInForeground = false))
+        assertEquals(200, preferences.foregroundBufferMs)
+        assertEquals(MIN_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS, preferences.backgroundBufferMs)
+        assertEquals(200, preferences.bufferDurationMs(appInForeground = true))
+        assertEquals(
+            MIN_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
+            preferences.bufferDurationMs(appInForeground = false)
+        )
+        assertEquals(250, normalizeUsbExclusiveForegroundBufferMs(260))
+        assertEquals(1500, normalizeUsbExclusiveBackgroundBufferMs(1530))
     }
 
     @Test

@@ -10,11 +10,13 @@ const val DEFAULT_USB_EXCLUSIVE_DEVICE_KEY = "auto"
 const val DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_COMPATIBILITY = true
 const val DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_COMPATIBILITY = true
 const val DEFAULT_USB_EXCLUSIVE_CHANNEL_COMPATIBILITY = true
-const val DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS = 5000
-const val DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS = 12000
-const val MIN_USB_EXCLUSIVE_BUFFER_MS = 3000
+const val DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS = 250
+const val DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS = 1500
+const val MIN_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS = 100
+const val MIN_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS = 200
+const val MIN_USB_EXCLUSIVE_BUFFER_MS = MIN_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS
 const val MAX_USB_EXCLUSIVE_BUFFER_MS = 12000
-const val USB_EXCLUSIVE_BUFFER_STEP_MS = 500
+const val USB_EXCLUSIVE_BUFFER_STEP_MS = 50
 
 enum class UsbExclusiveSampleRateMode(
     val storageValue: String,
@@ -190,7 +192,11 @@ data class UsbExclusivePreferences(
 
     fun bufferDurationMs(appInForeground: Boolean): Int {
         val requested = if (appInForeground) foregroundBufferMs else backgroundBufferMs
-        return normalizeUsbExclusiveBufferMs(requested)
+        return if (appInForeground) {
+            normalizeUsbExclusiveForegroundBufferMs(requested)
+        } else {
+            normalizeUsbExclusiveBackgroundBufferMs(requested)
+        }
     }
 
     companion object {
@@ -229,14 +235,14 @@ data class UsbExclusivePreferences(
                     ?: DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_COMPATIBILITY,
                 channelCompatibilityEnabled = channelCompatibilityEnabled
                     ?: DEFAULT_USB_EXCLUSIVE_CHANNEL_COMPATIBILITY,
-                foregroundBufferMs = normalizeUsbExclusiveBufferMs(
+                foregroundBufferMs = normalizeUsbExclusiveForegroundBufferMs(
                     foregroundBufferMs ?: if (hasValidStoredBufferProfile) {
                         parsedBufferProfile.bufferDurationMs
                     } else {
                         DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS
                     }
                 ),
-                backgroundBufferMs = normalizeUsbExclusiveBufferMs(
+                backgroundBufferMs = normalizeUsbExclusiveBackgroundBufferMs(
                     backgroundBufferMs ?: DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
                 )
             )
@@ -281,10 +287,22 @@ fun normalizeUsbExclusiveDeviceKey(value: String?): String {
         ?: DEFAULT_USB_EXCLUSIVE_DEVICE_KEY
 }
 
+fun normalizeUsbExclusiveForegroundBufferMs(value: Int): Int {
+    return normalizeUsbExclusiveBufferMs(value, MIN_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS)
+}
+
+fun normalizeUsbExclusiveBackgroundBufferMs(value: Int): Int {
+    return normalizeUsbExclusiveBufferMs(value, MIN_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS)
+}
+
 fun normalizeUsbExclusiveBufferMs(value: Int): Int {
-    val clamped = value.coerceIn(MIN_USB_EXCLUSIVE_BUFFER_MS, MAX_USB_EXCLUSIVE_BUFFER_MS)
+    return normalizeUsbExclusiveForegroundBufferMs(value)
+}
+
+private fun normalizeUsbExclusiveBufferMs(value: Int, minBufferMs: Int): Int {
+    val clamped = value.coerceIn(minBufferMs, MAX_USB_EXCLUSIVE_BUFFER_MS)
     val rounded = (clamped / USB_EXCLUSIVE_BUFFER_STEP_MS) * USB_EXCLUSIVE_BUFFER_STEP_MS
-    return rounded.coerceIn(MIN_USB_EXCLUSIVE_BUFFER_MS, MAX_USB_EXCLUSIVE_BUFFER_MS)
+    return rounded.coerceIn(minBufferMs, MAX_USB_EXCLUSIVE_BUFFER_MS)
 }
 
 private fun resolveSupportedValue(

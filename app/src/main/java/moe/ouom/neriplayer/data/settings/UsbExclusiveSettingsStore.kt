@@ -145,7 +145,7 @@ internal class UsbExclusiveSettingsStore(private val context: Context) {
     }
 
     suspend fun setForegroundBufferMs(bufferMs: Int) {
-        val normalized = normalizeUsbExclusiveBufferMs(bufferMs)
+        val normalized = normalizeUsbExclusiveForegroundBufferMs(bufferMs)
         setStoredPreference(
             key = SettingsKeys.USB_EXCLUSIVE_FOREGROUND_BUFFER_MS,
             value = normalized
@@ -155,7 +155,7 @@ internal class UsbExclusiveSettingsStore(private val context: Context) {
     }
 
     suspend fun setBackgroundBufferMs(bufferMs: Int) {
-        val normalized = normalizeUsbExclusiveBufferMs(bufferMs)
+        val normalized = normalizeUsbExclusiveBackgroundBufferMs(bufferMs)
         setStoredPreference(
             key = SettingsKeys.USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
             value = normalized
@@ -165,44 +165,52 @@ internal class UsbExclusiveSettingsStore(private val context: Context) {
     }
 
     suspend fun setPreferences(preferences: UsbExclusivePreferences) {
+        val normalizedPreferences = preferences.copy(
+            foregroundBufferMs = normalizeUsbExclusiveForegroundBufferMs(
+                preferences.foregroundBufferMs
+            ),
+            backgroundBufferMs = normalizeUsbExclusiveBackgroundBufferMs(
+                preferences.backgroundBufferMs
+            )
+        )
         context.dataStore.edit { mutablePreferences ->
             mutablePreferences[SettingsKeys.USB_EXCLUSIVE_DEVICE_KEY] =
-                preferences.selectedDeviceKey
+                normalizedPreferences.selectedDeviceKey
             mutablePreferences[SettingsKeys.USB_EXCLUSIVE_SAMPLE_RATE_MODE] =
-                preferences.sampleRateMode.storageValue
+                normalizedPreferences.sampleRateMode.storageValue
             mutablePreferences[SettingsKeys.USB_EXCLUSIVE_BIT_DEPTH_MODE] =
-                preferences.bitDepthMode.storageValue
+                normalizedPreferences.bitDepthMode.storageValue
             mutablePreferences[SettingsKeys.USB_EXCLUSIVE_BUFFER_PROFILE] =
-                preferences.bufferProfile.storageValue
+                normalizedPreferences.bufferProfile.storageValue
             mutablePreferences[SettingsKeys.USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY] =
-                preferences.unsupportedFormatPolicy.storageValue
+                normalizedPreferences.unsupportedFormatPolicy.storageValue
             mutablePreferences[SettingsKeys.USB_EXCLUSIVE_SAMPLE_RATE_COMPATIBILITY] =
-                preferences.sampleRateCompatibilityEnabled
+                normalizedPreferences.sampleRateCompatibilityEnabled
             mutablePreferences[SettingsKeys.USB_EXCLUSIVE_BIT_DEPTH_COMPATIBILITY] =
-                preferences.bitDepthCompatibilityEnabled
+                normalizedPreferences.bitDepthCompatibilityEnabled
             mutablePreferences[SettingsKeys.USB_EXCLUSIVE_CHANNEL_COMPATIBILITY] =
-                preferences.channelCompatibilityEnabled
+                normalizedPreferences.channelCompatibilityEnabled
             mutablePreferences[SettingsKeys.USB_EXCLUSIVE_FOREGROUND_BUFFER_MS] =
-                preferences.foregroundBufferMs
+                normalizedPreferences.foregroundBufferMs
             mutablePreferences[SettingsKeys.USB_EXCLUSIVE_BACKGROUND_BUFFER_MS] =
-                preferences.backgroundBufferMs
+                normalizedPreferences.backgroundBufferMs
         }
         updatePlaybackPreferenceSnapshot(context) {
             it.copy(
-                usbExclusiveDeviceKey = preferences.selectedDeviceKey,
-                usbExclusiveSampleRateMode = preferences.sampleRateMode.storageValue,
-                usbExclusiveBitDepthMode = preferences.bitDepthMode.storageValue,
-                usbExclusiveBufferProfile = preferences.bufferProfile.storageValue,
+                usbExclusiveDeviceKey = normalizedPreferences.selectedDeviceKey,
+                usbExclusiveSampleRateMode = normalizedPreferences.sampleRateMode.storageValue,
+                usbExclusiveBitDepthMode = normalizedPreferences.bitDepthMode.storageValue,
+                usbExclusiveBufferProfile = normalizedPreferences.bufferProfile.storageValue,
                 usbExclusiveUnsupportedFormatPolicy =
-                    preferences.unsupportedFormatPolicy.storageValue,
+                    normalizedPreferences.unsupportedFormatPolicy.storageValue,
                 usbExclusiveSampleRateCompatibility =
-                    preferences.sampleRateCompatibilityEnabled,
+                    normalizedPreferences.sampleRateCompatibilityEnabled,
                 usbExclusiveBitDepthCompatibility =
-                    preferences.bitDepthCompatibilityEnabled,
+                    normalizedPreferences.bitDepthCompatibilityEnabled,
                 usbExclusiveChannelCompatibility =
-                    preferences.channelCompatibilityEnabled,
-                usbExclusiveForegroundBufferMs = preferences.foregroundBufferMs,
-                usbExclusiveBackgroundBufferMs = preferences.backgroundBufferMs
+                    normalizedPreferences.channelCompatibilityEnabled,
+                usbExclusiveForegroundBufferMs = normalizedPreferences.foregroundBufferMs,
+                usbExclusiveBackgroundBufferMs = normalizedPreferences.backgroundBufferMs
             )
         }
     }

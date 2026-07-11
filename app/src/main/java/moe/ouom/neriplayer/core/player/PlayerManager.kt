@@ -178,6 +178,7 @@ object PlayerManager {
     internal var usbAudioSinkReconfigureJob: Job? = null
     internal var usbExclusiveSystemAudioReleaseJob: Job? = null
     internal var usbExclusiveSystemAudioResumeJob: Job? = null
+    internal var usbExclusiveSystemAudioWatchdogJob: Job? = null
     internal var usbExclusiveToggleTransitionJob: Job? = null
     @Volatile
     internal var usbExclusiveSystemAudioReleaseInProgress = false

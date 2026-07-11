@@ -40,8 +40,8 @@ constexpr int kPermissionPollIntervalMs = 2;
 constexpr int kGeneratedToneFrequencyHz = 440;
 constexpr int kDefaultPacketsPerTransfer = 16;
 constexpr int kDefaultTransferCount = 12;
-constexpr int kDefaultPcmRingDurationMs = 5000;
-constexpr int kMinimumPcmRingDurationMs = 3000;
+constexpr int kDefaultPcmRingDurationMs = 250;
+constexpr int kMinimumPcmRingDurationMs = 100;
 constexpr int kMaximumPcmRingDurationMs = 12000;
 constexpr int kCancelDrainWarningMs = 1200;
 constexpr int kFirstTransferCompletionTimeoutMs = 750;
@@ -2082,11 +2082,19 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativeConfigur
         LOGW("nativeConfigurePlayerBufferDuration rejected: closing handle=%lld", static_cast<long long>(handleValue));
         return JNI_FALSE;
     }
+    const int rawDurationMs = static_cast<int>(durationMs);
     const int requestedDurationMs = std::clamp(
-        static_cast<int>(durationMs),
+        rawDurationMs,
         kMinimumPcmRingDurationMs,
         kMaximumPcmRingDurationMs
     );
+    if (requestedDurationMs != rawDurationMs) {
+        LOGW(
+            "nativeConfigurePlayerBufferDuration clamped: requested=%d applied=%d",
+            rawDurationMs,
+            requestedDurationMs
+        );
+    }
     if (holder->streamSource.load() == StreamSource::PlayerPcm) {
         std::string resizeError;
         if (!holder->pcmPipeline.resizeRingDuration(

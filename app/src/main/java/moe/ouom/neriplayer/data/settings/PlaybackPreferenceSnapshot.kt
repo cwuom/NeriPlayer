@@ -168,10 +168,10 @@ data class PlaybackPreferenceSnapshot(
             usbExclusiveUnsupportedFormatPolicy = UsbExclusiveUnsupportedFormatPolicy
                 .fromStorageValue(usbExclusiveUnsupportedFormatPolicy)
                 .storageValue,
-            usbExclusiveForegroundBufferMs = normalizeUsbExclusiveBufferMs(
+            usbExclusiveForegroundBufferMs = normalizeUsbExclusiveForegroundBufferMs(
                 usbExclusiveForegroundBufferMs
             ),
-            usbExclusiveBackgroundBufferMs = normalizeUsbExclusiveBufferMs(
+            usbExclusiveBackgroundBufferMs = normalizeUsbExclusiveBackgroundBufferMs(
                 usbExclusiveBackgroundBufferMs
             ),
             cloudMusicLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(cloudMusicLyricDefaultOffsetMs),
