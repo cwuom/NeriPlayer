@@ -364,24 +364,24 @@ internal fun PlayerManager.handleTrackEnded() {
     when (repeatModeSetting) {
         Player.REPEAT_MODE_ONE -> {
             markAutoTrackAdvance()
-            playAtIndex(currentIndex)
+            playAtIndex(currentIndex, commandSource = activePlaybackCommandSource)
         }
         Player.REPEAT_MODE_ALL -> {
             markAutoTrackAdvance()
-            next(force = true)
+            next(force = true, commandSource = activePlaybackCommandSource)
         }
         else -> {
             if (player.shuffleModeEnabled) {
                 if (shuffleFuture.isNotEmpty() || shuffleBag.isNotEmpty()) {
                     markAutoTrackAdvance()
-                    next(force = false)
+                    next(force = false, commandSource = activePlaybackCommandSource)
                 } else {
                     stopPlaybackPreservingQueue()
                 }
             } else {
                 if (currentIndex < currentPlaylist.lastIndex) {
                     markAutoTrackAdvance()
-                    next(force = false)
+                    next(force = false, commandSource = activePlaybackCommandSource)
                 } else {
                     stopPlaybackPreservingQueue()
                 }
@@ -390,7 +390,10 @@ internal fun PlayerManager.handleTrackEnded() {
     }
 }
 
-internal fun PlayerManager.advanceAfterPlaybackFailure(source: String) {
+internal fun PlayerManager.advanceAfterPlaybackFailure(
+    source: String,
+    commandSource: PlaybackCommandSource = activePlaybackCommandSource
+) {
     clearPendingSeekPosition()
     _playbackPositionMs.value = 0L
 
@@ -410,11 +413,11 @@ internal fun PlayerManager.advanceAfterPlaybackFailure(source: String) {
     when (action) {
         PlaybackFailureAdvanceAction.NEXT -> {
             markAutoTrackAdvance()
-            next(force = false)
+            next(force = false, commandSource = commandSource)
         }
         PlaybackFailureAdvanceAction.WRAP -> {
             markAutoTrackAdvance()
-            next(force = true)
+            next(force = true, commandSource = commandSource)
         }
         PlaybackFailureAdvanceAction.STOP -> {
             stopPlaybackPreservingQueue(clearMediaUrl = true)
@@ -591,6 +594,9 @@ internal fun PlayerManager.playAtIndex(
                     }
                     maybeUpdateSongDuration(song, result.durationMs ?: 0L)
                     val cacheKey = result.cacheKeyOverride ?: computeCacheKey(song)
+                    configureActivePlaybackCandidates(result, resumePositionMs, commandSource)
+                    val selectedCandidate = currentPlaybackCandidate()
+                    val selectedUrl = selectedCandidate?.url ?: result.url
                     NPLogger.d(
                         "NERI-PlayerManager",
                         "Using custom cache key: $cacheKey for song: ${song.name}"
@@ -601,12 +607,12 @@ internal fun PlayerManager.playAtIndex(
                     )
                     val mediaItem = buildMediaItem(
                         _currentSongFlow.value ?: song,
-                        result.url,
+                        selectedUrl,
                         cacheKey,
                         result.mimeType
                     )
                     syncLyriconSong(_currentSongFlow.value ?: song)
-                    _currentMediaUrl.value = result.url
+                    _currentMediaUrl.value = selectedUrl
                     _currentPlaybackAudioInfo.value = result.audioInfo
                     currentMediaUrlResolvedAtMs = SystemClock.elapsedRealtime()
                     scheduleStatePersist(
@@ -630,11 +636,13 @@ internal fun PlayerManager.playAtIndex(
                         player.seekTo(startPositionMs)
                         _playbackPositionMs.value = startPositionMs
                     }
+                    resetPlaybackProgressAdvanceBaseline(startPositionMs)
                     clearPendingSeekPosition()
                     player.prepare()
                     if (resumePlaybackRequested) {
                         startPlayerPlaybackWithFade(startPlan)
                         startProgressUpdates()
+                        schedulePlaybackStartupWatchdog(reason = "media_resolved")
                     } else {
                         player.playWhenReady = false
                         player.pause()
@@ -668,7 +676,9 @@ internal fun PlayerManager.playAtIndex(
                         getLocalizedString(R.string.player_playback_login_required)
                     )
                 )
-                withContext(Dispatchers.Main) { next() }
+                withContext(Dispatchers.Main) {
+                    next(commandSource = commandSource)
+                }
             }
             is SongUrlResult.Failure -> {
                 NPLogger.e(
@@ -677,7 +687,10 @@ internal fun PlayerManager.playAtIndex(
                 )
                 consecutivePlayFailures++
                 withContext(Dispatchers.Main) {
-                    advanceAfterPlaybackFailure(source = "resolve_song_url_failure")
+                    advanceAfterPlaybackFailure(
+                        source = "resolve_song_url_failure",
+                        commandSource = commandSource
+                    )
                 }
             }
         }
@@ -731,6 +744,8 @@ private fun PlayerManager.maybeHydrateLocalSongForPlayback(
 
 internal fun PlayerManager.enterPendingMediaLoad(requestedPositionMs: Long) {
     val action = resolvePendingMediaLoadEntryAction(requestedPositionMs)
+    cancelPlaybackStartupWatchdog(reason = "pending_media_load")
+    clearActivePlaybackCandidates()
     pendingMediaLoadActive = true
     pendingMediaLoadPositionMs = action.positionMs
     if (action.stopProgressUpdates) stopProgressUpdates()
@@ -867,6 +882,8 @@ internal fun PlayerManager.playImpl(
             )
             val resumePositionMs = player.currentPosition.coerceAtLeast(0L)
             _playbackPositionMs.value = resumePositionMs
+            resetPlaybackProgressAdvanceBaseline(resumePositionMs)
+            schedulePlaybackStartupWatchdog(reason = "manual_resume_prepared")
             scheduleStatePersist(
                 positionMs = resumePositionMs,
                 shouldResumePlayback = true
@@ -966,6 +983,7 @@ internal fun PlayerManager.pauseImpl(
             pendingLoadActive = true,
             exposedPositionMs = _playbackPositionMs.value
         )
+        cancelPlaybackStartupWatchdog(reason = debugReason)
         cancelPendingPauseRequest(resetVolumeToFull = true)
         updateResumePlaybackRequested(action.resumePlaybackRequested)
         playbackRequestToken += 1
@@ -994,6 +1012,7 @@ internal fun PlayerManager.pauseImpl(
         "pause requested: forcePersist=$forcePersist, source=$commandSource, allowFadeOut=$allowFadeOut, preserveMutedVolume=$preserveMutedVolume, reason=$debugReason, currentSong=${_currentSongFlow.value?.name}, isPlaying=${player.isPlaying}, playWhenReady=${player.playWhenReady}, stack=[${debugStackHint()}]"
     )
     cancelPendingPauseRequest()
+    cancelPlaybackStartupWatchdog(reason = debugReason)
     updateResumePlaybackRequested(false)
     playbackRequestToken += 1
     playJob?.cancel()
@@ -1211,7 +1230,11 @@ internal fun PlayerManager.nextImpl(
             val nextIdx = shuffleFuture.removeAt(shuffleFuture.lastIndex)
             if (currentIndex != -1) shuffleHistory.add(currentIndex)
             currentIndex = nextIdx
-            playAtIndex(currentIndex, useTrackTransitionFade = useTransitionFade)
+            playAtIndex(
+                currentIndex,
+                useTrackTransitionFade = useTransitionFade,
+                commandSource = commandSource
+            )
             emitPlaybackCommand(
                 type = "NEXT",
                 source = commandSource,
@@ -1231,7 +1254,11 @@ internal fun PlayerManager.nextImpl(
         }
 
         if (shuffleBag.isEmpty()) {
-            playAtIndex(currentIndex, useTrackTransitionFade = useTransitionFade)
+            playAtIndex(
+                currentIndex,
+                useTrackTransitionFade = useTransitionFade,
+                commandSource = commandSource
+            )
             return
         }
 
@@ -1239,7 +1266,11 @@ internal fun PlayerManager.nextImpl(
 
         val pick = if (shuffleBag.size == 1) 0 else Random.nextInt(shuffleBag.size)
         currentIndex = shuffleBag.removeAt(pick)
-        playAtIndex(currentIndex, useTrackTransitionFade = useTransitionFade)
+        playAtIndex(
+            currentIndex,
+            useTrackTransitionFade = useTransitionFade,
+            commandSource = commandSource
+        )
         emitPlaybackCommand(
             type = "NEXT",
             source = commandSource,
@@ -1257,7 +1288,11 @@ internal fun PlayerManager.nextImpl(
                 return
             }
         }
-        playAtIndex(currentIndex, useTrackTransitionFade = useTransitionFade)
+        playAtIndex(
+            currentIndex,
+            useTrackTransitionFade = useTransitionFade,
+            commandSource = commandSource
+        )
         emitPlaybackCommand(
             type = "NEXT",
             source = commandSource,
@@ -1287,7 +1322,11 @@ internal fun PlayerManager.previousImpl(
             if (currentIndex != -1) shuffleFuture.add(currentIndex)
             val prev = shuffleHistory.removeAt(shuffleHistory.lastIndex)
             currentIndex = prev
-            playAtIndex(currentIndex, useTrackTransitionFade = useTransitionFade)
+            playAtIndex(
+                currentIndex,
+                useTrackTransitionFade = useTransitionFade,
+                commandSource = commandSource
+            )
             emitPlaybackCommand(
                 type = "PREVIOUS",
                 source = commandSource,
@@ -1299,7 +1338,11 @@ internal fun PlayerManager.previousImpl(
     } else {
         if (currentIndex > 0) {
             currentIndex--
-            playAtIndex(currentIndex, useTrackTransitionFade = useTransitionFade)
+            playAtIndex(
+                currentIndex,
+                useTrackTransitionFade = useTransitionFade,
+                commandSource = commandSource
+            )
             emitPlaybackCommand(
                 type = "PREVIOUS",
                 source = commandSource,
@@ -1308,7 +1351,11 @@ internal fun PlayerManager.previousImpl(
         } else {
             if (repeatModeSetting == Player.REPEAT_MODE_ALL && currentPlaylist.isNotEmpty()) {
                 currentIndex = currentPlaylist.lastIndex
-                playAtIndex(currentIndex, useTrackTransitionFade = useTransitionFade)
+                playAtIndex(
+                    currentIndex,
+                    useTrackTransitionFade = useTransitionFade,
+                    commandSource = commandSource
+                )
                 emitPlaybackCommand(
                     type = "PREVIOUS",
                     source = commandSource,
@@ -1372,10 +1419,6 @@ internal fun PlayerManager.startProgressUpdates() {
         return
     }
     if (progressJob?.isActive == true) return
-    syncPlaybackStatsPlayingState(
-        playing = true,
-        reason = "progress_updates_start"
-    )
     NPLogger.d(
         "NERI-PlayerManager",
         "startProgressUpdates: currentSong=${_currentSongFlow.value?.name}, playbackState=${playbackStateName(player.playbackState)}"
@@ -1396,6 +1439,15 @@ internal fun PlayerManager.startProgressUpdates() {
                 continue
             }
             _playbackPositionMs.value = positionMs
+            if (!playbackProgressAdvanceReported && isPlaybackActuallyAdvancing()) {
+                playbackProgressAdvanceReported = true
+                startupStallRecoveryAttempts = 0
+                cancelPlaybackStartupWatchdog(reason = "position_advanced")
+                syncPlaybackStatsPlayingState(
+                    playing = true,
+                    reason = "progress_position_advanced"
+                )
+            }
             val durationMs = runCatching { player.duration.coerceAtLeast(0L) }
                 .getOrDefault(_playbackDurationMs.value)
             if (durationMs > 0L) {
@@ -1468,6 +1520,8 @@ internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolea
     playJob?.cancel()
     playJob = null
     pendingMediaLoadActive = false
+    cancelPlaybackStartupWatchdog(reason = "stop_playback_preserving_queue")
+    clearActivePlaybackCandidates()
     currentYouTubePrefetchJob?.cancel()
     currentYouTubePrefetchJob = null
     currentYouTubePrefetchVideoIds = emptySet()

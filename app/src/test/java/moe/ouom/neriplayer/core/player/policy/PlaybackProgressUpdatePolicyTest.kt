@@ -43,4 +43,22 @@ class PlaybackProgressUpdatePolicyTest {
             )
         )
     }
+
+    @Test
+    fun `startup progress must advance beyond resume baseline`() {
+        assertFalse(
+            hasPlaybackProgressAdvancedSinceBaseline(
+                currentPositionMs = 30_000L,
+                baselinePositionMs = 30_000L,
+                toleranceMs = 500L
+            )
+        )
+        assertTrue(
+            hasPlaybackProgressAdvancedSinceBaseline(
+                currentPositionMs = 30_700L,
+                baselinePositionMs = 30_000L,
+                toleranceMs = 500L
+            )
+        )
+    }
 }

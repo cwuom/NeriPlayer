@@ -72,6 +72,7 @@ import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
 import moe.ouom.neriplayer.core.player.model.PlaybackSoundConfig
 import moe.ouom.neriplayer.core.player.model.PlaybackSoundState
+import moe.ouom.neriplayer.core.player.model.PlaybackUrlCandidate
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.metadata.NeteaseLyricsCacheEntry
@@ -171,6 +172,9 @@ object PlayerManager {
             field = value
             syncPlaybackControlPlayingState()
         }
+    internal var playbackStartupWatchdogJob: Job? = null
+    @Volatile
+    internal var playbackStartupWatchdogToken = 0L
     internal var bluetoothDisconnectPauseJob: Job? = null
     internal var audioRouteMuteRestoreVolume: Float? = null
     internal var playbackSoundPersistJob: Job? = null
@@ -265,6 +269,11 @@ object PlayerManager {
     internal const val AUTO_TRANSITION_BUFFER_POSITION_GUARD_MS = 1_500L
     internal const val USB_EXCLUSIVE_FOCUS_PAUSE_GUARD_MS = 3_000L
     internal const val PENDING_SEEK_POSITION_TOLERANCE_MS = 1_500L
+    internal const val STARTUP_STALL_POSITION_TOLERANCE_MS = 500L
+    internal const val STARTUP_STALL_LOCAL_TIMEOUT_MS = 5_000L
+    internal const val STARTUP_STALL_REMOTE_TIMEOUT_MS = 12_000L
+    internal const val STARTUP_STALL_YOUTUBE_TIMEOUT_MS = 25_000L
+    internal const val STARTUP_STALL_MAX_RECOVERY_ATTEMPTS = 3
     internal const val QUALITY_CHANGE_REFRESH_DEBOUNCE_MS = 0L
     internal const val MIN_FADE_STEPS = 4
     internal const val MAX_FADE_STEPS = 30
@@ -390,6 +399,13 @@ object PlayerManager {
     internal var pendingMediaLoadActive = false
     @Volatile
     internal var pendingMediaLoadPositionMs = 0L
+    internal var activePlaybackCandidates: List<PlaybackUrlCandidate> = emptyList()
+    internal var activePlaybackUrlIndex = 0
+    internal var activePlaybackResumePositionMs = 0L
+    internal var activePlaybackCommandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
+    internal var startupStallRecoveryAttempts = 0
+    internal var playbackProgressBaselinePositionMs = 0L
+    internal var playbackProgressAdvanceReported = false
     internal var lastHandledTrackEndKey: String? = null
     internal var lastTrackEndHandledAtMs = 0L
     val audioLevelFlow get() = AudioReactive.level
@@ -706,10 +722,9 @@ object PlayerManager {
     }
 
     internal fun isPreparedInPlayer(): Boolean =
-        player.currentMediaItem != null && (
-            player.playbackState == Player.STATE_READY ||
-                player.playbackState == Player.STATE_BUFFERING
-            )
+        player.currentMediaItem != null &&
+            player.playbackState == Player.STATE_READY &&
+            !shouldTreatReadyAtStartAsUnhealthyPrepared()
 
     fun setListenTogetherSyncPlaybackRate(rate: Float) {
         ensureInitialized()
@@ -740,6 +755,8 @@ object PlayerManager {
         )
         cancelPendingPauseRequest(resetVolumeToFull = true)
         playbackRequestToken += 1
+        cancelPlaybackStartupWatchdog(reason = "listen_together_reset")
+        clearActivePlaybackCandidates()
         playJob?.cancel()
         playJob = null
         pendingMediaLoadActive = false
@@ -866,6 +883,8 @@ object PlayerManager {
             "stopCurrentPlaybackForListenTogetherAwaitingStream(): currentSong=${_currentSongFlow.value?.name}, mediaUrl=${_currentMediaUrl.value}, targetStableKey=${currentListenTogetherTargetStableKey()}, stack=[${debugStackHint()}]"
         )
         cancelPendingPauseRequest(resetVolumeToFull = true)
+        cancelPlaybackStartupWatchdog(reason = "listen_together_awaiting_stream")
+        clearActivePlaybackCandidates()
         stopProgressUpdates()
         cancelVolumeFade(resetToFull = true)
         runCatching { player.stop() }
@@ -1317,7 +1336,8 @@ object PlayerManager {
             reason = reason,
             bypassCooldown = true,
             fallbackSeekPositionMs = positionMs,
-            resumePlaybackAfterRefresh = shouldResumePlaybackAfterRefresh
+            resumePlaybackAfterRefresh = shouldResumePlaybackAfterRefresh,
+            resumedPlaybackCommandSource = activePlaybackCommandSource
         )
     }
 

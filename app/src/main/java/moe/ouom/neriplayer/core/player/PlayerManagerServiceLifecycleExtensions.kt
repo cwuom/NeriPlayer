@@ -12,6 +12,7 @@ internal fun PlayerManager.suspendPlaybackForServiceRestart(reason: String) {
     playbackRequestToken += 1L
     playJob?.cancel()
     playJob = null
+    cancelPlaybackStartupWatchdog(reason = "service_restart")
     cancelPendingPauseRequest(resetVolumeToFull = true)
     cancelVolumeFade(resetToFull = true)
     runCatching {

@@ -237,6 +237,7 @@ internal fun PlayerManager.initializeImpl(
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 NPLogger.e("NERI-Player", "onPlayerError: ${error.errorCodeName}", error)
+                cancelPlaybackStartupWatchdog(reason = "player_error")
 
                 if (!shouldAcceptPlayerCallback(
                         playbackRequestToken,
@@ -255,6 +256,14 @@ internal fun PlayerManager.initializeImpl(
                 val isOfflineCache = currentUrl?.startsWith("http://offline.cache/") == true
 
                 val cause = error.cause
+                val shouldResumeAfterRecovery = resumePlaybackRequested || player.playWhenReady || player.isPlaying
+                if (
+                    shouldResumeAfterRecovery &&
+                    trySwitchToNextPlaybackCandidateForRecovery(reason = "player_error_${error.errorCodeName}")
+                ) {
+                    return
+                }
+
                 if (shouldAttemptUrlRefresh(error, _currentSongFlow.value, isOfflineCache)) {
                     val shouldBypassRefreshCooldown = pendingSeekPositionOrNull() != null &&
                         YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeSeek(
@@ -270,7 +279,8 @@ internal fun PlayerManager.initializeImpl(
                         reason = "playback_error_${error.errorCodeName}",
                         bypassCooldown = shouldBypassRefreshCooldown,
                         fallbackSeekPositionMs = resumePositionMs,
-                        resumePlaybackAfterRefresh = resumePlaybackAfterRefresh
+                        resumePlaybackAfterRefresh = resumePlaybackAfterRefresh,
+                        resumedPlaybackCommandSource = activePlaybackCommandSource
                     )
                     return
                 }
@@ -340,6 +350,9 @@ internal fun PlayerManager.initializeImpl(
                     return
                 }
                 _playerPlaybackStateFlow.value = state
+                if (state == Player.STATE_BUFFERING && player.playWhenReady) {
+                    schedulePlaybackStartupWatchdog(reason = "state_buffering")
+                }
                 if (state == Player.STATE_READY) {
                     if (shouldAcceptPlayerCallback(
                             playbackRequestToken,
@@ -351,9 +364,11 @@ internal fun PlayerManager.initializeImpl(
                     }
                     if (player.playWhenReady || player.isPlaying) {
                         startProgressUpdates()
+                        schedulePlaybackStartupWatchdog(reason = "state_ready")
                     }
                 }
                 if (state == Player.STATE_ENDED) {
+                    cancelPlaybackStartupWatchdog(reason = "state_ended")
                     if (shouldAcceptPlayerCallback(
                             playbackRequestToken,
                             loadedMediaRequestToken,
@@ -376,12 +391,15 @@ internal fun PlayerManager.initializeImpl(
                 }
                 _isPlayingFlow.value = isPlaying
                 LyriconManager.setPlaybackState(isPlaying)
-                syncPlaybackStatsPlayingState(
-                    playing = isPlaying,
-                    reason = "exo_is_playing_changed"
-                )
+                if (!isPlaying) {
+                    syncPlaybackStatsPlayingState(
+                        playing = false,
+                        reason = "exo_is_playing_changed"
+                    )
+                }
                 if (isPlaying) {
                     startProgressUpdates()
+                    schedulePlaybackStartupWatchdog(reason = "is_playing_true")
                 } else if (!player.playWhenReady) {
                     stopProgressUpdates()
                 }
@@ -409,7 +427,9 @@ internal fun PlayerManager.initializeImpl(
                 _playWhenReadyFlow.value = playWhenReady
                 if (playWhenReady) {
                     startProgressUpdates()
+                    schedulePlaybackStartupWatchdog(reason = "play_when_ready_true")
                 } else if (!player.isPlaying) {
+                    cancelPlaybackStartupWatchdog(reason = "play_when_ready_false")
                     stopProgressUpdates()
                 }
                 if (!playWhenReady) {
@@ -2573,6 +2593,8 @@ internal fun PlayerManager.releaseImpl() {
     try {
         updateResumePlaybackRequested(false)
         lastAutoTrackAdvanceAtMs = 0L
+        cancelPlaybackStartupWatchdog(reason = "release")
+        clearActivePlaybackCandidates()
         StartupAudioFocusController.release("player_release")
 
     try {

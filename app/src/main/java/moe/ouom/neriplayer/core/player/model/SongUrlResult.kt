@@ -23,16 +23,56 @@ package moe.ouom.neriplayer.core.player.model
  * Updated: 2026/3/23
  */
 
+internal data class PlaybackUrlCandidate(
+    val url: String,
+    val candidateUrls: List<String> = emptyList(),
+    val mimeType: String? = null,
+    val expectedContentLength: Long? = null,
+    val audioInfo: PlaybackAudioInfo? = null,
+    val cacheKeyOverride: String? = null
+) {
+    fun playbackUrls(): List<String> = buildList {
+        add(url)
+        addAll(candidateUrls)
+    }.map { it.trim() }
+        .filter { it.isNotBlank() }
+        .distinct()
+}
+
 internal sealed class SongUrlResult {
     data class Success(
         val url: String,
+        val candidateUrls: List<String> = emptyList(),
         val durationMs: Long? = null,
         val mimeType: String? = null,
         val noticeMessage: String? = null,
         val expectedContentLength: Long? = null,
         val audioInfo: PlaybackAudioInfo? = null,
-        val cacheKeyOverride: String? = null
-    ) : SongUrlResult()
+        val cacheKeyOverride: String? = null,
+        val fallbackCandidates: List<PlaybackUrlCandidate> = emptyList()
+    ) : SongUrlResult() {
+        fun playbackUrls(): List<String> = buildList {
+            add(url)
+            addAll(candidateUrls)
+        }.map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+
+        fun playbackCandidates(): List<PlaybackUrlCandidate> {
+            val primary = playbackUrls().map { playbackUrl ->
+                PlaybackUrlCandidate(
+                    url = playbackUrl,
+                    mimeType = mimeType,
+                    expectedContentLength = expectedContentLength,
+                    audioInfo = audioInfo,
+                    cacheKeyOverride = cacheKeyOverride
+                )
+            }
+            return (primary + fallbackCandidates.flatMap { candidate ->
+                candidate.playbackUrls().map { playbackUrl -> candidate.copy(url = playbackUrl) }
+            }).distinctBy { it.url }
+        }
+    }
 
     object WaitingForAuthoritativeStream : SongUrlResult()
     object RequiresLogin : SongUrlResult()
