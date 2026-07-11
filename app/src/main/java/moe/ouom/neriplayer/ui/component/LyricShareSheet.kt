@@ -139,6 +139,7 @@ fun LyricShareSheet(
     }
     val selectedCharCount = selectedText.length
     val coverUrl = remember(song, context) { song.displayCoverUrl(context) }
+    var isSharingCard by remember { mutableStateOf(false) }
 
     LaunchedEffect(shareableLyrics, initialKey) {
         if (shareableLyrics.isEmpty()) {
@@ -218,6 +219,7 @@ fun LyricShareSheet(
 
             LyricShareActions(
                 enabled = selectedText.isNotBlank(),
+                cardInProgress = isSharingCard,
                 onCopy = {
                     scope.launch {
                         clipboard.setClipEntry(
@@ -233,24 +235,28 @@ fun LyricShareSheet(
                     }
                 },
                 onShareCard = {
-                    scope.launch {
-                        val result = runCatching {
-                            createAndShareLyricCard(
-                                context = context,
-                                song = song,
-                                coverUrl = coverUrl,
-                                lyrics = selectedLines,
-                                queue = queue
-                            )
-                        }
-                        result.onFailure {
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.lyric_share_card_failed),
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }.onSuccess {
-                            onDismiss()
+                    if (!isSharingCard) {
+                        isSharingCard = true
+                        scope.launch {
+                            val result = runCatching {
+                                createAndShareLyricCard(
+                                    context = context,
+                                    song = song,
+                                    coverUrl = coverUrl,
+                                    lyrics = selectedLines,
+                                    queue = queue
+                                )
+                            }
+                            result.onFailure {
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.lyric_share_card_failed),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }.onSuccess {
+                                onDismiss()
+                            }
+                            isSharingCard = false
                         }
                     }
                 }
@@ -358,6 +364,7 @@ private fun LyricShareLine(
 @Composable
 private fun LyricShareActions(
     enabled: Boolean,
+    cardInProgress: Boolean,
     onCopy: () -> Unit,
     onShareSong: () -> Unit,
     onShareCard: () -> Unit
@@ -387,7 +394,7 @@ private fun LyricShareActions(
         }
         FilledTonalButton(
             onClick = onShareCard,
-            enabled = enabled,
+            enabled = enabled && !cardInProgress,
             modifier = Modifier.weight(1f)
         ) {
             Icon(
@@ -524,7 +531,11 @@ private suspend fun createAndShareLyricCard(
         )
     }
     val file = withContext(Dispatchers.IO) {
-        saveLyricShareCard(appContext, bitmap, song)
+        try {
+            saveLyricShareCard(appContext, bitmap, song)
+        } finally {
+            bitmap.recycle()
+        }
     }
     val uri = FileProvider.getUriForFile(
         context,

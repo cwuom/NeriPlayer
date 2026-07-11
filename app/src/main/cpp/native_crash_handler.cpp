@@ -533,6 +533,8 @@ void HandleSignal(int signal_number, siginfo_t* info, void* context) {
     g_handling_crash = 1;
     WriteSignalCrashLog(signal_number, info, context);
     RestorePreviousHandler(signal_number);
+    raise(signal_number);
+    _exit(128 + signal_number);
 }
 
 void HandleTerminate() {

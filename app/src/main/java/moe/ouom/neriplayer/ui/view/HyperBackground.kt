@@ -40,6 +40,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.drawable.toBitmap
 import coil.Coil
+import coil.size.Precision
 import androidx.palette.graphics.Palette
 import coil.request.CachePolicy
 import coil.request.ImageRequest
@@ -53,6 +54,7 @@ import kotlin.math.abs
 
 private const val DynamicBackgroundFallbackColor = 0xFF808080.toInt()
 private const val StrongHueConflictDegrees = 105f
+private const val PaletteCoverDecodeSizePx = 320
 
 private enum class DynamicBackgroundColorRole {
     Base,
@@ -140,6 +142,8 @@ fun HyperBackground(
                 val loader = Coil.imageLoader(context)
                 val req = ImageRequest.Builder(context)
                     .data(coverUrl)
+                    .size(PaletteCoverDecodeSizePx)
+                    .precision(Precision.INEXACT)
                     .allowHardware(false) // Palette 需要 software bitmap
                     .networkCachePolicy(
                         if (offlineMode && isRemoteImageSource(coverUrl)) {

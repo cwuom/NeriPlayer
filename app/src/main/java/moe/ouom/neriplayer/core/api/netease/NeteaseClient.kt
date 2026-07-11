@@ -25,7 +25,7 @@ package moe.ouom.neriplayer.core.api.netease
 
 import moe.ouom.neriplayer.util.JsonUtil.jsonQuote
 import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.readBytesCompat
+import moe.ouom.neriplayer.util.readBytesLimited
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.FormBody
@@ -43,6 +43,10 @@ import java.util.zip.GZIPInputStream
 import moe.ouom.neriplayer.util.DynamicProxySelector
 
 class NeteaseClient {
+    private companion object {
+        const val MAX_RESPONSE_BYTES = 4L * 1024L * 1024L
+    }
+
     private val okHttpClient: OkHttpClient
     private val cookieStore: MutableMap<String, MutableList<Cookie>> = mutableMapOf()
     private val cookieLock = Any()
@@ -54,17 +58,27 @@ class NeteaseClient {
         okHttpClient = OkHttpClient.Builder()
             .cookieJar(object : CookieJar {
                 override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-                    val host = url.host
                     synchronized(cookieLock) {
-                        val list = cookieStore.getOrPut(host) { mutableListOf() }
-                        list.removeAll { c -> cookies.any { it.name == c.name } }
-                        list.addAll(cookies)
+                        cookies.forEach { fresh ->
+                            removeStoredCookie(fresh)
+                            if (fresh.isUsableCookie()) {
+                                cookieStore.getOrPut(fresh.domain) { mutableListOf() }.add(fresh)
+                            }
+                        }
                     }
                 }
 
                 override fun loadForRequest(url: HttpUrl): List<Cookie> {
                     return synchronized(cookieLock) {
-                        cookieStore[url.host]?.toList() ?: emptyList()
+                        val now = System.currentTimeMillis()
+                        cookieStore.values.forEach { cookies ->
+                            cookies.removeAll { it.expiresAt <= now }
+                        }
+                        cookieStore.values
+                            .asSequence()
+                            .flatMap { it.asSequence() }
+                            .filter { it.expiresAt > now && it.matches(url) }
+                            .toList()
                     }
                 }
             })
@@ -103,7 +117,7 @@ class NeteaseClient {
                     .domain(host)    // 域 Cookie
                     .path("/")
                     .build()
-                list.removeAll { it.name == name }
+                list.removeAll { it.sameCookieIdentity(c) }
                 list.add(c)
             }
         }
@@ -129,11 +143,26 @@ class NeteaseClient {
     }
 
     private fun getCsrfCookie(): String? = synchronized(cookieLock) {
+        val now = System.currentTimeMillis()
         cookieStore.values
             .asSequence()
             .flatMap { it.asSequence() }
-            .firstOrNull { it.name == "__csrf" }
+            .firstOrNull { it.name == "__csrf" && it.expiresAt > now }
             ?.value
+    }
+
+    private fun removeStoredCookie(cookie: Cookie) {
+        cookieStore.values.forEach { cookies ->
+            cookies.removeAll { it.sameCookieIdentity(cookie) }
+        }
+    }
+
+    private fun Cookie.isUsableCookie(): Boolean {
+        return value.isNotBlank() && expiresAt > System.currentTimeMillis()
+    }
+
+    private fun Cookie.sameCookieIdentity(other: Cookie): Boolean {
+        return name == other.name && domain == other.domain && path == other.path
     }
 
     private fun buildPersistedCookieHeader(): String? {
@@ -219,9 +248,9 @@ class NeteaseClient {
             val responseBody = resp.body ?: throw IOException("Empty response body")
             val encoding = resp.header("Content-Encoding")?.lowercase(Locale.getDefault())
             val bytes = when (encoding) {
-                "br"   -> BrotliInputStream(responseBody.byteStream()).use { it.readBytesCompat() }
-                "gzip" -> GZIPInputStream(responseBody.byteStream()).use { it.readBytesCompat() }
-                else   -> responseBody.bytes()
+                "br"   -> BrotliInputStream(responseBody.byteStream()).use { it.readBytesLimited(MAX_RESPONSE_BYTES) }
+                "gzip" -> GZIPInputStream(responseBody.byteStream()).use { it.readBytesLimited(MAX_RESPONSE_BYTES) }
+                else   -> responseBody.byteStream().use { it.readBytesLimited(MAX_RESPONSE_BYTES) }
             }
             if (!resp.isSuccessful) {
                 val msg = String(bytes, StandardCharsets.UTF_8)

@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.readBytesLimited
 import org.json.JSONObject
 import java.io.File
 import java.util.Locale
@@ -22,6 +23,7 @@ import java.util.Locale
 internal object DownloadedAudioTagWriter {
     private const val TAG = "DownloadedAudioTagWriter"
     private const val FRONT_COVER_TYPE = "Front Cover"
+    private const val MAX_EMBEDDED_COVER_BYTES = 8L * 1024L * 1024L
     private val NETEASE_WORD_LINE_REGEX = Regex("""^\[(\d+),\s*\d+]\s*(.*)$""")
     private val NETEASE_WORD_TOKEN_REGEX = Regex("""[\(<]\d+,\s*\d+,\s*-?\d+[\)>]""")
     private val LRC_TIMED_LINE_REGEX = Regex("""^\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?]""")
@@ -45,7 +47,7 @@ internal object DownloadedAudioTagWriter {
                 sidecarReferences = sidecarReferences,
                 standardizedLyricEmbeddingEnabled = standardizedLyricEmbeddingEnabled
             )
-            val coverPicture = buildFrontCoverPicture(
+            val coverPictures = buildPicturesWithFrontCover(
                 context = context,
                 descriptor = target,
                 sidecarReferences = sidecarReferences
@@ -62,9 +64,9 @@ internal object DownloadedAudioTagWriter {
             } else {
                 true
             }
-            val coverSaved = coverPicture?.let { picture ->
+            val coverSaved = coverPictures?.let { pictures ->
                 runCatching {
-                    TagLib.savePictures(target.dup().detachFd(), arrayOf(picture))
+                    TagLib.savePictures(target.dup().detachFd(), pictures)
                 }.getOrElse {
                     NPLogger.w(TAG, "写入封面标签失败: ${audio.name}, ${it.message}")
                     false
@@ -75,7 +77,7 @@ internal object DownloadedAudioTagWriter {
             if (successful) {
                 NPLogger.d(
                     TAG,
-                    "音频内嵌标签写入完成: file=${audio.name}, propertyChanged=$propertyChanged, coverChanged=${coverPicture != null}"
+                    "音频内嵌标签写入完成: file=${audio.name}, propertyChanged=$propertyChanged, coverChanged=${coverPictures != null}"
                 )
             } else {
                 NPLogger.w(
@@ -293,11 +295,11 @@ internal object DownloadedAudioTagWriter {
         }
     }
 
-    private fun buildFrontCoverPicture(
+    private fun buildPicturesWithFrontCover(
         context: Context,
         descriptor: ParcelFileDescriptor,
         sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?
-    ): Picture? {
+    ): Array<Picture>? {
         val coverReference = sidecarReferences?.coverReference ?: return null
         val coverBytes = readReferenceBytes(context, coverReference) ?: return null
         val mimeType = detectPictureMimeType(coverBytes)
@@ -308,19 +310,13 @@ internal object DownloadedAudioTagWriter {
             return null
         }
         val remainingPictures = existingPictures.filterNot { it.pictureType == FRONT_COVER_TYPE }
-        return Picture(
+        val frontCover = Picture(
             data = coverBytes,
             description = "",
             pictureType = FRONT_COVER_TYPE,
             mimeType = mimeType
-        ).let { picture ->
-            if (remainingPictures.isEmpty()) {
-                picture
-            } else {
-                // savePictures 由调用方统一覆盖写入，这里只返回首图
-                picture
-            }
-        }
+        )
+        return (remainingPictures + frontCover).toTypedArray()
     }
 
     private fun putSingleValue(
@@ -365,11 +361,15 @@ internal object DownloadedAudioTagWriter {
     private fun readReferenceBytes(context: Context, reference: String): ByteArray? {
         val localFile = reference.takeIf { it.startsWith("/") }?.let(::File)
         if (localFile != null && localFile.exists()) {
-            return runCatching { localFile.readBytes() }.getOrNull()
+            return runCatching {
+                localFile.inputStream().use { it.readBytesLimited(MAX_EMBEDDED_COVER_BYTES) }
+            }.getOrNull()
         }
         val uri = runCatching { reference.toUri() }.getOrNull() ?: return null
         return runCatching {
-            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            context.contentResolver.openInputStream(uri)?.use {
+                it.readBytesLimited(MAX_EMBEDDED_COVER_BYTES)
+            }
         }.getOrNull()
     }
 

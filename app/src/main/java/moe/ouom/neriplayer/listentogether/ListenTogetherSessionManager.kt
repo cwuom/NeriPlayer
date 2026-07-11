@@ -24,6 +24,7 @@ import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.resolveShareableListenTogetherStreamUrl
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
@@ -157,7 +158,7 @@ class ListenTogetherSessionManager(
         updateSession(baseUrl, response)
         NPLogger.d(
             TAG,
-            "createRoom(): ok=${response.ok}, roomId=${response.roomId}, role=${response.role}, wsUrl=${response.wsUrl}"
+            "createRoom(): ok=${response.ok}, roomId=${response.roomId}, role=${response.role}, wsUrl=${response.wsUrl.redactListenTogetherWsUrlForLog()}"
         )
         return response
     }
@@ -176,7 +177,7 @@ class ListenTogetherSessionManager(
         updateSession(baseUrl, response)
         NPLogger.d(
             TAG,
-            "joinRoom(): ok=${response.ok}, roomId=${response.roomId}, role=${response.role}, wsUrl=${response.wsUrl}"
+            "joinRoom(): ok=${response.ok}, roomId=${response.roomId}, role=${response.role}, wsUrl=${response.wsUrl.redactListenTogetherWsUrlForLog()}"
         )
         return response
     }
@@ -209,7 +210,7 @@ class ListenTogetherSessionManager(
         reconnectJob = null
         val wsUrl = _sessionState.value.wsUrl ?: return
         ensureListenTogetherForegroundService("connect_websocket")
-        NPLogger.d(TAG, "connectWebSocket(): wsUrl=$wsUrl")
+        NPLogger.d(TAG, "connectWebSocket(): wsUrl=${wsUrl.redactListenTogetherWsUrlForLog()}")
         _sessionState.value = _sessionState.value.copy(
             connectionState = ListenTogetherConnectionState.CONNECTING,
             lastError = null
@@ -850,7 +851,7 @@ class ListenTogetherSessionManager(
             }
         NPLogger.d(
             TAG,
-            "updateSession(): roomId=${response.roomId}, role=${response.role}, tokenPresent=${!response.token.isNullOrBlank()}, wsUrl=$resolvedWsUrl"
+            "updateSession(): roomId=${response.roomId}, role=${response.role}, tokenPresent=${!response.token.isNullOrBlank()}, wsUrl=${resolvedWsUrl.redactListenTogetherWsUrlForLog()}"
         )
         _sessionState.value = _sessionState.value.copy(
             baseUrl = normalizedBaseUrl,
@@ -2529,6 +2530,15 @@ private fun ListenTogetherPlaybackState.expectedPositionMs(nowMs: Long = System.
     } else {
         basePositionMs.coerceAtLeast(0L)
     }
+}
+
+private fun String?.redactListenTogetherWsUrlForLog(): String? {
+    val raw = this ?: return null
+    val parsed = raw.toHttpUrlOrNull() ?: return raw.substringBefore('?') + "?token=<redacted>"
+    val redacted = parsed.newBuilder()
+        .setQueryParameter("token", "<redacted>")
+        .build()
+    return redacted.toString()
 }
 
 internal fun isListenTogetherSeekControlSatisfied(

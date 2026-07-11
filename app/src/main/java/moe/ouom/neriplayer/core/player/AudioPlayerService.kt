@@ -430,6 +430,7 @@ class AudioPlayerService : Service() {
     private var currentMediaArtwork: Bitmap? = null
     private var currentNotificationLargeIcon: Bitmap? = null
     private var artworkLoadInFlightSource: String? = null
+    private var artworkLoadJob: Job? = null
     private var lastArtworkLoadFailedSource: String? = null
     private var lastArtworkLoadFailedAtElapsedRealtime: Long = -1L
     private var artworkRetryJob: Job? = null
@@ -1148,6 +1149,8 @@ class AudioPlayerService : Service() {
                 currentMediaArtwork = null
                 currentNotificationLargeIcon = null
                 artworkLoadInFlightSource = null
+                artworkLoadJob?.cancel()
+                artworkLoadJob = null
                 artworkRetryJob?.cancel()
                 artworkRetryJob = null
                 artworkRetryAttemptCount = 0
@@ -1357,7 +1360,8 @@ class AudioPlayerService : Service() {
     private fun requestLargeIconAsync(url: String) {
         val appCtx = applicationContext
         artworkLoadInFlightSource = url
-        serviceScope.launch(Dispatchers.IO) {
+        artworkLoadJob?.cancel()
+        artworkLoadJob = serviceScope.launch(Dispatchers.IO) {
             try {
                 val loader = coil.Coil.imageLoader(appCtx)
                 val request = offlineCachedImageRequest(
@@ -1380,6 +1384,9 @@ class AudioPlayerService : Service() {
                     if (artworkLoadInFlightSource == url) {
                         artworkLoadInFlightSource = null
                     }
+                    if (artworkLoadJob === coroutineContext[Job]) {
+                        artworkLoadJob = null
+                    }
                     if (url == currentCoverSource) {
                         lastArtworkLoadFailedSource = null
                         lastArtworkLoadFailedAtElapsedRealtime = -1L
@@ -1399,6 +1406,9 @@ class AudioPlayerService : Service() {
                 )
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
+                    if (artworkLoadJob === coroutineContext[Job]) {
+                        artworkLoadJob = null
+                    }
                     markArtworkLoadFailed(url, e.message)
                 }
             }
@@ -1482,6 +1492,8 @@ class AudioPlayerService : Service() {
             }
             usbExclusiveKeepAliveJob?.cancel()
             usbExclusiveKeepAliveJob = null
+            artworkLoadJob?.cancel()
+            artworkLoadJob = null
             serviceScope.cancel()
             if (this::mediaSession.isInitialized) {
                 runCatching {

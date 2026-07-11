@@ -134,6 +134,7 @@ internal class YouTubeWebPoTokenProvider(
     private val accessMutex = Mutex()
     private val tokenCache = linkedMapOf<String, CachedWebPoToken>()
     private val pendingBridgeResults = linkedMapOf<String, CompletableDeferred<String>>()
+    private val pendingEvaluateResults = linkedSetOf<CompletableDeferred<String?>>()
 
     @Volatile
     private var webView: WebView? = null
@@ -468,6 +469,12 @@ internal class YouTubeWebPoTokenProvider(
             }
             pendingBridgeResults.clear()
         }
+        synchronized(pendingEvaluateResults) {
+            pendingEvaluateResults.forEach { deferred ->
+                deferred.complete(null)
+            }
+            pendingEvaluateResults.clear()
+        }
     }
 
     private suspend fun syncCookies(
@@ -615,12 +622,21 @@ internal class YouTubeWebPoTokenProvider(
 
     private suspend fun evaluateJavascript(script: String): String? {
         val activeWebView = webView ?: return null
-        return withContext(Dispatchers.Main) {
-            val result = CompletableDeferred<String?>()
-            activeWebView.evaluateJavascript(script) { raw ->
-                result.complete(decodeEvaluateJavascriptValue(raw))
+        val result = CompletableDeferred<String?>()
+        synchronized(pendingEvaluateResults) {
+            pendingEvaluateResults.add(result)
+        }
+        return try {
+            withContext(Dispatchers.Main) {
+                activeWebView.evaluateJavascript(script) { raw ->
+                    result.complete(decodeEvaluateJavascriptValue(raw))
+                }
             }
-            result.await()
+            withTimeoutOrNull(ASYNC_SCRIPT_TIMEOUT_MS) { result.await() }
+        } finally {
+            synchronized(pendingEvaluateResults) {
+                pendingEvaluateResults.remove(result)
+            }
         }
     }
 

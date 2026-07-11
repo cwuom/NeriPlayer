@@ -37,3 +37,22 @@ fun InputStream.readBytesCompat(bufferSize: Int = 8 * 1024): ByteArray {
         return out.toByteArray()
     }
 }
+
+fun InputStream.readBytesLimited(
+    maxBytes: Long,
+    bufferSize: Int = 8 * 1024
+): ByteArray {
+    require(maxBytes >= 0L) { "maxBytes must be non-negative" }
+    ByteArrayOutputStream().use { out ->
+        val buf = ByteArray(bufferSize)
+        var total = 0L
+        while (true) {
+            val n = this.read(buf)
+            if (n == -1) break
+            total += n
+            require(total <= maxBytes) { "stream exceeds limit: $total > $maxBytes" }
+            out.write(buf, 0, n)
+        }
+        return out.toByteArray()
+    }
+}

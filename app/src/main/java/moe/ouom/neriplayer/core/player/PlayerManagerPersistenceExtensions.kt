@@ -40,6 +40,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import java.io.File
+import java.io.OutputStreamWriter
 import java.lang.reflect.Type
 
 internal fun PlayerManager.hasItemsImpl(): Boolean = currentPlaylist.isNotEmpty()
@@ -96,8 +97,24 @@ private fun PlayerManager.buildPersistedPlaylistState(
 }
 
 private fun PlayerManager.writeJson(file: File, payload: Any) {
-    file.outputStream().bufferedWriter().use { writer ->
-        gson.toJson(payload, writer)
+    file.parentFile?.mkdirs()
+    val tempFile = File(file.parentFile ?: File("."), ".${file.name}.${System.nanoTime()}.tmp")
+    try {
+        tempFile.outputStream().use { stream ->
+            val writer = OutputStreamWriter(stream, Charsets.UTF_8).buffered()
+            gson.toJson(payload, writer)
+            writer.flush()
+            stream.fd.sync()
+        }
+        if (file.exists() && !file.delete()) {
+            error("Unable to replace ${file.name}")
+        }
+        if (!tempFile.renameTo(file)) {
+            error("Unable to commit ${file.name}")
+        }
+    } catch (error: Throwable) {
+        tempFile.delete()
+        throw error
     }
 }
 

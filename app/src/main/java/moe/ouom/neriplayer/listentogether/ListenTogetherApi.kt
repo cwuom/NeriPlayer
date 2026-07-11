@@ -6,10 +6,13 @@ import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.ResponseBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.net.URI
 import java.util.Locale
+
+private const val LISTEN_TOGETHER_MAX_HTTP_RESPONSE_BYTES = 2L * 1024L * 1024L
 
 data class ListenTogetherServerTestResult(
     val ok: Boolean,
@@ -88,7 +91,7 @@ class ListenTogetherApi(
             .build()
         runCatching {
             okHttpClient.newCall(request).execute().use { response ->
-                val body = response.body?.string().orEmpty()
+                val body = response.body?.limitedString().orEmpty()
                 val looksLikeListenTogetherService =
                     body.contains("\"ok\"", ignoreCase = true) ||
                         body.contains("room not initialized", ignoreCase = true) ||
@@ -119,7 +122,7 @@ class ListenTogetherApi(
             .get()
             .build()
         okHttpClient.newCall(request).execute().use { response ->
-            val body = response.body?.string().orEmpty()
+            val body = response.body?.limitedString().orEmpty()
             if (!response.isSuccessful) {
                 throw IOException("ListenTogether GET failed (${response.code}): $body")
             }
@@ -142,13 +145,36 @@ class ListenTogetherApi(
             requestBuilder.header("Authorization", "Bearer $it")
         }
         okHttpClient.newCall(requestBuilder.build()).execute().use { response ->
-            val responseBody = response.body?.string().orEmpty()
+            val responseBody = response.body?.limitedString().orEmpty()
             if (!response.isSuccessful) {
                 throw IOException("ListenTogether POST failed (${response.code}): $responseBody")
             }
             json.decodeFromString(responseBody)
         }
     }
+}
+
+private fun ResponseBody.limitedString(): String {
+    val contentLength = contentLength()
+    if (contentLength > LISTEN_TOGETHER_MAX_HTTP_RESPONSE_BYTES) {
+        throw IOException("ListenTogether response too large: $contentLength bytes")
+    }
+    val bytes = byteStream().use { input ->
+        val output = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        var total = 0L
+        while (true) {
+            val read = input.read(buffer)
+            if (read == -1) break
+            total += read
+            if (total > LISTEN_TOGETHER_MAX_HTTP_RESPONSE_BYTES) {
+                throw IOException("ListenTogether response too large: $total bytes")
+            }
+            output.write(buffer, 0, read)
+        }
+        output.toByteArray()
+    }
+    return bytes.toString(contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8)
 }
 
 internal fun String.normalizeBaseUrl(): String {

@@ -7,6 +7,8 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 
+private const val LISTEN_TOGETHER_MAX_WS_MESSAGE_CHARS = 2 * 1024 * 1024
+
 class ListenTogetherWebSocketClient(
     private val okHttpClient: OkHttpClient
 ) {
@@ -34,6 +36,14 @@ class ListenTogetherWebSocketClient(
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
                     if (this@ListenTogetherWebSocketClient.webSocket !== webSocket) return
+                    if (text.length > LISTEN_TOGETHER_MAX_WS_MESSAGE_CHARS) {
+                        listener.onProtocolError(
+                            text.take(256),
+                            IllegalArgumentException("WebSocket message too large: ${text.length} chars")
+                        )
+                        disconnect(code = 1009, reason = "message_too_large")
+                        return
+                    }
                     runCatching {
                         json.decodeFromString<ListenTogetherSocketEnvelope>(text)
                     }.onSuccess(listener::onMessage)

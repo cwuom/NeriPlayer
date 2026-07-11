@@ -45,6 +45,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.isFileInsideDirectory
 import java.io.File
+import java.io.InputStream
 import java.io.RandomAccessFile
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
@@ -54,6 +55,7 @@ import androidx.core.net.toUri
 
 private const val LOCAL_MEDIA_SHARE_TAG = "LocalMediaSupport"
 private const val MAX_CONTAINER_METADATA_BYTES = 4L * 1024L * 1024L
+private const val MAX_LOCAL_LYRIC_BYTES = 512L * 1024L
 private const val NUL_CHAR = '\u0000'
 private const val BOM_CHAR = '\uFEFF'
 private const val REPLACEMENT_CHAR = '\uFFFD'
@@ -894,11 +896,11 @@ object LocalMediaSupport {
 
     fun readTextContent(context: Context, reference: String): String? {
         val bytes = when {
-            reference.startsWith("/") -> runCatching { File(reference).readBytes() }
+            reference.startsWith("/") -> runCatching { readLimitedTextFile(File(reference)) }
                 .onFailure { NPLogger.w(TAG, "read bytes failed for $reference: ${it.message}") }
                 .getOrNull()
             else -> runCatching {
-                context.contentResolver.openInputStream(reference.toUri())?.use { it.readBytes() }
+                context.contentResolver.openInputStream(reference.toUri())?.use(::readLimitedTextStream)
             }.onFailure {
                 NPLogger.w(TAG, "read stream failed for $reference: ${it.message}")
             }.getOrNull()
@@ -908,12 +910,32 @@ object LocalMediaSupport {
     }
 
     fun readTextFile(file: File): String? {
-        val bytes = runCatching { file.readBytes() }
+        val bytes = runCatching { readLimitedTextFile(file) }
             .onFailure { NPLogger.w(TAG, "read bytes failed for ${file.absolutePath}: ${it.message}") }
             .getOrNull()
             ?: return null
 
         return decodeTextBytes(bytes)
+    }
+
+    private fun readLimitedTextFile(file: File): ByteArray {
+        val length = file.length()
+        require(length <= MAX_LOCAL_LYRIC_BYTES) { "text file is too large: $length bytes" }
+        return file.inputStream().use(::readLimitedTextStream)
+    }
+
+    private fun readLimitedTextStream(input: InputStream): ByteArray {
+        val output = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        var total = 0L
+        while (true) {
+            val read = input.read(buffer)
+            if (read == -1) break
+            total += read
+            require(total <= MAX_LOCAL_LYRIC_BYTES) { "text stream is too large: $total bytes" }
+            output.write(buffer, 0, read)
+        }
+        return output.toByteArray()
     }
 
     private fun decodeTextBytes(bytes: ByteArray): String? {

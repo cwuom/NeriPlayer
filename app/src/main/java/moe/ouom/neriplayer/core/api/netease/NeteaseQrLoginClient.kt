@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.api.netease
 import android.content.Context
 import moe.ouom.neriplayer.util.DynamicProxySelector
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.readBytesLimited
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.FormBody
@@ -24,6 +25,7 @@ private const val NETEASE_QR_CHECK_PATH = "/weapi/login/qrcode/client/login"
 private const val NETEASE_ACCOUNT_PATH = "/weapi/w/nuser/account/get"
 private const val NETEASE_REFRESH_TOKEN_HEADER = "x-refresh-token"
 private const val NETEASE_QR_LOG_TAG = "NERI-NeteaseQrClient"
+private const val NETEASE_QR_MAX_RESPONSE_BYTES = 4L * 1024L * 1024L
 private const val NETEASE_QR_DESKTOP_UA =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
         "AppleWebKit/537.36 (KHTML, like Gecko) " +
@@ -60,24 +62,27 @@ class NeteaseQrLoginClient(
     private val http = OkHttpClient.Builder()
         .cookieJar(object : CookieJar {
             override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-                val validCookies = cookies.filter { cookie ->
-                    cookie.value.isNotBlank() && cookie.expiresAt > System.currentTimeMillis()
-                }
-                if (validCookies.isEmpty()) {
-                    return
-                }
                 synchronized(cookieLock) {
-                    val hostCookies = cookieStore.getOrPut(url.host) { mutableListOf() }
-                    hostCookies.removeAll { old ->
-                        validCookies.any { fresh -> fresh.name == old.name }
+                    cookies.forEach { fresh ->
+                        removeStoredCookie(fresh)
+                        if (fresh.isUsableCookie()) {
+                            cookieStore.getOrPut(fresh.domain) { mutableListOf() }.add(fresh)
+                        }
                     }
-                    hostCookies.addAll(validCookies)
                 }
             }
 
             override fun loadForRequest(url: HttpUrl): List<Cookie> {
                 return synchronized(cookieLock) {
-                    cookieStore[url.host]?.toList().orEmpty()
+                    val now = System.currentTimeMillis()
+                    cookieStore.values.forEach { cookies ->
+                        cookies.removeAll { it.expiresAt <= now }
+                    }
+                    cookieStore.values
+                        .asSequence()
+                        .flatMap { it.asSequence() }
+                        .filter { it.expiresAt > now && it.matches(url) }
+                        .toList()
                 }
             }
         })
@@ -328,9 +333,9 @@ class NeteaseQrLoginClient(
         val body = body ?: throw IOException("Empty response body")
         val encoding = header("Content-Encoding")?.lowercase(Locale.getDefault())
         val bytes = when (encoding) {
-            "br" -> BrotliInputStream(body.byteStream()).use { it.readBytes() }
-            "gzip" -> GZIPInputStream(body.byteStream()).use { it.readBytes() }
-            else -> body.bytes()
+            "br" -> BrotliInputStream(body.byteStream()).use { it.readBytesLimited(NETEASE_QR_MAX_RESPONSE_BYTES) }
+            "gzip" -> GZIPInputStream(body.byteStream()).use { it.readBytesLimited(NETEASE_QR_MAX_RESPONSE_BYTES) }
+            else -> body.byteStream().use { it.readBytesLimited(NETEASE_QR_MAX_RESPONSE_BYTES) }
         }
         return String(bytes, StandardCharsets.UTF_8)
     }
@@ -338,15 +343,14 @@ class NeteaseQrLoginClient(
     private fun setMusicUCookie(refreshToken: String) {
         synchronized(cookieLock) {
             val hostCookies = cookieStore.getOrPut(NETEASE_QR_SCAN_HOST) { mutableListOf() }
-            hostCookies.removeAll { it.name == "MUSIC_U" }
-            hostCookies.add(
-                Cookie.Builder()
-                    .name("MUSIC_U")
-                    .value(refreshToken)
-                    .domain(NETEASE_QR_SCAN_HOST)
-                    .path("/")
-                    .build()
-            )
+            val cookie = Cookie.Builder()
+                .name("MUSIC_U")
+                .value(refreshToken)
+                .domain(NETEASE_QR_SCAN_HOST)
+                .path("/")
+                .build()
+            hostCookies.removeAll { it.sameCookieIdentity(cookie) }
+            hostCookies.add(cookie)
         }
         NPLogger.d(
             NETEASE_QR_LOG_TAG,
@@ -365,15 +369,14 @@ class NeteaseQrLoginClient(
                 if (name.isBlank() || value.isBlank()) {
                     return@forEach
                 }
-                hostCookies.removeAll { it.name == name }
-                hostCookies.add(
-                    Cookie.Builder()
-                        .name(name)
-                        .value(value)
-                        .domain(NETEASE_QR_SCAN_HOST)
-                        .path("/")
-                        .build()
-                )
+                val cookie = Cookie.Builder()
+                    .name(name)
+                    .value(value)
+                    .domain(NETEASE_QR_SCAN_HOST)
+                    .path("/")
+                    .build()
+                hostCookies.removeAll { it.sameCookieIdentity(cookie) }
+                hostCookies.add(cookie)
             }
         }
         NPLogger.d(NETEASE_QR_LOG_TAG, "Seeded QR cookie store keys=${cookies.keys}")
@@ -384,6 +387,20 @@ class NeteaseQrLoginClient(
             cookieStore[NETEASE_QR_SCAN_HOST]?.removeAll { it.name == "MUSIC_U" }
         }
         NPLogger.d(NETEASE_QR_LOG_TAG, "Removed MUSIC_U fallback cookie")
+    }
+
+    private fun removeStoredCookie(cookie: Cookie) {
+        cookieStore.values.forEach { cookies ->
+            cookies.removeAll { it.sameCookieIdentity(cookie) }
+        }
+    }
+
+    private fun Cookie.isUsableCookie(): Boolean {
+        return value.isNotBlank() && expiresAt > System.currentTimeMillis()
+    }
+
+    private fun Cookie.sameCookieIdentity(other: Cookie): Boolean {
+        return name == other.name && domain == other.domain && path == other.path
     }
 
     private fun createLoginChainId(sDeviceId: String): String {
