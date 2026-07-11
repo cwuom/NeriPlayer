@@ -28,6 +28,7 @@ import moe.ouom.neriplayer.util.NPLogger
 object UsbExclusiveSessionController {
     private const val TAG = "NERI-UsbExclusiveNative"
     private const val PLAYER_PCM_OPEN_MIN_INTERVAL_MS = 3_500L
+    private const val PLAYER_PCM_RECONFIGURE_CLOSE_GATE_MS = 180L
     private const val PLAYER_PCM_FOCUS_COOLDOWN_MS = 8_000L
     private const val PLAYER_PCM_FAILURE_FUSE_MS = 18_000L
     private const val PLAYER_PCM_TRANSIENT_FUSE_MS = 5_000L
@@ -521,7 +522,11 @@ object UsbExclusiveSessionController {
                 if (closeRequest != null) {
                     scheduleNativeClose(closeRequest)
                     val gateError = "native_open_deferred:native_close_in_flight"
-                    blockNativeOpenLocked("native_close_in_flight", PLAYER_PCM_OPEN_MIN_INTERVAL_MS)
+                    blockNativeOpenLocked(
+                        reason = "native_close_in_flight",
+                        delayMs = PLAYER_PCM_RECONFIGURE_CLOSE_GATE_MS,
+                        minimumDelayMs = PLAYER_PCM_RECONFIGURE_CLOSE_GATE_MS
+                    )
                     _state.value = _state.value.copy(
                         opened = false,
                         streaming = false,
@@ -1314,9 +1319,14 @@ object UsbExclusiveSessionController {
         return true
     }
 
-    private fun blockNativeOpenLocked(reason: String, delayMs: Long) {
+    private fun blockNativeOpenLocked(
+        reason: String,
+        delayMs: Long,
+        minimumDelayMs: Long = PLAYER_PCM_OPEN_MIN_INTERVAL_MS
+    ) {
         val nowMs = SystemClock.elapsedRealtime()
-        val untilMs = nowMs + delayMs.coerceAtLeast(PLAYER_PCM_OPEN_MIN_INTERVAL_MS)
+        val normalizedDelayMs = delayMs.coerceAtLeast(minimumDelayMs).coerceAtLeast(0L)
+        val untilMs = nowMs + normalizedDelayMs
         if (untilMs > playerPcmOpenBlockedUntilMs) {
             val oldReason = playerPcmOpenBlockReason.ifBlank { "none" }
             val oldRemainingMs = (playerPcmOpenBlockedUntilMs - nowMs).coerceAtLeast(0L)
@@ -1324,7 +1334,7 @@ object UsbExclusiveSessionController {
             playerPcmOpenBlockReason = reason
             NPLogger.w(
                 TAG,
-                "blockNativeOpenLocked(): reason=$reason delayMs=$delayMs " +
+                "blockNativeOpenLocked(): reason=$reason delayMs=$normalizedDelayMs " +
                     "oldReason=$oldReason oldRemainingMs=$oldRemainingMs"
             )
         }
