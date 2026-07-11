@@ -1228,8 +1228,7 @@ private fun PlayerManager.handleUsbExclusivePlaybackSettingChanged(enabled: Bool
             routeGeneration = routeGeneration,
             playbackWasActiveBeforeRelease = false,
             releaseMediaItemIndex = mediaItemIndexBeforeToggle,
-            releasePositionMs = positionBeforeToggleMs,
-            releaseCommandToken = playbackRequestToken
+            releasePositionMs = positionBeforeToggleMs
         )
         applyUsbExclusivePlaybackPolicy(reconfigureAudioSink = false)
     }
@@ -1462,8 +1461,7 @@ internal fun PlayerManager.releaseUsbExclusivePlaybackRoute(
     routeGeneration: Long = usbExclusiveRouteGeneration,
     playbackWasActiveBeforeRelease: Boolean = shouldKeepPlaybackActiveForUsbRouteSwitch(),
     releaseMediaItemIndex: Int? = null,
-    releasePositionMs: Long? = null,
-    releaseCommandToken: Long = playbackRequestToken
+    releasePositionMs: Long? = null
 ) {
     val disablingUsbExclusive = reason == "usb_exclusive_disabled"
     val interruptedIntent = usbExclusiveInterruptedPlaybackIntent.takeIf { disablingUsbExclusive }
@@ -1563,25 +1561,14 @@ internal fun PlayerManager.releaseUsbExclusivePlaybackRoute(
                             "reason=$reason closeInFlight=$closeInFlight"
                     )
                     usbExclusiveSystemAudioReleaseInProgress = false
-                    val shouldResumeAfterTimeout = false
-                    if (shouldResumeAfterTimeout) {
-                        forceSystemAudioResetAfterUsbExclusiveRelease(
-                            reason = "native_close_timeout:$reason",
-                            routeGeneration = routeGeneration,
-                            resumePlayback = true,
-                            releaseMediaItemIndex = effectiveReleaseMediaItemIndex,
-                            releasePositionMs = effectiveReleasePositionMs
-                        )
-                    } else {
-                        forceSystemAudioResetAfterUsbExclusiveRelease(
-                            reason = "native_close_timeout_idle:$reason",
-                            routeGeneration = routeGeneration,
-                            resumePlayback = false,
-                            releaseMediaItemIndex = effectiveReleaseMediaItemIndex,
-                            releasePositionMs = effectiveReleasePositionMs,
-                            allowWatchdog = false
-                        )
-                    }
+                    forceSystemAudioResetAfterUsbExclusiveRelease(
+                        reason = "native_close_timeout_idle:$reason",
+                        routeGeneration = routeGeneration,
+                        resumePlayback = false,
+                        releaseMediaItemIndex = effectiveReleaseMediaItemIndex,
+                        releasePositionMs = effectiveReleasePositionMs,
+                        allowWatchdog = false
+                    )
                     return@launch
                 }
                 delay(USB_EXCLUSIVE_SYSTEM_AUDIO_RELEASE_DELAY_MS)
@@ -1596,21 +1583,18 @@ internal fun PlayerManager.releaseUsbExclusivePlaybackRoute(
                     )
                     return@launch
                 }
-                val shouldResumeAfterRelease = false
                 usbExclusiveSystemAudioReleaseInProgress = false
-                if (!shouldResumeAfterRelease) {
-                    NPLogger.i(
-                        "NERI-UsbExclusive",
-                        "USB exclusive released while playback is idle; rebuild system audio: reason=$reason"
-                    )
-                }
+                NPLogger.i(
+                    "NERI-UsbExclusive",
+                    "USB exclusive released; rebuild system audio without auto resume: reason=$reason"
+                )
                 forceSystemAudioResetAfterUsbExclusiveRelease(
-                    reason = if (shouldResumeAfterRelease) reason else "idle:$reason",
+                    reason = "idle:$reason",
                     routeGeneration = routeGeneration,
-                    resumePlayback = shouldResumeAfterRelease,
+                    resumePlayback = false,
                     releaseMediaItemIndex = effectiveReleaseMediaItemIndex,
                     releasePositionMs = effectiveReleasePositionMs,
-                    allowWatchdog = shouldResumeAfterRelease
+                    allowWatchdog = false
                 )
                 return@launch
             }
