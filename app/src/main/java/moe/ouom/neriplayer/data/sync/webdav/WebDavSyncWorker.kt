@@ -55,7 +55,7 @@ class WebDavSyncWorker(
                 .build()
 
             WorkManager.getInstance(context)
-                .enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.KEEP, syncRequest)
+                .enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, syncRequest)
         }
 
         fun schedulePeriodicSync(context: Context) {

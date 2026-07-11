@@ -56,7 +56,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
     if (shouldWaitForListenTogetherAuthoritativeStream(song)) {
         return SongUrlResult.WaitingForAuthoritativeStream
     }
-    if (isDirectStreamUrl(song.streamUrl)) {
+    if (!forceRefresh && isDirectStreamUrl(song.streamUrl)) {
         return SongUrlResult.Success(song.streamUrl.orEmpty())
     }
     if (isLocalSong(song)) {

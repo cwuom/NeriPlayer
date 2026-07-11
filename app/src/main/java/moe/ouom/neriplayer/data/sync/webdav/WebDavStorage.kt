@@ -131,7 +131,11 @@ class WebDavStorage(private val context: Context) {
 
     fun restore(snapshot: WebDavSyncConfigSnapshot) {
         encryptedPrefs.edit {
-            clear()
+            remove(KEY_SERVER_URL)
+            remove(KEY_BASE_PATH)
+            remove(KEY_USERNAME)
+            remove(KEY_PASSWORD)
+            remove(KEY_AUTO_SYNC_ENABLED)
 
             val normalizedServerUrl = normalizeServerUrl(snapshot.serverUrl)
             val normalizedBasePath = normalizeBasePath(snapshot.basePath)

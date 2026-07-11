@@ -217,11 +217,11 @@ class AudioDownloadManagerTest {
     }
 
     @Test
-    fun `transfer size completeness accepts unknown sizes and rejects truncated payloads`() {
+    fun `transfer size completeness accepts unknown sizes and rejects mismatched payloads`() {
         assertTrue(AudioDownloadManager.isTransferSizeComplete(null, 128L))
         assertTrue(AudioDownloadManager.isTransferSizeComplete(0L, 128L))
         assertTrue(AudioDownloadManager.isTransferSizeComplete(256L, 256L))
-        assertTrue(AudioDownloadManager.isTransferSizeComplete(256L, 512L))
+        assertFalse(AudioDownloadManager.isTransferSizeComplete(256L, 512L))
         assertFalse(AudioDownloadManager.isTransferSizeComplete(256L, 128L))
     }
 

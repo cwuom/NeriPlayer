@@ -332,108 +332,106 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
         }
     }
 
-    fun applyMergedStats(
+    suspend fun applyMergedStats(
         syncStats: List<SyncTrackStat>,
         playbackStatsClearedAt: Long,
         respectLocalClear: Boolean = true,
         syncDailyStats: List<SyncPlaybackStatBucket> = emptyList()
     ) {
-        scope.launch {
-            mutex.withLock {
-                val effectiveClearedAt = if (respectLocalClear) {
-                    maxOf(_statsClearedAt.value, playbackStatsClearedAt)
-                } else {
-                    playbackStatsClearedAt
-                }
-                val current = _stats.value
-                    .filter { shouldKeepLocalAfterClear(it, effectiveClearedAt) }
-                    .associateBy { it.identityKey }
-                    .toMutableMap()
-                val normalizedRemoteStats = SyncPlaybackStatsMergePolicy.merge(
-                    local = emptyList(),
-                    remote = syncStats,
-                    playbackStatsClearedAt = effectiveClearedAt
-                )
-                for (remote in normalizedRemoteStats) {
-                    val local = current[remote.identityKey]
-                    if (local == null) {
-                        current[remote.identityKey] = TrackStat(
-                            id = remote.id,
-                            name = remote.name,
-                            artist = remote.artist,
-                            album = remote.album,
-                            albumId = remote.albumId,
-                            coverUrl = remote.coverUrl,
-                            durationMs = remote.durationMs,
-                            totalListenMs = remote.totalListenMs,
-                            playCount = remote.playCount,
-                            lastPlayedAt = remote.lastPlayedAt,
-                            firstPlayedAt = remote.firstPlayedAt,
-                            mediaUri = remote.mediaUri,
-                            localFilePath = null,
-                            localFileName = null,
-                            customName = null,
-                            customArtist = null,
-                            customCoverUrl = null,
-                            identityKey = remote.identityKey
-                        )
-                    } else {
-                        current[remote.identityKey] = local.copy(
-                            totalListenMs = maxOf(local.totalListenMs, remote.totalListenMs),
-                            playCount = maxOf(local.playCount, remote.playCount),
-                            lastPlayedAt = maxOf(local.lastPlayedAt, remote.lastPlayedAt),
-                            firstPlayedAt = minOf(local.firstPlayedAt, remote.firstPlayedAt),
-                            name = if (remote.lastPlayedAt > local.lastPlayedAt) remote.name else local.name,
-                            artist = if (remote.lastPlayedAt > local.lastPlayedAt) remote.artist else local.artist,
-                            coverUrl = if (remote.lastPlayedAt > local.lastPlayedAt) remote.coverUrl else local.coverUrl
-                        )
-                    }
-                }
-                val updated = current.values.toList()
-                _stats.value = updated
-                val shouldUpdateClearBarrier = if (respectLocalClear) {
-                    effectiveClearedAt > _statsClearedAt.value
-                } else {
-                    syncStats.isNotEmpty() && effectiveClearedAt != _statsClearedAt.value
-                }
-                if (shouldUpdateClearBarrier) {
-                    _statsClearedAt.value = effectiveClearedAt
-                    persistMetadata(effectiveClearedAt)
-                }
-
-                val currentDailyStats = _dailyStats.value
-                    .filter { shouldKeepDailyAfterClear(it, effectiveClearedAt) }
-                    .associateBy { it.dayStartAt to it.identityKey }
-                    .toMutableMap()
-                val normalizedRemoteDailyStats = SyncPlaybackStatsMergePolicy.mergeBuckets(
-                    local = emptyList(),
-                    remote = syncDailyStats,
-                    playbackStatsClearedAt = effectiveClearedAt
-                )
-                for (remote in normalizedRemoteDailyStats) {
-                    val key = remote.dayStartAt to remote.identityKey
-                    val local = currentDailyStats[key]
-                    currentDailyStats[key] = if (local == null) {
-                        remote.toPlaybackStatBucket()
-                    } else {
-                        mergeDailyBucket(local, remote)
-                    }
-                }
-
-                val updatedDailyStats = if (
-                    currentDailyStats.isEmpty() &&
-                    normalizedRemoteDailyStats.isEmpty() &&
-                    _dailyStats.value.isEmpty() &&
-                    updated.isNotEmpty()
-                ) {
-                    buildLegacyDailyStats(updated, effectiveClearedAt)
-                } else {
-                    currentDailyStats.values.toList()
-                }
-                _dailyStats.value = updatedDailyStats
-                persistDailyStatsToDisk(updatedDailyStats)
-                persistToDisk(updated)
+        mutex.withLock {
+            val effectiveClearedAt = if (respectLocalClear) {
+                maxOf(_statsClearedAt.value, playbackStatsClearedAt)
+            } else {
+                playbackStatsClearedAt
             }
+            val current = _stats.value
+                .filter { shouldKeepLocalAfterClear(it, effectiveClearedAt) }
+                .associateBy { it.identityKey }
+                .toMutableMap()
+            val normalizedRemoteStats = SyncPlaybackStatsMergePolicy.merge(
+                local = emptyList(),
+                remote = syncStats,
+                playbackStatsClearedAt = effectiveClearedAt
+            )
+            for (remote in normalizedRemoteStats) {
+                val local = current[remote.identityKey]
+                if (local == null) {
+                    current[remote.identityKey] = TrackStat(
+                        id = remote.id,
+                        name = remote.name,
+                        artist = remote.artist,
+                        album = remote.album,
+                        albumId = remote.albumId,
+                        coverUrl = remote.coverUrl,
+                        durationMs = remote.durationMs,
+                        totalListenMs = remote.totalListenMs,
+                        playCount = remote.playCount,
+                        lastPlayedAt = remote.lastPlayedAt,
+                        firstPlayedAt = remote.firstPlayedAt,
+                        mediaUri = remote.mediaUri,
+                        localFilePath = null,
+                        localFileName = null,
+                        customName = null,
+                        customArtist = null,
+                        customCoverUrl = null,
+                        identityKey = remote.identityKey
+                    )
+                } else {
+                    current[remote.identityKey] = local.copy(
+                        totalListenMs = maxOf(local.totalListenMs, remote.totalListenMs),
+                        playCount = maxOf(local.playCount, remote.playCount),
+                        lastPlayedAt = maxOf(local.lastPlayedAt, remote.lastPlayedAt),
+                        firstPlayedAt = minOf(local.firstPlayedAt, remote.firstPlayedAt),
+                        name = if (remote.lastPlayedAt > local.lastPlayedAt) remote.name else local.name,
+                        artist = if (remote.lastPlayedAt > local.lastPlayedAt) remote.artist else local.artist,
+                        coverUrl = if (remote.lastPlayedAt > local.lastPlayedAt) remote.coverUrl else local.coverUrl
+                    )
+                }
+            }
+            val updated = current.values.toList()
+            _stats.value = updated
+            val shouldUpdateClearBarrier = if (respectLocalClear) {
+                effectiveClearedAt > _statsClearedAt.value
+            } else {
+                syncStats.isNotEmpty() && effectiveClearedAt != _statsClearedAt.value
+            }
+            if (shouldUpdateClearBarrier) {
+                _statsClearedAt.value = effectiveClearedAt
+                persistMetadata(effectiveClearedAt)
+            }
+
+            val currentDailyStats = _dailyStats.value
+                .filter { shouldKeepDailyAfterClear(it, effectiveClearedAt) }
+                .associateBy { it.dayStartAt to it.identityKey }
+                .toMutableMap()
+            val normalizedRemoteDailyStats = SyncPlaybackStatsMergePolicy.mergeBuckets(
+                local = emptyList(),
+                remote = syncDailyStats,
+                playbackStatsClearedAt = effectiveClearedAt
+            )
+            for (remote in normalizedRemoteDailyStats) {
+                val key = remote.dayStartAt to remote.identityKey
+                val local = currentDailyStats[key]
+                currentDailyStats[key] = if (local == null) {
+                    remote.toPlaybackStatBucket()
+                } else {
+                    mergeDailyBucket(local, remote)
+                }
+            }
+
+            val updatedDailyStats = if (
+                currentDailyStats.isEmpty() &&
+                normalizedRemoteDailyStats.isEmpty() &&
+                _dailyStats.value.isEmpty() &&
+                updated.isNotEmpty()
+            ) {
+                buildLegacyDailyStats(updated, effectiveClearedAt)
+            } else {
+                currentDailyStats.values.toList()
+            }
+            _dailyStats.value = updatedDailyStats
+            persistDailyStatsToDisk(updatedDailyStats)
+            persistToDisk(updated)
         }
     }
 

@@ -51,6 +51,9 @@ object SyncDataSerializer {
         explicitNulls = false
     }
     private val protoBuf = ProtoBuf
+    private const val MAX_JSON_BYTES = 8 * 1024 * 1024
+    private const val MAX_COMPRESSED_BASE64_BYTES = 12 * 1024 * 1024
+    private const val MAX_DECOMPRESSED_BYTES = 16 * 1024 * 1024
 
     /**
      * 序列化数据为字符串（用于上传）
@@ -103,7 +106,12 @@ object SyncDataSerializer {
     /**
      * JSON反序列化
      */
-    private fun deserializeJson(content: String): SyncData = json.decodeFromString(content)
+    private fun deserializeJson(content: String): SyncData {
+        require(content.toByteArray(Charsets.UTF_8).size <= MAX_JSON_BYTES) {
+            "JSON sync data is too large"
+        }
+        return json.decodeFromString(content)
+    }
 
     /**
      * ProtoBuf + GZIP压缩序列化
@@ -126,6 +134,9 @@ object SyncDataSerializer {
      * ProtoBuf + GZIP解压反序列化
      */
     private fun deserializeCompressed(content: String): SyncData {
+        require(content.toByteArray(Charsets.UTF_8).size <= MAX_COMPRESSED_BASE64_BYTES) {
+            "Compressed sync data is too large"
+        }
         // Base64解码
         val compressedBytes = android.util.Base64.decode(content, android.util.Base64.NO_WRAP)
 
@@ -159,9 +170,23 @@ object SyncDataSerializer {
         val inputStream = ByteArrayInputStream(data)
         val outputStream = ByteArrayOutputStream()
         GZIPInputStream(inputStream).use { gzip ->
-            gzip.copyTo(outputStream)
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var total = 0
+            while (true) {
+                val read = gzip.read(buffer)
+                if (read == -1) break
+                total += read
+                require(total <= MAX_DECOMPRESSED_BYTES) { "Decompressed sync data is too large" }
+                outputStream.write(buffer, 0, read)
+            }
         }
         return outputStream.toByteArray()
+    }
+
+    fun ensureRemoteContentSize(content: String, isBinaryFormat: Boolean) {
+        val size = content.toByteArray(Charsets.UTF_8).size
+        val maxBytes = if (isBinaryFormat) MAX_COMPRESSED_BASE64_BYTES else MAX_JSON_BYTES
+        require(size <= maxBytes) { "Remote sync data is too large" }
     }
 
     /**

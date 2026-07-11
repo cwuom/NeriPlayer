@@ -24,22 +24,29 @@ package moe.ouom.neriplayer.core.player.state
  */
 
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-internal fun <T> blockingIo(block: suspend () -> T): T {
+internal fun <T> blockingIo(timeoutMs: Long = DEFAULT_BLOCKING_IO_TIMEOUT_MS, block: suspend () -> T): T {
     val resultRef = AtomicReference<Result<T>?>(null)
     val latch = CountDownLatch(1)
-    CoroutineScope(Dispatchers.IO).launch {
+    val job = CoroutineScope(Dispatchers.IO).launch {
         try {
             resultRef.set(runCatching { block() })
         } finally {
             latch.countDown()
         }
     }
-    latch.await()
+    if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+        job.cancel()
+        throw TimeoutException("blockingIo timed out after ${timeoutMs}ms")
+    }
     return resultRef.get()?.getOrThrow()
         ?: error("blockingIo completed without a result")
 }
+
+private const val DEFAULT_BLOCKING_IO_TIMEOUT_MS = 3_000L

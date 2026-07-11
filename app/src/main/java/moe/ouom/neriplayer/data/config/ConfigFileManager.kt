@@ -26,6 +26,7 @@ import moe.ouom.neriplayer.data.settings.toBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.settings.toPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.SyncCoordinator
 import moe.ouom.neriplayer.data.sync.webdav.WebDavStorage
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.util.LanguageManager
@@ -34,6 +35,7 @@ import moe.ouom.neriplayer.util.NPLogger
 class ConfigFileManager(private val context: Context) {
     companion object {
         private const val TAG = "ConfigFileManager"
+        private const val MAX_CONFIG_IMPORT_BYTES = 2L * 1024L * 1024L
     }
 
     suspend fun exportConfig(uri: Uri): Result<String> = withContext(Dispatchers.IO) {
@@ -84,40 +86,40 @@ class ConfigFileManager(private val context: Context) {
 
     suspend fun importConfig(uri: Uri): Result<AppConfigImportResult> = withContext(Dispatchers.IO) {
         try {
-            val raw = context.contentResolver.openInputStream(uri)
-                ?.bufferedReader(Charsets.UTF_8)
-                ?.use { it.readText() }
-                ?: throw IllegalStateException(context.getString(R.string.error_cannot_open_input))
+            val raw = LimitedTextReader.readUtf8(context, uri, MAX_CONFIG_IMPORT_BYTES)
             val payload = AppConfigBackupCodec.decode(raw)
-            val warnings = mutableListOf<String>()
+            SyncCoordinator.withExclusive {
+                val warnings = mutableListOf<String>()
 
-            val sanitizedSettings = ConfigSettingsSanitizer(context).sanitize(payload.settings, warnings)
-            restoreSettings(sanitizedSettings)
-            AppContainer.listenTogetherPreferences.restore(payload.listenTogether)
+                val sanitizedSettings = ConfigSettingsSanitizer(context).sanitize(payload.settings, warnings)
+                restoreSettings(sanitizedSettings)
+                AppContainer.listenTogetherPreferences.restore(payload.listenTogether)
 
-            val currentLanguage = LanguageManager.getCurrentLanguage(context)
-            val importedLanguage = payload.language.toLanguageOrNull()
-            if (importedLanguage != null) {
-                LanguageManager.setLanguage(context, importedLanguage)
-            }
+                val currentLanguage = LanguageManager.getCurrentLanguage(context)
+                val importedLanguage = payload.language.toLanguageOrNull()
+                if (importedLanguage != null) {
+                    LanguageManager.setLanguage(context, importedLanguage)
+                }
 
-            val restoredAuthCount = restoreAuth(payload, warnings)
-            val gitHubStorage = SecureTokenStorage(context)
-            val webDavStorage = WebDavStorage(context)
-            gitHubStorage.restore(payload.gitHubSync)
-            webDavStorage.restore(payload.webDavSync)
-            reconcileSyncWorkers(gitHubStorage, webDavStorage)
+                val restoredAuthCount = restoreAuth(payload, warnings)
+                val gitHubStorage = SecureTokenStorage(context)
+                val webDavStorage = WebDavStorage(context)
+                gitHubStorage.restore(payload.gitHubSync)
+                webDavStorage.restore(payload.webDavSync)
+                gitHubStorage.markSyncMutation()
+                reconcileSyncWorkers(gitHubStorage, webDavStorage)
 
-            Result.success(
-                AppConfigImportResult(
-                    restoredSettingsCount = sanitizedSettings.entryCount(),
-                    restoredListenTogetherCount = payload.listenTogether.entryCount(),
-                    restoredAuthCount = restoredAuthCount,
-                    restoredSyncCount = payload.syncSectionCount(),
-                    warnings = warnings,
-                    requiresActivityRecreate = importedLanguage != null && importedLanguage != currentLanguage
+                Result.success(
+                    AppConfigImportResult(
+                        restoredSettingsCount = sanitizedSettings.entryCount(),
+                        restoredListenTogetherCount = payload.listenTogether.entryCount(),
+                        restoredAuthCount = restoredAuthCount,
+                        restoredSyncCount = payload.syncSectionCount(),
+                        warnings = warnings,
+                        requiresActivityRecreate = importedLanguage != null && importedLanguage != currentLanguage
+                    )
                 )
-            )
+            }
         } catch (e: Exception) {
             NPLogger.e(TAG, "Failed to import config file", e)
             Result.failure(e)

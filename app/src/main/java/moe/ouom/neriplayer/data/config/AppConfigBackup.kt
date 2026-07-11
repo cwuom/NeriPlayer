@@ -8,6 +8,8 @@ import kotlinx.serialization.json.Json
 
 private const val CONFIG_FILE_PREFIX = "neriplayer_config"
 private const val CONFIG_FILE_EXTENSION = ".json"
+private const val CONFIG_KIND = "moe.ouom.neriplayer.config"
+private const val CONFIG_FORMAT_VERSION = 1
 
 private val configJson = Json {
     prettyPrint = true
@@ -122,7 +124,8 @@ data class WebDavSyncConfigSnapshot(
 
 @Serializable
 data class AppConfigBackup(
-    val formatVersion: Int = 1,
+    val kind: String = CONFIG_KIND,
+    val formatVersion: Int = CONFIG_FORMAT_VERSION,
     val exportedAt: Long = 0L,
     val settings: TypedPreferenceSnapshot = TypedPreferenceSnapshot(),
     val listenTogether: ListenTogetherConfigSnapshot = ListenTogetherConfigSnapshot(),
@@ -157,7 +160,15 @@ data class AppConfigImportResult(
 object AppConfigBackupCodec {
     fun encode(payload: AppConfigBackup): String = configJson.encodeToString(AppConfigBackup.serializer(), payload)
 
-    fun decode(raw: String): AppConfigBackup = configJson.decodeFromString(AppConfigBackup.serializer(), raw)
+    fun decode(raw: String): AppConfigBackup {
+        val payload = configJson.decodeFromString(AppConfigBackup.serializer(), raw)
+        require(payload.kind == CONFIG_KIND) { "Not a NeriPlayer config backup" }
+        require(payload.formatVersion in 1..CONFIG_FORMAT_VERSION) {
+            "Unsupported config backup format: ${payload.formatVersion}"
+        }
+        require(payload.hasRestorableContent()) { "Config backup has no restorable content" }
+        return payload
+    }
 
     fun generateFileName(now: Long = System.currentTimeMillis()): String {
         val formatter = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault())

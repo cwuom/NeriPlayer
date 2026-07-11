@@ -29,8 +29,6 @@ android {
                 storePassword = project.findProperty("KEYSTORE_PASSWORD") as String? ?: ""
                 keyAlias = project.findProperty("KEY_ALIAS") as String? ?: "key0"
                 keyPassword = project.findProperty("KEY_PASSWORD") as String? ?: ""
-            } else {
-                println("Release keystore not found at '${resolvedStoreFile.path}'. Using debug signing config instead.")
             }
         }
     }
@@ -75,7 +73,6 @@ android {
 
     buildTypes {
         val releaseSigningConfig = signingConfigs.getByName("release")
-        val debugSigningConfig = signingConfigs.getByName("debug")
 
         release {
             isMinifyEnabled = true
@@ -86,11 +83,7 @@ android {
                     abiFilters += defaultReleaseAbiFilters
                 }
             }
-            signingConfig = if (releaseSigningConfig.storeFile?.exists() == true) {
-                releaseSigningConfig
-            } else {
-                debugSigningConfig
-            }
+            signingConfig = releaseSigningConfig
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -143,6 +136,23 @@ android {
         }
     }
 
+}
+
+gradle.taskGraph.whenReady {
+    val releasePackagingRequested = allTasks.any { task ->
+        task.project == project && (
+            task.name == "assemble" ||
+                task.name == "bundle" ||
+                task.name.contains("Release", ignoreCase = false) &&
+                listOf("assemble", "bundle", "package", "sign").any(task.name::startsWith)
+            )
+    }
+    if (releasePackagingRequested && android.signingConfigs.getByName("release").storeFile?.exists() != true) {
+        throw GradleException(
+            "Release keystore not found. Pass -PKEYSTORE_FILE, -PKEYSTORE_PASSWORD, " +
+                "-PKEY_ALIAS and -PKEY_PASSWORD to build a release APK."
+        )
+    }
 }
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {

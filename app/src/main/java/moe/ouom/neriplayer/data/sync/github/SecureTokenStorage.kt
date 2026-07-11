@@ -390,7 +390,12 @@ class SecureTokenStorage(private val context: Context) {
 
     fun restore(snapshot: GitHubSyncConfigSnapshot) {
         encryptedPrefs.edit {
-            clear()
+            remove(KEY_GITHUB_TOKEN)
+            remove(KEY_REPO_OWNER)
+            remove(KEY_REPO_NAME)
+            remove(KEY_AUTO_SYNC_ENABLED)
+            remove(KEY_PLAY_HISTORY_UPDATE_MODE)
+            remove(KEY_DATA_SAVER_MODE)
 
             if (snapshot.token.isNotBlank()) putString(KEY_GITHUB_TOKEN, snapshot.token)
             if (snapshot.repoOwner.isNotBlank()) putString(KEY_REPO_OWNER, snapshot.repoOwner)

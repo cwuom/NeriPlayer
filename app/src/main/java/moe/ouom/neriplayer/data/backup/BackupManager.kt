@@ -31,10 +31,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
+import moe.ouom.neriplayer.data.config.LimitedTextReader
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.identity
+import moe.ouom.neriplayer.data.sync.SyncCoordinator
+import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.github.SyncPlaylist
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.github.SyncRecentPlay
@@ -42,7 +45,6 @@ import moe.ouom.neriplayer.data.sync.github.SyncTrackStat
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.util.NPLogger
 import java.io.IOException
-import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -60,6 +62,7 @@ class BackupManager(private val context: Context) {
         private const val BACKUP_FILE_PREFIX = "neriplayer_backup"
         private const val BACKUP_FILE_EXTENSION = ".json"
         private const val MAX_BACKUP_HISTORY_COUNT = 1000
+        private const val MAX_BACKUP_IMPORT_BYTES = 10L * 1024L * 1024L
     }
 
     private data class PlaylistLookup(
@@ -140,10 +143,7 @@ class BackupManager(private val context: Context) {
      */
     suspend fun importPlaylists(uri: Uri): Result<ImportResult> = withContext(Dispatchers.IO) {
         try {
-            val inputStream: InputStream = context.contentResolver.openInputStream(uri)
-                ?: throw IOException(context.getString(R.string.error_cannot_open_input))
-
-            val json = inputStream.bufferedReader().use { it.readText() }
+            val json = LimitedTextReader.readUtf8(context, uri, MAX_BACKUP_IMPORT_BYTES)
             val backupData = gson.fromJson<BackupData>(json, object : TypeToken<BackupData>() {}.type)
             val backupPlaylists = backupData.playlists.orEmpty()
 
@@ -151,100 +151,103 @@ class BackupManager(private val context: Context) {
                 return@withContext Result.failure(IllegalArgumentException("No playlist data in backup file"))  // Localized
             }
 
-            val playlistRepo = LocalPlaylistRepository.getInstance(context)
-            val historyRepo = PlayHistoryRepository.getInstance(context)
-            val playbackStatsRepo = PlaybackStatsRepository.getInstance(context)
-            val currentPlaylists = playlistRepo.playlists.value.toMutableList()
-            val playlistLookup = buildPlaylistLookup(currentPlaylists)
+            SyncCoordinator.withExclusive {
+                val playlistRepo = LocalPlaylistRepository.getInstance(context)
+                val historyRepo = PlayHistoryRepository.getInstance(context)
+                val playbackStatsRepo = PlaybackStatsRepository.getInstance(context)
+                val currentPlaylists = playlistRepo.playlists.value.toMutableList()
+                val playlistLookup = buildPlaylistLookup(currentPlaylists)
 
-            var importedCount = 0
-            var skippedCount = 0
-            var mergedCount = 0
+                var importedCount = 0
+                var skippedCount = 0
+                var mergedCount = 0
 
-            for (syncPlaylist in backupPlaylists) {
-                val importedSystemDescriptor = SystemLocalPlaylists.resolve(
-                    syncPlaylist.id,
-                    syncPlaylist.name,
-                    context
-                )
-                val importedPlaylistName = importedSystemDescriptor?.currentName ?: syncPlaylist.name
-                val importedPlaylistForMatch = LocalPlaylist(
-                    id = importedSystemDescriptor?.id ?: syncPlaylist.id,
-                    name = importedPlaylistName
-                )
+                for (syncPlaylist in backupPlaylists) {
+                    val importedSystemDescriptor = SystemLocalPlaylists.resolve(
+                        syncPlaylist.id,
+                        syncPlaylist.name,
+                        context
+                    )
+                    val importedPlaylistName = importedSystemDescriptor?.currentName ?: syncPlaylist.name
+                    val importedPlaylistForMatch = LocalPlaylist(
+                        id = importedSystemDescriptor?.id ?: syncPlaylist.id,
+                        name = importedPlaylistName
+                    )
 
-                val existingIndex = findMatchingPlaylistIndex(
-                    playlists = currentPlaylists,
-                    lookup = playlistLookup,
-                    importedPlaylist = importedPlaylistForMatch,
-                    importedSystemDescriptor = importedSystemDescriptor
-                )
+                    val existingIndex = findMatchingPlaylistIndex(
+                        playlists = currentPlaylists,
+                        lookup = playlistLookup,
+                        importedPlaylist = importedPlaylistForMatch,
+                        importedSystemDescriptor = importedSystemDescriptor
+                    )
 
-                if (existingIndex != -1) {
-                    // 如果存在同名歌单，进行智能合并
-                    val existingPlaylist = currentPlaylists[existingIndex]
-                    val mergeResult = mergePlaylists(existingPlaylist, syncPlaylist)
+                    if (existingIndex != -1) {
+                        // 如果存在同名歌单，进行智能合并
+                        val existingPlaylist = currentPlaylists[existingIndex]
+                        val mergeResult = mergePlaylists(existingPlaylist, syncPlaylist)
 
-                    if (mergeResult.hasChanges) {
-                        currentPlaylists[existingIndex] = mergeResult.mergedPlaylist
-                        mergedCount++
+                        if (mergeResult.hasChanges) {
+                            currentPlaylists[existingIndex] = mergeResult.mergedPlaylist
+                            mergedCount++
+                            NPLogger.d(
+                                TAG,
+                                context.resources.getQuantityString(
+                                    R.plurals.backup_playlist_merged,
+                                    mergeResult.addedSongs,
+                                    importedPlaylistName,
+                                    mergeResult.addedSongs
+                                )
+                            )
+                        } else {
+                            skippedCount++
+                            NPLogger.d(TAG, context.getString(R.string.backup_playlist_no_update, importedPlaylistName))
+                        }
+                    } else {
+                        // 创建新的歌单
+                        val newPlaylistId = nextImportedPlaylistId(playlistLookup, importedCount)
+                        val newPlaylist = LocalPlaylist(
+                            id = newPlaylistId,
+                            name = importedPlaylistName,
+                            songs = syncPlaylist.songs.map { it.toSongItem() }.toMutableList()
+                        )
+
+                        currentPlaylists.add(newPlaylist)
+                        registerPlaylist(playlistLookup, newPlaylist, currentPlaylists.lastIndex)
+                        importedCount++
                         NPLogger.d(
                             TAG,
                             context.resources.getQuantityString(
-                                R.plurals.backup_playlist_merged,
-                                mergeResult.addedSongs,
+                                R.plurals.backup_playlist_created,
+                                newPlaylist.songs.size,
                                 importedPlaylistName,
-                                mergeResult.addedSongs
+                                newPlaylist.songs.size
                             )
                         )
-                    } else {
-                        skippedCount++
-                        NPLogger.d(TAG, context.getString(R.string.backup_playlist_no_update, importedPlaylistName))
                     }
-                } else {
-                    // 创建新的歌单
-                    val newPlaylistId = nextImportedPlaylistId(playlistLookup, importedCount)
-                    val newPlaylist = LocalPlaylist(
-                        id = newPlaylistId,
-                        name = importedPlaylistName,
-                        songs = syncPlaylist.songs.map { it.toSongItem() }.toMutableList()
-                    )
-
-                    currentPlaylists.add(newPlaylist)
-                    registerPlaylist(playlistLookup, newPlaylist, currentPlaylists.lastIndex)
-                    importedCount++
-                    NPLogger.d(
-                        TAG,
-                        context.resources.getQuantityString(
-                            R.plurals.backup_playlist_created,
-                            newPlaylist.songs.size,
-                            importedPlaylistName,
-                            newPlaylist.songs.size
-                        )
-                    )
                 }
+
+                // 更新仓库
+                playlistRepo.updatePlaylists(currentPlaylists)
+                importRecentPlays(historyRepo, backupData.recentPlays.orEmpty())
+                importPlaybackStats(
+                    playbackStatsRepo = playbackStatsRepo,
+                    playbackStats = backupData.playbackStats.orEmpty(),
+                    playbackStatBuckets = backupData.playbackStatBuckets.orEmpty(),
+                    playbackStatsClearedAt = backupData.playbackStatsClearedAt
+                )
+                SecureTokenStorage(context).markSyncMutation()
+
+                val result = ImportResult(
+                    importedCount = importedCount,
+                    skippedCount = skippedCount,
+                    mergedCount = mergedCount,
+                    totalCount = backupPlaylists.size,
+                    backupDate = backupData.exportDate ?: dateFormat.format(Date(backupData.timestamp))
+                )
+
+                NPLogger.d(TAG, context.getString(R.string.backup_import_success_detail, result))
+                Result.success(result)
             }
-
-            // 更新仓库
-            playlistRepo.updatePlaylists(currentPlaylists)
-            importRecentPlays(historyRepo, backupData.recentPlays.orEmpty())
-            importPlaybackStats(
-                playbackStatsRepo = playbackStatsRepo,
-                playbackStats = backupData.playbackStats.orEmpty(),
-                playbackStatBuckets = backupData.playbackStatBuckets.orEmpty(),
-                playbackStatsClearedAt = backupData.playbackStatsClearedAt
-            )
-
-            val result = ImportResult(
-                importedCount = importedCount,
-                skippedCount = skippedCount,
-                mergedCount = mergedCount,
-                totalCount = backupPlaylists.size,
-                backupDate = backupData.exportDate ?: dateFormat.format(Date(backupData.timestamp))
-            )
-
-            NPLogger.d(TAG, context.getString(R.string.backup_import_success_detail, result))
-            Result.success(result)
 
         } catch (e: Exception) {
             NPLogger.e(TAG, context.getString(R.string.backup_import_failed), e)
@@ -345,7 +348,7 @@ class BackupManager(private val context: Context) {
         return candidate
     }
 
-    private fun importRecentPlays(
+    private suspend fun importRecentPlays(
         historyRepo: PlayHistoryRepository,
         recentPlays: List<SyncRecentPlay>
     ) {
@@ -361,7 +364,7 @@ class BackupManager(private val context: Context) {
         historyRepo.updateHistory(merged)
     }
 
-    private fun importPlaybackStats(
+    private suspend fun importPlaybackStats(
         playbackStatsRepo: PlaybackStatsRepository,
         playbackStats: List<SyncTrackStat>,
         playbackStatBuckets: List<SyncPlaybackStatBucket>,
@@ -388,10 +391,7 @@ class BackupManager(private val context: Context) {
      */
     suspend fun analyzeDifferences(uri: Uri): Result<DifferenceAnalysis> = withContext(Dispatchers.IO) {
         try {
-            val inputStream: InputStream = context.contentResolver.openInputStream(uri)
-                ?: throw IOException(context.getString(R.string.error_cannot_open_input))
-
-            val json = inputStream.bufferedReader().use { it.readText() }
+            val json = LimitedTextReader.readUtf8(context, uri, MAX_BACKUP_IMPORT_BYTES)
             val backupData = gson.fromJson<BackupData>(json, object : TypeToken<BackupData>() {}.type)
             val backupPlaylists = backupData.playlists.orEmpty()
 

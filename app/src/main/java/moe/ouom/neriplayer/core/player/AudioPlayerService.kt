@@ -68,6 +68,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -1548,6 +1549,8 @@ class AudioPlayerService : Service() {
         NPLogger.e("NERI-APS", "foreground promotion failed reason=$reason")
         allowServiceRestart = false
         isServiceForegroundActive = false
+        isServiceInstanceActive = false
+        releaseServiceResourcesAfterForegroundFailure(reason)
         shutdownUsbRuntime("foreground_promotion_failed:$reason")
         if (startId != null) {
             stopSelfResult(startId)
@@ -1555,6 +1558,24 @@ class AudioPlayerService : Service() {
             stopSelf()
         }
         return START_NOT_STICKY
+    }
+
+    private fun releaseServiceResourcesAfterForegroundFailure(reason: String) {
+        usbExclusiveKeepAliveJob?.cancel()
+        usbExclusiveKeepAliveJob = null
+        serviceScope.coroutineContext.cancelChildren()
+        if (this::mediaSession.isInitialized) {
+            runCatching {
+                mediaSession.isActive = false
+                mediaSession.release()
+            }.onFailure { error ->
+                NPLogger.w("NERI-APS", "media session release failed after FGS failure reason=$reason", error)
+            }
+        }
+        runCatching { PlayerManager.release() }
+            .onFailure { error ->
+                NPLogger.w("NERI-APS", "player release failed after FGS failure reason=$reason", error)
+            }
     }
 
     private fun shutdownUsbRuntime(reason: String) {

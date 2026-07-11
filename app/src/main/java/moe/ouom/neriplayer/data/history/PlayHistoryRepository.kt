@@ -117,6 +117,11 @@ class PlayHistoryRepository private constructor(private val app: Context) {
     }
 
     private fun triggerSyncIfNeeded(urgency: PlayHistorySyncUrgency = PlayHistorySyncUrgency.IMMEDIATE) {
+        runCatching {
+            storage.markSyncMutation()
+        }.onFailure { error ->
+            NPLogger.e("PlayHistoryRepo", "Failed to mark sync mutation", error)
+        }
         try {
             val mode = storage.getPlayHistoryUpdateMode()
             val now = System.currentTimeMillis()
@@ -150,7 +155,6 @@ class PlayHistoryRepository private constructor(private val app: Context) {
 
     private fun triggerAutoSyncNow() {
         try {
-            storage.markSyncMutation()
             if (!storage.isAutoSyncEnabled()) {
                 NPLogger.d("PlayHistoryRepo", "Auto sync is disabled, skipping sync")
             }
@@ -286,18 +290,16 @@ class PlayHistoryRepository private constructor(private val app: Context) {
         }
     }
 
-    fun updateHistory(entries: List<PlayedEntry>) {
-        scope.launch {
-            historyMutex.withLock {
-                NPLogger.d("PlayHistoryRepo", "updateHistory() called: entries=${entries.size}")
-                val clipped = entries
-                    .sortedByDescending { it.playedAt }
-                    .distinctBy { it.identityKey() }
-                    .take(1000)
-                NPLogger.d("PlayHistoryRepo", "updateHistory() setting history to ${clipped.size} entries, latest: ${clipped.firstOrNull()?.name}")
-                _history.value = clipped
-                persistToDisk(clipped)
-            }
+    suspend fun updateHistory(entries: List<PlayedEntry>) {
+        historyMutex.withLock {
+            NPLogger.d("PlayHistoryRepo", "updateHistory() called: entries=${entries.size}")
+            val clipped = entries
+                .sortedByDescending { it.playedAt }
+                .distinctBy { it.identityKey() }
+                .take(1000)
+            NPLogger.d("PlayHistoryRepo", "updateHistory() setting history to ${clipped.size} entries, latest: ${clipped.firstOrNull()?.name}")
+            _history.value = clipped
+            persistToDisk(clipped)
         }
     }
 

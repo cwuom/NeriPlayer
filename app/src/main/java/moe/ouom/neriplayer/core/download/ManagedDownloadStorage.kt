@@ -1957,8 +1957,8 @@ internal object ManagedDownloadStorage {
         seedMetadataJson: String?
     ): StoredEntry {
         val actualSizeBytes = tempFile.length().coerceAtLeast(0L)
-        if (expectedSizeBytes != null && expectedSizeBytes > 0L && actualSizeBytes < expectedSizeBytes) {
-            throw IOException("下载文件写入不完整: $actualSizeBytes/$expectedSizeBytes")
+        if (expectedSizeBytes != null && expectedSizeBytes > 0L && actualSizeBytes != expectedSizeBytes) {
+            throw IOException("下载文件大小不匹配: $actualSizeBytes/$expectedSizeBytes")
         }
         val storedEntry = try {
             when (val root = resolveRootBlocking(context)) {
@@ -3801,9 +3801,7 @@ internal object ManagedDownloadStorage {
     }
 
     private fun isEquivalentMigrationTarget(sourceEntry: StoredEntry, targetEntry: StoredEntry): Boolean {
-        val sourceSize = sourceEntry.sizeBytes.coerceAtLeast(0L)
-        val targetSize = targetEntry.sizeBytes.coerceAtLeast(0L)
-        return sourceSize > 0L && sourceSize == targetSize
+        return sourceEntry.reference.isNotBlank() && sourceEntry.reference == targetEntry.reference
     }
 
     private fun plannedStoredEntry(displayName: String): StoredEntry {

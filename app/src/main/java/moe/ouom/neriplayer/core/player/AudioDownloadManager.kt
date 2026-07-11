@@ -413,7 +413,7 @@ object AudioDownloadManager {
     }
 
     internal fun isTransferSizeComplete(expectedBytes: Long?, actualBytes: Long): Boolean {
-        return expectedBytes == null || expectedBytes <= 0L || actualBytes >= expectedBytes
+        return expectedBytes == null || expectedBytes <= 0L || actualBytes == expectedBytes
     }
 
     internal fun resolveDownloadTransportKind(
@@ -3368,8 +3368,18 @@ object AudioDownloadManager {
                 if (!response.isSuccessful) {
                     throw ChunkRequestIOException(response.code, "HTTP ${response.code}")
                 }
+                if (response.code != 206) {
+                    throw ChunkRequestIOException(
+                        response.code,
+                        "Chunk request did not return partial content: HTTP ${response.code}"
+                    )
+                }
 
                 val responseHeaders = response.headers.toMultimap()
+                val responseStart = parseContentRangeStart(responseHeaders)
+                if (responseStart != start) {
+                    throw IOException("分块响应偏移不匹配: expected=$start, actual=$responseStart")
+                }
                 var downloadedBytes = currentDownloadedBytes
                 var totalBytes = YouTubeGoogleVideoRangeSupport.resolveTotalContentLength(
                     uri = request.url.toString().toUri(),

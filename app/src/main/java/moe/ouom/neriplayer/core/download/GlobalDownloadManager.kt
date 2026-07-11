@@ -89,6 +89,7 @@ object GlobalDownloadManager {
     private const val METADATA_POST_PROCESSING_RETRY_DELAY_MS = 350L
     private const val DOWNLOAD_TASK_PROGRESS_EMIT_INTERVAL_NS = 450_000_000L
     private const val METADATA_POST_PROCESSING_PARALLELISM = 2
+    private const val SONG_EXECUTION_LOCK_STRIPES = 256
     internal const val PLAYBACK_METADATA_HYDRATION_DELAY_MS = 1_500L
     internal const val LOCAL_PLAYBACK_METADATA_HYDRATION_DELAY_MS = 4_000L
 
@@ -168,7 +169,7 @@ object GlobalDownloadManager {
     private val mobileDataInterruptionRequestIdGenerator = AtomicLong(0L)
     private val downloadRequestGeneration = AtomicLong(0L)
     private val songRequestGenerations = ConcurrentHashMap<String, Long>()
-    private val songExecutionLocks = ConcurrentHashMap<String, Mutex>()
+    private val songExecutionLocks = Array(SONG_EXECUTION_LOCK_STRIPES) { Mutex() }
     private val pendingDownloadRecoveryMutex = Mutex()
     private val activeBatchDownloadJobs = Collections.newSetFromMap(ConcurrentHashMap<Job, Boolean>())
     private val pendingDownloadRecoveryStateLock = Any()
@@ -3800,14 +3801,8 @@ object GlobalDownloadManager {
         block: suspend () -> T
     ): T {
         val mutex = songExecutionMutex(songKey)
-        return try {
-            mutex.withLock {
-                block()
-            }
-        } finally {
-            if (!mutex.isLocked) {
-                songExecutionLocks.remove(songKey, mutex)
-            }
+        return mutex.withLock {
+            block()
         }
     }
 
@@ -3889,7 +3884,8 @@ object GlobalDownloadManager {
     }
 
     private fun songExecutionMutex(songKey: String): Mutex {
-        return songExecutionLocks.computeIfAbsent(songKey) { Mutex() }
+        val index = (songKey.hashCode() and Int.MAX_VALUE) % songExecutionLocks.size
+        return songExecutionLocks[index]
     }
 
     private fun candidateBaseNames(

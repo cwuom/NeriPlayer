@@ -63,6 +63,7 @@ import moe.ouom.neriplayer.data.sync.github.SyncTrackStat
 import moe.ouom.neriplayer.data.sync.github.LocalSyncMutationConflictException
 import moe.ouom.neriplayer.data.sync.github.SyncUploadRetryExecutor
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
+import moe.ouom.neriplayer.data.sync.SyncCoordinator
 import moe.ouom.neriplayer.util.LanguageManager
 import moe.ouom.neriplayer.util.NPLogger
 import java.io.IOException
@@ -75,7 +76,6 @@ class WebDavSyncManager private constructor(context: Context) {
     private val favoriteRepo = FavoritePlaylistRepository.getInstance(appContext)
     private val playHistoryRepo = PlayHistoryRepository.getInstance(appContext)
     private val playbackStatsRepo = PlaybackStatsRepository.getInstance(appContext)
-    private val syncLock = Mutex()
 
     companion object {
         private const val TAG = "WebDavSyncManager"
@@ -93,7 +93,7 @@ class WebDavSyncManager private constructor(context: Context) {
     suspend fun performSync(): Result<SyncResult> = withContext(Dispatchers.IO) {
         val localizedContext = LanguageManager.applyLanguage(appContext)
 
-        if (!syncLock.tryLock()) {
+        if (!SyncCoordinator.tryLock()) {
             return@withContext Result.failure(
                 WebDavSyncInProgressException(
                     localizedContext.getString(R.string.webdav_sync_in_progress)
@@ -114,11 +114,6 @@ class WebDavSyncManager private constructor(context: Context) {
             val apiClient = WebDavApiClient(appContext, username, password)
             val startMutationVersion = storage.getSyncMutationVersion()
             val localData = sanitizeSyncData(buildLocalSyncData(localizedContext))
-            val uploadedDeletedPlaylistIds = localData.playlists
-                .asSequence()
-                .filter(SyncPlaylist::isDeleted)
-                .map(SyncPlaylist::id)
-                .toSet()
             val remoteSnapshotResult = fetchRemoteSnapshot(
                 apiClient = apiClient,
                 remoteUrl = remoteUrl
@@ -223,7 +218,6 @@ class WebDavSyncManager private constructor(context: Context) {
             uploadResolution.remoteVersion.lastKnownFingerprint
                 ?.let(webDavStorage::saveLastRemoteFingerprint)
             webDavStorage.saveLastSyncTime(System.currentTimeMillis())
-            storage.removeDeletedPlaylistIds(uploadedDeletedPlaylistIds)
             if (localMutatedDuringSync) {
                 WebDavSyncWorker.scheduleDelayedSync(
                     appContext,
@@ -257,7 +251,7 @@ class WebDavSyncManager private constructor(context: Context) {
             NPLogger.e(TAG, "Sync failed", e)
             Result.failure(e)
         } finally {
-            syncLock.unlock()
+            SyncCoordinator.unlock()
         }
     }
 
@@ -1086,6 +1080,7 @@ class WebDavSyncManager private constructor(context: Context) {
         }
 
         val remoteData = try {
+            SyncDataSerializer.ensureRemoteContentSize(snapshot.content, false)
             sanitizeSyncData(SyncDataSerializer.deserialize(snapshot.content, false))
         } catch (e: Exception) {
             NPLogger.e(TAG, "Failed to parse remote data", e)

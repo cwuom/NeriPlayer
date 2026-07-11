@@ -83,7 +83,7 @@ class GitHubSyncWorker(
             WorkManager.getInstance(context)
                 .enqueueUniqueWork(
                     WORK_NAME,
-                    ExistingWorkPolicy.KEEP, // 如果已有任务在执行，保持现有任务
+                    ExistingWorkPolicy.APPEND_OR_REPLACE,
                     syncRequest
                 )
         }

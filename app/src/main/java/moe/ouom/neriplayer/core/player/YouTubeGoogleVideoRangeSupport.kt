@@ -490,11 +490,15 @@ internal class ConditionalChunkedHttpDataSource(
         if (bytesRemainingInRequest == 0L) {
             return false
         }
+        val nextStartPosition = baseSpec.position + bytesReadFromRequest
         return try {
-            openChunk(startPosition = baseSpec.position + bytesReadFromRequest)
+            openChunk(startPosition = nextStartPosition)
             true
         } catch (error: HttpDataSource.InvalidResponseCodeException) {
-            if (error.responseCode == 416 || error.responseCode == 403) {
+            val reachedKnownEnd = error.responseCode == 416 &&
+                totalContentLength != null &&
+                nextStartPosition >= totalContentLength!!
+            if (reachedKnownEnd) {
                 bytesRemainingInRequest = 0L
                 false
             } else {

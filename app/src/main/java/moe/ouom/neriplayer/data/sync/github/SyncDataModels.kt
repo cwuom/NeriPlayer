@@ -152,7 +152,7 @@ data class SyncSong(
                 durationMs = song.durationMs,
                 coverUrl = syncCoverUrl,
                 mediaUri = LocalSongSupport.sanitizeMediaUriForSync(song.mediaUri),
-                addedAt = song.addedAt.takeIf { it > 0L } ?: System.currentTimeMillis(),
+                addedAt = song.addedAt.coerceAtLeast(0L),
                 matchedLyric = song.matchedLyric,
                 matchedTranslatedLyric = song.matchedTranslatedLyric,
                 matchedLyricSource = song.matchedLyricSource?.name,

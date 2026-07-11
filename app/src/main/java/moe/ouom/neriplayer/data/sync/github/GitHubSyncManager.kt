@@ -42,6 +42,7 @@ import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
+import moe.ouom.neriplayer.data.sync.SyncCoordinator
 import moe.ouom.neriplayer.util.LanguageManager
 import moe.ouom.neriplayer.util.NPLogger
 import java.io.IOException
@@ -53,7 +54,6 @@ class GitHubSyncManager private constructor(context: Context) {
     private val favoriteRepo = FavoritePlaylistRepository.getInstance(appContext)
     private val playHistoryRepo = PlayHistoryRepository.getInstance(appContext)
     private val playbackStatsRepo = PlaybackStatsRepository.getInstance(appContext)
-    private val syncLock = Mutex()
 
     companion object {
         private const val TAG = "GitHubSyncManager"
@@ -71,7 +71,7 @@ class GitHubSyncManager private constructor(context: Context) {
     suspend fun performSync(): Result<SyncResult> = withContext(Dispatchers.IO) {
         val localizedContext = LanguageManager.applyLanguage(appContext)
 
-        if (!syncLock.tryLock()) {
+        if (!SyncCoordinator.tryLock()) {
             return@withContext Result.failure(
                 GitHubSyncInProgressException(
                     localizedContext.getString(R.string.github_sync_in_progress)
@@ -92,11 +92,6 @@ class GitHubSyncManager private constructor(context: Context) {
             val apiClient = GitHubApiClient(appContext, token)
             val startMutationVersion = storage.getSyncMutationVersion()
             val localData = sanitizeSyncData(buildLocalSyncData(localizedContext))
-            val uploadedDeletedPlaylistIds = localData.playlists
-                .asSequence()
-                .filter(SyncPlaylist::isDeleted)
-                .map(SyncPlaylist::id)
-                .toSet()
             val useDataSaver = storage.isDataSaverMode()
             val preferredFileName = SyncDataSerializer.getFileName(useDataSaver)
             val remoteSnapshotResult = fetchRemoteSnapshot(
@@ -219,7 +214,6 @@ class GitHubSyncManager private constructor(context: Context) {
 
             uploadResolution.remoteVersion.sha?.let(storage::saveLastRemoteSha)
             storage.saveLastSyncTime(System.currentTimeMillis())
-            storage.removeDeletedPlaylistIds(uploadedDeletedPlaylistIds)
             if (localMutatedDuringSync) {
                 GitHubSyncWorker.scheduleDelayedSync(
                     appContext,
@@ -253,7 +247,7 @@ class GitHubSyncManager private constructor(context: Context) {
             NPLogger.e(TAG, "Sync failed", e)
             Result.failure(e)
         } finally {
-            syncLock.unlock()
+            SyncCoordinator.unlock()
         }
     }
 
@@ -1101,6 +1095,10 @@ class GitHubSyncManager private constructor(context: Context) {
 
         var actualRemoteSha = remoteSha
         val remoteData = try {
+            SyncDataSerializer.ensureRemoteContentSize(
+                remoteContent,
+                SyncDataSerializer.isBinaryFileName(actualFileName)
+            )
             sanitizeSyncData(
                 SyncDataSerializer.deserialize(
                     remoteContent,
@@ -1116,6 +1114,10 @@ class GitHubSyncManager private constructor(context: Context) {
             val fallbackSha = fallbackResult?.second
             val parsedFallback = if (!fallbackContent.isNullOrEmpty()) {
                 runCatching {
+                    SyncDataSerializer.ensureRemoteContentSize(
+                        fallbackContent,
+                        SyncDataSerializer.isBinaryFileName(alternativeFileName)
+                    )
                     sanitizeSyncData(
                         SyncDataSerializer.deserialize(
                             fallbackContent,
@@ -1176,7 +1178,7 @@ class GitHubSyncManager private constructor(context: Context) {
         fileName: String
     ): Result<String> {
         val localizedContext = LanguageManager.applyLanguage(appContext)
-        val useDataSaver = storage.isDataSaverMode()
+        val useDataSaver = SyncDataSerializer.isBinaryFileName(fileName)
         val content = SyncDataSerializer.serialize(data, useDataSaver)
         NPLogger.d(
             TAG,
