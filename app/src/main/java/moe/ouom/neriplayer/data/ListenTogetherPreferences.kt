@@ -43,9 +43,7 @@ class ListenTogetherPreferences(private val context: Context) {
             val savedInput = prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT]
                 ?.trim()
                 .orEmpty()
-            if (savedInput.isNotBlank()) {
-                savedInput
-            } else {
+            savedInput.ifBlank {
                 configuredListenTogetherBaseUrlOrNull(
                     prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL]
                 )

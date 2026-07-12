@@ -45,6 +45,7 @@ import java.nio.file.StandardCopyOption
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.abs
 
 internal object ManagedDownloadStorage {
     private const val TAG = "ManagedDownloadStorage"
@@ -85,6 +86,7 @@ internal object ManagedDownloadStorage {
     private const val SAF_DELETE_RETRY_DELAY_MS = 80L
     private const val SAF_REFERENCE_DELETE_PARALLELISM = 6
     private const val STREAM_COPY_BUFFER_SIZE_BYTES = 1 * 1024 * 1024
+    private const val SAF_COMMITTED_SIZE_TOLERANCE_BYTES = 1L
     private val audioExtensions = setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "webm", "eac3")
     private val imageExtensions = setOf("jpg", "jpeg", "png", "webp")
 
@@ -3671,31 +3673,45 @@ internal object ManagedDownloadStorage {
         return copiedBytes
     }
 
+    private fun isSizeWithinTolerance(
+        actualSizeBytes: Long,
+        expectedSizeBytes: Long,
+        toleranceBytes: Long
+    ): Boolean {
+        return abs(actualSizeBytes - expectedSizeBytes) <= toleranceBytes.coerceAtLeast(0L)
+    }
+
     internal fun verifiedCommittedByteCount(
         expectedSizeBytes: Long,
         reportedSizeBytes: Long?,
-        countedSizeBytes: Long?
+        countedSizeBytes: Long?,
+        toleranceBytes: Long = 0L
     ): Long? {
         val expectedSize = expectedSizeBytes.coerceAtLeast(0L)
+        val tolerance = toleranceBytes.coerceAtLeast(0L)
         val reportedSize = reportedSizeBytes?.takeIf { it >= 0L }
         if (reportedSize != null) {
-            return reportedSize.takeIf { it == expectedSize }
+            if (isSizeWithinTolerance(reportedSize, expectedSize, tolerance)) {
+                return reportedSize
+            }
         }
         return countedSizeBytes
             ?.takeIf { it >= 0L }
-            ?.takeIf { it == expectedSize }
+            ?.takeIf { isSizeWithinTolerance(it, expectedSize, tolerance) }
     }
 
     private fun requireVerifiedCommittedByteCount(
         expectedSizeBytes: Long,
         reportedSizeBytes: Long?,
         countedSizeBytes: Long?,
+        toleranceBytes: Long = 0L,
         description: String
     ): Long {
         return verifiedCommittedByteCount(
             expectedSizeBytes = expectedSizeBytes,
             reportedSizeBytes = reportedSizeBytes,
-            countedSizeBytes = countedSizeBytes
+            countedSizeBytes = countedSizeBytes,
+            toleranceBytes = toleranceBytes
         ) ?: throw IOException(
             "提交后的目标大小不匹配: $description, expected=${expectedSizeBytes.coerceAtLeast(0L)}, " +
                 "reported=${reportedSizeBytes ?: "unavailable"}, counted=${countedSizeBytes ?: "unavailable"}"
@@ -3722,16 +3738,18 @@ internal object ManagedDownloadStorage {
         expectedSizeBytes: Long,
         description: String
     ): Long {
+        val expectedSize = expectedSizeBytes.coerceAtLeast(0L)
         val reportedSize = queryDocumentSizeBytes(context, uri)
-        val countedSize = if (reportedSize == null) {
-            countDocumentBytes(context, uri)
-        } else {
-            null
+        val countedSize = when {
+            reportedSize == null -> countDocumentBytes(context, uri)
+            isSizeWithinTolerance(reportedSize, expectedSize, SAF_COMMITTED_SIZE_TOLERANCE_BYTES) -> null
+            else -> countDocumentBytes(context, uri)
         }
         return requireVerifiedCommittedByteCount(
-            expectedSizeBytes = expectedSizeBytes,
+            expectedSizeBytes = expectedSize,
             reportedSizeBytes = reportedSize,
             countedSizeBytes = countedSize,
+            toleranceBytes = SAF_COMMITTED_SIZE_TOLERANCE_BYTES,
             description = description
         )
     }

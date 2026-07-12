@@ -54,13 +54,46 @@ class ManagedDownloadStorageDeleteSemanticsTest {
             ManagedDownloadStorage.verifiedCommittedByteCount(
                 expectedSizeBytes = 128L,
                 reportedSizeBytes = 64L,
+                countedSizeBytes = 65L
+            )
+        )
+    }
+
+    @Test
+    fun `committed byte verification falls back to counted bytes when reported size drifts`() {
+        assertEquals(
+            128L,
+            ManagedDownloadStorage.verifiedCommittedByteCount(
+                expectedSizeBytes = 128L,
+                reportedSizeBytes = 64L,
                 countedSizeBytes = 128L
             )
         )
     }
 
     @Test
-    fun `committed byte verification falls back to counted bytes only when size is unavailable`() {
+    fun `committed byte verification allows small saf size drift`() {
+        assertEquals(
+            129L,
+            ManagedDownloadStorage.verifiedCommittedByteCount(
+                expectedSizeBytes = 128L,
+                reportedSizeBytes = 129L,
+                countedSizeBytes = null,
+                toleranceBytes = 1L
+            )
+        )
+        assertNull(
+            ManagedDownloadStorage.verifiedCommittedByteCount(
+                expectedSizeBytes = 128L,
+                reportedSizeBytes = 130L,
+                countedSizeBytes = null,
+                toleranceBytes = 1L
+            )
+        )
+    }
+
+    @Test
+    fun `committed byte verification falls back to counted bytes when reported size is unavailable`() {
         assertEquals(
             128L,
             ManagedDownloadStorage.verifiedCommittedByteCount(
