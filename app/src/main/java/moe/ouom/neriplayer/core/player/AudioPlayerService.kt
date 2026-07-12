@@ -1573,7 +1573,7 @@ class AudioPlayerService : Service() {
         try {
             isServiceForegroundActive = false
             isServiceInstanceActive = false
-            runCatching { PlayerManager.flushPlaybackStatsBlocking("service_destroy") }
+            runCatching { PlayerManager.flushPlaybackStatsAsync("service_destroy") }
                 .onFailure { NPLogger.w("NERI-APS", "playback stats flush failed during destroy", it) }
             if (this::becomingNoisyReceiver.isInitialized) {
                 runCatching { unregisterReceiver(becomingNoisyReceiver) }

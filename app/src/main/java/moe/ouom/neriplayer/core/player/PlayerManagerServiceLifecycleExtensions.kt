@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.core.player
 
-import moe.ouom.neriplayer.core.player.state.blockingIo
 import moe.ouom.neriplayer.util.NPLogger
 
 internal fun PlayerManager.suspendPlaybackForServiceRestart(reason: String) {
@@ -33,9 +32,11 @@ internal fun PlayerManager.suspendPlaybackForServiceRestart(reason: String) {
     restoredShouldResumePlayback = shouldResume
     restoredResumePositionMs = positionMs
     updateResumePlaybackRequested(shouldResume)
-    blockingIo {
-        persistState(positionMs = positionMs, shouldResumePlayback = shouldResume)
-    }
+    scheduleStatePersist(
+        positionMs = positionMs,
+        shouldResumePlayback = shouldResume,
+        debounceMs = 0L
+    )
     NPLogger.i(
         "NERI-PlayerManager",
         "suspended playback for service restart reason=$reason positionMs=$positionMs resume=$shouldResume"

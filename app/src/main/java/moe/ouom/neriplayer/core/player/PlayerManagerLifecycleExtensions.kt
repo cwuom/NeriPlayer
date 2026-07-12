@@ -53,6 +53,7 @@ import moe.ouom.neriplayer.core.player.model.AudioDevice
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
+import moe.ouom.neriplayer.core.player.policy.evaluateUsbExclusiveKeepAliveProgress
 import moe.ouom.neriplayer.core.player.policy.shouldAcceptPlayerCallback
 import moe.ouom.neriplayer.core.player.policy.shouldExposePlayerCallbackState
 import moe.ouom.neriplayer.core.player.policy.shouldSkipUsbExclusiveRouteRebuildForManualPlayback
@@ -2018,6 +2019,12 @@ private fun PlayerManager.scheduleUsbExclusiveBackgroundAudit(reason: String) {
     val checkpointsMs = listOf(1_000L, 5_000L, 15_000L)
     usbExclusiveBackgroundAuditJob = mainScope.launch {
         var elapsedMs = 0L
+        var lastAuditHandle = 0L
+        var lastAuditCompletedFrames = -1L
+        var lastAuditSignalBytes = -1L
+        var lastAuditZeroFillBytes = -1L
+        var lastAuditOutputPeak = Float.NaN
+        var auditStallTicks = 0
         for (checkpointMs in checkpointsMs) {
             delay((checkpointMs - elapsedMs).coerceAtLeast(0L))
             elapsedMs = checkpointMs
@@ -2053,6 +2060,58 @@ private fun PlayerManager.scheduleUsbExclusiveBackgroundAudit(reason: String) {
                     "playWhenReady=${player.playWhenReady} isPlaying=${player.isPlaying} " +
                     "positionMs=$playerPosition runtime=${nativeState.runtimeReport}"
             )
+            val shouldCheckFakeProgress =
+                isTransportActiveWithoutInitialization() &&
+                    pathState.effectivePath == UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB &&
+                    pathState.sinkPlaying &&
+                    nativeState.source == "player_pcm" &&
+                    nativeState.streaming &&
+                    !nativeState.transitioning
+            if (shouldCheckFakeProgress) {
+                val decision = evaluateUsbExclusiveKeepAliveProgress(
+                    previousHandle = lastAuditHandle,
+                    currentHandle = nativeState.handle,
+                    previousCompletedFrames = lastAuditCompletedFrames,
+                    currentCompletedFrames = nativeState.completedAudioFrames,
+                    previousSignalBytes = lastAuditSignalBytes,
+                    currentSignalBytes = nativeState.playerSignalBytes,
+                    previousZeroFillBytes = lastAuditZeroFillBytes,
+                    currentZeroFillBytes = nativeState.playerZeroFillBytes,
+                    previousOutputPeak = lastAuditOutputPeak,
+                    currentOutputPeak = nativeState.lastOutputPeak,
+                    previousStallTicks = auditStallTicks,
+                    recoveryTicks = 1
+                )
+                auditStallTicks = decision.stallTicks
+                lastAuditHandle = nativeState.handle
+                lastAuditCompletedFrames = nativeState.completedAudioFrames
+                lastAuditSignalBytes = nativeState.playerSignalBytes
+                lastAuditZeroFillBytes = nativeState.playerZeroFillBytes
+                lastAuditOutputPeak = nativeState.lastOutputPeak
+                if (decision.shouldRecover) {
+                    NPLogger.w(
+                        "NERI-UsbExclusive",
+                        "background USB audit detected fake native progress: " +
+                            "reason=$reason elapsedMs=$checkpointMs progress=${decision.progress} " +
+                            "completedFrames=${nativeState.completedAudioFrames} " +
+                            "signalBytes=${nativeState.playerSignalBytes} " +
+                            "zeroFillBytes=${nativeState.playerZeroFillBytes} " +
+                            "lastOutputPeak=${nativeState.lastOutputPeak}"
+                    )
+                    recoverUsbExclusivePlaybackIfUnhealthy(
+                        reason = "background_audit_fake_progress:$reason:$checkpointMs",
+                        forceRecovery = true
+                    )
+                    return@launch
+                }
+            } else {
+                auditStallTicks = 0
+                lastAuditHandle = nativeState.handle
+                lastAuditCompletedFrames = nativeState.completedAudioFrames
+                lastAuditSignalBytes = nativeState.playerSignalBytes
+                lastAuditZeroFillBytes = nativeState.playerZeroFillBytes
+                lastAuditOutputPeak = nativeState.lastOutputPeak
+            }
             recoverUsbExclusivePlaybackIfUnhealthy(reason = "background_audit:$reason:$checkpointMs")
         }
         if (usbExclusiveBackgroundAuditJob === coroutineContext[kotlinx.coroutines.Job]) {

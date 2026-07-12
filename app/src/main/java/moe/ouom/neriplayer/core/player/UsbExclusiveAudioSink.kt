@@ -1243,7 +1243,8 @@ internal class UsbExclusiveAudioSink(
                 "NERI-UsbExclusive",
                 "native transport start blocked because exclusive audio focus was denied"
             )
-            return false
+            PlayerManager.pauseForUsbExclusiveFocusLoss(AudioManager.AUDIOFOCUS_LOSS)
+            return true
         }
         val started = UsbExclusiveSessionController.playPlayerPcm(nativeHandle)
         if (!started) {

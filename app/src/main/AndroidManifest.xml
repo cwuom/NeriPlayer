@@ -114,8 +114,19 @@
             android:name="moe.ouom.neriplayer.core.player.AudioPlayerService"
             android:exported="false"
             android:stopWithTask="false"
-            android:foregroundServiceType="mediaPlayback"
-            />
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </service>
+
+        <receiver
+            android:name="androidx.media.session.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
         
         <!-- FileProvider for sharing downloaded music files -->
         <provider

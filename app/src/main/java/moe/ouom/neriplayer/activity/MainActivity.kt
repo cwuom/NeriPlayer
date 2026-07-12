@@ -851,7 +851,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         if (!safeModeActive) {
-            PlayerManager.flushPlaybackStatsBlocking("activity_stop")
+            PlayerManager.flushPlaybackStatsAsync("activity_stop")
         }
         super.onStop()
     }
@@ -1168,7 +1168,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         if (!safeModeActive) {
-            PlayerManager.flushPlaybackStatsBlocking("activity_destroy")
+            PlayerManager.flushPlaybackStatsAsync("activity_destroy")
         }
         clipboardInviteInspectJob?.cancel()
         externalAudioImportJob?.cancel()
