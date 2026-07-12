@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.stableKey
@@ -132,6 +133,55 @@ fun rememberPlaylistDisplayCoverUrl(
     return coverUrl
 }
 
+@Composable
+fun rememberLocalArtistDisplayCoverUrl(
+    artist: LocalArtistSummary?,
+    resolveLocalFallback: Boolean = true
+): String? {
+    val context = LocalContext.current
+    val appContext = remember(context) { context.applicationContext }
+    val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
+    val artistKey = remember(artist, resolveLocalFallback) {
+        artist?.coverResolutionKey(resolveLocalFallback)
+    }
+    var coverUrl by remember(artistKey, downloadPresenceVersion) {
+        mutableStateOf(cachedResolvedCover(artistKey) ?: artist?.displayCoverUrl())
+    }
+
+    LaunchedEffect(artistKey, appContext, downloadPresenceVersion, resolveLocalFallback) {
+        if (artist == null) {
+            coverUrl = null
+            return@LaunchedEffect
+        }
+
+        val immediateCover = artist.displayCoverUrl()
+        cachedResolvedCover(artistKey)?.let { cachedCover ->
+            coverUrl = cachedCover
+        }
+        if (!immediateCover.isNullOrBlank()) {
+            rememberResolvedCover(artistKey, immediateCover)
+            coverUrl = immediateCover
+        } else if (!resolveLocalFallback && cachedResolvedCover(artistKey).isNullOrBlank()) {
+            coverUrl = null
+        }
+        if (!resolveLocalFallback) {
+            return@LaunchedEffect
+        }
+
+        val resolvedCover = withContext(coverResolutionDispatcher) {
+            artist.displayCoverUrl(appContext, resolveLocalFallback)
+        }
+        if (!resolvedCover.isNullOrBlank()) {
+            rememberResolvedCover(artistKey, resolvedCover)
+            coverUrl = resolvedCover
+        } else if (immediateCover.isNullOrBlank() && cachedResolvedCover(artistKey).isNullOrBlank()) {
+            coverUrl = null
+        }
+    }
+
+    return coverUrl
+}
+
 private fun cachedResolvedCover(key: String?): String? {
     if (key.isNullOrBlank()) return null
     return synchronized(resolvedCoverMemoryCache) {
@@ -158,25 +208,35 @@ private fun SongItem.coverResolutionKey(resolveLocalFallback: Boolean): String {
 }
 
 private fun LocalPlaylist.coverResolutionKey(resolveLocalFallback: Boolean): String {
-    val recentCoverSignature = songs
-        .asSequence()
-        .take(12)
-        .joinToString("#") { song ->
-            listOf(
-                song.stableKey(),
-                song.customCoverUrl.orEmpty(),
-                song.coverUrl.orEmpty(),
-                song.originalCoverUrl.orEmpty(),
-                song.localFilePath.orEmpty(),
-                song.mediaUri.orEmpty()
-            ).joinToString(":")
-        }
     return listOf(
         id.toString(),
         modifiedAt.toString(),
         customCoverUrl.orEmpty(),
         songs.size.toString(),
-        recentCoverSignature,
+        songs.coverResolutionSignature(),
         resolveLocalFallback.toString()
     ).joinToString("|")
+}
+
+private fun LocalArtistSummary.coverResolutionKey(resolveLocalFallback: Boolean): String {
+    return listOf(
+        stableKey,
+        name,
+        songs.size.toString(),
+        songs.coverResolutionSignature(),
+        resolveLocalFallback.toString()
+    ).joinToString("|")
+}
+
+private fun List<SongItem>.coverResolutionSignature(): String {
+    return joinToString("#") { song ->
+        listOf(
+            song.stableKey(),
+            song.customCoverUrl.orEmpty(),
+            song.coverUrl.orEmpty(),
+            song.originalCoverUrl.orEmpty(),
+            song.localFilePath.orEmpty(),
+            song.mediaUri.orEmpty()
+        ).joinToString(":")
+    }
 }

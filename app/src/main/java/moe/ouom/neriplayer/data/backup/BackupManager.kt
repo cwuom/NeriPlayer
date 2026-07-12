@@ -206,10 +206,11 @@ class BackupManager(private val context: Context) {
                     } else {
                         // 创建新的歌单
                         val newPlaylistId = nextImportedPlaylistId(playlistLookup, importedCount)
+                        val normalizedImport = syncPlaylist.normalizedForDisplayOrder()
                         val newPlaylist = LocalPlaylist(
                             id = newPlaylistId,
                             name = importedPlaylistName,
-                            songs = syncPlaylist.songs.map { it.toSongItem() }.toMutableList(),
+                            songs = normalizedImport.songs.map { it.toSongItem() }.toMutableList(),
                             songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                         )
 
@@ -262,7 +263,8 @@ class BackupManager(private val context: Context) {
      */
     private fun mergePlaylists(existing: LocalPlaylist, imported: SyncPlaylist): MergeResult {
         val existingSongIds = existing.songs.mapTo(HashSet(existing.songs.size)) { it.identity() }
-        val newSongs = imported.songs
+        val normalizedImport = imported.normalizedForDisplayOrder()
+        val newSongs = normalizedImport.songs
             .filter { it.identity() !in existingSongIds }
             .map { it.toSongItem() }
         

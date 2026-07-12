@@ -34,4 +34,5 @@ data class LocalPlaylist(
     val songOrderVersion: Int = DISPLAY_ORDER_SONG_ORDER_VERSION
 )
 
+const val LEGACY_SONG_ORDER_VERSION = 0
 const val DISPLAY_ORDER_SONG_ORDER_VERSION = 1

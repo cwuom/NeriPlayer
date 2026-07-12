@@ -7,6 +7,9 @@ import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.protobuf.ProtoBuf
 import kotlinx.serialization.protobuf.ProtoNumber
+import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
+import moe.ouom.neriplayer.data.local.playlist.model.LEGACY_SONG_ORDER_VERSION
+import moe.ouom.neriplayer.data.model.displayCoverUrl
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -42,7 +45,27 @@ class SyncDataSerializerCompatTest {
         assertEquals("", song.album)
         assertEquals(0L, song.albumId)
         assertEquals(180_000L, song.durationMs)
+        assertEquals(LEGACY_SONG_ORDER_VERSION, decoded.playlists.single().songOrderVersion)
         assertEquals(emptyList<SyncPlaylistSongDeletion>(), decoded.playlistSongDeletions)
+    }
+
+    @Test
+    fun `legacy sync playlist restores old display order and cover`() {
+        val playlist = SyncPlaylist(
+            id = 1L,
+            name = "legacy",
+            songs = listOf(
+                syncSong(name = "oldest", coverUrl = "content://covers/oldest.jpg", addedAt = 11L),
+                syncSong(name = "middle", coverUrl = "content://covers/middle.jpg", addedAt = 22L),
+                syncSong(name = "newest", coverUrl = null, addedAt = 33L)
+            ),
+            createdAt = 1L,
+            modifiedAt = 100L
+        ).toLocalPlaylist()
+
+        assertEquals(DISPLAY_ORDER_SONG_ORDER_VERSION, playlist.songOrderVersion)
+        assertEquals(listOf("newest", "middle", "oldest"), playlist.songs.map { it.name })
+        assertEquals("content://covers/middle.jpg", playlist.displayCoverUrl())
     }
 
     @Test
@@ -109,4 +132,21 @@ class SyncDataSerializerCompatTest {
         @ProtoNumber(2) val name: String,
         @ProtoNumber(3) val coverUrl: String?
     )
+
+    private fun syncSong(
+        name: String,
+        coverUrl: String?,
+        addedAt: Long
+    ): SyncSong {
+        return SyncSong(
+            id = name.hashCode().toLong(),
+            name = name,
+            artist = "artist",
+            album = "album",
+            albumId = 1L,
+            durationMs = 1_000L,
+            coverUrl = coverUrl,
+            addedAt = addedAt
+        )
+    }
 }

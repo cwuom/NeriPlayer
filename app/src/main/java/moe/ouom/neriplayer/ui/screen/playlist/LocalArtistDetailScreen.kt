@@ -93,6 +93,7 @@ import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.SongDownloadSubtitle
+import moe.ouom.neriplayer.ui.util.rememberLocalArtistDisplayCoverUrl
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticIconButton
@@ -147,7 +148,7 @@ fun LocalArtistDetailScreen(
     }
     val songs = artist?.songs.orEmpty()
     val baseSongs = remember(songs) { songs.toList() }
-    val headerCover = rememberSongDisplayCoverUrl(artist?.coverSong)
+    val headerCover = rememberLocalArtistDisplayCoverUrl(artist)
     val title = artist?.name ?: artistName
     val artistId = remember(artistName) { localArtistStableId(artistName) }
     val scope = rememberCoroutineScope()
@@ -234,7 +235,7 @@ fun LocalArtistDetailScreen(
         AppContainer.playlistUsageRepo.updateInfo(
             id = artist.id,
             name = artist.name,
-            picUrl = headerCover ?: artist.coverSong?.displayCoverUrl(context),
+            picUrl = headerCover ?: artist.displayCoverUrl(context),
             trackCount = artist.songs.size,
             source = PlaylistUsageRepository.SOURCE_LOCAL_ARTIST
         )

@@ -266,7 +266,8 @@ class GitHubSyncManager private constructor(context: Context) {
                     songs = emptyList(),
                     createdAt = 0L,
                     modifiedAt = System.currentTimeMillis(),
-                    isDeleted = true
+                    isDeleted = true,
+                    songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                 )
             }
         }
@@ -615,7 +616,8 @@ class GitHubSyncManager private constructor(context: Context) {
                 name = finalName,
                 songs = mergedSongs,
                 createdAt = minOf(local.createdAt, remote.createdAt),
-                modifiedAt = maxOf(local.modifiedAt, remote.modifiedAt)
+                modifiedAt = maxOf(local.modifiedAt, remote.modifiedAt),
+                songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
             ),
             hasConflict = hasConflict,
             conflict = conflict,
@@ -756,7 +758,8 @@ class GitHubSyncManager private constructor(context: Context) {
             songs = emptyList(),
             createdAt = minOf(local.createdAt, remote.createdAt),
             modifiedAt = maxOf(local.modifiedAt, remote.modifiedAt),
-            isDeleted = true
+            isDeleted = true,
+            songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
         )
     }
 
@@ -908,7 +911,7 @@ class GitHubSyncManager private constructor(context: Context) {
             songs = SyncPlaylistSongMergePolicy.deduplicateSongs(
                 playlist.songs.mapNotNull { sanitizeSyncSong(it) }
             )
-        )
+        ).normalizedForDisplayOrder()
     }
 
     private fun sanitizeSyncFavoritePlaylist(playlist: SyncFavoritePlaylist): SyncFavoritePlaylist {

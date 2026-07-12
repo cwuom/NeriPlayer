@@ -315,7 +315,7 @@ class PlaylistUsageRepository(private val app: Context) {
                 return@mapNotNull null
             }
 
-            val refreshedPicUrl = artist.coverSong?.displayCoverUrl(
+            val refreshedPicUrl = artist.displayCoverUrl(
                 context = localizedContext,
                 resolveLocalMetadataFallback = true
             )

@@ -28,6 +28,7 @@ import android.os.Looper
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.isLocalSong
+import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
@@ -74,6 +75,24 @@ fun LocalPlaylist.displayCoverUrl(
     resolveLocalMetadataFallback: Boolean = true
 ): String? {
     return customCoverUrl ?: songs.firstNotNullOfOrNull { song ->
+        song.displayCoverUrl(
+            context = context,
+            resolveLocalMetadataFallback = resolveLocalMetadataFallback
+        )?.takeIf { it.isNotBlank() }
+    }
+}
+
+fun LocalArtistSummary.displayCoverUrl(): String? {
+    return songs.firstNotNullOfOrNull { song ->
+        song.displayCoverUrl()?.takeIf { it.isNotBlank() }
+    }
+}
+
+fun LocalArtistSummary.displayCoverUrl(
+    context: Context,
+    resolveLocalMetadataFallback: Boolean = true
+): String? {
+    return songs.firstNotNullOfOrNull { song ->
         song.displayCoverUrl(
             context = context,
             resolveLocalMetadataFallback = resolveLocalMetadataFallback

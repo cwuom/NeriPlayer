@@ -12,6 +12,7 @@ internal object SyncDataChangeDetector {
             val remotePlaylist = remotePlaylistMap[mergedPlaylist.id] ?: return true
             if (remotePlaylist.isDeleted != mergedPlaylist.isDeleted) return true
             if (remotePlaylist.name != mergedPlaylist.name) return true
+            if (remotePlaylist.songOrderVersion != mergedPlaylist.songOrderVersion) return true
             if (remotePlaylist.songs.size != mergedPlaylist.songs.size) return true
             if (remotePlaylist.songs.map { it.identity() } != mergedPlaylist.songs.map { it.identity() }) return true
             for (i in remotePlaylist.songs.indices) {

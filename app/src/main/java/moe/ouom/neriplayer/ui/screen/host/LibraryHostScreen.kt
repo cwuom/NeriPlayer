@@ -263,7 +263,7 @@ fun LibraryHostScreen(
                             AppContainer.playlistUsageRepo.recordOpen(
                                 id = artist.id,
                                 name = artist.name,
-                                picUrl = artist.coverSong?.displayCoverUrl(context),
+                                picUrl = artist.displayCoverUrl(context),
                                 trackCount = artist.songs.size,
                                 source = PlaylistUsageRepository.SOURCE_LOCAL_ARTIST
                             )
