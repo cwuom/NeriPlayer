@@ -313,6 +313,9 @@ fun LocalPlaylistDetailScreen(
     }
     val scanPreviewState by vm.scanPreviewState.collectAsState()
     val metadataProcessingState by vm.metadataProcessingState.collectAsState()
+    val visibleMetadataProcessingState = metadataProcessingState
+        .takeIf { it.playlistId == playlistId }
+        ?: LocalMetadataProcessingState()
     LaunchedEffect(playlistId) { vm.start(playlistId) }
 
     // 保存最新的歌单数据，用于在Screen销毁时更新使用记录
@@ -877,7 +880,7 @@ fun LocalPlaylistDetailScreen(
             }
             val playlistCover = rememberPlaylistDisplayCoverUrl(
                 playlist = playlist,
-                resolveLocalFallback = false
+                resolveLocalFallback = true
             )
             val headerCover = playlistCover ?: remember(baseQueue) {
                 baseQueue.firstNotNullOfOrNull { song ->
@@ -1357,12 +1360,12 @@ fun LocalPlaylistDetailScreen(
                                 }
                             }
 
-                            if (metadataProcessingState.isProcessing) {
+                            if (visibleMetadataProcessingState.isProcessing) {
                                 item(
                                     key = "metadata_processing_card",
                                     contentType = "local_metadata_processing"
                                 ) {
-                                    LocalMetadataProcessingCard(metadataProcessingState)
+                                    LocalMetadataProcessingCard(visibleMetadataProcessingState)
                                 }
                             }
 

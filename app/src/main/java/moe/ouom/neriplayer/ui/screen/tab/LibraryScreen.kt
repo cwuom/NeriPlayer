@@ -1320,7 +1320,7 @@ private fun LocalPlaylistList(
                                 }
                                 val cover = rememberPlaylistDisplayCoverUrl(
                                     playlist = system,
-                                    resolveLocalFallback = false
+                                    resolveLocalFallback = true
                                 )
                                 if (!cover.isNullOrEmpty()) {
                                     AsyncImage(
@@ -1430,7 +1430,7 @@ private fun LocalPlaylistList(
                                 }
                                 val cover = rememberPlaylistDisplayCoverUrl(
                                     playlist = pl,
-                                    resolveLocalFallback = false
+                                    resolveLocalFallback = true
                                 )
                                 if (!cover.isNullOrEmpty()) {
                                     AsyncImage(
@@ -1603,7 +1603,7 @@ private fun LocalPlaylistList(
                                 }
                                 val cover = rememberPlaylistDisplayCoverUrl(
                                     playlist = system,
-                                    resolveLocalFallback = false
+                                    resolveLocalFallback = true
                                 )
                                 if (!cover.isNullOrEmpty()) {
                                     AsyncImage(

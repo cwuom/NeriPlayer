@@ -71,6 +71,7 @@ data class LocalScanPreviewState(
 
 data class LocalMetadataProcessingState(
     val isProcessing: Boolean = false,
+    val playlistId: Long? = null,
     val processedCount: Int = 0,
     val totalCount: Int = 0
 )
@@ -249,7 +250,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     ) {
         viewModelScope.launch {
             val importedCount = repo.addScannedSongsToLocalFilesPlaylistAndCount(songs)
-            scheduleScannedMetadataRefresh(songs)
+            scheduleScannedMetadataRefresh(LocalFilesPlaylist.SYSTEM_ID, songs)
             onResult(
                 LocalAudioImportUiResult(
                     importedCount = importedCount,
@@ -266,7 +267,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     ) {
         viewModelScope.launch {
             val playlist = repo.createPlaylistWithScannedSongs(name, songs)
-            scheduleScannedMetadataRefresh(songs)
+            scheduleScannedMetadataRefresh(playlist.id, songs)
             onResult(
                 LocalAudioImportUiResult(
                     importedCount = playlist.songs.size,
@@ -283,7 +284,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     ) {
         viewModelScope.launch {
             val importedCount = repo.addScannedSongsToPlaylistAndCount(targetPlaylistId, songs)
-            scheduleScannedMetadataRefresh(songs)
+            scheduleScannedMetadataRefresh(targetPlaylistId, songs)
             onResult(
                 LocalAudioImportUiResult(
                     importedCount = importedCount,
@@ -346,10 +347,12 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         return scanJob === currentJob && scanSessionId == sessionId
     }
 
-    private fun scheduleScannedMetadataRefresh(songs: List<SongItem>) {
+    private fun scheduleScannedMetadataRefresh(targetPlaylistId: Long, songs: List<SongItem>) {
         val localSongs = songs.filter { LocalSongSupport.isLocalSong(it, app) }
         if (localSongs.isEmpty()) {
-            _metadataProcessingState.value = LocalMetadataProcessingState()
+            if (_metadataProcessingState.value.playlistId == targetPlaylistId) {
+                _metadataProcessingState.value = LocalMetadataProcessingState()
+            }
             return
         }
 
@@ -357,6 +360,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         val sessionId = ++metadataRefreshSessionId
         _metadataProcessingState.value = LocalMetadataProcessingState(
             isProcessing = true,
+            playlistId = targetPlaylistId,
             processedCount = 0,
             totalCount = localSongs.size
         )
@@ -369,6 +373,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                     if (metadataRefreshSessionId == sessionId) {
                         _metadataProcessingState.value = LocalMetadataProcessingState(
                             isProcessing = processed < total,
+                            playlistId = targetPlaylistId,
                             processedCount = processed,
                             totalCount = total
                         )
