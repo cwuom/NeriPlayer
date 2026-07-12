@@ -249,19 +249,19 @@ internal object StartupAudioFocusController {
 }
 
 internal fun shouldSuppressUsbExclusiveForFocusChange(change: Int): Boolean {
+    // USB DAC 是独立于系统音频路径的物理设备，瞬态焦点变化（通知、导航等）不应静音
     return when (change) {
         AudioManager.AUDIOFOCUS_GAIN -> false
-        AudioManager.AUDIOFOCUS_LOSS,
+        AudioManager.AUDIOFOCUS_LOSS -> true
         AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> true
-        else -> true
+        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> false
+        else -> false
     }
 }
 
 internal fun shouldPauseUsbExclusiveForFocusChange(change: Int): Boolean {
     return when (change) {
-        AudioManager.AUDIOFOCUS_LOSS,
-        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> true
+        AudioManager.AUDIOFOCUS_LOSS -> true
         else -> false
     }
 }
