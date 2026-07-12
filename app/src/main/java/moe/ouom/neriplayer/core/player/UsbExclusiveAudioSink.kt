@@ -39,7 +39,7 @@ import moe.ouom.neriplayer.core.player.policy.resolvePlaybackSoundConfigForEngin
 import moe.ouom.neriplayer.core.player.policy.shouldSuppressSystemFallbackForUsbExclusiveFailure
 import moe.ouom.neriplayer.core.player.usb.usbRuntimeMetrics
 import moe.ouom.neriplayer.core.player.usb.valueAfter
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 @UnstableApi
 internal class UsbExclusiveAudioSink(

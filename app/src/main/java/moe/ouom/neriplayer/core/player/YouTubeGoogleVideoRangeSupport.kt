@@ -31,7 +31,7 @@ import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import okhttp3.Request
 import java.io.IOException
 import java.util.Locale

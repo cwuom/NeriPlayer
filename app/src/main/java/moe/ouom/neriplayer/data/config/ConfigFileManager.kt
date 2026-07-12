@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.ListenTogetherPreferences
+import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
 import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
 import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
@@ -29,8 +29,8 @@ import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.SyncCoordinator
 import moe.ouom.neriplayer.data.sync.webdav.WebDavStorage
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
-import moe.ouom.neriplayer.util.LanguageManager
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 class ConfigFileManager(private val context: Context) {
     companion object {

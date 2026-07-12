@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.player.usb
 
 import android.content.Context
 import android.os.PowerManager
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal object UsbExclusiveWakeLock {
     private const val TAG = "NERI-UsbWakeLock"

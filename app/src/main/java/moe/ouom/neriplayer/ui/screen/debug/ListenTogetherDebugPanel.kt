@@ -73,7 +73,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.ListenTogetherPreferences
+import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
 import moe.ouom.neriplayer.listentogether.ListenTogetherConnectionState
 import moe.ouom.neriplayer.listentogether.ListenTogetherMember
 import moe.ouom.neriplayer.listentogether.ListenTogetherRoomSettings

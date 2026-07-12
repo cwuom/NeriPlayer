@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.download.storage.metadata
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
 
 internal object ManagedDownloadMetadataCodec {

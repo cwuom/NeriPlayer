@@ -39,8 +39,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.util.LanguageManager
-import moe.ouom.neriplayer.util.getDisplayName
+import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.util.platform.getDisplayName
 
 private val LanguageSettingItemShape = RoundedCornerShape(18.dp)
 private val LanguageOptionShape = RoundedCornerShape(16.dp)

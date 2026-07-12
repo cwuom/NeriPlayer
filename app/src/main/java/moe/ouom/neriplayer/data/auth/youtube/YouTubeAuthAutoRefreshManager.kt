@@ -19,7 +19,7 @@ import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.platform.youtube.installYouTubeBackgroundWebViewGuard
 import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeLoginHost
 import moe.ouom.neriplayer.data.platform.youtube.removeYouTubeBackgroundWebViewGuard
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
 import org.json.JSONTokener
 import java.net.URI

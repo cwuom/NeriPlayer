@@ -79,7 +79,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.toColorInt
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.util.HapticIconButton
+import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 
 internal fun maskCookieValue(value: String): String {
     return when {

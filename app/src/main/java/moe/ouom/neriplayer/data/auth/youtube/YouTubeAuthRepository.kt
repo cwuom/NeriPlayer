@@ -30,7 +30,7 @@ import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
 
 const val YOUTUBE_MUSIC_ORIGIN: String = "https://music.youtube.com"

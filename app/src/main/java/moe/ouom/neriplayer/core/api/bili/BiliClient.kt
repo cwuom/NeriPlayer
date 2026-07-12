@@ -48,8 +48,8 @@ import java.net.URLEncoder
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
-import moe.ouom.neriplayer.util.DynamicProxySelector
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.network.DynamicProxySelector
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 /**
  * B 站 Web 端 API 客户端

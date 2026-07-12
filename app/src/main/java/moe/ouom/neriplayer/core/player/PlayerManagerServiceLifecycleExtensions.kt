@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player
 
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal fun PlayerManager.suspendPlaybackForServiceRestart(reason: String) {
     if (!isPlayerInitialized() || currentSongFlow.value == null) return

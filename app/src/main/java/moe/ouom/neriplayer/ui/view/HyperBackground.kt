@@ -53,7 +53,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.util.isRemoteImageSource
+import moe.ouom.neriplayer.util.media.isRemoteImageSource
 import kotlin.math.abs
 
 private const val DynamicBackgroundFallbackColor = 0xFF808080.toInt()

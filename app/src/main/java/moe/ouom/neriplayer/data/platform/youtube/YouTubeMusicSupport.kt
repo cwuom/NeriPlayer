@@ -34,7 +34,7 @@ import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.auth.youtube.parseCookieHeader
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.matchesRootDomain
+import moe.ouom.neriplayer.util.network.matchesRootDomain
 
 const val YOUTUBE_MUSIC_MEDIA_URI_SCHEME: String = "ytmusic"
 private const val YOUTUBE_MUSIC_MEDIA_URI_HOST: String = "video"

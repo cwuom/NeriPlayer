@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.api.bili
 
-import moe.ouom.neriplayer.util.DynamicProxySelector
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.network.DynamicProxySelector
+import moe.ouom.neriplayer.core.logging.NPLogger
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient

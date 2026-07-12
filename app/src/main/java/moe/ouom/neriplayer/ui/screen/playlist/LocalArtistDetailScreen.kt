@@ -96,10 +96,10 @@ import moe.ouom.neriplayer.ui.component.SongDownloadSubtitle
 import moe.ouom.neriplayer.ui.util.rememberLocalArtistDisplayCoverUrl
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.HapticIconButton
-import moe.ouom.neriplayer.util.formatTotalDuration
-import moe.ouom.neriplayer.util.offlineCachedImageRequest
-import moe.ouom.neriplayer.util.performHapticFeedback
+import moe.ouom.neriplayer.ui.haptic.HapticIconButton
+import moe.ouom.neriplayer.util.format.formatTotalDuration
+import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 
 private fun hasCachedLocalArtistDownload(song: SongItem): Boolean {
     return GlobalDownloadManager.hasDownloadedSongCached(song) ||

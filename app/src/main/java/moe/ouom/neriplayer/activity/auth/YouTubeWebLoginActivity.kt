@@ -68,10 +68,10 @@ import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.auth.youtube.evaluateYouTubeAuthHealth
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
 import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeLoginHost
-import moe.ouom.neriplayer.util.DynamicProxySelector
-import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.isAllowedMainFrameRequest
-import moe.ouom.neriplayer.util.lockPortraitIfPhone
+import moe.ouom.neriplayer.util.network.DynamicProxySelector
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.network.isAllowedMainFrameRequest
+import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject

@@ -28,7 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.util.SafeModeManager
+import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
 
 @Composable
 internal fun SafeModeExportCard(

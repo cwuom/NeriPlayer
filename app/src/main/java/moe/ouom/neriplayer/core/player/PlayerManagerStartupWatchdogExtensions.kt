@@ -16,7 +16,7 @@ import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.policy.resolvePlaybackStartPlan
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal fun PlayerManager.configureActivePlaybackCandidates(
     result: SongUrlResult.Success,

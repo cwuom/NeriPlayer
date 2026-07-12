@@ -47,7 +47,7 @@ import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistSummaries
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
 import java.io.IOException
 

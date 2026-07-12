@@ -31,7 +31,6 @@ import android.media.MediaMetadataRetriever
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.net.Uri
 import android.os.Looper
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
@@ -76,10 +75,10 @@ import moe.ouom.neriplayer.data.traffic.TrafficByteAccumulator
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.TrafficUsageSource
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.currentTrafficNetworkType
-import moe.ouom.neriplayer.util.hasLikelyInternetAccess
-import moe.ouom.neriplayer.util.readBytesLimited
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.data.traffic.currentTrafficNetworkType
+import moe.ouom.neriplayer.data.traffic.hasLikelyInternetAccess
+import moe.ouom.neriplayer.util.io.readBytesLimited
 import okhttp3.Dispatcher
 import okhttp3.Request
 import okhttp3.ResponseBody

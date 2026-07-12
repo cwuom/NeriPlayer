@@ -5,8 +5,8 @@ import android.os.SystemClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
-import moe.ouom.neriplayer.util.HapticFeedbackEffect
-import moe.ouom.neriplayer.util.performHapticFeedback
+import moe.ouom.neriplayer.ui.haptic.HapticFeedbackEffect
+import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 
 private const val NO_LYRIC_LINE_INDEX = -1
 private const val MIN_LYRIC_SEEK_HAPTIC_INTERVAL_MS = 55L

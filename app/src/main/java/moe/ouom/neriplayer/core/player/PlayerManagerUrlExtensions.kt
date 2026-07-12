@@ -42,7 +42,7 @@ import moe.ouom.neriplayer.core.player.url.shouldRetryNeteaseWithLowerQuality
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
 
 private const val OFFLINE_CACHE_URL_PREFIX = "http://offline.cache/"

@@ -44,8 +44,8 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
-import moe.ouom.neriplayer.util.HapticTextButton
-import moe.ouom.neriplayer.util.performHapticFeedback
+import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

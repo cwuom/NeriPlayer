@@ -27,7 +27,6 @@ package moe.ouom.neriplayer.data.sync.github
 import android.content.Context
 import android.os.Build
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.history.PlayedEntry
@@ -44,8 +43,8 @@ import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.data.sync.SyncCoordinator
-import moe.ouom.neriplayer.util.LanguageManager
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.IOException
 
 class GitHubSyncManager private constructor(context: Context) {

@@ -52,8 +52,8 @@ import moe.ouom.neriplayer.data.platform.youtube.installYouTubeBackgroundWebView
 import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeBootstrapHost
 import moe.ouom.neriplayer.data.platform.youtube.removeYouTubeBackgroundWebViewGuard
 import moe.ouom.neriplayer.data.platform.youtube.resolveBootstrapUserAgent
-import moe.ouom.neriplayer.util.isAllowedMainFrameRequest
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.network.isAllowedMainFrameRequest
+import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
 import org.json.JSONTokener
 import java.util.UUID

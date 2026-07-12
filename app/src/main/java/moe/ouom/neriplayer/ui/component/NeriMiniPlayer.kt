@@ -79,8 +79,8 @@ import dev.chrisbanes.haze.hazeChild
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.util.fastScrollableImageRequest
-import moe.ouom.neriplayer.util.HapticIconButton
+import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
+import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.sign

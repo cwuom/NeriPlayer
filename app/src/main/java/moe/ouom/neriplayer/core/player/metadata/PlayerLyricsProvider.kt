@@ -40,8 +40,8 @@ import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.component.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.ui.component.resolveStoredLyricText
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.isTransientHttp2StreamReset
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.network.isTransientHttp2StreamReset
 import org.json.JSONObject
 
 internal fun extractPreferredNeteaseLyricContent(rawResponse: String): String {

@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.data.settings.normalizeMobileDataBiliAudioQuality
 import moe.ouom.neriplayer.data.settings.normalizeMobileDataNeteaseAudioQuality
 import moe.ouom.neriplayer.data.settings.normalizeMobileDataYouTubeAudioQuality
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
-import moe.ouom.neriplayer.util.currentTrafficNetworkType
+import moe.ouom.neriplayer.data.traffic.currentTrafficNetworkType
 
 internal fun PlayerManager.effectiveNeteaseQuality(): String {
     return resolveTrafficAwareQuality(

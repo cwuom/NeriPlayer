@@ -40,7 +40,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthHealth
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
 
 private const val NETEASE_AUTH_PREFS = "netease_auth_secure_prefs"

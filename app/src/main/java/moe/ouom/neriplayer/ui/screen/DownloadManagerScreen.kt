@@ -59,10 +59,10 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.DownloadedSong
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.DownloadManagerViewModel
-import moe.ouom.neriplayer.util.formatDate
-import moe.ouom.neriplayer.util.formatFileSize
-import moe.ouom.neriplayer.util.offlineCachedImageRequest
-import moe.ouom.neriplayer.util.performHapticFeedback
+import moe.ouom.neriplayer.util.format.formatDate
+import moe.ouom.neriplayer.util.format.formatFileSize
+import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)

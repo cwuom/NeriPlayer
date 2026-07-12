@@ -44,7 +44,7 @@ import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.github.SyncRecentPlay
 import moe.ouom.neriplayer.data.sync.github.SyncTrackStat
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date

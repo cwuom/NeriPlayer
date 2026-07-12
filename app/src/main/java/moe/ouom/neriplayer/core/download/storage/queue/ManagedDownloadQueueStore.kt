@@ -6,7 +6,7 @@ import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.download.storage.PENDING_DOWNLOAD_QUEUE_FILE_NAME
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException

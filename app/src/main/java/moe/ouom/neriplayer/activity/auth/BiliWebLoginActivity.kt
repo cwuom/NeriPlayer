@@ -59,10 +59,10 @@ import com.google.android.material.snackbar.Snackbar
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.shouldAutoCompleteBiliWebLogin
-import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.hostMatchesAnyDomain
-import moe.ouom.neriplayer.util.isAllowedMainFrameRequest
-import moe.ouom.neriplayer.util.lockPortraitIfPhone
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.network.hostMatchesAnyDomain
+import moe.ouom.neriplayer.util.network.isAllowedMainFrameRequest
+import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
 
 /**
  * 用内置 WebView 登录哔哩哔哩

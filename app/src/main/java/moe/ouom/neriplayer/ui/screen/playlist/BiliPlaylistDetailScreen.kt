@@ -31,7 +31,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -90,18 +89,14 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.HapticIconButton
-import moe.ouom.neriplayer.util.HapticFloatingActionButton
-import moe.ouom.neriplayer.util.HapticTextButton
-import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.formatDurationSec
-import moe.ouom.neriplayer.util.offlineCachedImageRequest
-import moe.ouom.neriplayer.util.performHapticFeedback
+import moe.ouom.neriplayer.ui.haptic.HapticIconButton
+import moe.ouom.neriplayer.ui.haptic.HapticFloatingActionButton
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.format.formatDurationSec
+import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.runtime.saveable.rememberSaveable
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 

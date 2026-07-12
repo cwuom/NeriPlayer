@@ -27,7 +27,7 @@ import android.content.Context
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
-import moe.ouom.neriplayer.util.LanguageManager
+import moe.ouom.neriplayer.util.platform.LanguageManager
 
 object LocalFilesPlaylist {
     const val SYSTEM_ID = -1002L

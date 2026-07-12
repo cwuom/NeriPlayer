@@ -13,7 +13,7 @@ import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.provider.service.addConnectionListener
 import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 object LyriconManager {
     private var provider: LyriconProvider? = null

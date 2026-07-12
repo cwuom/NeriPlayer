@@ -35,7 +35,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.settings.SettingsRepository
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import java.util.concurrent.TimeUnit
 
 /**

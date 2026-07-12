@@ -23,10 +23,10 @@ package moe.ouom.neriplayer.core.api.netease
  * Created: 2025/8/10
  */
 
-import moe.ouom.neriplayer.util.JsonUtil.jsonQuote
-import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.isTransientHttp2StreamReset
-import moe.ouom.neriplayer.util.readBytesLimited
+import moe.ouom.neriplayer.util.json.JsonUtil.jsonQuote
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.network.isTransientHttp2StreamReset
+import moe.ouom.neriplayer.util.io.readBytesLimited
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.FormBody
@@ -42,7 +42,7 @@ import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 import java.util.zip.GZIPInputStream
-import moe.ouom.neriplayer.util.DynamicProxySelector
+import moe.ouom.neriplayer.util.network.DynamicProxySelector
 
 class NeteaseClient {
     private companion object {

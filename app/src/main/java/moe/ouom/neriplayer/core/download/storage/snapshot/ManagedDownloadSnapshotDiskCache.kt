@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.core.download.storage.snapshot
 import android.content.Context
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.SNAPSHOT_CACHE_FILE_NAME
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
 import java.io.IOException
 

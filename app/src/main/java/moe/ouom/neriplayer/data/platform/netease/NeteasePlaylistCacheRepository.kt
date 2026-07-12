@@ -26,7 +26,7 @@ package moe.ouom.neriplayer.data.platform.netease
 import android.content.Context
 import com.google.gson.Gson
 import java.io.File
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 data class CachedNeteasePlaylistHeader(
     val id: Long,

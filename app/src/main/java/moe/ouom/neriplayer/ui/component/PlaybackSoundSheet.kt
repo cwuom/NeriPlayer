@@ -31,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
@@ -48,8 +49,8 @@ import moe.ouom.neriplayer.core.player.model.formatPlaybackGainLabel
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
-import moe.ouom.neriplayer.util.HapticOutlinedButton
-import moe.ouom.neriplayer.util.HapticTextButton
+import moe.ouom.neriplayer.ui.haptic.HapticOutlinedButton
+import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -326,7 +327,7 @@ fun PlaybackSoundSheet(
             onClick = onReset,
             modifier = Modifier.align(Alignment.End)
         ) {
-            Text(androidx.compose.ui.res.stringResource(R.string.nowplaying_audio_effects_reset))
+            Text(stringResource(R.string.nowplaying_audio_effects_reset))
         }
 
         Spacer(modifier = Modifier.height(4.dp))
@@ -335,7 +336,7 @@ fun PlaybackSoundSheet(
             onClick = onDismiss,
             modifier = Modifier.align(Alignment.End)
         ) {
-            Text(androidx.compose.ui.res.stringResource(R.string.action_done))
+            Text(stringResource(R.string.action_done))
         }
     }
 }

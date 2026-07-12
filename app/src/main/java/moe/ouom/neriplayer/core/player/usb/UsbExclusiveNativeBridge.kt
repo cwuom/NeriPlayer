@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.player.usb
 
 import android.hardware.usb.UsbDeviceConnection
 import java.nio.ByteBuffer
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal object UsbExclusiveNativeBridge {
     private const val TAG = "NERI-UsbExclusiveNative"

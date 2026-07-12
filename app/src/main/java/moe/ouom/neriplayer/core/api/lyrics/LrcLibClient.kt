@@ -31,7 +31,7 @@ package moe.ouom.neriplayer.core.api.lyrics
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject

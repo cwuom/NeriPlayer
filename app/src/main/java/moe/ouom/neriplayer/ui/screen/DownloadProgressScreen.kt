@@ -48,8 +48,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
-import moe.ouom.neriplayer.core.download.countQueuedDownloadTasks
 import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -59,8 +57,8 @@ import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
-import moe.ouom.neriplayer.util.formatFileSize
-import moe.ouom.neriplayer.util.performHapticFeedback
+import moe.ouom.neriplayer.util.format.formatFileSize
+import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

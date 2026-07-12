@@ -51,7 +51,7 @@ import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.stats.TrackStat
-import moe.ouom.neriplayer.util.offlineCachedImageRequest
+import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 
 private val StatsPeriodOptions = listOf(
     PlaybackStatsPeriod.DAY,

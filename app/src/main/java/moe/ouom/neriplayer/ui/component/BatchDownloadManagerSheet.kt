@@ -38,8 +38,8 @@ import moe.ouom.neriplayer.core.download.DownloadTask
 import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
-import moe.ouom.neriplayer.util.HapticIconButton
-import moe.ouom.neriplayer.util.HapticTextButton
+import moe.ouom.neriplayer.ui.haptic.HapticIconButton
+import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

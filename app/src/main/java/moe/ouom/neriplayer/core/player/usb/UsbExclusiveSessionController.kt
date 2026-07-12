@@ -23,7 +23,7 @@ import moe.ouom.neriplayer.data.settings.normalizeUsbExclusiveBackgroundBufferMs
 import moe.ouom.neriplayer.data.settings.normalizeUsbExclusiveForegroundBufferMs
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.data.settings.toUsbExclusivePreferences
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 object UsbExclusiveSessionController {
     private const val TAG = "NERI-UsbExclusiveNative"

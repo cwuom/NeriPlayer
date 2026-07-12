@@ -40,7 +40,7 @@ import moe.ouom.neriplayer.data.platform.bili.BiliFavoriteFolderContentCache
 import moe.ouom.neriplayer.data.platform.bili.CachedBiliFavoriteVideo
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.IOException
 
 private const val TAG = "NERI-BiliPlaylistVM"

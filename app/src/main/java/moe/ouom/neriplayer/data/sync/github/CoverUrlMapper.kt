@@ -26,7 +26,7 @@ package moe.ouom.neriplayer.data.sync.github
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
 
 /**

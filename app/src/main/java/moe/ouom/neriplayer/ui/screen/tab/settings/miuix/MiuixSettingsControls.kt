@@ -54,7 +54,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
-import moe.ouom.neriplayer.util.performHapticFeedback
+import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 
 private val MiuixControlShape = RoundedCornerShape(16.dp)
 private val MiuixDialogShape = RoundedCornerShape(28.dp)

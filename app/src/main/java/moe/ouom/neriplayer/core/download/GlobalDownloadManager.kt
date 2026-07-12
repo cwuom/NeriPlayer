@@ -63,8 +63,8 @@ import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.autoSettingFlow
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.currentTrafficNetworkType
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.data.traffic.currentTrafficNetworkType
 import org.json.JSONObject
 import kotlin.LazyThreadSafetyMode
 

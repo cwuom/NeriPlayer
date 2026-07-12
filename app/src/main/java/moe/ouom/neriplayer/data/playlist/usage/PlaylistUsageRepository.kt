@@ -39,8 +39,8 @@ import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.displayCoverUrl
-import moe.ouom.neriplayer.util.LanguageManager
-import moe.ouom.neriplayer.util.writeTextAtomically
+import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.util.io.writeTextAtomically
 import java.io.File
 
 data class UsageEntry(

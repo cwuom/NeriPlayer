@@ -18,7 +18,7 @@ import moe.ouom.neriplayer.core.player.prefetch.YouTubePrefetchTask
 import moe.ouom.neriplayer.core.player.policy.resolveYouTubeWarmupTargets
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 private const val YOUTUBE_WARMUP_BUFFER_BYTES = 64 * 1024
 private const val YOUTUBE_WARMUP_MIN_PREFETCH_BYTES = 256L * 1024L

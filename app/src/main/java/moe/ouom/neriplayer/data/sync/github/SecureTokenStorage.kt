@@ -35,7 +35,7 @@ import com.google.gson.reflect.TypeToken
 import moe.ouom.neriplayer.data.config.GitHubSyncConfigSnapshot
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import java.util.UUID
 
 /**

@@ -126,11 +126,11 @@ import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthViewModel
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthViewModel
-import moe.ouom.neriplayer.util.HapticButton
-import moe.ouom.neriplayer.util.HapticOutlinedButton
-import moe.ouom.neriplayer.util.HapticTextButton
-import moe.ouom.neriplayer.util.LanguageManager
-import moe.ouom.neriplayer.util.getDisplayName
+import moe.ouom.neriplayer.ui.haptic.HapticButton
+import moe.ouom.neriplayer.ui.haptic.HapticOutlinedButton
+import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.util.platform.getDisplayName
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap

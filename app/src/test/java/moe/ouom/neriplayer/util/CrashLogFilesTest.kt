@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.util
 
+import moe.ouom.neriplayer.util.crash.CrashLogFiles
 import org.junit.Assert.assertTrue
 import org.junit.Test
 

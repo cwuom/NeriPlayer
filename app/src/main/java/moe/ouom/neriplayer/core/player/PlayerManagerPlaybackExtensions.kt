@@ -42,8 +42,8 @@ import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.SearchManager
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.core.api.search.SearchManager
 import kotlin.random.Random
 
 internal fun PlayerManager.cancelVolumeFadeImpl(resetToFull: Boolean = false) {

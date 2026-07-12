@@ -74,8 +74,8 @@ import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistHeader
 import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
-import moe.ouom.neriplayer.util.HapticIconButton
-import moe.ouom.neriplayer.util.offlineCachedImageRequest
+import moe.ouom.neriplayer.ui.haptic.HapticIconButton
+import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

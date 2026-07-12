@@ -46,8 +46,8 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.netease.NeteaseQrLoginClient
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.normalizeNeteaseWebLoginCookies
-import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.lockPortraitIfPhone
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
 import org.json.JSONObject
 import kotlin.math.roundToInt
 

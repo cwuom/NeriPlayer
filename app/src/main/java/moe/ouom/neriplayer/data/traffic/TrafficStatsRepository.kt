@@ -14,9 +14,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.stats.playbackStatsDayStartAt
-import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.writeTextAtomically
-import moe.ouom.neriplayer.util.currentTrafficNetworkType
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.io.writeTextAtomically
+import moe.ouom.neriplayer.data.traffic.currentTrafficNetworkType
 import java.io.File
 
 class TrafficStatsRepository private constructor(

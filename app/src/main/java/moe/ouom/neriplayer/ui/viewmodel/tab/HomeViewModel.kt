@@ -42,8 +42,8 @@ import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistSummaries
-import moe.ouom.neriplayer.util.LanguageManager
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
 import java.io.IOException
 

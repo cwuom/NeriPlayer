@@ -63,6 +63,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -135,15 +136,15 @@ import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.ui.onboarding.StartupOnboardingScreen
 import moe.ouom.neriplayer.ui.screen.safemode.SafeModeScreen
 import moe.ouom.neriplayer.ui.theme.rememberActualSystemDarkTheme
-import moe.ouom.neriplayer.util.CrashReportStore
-import moe.ouom.neriplayer.util.ExceptionHandler
-import moe.ouom.neriplayer.util.HapticButton
-import moe.ouom.neriplayer.util.HapticTextButton
-import moe.ouom.neriplayer.util.LanguageManager
-import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.NightModeHelper
-import moe.ouom.neriplayer.util.SafeModeManager
-import moe.ouom.neriplayer.util.lockPortraitIfPhone
+import moe.ouom.neriplayer.util.crash.CrashReportStore
+import moe.ouom.neriplayer.core.crash.ExceptionHandler
+import moe.ouom.neriplayer.ui.haptic.HapticButton
+import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.platform.NightModeHelper
+import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
+import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
 
 private enum class AppStage { Loading, Disclaimer, Onboarding, Main }
 
@@ -1397,7 +1398,7 @@ fun DisclaimerScreen(
                 HapticButton(
                     onClick = { onAgree() },
                     enabled = countdown == 0,
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(

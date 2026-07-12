@@ -55,10 +55,10 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.normalizeNeteaseWebLoginCookies
 import moe.ouom.neriplayer.data.auth.web.shouldAutoCompleteNeteaseWebLogin
-import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.hostMatchesAnyDomain
-import moe.ouom.neriplayer.util.isAllowedMainFrameRequest
-import moe.ouom.neriplayer.util.lockPortraitIfPhone
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.network.hostMatchesAnyDomain
+import moe.ouom.neriplayer.util.network.isAllowedMainFrameRequest
+import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
 
 class NeteaseWebLoginActivity : ComponentActivity() {
 

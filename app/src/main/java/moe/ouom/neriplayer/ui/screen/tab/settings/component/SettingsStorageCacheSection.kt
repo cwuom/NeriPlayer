@@ -88,7 +88,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedBut
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
-import moe.ouom.neriplayer.util.formatFileSize
+import moe.ouom.neriplayer.util.format.formatFileSize
 
 @Composable
 internal fun SettingsStorageCacheSection(

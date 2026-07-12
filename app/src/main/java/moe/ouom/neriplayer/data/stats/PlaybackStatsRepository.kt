@@ -20,8 +20,8 @@ import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.github.SyncTrackStat
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.writeTextAtomically
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.io.writeTextAtomically
 import java.io.File
 
 data class TrackStat(

@@ -25,7 +25,7 @@ package moe.ouom.neriplayer.data.platform.youtube
 
 import android.content.Context
 import com.google.gson.Gson
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
 import java.security.MessageDigest
 

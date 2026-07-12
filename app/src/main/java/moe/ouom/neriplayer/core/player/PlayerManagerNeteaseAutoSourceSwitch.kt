@@ -9,7 +9,7 @@ import moe.ouom.neriplayer.core.player.url.buildBiliPlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.url.inferBiliQualityKey
 import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import kotlin.math.absoluteValue
 
 private const val NETEASE_AUTO_SOURCE_SEARCH_LIMIT = 6

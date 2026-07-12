@@ -41,11 +41,11 @@ import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicLibraryGateway
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicPlaylistDetail
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicTrack
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicUiDependencies
-import moe.ouom.neriplayer.util.AnrWatchdog
-import moe.ouom.neriplayer.util.ExceptionHandler
-import moe.ouom.neriplayer.util.LanguageManager
-import moe.ouom.neriplayer.util.NativeCrashHandler
-import moe.ouom.neriplayer.util.SafeModeManager
+import moe.ouom.neriplayer.util.crash.AnrWatchdog
+import moe.ouom.neriplayer.core.crash.ExceptionHandler
+import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.util.crash.NativeCrashHandler
+import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
 
 class NeriPlayerApplication : Application() {
     @Volatile

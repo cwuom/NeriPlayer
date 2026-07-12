@@ -7,8 +7,8 @@ import moe.ouom.neriplayer.data.sync.github.SyncPlaybackCounterShard
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
 import moe.ouom.neriplayer.data.sync.github.SyncTrackStat
-import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.writeTextAtomically
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.io.writeTextAtomically
 import java.io.File
 
 data class PlaybackStatsSyncCounterSnapshot(

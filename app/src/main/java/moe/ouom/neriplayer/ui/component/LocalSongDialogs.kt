@@ -60,10 +60,10 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.media.LocalMediaDetails
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.HapticTextButton
-import moe.ouom.neriplayer.util.convertTimestampToDate
-import moe.ouom.neriplayer.util.formatDuration
-import moe.ouom.neriplayer.util.formatFileSize
+import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.util.format.convertTimestampToDate
+import moe.ouom.neriplayer.util.format.formatDuration
+import moe.ouom.neriplayer.util.format.formatFileSize
 
 @Composable
 fun LocalSongDetailsDialog(

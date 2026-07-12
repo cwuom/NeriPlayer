@@ -10,7 +10,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.config.AppConfigImportResult
 import moe.ouom.neriplayer.data.config.ConfigFileManager
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 class ConfigTransferViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(ConfigTransferUiState())

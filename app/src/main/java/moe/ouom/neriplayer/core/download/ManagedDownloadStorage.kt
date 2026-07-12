@@ -24,21 +24,36 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.storage.*
+import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadContentReferenceDeleter
+import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitIo
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitVerifier
+import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadDeleteGuard
+import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadDeletePolicy
 import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirectoryIdentity
+import moe.ouom.neriplayer.core.download.storage.file.cache.ManagedDownloadFileChildNameCache
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadMetadataCodec
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationNamePlanner
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationProgressTracker
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationEntryRef
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationNamePlan
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationProgressEntry
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationTargetIndex
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.queue.ManagedDownloadQueueStore
 import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadPendingAudioWriteNames
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotCacheStore
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
+import moe.ouom.neriplayer.core.download.storage.tree.cache.ManagedDownloadTreeChildCache
+import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
+import moe.ouom.neriplayer.core.download.storage.tree.cache.TreeChildNameRefreshMerger
+import moe.ouom.neriplayer.core.download.storage.tree.query.ManagedDownloadTreeChildQuery
 import moe.ouom.neriplayer.core.download.storage.working.ManagedDownloadWorkingStore
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
@@ -66,9 +81,10 @@ internal object ManagedDownloadStorage {
     )
     private val treeDirectoryLocks = ConcurrentHashMap<String, Any>()
     private val treeSubdirectoryCache = ConcurrentHashMap<String, DocumentFile>()
-    private val treeChildrenNameCache = ConcurrentHashMap<String, CachedChildNames>()
-    private val treeChildrenEntryCache = ConcurrentHashMap<String, CachedTreeChildren>()
-    private val fileChildrenNameCache = ConcurrentHashMap<String, CachedChildNames>()
+    private val treeChildCache = ManagedDownloadTreeChildCache()
+    private val fileChildNameCache = ManagedDownloadFileChildNameCache(
+        writeCacheValidateIntervalMs = FILE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
+    )
     private val childNameReservationLocks = ConcurrentHashMap<String, Any>()
     private val ensuredNoMediaMarkers = ConcurrentHashMap<String, Boolean>()
     private val pendingAudioWriteNames = ManagedDownloadPendingAudioWriteNames()
@@ -271,50 +287,6 @@ internal object ManagedDownloadStorage {
         val validatedAtMs: Long
     )
 
-    private class CachedChildNames(
-        initialNames: Collection<String>,
-        initialRefreshedAtMs: Long,
-        initialComplete: Boolean
-    ) {
-        val names: MutableSet<String> = ConcurrentHashMap.newKeySet<String>().apply {
-            addAll(initialNames)
-        }
-
-        @Volatile
-        var refreshedAtMs: Long = initialRefreshedAtMs
-
-        @Volatile
-        var isComplete: Boolean = initialComplete
-    }
-
-    private class CachedTreeChildren(
-        initialChildren: Collection<QueriedTreeChild>,
-        initialRefreshedAtMs: Long,
-        initialComplete: Boolean
-    ) {
-        val childrenByName: MutableMap<String, QueriedTreeChild> = ConcurrentHashMap()
-
-        @Volatile
-        var refreshedAtMs: Long = initialRefreshedAtMs
-
-        @Volatile
-        var isComplete: Boolean = initialComplete
-
-        init {
-            initialChildren.forEach { child ->
-                childrenByName[child.name] = child
-            }
-        }
-    }
-
-    private data class QueriedTreeChild(
-        val name: String,
-        val documentUri: Uri,
-        val sizeBytes: Long,
-        val lastModifiedMs: Long,
-        val isDirectory: Boolean
-    )
-
     internal data class TreeChildNameRefresh(
         val names: Set<String>,
         val isComplete: Boolean
@@ -331,174 +303,63 @@ internal object ManagedDownloadStorage {
         val createdNew: Boolean
     )
 
-    private data class ManagedDeletePolicy(
-        val managedFileRoots: List<String>,
-        val managedTreeRoots: List<String>,
-        val trustedReferences: Set<String>
-    )
-
-    private data class MigrationTargetIndex(
-        val rootEntriesByName: Map<String, StoredEntry>,
-        val coverEntriesByName: Map<String, StoredEntry>,
-        val lyricEntriesByName: Map<String, StoredEntry>
-    ) {
-        fun namesFor(subdirectory: String?): Set<String> {
-            return when (subdirectory) {
-                null -> rootEntriesByName.keys
-                COVER_SUBDIRECTORY -> coverEntriesByName.keys
-                LYRIC_SUBDIRECTORY -> lyricEntriesByName.keys
-                else -> emptySet()
-            }
-        }
-
-        fun entryFor(subdirectory: String?, name: String): StoredEntry? {
-            return when (subdirectory) {
-                null -> rootEntriesByName[name]
-                COVER_SUBDIRECTORY -> coverEntriesByName[name]
-                LYRIC_SUBDIRECTORY -> lyricEntriesByName[name]
-                else -> null
-            }
-        }
-    }
-
-    private data class MigrationNamePlan(
-        val targetNamesByReference: Map<String, String>
-    ) {
-        fun targetNameFor(entry: ManagedMigrationEntry): String {
-            return targetNamesByReference[entry.entry.reference] ?: entry.entry.name
-        }
-    }
-
     private class MigrationProgressTracker(
         private val totalFiles: Int,
         private val totalBytes: Long,
         private val metadataFilesTotal: Int
     ) {
-        private val lock = Any()
-        private val activeCopyBytes = mutableMapOf<String, Long>()
-        private var stage: MigrationStage = MigrationStage.PREPARING
-        private var currentFileName: String? = null
-        private var completedCopyBytes = 0L
-        private var copiedFiles = 0
-        private var metadataFilesProcessed = 0
-        private var cleanupFilesProcessed = 0
-        private var cleanupFilesTotal = 0
-        private var lastEmitAtMs = 0L
+        private val delegate = ManagedDownloadMigrationProgressTracker(
+            totalFiles = totalFiles,
+            totalBytes = totalBytes,
+            metadataFilesTotal = metadataFilesTotal,
+            onProgress = { progress -> _migrationProgressFlow.value = progress }
+        )
 
         fun startPreparing(fileName: String? = null) {
-            synchronized(lock) {
-                stage = MigrationStage.PREPARING
-                currentFileName = fileName
-                emitLocked(force = true)
-            }
+            delegate.startPreparing(fileName)
         }
 
         fun startCopy(entry: ManagedMigrationEntry) {
-            synchronized(lock) {
-                stage = MigrationStage.COPYING
-                currentFileName = entry.entry.name
-                activeCopyBytes.putIfAbsent(entry.entry.reference, 0L)
-                emitLocked(force = true)
-            }
+            delegate.startCopy(entry.toProgressEntry())
         }
 
         fun onCopyProgress(entry: ManagedMigrationEntry, copiedBytes: Long) {
-            synchronized(lock) {
-                stage = MigrationStage.COPYING
-                currentFileName = entry.entry.name
-                activeCopyBytes[entry.entry.reference] = copiedBytes.coerceAtLeast(0L)
-                emitLocked(force = false)
-            }
+            delegate.onCopyProgress(entry.toProgressEntry(), copiedBytes)
         }
 
         fun completeCopy(entry: ManagedMigrationEntry) {
-            synchronized(lock) {
-                stage = MigrationStage.COPYING
-                currentFileName = entry.entry.name
-                val finishedBytes = activeCopyBytes.remove(entry.entry.reference)
-                    ?: entry.entry.sizeBytes.coerceAtLeast(0L)
-                completedCopyBytes += finishedBytes.coerceAtLeast(0L)
-                copiedFiles++
-                emitLocked(force = true)
-            }
+            delegate.completeCopy(entry.toProgressEntry())
         }
 
         fun failCopy(entry: ManagedMigrationEntry) {
-            synchronized(lock) {
-                activeCopyBytes.remove(entry.entry.reference)
-                currentFileName = entry.entry.name
-                emitLocked(force = true)
-            }
+            delegate.failCopy(entry.toProgressEntry())
         }
 
         fun startRewrite(fileName: String?) {
-            synchronized(lock) {
-                stage = MigrationStage.REWRITING_METADATA
-                currentFileName = fileName
-                emitLocked(force = true)
-            }
+            delegate.startRewrite(fileName)
         }
 
         fun finishRewrite(fileName: String?) {
-            synchronized(lock) {
-                stage = MigrationStage.REWRITING_METADATA
-                currentFileName = fileName
-                metadataFilesProcessed++
-                emitLocked(force = true)
-            }
+            delegate.finishRewrite(fileName)
         }
 
         fun startCleanup(totalEntries: Int, fileName: String?) {
-            synchronized(lock) {
-                stage = MigrationStage.CLEANING_UP
-                cleanupFilesTotal = totalEntries
-                currentFileName = fileName
-                emitLocked(force = true)
-            }
+            delegate.startCleanup(totalEntries, fileName)
         }
 
         fun finishCleanup(fileName: String?) {
-            synchronized(lock) {
-                stage = MigrationStage.CLEANING_UP
-                currentFileName = fileName
-                cleanupFilesProcessed++
-                emitLocked(force = true)
-            }
+            delegate.finishCleanup(fileName)
         }
 
         fun finishAll() {
-            synchronized(lock) {
-                stage = MigrationStage.FINALIZING
-                currentFileName = null
-                emitLocked(force = true)
-            }
+            delegate.finishAll()
         }
 
-        private fun emitLocked(force: Boolean) {
-            val now = System.currentTimeMillis()
-            if (!force && now - lastEmitAtMs < MIGRATION_PROGRESS_EMIT_INTERVAL_MS) {
-                return
-            }
-            lastEmitAtMs = now
-            val inFlightBytes = activeCopyBytes.values.sum()
-            _migrationProgressFlow.value = MigrationProgress(
-                stage = stage,
-                totalFiles = totalFiles,
-                processedFiles = when (stage) {
-                    MigrationStage.PREPARING -> 0
-                    MigrationStage.COPYING -> copiedFiles
-                    MigrationStage.REWRITING_METADATA -> copiedFiles + metadataFilesProcessed
-                    MigrationStage.CLEANING_UP -> copiedFiles + metadataFilesTotal + cleanupFilesProcessed
-                    MigrationStage.FINALIZING -> totalFiles
-                }.coerceAtMost(totalFiles),
-                copiedFiles = copiedFiles,
-                copiedBytes = completedCopyBytes + inFlightBytes,
-                totalBytes = totalBytes,
-                metadataFilesProcessed = metadataFilesProcessed,
-                metadataFilesTotal = metadataFilesTotal,
-                cleanupFilesProcessed = cleanupFilesProcessed,
-                cleanupFilesTotal = cleanupFilesTotal,
-                currentFileName = currentFileName
+        private fun ManagedMigrationEntry.toProgressEntry(): ManagedMigrationProgressEntry {
+            return ManagedMigrationProgressEntry(
+                reference = entry.reference,
+                name = entry.name,
+                sizeBytes = entry.sizeBytes
             )
         }
     }
@@ -755,8 +616,8 @@ internal object ManagedDownloadStorage {
         context: Context,
         targetRoot: RootHandle,
         migrationEntry: ManagedMigrationEntry,
-        targetIndex: MigrationTargetIndex,
-        namePlan: MigrationNamePlan,
+        targetIndex: ManagedMigrationTargetIndex,
+        namePlan: ManagedMigrationNamePlan,
         progressTracker: MigrationProgressTracker? = null
     ): ManagedMigrationCopyResult {
         val copiedEntry = retryManagedMigrationWrite(
@@ -2404,135 +2265,21 @@ internal object ManagedDownloadStorage {
     }
 
     private fun queryTreeChildren(context: Context, parent: DocumentFile): List<QueriedTreeChild> {
-        val parentUri = parent.uri
-        val documentId = runCatching { DocumentsContract.getDocumentId(parentUri) }.getOrNull()
-            ?: return parent.listFiles().mapNotNull { file ->
-                file.name?.let { name ->
-                    QueriedTreeChild(
-                        name = name,
-                        documentUri = file.uri,
-                        sizeBytes = file.length(),
-                        lastModifiedMs = file.lastModified(),
-                        isDirectory = file.isDirectory
-                    )
-                }
-            }
-        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(parentUri, documentId)
-        return runCatching {
-            context.contentResolver.query(
-                childrenUri,
-                arrayOf(
-                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                    DocumentsContract.Document.COLUMN_MIME_TYPE,
-                    DocumentsContract.Document.COLUMN_SIZE,
-                    DocumentsContract.Document.COLUMN_LAST_MODIFIED
-                ),
-                null,
-                null,
-                null
-            )?.use { cursor ->
-                val idIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
-                val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-                val mimeTypeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
-                val sizeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
-                val modifiedIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
-                if (idIndex < 0 || nameIndex < 0 || mimeTypeIndex < 0) {
-                    return@use emptyList()
-                }
-                buildList {
-                    while (cursor.moveToNext()) {
-                        val childDocumentId = cursor.getString(idIndex) ?: continue
-                        val childName = cursor.getString(nameIndex) ?: continue
-                        val childMimeType = cursor.getString(mimeTypeIndex).orEmpty()
-                        val childUri = DocumentsContract.buildDocumentUriUsingTree(parentUri, childDocumentId)
-                        add(
-                            QueriedTreeChild(
-                                name = childName,
-                                documentUri = childUri,
-                                sizeBytes = if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
-                                    cursor.getLong(sizeIndex)
-                                } else {
-                                    0L
-                                },
-                                lastModifiedMs = if (modifiedIndex >= 0 && !cursor.isNull(modifiedIndex)) {
-                                    cursor.getLong(modifiedIndex)
-                                } else {
-                                    0L
-                                },
-                                isDirectory = childMimeType == DocumentsContract.Document.MIME_TYPE_DIR
-                            )
-                        )
-                    }
-                }
-            }.orEmpty()
-        }.onFailure {
+        return ManagedDownloadTreeChildQuery.queryChildren(context, parent) {
             NPLogger.w(TAG, "查询目录子项失败，回退 DocumentFile 枚举: ${it.message}")
-        }.getOrElse {
-            parent.listFiles().mapNotNull { file ->
-                file.name?.let { name ->
-                    QueriedTreeChild(
-                        name = name,
-                        documentUri = file.uri,
-                        sizeBytes = file.length(),
-                        lastModifiedMs = file.lastModified(),
-                        isDirectory = file.isDirectory
-                    )
-                }
-            }
         }
-    }
-
-    private fun cachedFileChildrenNames(dir: File): Set<String> {
-        val cacheKey = dir.absolutePath
-        val now = System.currentTimeMillis()
-        fileChildrenNameCache[cacheKey]
-            ?.takeIf {
-                it.isComplete &&
-                    now - it.refreshedAtMs <= FILE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
-            }
-            ?.let { return it.names }
-        val refreshedNames = dir.listFiles()
-            ?.mapNotNull(File::getName)
-            .orEmpty()
-        val refreshed = CachedChildNames(
-            initialNames = refreshedNames,
-            initialRefreshedAtMs = now,
-            initialComplete = true
-        )
-        fileChildrenNameCache[cacheKey] = refreshed
-        return refreshed.names
     }
 
     private fun rememberFileChildName(dir: File, childName: String) {
-        val cacheKey = dir.absolutePath
-        val now = System.currentTimeMillis()
-        fileChildrenNameCache[cacheKey]?.let { cached ->
-            cached.names += childName
-            cached.refreshedAtMs = now
-            return
-        }
-        fileChildrenNameCache[cacheKey] = CachedChildNames(
-            initialNames = listOf(childName),
-            initialRefreshedAtMs = now,
-            initialComplete = false
-        )
+        fileChildNameCache.rememberName(dir, childName)
     }
 
     private fun reserveUniqueFileChildName(dir: File, desiredName: String): String {
-        val cacheKey = dir.absolutePath
-        val lock = childNameReservationLocks.computeIfAbsent("file:$cacheKey") { Any() }
-        return synchronized(lock) {
-            createUniqueName(cachedFileChildrenNames(dir), desiredName)
-                .also { reservedName -> rememberFileChildName(dir, reservedName) }
-        }
+        return fileChildNameCache.reserveUniqueName(dir, desiredName)
     }
 
     private fun forgetFileChildName(dir: File, childName: String) {
-        val cacheKey = dir.absolutePath
-        val cached = fileChildrenNameCache[cacheKey] ?: return
-        cached.names -= childName
-        cached.refreshedAtMs = System.currentTimeMillis()
+        fileChildNameCache.forgetName(dir, childName)
     }
 
     private fun cachedTreeChildrenNames(context: Context, parent: DocumentFile): Set<String> {
@@ -2560,27 +2307,14 @@ internal object ManagedDownloadStorage {
     ): Set<String> {
         val cacheKey = parent.uri.toString()
         val now = System.currentTimeMillis()
-        val cachedNames = treeChildrenNameCache[cacheKey]
-        val cachedEntries = treeChildrenEntryCache[cacheKey]
-        if (maxCacheAgeMs > 0L) {
-            cachedNames
-                ?.takeIf { cached ->
-                    now - cached.refreshedAtMs <= maxCacheAgeMs &&
-                        (
-                            cached.isComplete ||
-                                (
-                                    allowReservedNames &&
-                                        cachedEntries?.isComplete == true &&
-                                        now - cachedEntries.refreshedAtMs <= maxCacheAgeMs
-                                    )
-                            )
-                }
-                ?.let { return it.names }
-        }
+        treeChildCache.cachedNames(
+            cacheKey = cacheKey,
+            nowMs = now,
+            maxCacheAgeMs = maxCacheAgeMs,
+            allowReservedNames = allowReservedNames
+        )?.let { return it }
         val refreshedChildren = queryTreeChildren(context, parent)
-        rememberTreeChildren(parent, refreshedChildren, now, isComplete = true)
-        return treeChildrenNameCache[cacheKey]?.names
-            ?: refreshedChildren.mapTo(linkedSetOf(), QueriedTreeChild::name)
+        return rememberTreeChildren(parent, refreshedChildren, now, isComplete = true)
     }
 
     private fun refreshTreeChildren(
@@ -2600,11 +2334,11 @@ internal object ManagedDownloadStorage {
     ): Collection<QueriedTreeChild> {
         val cacheKey = parent.uri.toString()
         val now = System.currentTimeMillis()
-        if (maxCacheAgeMs > 0L) {
-            treeChildrenEntryCache[cacheKey]
-                ?.takeIf { it.isComplete && now - it.refreshedAtMs <= maxCacheAgeMs }
-                ?.let { return it.childrenByName.values }
-        }
+        treeChildCache.cachedChildren(
+            cacheKey = cacheKey,
+            nowMs = now,
+            maxCacheAgeMs = maxCacheAgeMs
+        )?.let { return it }
         return refreshTreeChildren(context, parent)
     }
 
@@ -2623,25 +2357,12 @@ internal object ManagedDownloadStorage {
         children: Collection<QueriedTreeChild>,
         refreshedAtMs: Long,
         isComplete: Boolean
-    ) {
-        val cacheKey = parent.uri.toString()
-        val childNames = children.map(QueriedTreeChild::name)
-        val cachedNames = treeChildrenNameCache[cacheKey]
-        val refreshedNames = mergeTreeChildNamesAfterRefresh(
-            refreshedNames = childNames,
-            cachedNames = cachedNames?.names,
-            cachedNamesComplete = cachedNames?.isComplete,
-            refreshedComplete = isComplete
-        )
-        treeChildrenEntryCache[cacheKey] = CachedTreeChildren(
-            initialChildren = children,
-            initialRefreshedAtMs = refreshedAtMs,
-            initialComplete = isComplete
-        )
-        treeChildrenNameCache[cacheKey] = CachedChildNames(
-            initialNames = refreshedNames.names,
-            initialRefreshedAtMs = refreshedAtMs,
-            initialComplete = refreshedNames.isComplete
+    ): Set<String> {
+        return treeChildCache.rememberChildren(
+            cacheKey = parent.uri.toString(),
+            children = children,
+            refreshedAtMs = refreshedAtMs,
+            isComplete = isComplete
         )
     }
 
@@ -2651,15 +2372,15 @@ internal object ManagedDownloadStorage {
         cachedNamesComplete: Boolean?,
         refreshedComplete: Boolean
     ): TreeChildNameRefresh {
-        if (cachedNamesComplete != false) {
-            return TreeChildNameRefresh(
-                names = refreshedNames.toCollection(linkedSetOf()),
-                isComplete = refreshedComplete
-            )
-        }
+        val refresh = TreeChildNameRefreshMerger.mergeAfterRefresh(
+            refreshedNames = refreshedNames,
+            cachedNames = cachedNames,
+            cachedNamesComplete = cachedNamesComplete,
+            refreshedComplete = refreshedComplete
+        )
         return TreeChildNameRefresh(
-            names = (refreshedNames + cachedNames.orEmpty()).toCollection(linkedSetOf()),
-            isComplete = false
+            names = refresh.names,
+            isComplete = refresh.isComplete
         )
     }
 
@@ -2668,36 +2389,19 @@ internal object ManagedDownloadStorage {
         childName: String,
         isReservation: Boolean = true
     ) {
-        val cacheKey = parent.uri.toString()
-        val now = System.currentTimeMillis()
-        treeChildrenNameCache[cacheKey]?.let { cached ->
-            cached.names += childName
-            cached.refreshedAtMs = now
-            if (isReservation) {
-                cached.isComplete = false
-            }
-            return
-        }
-        treeChildrenNameCache[cacheKey] = CachedChildNames(
-            initialNames = listOf(childName),
-            initialRefreshedAtMs = now,
-            initialComplete = false
+        treeChildCache.rememberChildName(
+            cacheKey = parent.uri.toString(),
+            childName = childName,
+            refreshedAtMs = System.currentTimeMillis(),
+            isReservation = isReservation
         )
     }
 
     private fun rememberTreeChild(parent: DocumentFile, child: QueriedTreeChild) {
-        rememberTreeChildName(parent, child.name, isReservation = false)
-        val cacheKey = parent.uri.toString()
-        val now = System.currentTimeMillis()
-        treeChildrenEntryCache[cacheKey]?.let { cached ->
-            cached.childrenByName[child.name] = child
-            cached.refreshedAtMs = now
-            return
-        }
-        treeChildrenEntryCache[cacheKey] = CachedTreeChildren(
-            initialChildren = listOf(child),
-            initialRefreshedAtMs = now,
-            initialComplete = false
+        treeChildCache.rememberChild(
+            cacheKey = parent.uri.toString(),
+            child = child,
+            refreshedAtMs = System.currentTimeMillis()
         )
     }
 
@@ -2752,15 +2456,11 @@ internal object ManagedDownloadStorage {
     }
 
     private fun forgetTreeChildName(cacheKey: String, childName: String) {
-        val now = System.currentTimeMillis()
-        treeChildrenNameCache[cacheKey]?.let { cached ->
-            cached.names -= childName
-            cached.refreshedAtMs = now
-        }
-        treeChildrenEntryCache[cacheKey]?.let { entries ->
-            entries.childrenByName -= childName
-            entries.refreshedAtMs = now
-        }
+        treeChildCache.forgetChildName(
+            cacheKey = cacheKey,
+            childName = childName,
+            refreshedAtMs = System.currentTimeMillis()
+        )
     }
 
     internal fun resolveTreeStoredName(actualName: String?, expectedName: String): String {
@@ -3002,24 +2702,12 @@ internal object ManagedDownloadStorage {
         output: java.io.OutputStream,
         onProgress: ((Long) -> Unit)? = null
     ): Long {
-        if (onProgress == null) {
-            return input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
-        }
-        val buffer = ByteArray(STREAM_COPY_BUFFER_SIZE_BYTES)
-        var copiedBytes = 0L
-        while (true) {
-            val readCount = input.read(buffer)
-            if (readCount < 0) {
-                break
-            }
-            if (readCount == 0) {
-                continue
-            }
-            output.write(buffer, 0, readCount)
-            copiedBytes += readCount
-            onProgress(copiedBytes)
-        }
-        return copiedBytes
+        return ManagedDownloadCommitIo.copyStreamWithProgress(
+            input = input,
+            output = output,
+            bufferSizeBytes = STREAM_COPY_BUFFER_SIZE_BYTES,
+            onProgress = onProgress
+        )
     }
 
     private fun isSizeWithinTolerance(
@@ -3055,14 +2743,12 @@ internal object ManagedDownloadStorage {
         toleranceBytes: Long = 0L,
         description: String
     ): Long {
-        return verifiedCommittedByteCount(
+        return ManagedDownloadCommitIo.requireVerifiedCommittedByteCount(
             expectedSizeBytes = expectedSizeBytes,
             reportedSizeBytes = reportedSizeBytes,
             countedSizeBytes = countedSizeBytes,
-            toleranceBytes = toleranceBytes
-        ) ?: throw IOException(
-            "提交后的目标大小不匹配: $description, expected=${expectedSizeBytes.coerceAtLeast(0L)}, " +
-                "reported=${reportedSizeBytes ?: "unavailable"}, counted=${countedSizeBytes ?: "unavailable"}"
+            toleranceBytes = toleranceBytes,
+            description = description
         )
     }
 
@@ -3071,11 +2757,9 @@ internal object ManagedDownloadStorage {
         expectedSizeBytes: Long,
         description: String
     ): Long {
-        val reportedSize = target.takeIf { it.exists() && it.isFile }?.length()
-        return requireVerifiedCommittedByteCount(
+        return ManagedDownloadCommitIo.verifyFileCommittedLength(
+            target = target,
             expectedSizeBytes = expectedSizeBytes,
-            reportedSizeBytes = reportedSize,
-            countedSizeBytes = null,
             description = description
         )
     }
@@ -3086,66 +2770,16 @@ internal object ManagedDownloadStorage {
         expectedSizeBytes: Long,
         description: String
     ): Long {
-        val expectedSize = expectedSizeBytes.coerceAtLeast(0L)
-        val reportedSize = queryDocumentSizeBytes(context, uri)
-        val countedSize = when {
-            reportedSize == null -> countDocumentBytes(context, uri)
-            isSizeWithinTolerance(reportedSize, expectedSize, SAF_COMMITTED_SIZE_TOLERANCE_BYTES) -> null
-            else -> countDocumentBytes(context, uri)
-        }
-        return requireVerifiedCommittedByteCount(
-            expectedSizeBytes = expectedSize,
-            reportedSizeBytes = reportedSize,
-            countedSizeBytes = countedSize,
+        return ManagedDownloadCommitIo.verifyDocumentCommittedLength(
+            contentResolver = context.contentResolver,
+            uri = uri,
+            expectedSizeBytes = expectedSizeBytes,
             toleranceBytes = SAF_COMMITTED_SIZE_TOLERANCE_BYTES,
-            description = description
+            bufferSizeBytes = STREAM_COPY_BUFFER_SIZE_BYTES,
+            description = description,
+            onQueryFailure = { error -> NPLogger.w(TAG, "查询 SAF 目标大小失败: $uri, ${error.message}") },
+            onCountFailure = { error -> NPLogger.w(TAG, "回读 SAF 目标失败: $uri, ${error.message}") }
         )
-    }
-
-    private fun queryDocumentSizeBytes(context: Context, uri: Uri): Long? {
-        return runCatching {
-            context.contentResolver.query(
-                uri,
-                arrayOf(DocumentsContract.Document.COLUMN_SIZE),
-                null,
-                null,
-                null
-            )?.use { cursor ->
-                val sizeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
-                if (sizeIndex < 0 || !cursor.moveToFirst() || cursor.isNull(sizeIndex)) {
-                    null
-                } else {
-                    cursor.getLong(sizeIndex).takeIf { it >= 0L }
-                }
-            }
-        }.onFailure {
-            NPLogger.w(TAG, "查询 SAF 目标大小失败: $uri, ${it.message}")
-        }.getOrNull()
-    }
-
-    private fun countDocumentBytes(context: Context, uri: Uri): Long? {
-        return runCatching {
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                countInputStreamBytes(input)
-            }
-        }.onFailure {
-            NPLogger.w(TAG, "回读 SAF 目标失败: $uri, ${it.message}")
-        }.getOrNull()
-    }
-
-    private fun countInputStreamBytes(input: InputStream): Long {
-        val buffer = ByteArray(STREAM_COPY_BUFFER_SIZE_BYTES)
-        var countedBytes = 0L
-        while (true) {
-            val readCount = input.read(buffer)
-            if (readCount < 0) {
-                return countedBytes
-            }
-            if (readCount == 0) {
-                continue
-            }
-            countedBytes += readCount
-        }
     }
 
     private fun verifiedTreeStoredEntry(
@@ -3174,7 +2808,7 @@ internal object ManagedDownloadStorage {
     private fun buildMigrationTargetIndex(
         context: Context,
         targetRoot: RootHandle
-    ): MigrationTargetIndex {
+    ): ManagedMigrationTargetIndex {
         val rootEntriesByName = listChildren(context, targetRoot)
             .associateBy(StoredEntry::name)
         val coverEntriesByName = findSubdirectories(context, targetRoot, COVER_SUBDIRECTORY, canonicalLast = true)
@@ -3183,7 +2817,7 @@ internal object ManagedDownloadStorage {
         val lyricEntriesByName = findSubdirectories(context, targetRoot, LYRIC_SUBDIRECTORY, canonicalLast = true)
             .flatMap { listChildren(context, it) }
             .associateBy(StoredEntry::name)
-        return MigrationTargetIndex(
+        return ManagedMigrationTargetIndex(
             rootEntriesByName = rootEntriesByName,
             coverEntriesByName = coverEntriesByName,
             lyricEntriesByName = lyricEntriesByName
@@ -3192,53 +2826,12 @@ internal object ManagedDownloadStorage {
 
     private fun buildMigrationNamePlan(
         entries: List<ManagedMigrationEntry>,
-        targetIndex: MigrationTargetIndex
-    ): MigrationNamePlan {
-        val plannedNames = mutableMapOf<String, String>()
-        val reservedRootNames = targetIndex.rootEntriesByName.keys.toMutableSet()
-        val audioEntriesByName = entries
-            .filter { it.subdirectory == null && it.entry.extension in audioExtensions }
-            .associateBy { it.entry.name }
-
-        audioEntriesByName.values
-            .sortedBy { it.entry.name }
-            .forEach { audioEntry ->
-                val targetName = resolvePlannedMigrationName(
-                    desiredName = audioEntry.entry.name,
-                    sourceEntry = audioEntry.entry,
-                    targetEntry = targetIndex.entryFor(null, audioEntry.entry.name),
-                    reservedNames = reservedRootNames
-                )
-                plannedNames[audioEntry.entry.reference] = targetName
-                val metadataName = audioEntry.entry.name + METADATA_SUFFIX
-                val metadataTargetName = targetName + METADATA_SUFFIX
-                entries.firstOrNull { candidate ->
-                    candidate.subdirectory == null && candidate.entry.name == metadataName
-                }?.let { metadataEntry ->
-                    plannedNames[metadataEntry.entry.reference] = metadataTargetName
-                    reservedRootNames += metadataTargetName
-                }
-            }
-
-        return MigrationNamePlan(targetNamesByReference = plannedNames)
-    }
-
-    private fun resolvePlannedMigrationName(
-        desiredName: String,
-        sourceEntry: StoredEntry,
-        targetEntry: StoredEntry?,
-        reservedNames: MutableSet<String>
-    ): String {
-        if (targetEntry == null && desiredName !in reservedNames) {
-            reservedNames += desiredName
-            return desiredName
-        }
-        if (targetEntry != null && isEquivalentMigrationTarget(sourceEntry, targetEntry)) {
-            return desiredName
-        }
-        val resolvedName = createUniqueName(reservedNames, desiredName)
-        reservedNames += resolvedName
-        return resolvedName
+        targetIndex: ManagedMigrationTargetIndex
+    ): ManagedMigrationNamePlan {
+        return ManagedDownloadMigrationNamePlanner.buildNamePlan(
+            entries = entries.map(::managedMigrationEntryRef),
+            targetIndex = targetIndex
+        )
     }
 
     private fun resolveFileMigrationTarget(
@@ -3328,7 +2921,18 @@ internal object ManagedDownloadStorage {
     }
 
     private fun isEquivalentMigrationTarget(sourceEntry: StoredEntry, targetEntry: StoredEntry): Boolean {
-        return sourceEntry.reference.isNotBlank() && sourceEntry.reference == targetEntry.reference
+        return ManagedDownloadMigrationNamePlanner.isEquivalentMigrationTarget(sourceEntry, targetEntry)
+    }
+
+    private fun ManagedMigrationNamePlan.targetNameFor(entry: ManagedMigrationEntry): String {
+        return targetNameFor(managedMigrationEntryRef(entry))
+    }
+
+    private fun managedMigrationEntryRef(entry: ManagedMigrationEntry): ManagedMigrationEntryRef {
+        return ManagedMigrationEntryRef(
+            subdirectory = entry.subdirectory,
+            entry = entry.entry
+        )
     }
 
     private fun plannedStoredEntry(displayName: String): StoredEntry {
@@ -3648,9 +3252,8 @@ internal object ManagedDownloadStorage {
 
     private fun clearTreeDirectoryCache() {
         treeSubdirectoryCache.clear()
-        treeChildrenNameCache.clear()
-        treeChildrenEntryCache.clear()
-        fileChildrenNameCache.clear()
+        treeChildCache.clear()
+        fileChildNameCache.clear()
         childNameReservationLocks.clear()
         ensuredNoMediaMarkers.clear()
         cachedTreeRoot = null
@@ -3980,7 +3583,7 @@ internal object ManagedDownloadStorage {
         context: Context,
         allowedRoot: RootHandle? = null,
         trustedReferences: Set<String>? = null
-    ): ManagedDeletePolicy {
+    ): ManagedDownloadDeletePolicy {
         val roots = listOf(allowedRoot ?: resolveRootBlocking(context))
         val snapshotTrustedReferences = trustedReferences
             ?: if (allowedRoot == null) {
@@ -3988,7 +3591,7 @@ internal object ManagedDownloadStorage {
             } else {
                 emptySet()
             }
-        return ManagedDeletePolicy(
+        return ManagedDownloadDeletePolicy(
             managedFileRoots = roots.mapNotNull { root ->
                 (root as? RootHandle.FileRoot)?.dir?.absolutePath
             },
@@ -4005,34 +3608,19 @@ internal object ManagedDownloadStorage {
         managedFileRoots: Collection<String>,
         managedTreeRoots: Collection<String>
     ): Boolean {
-        val normalizedReference = reference.takeIf(String::isNotBlank) ?: return false
-        val isTrusted = normalizedReference in trustedReferences
-        if (normalizedReference.startsWith("/")) {
-            val underRoot = managedFileRoots.any { rootPath ->
-                isFileReferenceUnderManagedRoot(normalizedReference, rootPath)
-            }
-            if (!underRoot && isTrusted) {
+        return ManagedDownloadDeleteGuard.isReferenceAllowedForManagedDelete(
+            reference = reference,
+            trustedReferences = trustedReferences,
+            managedFileRoots = managedFileRoots,
+            managedTreeRoots = managedTreeRoots,
+            onTrustedReferenceOutsideManagedRoot = { normalizedReference ->
                 NPLogger.w(TAG, "受信引用不在托管根内，拒绝删除: $normalizedReference")
             }
-            return underRoot
-        }
-        val underTree = managedTreeRoots.any { rootUri ->
-            isDocumentReferenceUnderManagedTree(normalizedReference, rootUri)
-        }
-        if (!underTree && isTrusted) {
-            NPLogger.w(TAG, "受信引用不在托管根内，拒绝删除: $normalizedReference")
-        }
-        return underTree
+        )
     }
 
     internal fun isFileReferenceUnderManagedRoot(reference: String, managedRootPath: String): Boolean {
-        val root = runCatching { File(managedRootPath).canonicalFile }.getOrNull() ?: return false
-        val target = runCatching { File(reference).canonicalFile }.getOrNull() ?: return false
-        if (target == root) {
-            return false
-        }
-        return generateSequence(target.parentFile) { file -> file.parentFile }
-            .any { parent -> parent == root }
+        return ManagedDownloadDeleteGuard.isFileReferenceUnderManagedRoot(reference, managedRootPath)
     }
 
     internal fun isDocumentReferenceUnderManagedTree(reference: String, managedTreeUri: String): Boolean {
@@ -4143,11 +3731,8 @@ internal object ManagedDownloadStorage {
             .toSet()
         if (deletedContentReferences.isEmpty()) return
 
-        treeChildrenEntryCache.forEach { (cacheKey, cachedChildren) ->
-            cachedChildren.childrenByName.values
-                .filter { child -> child.documentUri.toString() in deletedContentReferences }
-                .map(QueriedTreeChild::name)
-                .forEach { childName -> forgetTreeChildName(cacheKey, childName) }
+        treeChildCache.forgetChildrenByReference(deletedContentReferences) { cacheKey, childName ->
+            forgetTreeChildName(cacheKey, childName)
         }
         treeSubdirectoryCache.forEach { (cacheKey, directory) ->
             if (directory.uri.toString() in deletedContentReferences) {
@@ -4162,7 +3747,7 @@ internal object ManagedDownloadStorage {
     private fun deleteReferenceBlocking(
         context: Context,
         reference: String,
-        deletePolicy: ManagedDeletePolicy
+        deletePolicy: ManagedDownloadDeletePolicy
     ): Boolean {
         if (
             !isReferenceAllowedForManagedDelete(

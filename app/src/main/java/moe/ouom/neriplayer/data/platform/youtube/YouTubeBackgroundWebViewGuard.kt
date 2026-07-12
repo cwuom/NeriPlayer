@@ -4,7 +4,7 @@ import android.webkit.WebView
 import androidx.webkit.ScriptHandler
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal val YOUTUBE_BACKGROUND_WEBVIEW_GUARD_ORIGIN_RULES: Set<String> = setOf(
     "https://www.youtube.com",

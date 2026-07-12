@@ -43,7 +43,7 @@ import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_WEB_ORIGIN
 import moe.ouom.neriplayer.data.platform.youtube.resolveBootstrapUserAgent
 import moe.ouom.neriplayer.data.platform.youtube.resolveRequestUserAgent
 import moe.ouom.neriplayer.data.platform.youtube.resolveXGoogAuthUser
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request

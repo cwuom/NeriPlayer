@@ -37,7 +37,7 @@ import moe.ouom.neriplayer.data.settings.shouldRebaseLyricOffsetForSource
 import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import java.io.File
 import java.io.OutputStreamWriter

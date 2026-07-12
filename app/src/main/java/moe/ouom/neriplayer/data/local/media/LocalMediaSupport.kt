@@ -42,8 +42,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.isFileInsideDirectory
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.network.isFileInsideDirectory
 import org.json.JSONObject
 import java.io.File
 import java.io.InputStream

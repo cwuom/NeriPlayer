@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.api.netease
 
-import moe.ouom.neriplayer.util.JsonUtil
+import moe.ouom.neriplayer.util.json.JsonUtil
 import android.annotation.SuppressLint
 import java.nio.charset.StandardCharsets
 import java.security.KeyFactory

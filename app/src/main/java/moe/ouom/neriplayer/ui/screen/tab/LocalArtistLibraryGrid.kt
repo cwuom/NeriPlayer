@@ -42,7 +42,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.util.rememberLocalArtistDisplayCoverUrl
-import moe.ouom.neriplayer.util.fastScrollableImageRequest
+import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
 
 @Composable
 internal fun LocalArtistLibraryGrid(

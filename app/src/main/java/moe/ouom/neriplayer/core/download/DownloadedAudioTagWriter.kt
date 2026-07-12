@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.core.download
 
 import android.content.Context
-import android.net.Uri
 import android.os.ParcelFileDescriptor
 import androidx.core.net.toUri
 import com.kyant.taglib.Picture
@@ -14,8 +13,8 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.readBytesLimited
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.io.readBytesLimited
 import org.json.JSONObject
 import java.io.File
 import java.util.Locale

@@ -8,7 +8,7 @@ import androidx.core.content.edit
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import moe.ouom.neriplayer.data.config.WebDavSyncConfigSnapshot
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 class WebDavStorage(private val context: Context) {
     private val encryptedPrefs: SharedPreferences = openEncryptedPrefsWithRecovery()

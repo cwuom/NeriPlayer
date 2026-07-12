@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.data.sync.webdav
 import android.content.Context
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import okhttp3.Credentials
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType

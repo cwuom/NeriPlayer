@@ -39,7 +39,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener

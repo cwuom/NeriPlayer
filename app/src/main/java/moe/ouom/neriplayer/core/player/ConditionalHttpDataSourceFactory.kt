@@ -43,7 +43,7 @@ import moe.ouom.neriplayer.data.platform.bili.isBiliStreamUrl
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
 import moe.ouom.neriplayer.data.traffic.TrafficStatsRepository
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 /**
  * 自定义的 HttpDataSource.Factory：

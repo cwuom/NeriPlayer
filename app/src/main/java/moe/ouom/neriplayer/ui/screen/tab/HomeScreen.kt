@@ -131,9 +131,9 @@ import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeItem
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicParser
-import moe.ouom.neriplayer.util.HapticIconButton
-import moe.ouom.neriplayer.util.fastScrollableImageRequest
-import moe.ouom.neriplayer.util.formatPlayCount
+import moe.ouom.neriplayer.ui.haptic.HapticIconButton
+import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
+import moe.ouom.neriplayer.util.format.formatPlayCount
 import kotlin.math.ceil
 import kotlin.math.min
 import java.util.Locale

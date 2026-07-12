@@ -10,7 +10,7 @@ import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_RESUME_METADAT
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
 
 internal object ManagedDownloadWorkingStore {

@@ -116,7 +116,8 @@ import moe.ouom.neriplayer.listentogether.resolvedSubAudioId
 import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.platform.LanguageManager
 import java.io.File
 import java.io.RandomAccessFile
 import java.util.concurrent.ConcurrentHashMap
@@ -147,7 +148,7 @@ object PlayerManager {
 
     // Helper function to get localized string
     internal fun getLocalizedString(resId: Int, vararg formatArgs: Any): String {
-        val context = moe.ouom.neriplayer.util.LanguageManager.applyLanguage(application)
+        val context = LanguageManager.applyLanguage(application)
         return context.getString(resId, *formatArgs)
     }
 

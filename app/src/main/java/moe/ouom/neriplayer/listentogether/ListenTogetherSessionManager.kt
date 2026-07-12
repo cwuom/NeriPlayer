@@ -23,7 +23,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.resolveShareableListenTogetherStreamUrl
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.util.UUID
 import java.util.concurrent.TimeUnit

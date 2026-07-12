@@ -16,7 +16,7 @@ import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
 import moe.ouom.neriplayer.core.player.model.resolvePlaybackEqualizerBandLevelsMb
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 /**
  * 统一管理倍速、音调和均衡器，避免这些逻辑散在 PlayerManager 里

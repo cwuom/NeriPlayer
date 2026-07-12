@@ -7,7 +7,7 @@ import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveSessionController
-import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal object StartupAudioFocusController {
     private const val TAG = "NERI-StartupFocus"

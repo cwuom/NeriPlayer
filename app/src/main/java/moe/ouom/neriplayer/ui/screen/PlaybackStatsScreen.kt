@@ -44,8 +44,8 @@ import moe.ouom.neriplayer.data.stats.aggregatePlaybackStatBucketsForPeriod
 import moe.ouom.neriplayer.data.stats.aggregatePlaybackStatsCompatForPeriod
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.HapticIconButton
-import moe.ouom.neriplayer.util.HapticTextButton
+import moe.ouom.neriplayer.ui.haptic.HapticIconButton
+import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 
 internal enum class StatsSortMode {
     PLAY_COUNT, LISTEN_TIME, RECENT, FIRST_PLAYED

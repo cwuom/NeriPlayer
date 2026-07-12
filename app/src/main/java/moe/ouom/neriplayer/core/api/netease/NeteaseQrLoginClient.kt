@@ -1,9 +1,9 @@
 package moe.ouom.neriplayer.core.api.netease
 
 import android.content.Context
-import moe.ouom.neriplayer.util.DynamicProxySelector
-import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.readBytesLimited
+import moe.ouom.neriplayer.util.network.DynamicProxySelector
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.io.readBytesLimited
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.FormBody

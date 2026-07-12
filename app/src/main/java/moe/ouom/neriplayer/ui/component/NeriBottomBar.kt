@@ -41,7 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import moe.ouom.neriplayer.navigation.Destinations
-import moe.ouom.neriplayer.util.performHapticFeedback
+import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 
 @Composable
 fun NeriBottomBar(
