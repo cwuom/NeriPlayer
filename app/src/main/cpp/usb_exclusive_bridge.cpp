@@ -47,6 +47,7 @@ constexpr int kMaximumPcmRingDurationMs = 3000;
 constexpr int kCancelDrainWarningMs = 1200;
 constexpr int kCancelDrainDeadlineMs = 3000;
 constexpr int kQuarantineDrainLogIntervalMs = 10000;
+constexpr int kQuarantineTotalTimeoutMs = 30000;
 constexpr int kFirstTransferCompletionTimeoutMs = 1500;
 constexpr int kInterfaceTransitionCooldownMs = 1500;
 constexpr int kUrgentAudioThreadPriority = -19;
@@ -1897,7 +1898,17 @@ void quarantineCloseHandle(const std::shared_ptr<UsbExclusiveHandle>& handle) no
                 quarantineIndex,
                 handle->inFlightTransfers.load()
             );
+            const auto totalDeadline = std::chrono::steady_clock::now() +
+                std::chrono::milliseconds(kQuarantineTotalTimeoutMs);
             while (handle->inFlightTransfers.load() > 0) {
+                if (std::chrono::steady_clock::now() >= totalDeadline) {
+                    LOGE(
+                        "USB close quarantine hard timeout: index=%d inFlight=%d, forcing cleanup",
+                        quarantineIndex,
+                        handle->inFlightTransfers.load()
+                    );
+                    break;
+                }
                 interruptUsbEventHandler(handle.get());
                 const auto hardDeadline = std::chrono::steady_clock::now() +
                     std::chrono::milliseconds(kQuarantineDrainLogIntervalMs);
@@ -2023,7 +2034,9 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativeOpen(
         const int remainingCooldownMs = remainingInterfaceTransitionCooldownMsLocked();
         if (remainingCooldownMs > 0) {
             LOGI("nativeOpen waits for USB interface cooldown: %dms", remainingCooldownMs);
+            transitionGuard.unlock();
             std::this_thread::sleep_for(std::chrono::milliseconds(remainingCooldownMs));
+            transitionGuard.lock();
         }
         handle->frameBytes = handle->channelCount * handle->subslotBytes;
 

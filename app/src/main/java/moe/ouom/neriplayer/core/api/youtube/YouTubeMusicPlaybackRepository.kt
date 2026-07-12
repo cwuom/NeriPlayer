@@ -133,6 +133,7 @@ private const val WEB_REMIX_PO_TOKEN_PREFETCH_JOIN_TIMEOUT_MS = 150L
 private const val PLAYBACK_WARM_AUTH_REFRESH_AGE_MS = 12L * 60L * 60L * 1000L
 private const val PLAYABLE_URL_EXPIRY_SAFETY_MARGIN_MS = 90L * 1000L
 private const val EJS_FALLBACK_START_DELAY_MS = 40L
+private const val CIPHER_RESOLVE_TIMEOUT_MS = 12_000L
 
 private const val YOUTUBE_PLAYER_API_FORMAT_VERSION = "2"
 private const val STREAMING_CIPHER_LOG_THRESHOLD_MS = 250L
@@ -1964,6 +1965,7 @@ class YouTubeMusicPlaybackRepository(
                     )
                 }
                 return runBlocking {
+                    withTimeoutOrNull(CIPHER_RESOLVE_TIMEOUT_MS) {
                     val newPipeDeferred = if (skipSignatureNewPipe) {
                         null
                     } else {
@@ -2041,13 +2043,14 @@ class YouTubeMusicPlaybackRepository(
                             elapsedMs = winner.elapsedMs,
                             logged = signatureResolutionLogged
                         )
-                        return@runBlocking winner.value
+                        return@withTimeoutOrNull winner.value
                     }
                     val newPipeResult = newPipeDeferred?.await()
                     if (!skipSignatureNewPipe && newPipeResult?.value == null) {
                         NewPipeFallbackTracker.recordSignatureFailure(resolvedPlayerJsUrl)
                     }
-                    return@runBlocking null
+                    return@withTimeoutOrNull null
+                    }
                 }
             }
 
@@ -2062,6 +2065,7 @@ class YouTubeMusicPlaybackRepository(
                     )
                 }
                 return runBlocking {
+                    withTimeoutOrNull(CIPHER_RESOLVE_TIMEOUT_MS) {
                     val newPipeDeferred = if (skipThrottlingNewPipe) {
                         null
                     } else {
@@ -2140,13 +2144,14 @@ class YouTubeMusicPlaybackRepository(
                             elapsedMs = winner.elapsedMs,
                             logged = throttlingResolutionLogged
                         )
-                        return@runBlocking winner.value ?: url
+                        return@withTimeoutOrNull winner.value ?: url
                     }
                     val newPipeResult = newPipeDeferred?.await()
                     if (!skipThrottlingNewPipe && newPipeResult?.value == null) {
                         NewPipeFallbackTracker.recordThrottlingFailure(resolvedPlayerJsUrl)
                     }
-                    return@runBlocking url
+                    return@withTimeoutOrNull url
+                    } ?: url
                 }
             }
         }

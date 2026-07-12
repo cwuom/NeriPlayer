@@ -115,6 +115,10 @@ class ListenTogetherSessionManager(
     private var controllerLinkResolveStableKey: String? = null
     @Volatile
     private var controllerLinkResolveJob: Job? = null
+    @Volatile
+    private var pingSentAtMs: Long = 0L
+    @Volatile
+    private var estimatedServerClockOffsetMs: Long = 0L
 
     private val _sessionState = MutableStateFlow(ListenTogetherSessionState())
     val sessionState: StateFlow<ListenTogetherSessionState> = _sessionState.asStateFlow()
@@ -354,6 +358,20 @@ class ListenTogetherSessionManager(
 
                         "pong" -> {
                             _sessionState.value = _sessionState.value.copy(lastError = null)
+                            val serverNowMs = message.nowMs
+                            val sentAt = pingSentAtMs
+                            if (serverNowMs != null && serverNowMs > 0L && sentAt > 0L) {
+                                val pongReceivedAt = System.currentTimeMillis()
+                                val rtt = (pongReceivedAt - sentAt).coerceAtLeast(0L)
+                                val newOffset = serverNowMs - (sentAt + rtt / 2)
+                                // EWMA α=0.3 平滑时钟偏差估计
+                                val prev = estimatedServerClockOffsetMs
+                                estimatedServerClockOffsetMs = if (prev == 0L) {
+                                    newOffset
+                                } else {
+                                    ((prev * 7 + newOffset * 3) / 10)
+                                }
+                            }
                         }
                     }
                 }
@@ -417,6 +435,8 @@ class ListenTogetherSessionManager(
         awaitingTrackFinishStableKey = null
         pendingTrackFinishedLegacyFallback = null
         pendingMemberControlRequest = null
+        pingSentAtMs = 0L
+        estimatedServerClockOffsetMs = 0L
         resetListenerRecoveryState()
         PlayerManager.resetListenTogetherSyncPlaybackRate()
         NPLogger.d(TAG, "disconnectWebSocket()")
@@ -465,7 +485,10 @@ class ListenTogetherSessionManager(
         )
     }
 
-    fun sendPing(): Boolean = webSocketClient.sendPing()
+    fun sendPing(): Boolean {
+        pingSentAtMs = System.currentTimeMillis()
+        return webSocketClient.sendPing()
+    }
 
     suspend fun sendControlEvent(event: ListenTogetherEvent): ListenTogetherControlResponse {
         val snapshot = _sessionState.value
@@ -2648,8 +2671,9 @@ class ListenTogetherSessionManager(
 }
 
 private fun ListenTogetherPlaybackState.expectedPositionMs(nowMs: Long = System.currentTimeMillis()): Long {
+    val correctedNowMs = nowMs + estimatedServerClockOffsetMs
     return if (state == "playing") {
-        (basePositionMs + ((nowMs - baseTimestampMs) * playbackRate)).toLong().coerceAtLeast(0L)
+        (basePositionMs + ((correctedNowMs - baseTimestampMs) * playbackRate)).toLong().coerceAtLeast(0L)
     } else {
         basePositionMs.coerceAtLeast(0L)
     }
