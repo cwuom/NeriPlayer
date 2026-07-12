@@ -1999,7 +1999,9 @@ fun MoreOptionsSheet(
     val keyboardController = LocalSoftwareKeyboardController.current
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val isLocalSong = originalSong.isLocalSong()
+    val currentSong by PlayerManager.currentSongFlow.collectAsState()
+    val actualSong = currentSong?.takeIf { it.sameIdentityAs(originalSong) } ?: originalSong
+    val isLocalSong = actualSong.isLocalSong()
     val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsState(initial = false)
     val qualityOptions = currentPlaybackAudioInfo?.qualityOptions.orEmpty()
     val canSwitchQuality = qualityOptions.size > 1
@@ -2028,7 +2030,7 @@ fun MoreOptionsSheet(
 
     LaunchedEffect(showSearchView) {
         if (showSearchView) {
-            viewModel.prepareForSearch(originalSong.name)
+            viewModel.prepareForSearch(actualSong.displayName())
             viewModel.performSearch()
             if (autoShowKeyboard) {
                 delay(120)
@@ -2520,7 +2522,7 @@ fun MoreOptionsSheet(
                                                 )
                                             },
                                             modifier = Modifier.clickable {
-                                                viewModel.onSongSelected(originalSong, songResult)
+                                                viewModel.onSongSelected(actualSong, songResult)
                                                 onDismiss()
                                             }
                                         )
@@ -2566,7 +2568,7 @@ fun MoreOptionsSheet(
                 "EditInfo" -> {
                     EditSongInfoSheet(
                         viewModel = viewModel,
-                        originalSong = originalSong,
+                        originalSong = actualSong,
                         displayedLyrics = displayedLyrics,
                         displayedTranslatedLyrics = displayedTranslatedLyrics,
                         onDismiss = { showEditInfoSheet = false },
@@ -2973,6 +2975,10 @@ fun EditSongInfoSheet(
     var shouldRestoreLyrics by remember { mutableStateOf(false) }  // 标记是否应该恢复歌词(网易云)
     var originalLyric by remember { mutableStateOf<String?>(null) }  // 保存要恢复的原始歌词
     var originalTranslatedLyric by remember { mutableStateOf<String?>(null) }  // 保存要恢复的原始翻译歌词
+    var shouldRestoreCoverBase by remember { mutableStateOf(false) }
+    var shouldRestoreTitleBase by remember { mutableStateOf(false) }
+    var shouldRestoreArtistBase by remember { mutableStateOf(false) }
+    var shouldClearMatchedMetadata by remember { mutableStateOf(false) }
 
     // 标记用户是否手动编辑过，避免自动重置
     var userHasEdited by remember { mutableStateOf(false) }
@@ -2987,11 +2993,15 @@ fun EditSongInfoSheet(
             coverUrl = actualSong.customCoverUrl ?: actualSong.coverUrl ?: ""
             songName = actualSong.customName ?: actualSong.name
             artistName = actualSong.customArtist ?: actualSong.artist
+            shouldRestoreCoverBase = false
+            shouldRestoreTitleBase = false
+            shouldRestoreArtistBase = false
+            shouldClearMatchedMetadata = false
         }
     }
 
     LaunchedEffect(Unit) {
-        viewModel.prepareForSearch(originalSong.name)
+        viewModel.prepareForSearch(actualSong.displayName())
     }
 
     fun applyOriginalInfo(
@@ -3004,12 +3014,15 @@ fun EditSongInfoSheet(
             if (success && info != null) {
                 if (restoreTitle) {
                     songName = info.name
+                    shouldRestoreTitleBase = true
                 }
                 if (restoreArtist) {
                     artistName = info.artist
+                    shouldRestoreArtistBase = true
                 }
                 if (restoreCover) {
                     coverUrl = info.coverUrl ?: ""
+                    shouldRestoreCoverBase = true
                 }
                 if (restoreLyrics) {
                     if (info.shouldClearLyrics) {
@@ -3023,6 +3036,9 @@ fun EditSongInfoSheet(
                         originalLyric = info.lyric
                         originalTranslatedLyric = info.translatedLyric
                     }
+                }
+                if (restoreCover && restoreTitle && restoreArtist && restoreLyrics) {
+                    shouldClearMatchedMetadata = true
                 }
                 userHasEdited = true
             }
@@ -3070,7 +3086,11 @@ fun EditSongInfoSheet(
             // 封面链接输入框
             OutlinedTextField(
                 value = coverUrl,
-                onValueChange = { coverUrl = it },
+                onValueChange = {
+                    coverUrl = it
+                    userHasEdited = true
+                    shouldRestoreCoverBase = false
+                },
                 label = { Text(stringResource(R.string.music_cover_url)) },
                 placeholder = { Text(stringResource(R.string.music_cover_url_hint)) },
                 modifier = Modifier.fillMaxWidth(),
@@ -3120,7 +3140,11 @@ fun EditSongInfoSheet(
             // 标题输入框
             OutlinedTextField(
                 value = songName,
-                onValueChange = { songName = it },
+                onValueChange = {
+                    songName = it
+                    userHasEdited = true
+                    shouldRestoreTitleBase = false
+                },
                 label = { Text(stringResource(R.string.music_edit_title)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -3146,7 +3170,11 @@ fun EditSongInfoSheet(
             // 艺术家输入框
             OutlinedTextField(
                 value = artistName,
-                onValueChange = { artistName = it },
+                onValueChange = {
+                    artistName = it
+                    userHasEdited = true
+                    shouldRestoreArtistBase = false
+                },
                 label = { Text(stringResource(R.string.music_edit_artist)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -3349,11 +3377,19 @@ fun EditSongInfoSheet(
                                 originalSong = actualSong,
                                 newCoverUrl = coverUrl.ifBlank { null },
                                 newName = songName,
-                                newArtist = artistName
+                                newArtist = artistName,
+                                restoreBaseCover = shouldRestoreCoverBase,
+                                restoreBaseName = shouldRestoreTitleBase,
+                                restoreBaseArtist = shouldRestoreArtistBase,
+                                clearMatchedMetadata = shouldClearMatchedMetadata
                             )
 
                             // 重置编辑标志，允许自动更新
                             userHasEdited = false
+                            shouldRestoreCoverBase = false
+                            shouldRestoreTitleBase = false
+                            shouldRestoreArtistBase = false
+                            shouldClearMatchedMetadata = false
                             onDismiss()
                         } catch (e: Exception) {
                             NPLogger.e("NowPlayingScreen", "保存歌曲信息失败", e)
@@ -3392,12 +3428,15 @@ fun EditSongInfoSheet(
 
                 if (fillCover) {
                     coverUrl = selectedSongForFill!!.coverUrl?.replaceFirst("http://", "https://") ?: ""
+                    shouldRestoreCoverBase = false
                 }
                 if (fillTitle) {
                     songName = selectedSongForFill!!.songName
+                    shouldRestoreTitleBase = false
                 }
                 if (fillArtist) {
                     artistName = selectedSongForFill!!.singer
+                    shouldRestoreArtistBase = false
                 }
                 if (fillLyrics) {
                     selectedSongForFill?.let { selectedSong ->

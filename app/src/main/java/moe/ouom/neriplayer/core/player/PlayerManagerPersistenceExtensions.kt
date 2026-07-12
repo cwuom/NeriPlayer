@@ -898,12 +898,16 @@ internal fun PlayerManager.updateSongCustomInfoImpl(
     originalSong: SongItem,
     customCoverUrl: String?,
     customName: String?,
-    customArtist: String?
+    customArtist: String?,
+    restoreBaseCover: Boolean = false,
+    restoreBaseName: Boolean = false,
+    restoreBaseArtist: Boolean = false,
+    clearMatchedMetadata: Boolean = false
 ) {
     ioScope.launch {
         NPLogger.d(
             "PlayerManager",
-            "updateSongCustomInfo: id=${originalSong.id}, album='${originalSong.album}', customName=${customName?.take(32)}, customArtist=${customArtist?.take(32)}, customCoverUrl=${customCoverUrl?.take(64)}, stack=[${debugStackHint()}]"
+            "updateSongCustomInfo: id=${originalSong.id}, album='${originalSong.album}', customName=${customName?.take(32)}, customArtist=${customArtist?.take(32)}, customCoverUrl=${customCoverUrl?.take(64)}, restoreBase=[$restoreBaseName,$restoreBaseArtist,$restoreBaseCover], clearMatched=$clearMatchedMetadata, stack=[${debugStackHint()}]"
         )
 
         val currentSong = currentPlaylist.firstOrNull { it.sameIdentityAs(originalSong) }
@@ -913,34 +917,67 @@ internal fun PlayerManager.updateSongCustomInfoImpl(
         val baseName = currentSong.name
         val baseArtist = currentSong.artist
         val baseCoverUrl = currentSong.coverUrl
-        val originalName = currentSong.originalName ?: baseName
-        val originalArtist = currentSong.originalArtist ?: baseArtist
-        val originalCoverUrl = currentSong.originalCoverUrl ?: baseCoverUrl
+        val restoredBaseName = customName.normalizedManualMetadataValue()
+            ?: currentSong.originalName
+            ?: baseName
+        val restoredBaseArtist = customArtist.normalizedManualMetadataValue()
+            ?: currentSong.originalArtist
+            ?: baseArtist
+        val restoredBaseCoverUrl = customCoverUrl.normalizedManualMetadataValue()
+            ?: currentSong.originalCoverUrl
 
-        val normalizedCustomName = normalizeCustomMetadataValue(
-            desiredValue = customName,
-            baseValue = baseName
-        )
-        val normalizedCustomArtist = normalizeCustomMetadataValue(
-            desiredValue = customArtist,
-            baseValue = baseArtist
-        )
-        val normalizedCustomCoverUrl = normalizeCustomMetadataValue(
-            desiredValue = customCoverUrl,
-            baseValue = baseCoverUrl
-        )
+        val nextBaseName = if (restoreBaseName) restoredBaseName else baseName
+        val nextBaseArtist = if (restoreBaseArtist) restoredBaseArtist else baseArtist
+        val nextBaseCoverUrl = if (restoreBaseCover) restoredBaseCoverUrl else baseCoverUrl
+        val originalName = currentSong.originalName ?: nextBaseName
+        val originalArtist = currentSong.originalArtist ?: nextBaseArtist
+        val originalCoverUrl = currentSong.originalCoverUrl ?: nextBaseCoverUrl
+
+        val normalizedCustomName = if (restoreBaseName) {
+            null
+        } else {
+            normalizeCustomMetadataValue(
+                desiredValue = customName,
+                baseValue = baseName
+            )
+        }
+        val normalizedCustomArtist = if (restoreBaseArtist) {
+            null
+        } else {
+            normalizeCustomMetadataValue(
+                desiredValue = customArtist,
+                baseValue = baseArtist
+            )
+        }
+        val normalizedCustomCoverUrl = if (restoreBaseCover) {
+            null
+        } else {
+            normalizeCustomMetadataValue(
+                desiredValue = customCoverUrl,
+                baseValue = baseCoverUrl
+            )
+        }
 
         val updatedSong = currentSong.copy(
+            name = nextBaseName,
+            artist = nextBaseArtist,
+            coverUrl = nextBaseCoverUrl,
             customName = normalizedCustomName,
             customArtist = normalizedCustomArtist,
             customCoverUrl = normalizedCustomCoverUrl,
             originalName = originalName,
             originalArtist = originalArtist,
-            originalCoverUrl = originalCoverUrl
+            originalCoverUrl = originalCoverUrl,
+            matchedLyricSource = if (clearMatchedMetadata) null else currentSong.matchedLyricSource,
+            matchedSongId = if (clearMatchedMetadata) null else currentSong.matchedSongId
         )
 
         updateSongInAllPlaces(originalSong, updatedSong)
     }
+}
+
+private fun String?.normalizedManualMetadataValue(): String? {
+    return this?.trim()?.takeIf { it.isNotBlank() }
 }
 
 internal fun PlayerManager.hydrateSongMetadataImpl(originalSong: SongItem, updatedSong: SongItem) {

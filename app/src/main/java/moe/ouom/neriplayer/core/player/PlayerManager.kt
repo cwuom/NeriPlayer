@@ -1779,8 +1779,21 @@ object PlayerManager {
         originalSong: SongItem,
         customCoverUrl: String?,
         customName: String?,
-        customArtist: String?
-    ) = updateSongCustomInfoImpl(originalSong, customCoverUrl, customName, customArtist)
+        customArtist: String?,
+        restoreBaseCover: Boolean = false,
+        restoreBaseName: Boolean = false,
+        restoreBaseArtist: Boolean = false,
+        clearMatchedMetadata: Boolean = false
+    ) = updateSongCustomInfoImpl(
+        originalSong,
+        customCoverUrl,
+        customName,
+        customArtist,
+        restoreBaseCover,
+        restoreBaseName,
+        restoreBaseArtist,
+        clearMatchedMetadata
+    )
 
     fun hydrateSongMetadata(originalSong: SongItem, updatedSong: SongItem) =
         hydrateSongMetadataImpl(originalSong, updatedSong)

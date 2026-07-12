@@ -273,13 +273,21 @@ class NowPlayingViewModel : ViewModel() {
         originalSong: SongItem,
         newCoverUrl: String?,
         newName: String,
-        newArtist: String
+        newArtist: String,
+        restoreBaseCover: Boolean = false,
+        restoreBaseName: Boolean = false,
+        restoreBaseArtist: Boolean = false,
+        clearMatchedMetadata: Boolean = false
     ) {
         PlayerManager.updateSongCustomInfo(
             originalSong = originalSong,
             customCoverUrl = newCoverUrl,
             customName = newName,
-            customArtist = newArtist
+            customArtist = newArtist,
+            restoreBaseCover = restoreBaseCover,
+            restoreBaseName = restoreBaseName,
+            restoreBaseArtist = restoreBaseArtist,
+            clearMatchedMetadata = clearMatchedMetadata
         )
     }
 
