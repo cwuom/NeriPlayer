@@ -71,21 +71,22 @@ Additional notes:
 NeriPlayer covers a broad product surface. Protect these paths first:
 
 - **Playback**: `PlayerManager`, stream resolution, cache, URL refresh,
-  auto source switching, and state recovery.
+  auto source switching, state recovery, the USB-exclusive native path,
+  startup watchdogs, and foreground/background health audits.
 - **Downloads**: `AudioDownloadManager`, `GlobalDownloadManager`,
   `DownloadTaskStore`, `DownloadLifecyclePolicies`, `ManagedDownloadStorage`,
   resume checkpoints, sidecar files, queue recovery, cancellation cleanup, and SAF migration.
 - **Sync**: GitHub / WebDAV three-way merge, deletion records, playback stats,
   and remote format compatibility.
-- **Local data**: atomic playlist JSON writes, config import/export, encrypted
-  auth storage, and DataStore settings.
+- **Local data**: atomic playlist JSON writes, local metadata hydration,
+  config import/export, encrypted auth storage, and DataStore settings.
 - **Lyrics and Now Playing UI**: `AdvancedLyricsView`, `AppleMusicLyric`,
   `LyricShareSheet`, phonetic lyric display, long-press lyric sharing, and the
   full-screen Lyrics page.
 - **Storage and cache UI**: `StorageUsageAnalyzer`, cache cleanup options,
   download directory indexes, and SAF snapshots.
 - **Listen Together**: Android client, Worker protocol fields, roles, queues,
-  and controller-offline recovery.
+  version-gated updates, stream-link sharing toggles, and controller-offline recovery.
 - **Diagnostics**: safe mode, JVM/native crash logs, ANR capture, and Debug probes.
 
 Related tests live under `app/src/test/` and `app/src/androidTest/`.
@@ -132,9 +133,8 @@ extra Gradle property.
    ```
 
    If `KEYSTORE_FILE` is relative, it is resolved against the `app/` module
-   directory. If no keystore is available locally, the Release build falls back
-   to the debug signing config. This is useful for test installs only and should
-   not be used as an official release artifact.
+   directory. The current Release build does **not** fall back to the debug
+   signing config. If no usable keystore is available, the build fails directly.
 
 2. Build the default Release APK:
    ```bash
@@ -243,11 +243,17 @@ Security reminders:
   - `PlaybackStatsTracker.kt`: playback stats tracking.
   - `SleepTimerManager.kt`: sleep timer.
   - `ConditionalHttpDataSourceFactory.kt`: adds platform-specific request headers.
+  - `PlayerManagerStartupWatchdogExtensions.kt` and `PlayerManagerLifecycleExtensions.kt`:
+    playback startup watchdogs, foreground/background health audits, failure recovery,
+    and USB-exclusive fallback handling.
   - `PlayerManagerNeteaseAutoSourceSwitch.kt`: Bilibili fallback for NetEase
     tracks that are restricted, have no playable URL, or only return previews.
   - `YouTubeGoogleVideoRangeSupport.kt`, `YouTubeSeekRefreshPolicy.kt`, and
     `prefetch/YouTubePrefetchRunner.kt`: YouTube Music playback compatibility policies.
   - `metadata/`: lyrics, metadata, and external Bluetooth lyrics handling.
+  - `usb/`: USB-exclusive native session control, runtime snapshots, wake locks,
+    write planning, and recovery controls. The current implementation only covers
+    **UAC1.0** devices.
 
 - `app/src/main/java/moe/ouom/neriplayer/core/download/`
   - `GlobalDownloadManager.kt`: global download tasks and downloaded song list.
@@ -264,8 +270,9 @@ Security reminders:
   - `platform/netease/`: NetEase platform-side caches, currently including playlist detail cache.
   - `storage/`: storage usage analysis, cache grouping, and extra cache cleanup.
   - `local/playlist/`: local playlist JSON atomic writes, system playlist compatibility,
-    and local artist aggregation models.
-  - `local/audioimport/`, `local/media/`: local audio import, scanning, metadata reading, and sharing.
+    background metadata hydration, and local artist aggregation models.
+  - `local/audioimport/`, `local/media/`: local audio import, fast scans,
+    background metadata hydration, cover fallback resolution, and sharing.
   - `playlist/favorite/`, `playlist/usage/`: favorite playlists, followed artists,
     and Home continue-listening data.
   - `history/`, `stats/`: recent plays, playback stats, and day/week/month/year/all-time aggregation.
@@ -342,6 +349,15 @@ Security reminders:
 - Platform cookies/auth data, GitHub tokens, and WebDAV passwords are encrypted
   with `Android Keystore + EncryptedSharedPreferences`.
 - `DataStore` stores regular settings and non-sensitive state, not platform login credentials.
+- USB exclusive playback depends on a compatible **UAC1.0** DAC, the foreground service,
+  wake locks, and the system background policy. The in-app background-permission
+  prompt is not decorative, so screen-off behavior must stay in scope.
+- Local scan results may return quick metadata first and then hydrate richer
+  title/artist/album/cover data in the background. Do not assume the first scan
+  result is the final local metadata shape.
+- When `shareAudioLinks=false` in Listen Together, room snapshots and queue items
+  must not expose `streamUrl`. Turning the setting off must also clear any cached
+  shared links immediately, and `REQUEST_LINK` must be rejected.
 
 ---
 
@@ -397,7 +413,23 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 5. UI usually belongs in the matching `SettingsPage` in `SettingsScreen.kt` or
    under `ui/screen/tab/settings/component/`.
 
-#### 6. Modify GitHub / WebDAV sync
+#### 6. Modify USB exclusive playback
+
+1. Read `UsbExclusiveAudioSink.kt`, `core/player/usb/`,
+   `PlayerManagerStartupWatchdogExtensions.kt`,
+   `PlayerManagerLifecycleExtensions.kt`, and the related tests first.
+2. The current USB-exclusive implementation supports **UAC1.0** only. If support
+   is expanded to UAC2.0 or more complex devices, update the docs, boundaries,
+   diagnostics, and compatibility assumptions together.
+3. Consider device selection, sample-rate/bit-depth policies, foreground/background
+   buffers, wake locks, background-permission prompts, and the system-fallback path together.
+4. When changing automatic recovery, keep-alive logic, or background audits,
+   validate foreground playback, screen-off background playback, USB attach/detach,
+   and Android system fallback paths.
+5. If error semantics or recovery behavior changes, update the Settings / Debug
+   diagnostics surfaces and the matching tests.
+
+#### 7. Modify GitHub / WebDAV sync
 
 1. Understand `SyncDataModels.kt` and `SyncDataSerializer.kt` compatibility first.
 2. Sync data includes playlists, favorite playlists, recent plays, deletion records,
@@ -409,7 +441,7 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 5. Sensitive data must go through `SecureTokenStorage.kt` or `WebDavStorage.kt`.
    Do not store it in `DataStore` or plaintext JSON.
 
-#### 7. Modify download storage
+#### 8. Modify download storage
 
 1. Read `ManagedDownloadStorage.kt`, `ManagedDownloadNaming.kt`,
    `DownloadTaskStore.kt`, `DownloadLifecyclePolicies.kt`, and related unit tests first.
@@ -424,7 +456,7 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 5. Changes to migration, delete semantics, resume checkpoints, or sidecar writes
    must update or add unit tests.
 
-#### 8. Modify lyrics display, sharing, or phonetics
+#### 9. Modify lyrics display, sharing, or phonetics
 
 1. Now Playing lyrics mainly live in `AdvancedLyricsView.kt`, `AppleMusicLyric.kt`,
    and `NowPlayingScreen.kt`.
@@ -438,7 +470,7 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 5. Lyric cards are shared through `FileProvider` cache files. If the output location
    changes, update `file_paths.xml` and cache cleanup behavior as well.
 
-#### 9. Modify storage usage and cache cleanup
+#### 10. Modify storage usage and cache cleanup
 
 1. Entry points are `data/storage/StorageUsageAnalyzer.kt` and
    `SettingsStorageCacheSection.kt`.
@@ -450,7 +482,7 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 4. When clearing download staging, respect current download task state. Staging
    files for active tasks should wait until the task ends.
 
-#### 10. Modify NetEase playlist detail cache
+#### 11. Modify NetEase playlist detail cache
 
 1. The cache entry point is `NeteasePlaylistCacheRepository.kt`; page state is in
    `NeteaseCollectionDetailViewModel.kt`.
@@ -460,7 +492,7 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    force-refresh semantics.
 4. Album details do not use this playlist cache, so keep the data models separated.
 
-#### 11. Modify Lyricon integration
+#### 12. Modify Lyricon integration
 
 1. The integration entry point is `core/lyricon/LyriconManager.kt`.
 2. The setting key is `lyricon_enabled`, and playback lifecycle keeps it in sync.
@@ -469,13 +501,21 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 4. Keep Lyricon, SuperLyric, status-bar lyrics, advanced Now Playing lyrics,
    and external Bluetooth lyrics compatible when changing lyric structures.
 
-#### 12. Modify Listen Together
+#### 13. Modify Listen Together
 
 1. Android client logic is under `listentogether/`.
 2. Server logic is under `np-submodule/NeriPlayer-LTW`.
 3. Protocol field changes must stay compatible across the Android client and Worker,
    and tests must be updated.
-4. Settings support custom server URLs and availability tests. Do not hard-code a single server.
+4. When `shareAudioLinks=false`, HTTP and WebSocket room snapshots must not expose
+   `track.streamUrl` or `queue[*].streamUrl`, and turning the setting off must
+   clear any cached shared links immediately.
+5. `REQUEST_LINK` / `LINK_READY`, member control, controller-offline recovery,
+   and version-gated updates must be reviewed together so older state cannot
+   overwrite newer room state.
+6. Treat the 6-character room ID, 1-24 character nickname, queue limit 2000,
+   and request de-duplication as protocol boundaries, not just UI validation details.
+7. Settings support custom server URLs and availability tests. Do not hard-code a single server.
 
 ---
 
@@ -514,31 +554,45 @@ Before submitting, consider at least these checks:
    ```bash
    ./gradlew :app:testDebugUnitTest
    ```
-3. If you changed resources, UI, navigation, settings, sync, or storage logic:
+3. If you changed auth-dependent flows, stream resolution, or other integration-heavy
+   behavior, optional smoke tests are available:
+   ```bash
+   ./gradlew :app:testDebugUnitTest -DrunNeteaseSmoke=true
+   ./gradlew :app:testDebugUnitTest \
+     -DrunYouTubePlaybackSmoke=true \
+     -DyoutubeSmokeVideoId=<id> \
+     [-DyoutubeSmokeForceRefresh=true] \
+     [-DyoutubeSmokeCookieFile=/absolute/path/to/cookies.json]
+   ```
+4. If you changed resources, UI, navigation, settings, sync, or storage logic:
    ```bash
    ./gradlew :app:lintDebug
    ```
-4. If you changed Compose UI, permissions, Activity, or login flows:
+5. If you changed Compose UI, permissions, Activity, or login flows:
    ```bash
    ./gradlew :app:connectedDebugAndroidTest
    ```
-5. If you changed the Listen Together Worker:
+6. If you changed the Listen Together Worker:
    ```bash
    npm ci --prefix np-submodule/NeriPlayer-LTW
    npm run check --prefix np-submodule/NeriPlayer-LTW
    ```
-6. Add unit tests under `app/src/test/`.
+   `npm run check` only runs `node --check` syntax validation. Protocol or room-state
+   changes still need real create/join/WebSocket flow verification.
+7. Add unit tests under `app/src/test/`.
    Add device or Compose UI tests under `app/src/androidTest/`.
-7. If behavior changes affect README, settings copy, user flows, or sync formats,
+8. If behavior changes affect README, settings copy, user flows, or sync formats,
    update documentation in the same PR.
 
 Existing focused tests cover areas such as:
 
 - YouTube login, challenge parsing, PoToken, playback, Range/Seek policy, and prefetching
 - NetEase lyrics, local smoke tests, auto source switching, and playback response parsing
+- USB-exclusive keep-alive, startup watchdogs, foreground/background recovery, and audio-focus policies
 - Download metadata, naming, directory migration, `.nomedia`, delete semantics, and startup recovery
+- Local scanning, metadata hydration, cover fallback resolution, and atomic playlist writes
 - GitHub/WebDAV sync serialization, deletion policy, playback-stat merging, and upload retry
-- Listen Together base URL validation, playback sync planning, session cancellation, and protocol validation
+- Listen Together base URL validation, version-gated updates, playback sync planning, session cancellation, and protocol validation
 - Lyrics UI, word timing, external Bluetooth lyrics, playback sound controls, and playback policies
 - Config backup, generated settings, security guards, crash log files, and safe-mode behavior
 

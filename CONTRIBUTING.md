@@ -64,16 +64,19 @@
 
 这个项目功能面比较宽，提交前请优先保护这些链路：
 
-- **播放链路**：`PlayerManager`、取流策略、缓存、失败刷新、自动换源和状态恢复。
+- **播放链路**：`PlayerManager`、取流策略、缓存、失败刷新、自动换源、
+  状态恢复、USB 独占 Native 链路、启动看门狗和前后台健康审计。
 - **下载链路**：`AudioDownloadManager`、`GlobalDownloadManager`、
   `DownloadTaskStore`、`DownloadLifecyclePolicies`、`ManagedDownloadStorage`、
   续传检查点、sidecar 文件、任务队列恢复、取消清理和 SAF 目录迁移。
 - **同步链路**：GitHub / WebDAV 的三路合并、删除记录、播放统计和远端格式兼容。
-- **本地数据**：歌单 JSON 原子写入、配置导入导出、授权加密存储和 DataStore 设置。
+- **本地数据**：歌单 JSON 原子写入、本地元信息补全、配置导入导出、
+  授权加密存储和 DataStore 设置。
 - **歌词与播放页 UI**：`AdvancedLyricsView`、`AppleMusicLyric`、
   `LyricShareSheet`、歌词音译显示、歌词长按分享和 Lyrics 全屏页。
 - **存储与缓存 UI**：`StorageUsageAnalyzer`、缓存清理选项、下载目录索引和 SAF 快照。
-- **一起听**：Android 客户端、Worker 协议字段、角色权限、队列和房主离线恢复。
+- **一起听**：Android 客户端、Worker 协议字段、角色权限、队列、
+  版本门控更新、直链共享开关和房主离线恢复。
 - **诊断恢复**：安全模式、JVM/Native 崩溃日志、ANR 记录和 Debug 探针。
 
 对应测试已分布在 `app/src/test/` 与 `app/src/androidTest/`。
@@ -116,8 +119,8 @@
    ```
 
    如果 `KEYSTORE_FILE` 使用相对路径，会按 `app/` 模块目录解析。
-   本地未提供 keystore 时，Release 构建会回退到 debug signing config，
-   仅适合测试安装，不适合作为正式发布产物。
+   当前 Release 构建**不会**回退到 debug signing config；
+   未提供可用 keystore 时会直接失败。
 
 2. 构建默认 Release：
    ```bash
@@ -220,11 +223,15 @@
   - `PlaybackStatsTracker.kt`：播放统计采集。
   - `SleepTimerManager.kt`：睡眠定时器。
   - `ConditionalHttpDataSourceFactory.kt`：为特定域名动态附加 Header。
+  - `PlayerManagerStartupWatchdogExtensions.kt`、`PlayerManagerLifecycleExtensions.kt`：
+    播放启动看门狗、前后台健康审计、失败恢复和 USB 独占异常回退。
   - `PlayerManagerNeteaseAutoSourceSwitch.kt`：网易云无权限、
     无直链或试听片段时的 Bilibili 自动换源兜底。
   - `YouTubeGoogleVideoRangeSupport.kt`、`YouTubeSeekRefreshPolicy.kt`、
     `prefetch/YouTubePrefetchRunner.kt`：YouTube Music 播放兼容策略。
   - `metadata/`：歌词、元数据、外部蓝牙歌词等播放页数据处理。
+  - `usb/`：USB 独占 native 会话、运行态快照、唤醒锁、写入规划和恢复控制，
+    当前实现只覆盖 **UAC1.0** 设备。
 
 - `app/src/main/java/moe/ouom/neriplayer/core/download/`
   - `GlobalDownloadManager.kt` 维护全局下载任务与本地已下载列表。
@@ -239,8 +246,10 @@
   - `auth/`：网易云、Bilibili、YouTube 的 Cookie / Auth 本地存储与校验。
   - `platform/netease/`：网易云平台侧缓存，当前包含歌单详情本地缓存。
   - `storage/`：存储占用分析、缓存分组和额外缓存清理。
-  - `local/playlist/`：本地歌单 JSON 原子写入、系统歌单兼容和本地艺术家聚合模型。
-  - `local/audioimport/`、`local/media/`：本地音频导入、扫描、元数据读取和分享。
+  - `local/playlist/`：本地歌单 JSON 原子写入、系统歌单兼容、
+    后台元信息补全和本地艺术家聚合模型。
+  - `local/audioimport/`、`local/media/`：本地音频导入、快速扫描、
+    后台元信息补全、封面回退和分享。
   - `playlist/favorite/`、`playlist/usage/`：收藏歌单、收藏艺术家和首页继续播放数据。
   - `history/`、`stats/`：最近播放、播放统计和日/周/月/年/总计周期聚合。
   - `backup/`：本地歌单 JSON 备份、导入与差异分析。
@@ -305,6 +314,12 @@
 - 平台 Cookie / 鉴权信息、GitHub Token、WebDAV 密码使用
   `Android Keystore + EncryptedSharedPreferences` 加密保存。
 - `DataStore` 只承担常规设置与非敏感状态，不承载平台登录凭据。
+- USB 独占依赖兼容 **UAC1.0** DAC、前台服务、唤醒锁和系统后台策略；
+  设置页的后台权限提示不是装饰，改动相关逻辑时要同时考虑息屏场景。
+- 本地扫描结果可能先用快速元数据返回，再由后台任务补全歌曲名、歌手、
+  专辑和封面；不要假设首次扫描结果已经是最终形态。
+- 一起听在 `shareAudioLinks=false` 时，房间快照和队列不应暴露 `streamUrl`；
+  关闭该开关时还要立即清空已缓存直链，`REQUEST_LINK` 也应直接拒绝。
 
 ---
 
@@ -357,7 +372,20 @@
 5. UI 入口通常放在 `SettingsScreen.kt` 对应 `SettingsPage` 或
    `ui/screen/tab/settings/component/` 下。
 
-#### 6. 修改 GitHub / WebDAV 同步
+#### 6. 修改 USB 独占播放
+
+1. 先阅读 `UsbExclusiveAudioSink.kt`、`core/player/usb/`、
+   `PlayerManagerStartupWatchdogExtensions.kt`、
+   `PlayerManagerLifecycleExtensions.kt` 和相关测试。
+2. 当前 USB 独占实现只支持 **UAC1.0**；如要扩到 UAC2.0/更复杂设备，
+   需要把文档、能力边界、诊断和兼容性假设一起更新。
+3. 同时考虑设备选择、采样率/位深策略、前后台缓冲区、唤醒锁、
+   后台权限提示和系统回退链路。
+4. 修改自动恢复、keep-alive 或后台审计时，要验证前台播放、息屏后台、
+   USB 拔插和 system fallback 四条路径。
+5. 错误语义或恢复策略变化时，要同步更新设置页 / Debug 页诊断展示和对应测试。
+
+#### 7. 修改 GitHub / WebDAV 同步
 
 1. 先理解 `SyncDataModels.kt` 与 `SyncDataSerializer.kt` 的兼容策略。
 2. 同步对象包含歌单、收藏歌单、最近播放、删除记录和播放统计。
@@ -367,7 +395,7 @@
 5. 涉及敏感信息时统一走 `SecureTokenStorage.kt` 或 `WebDavStorage.kt`，
    不要放回 `DataStore` 或明文 JSON。
 
-#### 7. 修改下载存储
+#### 8. 修改下载存储
 
 1. 先阅读 `ManagedDownloadStorage.kt`、`ManagedDownloadNaming.kt`、
    `DownloadTaskStore.kt`、`DownloadLifecyclePolicies.kt`
@@ -381,7 +409,7 @@
 5. 修改目录迁移、删除语义、续传检查点或 sidecar 写入时，
    必须补充/更新对应单元测试。
 
-#### 8. 修改歌词显示、分享或音译
+#### 9. 修改歌词显示、分享或音译
 
 1. 播放页歌词主要在 `AdvancedLyricsView.kt`、`AppleMusicLyric.kt`
    和 `NowPlayingScreen.kt`。
@@ -393,7 +421,7 @@
 5. 歌词卡片通过 `FileProvider` 分享缓存文件；
    修改输出位置时要同步检查 `file_paths.xml` 和缓存清理。
 
-#### 9. 修改存储占用与缓存清理
+#### 10. 修改存储占用与缓存清理
 
 1. 入口在 `data/storage/StorageUsageAnalyzer.kt`
    和 `SettingsStorageCacheSection.kt`。
@@ -403,7 +431,7 @@
 4. 如果清理下载暂存，要尊重当前下载任务状态；
    活跃任务的暂存文件应等任务结束后再处理。
 
-#### 10. 修改网易云歌单详情缓存
+#### 11. 修改网易云歌单详情缓存
 
 1. 缓存入口是 `NeteasePlaylistCacheRepository.kt`，
    页面状态在 `NeteaseCollectionDetailViewModel.kt`。
@@ -411,7 +439,7 @@
 3. 网络失败或解析失败可以回退缓存，但手动刷新应保留强制刷新语义。
 4. 专辑详情不使用这套歌单缓存，避免不同数据模型互相污染。
 
-#### 11. 修改词幕适配
+#### 12. 修改词幕适配
 
 1. 词幕适配入口在 `core/lyricon/LyriconManager.kt`。
 2. 开关状态由设置项 `lyricon_enabled` 控制，并由播放器生命周期同步。
@@ -420,12 +448,19 @@
 4. 修改时要保持 Lyricon、SuperLyric、状态栏歌词、播放页高级歌词
    和外部蓝牙歌词的歌词结构兼容。
 
-#### 12. 修改一起听
+#### 13. 修改一起听
 
 1. Android 客户端逻辑在 `listentogether/`。
 2. 服务端逻辑在 `np-submodule/NeriPlayer-LTW`。
 3. 协议字段变更必须同时兼容客户端和 Worker，并更新测试。
-4. 设置页支持自定义服务端地址和可用性测试，不要硬编码单一地址。
+4. `shareAudioLinks=false` 时，HTTP/WS 房间快照都不能暴露
+   `track.streamUrl` 与 `queue[*].streamUrl`；关闭该开关时要立即清空
+   房间里已缓存的直链。
+5. `REQUEST_LINK` / `LINK_READY`、成员控制、房主离线恢复和版本门控更新
+   要一起看，避免旧状态覆盖新状态。
+6. 房间号 6 位、昵称 1-24、队列上限 2000 和请求去重要视为协议边界，
+   不要只改 UI 校验而忘记服务端约束。
+7. 设置页支持自定义服务端地址和可用性测试，不要硬编码单一地址。
 
 ---
 
@@ -464,30 +499,43 @@ adb logcat | grep NeriPlayer
    ```bash
    ./gradlew :app:testDebugUnitTest
    ```
-3. 如修改资源、UI、导航、设置、同步或存储逻辑，建议执行：
+3. 如修改登录态、取流链路或回归风险较高的集成行为，可按需执行 smoke test：
+   ```bash
+   ./gradlew :app:testDebugUnitTest -DrunNeteaseSmoke=true
+   ./gradlew :app:testDebugUnitTest \
+     -DrunYouTubePlaybackSmoke=true \
+     -DyoutubeSmokeVideoId=<id> \
+     [-DyoutubeSmokeForceRefresh=true] \
+     [-DyoutubeSmokeCookieFile=/absolute/path/to/cookies.json]
+   ```
+4. 如修改资源、UI、导航、设置、同步或存储逻辑，建议执行：
    ```bash
    ./gradlew :app:lintDebug
    ```
-4. 如涉及 Compose UI、权限、Activity 或登录流程，建议在设备/模拟器上执行：
+5. 如涉及 Compose UI、权限、Activity 或登录流程，建议在设备/模拟器上执行：
    ```bash
    ./gradlew :app:connectedDebugAndroidTest
    ```
-5. 如修改一起听 Worker：
+6. 如修改一起听 Worker：
    ```bash
    npm ci --prefix np-submodule/NeriPlayer-LTW
    npm run check --prefix np-submodule/NeriPlayer-LTW
    ```
-6. 新增单元测试放到 `app/src/test/`；
+   这里的 `npm run check` 只做 `node --check` 语法检查；
+   协议或房间状态改动还需要实际验证 create/join/ws 流程。
+7. 新增单元测试放到 `app/src/test/`；
    新增设备或 Compose UI 测试放到 `app/src/androidTest/`。
-7. 行为变更涉及 README、设置文案、用户流程或同步格式时，请同步更新文档。
+8. 行为变更涉及 README、设置文案、用户流程或同步格式时，请同步更新文档。
 
 当前已有测试覆盖的重点包括：
 
 - YouTube 登录、挑战解析、PoToken、取流、Range/Seek 策略与预取
 - 网易云歌词、本地 smoke test、自动换源和播放响应解析
+- USB 独占 keep-alive、启动看门狗、前后台恢复和音频焦点策略
 - 下载元数据、命名、目录迁移、`.nomedia`、删除语义和启动恢复
+- 本地扫描、元信息补全、封面回退和歌单原子写入
 - GitHub/WebDAV 同步序列化、删除策略、播放统计合并和上传重试
-- 一起听地址校验、播放同步规划、Session 取消与协议校验
+- 一起听地址校验、版本门控更新、播放同步规划、Session 取消与协议校验
 - 歌词视图、逐词时间、外部蓝牙歌词、播放音效和播放策略
 - 配置备份、设置生成、安全守卫、崩溃日志文件和安全模式相关逻辑
 

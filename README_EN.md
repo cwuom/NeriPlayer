@@ -147,9 +147,10 @@ Current positioning:
 - **Complete local music management**:
   `LocalAudioImportManager` supports external share/open imports, authorized
   folder scanning, device media-library scanning, common audio formats, nearby
-  `lrc/txt` lyrics, and `cover/folder/front` cover files.
-  `LocalPlaylistRepository` manages system local playlists, user playlists,
-  favorites, sorting, de-duplication, backup, and sync triggers.
+  `lrc/txt` lyrics, and `cover/folder/front` cover files. Large scans can show
+  a quick preview first, then hydrate richer title/artist/album/cover metadata
+  in the background. `LocalPlaylistRepository` manages system local playlists,
+  user playlists, favorites, sorting, de-duplication, backup, and sync triggers.
 - **Library browsing now has real categories**:
   `Library` is no longer just a playlist list. Local content can switch between
   playlists and artists, while `LocalArtistSummary` groups songs by display
@@ -165,8 +166,10 @@ Current positioning:
   `LoudnessEnhancer` to the current Media3 audio session. Presets, manual bands,
   loudness gain, fade/crossfade, pause on Bluetooth disconnect, USB exclusive
   playback, and audio-focus behavior are all available. Native USB exclusive
-  playback claims the complete UAC audio function so system sounds and other
-  apps cannot share the USB transport.
+  playback currently targets **UAC1.0** audio devices, so system sounds and other
+  apps cannot share the USB transport on that path. Device selection, sample-rate/bit-depth/
+  buffer policies, background-playback guidance, startup watchdogs, foreground/
+  background health audits, and automatic stall recovery are now part of the path.
 - **Downloads have moved from "can save" to "can recover"**:
   downloads do not use the system `DownloadManager`. They use the shared
   `OkHttpClient`, configurable concurrency, staging files, and sidecar metadata.
@@ -202,8 +205,8 @@ Current positioning:
 - **Listen Together syncs the room, not just a progress bar**:
   the Android client and Cloudflare Worker maintain rooms, roles, queues,
   playback state, controller-offline recovery, member control requests,
-  optional stream-link sharing, and custom server URLs. Durable Objects persist
-  room state while WebSocket keeps active members in sync.
+  optional stream-link sharing, version-gated updates, and custom server URLs.
+  Durable Objects persist room state while WebSocket keeps active members in sync.
 
 ---
 
@@ -294,6 +297,12 @@ For release build and signing details, see
   keep last playback progress, restore playback mode, fade-in/fade-out,
   crossfade-next, pause on Bluetooth disconnect, USB exclusive playback,
   mixed playback, and preemptive audio focus are configurable.
+- 🔌 **USB exclusive playback**:
+  currently supports **UAC1.0** USB DAC devices, with device selection,
+  sample-rate/bit-depth/buffer policies, compatibility toggles, and
+  background-playback guidance. If playback startup,
+  native transfer, or foreground/background transitions become unhealthy, the
+  app tries to recover automatically and can fall back to Android system output.
 - 💾 **Configurable streaming cache**:
   audio cache uses `SimpleCache + LRU`, defaults to **1 GB**, and supports
   cleanup for audio cache, image cache, download staging, share staging, and
@@ -317,6 +326,7 @@ For release build and signing details, see
 - 🎵 **Local audio import and scanning**:
   supports system `VIEW / SEND / SEND_MULTIPLE` for `audio/*`, device music
   scanning, authorized-folder scanning, and nearby sidecar lyrics/covers.
+  Large scans can show a quick preview first, then continue background metadata hydration.
 - 👤 **Local artist grouping and detail pages**:
   local songs are grouped by display artist automatically, including common
   `feat.`, `with`, Chinese conjunction, punctuation, and slash-separated artist
@@ -350,7 +360,9 @@ For release build and signing details, see
   language, platform auth, GitHub/WebDAV config, and Listen Together settings.
 - 🎧 **Listen Together**:
   create or join rooms, sync playback state over WebSocket, support host/listener
-  permissions, invite links, deep links, custom server URLs, and host-offline detection.
+  permissions, member-control toggles, auto-pause on member changes, optional
+  sharing of controller-resolved stream URLs, invite links, deep links, custom
+  server URLs, and host-offline detection.
 - 🌈 **Personalization and themes**:
   auto/light/dark mode, dynamic color, seed colors, theme styles, UI scaling,
   custom background image, haptic feedback, lyric font size, lyric blur,
@@ -478,6 +490,11 @@ For release build and signing details, see
 - Preemptive audio focus, mixed playback, pause on Bluetooth disconnect, and
   USB exclusive playback are stored in playback preference snapshots so they are
   available early in player startup.
+- USB exclusive playback currently supports **UAC1.0** devices, with device
+  selection, sample-rate/bit-depth/buffer policies, compatibility toggles, and
+  background buffer tuning. To reduce stuck
+  states, the player layer also includes startup watchdogs, foreground/background
+  health audits, keep-alive checks, native transfer recovery, and system-output fallback.
 
 ### Search and data sources
 
@@ -553,6 +570,12 @@ For release build and signing details, see
   not user-saved downloaded songs.
 - `LocalAudioImportManager` imports external audio, scans device music, and copies
   nearby `lrc/txt` lyrics and `cover/folder/front` images.
+- Local scan previews can filter to tracks that already have metadata. After a
+  local playlist is created or enriched, the app can continue hydrating titles,
+  artists, albums, and covers in the background while preserving edited local metadata.
+- Download "metadata post-processing" can be disabled separately. When disabled,
+  NeriPlayer still keeps management metadata, but stops writing tags, lyrics,
+  and covers back into the audio file itself.
 - `BackupManager` supports playlist JSON export/import and diff analysis.
 - `ConfigFileManager` supports full config export/import for migration.
 
@@ -580,6 +603,13 @@ WebSocket for real-time sync.
 
 The app can configure a Listen Together server URL, test availability, and reset
 the local Listen Together identity from Settings.
+
+Additional notes:
+
+- Room IDs use a 6-character readable charset, and nicknames must be 1-24
+  characters long using Chinese characters, letters, or digits
+- For full protocol, event, and deployment details, see
+  [np-submodule/NeriPlayer-LTW/README.md](./np-submodule/NeriPlayer-LTW/README.md)
 
 ---
 
@@ -650,6 +680,9 @@ and community feedback. They are not fixed-date commitments.
 
 ### Shipped recently
 
+- [x] USB exclusive device selection, quality policies, background-playback guidance, and layered automatic recovery
+- [x] Fast local scan previews, background metadata hydration, and cover fallback resolution
+- [x] Listen Together stream-link sharing toggles, asynchronous stream resolution, and more stable room sync
 - [x] Long-press lyric selection, copy, song sharing, and lyric card generation
 - [x] Phonetic lyric display and the lyric behavior sheet
 - [x] Mini Player horizontal swipe for previous/next
@@ -727,6 +760,9 @@ We will keep improving the project over time.
   Only network-policy pauses or recoverable errors keep resume state.
 - Custom SAF download directories make files easier to access externally, but
   scanning, migration, and finalization are usually slower than the app-private directory.
+- USB exclusive playback depends on a compatible **UAC1.0** USB DAC, the foreground service,
+  and the system's background/battery policy. If playback is limited after the
+  screen turns off, follow the in-app guidance to allow unrestricted background behavior.
 - Phonetic lyric display depends on phonetic data from the platform or embedded
   lyrics. The toggle stays unavailable when the current lyric has no phonetics.
 - Lyric cards are written to the app cache for system sharing and can be removed
