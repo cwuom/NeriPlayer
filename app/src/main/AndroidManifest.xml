@@ -110,6 +110,11 @@
             android:process=":youtube_web_login"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar"
             />
+        <activity
+            android:name=".activity.KugouQrLoginActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Material3.DayNight.NoActionBar"
+            />
         <service
             android:name="moe.ouom.neriplayer.core.player.service.AudioPlayerService"
             android:exported="false"

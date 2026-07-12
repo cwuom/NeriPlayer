@@ -52,6 +52,7 @@ class SearchApiProbeViewModel(app: Application) : AndroidViewModel(app) {
 
     private val cloudMusicApi = AppContainer.cloudMusicSearchApi
     private val qqMusicApi = AppContainer.qqMusicSearchApi
+    private val KuGouApi = AppContainer.kugouSearchApi
     private val json = Json { prettyPrint = true }
 
     private val _ui = MutableStateFlow(SearchProbeUiState())
@@ -88,6 +89,7 @@ class SearchApiProbeViewModel(app: Application) : AndroidViewModel(app) {
                     when (platform) {
                         MusicPlatform.CLOUD_MUSIC -> cloudMusicApi.search(keyword, 1)
                         MusicPlatform.QQ_MUSIC -> qqMusicApi.search(keyword, 1)
+                        MusicPlatform.KUGOU -> KuGouApi.search(keyword,1)
                     }
                 }
                 val resultJson = json.encodeToString(resultList)

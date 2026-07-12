@@ -4,6 +4,7 @@ package moe.ouom.neriplayer.core.player.url
 
 import android.net.Uri
 import android.os.SystemClock
+import android.util.Log
 import androidx.core.net.toUri
 import androidx.media3.common.PlaybackException
 import androidx.media3.datasource.cache.ContentMetadata
@@ -13,6 +14,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.jsonArray
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -20,6 +22,9 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.model.mergeLocalPlaybackAudioInfoWithRemoteQuality
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
@@ -149,6 +154,11 @@ internal suspend fun PlayerManager.resolveSongUrl(
             suppressError = hasCachedData,
             sideEffects = sideEffects
         )
+        isKugouTrack(song) -> getKugouAudioUrl(
+            song = song,
+            forceRefresh = forceRefresh,
+            sideEffects = sideEffects
+        )
         else -> getNeteaseSongUrl(
             song = song,
             suppressError = hasCachedData,
@@ -197,6 +207,11 @@ internal suspend fun PlayerManager.resolveShareableListenTogetherStreamUrl(
         isBiliTrack(song) -> getBiliAudioUrl(
             song = song,
             suppressError = true,
+            sideEffects = sideEffects
+        )
+        isKugouTrack(song) -> getKugouAudioUrl(
+            song = song,
+            forceRefresh = true,
             sideEffects = sideEffects
         )
         else -> getNeteaseSongUrl(
@@ -1023,6 +1038,45 @@ private suspend fun PlayerManager.getBiliAudioUrl(
             }
         }
         SongUrlResult.Failure
+    }
+}
+
+private suspend fun PlayerManager.getKugouAudioUrl(
+    song: SongItem,
+    forceRefresh: Boolean,
+    sideEffects: RefreshResolverSideEffects
+): SongUrlResult {
+    return withContext(Dispatchers.IO) {
+        try {
+            val hash = song.audioId ?: return@withContext SongUrlResult.Failure
+
+            val response = AppContainer.kugouClient.song.getSongUrl(
+                hash = hash,
+                quality = "128"
+            )
+
+            Log.d("NERI-PlayerManager","hash $hash res:${response.body}")
+
+            if (response.status != 200) {
+                return@withContext SongUrlResult.Failure
+            }
+
+            val data = response.body
+            val url = data["url"]?.jsonArray?.firstOrNull()?.jsonPrimitive?.content
+                ?: data["backupUrl"]?.jsonArray?.firstOrNull()?.jsonPrimitive?.content
+
+            if (url.isNullOrBlank()) {
+                return@withContext SongUrlResult.Failure
+            }
+
+            SongUrlResult.Success(
+                url = url,
+                cacheKeyOverride = "kugou_$hash",
+                mimeType = "audio/mpeg"
+            )
+        } catch (e: Exception) {
+            SongUrlResult.Failure
+        }
     }
 }
 

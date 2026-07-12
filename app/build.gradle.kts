@@ -322,4 +322,6 @@ dependencies {
     implementation(libs.androidx.palette.ktx)
 
     implementation(libs.superlyricapi)
+
+    implementation(libs.kugouapi.kmp)
 }

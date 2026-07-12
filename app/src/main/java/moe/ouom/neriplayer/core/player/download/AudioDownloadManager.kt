@@ -32,6 +32,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Looper
+import android.util.Log
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -49,6 +50,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.serialization.json.*
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableAudio
@@ -1132,6 +1134,7 @@ object AudioDownloadManager {
                                     forceRefresh = forceRefreshYouTubeSource
                                 )
                                 isBili -> resolveBili(song)
+                                song.channelId == "kugou" -> resolveKugou(song)
                                 else -> resolveNetease(song.id)
                             }
                             if (resolved == null) {
@@ -2462,6 +2465,7 @@ object AudioDownloadManager {
             }
             val isYouTubeMusic = isYouTubeMusicSong(song)
             val isBili = song.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
+            val isKugou = song.album.startsWith(PlayerManager.KuGou_SOURCE_TAG)
 
             when {
                 isYouTubeMusic -> {
@@ -2470,6 +2474,9 @@ object AudioDownloadManager {
                     }
                 }
                 isBili -> { /* B站暂无歌词源 */ }
+                isKugou -> {
+                    lyricText = downloadKugouLyrics(song)
+                }
                 else -> {
                     val downloaded = downloadNeteaseLyrics(
                         song = song,
@@ -2773,6 +2780,36 @@ object AudioDownloadManager {
 
     fun getTranslatedLyricContent(context: Context, song: SongItem): String? {
         return ManagedDownloadStorage.readLyrics(context, song, translated = true)
+    }
+
+
+    private suspend fun resolveKugou(song: SongItem): ResolvedDownloadSource? {
+        return withContext(Dispatchers.IO) {
+            val hash = song.audioId ?: return@withContext null
+            val response = AppContainer.kugouClient.song.getSongUrl(hash = hash, quality = "128")
+            Log.d("Kugou","resolveKugou $response")
+            if (response.status != 200) return@withContext null
+
+            val data = response.body
+            val url = data["url"]?.jsonPrimitive?.content
+                ?: data["data"]?.jsonObject?.get("url")?.jsonPrimitive?.content
+                ?: return@withContext null
+
+            ResolvedDownloadSource(
+                url = url,
+                mimeType = "audio/mpeg",
+                fileExtensionHint = "mp3"
+            )
+        }
+    }
+
+    private suspend fun downloadKugouLyrics(song: SongItem): String? {
+        return withContext(Dispatchers.IO) {
+            val hash = song.audioId ?: return@withContext null
+            runCatching {
+                AppContainer.kugouSearchApi.getSongInfo(hash).lyric
+            }.getOrNull()
+        }
     }
 
     // 解析网易云直链

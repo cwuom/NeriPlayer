@@ -46,6 +46,7 @@ import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistsFromSongDetail
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.api.search.KuGouSearchApi
 
 data class ManualSearchState(
     val keyword: String = "",
@@ -245,6 +246,10 @@ class NowPlayingViewModel : ViewModel() {
                         moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi(client)
                     }
                     MusicPlatform.QQ_MUSIC -> moe.ouom.neriplayer.core.api.search.QQMusicSearchApi()
+                    MusicPlatform.KUGOU -> {
+                        val client = AppContainer.kugouClient
+                        KuGouSearchApi(client)
+                    }
                 }
 
                 val songDetails = api.getSongInfo(selectedSong.id)
@@ -304,6 +309,7 @@ class NowPlayingViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 val isBili = originalSong.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
+                val isKuGou = originalSong.album.startsWith(PlayerManager.KuGou_SOURCE_TAG)
 
                 if (!originalSong.mediaUri.isNullOrBlank()) {
                     val info = buildLocalOriginalSongInfo(originalSong)
@@ -323,6 +329,28 @@ class NowPlayingViewModel : ViewModel() {
                         shouldClearLyrics = true  // B站音源应该清除歌词
                     )
                     onResult(true, info, context.getString(R.string.music_restore_success))
+                } else if (isKuGou){
+                    val appContainer = AppContainer
+                    val songDetails = appContainer.kugouSearchApi?.getSongInfo(originalSong.audioId.toString())
+
+                    if (songDetails != null) {
+                        val coverUrl = songDetails.coverUrl?.let {
+                            if (it.startsWith("http://")) it.replaceFirst("http://", "https://") else it
+                        }
+
+                        val info = OriginalSongInfo(
+                            name = songDetails.songName,
+                            artist = songDetails.singer,
+                            coverUrl = coverUrl,
+                            shouldClearLyrics = false,  // 网易云音源不清除歌词
+                            lyric = songDetails.lyric,  // 保存原始歌词
+                            translatedLyric = songDetails.translatedLyric  // 保存原始翻译歌词
+                        )
+                        onResult(true, info, context.getString(R.string.music_restore_success))
+                    } else {
+                        onResult(false, null, context.getString(R.string.music_restore_failed))
+                    }
+
                 } else {
                     // 网易云音乐：从网易云获取原始信息
                     val appContainer = AppContainer

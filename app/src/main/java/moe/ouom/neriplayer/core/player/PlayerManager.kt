@@ -209,6 +209,7 @@ internal const val PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS = 80L
 object PlayerManager {
     const val BILI_SOURCE_TAG = "Bilibili"
     const val NETEASE_SOURCE_TAG = "Netease"
+    const val KuGou_SOURCE_TAG = "KuGou"
 
     @Volatile
     internal var initialized = false
@@ -524,6 +525,7 @@ object PlayerManager {
 
     val cloudMusicSearchApi by lazy { AppContainer.cloudMusicSearchApi }
     val qqMusicSearchApi by lazy { AppContainer.qqMusicSearchApi }
+    val kuGouSearchApi by lazy { AppContainer.kugouSearchApi }
     val lrcLibClient by lazy { AppContainer.lrcLibClient }
 
     // YouTube Music 歌词缓存，避免短时间内重复请求
@@ -1139,6 +1141,10 @@ object PlayerManager {
     internal fun isBiliTrack(song: SongItem): Boolean {
         return song.channelId == ListenTogetherChannels.BILIBILI ||
             song.album.startsWith(BILI_SOURCE_TAG)
+    }
+
+    internal fun isKugouTrack(song: SongItem): Boolean {
+        return song.channelId == "kugou" || song.matchedLyricSource == MusicPlatform.KUGOU
     }
     internal fun shouldPersistEmbeddedLyrics(song: SongItem): Boolean {
         return song.matchedLyric != null ||

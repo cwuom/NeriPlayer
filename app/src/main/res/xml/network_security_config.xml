@@ -2,4 +2,11 @@
 <network-security-config>
     <!-- listen together accepts user-hosted HTTP servers, so cleartext must stay enabled -->
     <base-config cleartextTrafficPermitted="true" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">127.0.0.1</domain>
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">fs.youthandroid.kugou.com</domain>
+        <domain includeSubdomains="true">c1.kgimg.com</domain>
+        <domain includeSubdomains="true">imge.kugou.com</domain>
+    </domain-config>
 </network-security-config>

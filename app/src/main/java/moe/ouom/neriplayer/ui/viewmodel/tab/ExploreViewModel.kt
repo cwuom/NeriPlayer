@@ -89,7 +89,8 @@ val TAG_TO_API_CATEGORY = mapOf(
 enum class SearchSource {
     YOUTUBE_MUSIC,
     NETEASE,
-    BILIBILI
+    BILIBILI,
+    KUGOU
 }
 
 data class ExploreUiState(
@@ -167,6 +168,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             SearchSource.NETEASE -> searchNetease(keyword, requestVersion)
             SearchSource.BILIBILI -> searchBilibili(keyword, requestVersion)
             SearchSource.YOUTUBE_MUSIC -> searchYouTubeMusic(keyword, requestVersion)
+            SearchSource.KUGOU -> searchKugou(keyword, requestVersion)
         }
     }
 
@@ -209,6 +211,72 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     )
                 }
             }
+        }
+    }
+
+    /** 搜索 酷狗 音乐 */
+    private fun searchKugou(keyword: String, requestVersion: Long) {
+        searchJob = viewModelScope.launch {
+            try {
+                val results = withContext(Dispatchers.IO) {
+                    AppContainer.kugouSearchApi.search(keyword, page = 1)
+                }
+                val songs = results.map { info ->
+                    SongItem(
+                        id = info.id.hashCode().toLong(),
+                        name = info.songName,
+                        artist = info.singer,
+                        album = info.albumName ?: "Kugou",
+                        albumId = info.id.hashCode().toLong(),
+                        durationMs = parseDurationToMs(info.duration),
+                        coverUrl = info.coverUrl,
+                        channelId = "kugou",
+                        audioId = info.id
+                    )
+                }
+                NPLogger.d(
+                    TAG,
+                    "search Kugou success: request=$requestVersion, keyword=$keyword, count=${songs.size}"
+                )
+                updateSearchStateIfCurrent(requestVersion, SearchSource.KUGOU) {
+                    it.copy(
+                        searching = false,
+                        searchError = null,
+                        searchResults = songs
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                NPLogger.e(
+                    TAG,
+                    "search Kugou failed: request=$requestVersion, keyword=$keyword",
+                    e
+                )
+                updateSearchStateIfCurrent(requestVersion, SearchSource.KUGOU) {
+                    it.copy(
+                        searching = false,
+                        searchError = app.getString(
+                            R.string.error_bilibili_search, // 复用通用错误提示
+                            e.message ?: app.getString(R.string.github_sync_failed_message)
+                        ),
+                        searchResults = emptyList()
+                    )
+                }
+            }
+        }
+    }
+
+    private fun parseDurationToMs(duration: String): Long {
+        return try {
+            val parts = duration.split(":")
+            if (parts.size == 2) {
+                val min = parts[0].toLong()
+                val sec = parts[1].toLong()
+                (min * 60 + sec) * 1000L
+            } else 0L
+        } catch (e: Exception) {
+            0L
         }
     }
 

@@ -26,7 +26,7 @@ import kotlinx.serialization.Serializable
  */
 
 enum class MusicPlatform {
-    CLOUD_MUSIC, QQ_MUSIC
+    CLOUD_MUSIC, QQ_MUSIC, KUGOU
 }
 
 @Serializable

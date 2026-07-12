@@ -38,6 +38,7 @@ internal fun shouldRebaseLyricOffsetForSource(
     return when (targetSource) {
         MusicPlatform.QQ_MUSIC -> lyricSource == MusicPlatform.QQ_MUSIC
         MusicPlatform.CLOUD_MUSIC -> lyricSource != MusicPlatform.QQ_MUSIC
+        MusicPlatform.KUGOU -> lyricSource == MusicPlatform.KUGOU
     }
 }
 

@@ -6,9 +6,9 @@ import java.util.Properties
 object Version {
     val java = JavaVersion.VERSION_17
 
-    const val compileSdkVersion = 36
+    const val compileSdkVersion = 37
     const val minSdk = 28
-    const val targetSdk = 36
+    const val targetSdk = 37
 
     private const val defaultNdkVersion = "27.0.12077973"
     private const val defaultCMakeVersion = "3.28.0+"

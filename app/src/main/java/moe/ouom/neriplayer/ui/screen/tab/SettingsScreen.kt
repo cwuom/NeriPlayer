@@ -23,6 +23,7 @@
  * Created: 2025/8/8
  */
 
+import android.app.Activity
 import android.content.Intent
 import android.content.Context
 import android.net.Uri
@@ -66,6 +67,7 @@ import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Wallpaper
@@ -185,7 +187,9 @@ import moe.ouom.neriplayer.ui.viewmodel.ConfigTransferViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthEvent
+import moe.ouom.neriplayer.ui.viewmodel.auth.KugouAuthViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthViewModel
+import moe.ouom.neriplayer.activity.KugouQrLoginActivity
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthViewModel
 import kotlin.math.absoluteValue
@@ -429,6 +433,7 @@ fun SettingsScreen(
     var showConfirmDialog by remember { mutableStateOf(false) }
     var showCookieDialog by remember { mutableStateOf(false) }
     var showNeteaseSavedCookieDialog by remember { mutableStateOf(false) }
+    var showKugouSavedCookieDialog by remember { mutableStateOf(false) }
     var showBiliSheet by remember { mutableStateOf(false) }
     var showBiliCookieDialog by remember { mutableStateOf(false) }
     var showBiliSavedCookieDialog by remember { mutableStateOf(false) }
@@ -450,6 +455,8 @@ fun SettingsScreen(
     // ------------------------------------
 
     val neteaseVm: NeteaseAuthViewModel = viewModel()
+    val kugouVm: KugouAuthViewModel = viewModel()
+
     var inlineMsg by remember { mutableStateOf<String?>(null) }
     var showDownloadDirectorySwitchWarningDialog by remember { mutableStateOf(false) }
     var pendingDownloadDirectoryChange by remember { mutableStateOf<PendingDownloadDirectoryChange?>(null) }
@@ -610,6 +617,14 @@ fun SettingsScreen(
                 R.string.settings_download_directory_pick_failed,
                 it.message ?: ""
             )
+        }
+    }
+
+    val kugouLoginLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            kugouVm.refreshAuthHealth()
         }
     }
 
@@ -1102,6 +1117,7 @@ fun SettingsScreen(
                             biliVm = biliVm,
                             youtubeVm = youtubeVm,
                             neteaseVm = neteaseVm,
+                            kugouVm = kugouVm,
                             onOpenBiliSheet = { tab ->
                                 inlineMsg = null
                                 biliSheetInitialTab = tab
@@ -1119,6 +1135,10 @@ fun SettingsScreen(
                                 inlineMsg = null
                                 showNeteaseSavedCookieDialog = true
                             },
+                            onOpenKugouSavedCookieDialog = {
+                                inlineMsg = null
+                                showKugouSavedCookieDialog = true
+                            },
                             onOpenYouTubeSheet = {
                                 inlineMsg = null
                                 youtubeSheetInitialTab = 0
@@ -1128,6 +1148,11 @@ fun SettingsScreen(
                                 inlineMsg = null
                                 neteaseSheetInitialTab = 0
                                 showNeteaseSheet = true
+                            },
+                            onOpenKugouSheet = {
+                                inlineMsg = null
+                                val intent = Intent(context, KugouQrLoginActivity::class.java)
+                                kugouLoginLauncher.launch(intent)
                             }
                         )
                     }
@@ -2734,21 +2759,26 @@ private fun SettingsLoginExpandedContent(
     biliVm: BiliAuthViewModel,
     youtubeVm: YouTubeAuthViewModel,
     neteaseVm: NeteaseAuthViewModel,
+    kugouVm: KugouAuthViewModel,
     onOpenBiliSheet: (Int) -> Unit,
     onOpenBiliSavedCookieDialog: () -> Unit,
     onOpenYouTubeSavedCookieDialog: () -> Unit,
     onOpenNeteaseSavedCookieDialog: () -> Unit,
+    onOpenKugouSavedCookieDialog: () -> Unit,
     onOpenYouTubeSheet: () -> Unit,
     onOpenNeteaseSheet: () -> Unit,
+    onOpenKugouSheet: () -> Unit,
 ) {
     val biliAuthUiState by biliVm.uiState.collectAsStateWithLifecycleCompat()
     val youtubeAuthUiState by youtubeVm.uiState.collectAsStateWithLifecycleCompat()
     val neteaseAuthUiState by neteaseVm.uiState.collectAsStateWithLifecycleCompat()
+    val kugouAuthUiState by kugouVm.uiState.collectAsStateWithLifecycleCompat()
 
-    LaunchedEffect(biliVm, youtubeVm, neteaseVm) {
+    LaunchedEffect(biliVm, youtubeVm, neteaseVm, kugouVm) {
         biliVm.refreshAuthHealth()
         neteaseVm.refreshAuthHealth()
         youtubeVm.refreshAuthHealth()
+        kugouVm.refreshAuthHealth()
     }
 
     val biliStatusText = when (biliAuthUiState.health.state) {
@@ -2810,6 +2840,22 @@ private fun SettingsLoginExpandedContent(
                 stringResource(R.string.settings_youtube_status_saved_invalid)
             } else {
                 stringResource(R.string.settings_youtube_status_missing)
+            }
+        }
+    }
+    val kugouStatusText = when (kugouAuthUiState.health.state) {
+        SavedCookieAuthState.Valid -> {
+            val relativeTime = kugouAuthUiState.health.savedAt
+                .takeIf { it > 0L }
+                ?.let { formatSyncTime(it) }
+                ?: stringResource(R.string.time_just_now)
+            stringResource(R.string.settings_netease_status_valid, relativeTime) // 复用网易云的 valid 字符串
+        }
+        else -> {
+            if (kugouAuthUiState.hasSavedCookies) {
+                stringResource(R.string.settings_netease_status_saved_invalid)
+            } else {
+                stringResource(R.string.settings_netease_status_missing)
             }
         }
     }
@@ -2883,6 +2929,29 @@ private fun SettingsLoginExpandedContent(
                         onOpenNeteaseSavedCookieDialog()
                     } else {
                         onOpenNeteaseSheet()
+                    }
+                }
+            ),
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        )
+
+        ListItem(
+            leadingContent = {
+                Icon(
+                    imageVector = Icons.Outlined.MusicNote,
+                    contentDescription = "酷狗音乐",
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            headlineContent = { Text("酷狗音乐") },
+            supportingContent = { Text(kugouStatusText) },
+            modifier = Modifier.settingsItemClickable(
+                onClick = {
+                    if (kugouAuthUiState.hasSavedCookies) {
+                        onOpenKugouSavedCookieDialog()
+                    } else {
+                        onOpenKugouSheet()
                     }
                 }
             ),
