@@ -3,6 +3,7 @@
 package moe.ouom.neriplayer.core.player
 
 import androidx.media3.common.C
+import moe.ouom.neriplayer.core.player.effects.AudioReactive
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.junit.After

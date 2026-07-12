@@ -44,7 +44,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.player.FloatingLyricsOverlayManager
+import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_CENTER
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_LEFT
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_RIGHT

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.player
 
+import moe.ouom.neriplayer.core.player.resolver.youtube.ChunkRequestIOException
+import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeGoogleVideoRangeSupport
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

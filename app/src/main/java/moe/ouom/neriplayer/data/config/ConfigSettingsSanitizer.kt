@@ -6,7 +6,7 @@ import androidx.documentfile.provider.DocumentFile
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.normalizeDownloadFileNameTemplate
-import moe.ouom.neriplayer.core.player.normalizeDownloadParallelism
+import moe.ouom.neriplayer.core.player.download.normalizeDownloadParallelism
 import moe.ouom.neriplayer.core.player.model.DEFAULT_EQUALIZER_BAND_LEVEL_RANGE_MB
 import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
 import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresets

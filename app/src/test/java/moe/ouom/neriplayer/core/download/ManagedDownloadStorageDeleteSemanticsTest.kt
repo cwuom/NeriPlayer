@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download
 
 import java.io.FileNotFoundException
 import java.nio.file.Files
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -21,6 +22,23 @@ class ManagedDownloadStorageDeleteSemanticsTest {
             ManagedDownloadStorage.isMissingManagedDocumentFailure(
                 IllegalArgumentException("Failed to determine if uri is child of primary:neriplayer-download")
             )
+        )
+    }
+
+    @Test
+    fun `reference io keeps missing document failure semantics aligned`() {
+        val missingFileError = FileNotFoundException(
+            "Missing file for primary:neriplayer-download/test.flac"
+        )
+        val unrelatedError = IllegalStateException("provider offline")
+
+        assertEquals(
+            ManagedDownloadStorage.isMissingManagedDocumentFailure(missingFileError),
+            ManagedDownloadReferenceIo.isMissingDocumentFailure(missingFileError)
+        )
+        assertEquals(
+            ManagedDownloadStorage.isMissingManagedDocumentFailure(unrelatedError),
+            ManagedDownloadReferenceIo.isMissingDocumentFailure(unrelatedError)
         )
     }
 

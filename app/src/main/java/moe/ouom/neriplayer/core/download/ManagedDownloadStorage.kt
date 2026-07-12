@@ -3,7 +3,6 @@ package moe.ouom.neriplayer.core.download
 import android.content.Context
 import android.net.Uri
 import android.os.Environment
-import android.provider.DocumentsContract
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.CoroutineScope
@@ -22,7 +21,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.storage.*
 import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadContentReferenceDeleter
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitIo
@@ -32,6 +30,7 @@ import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadDeletePol
 import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirectoryIdentity
 import moe.ouom.neriplayer.core.download.storage.file.cache.ManagedDownloadFileChildNameCache
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadMetadataCodec
+import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadStorageLookup
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationNamePlanner
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationProgressTracker
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationEntryRef
@@ -39,8 +38,8 @@ import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationNameP
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationProgressEntry
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationTargetIndex
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
-import moe.ouom.neriplayer.core.download.storage.queue.ManagedDownloadQueueStore
 import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadPendingAudioWriteNames
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotCacheStore
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
@@ -48,14 +47,11 @@ import moe.ouom.neriplayer.core.download.storage.tree.cache.ManagedDownloadTreeC
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
 import moe.ouom.neriplayer.core.download.storage.tree.cache.TreeChildNameRefreshMerger
 import moe.ouom.neriplayer.core.download.storage.tree.query.ManagedDownloadTreeChildQuery
-import moe.ouom.neriplayer.core.download.storage.working.ManagedDownloadWorkingStore
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.identity
-import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
-import java.io.FileNotFoundException
 import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
@@ -64,20 +60,14 @@ internal object ManagedDownloadStorage {
     private const val TAG = "ManagedDownloadStorage"
     private const val LOG_HOT_AUDIO_HITS = false
 
-    @Volatile
-    private var customDirectoryUri: String? = null
-
-    @Volatile
-    private var customDirectoryLabel: String? = null
-
-    @Volatile
-    private var downloadFileNameTemplate: String? = null
-
     private val snapshotBuildLock = Any()
     private val snapshotScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val settings = ManagedDownloadStorageSettings(
+        defaultRootPathProvider = { context -> createDefaultRoot(context).dir.absolutePath }
+    )
     private val snapshotCacheStore = ManagedDownloadSnapshotCacheStore(
         scope = snapshotScope,
-        cacheKeyProvider = ::buildSnapshotCacheKey
+        cacheKeyProvider = settings::snapshotCacheKey
     )
     private val treeDirectoryLocks = ConcurrentHashMap<String, Any>()
     private val treeSubdirectoryCache = ConcurrentHashMap<String, DocumentFile>()
@@ -123,7 +113,7 @@ internal object ManagedDownloadStorage {
     }
 
     private fun resolveStartupPendingAudioRecovery(context: Context): StartupRecoveryResult {
-        val configuredUri = normalizeDirectoryUri(customDirectoryUri)
+        val configuredUri = normalizeDirectoryUri(settings.configuredDirectoryUri)
         val treeRootAvailable = resolveTreeRootBlocking(context, configuredUri) != null
         return if (shouldDeferStartupManagedCleanup(configuredUri, treeRootAvailable)) {
             schedulePendingAudioWriteCleanup(context)
@@ -141,7 +131,7 @@ internal object ManagedDownloadStorage {
     }
 
     private fun resolveStartupMetadataRecovery(context: Context): StartupRecoveryResult {
-        val configuredUri = normalizeDirectoryUri(customDirectoryUri)
+        val configuredUri = normalizeDirectoryUri(settings.configuredDirectoryUri)
         val treeRootAvailable = resolveTreeRootBlocking(context, configuredUri) != null
         if (shouldDeferStartupManagedCleanup(configuredUri, treeRootAvailable)) {
             scheduleUnfinalizedDownloadArtifactCleanup(context)
@@ -422,15 +412,17 @@ internal object ManagedDownloadStorage {
     }
 
     fun primeSettings(directoryUri: String?, directoryLabel: String?, fileNameTemplate: String? = null) {
-        customDirectoryUri = directoryUri?.takeIf { it.isNotBlank() }
-        customDirectoryLabel = directoryLabel?.takeIf { it.isNotBlank() }
-        downloadFileNameTemplate = normalizeDownloadFileNameTemplate(fileNameTemplate)
+        settings.prime(
+            directoryUri = directoryUri,
+            directoryLabel = directoryLabel,
+            fileNameTemplate = fileNameTemplate
+        )
         clearTreeDirectoryCache()
         invalidateSnapshotCache()
     }
 
     fun updateCustomDirectoryUri(uri: String?) {
-        customDirectoryUri = uri?.takeIf { it.isNotBlank() }
+        settings.updateDirectoryUri(uri)
         clearTreeDirectoryCache()
         invalidateSnapshotCache()
     }
@@ -440,14 +432,14 @@ internal object ManagedDownloadStorage {
     }
 
     fun updateCustomDirectoryLabel(label: String?) {
-        customDirectoryLabel = label?.takeIf { it.isNotBlank() }
+        settings.updateDirectoryLabel(label)
     }
 
     fun updateDownloadFileNameTemplate(template: String?) {
-        downloadFileNameTemplate = normalizeDownloadFileNameTemplate(template)
+        settings.updateFileNameTemplate(template)
     }
 
-    internal fun currentDownloadFileNameTemplate(): String? = downloadFileNameTemplate
+    internal fun currentDownloadFileNameTemplate(): String? = settings.fileNameTemplate
 
     internal fun currentSnapshotCacheKey(context: Context): String {
         return snapshotCacheStore.currentKey(context)
@@ -476,18 +468,11 @@ internal object ManagedDownloadStorage {
         return ManagedDownloadDirectoryIdentity.normalizeConfiguredDirectoryUri(uriString)
     }
 
-    fun describeConfiguredDirectory(context: Context, uriString: String? = customDirectoryUri): String {
-        val resolvedUri = uriString?.takeIf { it.isNotBlank() }
-        if (resolvedUri.isNullOrBlank()) {
-            return context.getString(R.string.settings_download_directory_default_label)
-        }
-        if (resolvedUri == customDirectoryUri && !customDirectoryLabel.isNullOrBlank()) {
-            return customDirectoryLabel.orEmpty()
-        }
-        val treeUri = runCatching { resolvedUri.toUri() }.getOrNull()
-        val tree = treeUri?.let { DocumentFile.fromTreeUri(context, it) }
-        return tree?.name?.takeIf { it.isNotBlank() }
-            ?: resolvedUri
+    fun describeConfiguredDirectory(
+        context: Context,
+        uriString: String? = settings.configuredDirectoryUri
+    ): String {
+        return settings.describeDirectory(context, uriString)
     }
 
     suspend fun hasMigratableDownloads(context: Context, directoryUri: String?): Boolean = withContext(Dispatchers.IO) {
@@ -703,139 +688,125 @@ internal object ManagedDownloadStorage {
     }
 
     fun buildDisplayBaseName(song: SongItem): String {
-        return renderManagedDownloadBaseName(song, downloadFileNameTemplate)
+        return renderManagedDownloadBaseName(song, settings.fileNameTemplate)
     }
 
     internal fun buildWorkingFileName(songKey: String, fileName: String): String {
-        return ManagedDownloadWorkingStore.buildWorkingFileName(songKey, fileName)
+        return ManagedDownloadRecoveryFiles.buildWorkingFileName(songKey, fileName)
     }
 
     internal fun buildWorkingSongKeyHash(songKey: String): String {
-        return ManagedDownloadWorkingStore.buildWorkingSongKeyHash(songKey)
+        return ManagedDownloadRecoveryFiles.buildWorkingSongKeyHash(songKey)
     }
 
     fun createWorkingFile(context: Context, songKey: String, fileName: String): File {
-        return ManagedDownloadWorkingStore.createWorkingFile(context.cacheDir, songKey, fileName)
+        return ManagedDownloadRecoveryFiles.createWorkingFile(context, songKey, fileName)
     }
 
     internal fun buildWorkingHlsCheckpointFile(workingFile: File): File {
-        return ManagedDownloadWorkingStore.buildWorkingHlsCheckpointFile(workingFile)
+        return ManagedDownloadRecoveryFiles.buildWorkingHlsCheckpointFile(workingFile)
     }
 
     internal fun buildWorkingResumeMetadataFile(workingFile: File): File {
-        return ManagedDownloadWorkingStore.buildWorkingResumeMetadataFile(workingFile)
+        return ManagedDownloadRecoveryFiles.buildWorkingResumeMetadataFile(workingFile)
     }
 
     internal fun shouldPreserveWorkingFileForResume(
         entry: File,
         nowMs: Long = System.currentTimeMillis()
     ): Boolean {
-        return ManagedDownloadWorkingStore.shouldPreserveWorkingFileForResume(entry, nowMs)
+        return ManagedDownloadRecoveryFiles.shouldPreserveWorkingFileForResume(entry, nowMs)
     }
 
     internal fun shouldPreserveWorkingCheckpointForResume(
         entry: File,
         nowMs: Long = System.currentTimeMillis()
     ): Boolean {
-        return ManagedDownloadWorkingStore.shouldPreserveWorkingCheckpointForResume(entry, nowMs)
+        return ManagedDownloadRecoveryFiles.shouldPreserveWorkingCheckpointForResume(entry, nowMs)
     }
 
     internal fun shouldPreserveWorkingResumeMetadataForResume(
         entry: File,
         nowMs: Long = System.currentTimeMillis()
     ): Boolean {
-        return ManagedDownloadWorkingStore.shouldPreserveWorkingResumeMetadataForResume(entry, nowMs)
+        return ManagedDownloadRecoveryFiles.shouldPreserveWorkingResumeMetadataForResume(entry, nowMs)
     }
 
     internal fun saveWorkingResumeMetadata(
         workingFile: File,
         song: SongItem
     ) {
-        ManagedDownloadWorkingStore.saveWorkingResumeMetadata(workingFile, song)
+        ManagedDownloadRecoveryFiles.saveWorkingResumeMetadata(workingFile, song)
     }
 
     internal fun deleteWorkingResumeMetadata(workingFile: File?) {
-        ManagedDownloadWorkingStore.deleteWorkingResumeMetadata(workingFile)
+        ManagedDownloadRecoveryFiles.deleteWorkingResumeMetadata(workingFile)
     }
 
     internal fun deleteWorkingDownloadArtifacts(workingFile: File?) {
-        ManagedDownloadWorkingStore.deleteWorkingDownloadArtifacts(workingFile)
+        ManagedDownloadRecoveryFiles.deleteWorkingDownloadArtifacts(workingFile)
     }
 
     internal fun deletePendingWorkingDownloadArtifacts(
         context: Context,
         songKeys: Collection<String>
     ): Set<String> {
-        val stagingDir = File(context.cacheDir, DOWNLOAD_STAGING_DIR_NAME)
-        return deletePendingWorkingDownloadArtifactsInDirectory(stagingDir, songKeys)
+        return ManagedDownloadRecoveryFiles.deletePendingWorkingDownloadArtifacts(context, songKeys)
     }
 
     internal fun deletePendingWorkingDownloadArtifactsInDirectory(
         stagingDir: File,
         songKeys: Collection<String>
     ): Set<String> {
-        return ManagedDownloadWorkingStore.deletePendingWorkingDownloadArtifactsInDirectory(stagingDir, songKeys)
+        return ManagedDownloadRecoveryFiles.deletePendingWorkingDownloadArtifactsInDirectory(stagingDir, songKeys)
     }
 
     internal fun listPendingResumableDownloads(context: Context): List<PendingResumableDownload> {
-        val stagingDir = File(context.cacheDir, DOWNLOAD_STAGING_DIR_NAME)
-        return listPendingResumableDownloadsInDirectory(stagingDir)
+        return ManagedDownloadRecoveryFiles.listPendingResumableDownloads(context)
     }
 
     internal fun upsertPendingDownloadQueue(
         context: Context,
         songs: List<SongItem>
     ) {
-        upsertPendingDownloadQueueInFile(
-            queueFile = pendingDownloadQueueFile(context),
-            songs = songs
-        )
+        ManagedDownloadRecoveryFiles.upsertPendingDownloadQueue(context, songs)
     }
 
     internal fun listPendingQueuedDownloads(context: Context): List<PendingDownloadQueueEntry> {
-        return listPendingQueuedDownloadsFromFile(pendingDownloadQueueFile(context))
+        return ManagedDownloadRecoveryFiles.listPendingQueuedDownloads(context)
     }
 
     internal fun removePendingDownloadQueueEntries(
         context: Context,
         songKeys: Collection<String>
     ) {
-        removePendingDownloadQueueEntriesFromFile(
-            queueFile = pendingDownloadQueueFile(context),
-            songKeys = songKeys
-        )
+        ManagedDownloadRecoveryFiles.removePendingDownloadQueueEntries(context, songKeys)
     }
 
     internal fun clearPendingDownloadQueue(context: Context) {
-        clearPendingDownloadQueueFile(pendingDownloadQueueFile(context))
+        ManagedDownloadRecoveryFiles.clearPendingDownloadQueue(context)
     }
 
     internal fun markCancelledDownloadKeys(
         context: Context,
         songKeys: Collection<String>
     ) {
-        markCancelledDownloadKeysInFile(
-            keysFile = cancelledDownloadKeysFile(context),
-            songKeys = songKeys
-        )
+        ManagedDownloadRecoveryFiles.markCancelledDownloadKeys(context, songKeys)
     }
 
     internal fun listCancelledDownloadKeys(context: Context): Set<String> {
-        return listCancelledDownloadKeysFromFile(cancelledDownloadKeysFile(context))
+        return ManagedDownloadRecoveryFiles.listCancelledDownloadKeys(context)
     }
 
     internal fun removeCancelledDownloadKeys(
         context: Context,
         songKeys: Collection<String>
     ) {
-        removeCancelledDownloadKeysFromFile(
-            keysFile = cancelledDownloadKeysFile(context),
-            songKeys = songKeys
-        )
+        ManagedDownloadRecoveryFiles.removeCancelledDownloadKeys(context, songKeys)
     }
 
     internal fun clearCancelledDownloadKeys(context: Context) {
-        clearCancelledDownloadKeysFile(cancelledDownloadKeysFile(context))
+        ManagedDownloadRecoveryFiles.clearCancelledDownloadKeys(context)
     }
 
     internal fun upsertPendingDownloadQueueInFile(
@@ -843,11 +814,11 @@ internal object ManagedDownloadStorage {
         songs: List<SongItem>,
         nowMs: Long = System.currentTimeMillis()
     ) {
-        ManagedDownloadQueueStore.upsertPendingDownloadQueueInFile(queueFile, songs, nowMs)
+        ManagedDownloadRecoveryFiles.upsertPendingDownloadQueueInFile(queueFile, songs, nowMs)
     }
 
     internal fun listPendingQueuedDownloadsFromFile(queueFile: File): List<PendingDownloadQueueEntry> {
-        return ManagedDownloadQueueStore.listPendingQueuedDownloadsFromFile(queueFile)
+        return ManagedDownloadRecoveryFiles.listPendingQueuedDownloadsFromFile(queueFile)
     }
 
     internal fun removePendingDownloadQueueEntriesFromFile(
@@ -855,14 +826,14 @@ internal object ManagedDownloadStorage {
         songKeys: Collection<String>,
         nowMs: Long = System.currentTimeMillis()
     ) {
-        ManagedDownloadQueueStore.removePendingDownloadQueueEntriesFromFile(queueFile, songKeys, nowMs)
+        ManagedDownloadRecoveryFiles.removePendingDownloadQueueEntriesFromFile(queueFile, songKeys, nowMs)
     }
 
     internal fun clearPendingDownloadQueueFile(
         queueFile: File,
         nowMs: Long = System.currentTimeMillis()
     ) {
-        ManagedDownloadQueueStore.clearPendingDownloadQueueFile(queueFile, nowMs)
+        ManagedDownloadRecoveryFiles.clearPendingDownloadQueueFile(queueFile, nowMs)
     }
 
     internal fun markCancelledDownloadKeysInFile(
@@ -870,11 +841,11 @@ internal object ManagedDownloadStorage {
         songKeys: Collection<String>,
         nowMs: Long = System.currentTimeMillis()
     ) {
-        ManagedDownloadQueueStore.markCancelledDownloadKeysInFile(keysFile, songKeys, nowMs)
+        ManagedDownloadRecoveryFiles.markCancelledDownloadKeysInFile(keysFile, songKeys, nowMs)
     }
 
     internal fun listCancelledDownloadKeysFromFile(keysFile: File): Set<String> {
-        return ManagedDownloadQueueStore.listCancelledDownloadKeysFromFile(keysFile)
+        return ManagedDownloadRecoveryFiles.listCancelledDownloadKeysFromFile(keysFile)
     }
 
     internal fun removeCancelledDownloadKeysFromFile(
@@ -882,21 +853,21 @@ internal object ManagedDownloadStorage {
         songKeys: Collection<String>,
         nowMs: Long = System.currentTimeMillis()
     ) {
-        ManagedDownloadQueueStore.removeCancelledDownloadKeysFromFile(keysFile, songKeys, nowMs)
+        ManagedDownloadRecoveryFiles.removeCancelledDownloadKeysFromFile(keysFile, songKeys, nowMs)
     }
 
     internal fun clearCancelledDownloadKeysFile(
         keysFile: File,
         nowMs: Long = System.currentTimeMillis()
     ) {
-        ManagedDownloadQueueStore.clearCancelledDownloadKeysFile(keysFile, nowMs)
+        ManagedDownloadRecoveryFiles.clearCancelledDownloadKeysFile(keysFile, nowMs)
     }
 
     internal fun listPendingResumableDownloadsInDirectory(
         stagingDir: File,
         nowMs: Long = System.currentTimeMillis()
     ): List<PendingResumableDownload> {
-        return ManagedDownloadWorkingStore.listPendingResumableDownloadsInDirectory(stagingDir, nowMs)
+        return ManagedDownloadRecoveryFiles.listPendingResumableDownloadsInDirectory(stagingDir, nowMs)
     }
 
     internal fun consumeStartupRecoveryResult(): StartupRecoveryResult {
@@ -906,15 +877,14 @@ internal object ManagedDownloadStorage {
     }
 
     fun cleanupStagingFiles(context: Context): StartupRecoveryResult {
-        val stagingDir = File(context.cacheDir, DOWNLOAD_STAGING_DIR_NAME)
-        return cleanupStagingFilesInDirectory(stagingDir)
+        return ManagedDownloadRecoveryFiles.cleanupStagingFiles(context)
     }
 
     internal fun cleanupStagingFilesInDirectory(
         stagingDir: File,
         nowMs: Long = System.currentTimeMillis()
     ): StartupRecoveryResult {
-        return ManagedDownloadWorkingStore.cleanupStagingFilesInDirectory(stagingDir, nowMs)
+        return ManagedDownloadRecoveryFiles.cleanupStagingFilesInDirectory(stagingDir, nowMs)
     }
 
     fun findAudio(
@@ -947,7 +917,7 @@ internal object ManagedDownloadStorage {
     }
 
     fun buildCandidateBaseNames(song: SongItem): List<String> {
-        return candidateManagedDownloadBaseNames(song, downloadFileNameTemplate)
+        return candidateManagedDownloadBaseNames(song, settings.fileNameTemplate)
     }
 
     suspend fun findDownloadedAudio(
@@ -1249,7 +1219,7 @@ internal object ManagedDownloadStorage {
     }
 
     private fun shouldIndexMetadataLessAudio(): Boolean {
-        return shouldIndexMetadataLessAudio(customDirectoryUri)
+        return shouldIndexMetadataLessAudio(settings.configuredDirectoryUri)
     }
 
     suspend fun findMetadataForAudio(context: Context, audio: StoredEntry): StoredEntry? = withContext(Dispatchers.IO) {
@@ -1704,7 +1674,7 @@ internal object ManagedDownloadStorage {
         return findIndexedLyricReference(
             snapshot = snapshot,
             songId = song.id.takeIf { it > 0L },
-            candidateBaseNames = candidateManagedDownloadBaseNames(song, downloadFileNameTemplate),
+            candidateBaseNames = candidateManagedDownloadBaseNames(song, settings.fileNameTemplate),
             translated = translated
         )
     }
@@ -1838,7 +1808,7 @@ internal object ManagedDownloadStorage {
     }
 
     private fun resolveRootBlocking(context: Context): RootHandle {
-        val configuredUri = normalizeDirectoryUri(customDirectoryUri)
+        val configuredUri = normalizeDirectoryUri(settings.configuredDirectoryUri)
         resolveTreeRootBlocking(context, configuredUri)?.let { return it }
         if (configuredUri != null) {
             NPLogger.w(TAG, "自定义下载目录不可用，回退默认目录: $configuredUri")
@@ -1860,94 +1830,20 @@ internal object ManagedDownloadStorage {
         snapshot: DownloadLibrarySnapshot,
         song: SongItem
     ): StoredEntry? {
-        val identity = song.identity()
-        val stableKey = identity.stableKey()
-        val remoteTrackKey = ManagedDownloadSnapshotIndex.buildRemoteTrackKey(
-            song.channelId,
-            song.audioId,
-            song.subAudioId
-        )
-
-        snapshot.audioEntriesByStableKey[stableKey]
-            ?.let { matches ->
-                return pickBestAudioEntry(matches, song)?.also { entry ->
-                    if (LOG_HOT_AUDIO_HITS) {
-                        NPLogger.d(TAG, "命中已下载音频(stableKey): song=${song.displayName()}, file=${entry.name}")
-                    }
-                }
-            }
-
-        remoteTrackKey?.let { key ->
-            snapshot.audioEntriesByRemoteTrackKey[key]
-                ?.let { matches ->
-                    return pickBestAudioEntry(matches, song)?.also { entry ->
-                        if (LOG_HOT_AUDIO_HITS) {
-                            NPLogger.d(TAG, "命中已下载音频(remoteTrackKey): song=${song.displayName()}, file=${entry.name}")
-                        }
-                    }
-                }
-        }
-
-        identity.mediaUri?.let { mediaUri ->
-            snapshot.audioEntriesByMediaUri[mediaUri]
-                ?.let { matches ->
-                    return pickBestAudioEntry(matches, song)?.also { entry ->
-                        if (LOG_HOT_AUDIO_HITS) {
-                            NPLogger.d(TAG, "命中已下载音频(mediaUri): song=${song.displayName()}, file=${entry.name}")
-                        }
-                    }
-                }
-        }
-
-        identity.id.takeIf { it > 0L }?.let { songId ->
-            snapshot.audioEntriesBySongId[songId]
-                ?.let { matches ->
-                    return pickBestAudioEntry(matches, song)?.also { entry ->
-                        if (LOG_HOT_AUDIO_HITS) {
-                            NPLogger.d(TAG, "命中已下载音频(songId): song=${song.displayName()}, file=${entry.name}")
-                        }
-                    }
-                }
-        }
-
-        return findAudioEntry(
-            audioEntries = snapshot.audioEntriesWithoutMetadata,
-            baseNames = candidateManagedDownloadBaseNames(song, downloadFileNameTemplate)
-        )?.also { entry ->
+        return ManagedDownloadStorageLookup.findAudioEntry(
+            snapshot = snapshot,
+            song = song,
+            fileNameTemplate = settings.fileNameTemplate
+        )?.let { result ->
             if (LOG_HOT_AUDIO_HITS) {
-                NPLogger.d(TAG, "命中已下载音频(legacyNameFallback): song=${song.displayName()}, file=${entry.name}")
+                NPLogger.d(TAG, "命中已下载音频(${result.hitType}): song=${song.displayName()}, file=${result.entry.name}")
             }
+            result.entry
         }
     }
 
     private fun findAudioEntry(audioEntries: List<StoredEntry>, baseNames: List<String>): StoredEntry? {
-        val exactCandidates = buildSet {
-            baseNames.forEach { baseName ->
-                audioExtensions.forEach { ext -> add("$baseName.$ext") }
-            }
-        }
-        val patternCandidates = baseNames.map { baseName ->
-            Regex("^${Regex.escape(baseName)}(?: \\(\\d+\\))?\\.[A-Za-z0-9]+$")
-        }
-
-        return audioEntries
-            .filterNot(StoredEntry::isDirectory)
-            .firstOrNull { entry ->
-                entry.extension in audioExtensions && (
-                    entry.name in exactCandidates ||
-                        patternCandidates.any { it.matches(entry.name) }
-                    )
-            }
-    }
-
-    private fun pickBestAudioEntry(
-        audioEntries: List<StoredEntry>,
-        song: SongItem
-    ): StoredEntry? {
-        if (audioEntries.isEmpty()) return null
-        val baseNames = candidateManagedDownloadBaseNames(song, downloadFileNameTemplate)
-        return findAudioEntry(audioEntries, baseNames)
-            ?: audioEntries.maxByOrNull(StoredEntry::lastModifiedMs)
+        return ManagedDownloadStorageLookup.findAudioEntry(audioEntries, baseNames)
     }
 
     private fun listChildren(context: Context, root: RootHandle): List<StoredEntry> {
@@ -2064,7 +1960,7 @@ internal object ManagedDownloadStorage {
         names: List<String>,
         entriesByName: Map<String, StoredEntry>
     ): StoredEntry? {
-        return names.firstNotNullOfOrNull(entriesByName::get)
+        return ManagedDownloadStorageLookup.findIndexedEntryByNames(names, entriesByName)
     }
 
     private fun buildSidecarCandidateNames(candidateBaseNames: List<String>): List<String> {
@@ -2126,15 +2022,6 @@ internal object ManagedDownloadStorage {
         references: Set<String>
     ): DownloadLibrarySnapshot {
         return ManagedDownloadSnapshotIndex.applyReferenceDeletes(snapshot, references)
-    }
-
-    private fun buildSnapshotCacheKey(context: Context): String {
-        val configuredIdentity = directoryIdentity(customDirectoryUri)
-        return if (configuredIdentity != null) {
-            "tree:$configuredIdentity"
-        } else {
-            "file:${createDefaultRoot(context).dir.absolutePath}"
-        }
     }
 
     private fun invalidateSnapshotCache(context: Context? = null) {
@@ -3549,34 +3436,11 @@ internal object ManagedDownloadStorage {
     }
 
     private fun readTextInternal(context: Context, reference: String): String? {
-        return when {
-            reference.startsWith("/") -> File(reference).takeIf(File::exists)?.readText(Charsets.UTF_8)
-            else -> runCatching {
-                context.contentResolver.openInputStream(reference.toUri())
-                    ?.bufferedReader(Charsets.UTF_8)
-                    ?.use { it.readText() }
-            }.getOrElse { error ->
-                if (isMissingManagedDocumentFailure(error)) {
-                    null
-                } else {
-                    throw error
-                }
-            }
-        }
+        return ManagedDownloadReferenceIo.readText(context, reference)
     }
 
     private fun existsInternal(context: Context, reference: String?): Boolean {
-        if (reference.isNullOrBlank()) return false
-        return when {
-            reference.startsWith("/") -> File(reference).exists()
-            else -> {
-                val uri = runCatching { reference.toUri() }.getOrNull() ?: return false
-                resolveDocumentFile(context, uri)?.exists()
-                    ?: runCatching {
-                        context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
-                    }.getOrDefault(false)
-            }
-        }
+        return ManagedDownloadReferenceIo.exists(context, reference)
     }
 
     private fun buildManagedDeletePolicy(
@@ -3778,8 +3642,7 @@ internal object ManagedDownloadStorage {
     }
 
     private fun resolveDocumentFile(context: Context, uri: Uri): DocumentFile? {
-        return DocumentFile.fromSingleUri(context, uri)
-            ?: DocumentFile.fromTreeUri(context, uri)
+        return ManagedDownloadReferenceIo.resolveDocumentFile(context, uri)
     }
 
     private fun deleteContentReference(
@@ -3787,60 +3650,20 @@ internal object ManagedDownloadStorage {
         reference: String,
         uri: Uri
     ): Boolean {
-        repeat(SAF_DELETE_MAX_ATTEMPTS) { attempt ->
-            if (deleteContentReferenceOnce(context, reference, uri)) {
-                return true
-            }
-            if (attempt < SAF_DELETE_MAX_ATTEMPTS - 1) {
-                runCatching {
-                    Thread.sleep(SAF_DELETE_RETRY_DELAY_MS * (attempt + 1L))
-                }
-            }
+        val deleted = ManagedDownloadReferenceIo.deleteContentReference(
+            context = context,
+            uri = uri,
+            maxAttempts = SAF_DELETE_MAX_ATTEMPTS,
+            retryDelayMs = SAF_DELETE_RETRY_DELAY_MS
+        )
+        if (!deleted) {
+            NPLogger.w(TAG, "删除下载 content 引用失败: $reference")
         }
-        return false
-    }
-
-    private fun deleteContentReferenceOnce(
-        context: Context,
-        reference: String,
-        uri: Uri
-    ): Boolean {
-        val deletedByContract = runCatching {
-            DocumentsContract.deleteDocument(context.contentResolver, uri)
-        }.getOrElse { error ->
-            if (isMissingManagedDocumentFailure(error)) {
-                return true
-            }
-            false
-        }
-        if (deletedByContract) {
-            return true
-        }
-
-        val deletedByDocumentFile = runCatching {
-            resolveDocumentFile(context, uri)?.delete() ?: false
-        }.getOrElse { error ->
-            if (isMissingManagedDocumentFailure(error)) {
-                return true
-            }
-            false
-        }
-        return deletedByDocumentFile
+        return deleted
     }
 
     internal fun isMissingManagedDocumentFailure(error: Throwable): Boolean {
-        return generateSequence(error) { it.cause }.any { cause ->
-            when (cause) {
-                is FileNotFoundException -> true
-                is IllegalArgumentException -> {
-                    val message = cause.message.orEmpty()
-                    message.contains("Missing file", ignoreCase = true) ||
-                        message.contains("Failed to determine if", ignoreCase = true)
-                }
-
-                else -> false
-            }
-        }
+        return ManagedDownloadReferenceIo.isMissingDocumentFailure(error)
     }
 
     internal fun mimeTypeFromName(name: String, fallback: String?): String {
@@ -3848,19 +3671,7 @@ internal object ManagedDownloadStorage {
     }
 
     internal fun parseWorkingResumeMetadataSong(rawJson: String): SongItem? {
-        return runCatching {
-            ManagedDownloadStorageJsonCodec.workingResumeMetadataSongFromJson(rawJson)
-        }.onFailure {
-            NPLogger.w(TAG, "解析下载恢复元数据失败: ${it.message}")
-        }.getOrNull()
-    }
-
-    private fun pendingDownloadQueueFile(context: Context): File {
-        return File(context.filesDir, PENDING_DOWNLOAD_QUEUE_FILE_NAME)
-    }
-
-    private fun cancelledDownloadKeysFile(context: Context): File {
-        return File(context.filesDir, CANCELLED_DOWNLOAD_KEYS_FILE_NAME)
+        return ManagedDownloadRecoveryFiles.parseWorkingResumeMetadataSong(rawJson)
     }
 
     internal fun serializePendingDownloadQueuePayload(

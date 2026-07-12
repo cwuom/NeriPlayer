@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.core.player
 
+import moe.ouom.neriplayer.core.player.playback.PENDING_TRACK_END_DEDUPLICATION_KEY
+import moe.ouom.neriplayer.core.player.playback.shouldHandleTrackEnd
+import moe.ouom.neriplayer.core.player.playback.trackEndDeduplicationKey
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

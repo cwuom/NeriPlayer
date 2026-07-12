@@ -670,10 +670,8 @@ void CacheJavaString(JNIEnv* env, jstring value, char* target, size_t capacity) 
 
 }  // namespace
 
-extern "C" JNIEXPORT jboolean JNICALL
-Java_moe_ouom_neriplayer_util_NativeCrashHandler_nativeInstall(
+static jboolean NativeCrashHandlerNativeInstall(
     JNIEnv* env,
-    jclass,
     jstring crash_directory,
     jstring app_version,
     jstring build_type,
@@ -726,12 +724,7 @@ Java_moe_ouom_neriplayer_util_NativeCrashHandler_nativeInstall(
     return g_signal_handlers_installed ? JNI_TRUE : JNI_FALSE;
 }
 
-extern "C" JNIEXPORT void JNICALL
-Java_moe_ouom_neriplayer_util_NativeCrashHandler_nativeTriggerTestCrash(
-    JNIEnv*,
-    jclass,
-    jint crash_type
-) {
+static void NativeCrashHandlerTriggerTestCrash(jint crash_type) {
     switch (crash_type) {
         case kTestCrashSigSegv: {
             volatile int* invalid_address = nullptr;
@@ -742,4 +735,78 @@ Java_moe_ouom_neriplayer_util_NativeCrashHandler_nativeTriggerTestCrash(
         default:
             abort();
     }
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_moe_ouom_neriplayer_util_crash_NativeCrashHandler_nativeInstall(
+    JNIEnv* env,
+    jclass,
+    jstring crash_directory,
+    jstring app_version,
+    jstring build_type,
+    jstring build_uuid,
+    jstring package_name,
+    jstring device_info,
+    jstring supported_abis,
+    jint sdk_int,
+    jstring android_version
+) {
+    return NativeCrashHandlerNativeInstall(
+        env,
+        crash_directory,
+        app_version,
+        build_type,
+        build_uuid,
+        package_name,
+        device_info,
+        supported_abis,
+        sdk_int,
+        android_version
+    );
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_moe_ouom_neriplayer_util_crash_NativeCrashHandler_nativeTriggerTestCrash(
+    JNIEnv*,
+    jclass,
+    jint crash_type
+) {
+    NativeCrashHandlerTriggerTestCrash(crash_type);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_moe_ouom_neriplayer_util_NativeCrashHandler_nativeInstall(
+    JNIEnv* env,
+    jclass,
+    jstring crash_directory,
+    jstring app_version,
+    jstring build_type,
+    jstring build_uuid,
+    jstring package_name,
+    jstring device_info,
+    jstring supported_abis,
+    jint sdk_int,
+    jstring android_version
+) {
+    return NativeCrashHandlerNativeInstall(
+        env,
+        crash_directory,
+        app_version,
+        build_type,
+        build_uuid,
+        package_name,
+        device_info,
+        supported_abis,
+        sdk_int,
+        android_version
+    );
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_moe_ouom_neriplayer_util_NativeCrashHandler_nativeTriggerTestCrash(
+    JNIEnv*,
+    jclass,
+    jint crash_type
+) {
+    NativeCrashHandlerTriggerTestCrash(crash_type);
 }

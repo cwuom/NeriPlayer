@@ -62,6 +62,10 @@ import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.di.AppContainer.settingsRepo
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
+import moe.ouom.neriplayer.core.player.effects.AudioReactive
+import moe.ouom.neriplayer.core.player.effects.PlaybackEffectsController
+import moe.ouom.neriplayer.core.player.engine.datasource.ConditionalHttpDataSourceFactory
+import moe.ouom.neriplayer.core.player.lyrics.syncExternalBluetoothLyrics
 import moe.ouom.neriplayer.core.player.model.AudioDevice
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_PITCH
@@ -92,6 +96,11 @@ import moe.ouom.neriplayer.core.player.policy.resolvePlaybackWakeMode
 import moe.ouom.neriplayer.core.player.policy.shouldShowPauseButtonForPlaybackControls
 import moe.ouom.neriplayer.core.player.policy.shouldBootstrapPlaybackServiceOnAppLaunch
 import moe.ouom.neriplayer.core.player.policy.shouldRunPlaybackServiceInForeground
+import moe.ouom.neriplayer.core.player.playback.PlaybackStatsSnapshot
+import moe.ouom.neriplayer.core.player.playback.PlaybackStatsTracker
+import moe.ouom.neriplayer.core.player.playback.trackEndDeduplicationKey
+import moe.ouom.neriplayer.core.player.timer.SleepTimerManager
+import moe.ouom.neriplayer.core.player.timer.SleepTimerMode
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveSessionController

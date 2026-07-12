@@ -115,10 +115,10 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.sync.GitHubSyncWarningRepository
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.canUseDirectPlaybackServiceStart
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
+import moe.ouom.neriplayer.core.player.service.AudioPlayerService
+import moe.ouom.neriplayer.core.player.service.canUseDirectPlaybackServiceStart
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.settings.SettingsRepository

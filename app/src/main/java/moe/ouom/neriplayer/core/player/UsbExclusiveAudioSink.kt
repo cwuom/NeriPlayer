@@ -29,6 +29,7 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.player.effects.AudioReactive
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.UsbExclusivePcmWritePlanner
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveRuntimeMetrics

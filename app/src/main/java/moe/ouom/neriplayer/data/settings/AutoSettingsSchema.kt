@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.data.settings
 
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.player.DEFAULT_DOWNLOAD_PARALLELISM
+import moe.ouom.neriplayer.core.player.download.DEFAULT_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_PITCH
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_SPEED

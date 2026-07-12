@@ -58,6 +58,12 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.clearSongCancelled
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.shouldUseIndexedSidecarLookup
+import moe.ouom.neriplayer.core.player.download.DEFAULT_DOWNLOAD_PARALLELISM
+import moe.ouom.neriplayer.core.player.download.MAX_DOWNLOAD_PARALLELISM
+import moe.ouom.neriplayer.core.player.download.normalizeDownloadParallelism
+import moe.ouom.neriplayer.core.player.resolver.youtube.ChunkRequestIOException
+import moe.ouom.neriplayer.core.player.resolver.netease.NeteasePlaybackResponseParser
+import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeGoogleVideoRangeSupport
 import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport

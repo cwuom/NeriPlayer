@@ -31,4 +31,49 @@ class GlobalDownloadManagerDeleteReferenceTest {
             )
         )
     }
+
+    @Test
+    fun `artifact planner keeps sidecars owned by other downloads`() {
+        val sharedCoverReference = "content://downloads/covers/shared.jpg"
+        val currentAudio = ManagedDownloadStorage.StoredEntry(
+            name = "artist - current.mp3",
+            reference = "content://downloads/audio/current.mp3",
+            mediaUri = "content://downloads/audio/current.mp3",
+            localFilePath = null,
+            sizeBytes = 1024L,
+            lastModifiedMs = 1L
+        )
+        val currentMetadataReference = ManagedDownloadStorage.metadataReferenceForAudio(currentAudio)
+            ?: error("missing current metadata reference")
+        val currentMetadata = ManagedDownloadStorage.StoredEntry(
+            name = "${currentAudio.name}.npmeta.json",
+            reference = currentMetadataReference,
+            mediaUri = currentMetadataReference,
+            localFilePath = null,
+            sizeBytes = 128L,
+            lastModifiedMs = 1L
+        )
+        val otherMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            coverPath = sharedCoverReference
+        )
+        val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
+            metadataEntriesByAudioName = mapOf(currentAudio.name to currentMetadata),
+            metadataByAudioName = mapOf("artist - other.mp3" to otherMetadata),
+            knownReferences = setOf(
+                currentAudio.reference,
+                currentMetadataReference,
+                sharedCoverReference
+            )
+        )
+
+        val references = ManagedDownloadArtifactPlanner.collectArtifactReferences(
+            snapshot = snapshot,
+            storedAudio = currentAudio,
+            songId = 1L,
+            candidateBaseNames = listOf("artist - current"),
+            explicitReferences = listOf(sharedCoverReference)
+        )
+
+        assertEquals(setOf(currentAudio.reference, currentMetadataReference), references)
+    }
 }

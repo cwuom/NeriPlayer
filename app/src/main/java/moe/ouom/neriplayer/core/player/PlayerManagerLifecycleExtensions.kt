@@ -40,6 +40,14 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.di.AppContainer.biliCookieRepo
 import moe.ouom.neriplayer.core.di.AppContainer.settingsRepo
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
+import moe.ouom.neriplayer.core.player.engine.ReactiveRenderersFactory
+import moe.ouom.neriplayer.core.player.engine.datasource.ConditionalHttpDataSourceFactory
+import moe.ouom.neriplayer.core.player.service.AudioPlayerService
+import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
+import moe.ouom.neriplayer.core.player.lyrics.clearExternalBluetoothLyricLine
+import moe.ouom.neriplayer.core.player.lyrics.syncExternalBluetoothLyrics
+import moe.ouom.neriplayer.core.player.lyrics.syncFloatingTranslatedLyrics
+import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
 import moe.ouom.neriplayer.core.player.audio.isBluetoothOutputType
 import moe.ouom.neriplayer.core.player.audio.isHeadsetLikeOutput
 import moe.ouom.neriplayer.core.player.audio.isUsbOutputType
@@ -61,6 +69,8 @@ import moe.ouom.neriplayer.core.player.policy.isTransientUsbExclusiveOpenGate
 import moe.ouom.neriplayer.core.player.policy.shouldApplyActiveUsbBufferResize
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
 import moe.ouom.neriplayer.core.player.policy.shouldClearResumePlaybackRequestOnPlayWhenReadyPause
+import moe.ouom.neriplayer.core.player.playback.PlaybackStatsTracker
+import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeSeekRefreshPolicy
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveSessionController

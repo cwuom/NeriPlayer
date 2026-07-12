@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.player
 
 import android.support.v4.media.session.PlaybackStateCompat
+import moe.ouom.neriplayer.core.player.service.MediaSessionPlaybackStateThrottler
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

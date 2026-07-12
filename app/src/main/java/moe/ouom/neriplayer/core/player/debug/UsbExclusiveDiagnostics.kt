@@ -14,7 +14,7 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
 import androidx.core.content.ContextCompat
-import moe.ouom.neriplayer.core.player.AudioPlayerService
+import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.retryUsbExclusivePlayback
 import moe.ouom.neriplayer.core.player.audio.isUsbOutputType

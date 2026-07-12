@@ -34,7 +34,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
-import moe.ouom.neriplayer.core.player.FloatingLyricsOverlayManager
+import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicLibraryGateway

@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommand
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
-import moe.ouom.neriplayer.core.player.AudioPlayerService
+import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.resolveShareableListenTogetherStreamUrl

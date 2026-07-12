@@ -59,8 +59,8 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
-import moe.ouom.neriplayer.core.player.MAX_DOWNLOAD_PARALLELISM
-import moe.ouom.neriplayer.core.player.normalizeDownloadParallelism
+import moe.ouom.neriplayer.core.player.download.MAX_DOWNLOAD_PARALLELISM
+import moe.ouom.neriplayer.core.player.download.normalizeDownloadParallelism
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton

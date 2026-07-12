@@ -10,7 +10,7 @@ import moe.ouom.neriplayer.core.player.model.deriveCodecLabel
 import moe.ouom.neriplayer.core.player.model.estimateBitrateKbps
 import moe.ouom.neriplayer.core.player.model.inferYouTubeQualityKeyFromBitrate
 import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
-import moe.ouom.neriplayer.core.player.NeteasePlaybackResponseParser
+import moe.ouom.neriplayer.core.player.resolver.netease.NeteasePlaybackResponseParser
 
 internal val NETEASE_QUALITY_FALLBACK_ORDER = listOf(
     "jymaster",

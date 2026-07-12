@@ -16,6 +16,7 @@ import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
+import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
 import moe.ouom.neriplayer.core.player.metadata.shouldAutoMatchExternalLyrics
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
@@ -36,6 +37,10 @@ import moe.ouom.neriplayer.core.player.policy.shouldApplyResolvedMedia
 import moe.ouom.neriplayer.core.player.policy.shouldApplyResolvedMediaSideEffects
 import moe.ouom.neriplayer.core.player.policy.shouldPausePlaybackWhenToggling
 import moe.ouom.neriplayer.core.player.policy.shouldRunPlaybackProgressUpdates
+import moe.ouom.neriplayer.core.player.playback.PlaybackStatsSnapshot
+import moe.ouom.neriplayer.core.player.playback.shouldHandleTrackEnd
+import moe.ouom.neriplayer.core.player.playback.trackEndDeduplicationKey
+import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeSeekRefreshPolicy
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager

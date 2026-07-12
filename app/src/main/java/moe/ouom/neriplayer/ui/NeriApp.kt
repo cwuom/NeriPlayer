@@ -151,14 +151,14 @@ import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.player.AudioPlayerService
-import moe.ouom.neriplayer.core.player.AudioReactive
+import moe.ouom.neriplayer.core.player.effects.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.recoverUsbExclusivePlaybackOnForeground
 import moe.ouom.neriplayer.core.player.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.updateUsbExclusiveForegroundState
 import moe.ouom.neriplayer.core.player.preloadRestoredStateSnapshot
-import moe.ouom.neriplayer.core.player.shouldSkipLocalPlaybackSyncServiceStart
+import moe.ouom.neriplayer.core.player.service.AudioPlayerService
+import moe.ouom.neriplayer.core.player.service.shouldSkipLocalPlaybackSyncServiceStart
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.shouldSyncPlaybackServiceForLocalPlaybackCommand

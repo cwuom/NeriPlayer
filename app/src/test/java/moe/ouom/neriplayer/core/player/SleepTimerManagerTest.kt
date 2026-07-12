@@ -1,6 +1,9 @@
 package moe.ouom.neriplayer.core.player
 
 import kotlinx.coroutines.test.TestScope
+import moe.ouom.neriplayer.core.player.timer.SleepTimerManager
+import moe.ouom.neriplayer.core.player.timer.SleepTimerMode
+import moe.ouom.neriplayer.core.player.timer.SleepTimerState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
