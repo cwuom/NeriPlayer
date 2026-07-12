@@ -49,8 +49,8 @@ data class ListenTogetherPlaybackState(
     val basePositionMs: Long = 0L,
     val baseTimestampMs: Long = 0L,
     val playbackRate: Double = 1.0,
-    val repeatMode: Int = 0,
-    val shuffleEnabled: Boolean = false
+    val repeatMode: Int? = null,
+    val shuffleEnabled: Boolean? = null
 )
 
 @Serializable

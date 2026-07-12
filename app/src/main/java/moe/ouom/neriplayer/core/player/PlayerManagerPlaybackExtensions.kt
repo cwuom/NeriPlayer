@@ -1439,37 +1439,40 @@ internal fun PlayerManager.setShuffleImpl(
 }
 
 internal fun PlayerManager.applyListenTogetherPlaybackModeImpl(
-    repeatMode: Int,
-    shuffleEnabled: Boolean
+    repeatMode: Int?,
+    shuffleEnabled: Boolean?
 ) {
-    val normalizedRepeatMode = when (repeatMode) {
-        Player.REPEAT_MODE_OFF,
-        Player.REPEAT_MODE_ALL,
-        Player.REPEAT_MODE_ONE -> repeatMode
-        else -> Player.REPEAT_MODE_OFF
+    val normalizedRepeatMode = repeatMode?.let { mode ->
+        when (mode) {
+            Player.REPEAT_MODE_OFF,
+            Player.REPEAT_MODE_ALL,
+            Player.REPEAT_MODE_ONE -> mode
+            else -> Player.REPEAT_MODE_OFF
+        }
     }
-    val repeatChanged = repeatModeSetting != normalizedRepeatMode
-    val shuffleChanged = _shuffleModeFlow.value != shuffleEnabled
+    val repeatChanged = normalizedRepeatMode != null && repeatModeSetting != normalizedRepeatMode
+    val shuffleChanged = shuffleEnabled != null && _shuffleModeFlow.value != shuffleEnabled
     if (!repeatChanged && !shuffleChanged) return
     if (repeatChanged) {
-        repeatModeSetting = normalizedRepeatMode
+        repeatModeSetting = normalizedRepeatMode ?: Player.REPEAT_MODE_OFF
         if (isPlayerInitialized()) {
             syncExoRepeatMode()
         }
-        _repeatModeFlow.value = normalizedRepeatMode
+        _repeatModeFlow.value = repeatModeSetting
     }
     if (shuffleChanged) {
+        val nextShuffleEnabled = shuffleEnabled == true
         if (isPlayerInitialized()) {
-            player.shuffleModeEnabled = shuffleEnabled
+            player.shuffleModeEnabled = nextShuffleEnabled
             shuffleHistory.clear()
             shuffleFuture.clear()
-            if (shuffleEnabled) {
+            if (nextShuffleEnabled) {
                 rebuildShuffleBag(excludeIndex = currentIndex)
             } else {
                 shuffleBag.clear()
             }
         }
-        _shuffleModeFlow.value = shuffleEnabled
+        _shuffleModeFlow.value = nextShuffleEnabled
     }
     scheduleStatePersist()
 }

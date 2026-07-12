@@ -1812,8 +1812,8 @@ object PlayerManager {
     ) = this.setShuffleImpl(enabled, commandSource)
 
     fun applyListenTogetherPlaybackMode(
-        repeatMode: Int,
-        shuffleEnabled: Boolean
+        repeatMode: Int?,
+        shuffleEnabled: Boolean?
     ) = this.applyListenTogetherPlaybackModeImpl(repeatMode, shuffleEnabled)
 
     internal fun stopProgressUpdates() = this.stopProgressUpdatesImpl()

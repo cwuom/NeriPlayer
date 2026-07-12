@@ -283,7 +283,19 @@ class ListenTogetherEventCompatibilityTest {
         )
 
         assertEquals(2, state.playback.repeatMode)
-        assertTrue(state.playback.shuffleEnabled)
+        assertTrue(state.playback.shuffleEnabled == true)
+    }
+
+    @Test
+    fun `legacy room playback state leaves playback mode unspecified`() {
+        val state = ListenTogetherRoomState(
+            roomId = "ABC234",
+            version = 1L,
+            playback = ListenTogetherPlaybackState(state = "playing")
+        )
+
+        assertNull(state.playback.repeatMode)
+        assertNull(state.playback.shuffleEnabled)
     }
 
     @Test
