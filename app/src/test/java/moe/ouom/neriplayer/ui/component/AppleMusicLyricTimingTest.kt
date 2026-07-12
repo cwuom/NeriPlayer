@@ -52,8 +52,18 @@ class AppleMusicLyricTimingTest {
 
     @Test
     fun `shouldSnapLyricTimeSmoothing only animates small forward deltas`() {
-        assertFalse(shouldSnapLyricTimeSmoothing(displayedTimeMs = 1_000L, targetTimeMs = 1_080L))
-        assertTrue(shouldSnapLyricTimeSmoothing(displayedTimeMs = 1_000L, targetTimeMs = 1_400L))
+        assertFalse(
+            shouldSnapLyricTimeSmoothing(
+                displayedTimeMs = 1_000L,
+                targetTimeMs = 1_180L
+            )
+        )
+        assertTrue(
+            shouldSnapLyricTimeSmoothing(
+                displayedTimeMs = 1_000L,
+                targetTimeMs = 1_181L
+            )
+        )
         assertTrue(shouldSnapLyricTimeSmoothing(displayedTimeMs = 1_000L, targetTimeMs = 900L))
     }
 

@@ -1144,6 +1144,9 @@ private fun LyricsContentPane(
         onLyricLongClick = onLyricLongClick,
         translatedLyrics = if (showLyricTranslation) effectivePlainTranslatedLyrics else null,
         translationFontSize = scaledLyricFontSize(16f, lyricFontScale).sp,
+        isPlaying = shouldAnimateFromPlayback,
+        playbackSpeed = playbackSpeed,
+        interpolatePlaybackPosition = true
     )
 }
 

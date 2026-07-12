@@ -55,10 +55,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -90,7 +92,7 @@ import kotlin.math.roundToLong
 import moe.ouom.neriplayer.core.player.metadata.normalizeLegacyLrcTimestamps
 
 private const val LYRIC_TIME_SMOOTHING_DURATION_MS = 96
-private const val LYRIC_TIME_SMOOTHING_MAX_DELTA_MS = 240L
+private const val LYRIC_TIME_SMOOTHING_MAX_DELTA_MS = 180L
 
 @Stable
 data class LyricVisualSpec(
@@ -201,6 +203,30 @@ internal fun shouldSnapLyricTimeSmoothing(
 }
 
 @Composable
+private fun animateFloatWhenEnabled(
+    targetValue: Float,
+    enabled: Boolean,
+    animationDurationMs: Int? = null,
+    label: String
+): State<Float> {
+    val animationSpec = if (animationDurationMs != null) {
+        tween<Float>(durationMillis = animationDurationMs)
+    } else {
+        spring(
+            stiffness = Spring.StiffnessLow,
+            dampingRatio = 0.85f
+        )
+    }
+    val animated = animateFloatAsState(
+        targetValue = targetValue,
+        animationSpec = animationSpec,
+        label = label
+    )
+    val immediate = rememberUpdatedState(targetValue)
+    return if (enabled) animated else immediate
+}
+
+@Composable
 private fun rememberSmoothedLyricTimeMs(
     targetTimeMs: Long
 ): Long {
@@ -262,17 +288,21 @@ fun AppleMusicLyric(
     onLyricClick: ((LyricEntry) -> Unit)? = null,
     onLyricLongClick: ((LyricEntry) -> Unit)? = null,
     translatedLyrics: List<LyricEntry>? = null,
-    translationFontSize: TextUnit = 14.sp
+    translationFontSize: TextUnit = 14.sp,
+    isPlaying: Boolean = false,
+    playbackSpeed: Float = 1f,
+    interpolatePlaybackPosition: Boolean = false,
+    visualEffectsEnabled: Boolean = true,
+    smoothActiveLineProgress: Boolean = true
 ) {
     val listState = rememberLazyListState()
     var manualClearHoldIndex by remember(lyrics) { mutableStateOf<Int?>(null) }
     var isAutoScrolling by remember { mutableStateOf(false) }
     var lastUserInteracting by remember { mutableStateOf(false) }
-    val targetLyricTimeMs = (currentTimeMs + lyricOffsetMs).coerceAtLeast(0L)
-    val smoothedLyricTimeMs = rememberSmoothedLyricTimeMs(targetLyricTimeMs)
+    val lineSelectionTimeMs = (currentTimeMs + lyricOffsetMs).coerceAtLeast(0L)
 
-    val currentIndex = remember(lyrics, smoothedLyricTimeMs) {
-        findCurrentLineIndex(lyrics, smoothedLyricTimeMs)
+    val currentIndex = remember(lyrics, lineSelectionTimeMs) {
+        findCurrentLineIndex(lyrics, lineSelectionTimeMs)
     }
     val translationMatchesByIndex = remember(lyrics, translatedLyrics) {
         translatedLyrics
@@ -359,11 +389,17 @@ fun AppleMusicLyric(
                         )
                         .animateItem()
                         .widthIn(max = maxTextWidth)
-                        .animateContentSize(
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioLowBouncy,
-                                stiffness = Spring.StiffnessLow
-                            )
+                        .then(
+                            if (visualEffectsEnabled) {
+                                Modifier.animateContentSize(
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioLowBouncy,
+                                        stiffness = Spring.StiffnessLow
+                                    )
+                                )
+                            } else {
+                                Modifier
+                            }
                         ),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -386,25 +422,31 @@ fun AppleMusicLyric(
                     } else {
                         // 播放时：显示带动画的复杂文本
                         val targetScale =
-                            if (isActive) visualSpec.activeScale else scaleForDistance(distance, visualSpec)
-                        val scale by animateFloatAsState(
+                            if (!visualEffectsEnabled) 1f
+                            else if (isActive) visualSpec.activeScale
+                            else scaleForDistance(distance, visualSpec)
+                        val scale by animateFloatWhenEnabled(
                             targetValue = targetScale,
-                            animationSpec = spring(
-                                stiffness = Spring.StiffnessLow,
-                                dampingRatio = 0.85f
-                            ),
+                            enabled = visualEffectsEnabled,
                             label = "lyric_scale"
                         )
 
                         val tilt =
-                            if (isActive) 0f else if (index < currentIndex) visualSpec.pageTiltDeg else -visualSpec.pageTiltDeg
-                        val rotationX by animateFloatAsState(
+                            if (!visualEffectsEnabled || isActive) {
+                                0f
+                            } else if (index < currentIndex) {
+                                visualSpec.pageTiltDeg
+                            } else {
+                                -visualSpec.pageTiltDeg
+                            }
+                        val rotationX by animateFloatWhenEnabled(
                             targetValue = tilt,
-                            animationSpec = tween(durationMillis = visualSpec.flipDurationMs),
+                            enabled = visualEffectsEnabled,
+                            animationDurationMs = visualSpec.flipDurationMs,
                             label = "lyric_flip"
                         )
 
-                        val blurRadiusPx = if (isActive || !lyricBlurEnabled) 0f else {
+                        val blurRadiusPx = if (isActive || !lyricBlurEnabled || !visualEffectsEnabled) 0f else {
                             blurForDistance(distance, lyricBlurAmount)
                         }
 
@@ -430,11 +472,16 @@ fun AppleMusicLyric(
                         if (isActive) {
                             AppleMusicActiveLine(
                                 line = line,
-                                currentTimeMs = smoothedLyricTimeMs,
+                                currentTimeMs = currentTimeMs,
                                 activeColor = textColor,
                                 inactiveColor = textColor.copy(alpha = 0.5f),
                                 fontSize = fontSize,
-                                fadeWidth = 12.dp
+                                fadeWidth = 12.dp,
+                                lyricOffsetMs = lyricOffsetMs,
+                                isPlaying = isPlaying,
+                                playbackSpeed = playbackSpeed,
+                                interpolatePlaybackPosition = interpolatePlaybackPosition,
+                                animateProgress = smoothActiveLineProgress && !interpolatePlaybackPosition
                             )
                         } else {
                             var colorStyle = textColor.copy(
@@ -566,11 +613,14 @@ fun parseNeteaseYrc(yrc: String): List<LyricEntry> {
 
 /** 小数字符偏移的多行 reveal */
 @Composable
-fun Modifier.multilineGradientReveal(
+internal fun Modifier.multilineGradientReveal(
     layout: TextLayoutResult?,
-    revealOffsetChars: Float,
+    revealOffsetChars: Float?,
     textLength: Int,
-    fadeWidth: Dp
+    fadeWidth: Dp,
+    line: LyricEntry? = null,
+    interpolatedPositionState: InterpolatedPlaybackPositionState? = null,
+    lyricOffsetMs: Long = 0L
 ): Modifier = this
     .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
     .drawWithContent {
@@ -578,14 +628,24 @@ fun Modifier.multilineGradientReveal(
             drawContent()
             return@drawWithContent
         }
+        val effectiveRevealOffsetChars = revealOffsetChars ?: run {
+            val currentLine = line
+            val positionState = interpolatedPositionState
+            if (currentLine == null || positionState == null) {
+                drawContent()
+                return@drawWithContent
+            }
+            val drawTimeMs = (positionState.renderedPositionMs + lyricOffsetMs).coerceAtLeast(0L)
+            currentLine.text.length * calculateLineProgress(currentLine, drawTimeMs).coerceIn(0f, 1f)
+        }
 
         // 进度达100%，直接显示全部高亮，跳过裁剪
-        if (revealOffsetChars >= textLength) {
+        if (effectiveRevealOffsetChars >= textLength) {
             drawContent()
             return@drawWithContent
         }
 
-        val safeChars = revealOffsetChars.coerceIn(0f, textLength.toFloat())
+        val safeChars = effectiveRevealOffsetChars.coerceIn(0f, textLength.toFloat())
         val totalLines = layout.lineCount
 
         // 遍历所有行，分三种情况处理，已完成行、当前行、未开始行
@@ -706,25 +766,47 @@ fun AppleMusicActiveLine(
     activeColor: Color,
     inactiveColor: Color,
     fontSize: TextUnit,
-    fadeWidth: Dp = 12.dp
+    fadeWidth: Dp = 12.dp,
+    lyricOffsetMs: Long = 0L,
+    isPlaying: Boolean = false,
+    playbackSpeed: Float = 1f,
+    interpolatePlaybackPosition: Boolean = false,
+    animateProgress: Boolean = true
 ) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     val isLayoutReady by remember { derivedStateOf { layout != null } }
+    val interpolatedPositionState = rememberInterpolatedPlaybackPositionState(
+        currentTimeMs = currentTimeMs,
+        isPlaying = isPlaying && interpolatePlaybackPosition,
+        playbackSpeed = playbackSpeed
+    )
+    val targetLyricTimeMs = (currentTimeMs + lyricOffsetMs).coerceAtLeast(0L)
+    val smoothedTargetLyricTimeMs = rememberSmoothedLyricTimeMs(targetLyricTimeMs)
+    val smoothedLyricTimeMs = if (animateProgress) {
+        smoothedTargetLyricTimeMs
+    } else {
+        targetLyricTimeMs
+    }
 
     // 计算当前行进度
-    val progressTarget = remember(line, currentTimeMs) {
-        calculateLineProgress(line, currentTimeMs).coerceIn(0f, 1f)
+    val progressTarget = remember(line, smoothedLyricTimeMs) {
+        calculateLineProgress(line, smoothedLyricTimeMs).coerceIn(0f, 1f)
     }
 
-    // 逐字揭示动画控制器：进度变化时直接同步，避免动画延迟导致的高亮断层
     val revealOffsetCharsAnimatable = remember(line.text) { Animatable(0f) }
-    LaunchedEffect(isLayoutReady, progressTarget) {
+    LaunchedEffect(isLayoutReady, progressTarget, animateProgress) {
         if (!isLayoutReady) return@LaunchedEffect
+        if (!animateProgress) return@LaunchedEffect
         val targetChars = line.text.length * progressTarget
-        // 进度突变时直接跳转，确保行切换时高亮同步
         revealOffsetCharsAnimatable.snapTo(targetChars)
     }
-    val revealOffsetChars = revealOffsetCharsAnimatable.value
+    val revealOffsetChars = if (animateProgress) {
+        revealOffsetCharsAnimatable.value
+    } else if (interpolatePlaybackPosition) {
+        null
+    } else {
+        line.text.length * progressTarget
+    }
 
     val textStyle = TextStyle(
         fontSize = fontSize,
@@ -761,7 +843,14 @@ fun AppleMusicActiveLine(
                     layout = layout,
                     revealOffsetChars = revealOffsetChars,
                     textLength = line.text.length,
-                    fadeWidth = effectiveFadeWidth
+                    fadeWidth = effectiveFadeWidth,
+                    line = line,
+                    interpolatedPositionState = if (interpolatePlaybackPosition) {
+                        interpolatedPositionState
+                    } else {
+                        null
+                    },
+                    lyricOffsetMs = lyricOffsetMs
                 )
             )
         }

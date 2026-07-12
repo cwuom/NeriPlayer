@@ -3,13 +3,8 @@ package moe.ouom.neriplayer.ui.component
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
@@ -19,9 +14,6 @@ import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.repeatOnLifecycle
 import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeAlignment
@@ -31,13 +23,10 @@ import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import com.mocharealm.accompanist.lyrics.core.parser.AutoParser
 import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.ModernKaraokeLyricsView
 import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
-import kotlinx.coroutines.isActive
 import kotlin.math.abs
 import kotlin.math.max
 
 private const val TranslationAlignmentToleranceMs = 450L
-private const val InterpolatedPlaybackResyncThresholdMs = 220L
-private const val InterpolatedPlaybackBackwardToleranceMs = 24L
 private const val FocusedLyricVisualCompensationRatio = 0.42f
 private val FocusedLyricMaskSafePadding = 24.dp
 
@@ -208,91 +197,6 @@ internal fun resolvePlayedLyricViewportOffset(
     return (
         resolvedPlayedLyricSpace + focusedLineVisualCompensation - keepAliveZone
         ).coerceAtLeast(minimumOffset)
-}
-
-@Composable
-private fun rememberInterpolatedPlaybackPositionProvider(
-    currentTimeMs: Long,
-    isPlaying: Boolean,
-    playbackSpeed: Float
-): () -> Int {
-    var renderedPositionMs by remember { mutableLongStateOf(currentTimeMs) }
-    var anchorPositionMs by remember { mutableLongStateOf(currentTimeMs) }
-    var anchorRealtimeNanos by remember { mutableLongStateOf(System.nanoTime()) }
-    val lifecycleOwner = LocalLifecycleOwner.current
-
-    LaunchedEffect(currentTimeMs, isPlaying) {
-        anchorPositionMs = currentTimeMs
-        anchorRealtimeNanos = System.nanoTime()
-        if (shouldSnapInterpolatedPlaybackPosition(currentTimeMs, renderedPositionMs, isPlaying)) {
-            renderedPositionMs = currentTimeMs
-        } else if (currentTimeMs > renderedPositionMs) {
-            renderedPositionMs = currentTimeMs
-        }
-    }
-
-    LaunchedEffect(isPlaying, playbackSpeed, lifecycleOwner) {
-        if (!isPlaying) {
-            renderedPositionMs = currentTimeMs
-            return@LaunchedEffect
-        }
-
-        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            while (isActive) {
-                val frameNanos = withFrameNanos { it }
-                val predictedPositionMs = resolveInterpolatedPlaybackPosition(
-                    anchorPositionMs = anchorPositionMs,
-                    anchorRealtimeNanos = anchorRealtimeNanos,
-                    frameRealtimeNanos = frameNanos,
-                    playbackSpeed = playbackSpeed,
-                    previousRenderedPositionMs = renderedPositionMs
-                )
-                if (predictedPositionMs != renderedPositionMs) {
-                    renderedPositionMs = predictedPositionMs
-                }
-            }
-        }
-    }
-
-    return remember {
-        {
-            renderedPositionMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-        }
-    }
-}
-
-internal fun shouldSnapInterpolatedPlaybackPosition(
-    externalPositionMs: Long,
-    renderedPositionMs: Long,
-    isPlaying: Boolean,
-    snapThresholdMs: Long = InterpolatedPlaybackResyncThresholdMs
-): Boolean {
-    if (!isPlaying) {
-        return true
-    }
-    return abs(externalPositionMs - renderedPositionMs) >= snapThresholdMs
-}
-
-internal fun resolveInterpolatedPlaybackPosition(
-    anchorPositionMs: Long,
-    anchorRealtimeNanos: Long,
-    frameRealtimeNanos: Long,
-    playbackSpeed: Float,
-    previousRenderedPositionMs: Long,
-    backwardToleranceMs: Long = InterpolatedPlaybackBackwardToleranceMs
-): Long {
-    val elapsedNanos = (frameRealtimeNanos - anchorRealtimeNanos).coerceAtLeast(0L)
-    val predictedDeltaMs = (
-        (elapsedNanos / 1_000_000.0) * playbackSpeed.coerceAtLeast(0f)
-        ).toLong()
-    val predictedPositionMs = anchorPositionMs +
-        predictedDeltaMs
-    val backwardDeltaMs = previousRenderedPositionMs - predictedPositionMs
-    return if (backwardDeltaMs in 1..backwardToleranceMs) {
-        previousRenderedPositionMs
-    } else {
-        predictedPositionMs
-    }
 }
 
 internal fun buildAdvancedSyncedLyrics(

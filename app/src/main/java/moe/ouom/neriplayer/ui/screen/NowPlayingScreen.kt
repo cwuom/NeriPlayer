@@ -407,6 +407,7 @@ fun NowPlayingScreen(
     val durationMs by PlayerManager.playbackDurationFlow.collectAsStateWithLifecycle()
     val sleepTimerState by PlayerManager.sleepTimerManager.timerState.collectAsStateWithLifecycle()
     val currentPlaybackAudioInfo by PlayerManager.currentPlaybackAudioInfoFlow.collectAsStateWithLifecycle()
+    val playbackSoundState by PlayerManager.playbackSoundStateFlow.collectAsStateWithLifecycle()
     val settingsRepo = remember { AppContainer.settingsRepo }
     val listenTogetherSessionManager = remember { AppContainer.listenTogetherSessionManager }
     val listenTogetherSessionState by listenTogetherSessionManager.sessionState.collectAsStateWithLifecycle()
@@ -1366,6 +1367,8 @@ fun NowPlayingScreen(
                             lyricOffsetMs = totalOffset,
                             lyricBlurEnabled = lyricBlurEnabled,
                             lyricBlurAmount = lyricBlurAmount,
+                            isPlaying = isPlaying && previewPositionOverrideMs == null,
+                            playbackSpeed = playbackSoundState.speed,
                             onLyricClick = { entry -> PlayerManager.seekTo(entry.startTimeMs) },
                             onLyricLongClick = { entry -> lyricShareInitialLine = entry },
                             translatedLyrics = if (showLyricTranslation) secondaryPlainLyrics else null
@@ -3778,6 +3781,8 @@ private fun NowPlayingLyricsPane(
     lyricOffsetMs: Long,
     lyricBlurEnabled: Boolean,
     lyricBlurAmount: Float,
+    isPlaying: Boolean,
+    playbackSpeed: Float,
     onLyricClick: (LyricEntry) -> Unit,
     onLyricLongClick: (LyricEntry) -> Unit,
     translatedLyrics: List<LyricEntry>? = null
@@ -3797,7 +3802,12 @@ private fun NowPlayingLyricsPane(
         lyricBlurAmount = lyricBlurAmount,
         onLyricClick = onLyricClick,
         onLyricLongClick = onLyricLongClick,
-        translatedLyrics = translatedLyrics
+        translatedLyrics = translatedLyrics,
+        isPlaying = isPlaying,
+        playbackSpeed = playbackSpeed,
+        interpolatePlaybackPosition = true,
+        visualEffectsEnabled = false,
+        smoothActiveLineProgress = false
     )
 }
 

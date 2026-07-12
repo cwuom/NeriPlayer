@@ -371,6 +371,17 @@ class AdvancedLyricsViewTest {
     }
 
     @Test
+    fun `resolveAnchoredInterpolatedPlaybackPosition keeps local render ahead within tolerance`() {
+        val resolved = resolveAnchoredInterpolatedPlaybackPosition(
+            externalPositionMs = 1_000L,
+            renderedPositionMs = 1_120L,
+            isPlaying = true
+        )
+
+        assertEquals(1_120L, resolved)
+    }
+
+    @Test
     fun `resolveInterpolatedPlaybackPosition keeps continuous interpolation during long frame stalls`() {
         val predicted = resolveInterpolatedPlaybackPosition(
             anchorPositionMs = 5_000L,
