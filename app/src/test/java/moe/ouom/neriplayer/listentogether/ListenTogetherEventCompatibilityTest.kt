@@ -260,6 +260,52 @@ class ListenTogetherEventCompatibilityTest {
     }
 
     @Test
+    fun `playback mode request does not require current track target`() {
+        assertTrue(
+            isListenTogetherMemberControlTargetCurrent(
+                eventType = "REQUEST_PLAYBACK_MODE",
+                requestedStableKey = null,
+                currentStableKey = "netease:1"
+            )
+        )
+    }
+
+    @Test
+    fun `playback mode is carried in room playback state`() {
+        val state = ListenTogetherRoomState(
+            roomId = "ABC234",
+            version = 1L,
+            playback = ListenTogetherPlaybackState(
+                state = "playing",
+                repeatMode = 2,
+                shuffleEnabled = true
+            )
+        )
+
+        assertEquals(2, state.playback.repeatMode)
+        assertTrue(state.playback.shuffleEnabled)
+    }
+
+    @Test
+    fun `playback mode request is satisfied by matching room playback mode`() {
+        val state = ListenTogetherRoomState(
+            roomId = "ABC234",
+            version = 1L,
+            playback = ListenTogetherPlaybackState(
+                repeatMode = 1,
+                shuffleEnabled = true
+            )
+        )
+        val event = ListenTogetherEvent(
+            type = "REQUEST_PLAYBACK_MODE",
+            repeatMode = 1,
+            shuffleEnabled = true
+        )
+
+        assertTrue(isListenTogetherPendingMemberControlSatisfied(event, state))
+    }
+
+    @Test
     fun `join auto pause flag alone does not pause a playing room`() {
         val state = roomState(playbackState = "playing")
 

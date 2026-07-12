@@ -172,7 +172,9 @@ class ListenTogetherSessionManager(
                 track = queueTracks.getOrNull(resolvedCurrentIndex),
                 settings = roomSettings.normalized(),
                 isPlaying = isPlaying,
-                positionMs = positionMs.coerceAtLeast(0L)
+                positionMs = positionMs.coerceAtLeast(0L),
+                repeatMode = PlayerManager.repeatModeFlow.value,
+                shuffleEnabled = PlayerManager.shuffleModeFlow.value
             )
         )
         updateSession(baseUrl, response)
@@ -583,6 +585,10 @@ class ListenTogetherSessionManager(
             PlayerManager.resetListenTogetherSyncPlaybackRate()
             PlayerManager.playPlaylist(queue, targetIndex, commandSource = PlaybackCommandSource.REMOTE_SYNC)
         }
+        PlayerManager.applyListenTogetherPlaybackMode(
+            repeatMode = state.playback.repeatMode,
+            shuffleEnabled = state.playback.shuffleEnabled
+        )
 
         val resolvedExpectedPositionMs = expectedPositionMs
             ?: state.playback.expectedPositionMs(serverClockOffsetMs = estimatedServerClockOffsetMs)
@@ -690,6 +696,19 @@ class ListenTogetherSessionManager(
     fun buildRequestPauseEvent(positionMs: Long): ListenTogetherEvent = playbackSnapshotEvent("REQUEST_PAUSE", positionMs)
 
     fun buildRequestSeekEvent(positionMs: Long): ListenTogetherEvent = playbackSnapshotEvent("REQUEST_SEEK", positionMs)
+
+    fun buildPlaybackModeEvent(
+        repeatMode: Int,
+        shuffleEnabled: Boolean
+    ): ListenTogetherEvent {
+        return playbackSnapshotEvent(
+            type = if (isCurrentUserController()) "PLAYBACK_MODE" else "REQUEST_PLAYBACK_MODE",
+            positionMs = PlayerManager.playbackPositionFlow.value.coerceAtLeast(0L)
+        ).copy(
+            repeatMode = repeatMode,
+            shuffleEnabled = shuffleEnabled
+        )
+    }
 
     fun buildHeartbeatEvent(
         state: String,
@@ -845,7 +864,9 @@ class ListenTogetherSessionManager(
             track = shareableTrack,
             queue = shareableQueue,
             shouldPlay = resolvedState == "playing",
-            state = resolvedState
+            state = resolvedState,
+            repeatMode = PlayerManager.repeatModeFlow.value,
+            shuffleEnabled = PlayerManager.shuffleModeFlow.value
         )
     }
 
@@ -1326,6 +1347,10 @@ class ListenTogetherSessionManager(
 
             "PLAY" -> if (isCurrentUserController()) buildPlayEvent(positionMs) else buildRequestPlayEvent(positionMs)
             "PAUSE" -> if (isCurrentUserController()) buildPauseEvent(positionMs) else buildRequestPauseEvent(positionMs)
+            "PLAYBACK_MODE" -> buildPlaybackModeEvent(
+                repeatMode = command.repeatMode ?: PlayerManager.repeatModeFlow.value,
+                shuffleEnabled = command.shuffleEnabled ?: PlayerManager.shuffleModeFlow.value
+            )
             "TRACK_FINISHED" -> buildTrackFinishedEvent(command, queue, currentSong, positionMs)
             "SEEK" -> {
                 val (shareableQueue, resolvedCurrentIndex) = queue.toShareableQueueSnapshot(
@@ -1364,6 +1389,8 @@ class ListenTogetherSessionManager(
             queue = queue,
             shouldPlay = message.shouldPlay,
             state = message.stateName,
+            repeatMode = message.repeatMode,
+            shuffleEnabled = message.shuffleEnabled,
             requestTrackStableKey = message.requestTrackStableKey
         )
     }
@@ -1452,7 +1479,9 @@ class ListenTogetherSessionManager(
             playback = currentState.playback.copy(
                 state = nextPlaybackState,
                 basePositionMs = (committedEvent.positionMs ?: message.expectedPositionMs ?: 0L).coerceAtLeast(0L),
-                baseTimestampMs = System.currentTimeMillis()
+                baseTimestampMs = System.currentTimeMillis(),
+                repeatMode = committedEvent.repeatMode ?: currentState.playback.repeatMode,
+                shuffleEnabled = committedEvent.shuffleEnabled ?: currentState.playback.shuffleEnabled
             )
         )
         commitRoomState(
@@ -1641,7 +1670,13 @@ class ListenTogetherSessionManager(
     private fun retryPendingMemberControlRequestIfNeeded() {
         val pending = pendingMemberControlRequest ?: return
         val nowElapsedMs = SystemClock.elapsedRealtime()
-        if (isPendingMemberControlSatisfied(pending.event, _roomState.value)) {
+        if (
+            isListenTogetherPendingMemberControlSatisfied(
+                event = pending.event,
+                state = _roomState.value,
+                seekSatisfiedDriftMs = PENDING_MEMBER_SEEK_SATISFIED_DRIFT_MS
+            )
+        ) {
             NPLogger.d(TAG, "retryPendingMemberControlRequestIfNeeded(): request satisfied, type=${pending.event.type}")
             pendingMemberControlRequest = null
             return
@@ -1674,33 +1709,6 @@ class ListenTogetherSessionManager(
             "retryPendingMemberControlRequestIfNeeded(): retry type=${retryEvent.type}, attempt=${pending.attempts + 1}"
         )
         sendControlEventPureWebSocket(retryEvent, "pending_member_control_retry")
-    }
-
-    private fun isPendingMemberControlSatisfied(
-        event: ListenTogetherEvent,
-        state: ListenTogetherRoomState?
-    ): Boolean {
-        state ?: return false
-        val requestedType = event.type.removePrefix("REQUEST_")
-        return when (requestedType) {
-            "PLAY" -> state.playback.state == "playing"
-            "PAUSE" -> state.playback.state == "paused"
-            "SEEK" -> {
-                val requestedPositionMs = event.positionMs ?: return false
-                isListenTogetherSeekControlSatisfied(
-                    playback = state.playback,
-                    requestedPositionMs = requestedPositionMs,
-                    satisfiedDriftMs = PENDING_MEMBER_SEEK_SATISFIED_DRIFT_MS
-                )
-            }
-            "SET_TRACK" -> {
-                val requestedStableKey = event.track?.stableKey
-                    ?: event.queue?.getOrNull(event.currentIndex ?: -1)?.stableKey
-                    ?: return false
-                state.currentStableKey() == requestedStableKey
-            }
-            else -> false
-        }
     }
 
     private suspend fun refreshListenerRoomStateIfDue(
@@ -2677,11 +2685,13 @@ class ListenTogetherSessionManager(
             "PLAY",
             "PAUSE",
             "SEEK",
+            "PLAYBACK_MODE",
             "SET_TRACK",
             "SET_QUEUE",
             "REQUEST_PLAY",
             "REQUEST_PAUSE",
             "REQUEST_SEEK",
+            "REQUEST_PLAYBACK_MODE",
             "REQUEST_SET_TRACK"
         )
         private val PASSIVE_POSITION_UPDATE_TYPES = setOf(
@@ -2699,12 +2709,14 @@ class ListenTogetherSessionManager(
             "PREVIOUS",
             "PLAY",
             "PAUSE",
+            "PLAYBACK_MODE",
             "SEEK"
         )
         private val REQUEST_CONTROL_EVENT_TYPES = setOf(
             "REQUEST_PLAY",
             "REQUEST_PAUSE",
             "REQUEST_SEEK",
+            "REQUEST_PLAYBACK_MODE",
             "REQUEST_SET_TRACK"
         )
         private val TRACK_BOUND_REQUEST_CONTROL_EVENT_TYPES = setOf(

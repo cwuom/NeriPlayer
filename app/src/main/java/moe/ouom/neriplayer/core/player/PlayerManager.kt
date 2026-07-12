@@ -1428,6 +1428,8 @@ object PlayerManager {
         currentIndex: Int? = null,
         positionMs: Long? = null,
         shouldPlay: Boolean? = null,
+        repeatMode: Int? = null,
+        shuffleEnabled: Boolean? = null,
         force: Boolean = false
     ) {
         if (source != PlaybackCommandSource.LOCAL) return
@@ -1439,6 +1441,8 @@ object PlayerManager {
                 currentIndex = currentIndex,
                 positionMs = positionMs,
                 shouldPlay = shouldPlay,
+                repeatMode = repeatMode,
+                shuffleEnabled = shuffleEnabled,
                 force = force
             )
         )
@@ -1797,11 +1801,20 @@ object PlayerManager {
     fun previous(commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL) =
         this.previousImpl(commandSource)
 
-    fun cycleRepeatMode() = this.cycleRepeatModeImpl()
+    fun cycleRepeatMode(commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL) =
+        this.cycleRepeatModeImpl(commandSource)
 
     fun release() = releaseImpl()
 
-    fun setShuffle(enabled: Boolean) = this.setShuffleImpl(enabled)
+    fun setShuffle(
+        enabled: Boolean,
+        commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
+    ) = this.setShuffleImpl(enabled, commandSource)
+
+    fun applyListenTogetherPlaybackMode(
+        repeatMode: Int,
+        shuffleEnabled: Boolean
+    ) = this.applyListenTogetherPlaybackModeImpl(repeatMode, shuffleEnabled)
 
     internal fun stopProgressUpdates() = this.stopProgressUpdatesImpl()
 

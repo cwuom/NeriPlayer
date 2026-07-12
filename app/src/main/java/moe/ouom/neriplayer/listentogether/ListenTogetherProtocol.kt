@@ -48,7 +48,9 @@ data class ListenTogetherPlaybackState(
     val state: String = "paused",
     val basePositionMs: Long = 0L,
     val baseTimestampMs: Long = 0L,
-    val playbackRate: Double = 1.0
+    val playbackRate: Double = 1.0,
+    val repeatMode: Int = 0,
+    val shuffleEnabled: Boolean = false
 )
 
 @Serializable
@@ -87,7 +89,9 @@ data class ListenTogetherInitialSnapshot(
     val track: ListenTogetherTrack? = null,
     val settings: ListenTogetherRoomSettings = ListenTogetherRoomSettings(),
     val isPlaying: Boolean = false,
-    val positionMs: Long = 0L
+    val positionMs: Long = 0L,
+    val repeatMode: Int = 0,
+    val shuffleEnabled: Boolean = false
 )
 
 @Serializable
@@ -157,6 +161,8 @@ data class ListenTogetherEvent(
     val roomSettings: ListenTogetherRoomSettings? = null,
     val shouldPlay: Boolean? = null,
     val state: String? = null,
+    val repeatMode: Int? = null,
+    val shuffleEnabled: Boolean? = null,
     val requestTrackStableKey: String? = null,
     val finishedTrackStableKey: String? = null
 )
@@ -186,6 +192,8 @@ data class ListenTogetherSocketEnvelope(
     val requestTrackStableKey: String? = null,
     val shouldPlay: Boolean? = null,
     val stateName: String? = null,
+    val repeatMode: Int? = null,
+    val shuffleEnabled: Boolean? = null,
     val clientTimeMs: Long? = null,
     val requestSequence: Long? = null
 )

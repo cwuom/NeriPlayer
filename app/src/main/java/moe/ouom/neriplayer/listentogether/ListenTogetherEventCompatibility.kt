@@ -67,6 +67,40 @@ internal fun shouldSuppressListenerControlWhileAwaitingStream(
     return !localTrackHasDirectStream
 }
 
+internal fun isListenTogetherPendingMemberControlSatisfied(
+    event: ListenTogetherEvent,
+    state: ListenTogetherRoomState?,
+    seekSatisfiedDriftMs: Long = 1_500L
+): Boolean {
+    state ?: return false
+    val requestedType = event.type.removePrefix("REQUEST_")
+    return when (requestedType) {
+        "PLAY" -> state.playback.state == "playing"
+        "PAUSE" -> state.playback.state == "paused"
+        "SEEK" -> {
+            val requestedPositionMs = event.positionMs ?: return false
+            isListenTogetherSeekControlSatisfied(
+                playback = state.playback,
+                requestedPositionMs = requestedPositionMs,
+                satisfiedDriftMs = seekSatisfiedDriftMs
+            )
+        }
+        "PLAYBACK_MODE" -> {
+            val requestedRepeatMode = event.repeatMode
+            val requestedShuffleEnabled = event.shuffleEnabled
+            (requestedRepeatMode == null || state.playback.repeatMode == requestedRepeatMode) &&
+                (requestedShuffleEnabled == null || state.playback.shuffleEnabled == requestedShuffleEnabled)
+        }
+        "SET_TRACK" -> {
+            val requestedStableKey = event.track?.stableKey
+                ?: event.queue?.getOrNull(event.currentIndex ?: -1)?.stableKey
+                ?: return false
+            state.currentStableKeyForCompatibility() == requestedStableKey
+        }
+        else -> false
+    }
+}
+
 private val TRACK_BOUND_MEMBER_CONTROL_TYPES = setOf(
     "REQUEST_PLAY",
     "REQUEST_PAUSE",
@@ -77,6 +111,10 @@ private val STREAM_DEPENDENT_MEMBER_CONTROL_TYPES = setOf(
     "REQUEST_PAUSE",
     "REQUEST_SEEK"
 )
+
+private fun ListenTogetherRoomState.currentStableKeyForCompatibility(): String? {
+    return track?.stableKey ?: queue.getOrNull(currentIndex)?.stableKey
+}
 
 internal fun isUnsupportedTrackFinishedEventError(errorMessage: String?): Boolean {
     val normalized = errorMessage

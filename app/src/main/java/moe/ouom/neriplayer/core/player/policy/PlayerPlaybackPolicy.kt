@@ -21,6 +21,8 @@ data class PlaybackCommand(
     val currentIndex: Int? = null,
     val positionMs: Long? = null,
     val shouldPlay: Boolean? = null,
+    val repeatMode: Int? = null,
+    val shuffleEnabled: Boolean? = null,
     val force: Boolean = false
 )
 
