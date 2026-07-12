@@ -1,6 +1,9 @@
-package moe.ouom.neriplayer.core.download.storage
+package moe.ouom.neriplayer.core.download.storage.queue
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.CANCELLED_DOWNLOAD_KEYS_FILE_NAME
+import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
+import moe.ouom.neriplayer.core.download.storage.PENDING_DOWNLOAD_QUEUE_FILE_NAME
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
