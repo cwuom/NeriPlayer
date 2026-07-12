@@ -1,10 +1,16 @@
 @file:Suppress("UnstableApiUsage")
 
 import com.android.build.gradle.BaseExtension
+import org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension
 
 plugins {
     id("com.android.base")
-    kotlin("android")
+}
+
+pluginManager.apply {
+    if (!plugins.hasPlugin("org.jetbrains.kotlin.android")) {
+        apply("org.jetbrains.kotlin.android")
+    }
 }
 
 extensions.findByType(BaseExtension::class)?.run {
@@ -20,9 +26,8 @@ extensions.findByType(BaseExtension::class)?.run {
         sourceCompatibility = Version.java
         targetCompatibility = Version.java
     }
-
 }
 
-kotlin {
+extensions.configure<KotlinAndroidProjectExtension> {
     jvmToolchain(Version.java.toString().toInt())
 }
