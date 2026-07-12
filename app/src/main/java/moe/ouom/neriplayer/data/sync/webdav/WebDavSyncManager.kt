@@ -34,6 +34,7 @@ import moe.ouom.neriplayer.data.history.PlayedEntry
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -792,7 +793,8 @@ class WebDavSyncManager private constructor(context: Context) {
                     name = systemDescriptor?.currentName ?: syncPlaylist.name,
                     songs = mergeLocalOnlySongs(syncedSongs, preservedLocalSongs),
                     modifiedAt = syncPlaylist.modifiedAt,
-                    customCoverUrl = currentPlaylists[normalizedId]?.customCoverUrl
+                    customCoverUrl = currentPlaylists[normalizedId]?.customCoverUrl,
+                    songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                 )
             }
         playlistRepo.updatePlaylists(mergedLocalPlaylists)

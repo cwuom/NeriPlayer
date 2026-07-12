@@ -69,32 +69,32 @@ class LocalPlaylistDetailSelectionPolicyTest {
     }
 
     @Test
-    fun `snapshot reversed list survives source mutations`() {
+    fun `snapshot display order list survives source mutations`() {
         val source = mutableStateListOf("first", "second", "third")
 
-        val reversedSnapshot = snapshotReversedList(source)
+        val displayOrderSnapshot = snapshotDisplayOrderList(source)
         source.clear()
         source.addAll(listOf("fourth", "fifth"))
 
-        assertEquals(listOf("third", "second", "first"), reversedSnapshot)
-        assertEquals(listOf("fifth", "fourth"), snapshotReversedList(source))
+        assertEquals(listOf("first", "second", "third"), displayOrderSnapshot)
+        assertEquals(listOf("fourth", "fifth"), snapshotDisplayOrderList(source))
     }
 
     @Test
     fun `exporting selected local songs keeps target display order`() {
         val storedSongs = listOf(
-            song(id = 1, name = "oldest"),
+            song(id = 1, name = "newest"),
             song(id = 2, name = "middle"),
-            song(id = 3, name = "newest")
+            song(id = 3, name = "oldest")
         )
-        val selectedKeys = snapshotReversedList(storedSongs)
+        val selectedKeys = snapshotDisplayOrderList(storedSongs)
             .take(2)
             .mapTo(mutableSetOf()) { it.stableKey() }
 
         val exportedSongs = selectedStoredLocalSongsForExport(storedSongs, selectedKeys)
 
-        assertEquals(listOf("middle", "newest"), exportedSongs.map { it.name })
-        assertEquals(listOf("newest", "middle"), snapshotReversedList(exportedSongs).map { it.name })
+        assertEquals(listOf("newest", "middle"), exportedSongs.map { it.name })
+        assertEquals(listOf("newest", "middle"), snapshotDisplayOrderList(exportedSongs).map { it.name })
     }
 
     private fun song(id: Long, name: String): SongItem {

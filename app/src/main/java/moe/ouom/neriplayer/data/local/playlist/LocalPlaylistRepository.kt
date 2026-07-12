@@ -41,6 +41,7 @@ import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseLikeSyncPlan
 import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseLikeSyncResult
@@ -146,12 +147,72 @@ class LocalPlaylistRepository private constructor(
             emptyList()
         }
 
-        val normalized = normalizePlaylists(loaded)
+        val normalized = normalizePlaylistOrder(loaded)
         _playlists.value = normalized
         _playlistCount.value = normalized.size
         if (normalized != loaded) {
             saveToDisk(normalized, triggerSync = false)
         }
+    }
+
+    private fun migratePlaylistSongOrder(playlists: List<LocalPlaylist>): List<LocalPlaylist> {
+        if (playlists.isEmpty()) return playlists
+
+        var changed = false
+        val migrated = playlists.map { playlist ->
+            if (playlist.songOrderVersion >= DISPLAY_ORDER_SONG_ORDER_VERSION) {
+                val displaySongs = sortSongsByAddedAtForDisplay(playlist.songs)
+                if (displaySongs == playlist.songs) {
+                    playlist
+                } else {
+                    changed = true
+                    playlist.copy(songs = displaySongs)
+                }
+            } else {
+                changed = true
+                playlist.copy(
+                    songs = migrateLegacySongsToDisplayOrder(playlist.songs, playlist.modifiedAt),
+                    songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
+                )
+            }
+        }
+        return if (changed) migrated else playlists
+    }
+
+    private fun normalizePlaylistOrder(playlists: List<LocalPlaylist>): List<LocalPlaylist> {
+        val migrated = migratePlaylistSongOrder(playlists)
+        return migratePlaylistSongOrder(normalizePlaylists(migrated))
+    }
+
+    private fun migrateLegacySongsToDisplayOrder(
+        songs: List<SongItem>,
+        playlistModifiedAt: Long
+    ): MutableList<SongItem> {
+        if (songs.isEmpty()) return mutableListOf()
+
+        val newestAddedAt = maxOf(
+            System.currentTimeMillis(),
+            playlistModifiedAt,
+            songs.maxOfOrNull { it.addedAt } ?: 0L
+        )
+        return songs
+            .asReversed()
+            .mapIndexed { index, song ->
+                val displayAddedAt = (newestAddedAt - index).coerceAtLeast(1L)
+                song.copy(addedAt = displayAddedAt)
+            }
+            .toMutableList()
+    }
+
+    private fun sortSongsByAddedAtForDisplay(songs: List<SongItem>): MutableList<SongItem> {
+        if (songs.size < 2) return songs.toMutableList()
+        return songs
+            .withIndex()
+            .sortedWith(
+                compareByDescending<IndexedValue<SongItem>> { it.value.addedAt }
+                    .thenBy { it.index }
+            )
+            .mapTo(mutableListOf()) { it.value }
     }
 
     private fun saveToDisk(
@@ -223,7 +284,7 @@ class LocalPlaylistRepository private constructor(
     }
 
     private fun publishLocked(playlists: List<LocalPlaylist>, triggerSync: Boolean = true) {
-        val normalized = normalizePlaylists(playlists)
+        val normalized = normalizePlaylistOrder(playlists)
         if (normalized == _playlists.value) {
             return
         }
@@ -272,7 +333,30 @@ class LocalPlaylistRepository private constructor(
     private fun songSet(songs: List<SongItem>): Set<SongIdentity> = songs.map { it.identity() }.toSet()
 
     private fun stampSongsForPlaylistInsert(songs: List<SongItem>, addedAt: Long): List<SongItem> {
-        return songs.map { it.copy(addedAt = addedAt) }
+        return songs.mapIndexed { index, song ->
+            song.copy(addedAt = (addedAt - index).coerceAtLeast(1L))
+        }
+    }
+
+    private fun nextPlaylistSongAddedAt(playlist: LocalPlaylist, now: Long): Long {
+        val latestExistingAddedAt = playlist.songs.maxOfOrNull { it.addedAt } ?: 0L
+        return maxOf(now, latestExistingAddedAt + 1L)
+    }
+
+    private fun stampSongsForDisplayOrder(
+        songs: List<SongItem>,
+        newestAt: Long
+    ): MutableList<SongItem> {
+        return songs.mapIndexedTo(mutableListOf()) { index, song ->
+            song.copy(addedAt = (newestAt - index).coerceAtLeast(1L))
+        }
+    }
+
+    private fun mergeNewSongsFirst(
+        existingSongs: List<SongItem>,
+        newSongs: List<SongItem>
+    ): MutableList<SongItem> {
+        return (newSongs + existingSongs).toMutableList()
     }
 
     private fun recordPlaylistSongDeletions(
@@ -436,7 +520,8 @@ class LocalPlaylistRepository private constructor(
                     LocalPlaylist(
                         id = nextPlaylistId(list),
                         name = sanitizePlaylistName(name),
-                        modifiedAt = System.currentTimeMillis()
+                        modifiedAt = System.currentTimeMillis(),
+                        songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                     )
                 )
                 publishLocked(list)
@@ -483,7 +568,8 @@ class LocalPlaylistRepository private constructor(
                     id = nextPlaylistId(list),
                     name = sanitizePlaylistName(name),
                     songs = distinctSongs,
-                    modifiedAt = now
+                    modifiedAt = now,
+                    songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                 )
                 list.add(playlist)
                 publishLocked(list)
@@ -495,10 +581,7 @@ class LocalPlaylistRepository private constructor(
     suspend fun addToFavorites(song: SongItem) {
         withContext(Dispatchers.IO) {
             val now = System.currentTimeMillis()
-            val hydratedSong = stampSongsForPlaylistInsert(
-                songs = hydrateLocalSongsForPersistence(listOf(song)),
-                addedAt = now
-            ).first()
+            val hydratedSong = hydrateLocalSongsForPersistence(listOf(song)).first()
             commitPlaylistMutation {
                 val list = _playlists.value.toMutableList()
                 val index = list.indexOfFirst { FavoritesPlaylist.isSystemPlaylist(it, context) }
@@ -515,10 +598,15 @@ class LocalPlaylistRepository private constructor(
                     return@commitPlaylistMutation
                 }
 
+                val stampedSong = stampSongsForPlaylistInsert(
+                    songs = listOf(hydratedSong),
+                    addedAt = nextPlaylistSongAddedAt(favorites, now)
+                ).first()
                 clearPlaylistSongDeletions(favorites.id, listOf(hydratedSong))
                 list[index] = favorites.copy(
-                    songs = (favorites.songs + hydratedSong).toMutableList(),
-                    modifiedAt = now
+                    songs = mergeNewSongsFirst(favorites.songs, listOf(stampedSong)),
+                    modifiedAt = now,
+                    songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                 )
                 publishLocked(list)
             }
@@ -541,7 +629,8 @@ class LocalPlaylistRepository private constructor(
                 recordPlaylistSongDeletions(favorites.id, removedSongs, deletedAt)
                 list[index] = favorites.copy(
                     songs = updatedSongs,
-                    modifiedAt = deletedAt
+                    modifiedAt = deletedAt,
+                    songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                 )
                 publishLocked(list)
             }
@@ -580,7 +669,11 @@ class LocalPlaylistRepository private constructor(
                     } else {
                         val deletedAt = System.currentTimeMillis()
                         recordPlaylistSongDeletions(playlist.id, removedSongs, deletedAt)
-                        playlist.copy(songs = filtered, modifiedAt = deletedAt)
+                        playlist.copy(
+                            songs = filtered,
+                            modifiedAt = deletedAt,
+                            songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
+                        )
                     }
                 }
                 publishLocked(updated)
@@ -601,7 +694,8 @@ class LocalPlaylistRepository private constructor(
                     recordPlaylistSongDeletions(playlist.id, playlist.songs, deletedAt)
                     playlist.copy(
                         songs = mutableListOf(),
-                        modifiedAt = deletedAt
+                        modifiedAt = deletedAt,
+                        songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                     )
                 }
                 if (!changed) return@commitPlaylistMutation
@@ -623,7 +717,11 @@ class LocalPlaylistRepository private constructor(
                     }
                     val deletedAt = System.currentTimeMillis()
                     recordPlaylistSongDeletions(playlist.id, removedSongs, deletedAt)
-                    playlist.copy(songs = filtered, modifiedAt = deletedAt)
+                    playlist.copy(
+                        songs = filtered,
+                        modifiedAt = deletedAt,
+                        songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
+                    )
                 }
                 publishLocked(updated)
             }
@@ -663,7 +761,12 @@ class LocalPlaylistRepository private constructor(
                         val song = removeAt(fromIndex)
                         add(toIndex, song)
                     }
-                    playlist.copy(songs = songs, modifiedAt = System.currentTimeMillis())
+                    val modifiedAt = System.currentTimeMillis()
+                    playlist.copy(
+                        songs = stampSongsForDisplayOrder(songs, modifiedAt),
+                        modifiedAt = modifiedAt,
+                        songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
+                    )
                 }
                 publishLocked(updated)
             }
@@ -682,7 +785,12 @@ class LocalPlaylistRepository private constructor(
                             ordered += song
                         }
                     }
-                    playlist.copy(songs = ordered, modifiedAt = System.currentTimeMillis())
+                    val modifiedAt = System.currentTimeMillis()
+                    playlist.copy(
+                        songs = stampSongsForDisplayOrder(ordered, modifiedAt),
+                        modifiedAt = modifiedAt,
+                        songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
+                    )
                 }
                 publishLocked(updated)
             }
@@ -731,10 +839,7 @@ class LocalPlaylistRepository private constructor(
         return withContext(Dispatchers.IO) {
             if (songs.isEmpty()) return@withContext 0
             val now = System.currentTimeMillis()
-            val hydratedSongs = stampSongsForPlaylistInsert(
-                songs = hydrateLocalSongsForPersistence(songs, hydrateLocalMetadata),
-                addedAt = now
-            )
+            val hydratedSongs = hydrateLocalSongsForPersistence(songs, hydrateLocalMetadata)
             commitPlaylistMutation {
                 addStampedSongsToPlaylistLocked(
                     playlistId = playlistId,
@@ -763,19 +868,24 @@ class LocalPlaylistRepository private constructor(
                 return@map playlist
             }
 
-            val toAdd = filterNewSongs(
+            val newSongs = filterNewSongs(
                 existingSongs = playlist.songs,
                 candidates = songs,
                 includeLocalMetadataFallback = includeLocalMetadataFallback
             )
-            if (toAdd.isEmpty()) {
+            if (newSongs.isEmpty()) {
                 playlist
             } else {
+                val toAdd = stampSongsForPlaylistInsert(
+                    songs = newSongs,
+                    addedAt = nextPlaylistSongAddedAt(playlist, now)
+                )
                 addedCount += toAdd.size
                 clearPlaylistSongDeletions(playlist.id, toAdd)
                 playlist.copy(
-                    songs = (playlist.songs + toAdd).toMutableList(),
-                    modifiedAt = now
+                    songs = mergeNewSongsFirst(playlist.songs, toAdd),
+                    modifiedAt = now,
+                    songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                 )
             }
         }
@@ -812,7 +922,8 @@ class LocalPlaylistRepository private constructor(
                     } else {
                         playlist.copy(
                             songs = normalizedSongs,
-                            modifiedAt = System.currentTimeMillis()
+                            modifiedAt = System.currentTimeMillis(),
+                            songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                         )
                     }
                 }
@@ -847,10 +958,7 @@ class LocalPlaylistRepository private constructor(
         return withContext(Dispatchers.IO) {
             if (songs.isEmpty()) return@withContext 0
             val now = System.currentTimeMillis()
-            val hydratedSongs = stampSongsForPlaylistInsert(
-                songs = hydrateLocalSongsForPersistence(songs, hydrateLocalMetadata),
-                addedAt = now
-            )
+            val hydratedSongs = hydrateLocalSongsForPersistence(songs, hydrateLocalMetadata)
             commitPlaylistMutation {
                 var addedCount = 0
                 val updated = _playlists.value.map { playlist ->
@@ -858,18 +966,23 @@ class LocalPlaylistRepository private constructor(
                         return@map playlist
                     }
 
-                    val toAdd = filterNewSongs(
+                    val newSongs = filterNewSongs(
                         existingSongs = playlist.songs,
                         candidates = hydratedSongs,
                         includeLocalMetadataFallback = true
                     )
-                    if (toAdd.isEmpty()) {
+                    if (newSongs.isEmpty()) {
                         playlist
                     } else {
+                        val toAdd = stampSongsForPlaylistInsert(
+                            songs = newSongs,
+                            addedAt = nextPlaylistSongAddedAt(playlist, now)
+                        )
                         addedCount += toAdd.size
                         playlist.copy(
-                            songs = (playlist.songs + toAdd).toMutableList(),
-                            modifiedAt = now
+                            songs = mergeNewSongsFirst(playlist.songs, toAdd),
+                            modifiedAt = now,
+                            songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                         )
                     }
                 }
@@ -980,7 +1093,10 @@ class LocalPlaylistRepository private constructor(
                         val songs = playlist.songs.toMutableList()
                         songs[songIndex] = mergedSongInfo
                         changed = true
-                        playlist.copy(songs = songs)
+                        playlist.copy(
+                            songs = songs,
+                            songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
+                        )
                     }
                 }
                 if (!changed) {
@@ -1019,7 +1135,10 @@ class LocalPlaylistRepository private constructor(
                 }.toMutableList()
 
                 if (playlistChanged) {
-                    playlist.copy(songs = refreshedSongs)
+                    playlist.copy(
+                        songs = refreshedSongs,
+                        songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
+                    )
                 } else {
                     playlist
                 }
@@ -1114,7 +1233,10 @@ class LocalPlaylistRepository private constructor(
                     if (!playlistChanged) {
                         playlist
                     } else {
-                        playlist.copy(songs = updatedSongs.toMutableList())
+                        playlist.copy(
+                            songs = updatedSongs.toMutableList(),
+                            songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
+                        )
                     }
                 }
                 if (changed) {

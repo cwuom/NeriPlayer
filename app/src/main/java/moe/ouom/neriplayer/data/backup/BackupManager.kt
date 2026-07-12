@@ -33,6 +33,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.config.LimitedTextReader
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.identity
@@ -208,7 +209,8 @@ class BackupManager(private val context: Context) {
                         val newPlaylist = LocalPlaylist(
                             id = newPlaylistId,
                             name = importedPlaylistName,
-                            songs = syncPlaylist.songs.map { it.toSongItem() }.toMutableList()
+                            songs = syncPlaylist.songs.map { it.toSongItem() }.toMutableList(),
+                            songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                         )
 
                         currentPlaylists.add(newPlaylist)
@@ -272,8 +274,11 @@ class BackupManager(private val context: Context) {
             )
         }
         
-        val mergedSongs = (existing.songs + newSongs).toMutableList()
-        val mergedPlaylist = existing.copy(songs = mergedSongs)
+        val mergedSongs = (newSongs + existing.songs).toMutableList()
+        val mergedPlaylist = existing.copy(
+            songs = mergedSongs,
+            songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
+        )
         
         return MergeResult(
             mergedPlaylist = mergedPlaylist,

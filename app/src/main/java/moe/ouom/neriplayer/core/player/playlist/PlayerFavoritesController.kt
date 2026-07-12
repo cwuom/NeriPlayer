@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.core.player.playlist
  */
 
 import android.app.Application
+import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.sameIdentityAs
@@ -57,7 +58,8 @@ internal object PlayerFavoritesController {
                 name = playlist.name,
                 songs = playlist.songs.toMutableList(),
                 modifiedAt = playlist.modifiedAt,
-                customCoverUrl = playlist.customCoverUrl
+                customCoverUrl = playlist.customCoverUrl,
+                songOrderVersion = playlist.songOrderVersion
             )
         }.toMutableList()
 
@@ -65,7 +67,7 @@ internal object PlayerFavoritesController {
             val favorites = copiedPlaylists[favoriteIndex]
             when {
                 add && song != null && favorites.songs.none { it.sameIdentityAs(song) } -> {
-                    favorites.songs.add(song)
+                    favorites.songs.add(0, song)
                 }
                 !add && song != null -> {
                     favorites.songs.removeAll { it.sameIdentityAs(song) }
@@ -75,7 +77,8 @@ internal object PlayerFavoritesController {
             copiedPlaylists += LocalPlaylist(
                 id = FavoritesPlaylist.SYSTEM_ID,
                 name = favoritePlaylistName,
-                songs = mutableListOf(song)
+                songs = mutableListOf(song),
+                songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
             )
         }
 
@@ -89,7 +92,8 @@ internal object PlayerFavoritesController {
                 name = playlist.name,
                 songs = playlist.songs.toMutableList(),
                 modifiedAt = playlist.modifiedAt,
-                customCoverUrl = playlist.customCoverUrl
+                customCoverUrl = playlist.customCoverUrl,
+                songOrderVersion = playlist.songOrderVersion
             )
         }
     }

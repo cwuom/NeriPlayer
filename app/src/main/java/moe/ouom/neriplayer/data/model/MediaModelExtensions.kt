@@ -64,7 +64,7 @@ fun SongItem.displayName(): String = customName ?: name
 fun SongItem.displayArtist(): String = customArtist ?: artist
 
 fun LocalPlaylist.displayCoverUrl(): String? {
-    return customCoverUrl ?: songs.asReversed().firstNotNullOfOrNull { song ->
+    return customCoverUrl ?: songs.firstNotNullOfOrNull { song ->
         song.displayCoverUrl()?.takeIf { it.isNotBlank() }
     }
 }
@@ -73,7 +73,7 @@ fun LocalPlaylist.displayCoverUrl(
     context: Context,
     resolveLocalMetadataFallback: Boolean = true
 ): String? {
-    return customCoverUrl ?: songs.asReversed().firstNotNullOfOrNull { song ->
+    return customCoverUrl ?: songs.firstNotNullOfOrNull { song ->
         song.displayCoverUrl(
             context = context,
             resolveLocalMetadataFallback = resolveLocalMetadataFallback

@@ -30,5 +30,8 @@ data class LocalPlaylist(
     val name: String,
     val songs: MutableList<SongItem> = mutableListOf(),
     val modifiedAt: Long = System.currentTimeMillis(),
-    val customCoverUrl: String? = null
+    val customCoverUrl: String? = null,
+    val songOrderVersion: Int = DISPLAY_ORDER_SONG_ORDER_VERSION
 )
+
+const val DISPLAY_ORDER_SONG_ORDER_VERSION = 1

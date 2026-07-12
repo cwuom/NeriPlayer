@@ -600,7 +600,6 @@ fun YouTubeMusicPlaylistDetailScreen(
                 onDismissRequest = { showExportSheet = false },
                 onCreateAndExport = { name ->
                     val songs = ui.tracks
-                        .asReversed()
                         .filter { selectedKeys.contains(it.stableKey()) }
                     scope.launch {
                         repo.createPlaylistWithSongs(name, songs)
@@ -608,7 +607,6 @@ fun YouTubeMusicPlaylistDetailScreen(
                 },
                 onExportToPlaylist = { playlist ->
                     val songs = ui.tracks
-                        .asReversed()
                         .filter { selectedKeys.contains(it.stableKey()) }
                     scope.launch {
                         repo.addSongsToPlaylist(playlist.id, songs)

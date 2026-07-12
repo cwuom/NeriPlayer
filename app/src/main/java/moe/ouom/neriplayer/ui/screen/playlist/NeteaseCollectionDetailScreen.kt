@@ -701,7 +701,6 @@ fun DetailScreen(
                         onDismissRequest = { showExportSheet = false },
                         onCreateAndExport = { name ->
                             val songs = ui.tracks
-                                .asReversed()
                                 .filter { selectedIds.contains(it.id) }
                             scope.launch {
                                 repo.createPlaylistWithSongs(name, songs)
@@ -709,7 +708,6 @@ fun DetailScreen(
                         },
                         onExportToPlaylist = { playlist ->
                             val songs = ui.tracks
-                                .asReversed()
                                 .filter { selectedIds.contains(it.id) }
                             scope.launch {
                                 repo.addSongsToPlaylist(playlist.id, songs)

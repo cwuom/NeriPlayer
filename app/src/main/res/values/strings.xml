@@ -572,6 +572,7 @@
     <string name="search_video">搜索视频</string>
     <string name="search_netease">搜索网易云</string>
     <string name="search_playlist">搜索歌单内歌曲</string>
+    <string name="search_artist_songs">搜索歌手歌曲</string>
     <string name="search_favorite">搜索收藏夹内视频</string>
     <string name="search_result_play_keep_queue">播放（保留队列）</string>
     <string name="search_result_add_to_current_queue">添加到当前播放列表</string>

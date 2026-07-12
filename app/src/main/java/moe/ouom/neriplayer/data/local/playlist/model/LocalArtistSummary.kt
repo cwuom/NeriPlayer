@@ -21,7 +21,7 @@ data class LocalArtistSummary(
         get() = localArtistStableKey(name)
 
     val coverSong: SongItem?
-        get() = songs.lastOrNull()
+        get() = songs.firstOrNull()
 }
 
 fun localArtistStableKey(name: String): String {

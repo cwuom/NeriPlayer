@@ -159,7 +159,6 @@ private fun SongItem.coverResolutionKey(resolveLocalFallback: Boolean): String {
 
 private fun LocalPlaylist.coverResolutionKey(resolveLocalFallback: Boolean): String {
     val recentCoverSignature = songs
-        .asReversed()
         .asSequence()
         .take(12)
         .joinToString("#") { song ->

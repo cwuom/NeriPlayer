@@ -32,6 +32,7 @@ import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylist
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.stableKey
@@ -91,7 +92,8 @@ data class SyncPlaylist(
             id = id,
             name = name,
             songs = songs.map { it.toSongItem() }.toMutableList(),
-            modifiedAt = modifiedAt
+            modifiedAt = modifiedAt,
+            songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
         )
     }
 }

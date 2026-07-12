@@ -183,8 +183,8 @@ import moe.ouom.neriplayer.ui.component.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.component.SongDownloadSubtitle
-import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.util.rememberPlaylistDisplayCoverUrl
+import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailUiState
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalMetadataProcessingState
@@ -252,15 +252,14 @@ internal fun toggleDisplayedSongSelection(
     }
 }
 
-internal fun <T> snapshotReversedList(items: List<T>): List<T> {
-    return items.toList().asReversed()
+internal fun <T> snapshotDisplayOrderList(items: List<T>): List<T> {
+    return items.toList()
 }
 
 internal fun selectedStoredLocalSongsForExport(
     storedSongs: List<SongItem>,
     selectedKeys: Set<String>
 ): List<SongItem> {
-    // 目标歌单也会倒序展示，所以这里保留存储顺序，避免全选新建后看起来反过来
     return storedSongs.filter { it.stableKey() in selectedKeys }
 }
 
@@ -613,7 +612,7 @@ fun LocalPlaylistDetailScreen(
                 )
             }
 
-            // 可变列表保持存储层顺序，UI 读取时用快照倒序展示
+            // 可变列表保持展示顺序，数据层会负责兼容旧版本存储
             val localSongs = remember(playlistId) {
                 mutableStateListOf<SongItem>().also { it.addAll(playlist.songs) }
             }
@@ -678,10 +677,12 @@ fun LocalPlaylistDetailScreen(
                         return@mapNotNull null
                     }
                     existingKeys += candidateKeys
-                    song.copy(addedAt = now)
+                    song
+                }.mapIndexed { index, song ->
+                    song.copy(addedAt = (now - index).coerceAtLeast(1L))
                 }
                 if (additions.isNotEmpty()) {
-                    localSongs.addAll(additions)
+                    localSongs.addAll(0, additions)
                 }
             }
 
@@ -874,7 +875,7 @@ fun LocalPlaylistDetailScreen(
             val hasRestoredScroll = rememberSaveable(playlistId) { mutableStateOf(false) }
             val listState = reorderState.listState
             val baseQueue by remember(localSongs) {
-                derivedStateOf { snapshotReversedList(localSongs) }
+                derivedStateOf { snapshotDisplayOrderList(localSongs) }
             }
             val queueIndexBySongKey by remember(baseQueue) {
                 derivedStateOf {
@@ -885,15 +886,13 @@ fun LocalPlaylistDetailScreen(
                     }
                 }
             }
-            val playlistCover = rememberPlaylistDisplayCoverUrl(
-                playlist = playlist,
+            val displayOrderPlaylistForCover = remember(playlist, baseQueue) {
+                playlist.copy(songs = baseQueue.toMutableList())
+            }
+            val headerCover = rememberPlaylistDisplayCoverUrl(
+                playlist = displayOrderPlaylistForCover,
                 resolveLocalFallback = true
             )
-            val headerCover = playlistCover ?: remember(baseQueue) {
-                baseQueue.firstNotNullOfOrNull { song ->
-                    song.displayCoverUrl()?.takeIf(String::isNotBlank)
-                }
-            }
             val displayedSongs by remember(baseQueue, searchQuery, context) {
                 derivedStateOf {
                     val base = baseQueue
@@ -1376,7 +1375,7 @@ fun LocalPlaylistDetailScreen(
                                 }
                             }
 
-                            // 列表（倒序）
+                            // 列表
                             itemsIndexed(
                                 items = displayedSongs,
                                 key = { _, song -> song.stableKey() },
@@ -1439,7 +1438,7 @@ fun LocalPlaylistDetailScreen(
                                                     )
                                                 } else {
                                                     Text(
-                                                        text = (revIndex + 1).toString(), // 展示顺序编号（倒序）
+                                                        text = (revIndex + 1).toString(),
                                                         style = MaterialTheme.typography.titleSmall,
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                         maxLines = 1,
