@@ -32,6 +32,9 @@ private fun PlayerManager.resolveTrafficAwareQuality(
     source: PlaybackAudioSource,
     defaultQuality: String
 ): String {
+    if (!isApplicationInitialized()) {
+        return defaultQuality
+    }
     val networkType = application.currentTrafficNetworkType()
     if (networkType == TrafficNetworkType.WIFI) {
         return defaultQuality

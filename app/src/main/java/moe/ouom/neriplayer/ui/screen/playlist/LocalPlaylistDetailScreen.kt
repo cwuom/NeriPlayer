@@ -1450,6 +1450,7 @@ fun LocalPlaylistDetailScreen(
                                                         context = itemContext,
                                                         data = displayCoverUrl,
                                                         sizePx = 128,
+                                                        crossfade = false,
                                                         offlineMode = offlineMode
                                                     ),
                                                     contentDescription = null,

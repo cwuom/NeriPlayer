@@ -16,9 +16,20 @@ import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import java.util.LinkedHashMap
 
 @OptIn(ExperimentalCoroutinesApi::class)
 private val coverResolutionDispatcher = Dispatchers.IO.limitedParallelism(2)
+private const val UI_COVER_MEMORY_CACHE_LIMIT = 2048
+private val resolvedCoverMemoryCache = object : LinkedHashMap<String, String>(
+    UI_COVER_MEMORY_CACHE_LIMIT,
+    0.75f,
+    true
+) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>): Boolean {
+        return size > UI_COVER_MEMORY_CACHE_LIMIT
+    }
+}
 
 @Composable
 fun rememberSongDisplayCoverUrl(
@@ -32,7 +43,10 @@ fun rememberSongDisplayCoverUrl(
         song?.coverResolutionKey(resolveLocalFallback)
     }
     var coverUrl by remember(songKey, downloadPresenceVersion) {
-        mutableStateOf(song?.displayCoverUrl(context, resolveLocalFallback))
+        mutableStateOf(
+            cachedResolvedCover(songKey)
+                ?: song?.displayCoverUrl(context, resolveLocalFallback)
+        )
     }
 
     LaunchedEffect(songKey, appContext, downloadPresenceVersion) {
@@ -41,8 +55,16 @@ fun rememberSongDisplayCoverUrl(
             return@LaunchedEffect
         }
 
+        cachedResolvedCover(songKey)?.let { cachedCover ->
+            coverUrl = cachedCover
+        }
         val immediateCover = song.displayCoverUrl(context, resolveLocalFallback)
-        coverUrl = immediateCover
+        if (!immediateCover.isNullOrBlank()) {
+            rememberResolvedCover(songKey, immediateCover)
+            coverUrl = immediateCover
+        } else if (!resolveLocalFallback && cachedResolvedCover(songKey).isNullOrBlank()) {
+            coverUrl = null
+        }
         if (!resolveLocalFallback) {
             return@LaunchedEffect
         }
@@ -51,8 +73,9 @@ fun rememberSongDisplayCoverUrl(
             song.displayCoverUrl(appContext, resolveLocalFallback)
         }
         if (!resolvedCover.isNullOrBlank()) {
+            rememberResolvedCover(songKey, resolvedCover)
             coverUrl = resolvedCover
-        } else if (immediateCover.isNullOrBlank()) {
+        } else if (immediateCover.isNullOrBlank() && cachedResolvedCover(songKey).isNullOrBlank()) {
             coverUrl = null
         }
     }
@@ -72,7 +95,7 @@ fun rememberPlaylistDisplayCoverUrl(
         playlist?.coverResolutionKey(resolveLocalFallback)
     }
     var coverUrl by remember(playlistKey, downloadPresenceVersion) {
-        mutableStateOf(playlist?.displayCoverUrl())
+        mutableStateOf(cachedResolvedCover(playlistKey) ?: playlist?.displayCoverUrl())
     }
 
     LaunchedEffect(playlistKey, appContext, downloadPresenceVersion, resolveLocalFallback) {
@@ -82,7 +105,15 @@ fun rememberPlaylistDisplayCoverUrl(
         }
 
         val immediateCover = playlist.displayCoverUrl()
-        coverUrl = immediateCover
+        cachedResolvedCover(playlistKey)?.let { cachedCover ->
+            coverUrl = cachedCover
+        }
+        if (!immediateCover.isNullOrBlank()) {
+            rememberResolvedCover(playlistKey, immediateCover)
+            coverUrl = immediateCover
+        } else if (!resolveLocalFallback && cachedResolvedCover(playlistKey).isNullOrBlank()) {
+            coverUrl = null
+        }
         if (!resolveLocalFallback) {
             return@LaunchedEffect
         }
@@ -91,13 +122,28 @@ fun rememberPlaylistDisplayCoverUrl(
             playlist.displayCoverUrl(appContext, resolveLocalFallback)
         }
         if (!resolvedCover.isNullOrBlank()) {
+            rememberResolvedCover(playlistKey, resolvedCover)
             coverUrl = resolvedCover
-        } else if (immediateCover.isNullOrBlank()) {
+        } else if (immediateCover.isNullOrBlank() && cachedResolvedCover(playlistKey).isNullOrBlank()) {
             coverUrl = null
         }
     }
 
     return coverUrl
+}
+
+private fun cachedResolvedCover(key: String?): String? {
+    if (key.isNullOrBlank()) return null
+    return synchronized(resolvedCoverMemoryCache) {
+        resolvedCoverMemoryCache[key]
+    }
+}
+
+private fun rememberResolvedCover(key: String?, coverUrl: String?) {
+    if (key.isNullOrBlank() || coverUrl.isNullOrBlank()) return
+    synchronized(resolvedCoverMemoryCache) {
+        resolvedCoverMemoryCache[key] = coverUrl
+    }
 }
 
 private fun SongItem.coverResolutionKey(resolveLocalFallback: Boolean): String {

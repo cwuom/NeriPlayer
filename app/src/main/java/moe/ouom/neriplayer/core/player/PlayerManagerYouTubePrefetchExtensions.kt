@@ -40,6 +40,9 @@ internal fun PlayerManager.prefetchYouTubeQueueWindowImpl(
     startIndex: Int,
     source: String
 ) {
+    if (!canRunYouTubePrefetch(source)) {
+        return
+    }
     val targets = resolveYouTubeWarmupTargets(
         playlist = playlist,
         currentSongIndex = startIndex,
@@ -90,6 +93,9 @@ internal fun PlayerManager.prefetchYouTubePlayableUrlWindowImpl(
     startIndex: Int,
     source: String
 ) {
+    if (!canRunYouTubePrefetch(source)) {
+        return
+    }
     val targets = resolveYouTubeWarmupTargets(
         playlist = playlist,
         currentSongIndex = startIndex,
@@ -110,6 +116,9 @@ internal fun PlayerManager.kickoffYouTubePlaybackIntentWarmup(
     song: SongItem,
     source: String
 ) {
+    if (!canRunYouTubePrefetch(source)) {
+        return
+    }
     if (!isYouTubeMusicTrack(song)) {
         return
     }
@@ -161,6 +170,14 @@ internal fun PlayerManager.cancelYouTubePrefetchUnlessReusableForSong(
     activePrefetchJob?.cancel()
     currentYouTubePrefetchJob = null
     currentYouTubePrefetchVideoIds = emptySet()
+}
+
+private fun PlayerManager.canRunYouTubePrefetch(source: String): Boolean {
+    if (isApplicationInitialized()) {
+        return true
+    }
+    NPLogger.d("NERI-PlayerManager", "skip YouTube prefetch before initialization: source=$source")
+    return false
 }
 
 private fun PlayerManager.kickoffYouTubePlayableAudioPrefetches(

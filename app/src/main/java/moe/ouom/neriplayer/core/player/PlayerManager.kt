@@ -498,6 +498,15 @@ object PlayerManager {
 
     internal fun isApplicationInitialized(): Boolean = this::application.isInitialized
 
+    internal fun bindApplication(app: Application) {
+        if (isApplicationInitialized()) return
+        synchronized(initializationLock) {
+            if (!isApplicationInitialized()) {
+                application = app
+            }
+        }
+    }
+
     internal fun isPlayerInitialized(): Boolean = this::player.isInitialized
 
     internal fun isCacheInitialized(): Boolean = this::cache.isInitialized

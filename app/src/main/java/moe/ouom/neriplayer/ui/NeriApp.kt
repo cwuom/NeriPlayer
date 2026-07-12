@@ -82,6 +82,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -207,6 +208,7 @@ import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.ui.theme.isActualSystemDarkTheme
 import moe.ouom.neriplayer.ui.theme.rememberActualSystemDarkTheme
+import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.view.HyperBackground
 import moe.ouom.neriplayer.ui.viewmodel.debug.LogViewerScreen
 import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
@@ -727,6 +729,10 @@ private fun NeriAppContent(
     val repo = remember { AppContainer.settingsRepo }
     val systemDark = rememberActualSystemDarkTheme()
     val application = remember(context) { context.applicationContext as Application }
+    SideEffect {
+        // 播放点击可能早于启动预加载完成，先绑定上下文避免懒初始化缺入口
+        PlayerManager.bindApplication(application)
+    }
     val startupPlaybackPreferences = remember(application) {
         readPlaybackPreferenceSnapshotCached(application) ?: PlaybackPreferenceSnapshot()
     }
@@ -870,10 +876,7 @@ private fun NeriAppContent(
     // 缓存当前封面的取色结果，避免开关动态取色时先闪到默认种子色
     var coverSeedHex by remember { mutableStateOf<String?>(null) }
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
-    val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
-    val displayCoverUrl = remember(currentSong, context, downloadPresenceVersion, coverArtRefreshToken) {
-        currentSong.resolveUiCoverSource(context)
-    }
+    val displayCoverUrl = rememberSongDisplayCoverUrl(currentSong)
     val scope = rememberCoroutineScope()
     var pendingTrafficRiskDownloadRequest by remember {
         mutableStateOf<GlobalDownloadManager.TrafficRiskDownloadRequest?>(null)
