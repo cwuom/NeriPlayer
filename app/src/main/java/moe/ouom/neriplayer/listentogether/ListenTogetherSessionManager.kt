@@ -584,7 +584,8 @@ class ListenTogetherSessionManager(
             PlayerManager.playPlaylist(queue, targetIndex, commandSource = PlaybackCommandSource.REMOTE_SYNC)
         }
 
-        val resolvedExpectedPositionMs = expectedPositionMs ?: state.playback.expectedPositionMs()
+        val resolvedExpectedPositionMs = expectedPositionMs
+            ?: state.playback.expectedPositionMs(serverClockOffsetMs = estimatedServerClockOffsetMs)
         val localPositionMs = PlayerManager.playbackPositionFlow.value.coerceAtLeast(0L)
         val desiredPlaying = state.playback.state == "playing"
         val localPlaying = PlayerManager.isPlayingFlow.value
@@ -1674,7 +1675,9 @@ class ListenTogetherSessionManager(
     private fun applyListenerWatchdogSync(state: ListenTogetherRoomState) {
         if (isCurrentUserController()) return
         if (state.roomStatus != ListenTogetherRoomStatuses.ACTIVE) return
-        val expectedPositionMs = state.playback.expectedPositionMs()
+        val expectedPositionMs = state.playback.expectedPositionMs(
+            serverClockOffsetMs = estimatedServerClockOffsetMs
+        )
         val needsStallRecovery = shouldRecoverListenerPlaybackStall(state)
         val causeType = if (needsStallRecovery) "WATCHDOG_STALL" else "WATCHDOG"
         applyRoomStateToPlayer(
@@ -2670,8 +2673,11 @@ class ListenTogetherSessionManager(
     }
 }
 
-private fun ListenTogetherPlaybackState.expectedPositionMs(nowMs: Long = System.currentTimeMillis()): Long {
-    val correctedNowMs = nowMs + estimatedServerClockOffsetMs
+private fun ListenTogetherPlaybackState.expectedPositionMs(
+    nowMs: Long = System.currentTimeMillis(),
+    serverClockOffsetMs: Long = 0L
+): Long {
+    val correctedNowMs = nowMs + serverClockOffsetMs
     return if (state == "playing") {
         (basePositionMs + ((correctedNowMs - baseTimestampMs) * playbackRate)).toLong().coerceAtLeast(0L)
     } else {
