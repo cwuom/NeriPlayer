@@ -1146,6 +1146,9 @@ class ListenTogetherSessionManager(
             )
             return
         }
+        if (shouldRejectForwardedMemberControl(message, forwardedEvent)) {
+            return
+        }
         requestSequence.takeIf { it > 0L }?.let { lastHandledForwardedRequestSequence = it }
         if (
             SystemClock.elapsedRealtime() - lastControllerLocalControlAtElapsedMs <
@@ -1246,6 +1249,9 @@ class ListenTogetherSessionManager(
                 TAG,
                 "handleLocalPlaybackCommand(): unsupported command type=${command.type}, source=${command.source}"
             )
+            return
+        }
+        if (shouldSuppressLocalListenerControlEvent(event)) {
             return
         }
         if (event.type == "TRACK_FINISHED") {
@@ -1360,6 +1366,65 @@ class ListenTogetherSessionManager(
             state = message.stateName,
             requestTrackStableKey = message.requestTrackStableKey
         )
+    }
+
+    private fun shouldSuppressLocalListenerControlEvent(event: ListenTogetherEvent): Boolean {
+        if (isCurrentUserController()) return false
+        if (event.type !in REQUEST_CONTROL_EVENT_TYPES) return false
+        val currentState = _roomState.value
+        val currentStableKey = currentState?.currentStableKey()
+        val requestedStableKey = event.requestedStableKey()
+        if (!isListenTogetherMemberControlTargetCurrent(event.type, requestedStableKey, currentStableKey)) {
+            NPLogger.w(
+                TAG,
+                "shouldSuppressLocalListenerControlEvent(): stale target, type=${event.type}, requested=$requestedStableKey, current=$currentStableKey"
+            )
+            return true
+        }
+        val awaitingAuthoritativeStream = currentState?.targetSongItem()?.let { targetSong ->
+            shouldWaitForListenTogetherAuthoritativeStreamPlayback(
+                playerWaitingForAuthoritativeStream = PlayerManager.shouldWaitForListenTogetherAuthoritativeStream(targetSong),
+                localTrackMatchesTarget = PlayerManager.currentSongFlow.value?.sameTrackAs(targetSong) == true,
+                localTrackStreamUrl = PlayerManager.currentSongFlow.value?.streamUrl,
+                localResolvedStreamUrl = PlayerManager.currentMediaUrlFlow.value
+            )
+        } ?: false
+        val hasDirectStream = normalizedDirectStreamUrl(PlayerManager.currentSongFlow.value?.streamUrl) != null ||
+            normalizedDirectStreamUrl(PlayerManager.currentMediaUrlFlow.value) != null
+        if (
+            shouldSuppressListenerControlWhileAwaitingStream(
+                eventType = event.type,
+                awaitingAuthoritativeStream = awaitingAuthoritativeStream,
+                localTrackHasDirectStream = hasDirectStream
+            )
+        ) {
+            NPLogger.w(
+                TAG,
+                "shouldSuppressLocalListenerControlEvent(): awaiting controller stream, type=${event.type}, requested=$requestedStableKey"
+            )
+            currentState?.let { maybeRequestControllerLink(it, "suppress_local_control:${event.type}", force = true) }
+            return true
+        }
+        return false
+    }
+
+    private fun shouldRejectForwardedMemberControl(
+        message: ListenTogetherSocketEnvelope,
+        forwardedEvent: ListenTogetherEvent
+    ): Boolean {
+        val requestType = message.causedBy?.type ?: return false
+        if (requestType !in TRACK_BOUND_REQUEST_CONTROL_EVENT_TYPES) return false
+        val currentStableKey = _roomState.value?.currentStableKey()
+        val requestedStableKey = forwardedEvent.requestedStableKey()
+        if (isListenTogetherMemberControlTargetCurrent(requestType, requestedStableKey, currentStableKey)) {
+            return false
+        }
+        NPLogger.w(
+            TAG,
+            "shouldRejectForwardedMemberControl(): stale target, requestType=$requestType, requested=$requestedStableKey, current=$currentStableKey, requester=${message.causedBy?.userUuid}"
+        )
+        publishControllerHeartbeatIfNeeded(force = true, reason = "reject_stale_member_control")
+        return true
     }
 
     private fun applyForwardedControllerRequestLocally(
@@ -2642,6 +2707,11 @@ class ListenTogetherSessionManager(
             "REQUEST_SEEK",
             "REQUEST_SET_TRACK"
         )
+        private val TRACK_BOUND_REQUEST_CONTROL_EVENT_TYPES = setOf(
+            "REQUEST_PLAY",
+            "REQUEST_PAUSE",
+            "REQUEST_SEEK"
+        )
         private fun isUnauthorizedReconnectError(normalized: String): Boolean {
             return "unauthorized" in normalized
         }
@@ -2704,6 +2774,12 @@ internal fun isListenTogetherSeekControlSatisfied(
 
 private fun ListenTogetherRoomState.currentStableKey(): String? {
     return track?.stableKey ?: queue.getOrNull(currentIndex)?.stableKey
+}
+
+private fun ListenTogetherEvent.requestedStableKey(): String? {
+    return requestTrackStableKey
+        ?: track?.stableKey
+        ?: queue?.getOrNull(currentIndex ?: -1)?.stableKey
 }
 
 private fun ListenTogetherRoomState.targetSongItem(): SongItem? {

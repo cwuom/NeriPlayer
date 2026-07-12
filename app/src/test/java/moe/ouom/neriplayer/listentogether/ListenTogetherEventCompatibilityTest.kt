@@ -202,6 +202,64 @@ class ListenTogetherEventCompatibilityTest {
     }
 
     @Test
+    fun `member control must target current room track`() {
+        assertTrue(
+            isListenTogetherMemberControlTargetCurrent(
+                eventType = "REQUEST_PAUSE",
+                requestedStableKey = "netease:1",
+                currentStableKey = "netease:1"
+            )
+        )
+        assertFalse(
+            isListenTogetherMemberControlTargetCurrent(
+                eventType = "REQUEST_PAUSE",
+                requestedStableKey = "netease:old",
+                currentStableKey = "netease:1"
+            )
+        )
+    }
+
+    @Test
+    fun `listener play pause is suppressed while waiting for authoritative stream`() {
+        assertTrue(
+            shouldSuppressListenerControlWhileAwaitingStream(
+                eventType = "REQUEST_PAUSE",
+                awaitingAuthoritativeStream = true,
+                localTrackHasDirectStream = false
+            )
+        )
+        assertFalse(
+            shouldSuppressListenerControlWhileAwaitingStream(
+                eventType = "REQUEST_PAUSE",
+                awaitingAuthoritativeStream = true,
+                localTrackHasDirectStream = true
+            )
+        )
+    }
+
+    @Test
+    fun `listener set track request is not suppressed by missing stream`() {
+        assertFalse(
+            shouldSuppressListenerControlWhileAwaitingStream(
+                eventType = "REQUEST_SET_TRACK",
+                awaitingAuthoritativeStream = true,
+                localTrackHasDirectStream = false
+            )
+        )
+    }
+
+    @Test
+    fun `listener play request is preserved while waiting for authoritative stream`() {
+        assertFalse(
+            shouldSuppressListenerControlWhileAwaitingStream(
+                eventType = "REQUEST_PLAY",
+                awaitingAuthoritativeStream = true,
+                localTrackHasDirectStream = false
+            )
+        )
+    }
+
+    @Test
     fun `join auto pause flag alone does not pause a playing room`() {
         val state = roomState(playbackState = "playing")
 

@@ -663,10 +663,9 @@ internal fun PlayerManager.playAtIndex(
                     "NERI-PlayerManager",
                     "Waiting for authoritative listen-together stream: song=${song.name}, stableKey=${song.listenTogetherStableKeyOrNull()}"
                 )
-                updateResumePlaybackRequested(false)
                 scheduleStatePersist(
                     positionMs = resumePositionMs.coerceAtLeast(0L),
-                    shouldResumePlayback = false
+                    shouldResumePlayback = true
                 )
             }
             is SongUrlResult.RequiresLogin -> {

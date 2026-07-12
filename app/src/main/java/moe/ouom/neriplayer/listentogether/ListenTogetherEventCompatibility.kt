@@ -40,6 +40,44 @@ internal fun resolveListenTogetherLinkReadyState(
     }
 }
 
+internal fun isListenTogetherMemberControlTargetCurrent(
+    eventType: String,
+    requestedStableKey: String?,
+    currentStableKey: String?
+): Boolean {
+    if (eventType !in TRACK_BOUND_MEMBER_CONTROL_TYPES) return true
+    val requested = requestedStableKey
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: return false
+    val current = currentStableKey
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: return false
+    return requested == current
+}
+
+internal fun shouldSuppressListenerControlWhileAwaitingStream(
+    eventType: String,
+    awaitingAuthoritativeStream: Boolean,
+    localTrackHasDirectStream: Boolean
+): Boolean {
+    if (eventType !in STREAM_DEPENDENT_MEMBER_CONTROL_TYPES) return false
+    if (!awaitingAuthoritativeStream) return false
+    return !localTrackHasDirectStream
+}
+
+private val TRACK_BOUND_MEMBER_CONTROL_TYPES = setOf(
+    "REQUEST_PLAY",
+    "REQUEST_PAUSE",
+    "REQUEST_SEEK"
+)
+
+private val STREAM_DEPENDENT_MEMBER_CONTROL_TYPES = setOf(
+    "REQUEST_PAUSE",
+    "REQUEST_SEEK"
+)
+
 internal fun isUnsupportedTrackFinishedEventError(errorMessage: String?): Boolean {
     val normalized = errorMessage
         ?.trim()
