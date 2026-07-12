@@ -19,11 +19,12 @@ espressoCore = "3.7.0"
 appcompat = "1.7.1"
 kotlinxSerializationJson = "1.9.0"
 kotlinxSerializationProtobuf = "1.9.0"
+kugouapiKmp = "1.0.3"
 material = "1.12.0"
 constraintlayout = "2.2.1"
 
-compose-bom = "2025.08.00"
-activity-compose = "1.10.1"
+compose-bom = "2026.06.01"
+activity-compose = "1.13.0"
 materialKolor = "3.0.1"
 media = "1.7.0"
 media3Datasource = "1.8.0"
@@ -64,6 +65,7 @@ androidx-media3-exoplayer = { module = "androidx.media3:media3-exoplayer", versi
 androidx-media3-exoplayer-hls = { module = "androidx.media3:media3-exoplayer-hls", version.ref = "media3ExoplayerHls" }
 androidx-palette-ktx = { module = "androidx.palette:palette-ktx", version.ref = "paletteKtx" }
 androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "securityCrypto" }
+kugouapi-kmp = { module = "top.ghhccghk.multiplatform.kugouapi:kugouapi-kmp", version.ref = "kugouapiKmp" }
 superlyricapi = { module = "com.github.HChenX:SuperLyricApi", version.ref = "superlyricapi" }
 taglib = { module = "io.github.kyant0:taglib", version.ref = "taglib" }
 androidx-ui-graphics = { module = "androidx.compose.ui:ui-graphics", version.ref = "uiGraphics" }
