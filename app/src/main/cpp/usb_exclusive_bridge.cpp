@@ -38,7 +38,6 @@ constexpr int kUsbDescriptorTypeClassSpecificInterface = 0x24;
 constexpr int kUsbAudioControlHeaderSubtype = 0x01;
 constexpr int kUsbTransferTypeIsochronous = 0x01;
 constexpr int kPermissionPollIntervalMs = 2;
-constexpr int kPausedPollIntervalMs = 20;
 constexpr int kGeneratedToneFrequencyHz = 440;
 constexpr int kDefaultPacketsPerTransfer = 16;
 constexpr int kDefaultTransferCount = 12;
@@ -1572,12 +1571,9 @@ void eventLoopThread(UsbExclusiveHandle* handle) noexcept {
         const auto startedAt = std::chrono::steady_clock::now();
         LOGI("USB event loop entered");
         while (handle->deviceOnline.load() && !handle->stopRequested.load()) {
-            const int pollMs = handle->playbackEnabled.load()
-                ? kPermissionPollIntervalMs
-                : kPausedPollIntervalMs;
             timeval timeout {};
             timeout.tv_sec = 0;
-            timeout.tv_usec = pollMs * 1000;
+            timeout.tv_usec = kPermissionPollIntervalMs * 1000;
             const int rc = libusb_handle_events_timeout_completed(handle->ctx, &timeout, nullptr);
             if (rc != LIBUSB_SUCCESS && rc != LIBUSB_ERROR_INTERRUPTED) {
                 if (rc == LIBUSB_ERROR_NO_DEVICE) {

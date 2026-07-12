@@ -913,7 +913,7 @@ internal class UsbExclusiveAudioSink(
         remaining: Int,
         directBuffer: Boolean
     ): Int {
-        val cachedMetrics = UsbExclusiveSessionController.state.value.runtimeReport
+        val cachedMetrics = UsbExclusiveSessionController.runtimeReportForWritePlanning(nativeHandle)
             .usbRuntimeMetrics()
         var size = planNativeWriteSize(remaining, cachedMetrics)
         if (size <= 0 && cachedMetrics.hasPcmQueue && cachedMetrics.hasHealthyTransport) {
@@ -923,7 +923,8 @@ internal class UsbExclusiveAudioSink(
                 lastNativeBackpressureRefreshAtMs = nowMs
                 size = planNativeWriteSize(
                     remaining,
-                    UsbExclusiveSessionController.state.value.runtimeReport.usbRuntimeMetrics()
+                    UsbExclusiveSessionController.runtimeReportForWritePlanning(nativeHandle)
+                        .usbRuntimeMetrics()
                 )
             }
         }
@@ -963,7 +964,7 @@ internal class UsbExclusiveAudioSink(
     }
 
     private fun refreshRuntimeAfterStalledWrite(nowMs: Long): String {
-        val cachedReport = UsbExclusiveSessionController.state.value.runtimeReport
+        val cachedReport = UsbExclusiveSessionController.runtimeReportForWritePlanning(nativeHandle)
         val cachedMetrics = cachedReport.usbRuntimeMetrics()
         val shouldRefresh = !cachedMetrics.isBenignBackpressure ||
             nowMs - lastNativeBackpressureRefreshAtMs >= NATIVE_BACKPRESSURE_REFRESH_INTERVAL_MS
@@ -972,7 +973,7 @@ internal class UsbExclusiveAudioSink(
         }
         UsbExclusiveSessionController.refreshRuntime(nativeHandle)
         lastNativeBackpressureRefreshAtMs = nowMs
-        return UsbExclusiveSessionController.state.value.runtimeReport
+        return UsbExclusiveSessionController.runtimeReportForWritePlanning(nativeHandle)
     }
 
     private fun recordBenignNativeBackpressure(

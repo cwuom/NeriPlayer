@@ -62,7 +62,13 @@ object UsbExclusiveSessionController {
     private var lastPlayerPcmBackpressureLogAtMs = 0L
     @Volatile
     private var lastPlayerPcmStateEmitAtMs = 0L
+    private val latestPlayerPcmRuntime = AtomicReference(PlayerPcmRuntimeCache())
     private const val PCM_STATE_EMIT_INTERVAL_MS = 500L
+
+    private data class PlayerPcmRuntimeCache(
+        val handle: Long = 0L,
+        val report: String = "idle"
+    )
 
     private data class PendingPlayerPcmOpenBlock(
         val reason: String,
@@ -171,6 +177,11 @@ object UsbExclusiveSessionController {
                 } else {
                     idleRuntimeReport
                 }
+            }
+            if (current.source == "player_pcm" && current.handle != 0L) {
+                rememberPlayerPcmRuntimeReport(current.handle, runtimeReport)
+            } else {
+                clearPlayerPcmRuntimeReport()
             }
             val lastError = if (current.handle != 0L) {
                 current.lastError
@@ -460,6 +471,8 @@ object UsbExclusiveSessionController {
                         inputEncoding = inputEncoding
                     )
                 ) {
+                    val runtimeReport = UsbExclusiveNativeBridge.runtimeReport(current.handle)
+                    rememberPlayerPcmRuntimeReport(current.handle, runtimeReport)
                     _state.value = current.copy(
                         streaming = false,
                         paused = false,
@@ -473,7 +486,7 @@ object UsbExclusiveSessionController {
                         lastError = null,
                         completedAudioFrames = 0L,
                         queuedAudioFrames = 0L
-                    ).withRuntimeReport(UsbExclusiveNativeBridge.runtimeReport(current.handle))
+                    ).withRuntimeReport(runtimeReport)
                     NPLogger.d(
                         TAG,
                         "openPlayerPcm(): reused native handle=${current.handle} " +
@@ -659,6 +672,8 @@ object UsbExclusiveSessionController {
                 playerPcmOpenBlockedUntilMs = 0L
                 playerPcmOpenBlockReason = ""
                 playerPcmFreshOpenRequiredReason = null
+                val runtimeReport = UsbExclusiveNativeBridge.runtimeReport(handle)
+                rememberPlayerPcmRuntimeReport(handle, runtimeReport)
                 _state.value = UsbExclusiveNativeState(
                     available = true,
                     opened = true,
@@ -677,7 +692,7 @@ object UsbExclusiveSessionController {
                     outputSampleRate = resolvedOutput.sampleRate,
                     bufferDurationMs = resolvedOutput.bufferDurationMs,
                     lastError = null
-                ).withRuntimeReport(UsbExclusiveNativeBridge.runtimeReport(handle))
+                ).withRuntimeReport(runtimeReport)
                 NPLogger.i(
                     TAG,
                     "openPlayerPcm(): opened handle=$handle device=" +
@@ -828,6 +843,7 @@ object UsbExclusiveSessionController {
             )
             if (!configured) {
                 val runtimeReport = UsbExclusiveNativeBridge.runtimeReport(current.handle)
+                rememberPlayerPcmRuntimeReport(current.handle, runtimeReport)
                 NPLogger.w(
                     TAG,
                     "configureActivePlayerBufferDuration(): native rejected durationMs=$normalizedDurationMs " +
@@ -837,10 +853,12 @@ object UsbExclusiveSessionController {
                     .withRuntimeReport(runtimeReport)
                 return false
             }
+            val runtimeReport = UsbExclusiveNativeBridge.runtimeReport(current.handle)
+            rememberPlayerPcmRuntimeReport(current.handle, runtimeReport)
             _state.value = current.copy(
                 bufferDurationMs = normalizedDurationMs,
                 lastError = null
-            ).withRuntimeReport(UsbExclusiveNativeBridge.runtimeReport(current.handle))
+            ).withRuntimeReport(runtimeReport)
             NPLogger.d(
                 TAG,
                 "configureActivePlayerBufferDuration(): applied durationMs=$normalizedDurationMs " +
@@ -873,6 +891,7 @@ object UsbExclusiveSessionController {
             if (written <= 0 || written < size) {
                 val nowMs = SystemClock.elapsedRealtime()
                 val report = UsbExclusiveNativeBridge.runtimeReport(handle)
+                rememberPlayerPcmRuntimeReport(handle, report)
                 val metrics = report.usbRuntimeMetrics()
                 _state.value = current.copy(
                     completedAudioFrames = UsbExclusiveNativeBridge.completedAudioFrames(handle),
@@ -897,18 +916,42 @@ object UsbExclusiveSessionController {
                 }
             } else {
                 val nowMs = SystemClock.elapsedRealtime()
+                val report = UsbExclusiveNativeBridge.runtimeReport(handle)
+                rememberPlayerPcmRuntimeReport(handle, report)
                 if (nowMs - lastPlayerPcmStateEmitAtMs >= PCM_STATE_EMIT_INTERVAL_MS) {
                     lastPlayerPcmStateEmitAtMs = nowMs
                     _state.value = current.copy(
                         completedAudioFrames = UsbExclusiveNativeBridge.completedAudioFrames(handle),
                         queuedAudioFrames = UsbExclusiveNativeBridge.queuedPlayerFrames(handle)
-                    )
+                    ).withRuntimeReport(report)
                 }
             }
             return written
         } finally {
             ioGate.exitWrite()
         }
+    }
+
+    fun runtimeReportForWritePlanning(handle: Long): String {
+        val current = _state.value
+        if (current.handle != handle || current.source != "player_pcm" || !current.opened) {
+            return current.runtimeReport
+        }
+        val latest = latestPlayerPcmRuntime.get()
+        return if (latest.handle == handle && latest.report.isNotBlank()) {
+            latest.report
+        } else {
+            current.runtimeReport
+        }
+    }
+
+    private fun rememberPlayerPcmRuntimeReport(handle: Long, report: String) {
+        if (handle == 0L || report.isBlank()) return
+        latestPlayerPcmRuntime.set(PlayerPcmRuntimeCache(handle, report))
+    }
+
+    private fun clearPlayerPcmRuntimeReport() {
+        latestPlayerPcmRuntime.set(PlayerPcmRuntimeCache())
     }
 
     fun playPlayerPcm(handle: Long): Boolean {
@@ -929,6 +972,7 @@ object UsbExclusiveSessionController {
             }
             val started = UsbExclusiveNativeBridge.playPlayerPcm(handle)
             val report = UsbExclusiveNativeBridge.runtimeReport(handle)
+            rememberPlayerPcmRuntimeReport(handle, report)
             _state.value = current.copy(
                 streaming = started,
                 paused = false,
@@ -953,6 +997,7 @@ object UsbExclusiveSessionController {
             }
             val paused = UsbExclusiveNativeBridge.pausePlayerPcm(handle)
             val report = UsbExclusiveNativeBridge.runtimeReport(handle)
+            rememberPlayerPcmRuntimeReport(handle, report)
             _state.value = current.copy(
                 streaming = report.booleanField("running") ?: current.streaming,
                 paused = paused,
@@ -977,6 +1022,7 @@ object UsbExclusiveSessionController {
             }
             val flushed = UsbExclusiveNativeBridge.flushPlayerPcm(handle)
             val report = UsbExclusiveNativeBridge.runtimeReport(handle)
+            rememberPlayerPcmRuntimeReport(handle, report)
             _state.value = current.copy(
                 streaming = report.booleanField("running") ?: current.streaming,
                 paused = false,
@@ -1091,6 +1137,9 @@ object UsbExclusiveSessionController {
             val current = _state.value
             if (current.handle != handle) return
             val runtimeReport = UsbExclusiveNativeBridge.runtimeReport(handle)
+            if (current.source == "player_pcm") {
+                rememberPlayerPcmRuntimeReport(handle, runtimeReport)
+            }
             _state.value = current.copy(
                 completedAudioFrames = UsbExclusiveNativeBridge.completedAudioFrames(handle),
                 queuedAudioFrames = UsbExclusiveNativeBridge.queuedPlayerFrames(handle)
@@ -1136,6 +1185,7 @@ object UsbExclusiveSessionController {
             runtimeReport = terminalError ?: "idle",
             lastError = terminalError
         )
+        clearPlayerPcmRuntimeReport()
         if (current.handle == 0L) {
             runCatching { connection?.close() }
             UsbExclusiveWakeLock.release(reason)
