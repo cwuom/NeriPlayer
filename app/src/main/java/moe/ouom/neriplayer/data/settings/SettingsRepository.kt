@@ -25,9 +25,11 @@ package moe.ouom.neriplayer.data.settings
 
 
 import android.content.Context
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
@@ -54,6 +56,12 @@ class SettingsRepository(private val context: Context) {
     private val autoSettingSpecRepository = AutoSettingSpecRepository(context)
     private val usbExclusiveSettingsStore = UsbExclusiveSettingsStore(context)
 
+    private fun <T> dataStoreSettingFlow(transform: (Preferences) -> T): Flow<T> {
+        return context.dataStore.data
+            .map(transform)
+            .distinctUntilChanged()
+    }
+
     fun <T> settingFlow(setting: AutoSettingSpec<T>): Flow<T> {
         return autoSettingSpecRepository.flow(setting)
     }
@@ -63,13 +71,13 @@ class SettingsRepository(private val context: Context) {
     }
 
     val dynamicColorFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.DYNAMIC_COLOR] ?: true }
+        dataStoreSettingFlow { it[SettingsKeys.DYNAMIC_COLOR] ?: true }
 
     val forceDarkFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.FORCE_DARK] ?: false }
+        dataStoreSettingFlow { it[SettingsKeys.FORCE_DARK] ?: false }
 
     val followSystemDarkFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.FOLLOW_SYSTEM_DARK] ?: true }
+        dataStoreSettingFlow { it[SettingsKeys.FOLLOW_SYSTEM_DARK] ?: true }
 
     val showCoverSourceBadgeFlow: Flow<Boolean> =
         autoSettingsRepository.showCoverSourceBadgeFlow
@@ -96,16 +104,16 @@ class SettingsRepository(private val context: Context) {
         autoSettingsRepository.silentGitHubSyncFailureFlow
 
     val audioQualityFlow: Flow<String> =
-        context.dataStore.data.map { it[SettingsKeys.AUDIO_QUALITY] ?: "exhigh" }
+        dataStoreSettingFlow { it[SettingsKeys.AUDIO_QUALITY] ?: "exhigh" }
 
     val youtubeAudioQualityFlow: Flow<String> =
-        context.dataStore.data.map { it[SettingsKeys.YOUTUBE_AUDIO_QUALITY] ?: "very_high" }
+        dataStoreSettingFlow { it[SettingsKeys.YOUTUBE_AUDIO_QUALITY] ?: "very_high" }
 
     val biliAudioQualityFlow: Flow<String> =
-        context.dataStore.data.map { it[SettingsKeys.BILI_AUDIO_QUALITY] ?: "high" }
+        dataStoreSettingFlow { it[SettingsKeys.BILI_AUDIO_QUALITY] ?: "high" }
 
     val mobileDataFollowDefaultAudioQualityFlow: Flow<Boolean> =
-        context.dataStore.data.map { prefs ->
+        dataStoreSettingFlow { prefs ->
             prefs[SettingsKeys.MOBILE_DATA_FOLLOW_DEFAULT_AUDIO_QUALITY]
                 ?: resolveLegacyMobileDataFollowDefaultAudioQuality(
                     prefs[SettingsKeys.MOBILE_DATA_DOWNGRADE_QUALITY]
@@ -114,7 +122,7 @@ class SettingsRepository(private val context: Context) {
         }
 
     val mobileDataNeteaseAudioQualityFlow: Flow<String> =
-        context.dataStore.data.map { prefs ->
+        dataStoreSettingFlow { prefs ->
             normalizeMobileDataNeteaseAudioQuality(
                 prefs[SettingsKeys.MOBILE_DATA_NETEASE_AUDIO_QUALITY]
                     ?: resolveLegacyMobileDataNeteaseAudioQuality(
@@ -124,7 +132,7 @@ class SettingsRepository(private val context: Context) {
         }
 
     val mobileDataYouTubeAudioQualityFlow: Flow<String> =
-        context.dataStore.data.map { prefs ->
+        dataStoreSettingFlow { prefs ->
             normalizeMobileDataYouTubeAudioQuality(
                 prefs[SettingsKeys.MOBILE_DATA_YOUTUBE_AUDIO_QUALITY]
                     ?: resolveLegacyMobileDataYouTubeAudioQuality(
@@ -134,7 +142,7 @@ class SettingsRepository(private val context: Context) {
         }
 
     val mobileDataBiliAudioQualityFlow: Flow<String> =
-        context.dataStore.data.map { prefs ->
+        dataStoreSettingFlow { prefs ->
             normalizeMobileDataBiliAudioQuality(
                 prefs[SettingsKeys.MOBILE_DATA_BILI_AUDIO_QUALITY]
                     ?: resolveLegacyMobileDataBiliAudioQuality(
@@ -153,20 +161,20 @@ class SettingsRepository(private val context: Context) {
         settingFlow(AutoSettingsSchema.general.alwaysRecordLogsEnabled)
 
     val themeSeedColorFlow: Flow<String> =
-        context.dataStore.data.map { it[SettingsKeys.THEME_SEED_COLOR] ?: ThemeDefaults.DEFAULT_SEED_COLOR_HEX }
+        dataStoreSettingFlow { it[SettingsKeys.THEME_SEED_COLOR] ?: ThemeDefaults.DEFAULT_SEED_COLOR_HEX }
 
     val themeColorPaletteFlow: Flow<List<String>> =
-        context.dataStore.data.map { prefs ->
+        dataStoreSettingFlow { prefs ->
             parseColorPalette(prefs[SettingsKeys.THEME_COLOR_PALETTE])
         }
 
     val themePaletteStyleFlow: Flow<String> =
-        context.dataStore.data.map {
+        dataStoreSettingFlow {
             ThemeDefaults.normalizePaletteStyle(it[SettingsKeys.THEME_PALETTE_STYLE])
         }
 
     val themeColorSpecFlow: Flow<String> =
-        context.dataStore.data.map {
+        dataStoreSettingFlow {
             ThemeDefaults.normalizeColorSpec(it[SettingsKeys.THEME_COLOR_SPEC])
         }
 
@@ -177,7 +185,7 @@ class SettingsRepository(private val context: Context) {
         autoSettingsRepository.lyricBlurAmountFlow
 
     val cloudMusicLyricDefaultOffsetMsFlow: Flow<Long> =
-        context.dataStore.data.map {
+        dataStoreSettingFlow {
             normalizeLyricDefaultOffsetMs(
                 it[SettingsKeys.CLOUD_MUSIC_LYRIC_DEFAULT_OFFSET_MS]
                     ?: DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
@@ -185,7 +193,7 @@ class SettingsRepository(private val context: Context) {
         }
 
     val qqMusicLyricDefaultOffsetMsFlow: Flow<Long> =
-        context.dataStore.data.map {
+        dataStoreSettingFlow {
             normalizeLyricDefaultOffsetMs(
                 it[SettingsKeys.QQ_MUSIC_LYRIC_DEFAULT_OFFSET_MS]
                     ?: DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
@@ -205,7 +213,7 @@ class SettingsRepository(private val context: Context) {
         autoSettingsRepository.externalBluetoothLyricsEnabledFlow
 
     val floatingLyricsPreferencesFlow: Flow<FloatingLyricsPreferences> =
-        context.dataStore.data.map { prefs ->
+        dataStoreSettingFlow { prefs ->
             val outlineWidthDp = prefs[SettingsKeys.FLOATING_LYRICS_OUTLINE_WIDTH_DP] ?: 1.6f
             FloatingLyricsPreferences(
                 enabled = prefs[SettingsKeys.FLOATING_LYRICS_ENABLED] ?: false,
@@ -254,7 +262,7 @@ class SettingsRepository(private val context: Context) {
         autoSettingsRepository.nowPlayingCoverBlurDarkenFlow
 
     val lyricFontScaleFlow: Flow<Float> =
-        context.dataStore.data.map {
+        dataStoreSettingFlow {
             normalizeLyricFontScale(it[SettingsKeys.LYRIC_FONT_SCALE] ?: 1.0f)
         }
 
@@ -262,19 +270,19 @@ class SettingsRepository(private val context: Context) {
         autoSettingsRepository.uiDensityScaleFlow
 
     val bypassProxyFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.BYPASS_PROXY] ?: true }
+        dataStoreSettingFlow { it[SettingsKeys.BYPASS_PROXY] ?: true }
 
     val backgroundImageUriFlow: Flow<String?> =
-        context.dataStore.data.map { it[SettingsKeys.BACKGROUND_IMAGE_URI] }
+        dataStoreSettingFlow { it[SettingsKeys.BACKGROUND_IMAGE_URI] }
 
     val downloadDirectoryUriFlow: Flow<String?> =
-        context.dataStore.data.map { it[SettingsKeys.DOWNLOAD_DIRECTORY_URI] }
+        dataStoreSettingFlow { it[SettingsKeys.DOWNLOAD_DIRECTORY_URI] }
 
     val downloadDirectoryLabelFlow: Flow<String?> =
-        context.dataStore.data.map { it[SettingsKeys.DOWNLOAD_DIRECTORY_LABEL] }
+        dataStoreSettingFlow { it[SettingsKeys.DOWNLOAD_DIRECTORY_LABEL] }
 
     val downloadFileNameTemplateFlow: Flow<String?> =
-        context.dataStore.data.map {
+        dataStoreSettingFlow {
             normalizeDownloadFileNameTemplate(it[SettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE])
         }
 
@@ -294,7 +302,7 @@ class SettingsRepository(private val context: Context) {
         flow {
             emit(null) // 加载态
             val realFlow: Flow<Boolean> =
-                context.dataStore.data.map { prefs ->
+                dataStoreSettingFlow { prefs ->
                     prefs[SettingsKeys.DISCLAIMER_ACCEPTED_V2] ?: false
                 }
             emitAll(realFlow)
@@ -304,14 +312,14 @@ class SettingsRepository(private val context: Context) {
         flow {
             emit(null)
             val realFlow: Flow<Boolean> =
-                context.dataStore.data.map { prefs ->
+                dataStoreSettingFlow { prefs ->
                     prefs[SettingsKeys.STARTUP_ONBOARDING_COMPLETED] ?: false
                 }
             emitAll(realFlow)
         }
 
     val maxCacheSizeBytesFlow: Flow<Long> =
-        context.dataStore.data.map { it[SettingsKeys.MAX_CACHE_SIZE_BYTES] ?: (1024L * 1024 * 1024) }
+        dataStoreSettingFlow { it[SettingsKeys.MAX_CACHE_SIZE_BYTES] ?: (1024L * 1024 * 1024) }
 
     val showLyricTranslationFlow: Flow<Boolean> =
         autoSettingsRepository.showLyricTranslationFlow
@@ -338,70 +346,70 @@ class SettingsRepository(private val context: Context) {
         autoSettingsRepository.homeCardRecommendedFlow
 
     val playbackFadeInFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.PLAYBACK_FADE_IN] ?: false }
+        dataStoreSettingFlow { it[SettingsKeys.PLAYBACK_FADE_IN] ?: false }
 
     val playbackCrossfadeNextFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.PLAYBACK_CROSSFADE_NEXT] ?: false }
+        dataStoreSettingFlow { it[SettingsKeys.PLAYBACK_CROSSFADE_NEXT] ?: false }
 
     val playbackFadeInDurationMsFlow: Flow<Long> =
-        context.dataStore.data.map { it[SettingsKeys.PLAYBACK_FADE_IN_DURATION_MS] ?: 500L }
+        dataStoreSettingFlow { it[SettingsKeys.PLAYBACK_FADE_IN_DURATION_MS] ?: 500L }
 
     val playbackFadeOutDurationMsFlow: Flow<Long> =
-        context.dataStore.data.map { it[SettingsKeys.PLAYBACK_FADE_OUT_DURATION_MS] ?: 500L }
+        dataStoreSettingFlow { it[SettingsKeys.PLAYBACK_FADE_OUT_DURATION_MS] ?: 500L }
 
     val playbackCrossfadeInDurationMsFlow: Flow<Long> =
-        context.dataStore.data.map { it[SettingsKeys.PLAYBACK_CROSSFADE_IN_DURATION_MS] ?: 500L }
+        dataStoreSettingFlow { it[SettingsKeys.PLAYBACK_CROSSFADE_IN_DURATION_MS] ?: 500L }
 
     val playbackCrossfadeOutDurationMsFlow: Flow<Long> =
-        context.dataStore.data.map { it[SettingsKeys.PLAYBACK_CROSSFADE_OUT_DURATION_MS] ?: 500L }
+        dataStoreSettingFlow { it[SettingsKeys.PLAYBACK_CROSSFADE_OUT_DURATION_MS] ?: 500L }
 
     val playbackSpeedFlow: Flow<Float> =
-        context.dataStore.data.map {
+        dataStoreSettingFlow {
             normalizePlaybackSpeed(it[SettingsKeys.PLAYBACK_SPEED] ?: DEFAULT_PLAYBACK_SPEED)
         }
 
     val playbackPitchFlow: Flow<Float> =
-        context.dataStore.data.map {
+        dataStoreSettingFlow {
             normalizePlaybackPitch(it[SettingsKeys.PLAYBACK_PITCH] ?: DEFAULT_PLAYBACK_PITCH)
         }
 
     val playbackEqualizerEnabledFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.PLAYBACK_EQUALIZER_ENABLED] ?: false }
+        dataStoreSettingFlow { it[SettingsKeys.PLAYBACK_EQUALIZER_ENABLED] ?: false }
 
     val playbackEqualizerPresetFlow: Flow<String> =
-        context.dataStore.data.map {
+        dataStoreSettingFlow {
             it[SettingsKeys.PLAYBACK_EQUALIZER_PRESET] ?: PlaybackEqualizerPresetId.FLAT
         }
 
     val playbackEqualizerCustomBandLevelsFlow: Flow<List<Int>> =
-        context.dataStore.data.map {
+        dataStoreSettingFlow {
             decodePlaybackEqualizerBandLevels(it[SettingsKeys.PLAYBACK_EQUALIZER_CUSTOM_BAND_LEVELS])
         }
 
     val playbackLoudnessGainMbFlow: Flow<Int> =
-        context.dataStore.data.map {
+        dataStoreSettingFlow {
             normalizePlaybackLoudnessGainMb(
                 it[SettingsKeys.PLAYBACK_LOUDNESS_GAIN_MB] ?: DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
             )
         }
 
     val keepLastPlaybackProgressFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS] ?: true }
+        dataStoreSettingFlow { it[SettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS] ?: true }
 
     val keepPlaybackModeStateFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.KEEP_PLAYBACK_MODE_STATE] ?: true }
+        dataStoreSettingFlow { it[SettingsKeys.KEEP_PLAYBACK_MODE_STATE] ?: true }
 
     val neteaseAutoSourceSwitchFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.NETEASE_AUTO_SOURCE_SWITCH] ?: true }
+        dataStoreSettingFlow { it[SettingsKeys.NETEASE_AUTO_SOURCE_SWITCH] ?: true }
 
     val stopOnBluetoothDisconnectFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.STOP_ON_BLUETOOTH_DISCONNECT] ?: true }
+        dataStoreSettingFlow { it[SettingsKeys.STOP_ON_BLUETOOTH_DISCONNECT] ?: true }
 
     val usbExclusivePlaybackFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.USB_EXCLUSIVE_PLAYBACK] ?: false }
+        dataStoreSettingFlow { it[SettingsKeys.USB_EXCLUSIVE_PLAYBACK] ?: false }
 
     val usbExclusiveBackgroundPermissionPromptSuppressedFlow: Flow<Boolean> =
-        context.dataStore.data.map {
+        dataStoreSettingFlow {
             it[USB_EXCLUSIVE_BACKGROUND_PERMISSION_PROMPT_SUPPRESSED] ?: false
         }
 
@@ -439,17 +447,17 @@ class SettingsRepository(private val context: Context) {
         usbExclusiveSettingsStore.backgroundBufferMsFlow
 
     val allowMixedPlaybackFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.ALLOW_MIXED_PLAYBACK] ?: false }
+        dataStoreSettingFlow { it[SettingsKeys.ALLOW_MIXED_PLAYBACK] ?: false }
 
     val preemptAudioFocusFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.PREEMPT_AUDIO_FOCUS] ?: false }
+        dataStoreSettingFlow { it[SettingsKeys.PREEMPT_AUDIO_FOCUS] ?: false }
 
     // 中文系统默认关闭国际化
     private val defaultInternationalization: Boolean
         get() = !Locale.getDefault().language.startsWith("zh")
 
     val internationalizationEnabledFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.INTERNATIONALIZATION_ENABLED] ?: defaultInternationalization }
+        dataStoreSettingFlow { it[SettingsKeys.INTERNATIONALIZATION_ENABLED] ?: defaultInternationalization }
 
     suspend fun setDynamicColor(value: Boolean) {
         context.dataStore.edit { it[SettingsKeys.DYNAMIC_COLOR] = value }

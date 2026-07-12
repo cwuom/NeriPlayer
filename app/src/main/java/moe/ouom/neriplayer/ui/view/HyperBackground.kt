@@ -27,7 +27,6 @@ import android.os.Build
 import android.view.View
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,6 +49,7 @@ import coil.request.ImageRequest
 import coil.request.SuccessResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.util.isRemoteImageSource
@@ -125,11 +125,6 @@ fun HyperBackground(
 
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    val level by PlayerManager.audioLevelFlow.collectAsState(0f)
-    val beat  by PlayerManager.beatImpulseFlow.collectAsState(0f)
-    val currentLevel by rememberUpdatedState(level)
-    val currentBeat by rememberUpdatedState(beat)
-
     LaunchedEffect(painter, hostView, currentIsDark, coverUrl, refreshKey, offlineMode, lifecycleOwner) {
         if (painter == null || hostView == null) return@LaunchedEffect
         val v = hostView!!
@@ -195,28 +190,41 @@ fun HyperBackground(
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                var currentLevel = 0f
+                var currentBeat = 0f
                 var startNs = 0L
                 var smoothLevel = 0f
                 var smoothBeat = 0f
-                while (isActive) {
-                    withFrameNanos { t ->
-                        if (startNs == 0L) startNs = t
-                        val seconds = ((t - startNs) / 1_000_000_000.0).toFloat()
-                        painter.setAnimTime(seconds % 62.831852f)
+                val levelJob = launch {
+                    PlayerManager.audioLevelFlow.collect { currentLevel = it }
+                }
+                val beatJob = launch {
+                    PlayerManager.beatImpulseFlow.collect { currentBeat = it }
+                }
+                try {
+                    while (isActive) {
+                        withFrameNanos { t ->
+                            if (startNs == 0L) startNs = t
+                            val seconds = ((t - startNs) / 1_000_000_000.0).toFloat()
+                            painter.setAnimTime(seconds % 62.831852f)
 
-                        val targetLevel = currentLevel.coerceIn(0f, 1f)
-                        val targetBeat = (currentBeat * 0.94f).coerceIn(0f, 1f)
-                        val levelRate = if (targetLevel > smoothLevel) 0.12f else 0.045f
-                        val beatRate = if (targetBeat > smoothBeat) 0.46f else 0.12f
-                        smoothLevel += (targetLevel - smoothLevel) * levelRate
-                        smoothBeat += (targetBeat - smoothBeat) * beatRate
-                        painter.setReactive(smoothLevel, smoothBeat)
+                            val targetLevel = currentLevel.coerceIn(0f, 1f)
+                            val targetBeat = (currentBeat * 0.94f).coerceIn(0f, 1f)
+                            val levelRate = if (targetLevel > smoothLevel) 0.12f else 0.045f
+                            val beatRate = if (targetBeat > smoothBeat) 0.46f else 0.12f
+                            smoothLevel += (targetLevel - smoothLevel) * levelRate
+                            smoothBeat += (targetBeat - smoothBeat) * beatRate
+                            painter.setReactive(smoothLevel, smoothBeat)
 
-                        val w = v.width; val h = v.height
-                        if (w > 0 && h > 0) painter.setResolution(w.toFloat(), h.toFloat())
-                        painter.updateMaterials()
-                        v.setRenderEffect(painter.renderEffect)
+                            val w = v.width; val h = v.height
+                            if (w > 0 && h > 0) painter.setResolution(w.toFloat(), h.toFloat())
+                            painter.updateMaterials()
+                            v.setRenderEffect(painter.renderEffect)
+                        }
                     }
+                } finally {
+                    levelJob.cancel()
+                    beatJob.cancel()
                 }
             }
         }

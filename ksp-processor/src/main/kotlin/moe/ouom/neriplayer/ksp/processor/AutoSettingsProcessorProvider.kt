@@ -485,6 +485,7 @@ private fun buildRepositoryFile(packageName: String, settings: List<SettingSpec>
         appendLine("import android.content.Context")
         appendLine("import androidx.datastore.preferences.core.edit")
         appendLine("import kotlinx.coroutines.flow.Flow")
+        appendLine("import kotlinx.coroutines.flow.distinctUntilChanged")
         appendLine("import kotlinx.coroutines.flow.map")
         appendLine("import moe.ouom.neriplayer.data.settings.dataStore")
         appendLine()
@@ -495,7 +496,7 @@ private fun buildRepositoryFile(packageName: String, settings: List<SettingSpec>
             appendLine(
                 "            ${setting.normalizeReadExpression("prefs[AutoSettingsKeys.${setting.keyName}] ?: ${setting.defaultLiteral()}")}"
             )
-            appendLine("        }")
+            appendLine("        }.distinctUntilChanged()")
             appendLine()
         }
         accessibleSettings.forEach { setting ->

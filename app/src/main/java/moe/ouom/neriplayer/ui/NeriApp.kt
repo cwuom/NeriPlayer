@@ -236,6 +236,8 @@ import kotlin.coroutines.resume
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+private val navigationGson: Gson by lazy(LazyThreadSafetyMode.PUBLICATION) { Gson() }
+
 private fun resolveMainStartDestination(
     preferredRoute: String,
     showHomeTab: Boolean,
@@ -1404,7 +1406,7 @@ private fun NeriAppContent(
             val backEntry by navController.currentBackStackEntryAsState()
             val currentRoute = backEntry?.destination?.route
             fun navigateToNeteaseArtist(artist: NeteaseArtistSummary) {
-                val json = Uri.encode(Gson().toJson(artist))
+                val json = Uri.encode(navigationGson.toJson(artist))
                 val currentEntry = navController.currentBackStackEntry
                 val currentIsArtist =
                     currentEntry?.destination?.route == Destinations.NeteaseArtistDetail.route
@@ -1413,7 +1415,7 @@ private fun NeriAppContent(
                     ?.getString("artistJson")
                     ?.let {
                         runCatching {
-                            Gson().fromJson(it, NeteaseArtistSummary::class.java)
+                            navigationGson.fromJson(it, NeteaseArtistSummary::class.java)
                         }.getOrNull()
                     }
                 if (currentArtist?.id == artist.id) {
@@ -1703,7 +1705,7 @@ private fun NeriAppContent(
                                     }
                                 ) { backStackEntry ->
                                     val playlistJson = backStackEntry.arguments?.getString("playlistJson")
-                                    val playlist = Gson().fromJson(playlistJson, PlaylistSummary::class.java)
+                                    val playlist = navigationGson.fromJson(playlistJson, PlaylistSummary::class.java)
                                     NeteasePlaylistDetailScreen(
                                         playlist = playlist,
                                         onBack = { navController.popBackStack() },
@@ -1729,7 +1731,7 @@ private fun NeriAppContent(
                                     }
                                 ) { backStackEntry ->
                                     val playlistJson = backStackEntry.arguments?.getString("playlistJson")
-                                    val album = Gson().fromJson(playlistJson, AlbumSummary::class.java)
+                                    val album = navigationGson.fromJson(playlistJson, AlbumSummary::class.java)
                                     NeteaseAlbumDetailScreen(
                                         album = album,
                                         onBack = { navController.popBackStack() },
@@ -1755,14 +1757,14 @@ private fun NeriAppContent(
                                     }
                                 ) { backStackEntry ->
                                     val artistJson = backStackEntry.arguments?.getString("artistJson")
-                                    val artist = Gson().fromJson(artistJson, NeteaseArtistSummary::class.java)
+                                    val artist = navigationGson.fromJson(artistJson, NeteaseArtistSummary::class.java)
                                     NeteaseArtistDetailScreen(
                                         artist = artist,
                                         onBack = { navController.popBackStack() },
                                         onSongClick = ::playSongsAndOpenNowPlaying,
                                         offlineMode = offlineMode,
                                         onAlbumClick = { album ->
-                                            val json = Uri.encode(Gson().toJson(album))
+                                            val json = Uri.encode(navigationGson.toJson(album))
                                             navController.navigate("netease_album_detail/$json")
                                         }
                                     )
@@ -1785,7 +1787,7 @@ private fun NeriAppContent(
                                     }
                                 ) { backStackEntry ->
                                     val playlistJson = backStackEntry.arguments?.getString("playlistJson")
-                                    val playlist = Gson().fromJson(playlistJson, BiliPlaylist::class.java)
+                                    val playlist = navigationGson.fromJson(playlistJson, BiliPlaylist::class.java)
                                     BiliPlaylistDetailScreen(
                                         playlist = playlist,
                                         onBack = { navController.popBackStack() },
@@ -2743,7 +2745,7 @@ private fun NeriAppContent(
                                     showLyricsScreen = showNowPlayingLyrics,
                                     onShowLyricsScreenChange = { showNowPlayingLyrics = it },
                                     onEnterAlbum = { album ->
-                                        val json = Uri.encode(Gson().toJson(album))
+                                        val json = Uri.encode(navigationGson.toJson(album))
                                         navController.navigate("netease_album_detail/$json")
                                         if (showNowPlayingLyrics) {
                                             restoreLyricsAfterAlbumBack = true

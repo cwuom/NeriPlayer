@@ -1964,92 +1964,92 @@ class YouTubeMusicPlaybackRepository(
                         "Skip NewPipe signature for $videoId because player.js is already flagged"
                     )
                 }
-                return runBlocking {
+                return runBlocking(Dispatchers.Default) {
                     withTimeoutOrNull(CIPHER_RESOLVE_TIMEOUT_MS) {
-                    val newPipeDeferred = if (skipSignatureNewPipe) {
-                        null
-                    } else {
-                        async(Dispatchers.Default) {
-                            val startedAtMs = System.currentTimeMillis()
-                            val resolvedByNewPipe = runCatching {
-                                YoutubeJavaScriptPlayerManager.deobfuscateSignature(
-                                    videoId,
-                                    encryptedSignature
+                        val newPipeDeferred = if (skipSignatureNewPipe) {
+                            null
+                        } else {
+                            async(Dispatchers.Default) {
+                                val startedAtMs = System.currentTimeMillis()
+                                val resolvedByNewPipe = runCatching {
+                                    YoutubeJavaScriptPlayerManager.deobfuscateSignature(
+                                        videoId,
+                                        encryptedSignature
+                                    )
+                                }.onFailure { error ->
+                                    if (signatureErrorLogged.compareAndSet(false, true)) {
+                                        NPLogger.w(
+                                            "YouTubeMusicPlayback",
+                                            "Failed to deobfuscate streaming signature for $videoId via NewPipe elapsedMs=${playbackElapsedMs(startedAtMs)}",
+                                            error
+                                        )
+                                    }
+                                }.getOrNull()?.takeIf { it.isNotBlank() && it != encryptedSignature }
+                                ChallengeCandidateResult(
+                                    source = "NEWPIPE",
+                                    value = resolvedByNewPipe,
+                                    elapsedMs = playbackElapsedMs(startedAtMs)
                                 )
-                            }.onFailure { error ->
-                                if (signatureErrorLogged.compareAndSet(false, true)) {
+                            }
+                        }
+                        val ejsDeferred = if (resolvedPlayerJsUrl.isBlank()) {
+                            null
+                        } else {
+                            async(Dispatchers.IO) {
+                                if (!skipSignatureNewPipe) {
+                                    delay(EJS_FALLBACK_START_DELAY_MS)
+                                }
+                                val startedAtMs = System.currentTimeMillis()
+                                val ejsResult = runCatching {
+                                    ejsChallengeSolver?.solveDetailed(
+                                        playerJsUrl = resolvedPlayerJsUrl,
+                                        encryptedSignature = encryptedSignature
+                                    )
+                                }.getOrElse { error ->
+                                    YouTubeJsChallengeSolveResult(
+                                        status = YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED,
+                                        detail = "solveDetailed threw unexpectedly",
+                                        cause = error
+                                    )
+                                } ?: YouTubeJsChallengeSolveResult(
+                                    status = YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED,
+                                    detail = "ejsChallengeSolver is unavailable"
+                                )
+                                val elapsedMs = playbackElapsedMs(startedAtMs)
+                                val resolvedByEjs = ejsResult.solution.signature
+                                    ?.takeIf { it.isNotBlank() && it != encryptedSignature }
+                                if (resolvedByEjs == null &&
+                                    ejsResult.status != YouTubeJsChallengeSolveStatus.SUCCESS &&
+                                    signatureEjsFallbackLogged.compareAndSet(false, true)
+                                ) {
                                     NPLogger.w(
                                         "YouTubeMusicPlayback",
-                                        "Failed to deobfuscate streaming signature for $videoId via NewPipe elapsedMs=${playbackElapsedMs(startedAtMs)}",
-                                        error
+                                        "EJS signature fallback failed for $videoId: ${ejsResult.summary()}, elapsedMs=$elapsedMs",
+                                        ejsResult.cause
                                     )
                                 }
-                            }.getOrNull()?.takeIf { it.isNotBlank() && it != encryptedSignature }
-                            ChallengeCandidateResult(
-                                source = "NEWPIPE",
-                                value = resolvedByNewPipe,
-                                elapsedMs = playbackElapsedMs(startedAtMs)
-                            )
-                        }
-                    }
-                    val ejsDeferred = if (resolvedPlayerJsUrl.isBlank()) {
-                        null
-                    } else {
-                        async(Dispatchers.IO) {
-                            if (!skipSignatureNewPipe) {
-                                delay(EJS_FALLBACK_START_DELAY_MS)
-                            }
-                            val startedAtMs = System.currentTimeMillis()
-                            val ejsResult = runCatching {
-                                ejsChallengeSolver?.solveDetailed(
-                                    playerJsUrl = resolvedPlayerJsUrl,
-                                    encryptedSignature = encryptedSignature
-                                )
-                            }.getOrElse { error ->
-                                YouTubeJsChallengeSolveResult(
-                                    status = YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED,
-                                    detail = "solveDetailed threw unexpectedly",
-                                    cause = error
-                                )
-                            } ?: YouTubeJsChallengeSolveResult(
-                                status = YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED,
-                                detail = "ejsChallengeSolver is unavailable"
-                            )
-                            val elapsedMs = playbackElapsedMs(startedAtMs)
-                            val resolvedByEjs = ejsResult.solution.signature
-                                ?.takeIf { it.isNotBlank() && it != encryptedSignature }
-                            if (resolvedByEjs == null &&
-                                ejsResult.status != YouTubeJsChallengeSolveStatus.SUCCESS &&
-                                signatureEjsFallbackLogged.compareAndSet(false, true)
-                            ) {
-                                NPLogger.w(
-                                    "YouTubeMusicPlayback",
-                                    "EJS signature fallback failed for $videoId: ${ejsResult.summary()}, elapsedMs=$elapsedMs",
-                                    ejsResult.cause
+                                ChallengeCandidateResult(
+                                    source = "EJS_FALLBACK",
+                                    value = resolvedByEjs,
+                                    elapsedMs = elapsedMs
                                 )
                             }
-                            ChallengeCandidateResult(
-                                source = "EJS_FALLBACK",
-                                value = resolvedByEjs,
-                                elapsedMs = elapsedMs
-                            )
                         }
-                    }
-                    val winner = awaitFirstChallengeSuccess(listOfNotNull(newPipeDeferred, ejsDeferred))
-                    if (winner != null) {
-                        maybeLogResolution(
-                            challengeType = "signature",
-                            source = winner.source,
-                            elapsedMs = winner.elapsedMs,
-                            logged = signatureResolutionLogged
-                        )
-                        return@withTimeoutOrNull winner.value
-                    }
-                    val newPipeResult = newPipeDeferred?.await()
-                    if (!skipSignatureNewPipe && newPipeResult?.value == null) {
-                        NewPipeFallbackTracker.recordSignatureFailure(resolvedPlayerJsUrl)
-                    }
-                    return@withTimeoutOrNull null
+                        val winner = awaitFirstChallengeSuccess(listOfNotNull(newPipeDeferred, ejsDeferred))
+                        if (winner != null) {
+                            maybeLogResolution(
+                                challengeType = "signature",
+                                source = winner.source,
+                                elapsedMs = winner.elapsedMs,
+                                logged = signatureResolutionLogged
+                            )
+                            return@withTimeoutOrNull winner.value
+                        }
+                        val newPipeResult = newPipeDeferred?.await()
+                        if (!skipSignatureNewPipe && newPipeResult?.value == null) {
+                            NewPipeFallbackTracker.recordSignatureFailure(resolvedPlayerJsUrl)
+                        }
+                        return@withTimeoutOrNull null
                     }
                 }
             }
@@ -2064,93 +2064,93 @@ class YouTubeMusicPlaybackRepository(
                         "Skip NewPipe throttling for $videoId because player.js is already flagged"
                     )
                 }
-                return runBlocking {
+                return runBlocking(Dispatchers.Default) {
                     withTimeoutOrNull(CIPHER_RESOLVE_TIMEOUT_MS) {
-                    val newPipeDeferred = if (skipThrottlingNewPipe) {
-                        null
-                    } else {
-                        async(Dispatchers.Default) {
-                            val startedAtMs = System.currentTimeMillis()
-                            val resolvedByNewPipe = runCatching {
-                                YoutubeJavaScriptPlayerManager.getUrlWithThrottlingParameterDeobfuscated(
-                                    videoId,
-                                    url
+                        val newPipeDeferred = if (skipThrottlingNewPipe) {
+                            null
+                        } else {
+                            async(Dispatchers.Default) {
+                                val startedAtMs = System.currentTimeMillis()
+                                val resolvedByNewPipe = runCatching {
+                                    YoutubeJavaScriptPlayerManager.getUrlWithThrottlingParameterDeobfuscated(
+                                        videoId,
+                                        url
+                                    )
+                                }.onFailure { error ->
+                                    if (throttlingErrorLogged.compareAndSet(false, true)) {
+                                        NPLogger.w(
+                                            "YouTubeMusicPlayback",
+                                            "Failed to deobfuscate throttling parameter for $videoId via NewPipe elapsedMs=${playbackElapsedMs(startedAtMs)}",
+                                            error
+                                        )
+                                    }
+                                }.getOrNull()?.takeIf { it.isNotBlank() && it != url }
+                                ChallengeCandidateResult(
+                                    source = "NEWPIPE",
+                                    value = resolvedByNewPipe,
+                                    elapsedMs = playbackElapsedMs(startedAtMs)
                                 )
-                            }.onFailure { error ->
-                                if (throttlingErrorLogged.compareAndSet(false, true)) {
+                            }
+                        }
+                        val ejsDeferred = if (resolvedPlayerJsUrl.isBlank()) {
+                            null
+                        } else {
+                            async(Dispatchers.IO) {
+                                if (!skipThrottlingNewPipe) {
+                                    delay(EJS_FALLBACK_START_DELAY_MS)
+                                }
+                                val startedAtMs = System.currentTimeMillis()
+                                val ejsResult = runCatching {
+                                    ejsChallengeSolver?.solveDetailed(
+                                        playerJsUrl = resolvedPlayerJsUrl,
+                                        throttlingParameter = obfuscatedN
+                                    )
+                                }.getOrElse { error ->
+                                    YouTubeJsChallengeSolveResult(
+                                        status = YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED,
+                                        detail = "solveDetailed threw unexpectedly",
+                                        cause = error
+                                    )
+                                } ?: YouTubeJsChallengeSolveResult(
+                                    status = YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED,
+                                    detail = "ejsChallengeSolver is unavailable"
+                                )
+                                val elapsedMs = playbackElapsedMs(startedAtMs)
+                                val resolvedByEjs = ejsResult.solution.throttlingParameter
+                                    ?.takeIf { it.isNotBlank() && it != obfuscatedN }
+                                    ?.let { replaceStreamQueryParameter(url, "n", it) }
+                                if (resolvedByEjs == null &&
+                                    ejsResult.status != YouTubeJsChallengeSolveStatus.SUCCESS &&
+                                    throttlingEjsFallbackLogged.compareAndSet(false, true)
+                                ) {
                                     NPLogger.w(
                                         "YouTubeMusicPlayback",
-                                        "Failed to deobfuscate throttling parameter for $videoId via NewPipe elapsedMs=${playbackElapsedMs(startedAtMs)}",
-                                        error
+                                        "EJS throttling fallback failed for $videoId: ${ejsResult.summary()}, elapsedMs=$elapsedMs",
+                                        ejsResult.cause
                                     )
                                 }
-                            }.getOrNull()?.takeIf { it.isNotBlank() && it != url }
-                            ChallengeCandidateResult(
-                                source = "NEWPIPE",
-                                value = resolvedByNewPipe,
-                                elapsedMs = playbackElapsedMs(startedAtMs)
-                            )
-                        }
-                    }
-                    val ejsDeferred = if (resolvedPlayerJsUrl.isBlank()) {
-                        null
-                    } else {
-                        async(Dispatchers.IO) {
-                            if (!skipThrottlingNewPipe) {
-                                delay(EJS_FALLBACK_START_DELAY_MS)
-                            }
-                            val startedAtMs = System.currentTimeMillis()
-                            val ejsResult = runCatching {
-                                ejsChallengeSolver?.solveDetailed(
-                                    playerJsUrl = resolvedPlayerJsUrl,
-                                    throttlingParameter = obfuscatedN
-                                )
-                            }.getOrElse { error ->
-                                YouTubeJsChallengeSolveResult(
-                                    status = YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED,
-                                    detail = "solveDetailed threw unexpectedly",
-                                    cause = error
-                                )
-                            } ?: YouTubeJsChallengeSolveResult(
-                                status = YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED,
-                                detail = "ejsChallengeSolver is unavailable"
-                            )
-                            val elapsedMs = playbackElapsedMs(startedAtMs)
-                            val resolvedByEjs = ejsResult.solution.throttlingParameter
-                                ?.takeIf { it.isNotBlank() && it != obfuscatedN }
-                                ?.let { replaceStreamQueryParameter(url, "n", it) }
-                            if (resolvedByEjs == null &&
-                                ejsResult.status != YouTubeJsChallengeSolveStatus.SUCCESS &&
-                                throttlingEjsFallbackLogged.compareAndSet(false, true)
-                            ) {
-                                NPLogger.w(
-                                    "YouTubeMusicPlayback",
-                                    "EJS throttling fallback failed for $videoId: ${ejsResult.summary()}, elapsedMs=$elapsedMs",
-                                    ejsResult.cause
+                                ChallengeCandidateResult(
+                                    source = "EJS_FALLBACK",
+                                    value = resolvedByEjs,
+                                    elapsedMs = elapsedMs
                                 )
                             }
-                            ChallengeCandidateResult(
-                                source = "EJS_FALLBACK",
-                                value = resolvedByEjs,
-                                elapsedMs = elapsedMs
-                            )
                         }
-                    }
-                    val winner = awaitFirstChallengeSuccess(listOfNotNull(newPipeDeferred, ejsDeferred))
-                    if (winner != null) {
-                        maybeLogResolution(
-                            challengeType = "throttling",
-                            source = winner.source,
-                            elapsedMs = winner.elapsedMs,
-                            logged = throttlingResolutionLogged
-                        )
-                        return@withTimeoutOrNull winner.value ?: url
-                    }
-                    val newPipeResult = newPipeDeferred?.await()
-                    if (!skipThrottlingNewPipe && newPipeResult?.value == null) {
-                        NewPipeFallbackTracker.recordThrottlingFailure(resolvedPlayerJsUrl)
-                    }
-                    return@withTimeoutOrNull url
+                        val winner = awaitFirstChallengeSuccess(listOfNotNull(newPipeDeferred, ejsDeferred))
+                        if (winner != null) {
+                            maybeLogResolution(
+                                challengeType = "throttling",
+                                source = winner.source,
+                                elapsedMs = winner.elapsedMs,
+                                logged = throttlingResolutionLogged
+                            )
+                            return@withTimeoutOrNull winner.value ?: url
+                        }
+                        val newPipeResult = newPipeDeferred?.await()
+                        if (!skipThrottlingNewPipe && newPipeResult?.value == null) {
+                            NewPipeFallbackTracker.recordThrottlingFailure(resolvedPlayerJsUrl)
+                        }
+                        return@withTimeoutOrNull url
                     } ?: url
                 }
             }

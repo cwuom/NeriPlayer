@@ -69,7 +69,7 @@ class ConditionalHttpDataSourceFactory(
     private var latestCookieHeader: String = ""
     @Volatile
     private var latestYouTubeAuth: YouTubeAuthBundle = YouTubeAuthBundle()
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     init {
         scope.launch {

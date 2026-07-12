@@ -1479,12 +1479,11 @@ internal fun PlayerManager.startProgressUpdates() {
             }
             updateExternalBluetoothLyricLine(positionMs)
             maybePersistPlaybackProgress(positionMs)
-            persistPlaybackStatsSnapshotAsync(
-                synchronized(playbackStatsTracker) {
-                    playbackStatsTracker.onPlaybackProgress(positionMs)
-                        ?.also { markTrackEndHandledForStatsFallback() }
-                }
-            )
+            val progressStatsSnapshot = consumePlaybackStatsProgress(positionMs)
+            if (progressStatsSnapshot != null) {
+                markTrackEndHandledForStatsFallback()
+            }
+            persistPlaybackStatsSnapshotAsync(progressStatsSnapshot)
             maybePersistPlaybackStatsProgress()
             delay(updateIntervalMs)
         }
@@ -1515,12 +1514,22 @@ private fun PlayerManager.maybePersistPlaybackProgress(positionMs: Long) {
     scheduleStatePersist(positionMs = positionMs, shouldResumePlayback = true)
 }
 
-private fun PlayerManager.maybePersistPlaybackStatsProgress() {
-    val snapshot = synchronized(playbackStatsTracker) {
-        if (playbackStatsTracker.shouldFlushPeriodically()) {
-            playbackStatsTracker.flushPeriodic()
-        } else {
-            null
+private suspend fun PlayerManager.consumePlaybackStatsProgress(positionMs: Long): PlaybackStatsSnapshot? {
+    return withContext(Dispatchers.Default) {
+        synchronized(playbackStatsTracker) {
+            playbackStatsTracker.onPlaybackProgress(positionMs)
+        }
+    }
+}
+
+private suspend fun PlayerManager.maybePersistPlaybackStatsProgress() {
+    val snapshot = withContext(Dispatchers.Default) {
+        synchronized(playbackStatsTracker) {
+            if (playbackStatsTracker.shouldFlushPeriodically()) {
+                playbackStatsTracker.flushPeriodic()
+            } else {
+                null
+            }
         }
     }
     persistPlaybackStatsSnapshotAsync(snapshot)

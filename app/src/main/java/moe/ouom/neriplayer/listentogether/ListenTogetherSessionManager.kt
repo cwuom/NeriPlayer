@@ -2590,12 +2590,12 @@ class ListenTogetherSessionManager(
         private const val TRACK_SWITCH_FORCE_SYNC_MS = 500L
         private const val MAX_RECENT_EVENT_IDS = 128
         private const val CONTROLLER_GRACE_PERIOD_MS = 10 * 60 * 1000L
-        private const val HEARTBEAT_POLL_INTERVAL_MS = 2_000L
+        private const val HEARTBEAT_POLL_INTERVAL_MS = 5_000L
         private const val HEARTBEAT_IDLE_THRESHOLD_MS = 12_000L
         private const val LINK_REQUEST_THROTTLE_MS = 4_000L
         private const val CONTROLLER_LOCAL_CONTROL_COOLDOWN_MS = 1_200L
         private const val CONTROLLER_WATCHDOG_HEARTBEAT_INTERVAL_MS = 4_000L
-        private const val SYNC_WATCHDOG_INTERVAL_MS = 2_500L
+        private const val SYNC_WATCHDOG_INTERVAL_MS = 8_000L
         private const val LISTENER_STATE_REFRESH_INTERVAL_MS = 7_500L
         private const val LISTENER_PLAYBACK_STALL_TIMEOUT_MS = 8_000L
         private const val LISTENER_PLAYBACK_STALL_RECOVERY_COOLDOWN_MS = 12_000L

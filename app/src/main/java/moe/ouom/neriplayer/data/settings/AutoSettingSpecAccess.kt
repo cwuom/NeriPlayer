@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingSpec
 import moe.ouom.neriplayer.ksp.annotations.SettingValueType
@@ -47,7 +48,7 @@ operator fun <T> MutablePreferences.set(setting: AutoSettingSpec<T>, value: T) {
 fun <T> Context.autoSettingFlow(setting: AutoSettingSpec<T>): Flow<T> {
     return dataStore.data.map { prefs ->
         prefs.valueOf(setting)
-    }
+    }.distinctUntilChanged()
 }
 
 suspend fun <T> Context.setAutoSetting(setting: AutoSettingSpec<T>, value: T) {

@@ -19,6 +19,9 @@ import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeAlignment
@@ -216,6 +219,7 @@ private fun rememberInterpolatedPlaybackPositionProvider(
     var renderedPositionMs by remember { mutableLongStateOf(currentTimeMs) }
     var anchorPositionMs by remember { mutableLongStateOf(currentTimeMs) }
     var anchorRealtimeNanos by remember { mutableLongStateOf(System.nanoTime()) }
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(currentTimeMs, isPlaying) {
         anchorPositionMs = currentTimeMs
@@ -227,23 +231,25 @@ private fun rememberInterpolatedPlaybackPositionProvider(
         }
     }
 
-    LaunchedEffect(isPlaying, playbackSpeed) {
+    LaunchedEffect(isPlaying, playbackSpeed, lifecycleOwner) {
         if (!isPlaying) {
             renderedPositionMs = currentTimeMs
             return@LaunchedEffect
         }
 
-        while (isActive) {
-            val frameNanos = withFrameNanos { it }
-            val predictedPositionMs = resolveInterpolatedPlaybackPosition(
-                anchorPositionMs = anchorPositionMs,
-                anchorRealtimeNanos = anchorRealtimeNanos,
-                frameRealtimeNanos = frameNanos,
-                playbackSpeed = playbackSpeed,
-                previousRenderedPositionMs = renderedPositionMs
-            )
-            if (predictedPositionMs != renderedPositionMs) {
-                renderedPositionMs = predictedPositionMs
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (isActive) {
+                val frameNanos = withFrameNanos { it }
+                val predictedPositionMs = resolveInterpolatedPlaybackPosition(
+                    anchorPositionMs = anchorPositionMs,
+                    anchorRealtimeNanos = anchorRealtimeNanos,
+                    frameRealtimeNanos = frameNanos,
+                    playbackSpeed = playbackSpeed,
+                    previousRenderedPositionMs = renderedPositionMs
+                )
+                if (predictedPositionMs != renderedPositionMs) {
+                    renderedPositionMs = predictedPositionMs
+                }
             }
         }
     }
