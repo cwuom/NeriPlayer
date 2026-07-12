@@ -8,6 +8,7 @@ plugins {
 group = "moe.ouom.wekit.buildLogic"
 
 repositories {
+    mavenLocal()
     google()
     gradlePluginPortal()
     mavenCentral()
