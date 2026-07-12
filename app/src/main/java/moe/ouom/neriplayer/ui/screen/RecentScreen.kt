@@ -77,7 +77,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -94,12 +93,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.media.displayAlbum
+import moe.ouom.neriplayer.data.history.toSongItem
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.sameIdentityAs
@@ -124,31 +125,11 @@ fun RecentScreen(
     offlineMode: Boolean = false
 ) {
     val repo = AppContainer.playHistoryRepo
-    val history by repo.historyFlow.collectAsState()
+    val history by repo.historyFlow.collectAsStateWithLifecycle()
 
     // 可播放的 SongItem 列表
     val baseSongs: List<SongItem> = remember(history) {
-        history.map {
-            SongItem(
-                id = it.id, name = it.name, artist = it.artist, albumId = it.albumId,
-                album = it.album,
-                durationMs = it.durationMs,
-                coverUrl = it.coverUrl,
-                mediaUri = it.localFilePath ?: it.mediaUri,
-                matchedLyric = it.matchedLyric,
-                matchedTranslatedLyric = it.matchedTranslatedLyric,
-                customCoverUrl = it.customCoverUrl,
-                customName = it.customName,
-                customArtist = it.customArtist,
-                originalName = it.originalName,
-                originalArtist = it.originalArtist,
-                originalCoverUrl = it.originalCoverUrl,
-                originalLyric = it.originalLyric,
-                originalTranslatedLyric = it.originalTranslatedLyric,
-                localFileName = it.localFileName,
-                localFilePath = it.localFilePath
-            )
-        }
+        history.map { it.toSongItem() }
     }
 
     val context = LocalContext.current
@@ -189,9 +170,9 @@ fun RecentScreen(
     }
 
     // 当前播放态
-    val currentSong by PlayerManager.currentSongFlow.collectAsState()
-    val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
-    val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
+    val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
+    val isPlaying by PlayerManager.isPlayingFlow.collectAsStateWithLifecycle()
+    val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
 
     // 清空确认
     var showClearConfirm by remember { mutableStateOf(false) }

@@ -1,6 +1,16 @@
 package moe.ouom.neriplayer.data.playlist.usage
 
 import android.content.Context
+import android.content.SharedPreferences
+import android.content.res.Configuration
+import android.content.res.Resources
+import android.os.LocaleList
+import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -8,6 +18,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
+import java.util.Locale
 
 class PlaylistUsageRepositoryTest {
 
@@ -126,6 +137,45 @@ class PlaylistUsageRepositoryTest {
         assertEquals(200L, entry.lastOpened)
     }
 
+    @Test
+    fun `local playlist usage lookup keeps legacy local files cover`() {
+        val coverUrl = "file:///covers/local.jpg"
+        val legacyLocalFiles = LocalPlaylist(
+            id = -12L,
+            name = "本地文件",
+            songs = mutableListOf(localSong(coverUrl))
+        )
+
+        val lookup = buildLocalPlaylistUsageLookup(
+            playlists = listOf(legacyLocalFiles),
+            context = mockLocalizedContext()
+        )
+
+        val localFiles = lookup.getValue(LocalFilesPlaylist.SYSTEM_ID)
+        assertEquals(1, localFiles.songs.size)
+        assertEquals(coverUrl, localFiles.displayCoverUrl())
+    }
+
+    @Test
+    fun `local files usage cover resolves with local metadata fallback`() {
+        val context = mockLocalizedContext()
+        val embeddedCoverUrl = "file://${tempFolder.root.resolve("local-cover.jpg").absolutePath}"
+        val localFiles = LocalPlaylist(
+            id = LocalFilesPlaylist.SYSTEM_ID,
+            name = "本地文件",
+            songs = mutableListOf(
+                localSong(coverUrl = null).copy(customCoverUrl = embeddedCoverUrl)
+            )
+        )
+
+        val refreshedPicUrl = localFiles.displayCoverUrl(
+            context = context,
+            resolveLocalMetadataFallback = true
+        )
+
+        assertEquals(embeddedCoverUrl, refreshedPicUrl)
+    }
+
     private fun usageEntry(
         id: Long,
         subtype: String?,
@@ -150,5 +200,39 @@ class PlaylistUsageRepositoryTest {
         val context = mock(Context::class.java)
         `when`(context.filesDir).thenReturn(tempFolder.root)
         return context
+    }
+
+    private fun mockLocalizedContext(): Context {
+        val resources = mock(Resources::class.java)
+        val configuration = mock(Configuration::class.java)
+        val locales = mock(LocaleList::class.java)
+        val prefs = mock(SharedPreferences::class.java)
+        return mock(Context::class.java).apply {
+            `when`(resources.configuration).thenReturn(configuration)
+            `when`(configuration.locales).thenReturn(locales)
+            `when`(locales[0]).thenReturn(Locale.CHINA)
+            `when`(getSharedPreferences("language_settings", Context.MODE_PRIVATE)).thenReturn(prefs)
+            `when`(prefs.getString("selected_language", "")).thenReturn("")
+            `when`(this.resources).thenReturn(resources)
+            `when`(getString(R.string.local_files)).thenReturn("本地文件")
+            `when`(getString(R.string.favorite_my_music)).thenReturn("我喜欢的音乐")
+        }
+    }
+
+    private fun localSong(coverUrl: String?): SongItem {
+        return SongItem(
+            id = 1L,
+            name = "Local Song",
+            artist = "Local Artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 180_000L,
+            coverUrl = coverUrl,
+            mediaUri = "/music/local.mp3",
+            localFileName = "local.mp3",
+            localFilePath = "/music/local.mp3",
+            channelId = "local",
+            audioId = "1"
+        )
     }
 }

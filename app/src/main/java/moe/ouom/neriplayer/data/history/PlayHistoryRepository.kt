@@ -69,8 +69,71 @@ data class PlayedEntry(
     val originalTranslatedLyric: String? = null,
     val localFileName: String? = null,
     val localFilePath: String? = null,
+    val channelId: String? = null,
+    val audioId: String? = null,
+    val subAudioId: String? = null,
+    val sourceStableKey: String? = null,
     val playedAt: Long
 )
+
+internal fun SongItem.toPlayedEntry(now: Long): PlayedEntry {
+    return PlayedEntry(
+        id = id,
+        name = name,
+        artist = artist,
+        album = album,
+        albumId = albumId,
+        durationMs = durationMs,
+        coverUrl = coverUrl,
+        mediaUri = mediaUri,
+        matchedLyric = matchedLyric,
+        matchedTranslatedLyric = matchedTranslatedLyric,
+        customCoverUrl = customCoverUrl,
+        customName = customName,
+        customArtist = customArtist,
+        originalName = originalName,
+        originalArtist = originalArtist,
+        originalCoverUrl = originalCoverUrl,
+        originalLyric = originalLyric,
+        originalTranslatedLyric = originalTranslatedLyric,
+        localFileName = localFileName,
+        localFilePath = localFilePath,
+        channelId = channelId,
+        audioId = audioId,
+        subAudioId = subAudioId,
+        sourceStableKey = sourceStableKey,
+        playedAt = now
+    )
+}
+
+internal fun PlayedEntry.toSongItem(): SongItem {
+    return SongItem(
+        id = id,
+        name = name,
+        artist = artist,
+        albumId = albumId,
+        album = album,
+        durationMs = durationMs,
+        coverUrl = coverUrl,
+        mediaUri = localFilePath ?: mediaUri,
+        matchedLyric = matchedLyric,
+        matchedTranslatedLyric = matchedTranslatedLyric,
+        customCoverUrl = customCoverUrl,
+        customName = customName,
+        customArtist = customArtist,
+        originalName = originalName,
+        originalArtist = originalArtist,
+        originalCoverUrl = originalCoverUrl,
+        originalLyric = originalLyric,
+        originalTranslatedLyric = originalTranslatedLyric,
+        localFileName = localFileName,
+        localFilePath = localFilePath,
+        channelId = channelId,
+        audioId = audioId,
+        subAudioId = subAudioId,
+        sourceStableKey = sourceStableKey
+    )
+}
 
 internal enum class PlayHistorySyncUrgency {
     SETTLED,
@@ -312,32 +375,6 @@ class PlayHistoryRepository private constructor(private val app: Context) {
         return SongIdentity(id, album, localFilePath ?: mediaUri)
     }
 
-    private fun SongItem.toPlayedEntry(now: Long): PlayedEntry {
-        return PlayedEntry(
-            id = id,
-            name = name,
-            artist = artist,
-            album = album,
-            albumId = albumId,
-            durationMs = durationMs,
-            coverUrl = coverUrl,
-            mediaUri = mediaUri,
-            matchedLyric = matchedLyric,
-            matchedTranslatedLyric = matchedTranslatedLyric,
-            customCoverUrl = customCoverUrl,
-            customName = customName,
-            customArtist = customArtist,
-            originalName = originalName,
-            originalArtist = originalArtist,
-            originalCoverUrl = originalCoverUrl,
-            originalLyric = originalLyric,
-            originalTranslatedLyric = originalTranslatedLyric,
-            localFileName = localFileName,
-            localFilePath = localFilePath,
-            playedAt = now
-        )
-    }
-
     private fun PlayedEntry.mergeSongMetadata(song: SongItem, playedAt: Long = this.playedAt): PlayedEntry {
         return copy(
             name = song.name,
@@ -359,6 +396,10 @@ class PlayHistoryRepository private constructor(private val app: Context) {
             originalTranslatedLyric = song.originalTranslatedLyric,
             localFileName = song.localFileName,
             localFilePath = song.localFilePath,
+            channelId = song.channelId,
+            audioId = song.audioId,
+            subAudioId = song.subAudioId,
+            sourceStableKey = song.sourceStableKey,
             playedAt = playedAt
         )
     }

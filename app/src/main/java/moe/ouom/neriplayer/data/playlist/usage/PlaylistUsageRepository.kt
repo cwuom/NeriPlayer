@@ -35,6 +35,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.local.playlist.model.buildLocalArtistSummaries
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.util.LanguageManager
@@ -253,12 +255,12 @@ class PlaylistUsageRepository(private val app: Context) {
         if (current.none { it.source == SOURCE_LOCAL }) return
 
         val localizedContext = LanguageManager.applyLanguage(app)
-        val playlistsById = playlists.associateBy(LocalPlaylist::id)
+        val localPlaylistLookup = buildLocalPlaylistUsageLookup(playlists, localizedContext)
         var changed = false
         val updated = current.mapNotNull { entry ->
             if (entry.source != SOURCE_LOCAL) return@mapNotNull entry
 
-            val playlist = playlistsById[entry.id] ?: run {
+            val playlist = localPlaylistLookup[entry.id] ?: run {
                 changed = true
                 return@mapNotNull null
             }
@@ -268,7 +270,10 @@ class PlaylistUsageRepository(private val app: Context) {
                 playlistName = playlist.name,
                 context = localizedContext
             )?.currentName ?: playlist.name
-            val refreshedPicUrl = playlist.displayCoverUrl()
+            val refreshedPicUrl = playlist.displayCoverUrl(
+                context = localizedContext,
+                resolveLocalMetadataFallback = true
+            )
             val refreshedTrackCount = playlist.songs.size
             if (
                 entry.name == refreshedName &&
@@ -310,7 +315,10 @@ class PlaylistUsageRepository(private val app: Context) {
                 return@mapNotNull null
             }
 
-            val refreshedPicUrl = artist.coverSong?.displayCoverUrl()
+            val refreshedPicUrl = artist.coverSong?.displayCoverUrl(
+                context = localizedContext,
+                resolveLocalMetadataFallback = true
+            )
             val refreshedTrackCount = artist.songs.size
             if (
                 entry.name == artist.name &&
@@ -350,4 +358,27 @@ class PlaylistUsageRepository(private val app: Context) {
         _flow.value = out
         saveAsync(out)
     }
+}
+
+internal fun buildLocalPlaylistUsageLookup(
+    playlists: List<LocalPlaylist>,
+    context: Context
+): Map<Long, LocalPlaylist> {
+    val lookup = playlists.associateBy(LocalPlaylist::id).toMutableMap()
+    val systemGroups = playlists.groupBy { playlist ->
+        SystemLocalPlaylists.resolve(playlist.id, playlist.name, context)?.id
+    }
+
+    systemGroups[FavoritesPlaylist.SYSTEM_ID]
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { favorites ->
+            lookup[FavoritesPlaylist.SYSTEM_ID] = FavoritesPlaylist.merge(favorites, context)
+        }
+    systemGroups[LocalFilesPlaylist.SYSTEM_ID]
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { localFiles ->
+            lookup[LocalFilesPlaylist.SYSTEM_ID] = LocalFilesPlaylist.merge(localFiles, context)
+        }
+
+    return lookup
 }
