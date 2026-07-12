@@ -24,11 +24,15 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.storage.*
+import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitVerifier
+import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirectoryIdentity
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadMetadataCodec
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.queue.ManagedDownloadQueueStore
+import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadPendingAudioWriteNames
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotCacheStore
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
+import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.working.ManagedDownloadWorkingStore
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.identity
@@ -39,11 +43,7 @@ import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
 import java.io.InputStream
-import java.net.URLDecoder
-import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
-import kotlin.math.abs
 
 internal object ManagedDownloadStorage {
     private const val TAG = "ManagedDownloadStorage"
@@ -71,7 +71,7 @@ internal object ManagedDownloadStorage {
     private val fileChildrenNameCache = ConcurrentHashMap<String, CachedChildNames>()
     private val childNameReservationLocks = ConcurrentHashMap<String, Any>()
     private val ensuredNoMediaMarkers = ConcurrentHashMap<String, Boolean>()
-    private val pendingAudioWriteIdGenerator = AtomicLong(0L)
+    private val pendingAudioWriteNames = ManagedDownloadPendingAudioWriteNames()
 
     @Volatile
     private var startupRecoveryResult = StartupRecoveryResult()
@@ -604,29 +604,15 @@ internal object ManagedDownloadStorage {
     }
 
     internal fun directoryIdentity(uriString: String?): String? {
-        val normalized = normalizeConfiguredDirectoryUri(uriString) ?: return null
-        extractDirectoryDocumentId(normalized, "/tree/")
-            ?.let { documentId ->
-                return "tree:${extractDirectoryAuthority(normalized)}:$documentId"
-            }
-        extractDirectoryDocumentId(normalized, "/document/")
-            ?.let { documentId ->
-                return "document:${extractDirectoryAuthority(normalized)}:$documentId"
-            }
-        return normalized
+        return ManagedDownloadDirectoryIdentity.directoryIdentity(uriString)
     }
 
     internal fun areEquivalentDirectoryUris(first: String?, second: String?): Boolean {
-        val firstIdentity = directoryIdentity(first)
-        val secondIdentity = directoryIdentity(second)
-        return when {
-            firstIdentity == null && secondIdentity == null -> true
-            else -> firstIdentity != null && firstIdentity == secondIdentity
-        }
+        return ManagedDownloadDirectoryIdentity.areEquivalentDirectoryUris(first, second)
     }
 
     internal fun canonicalizeDirectoryUri(uriString: String?): String? {
-        return normalizeConfiguredDirectoryUri(uriString)
+        return ManagedDownloadDirectoryIdentity.normalizeConfiguredDirectoryUri(uriString)
     }
 
     fun describeConfiguredDirectory(context: Context, uriString: String? = customDirectoryUri): String {
@@ -2410,12 +2396,11 @@ internal object ManagedDownloadStorage {
     }
 
     internal fun isPendingAudioWriteName(name: String): Boolean {
-        return name.contains(PENDING_AUDIO_WRITE_MARKER)
+        return pendingAudioWriteNames.isPendingAudioWriteName(name)
     }
 
     private fun buildPendingAudioWriteName(fileName: String): String {
-        val pendingId = pendingAudioWriteIdGenerator.incrementAndGet()
-        return "$fileName$PENDING_AUDIO_WRITE_MARKER.$pendingId"
+        return pendingAudioWriteNames.buildPendingAudioWriteName(fileName)
     }
 
     private fun queryTreeChildren(context: Context, parent: DocumentFile): List<QueriedTreeChild> {
@@ -2779,7 +2764,7 @@ internal object ManagedDownloadStorage {
     }
 
     internal fun resolveTreeStoredName(actualName: String?, expectedName: String): String {
-        return actualName?.takeIf(String::isNotBlank) ?: expectedName
+        return ManagedDownloadTreeNaming.resolveTreeStoredName(actualName, expectedName)
     }
 
     private fun DocumentFile.resolvedTreeStoredName(expectedName: String): String {
@@ -2885,28 +2870,7 @@ internal object ManagedDownloadStorage {
     }
 
     internal fun documentCreateMimeType(desiredName: String, mimeType: String): String {
-        val normalizedMimeType = mimeType.takeIf { it.isNotBlank() } ?: "application/octet-stream"
-        val extension = desiredName.substringAfterLast('.', "").lowercase()
-        if (normalizedMimeType.equals("text/plain", ignoreCase = true) && extension.isNotBlank() && extension != "txt") {
-            return "application/octet-stream"
-        }
-        if (
-            extension.isNotBlank() &&
-            (
-                normalizedMimeType.startsWith("audio/", ignoreCase = true) ||
-                    normalizedMimeType.startsWith("image/", ignoreCase = true)
-                )
-        ) {
-            // 有些 SAF 提供方会按 MIME 再补一次后缀，二进制兜底能保住原文件名
-            return "application/octet-stream"
-        }
-        if (
-            normalizedMimeType.equals("application/json", ignoreCase = true) &&
-            desiredName.endsWith(METADATA_SUFFIX, ignoreCase = true)
-        ) {
-            return "application/octet-stream"
-        }
-        return normalizedMimeType
+        return ManagedDownloadTreeNaming.documentCreateMimeType(desiredName, mimeType)
     }
 
     private fun writeRootStream(
@@ -3063,7 +3027,11 @@ internal object ManagedDownloadStorage {
         expectedSizeBytes: Long,
         toleranceBytes: Long
     ): Boolean {
-        return abs(actualSizeBytes - expectedSizeBytes) <= toleranceBytes.coerceAtLeast(0L)
+        return ManagedDownloadCommitVerifier.isSizeWithinTolerance(
+            actualSizeBytes = actualSizeBytes,
+            expectedSizeBytes = expectedSizeBytes,
+            toleranceBytes = toleranceBytes
+        )
     }
 
     internal fun verifiedCommittedByteCount(
@@ -3072,17 +3040,12 @@ internal object ManagedDownloadStorage {
         countedSizeBytes: Long?,
         toleranceBytes: Long = 0L
     ): Long? {
-        val expectedSize = expectedSizeBytes.coerceAtLeast(0L)
-        val tolerance = toleranceBytes.coerceAtLeast(0L)
-        val reportedSize = reportedSizeBytes?.takeIf { it >= 0L }
-        if (reportedSize != null) {
-            if (isSizeWithinTolerance(reportedSize, expectedSize, tolerance)) {
-                return reportedSize
-            }
-        }
-        return countedSizeBytes
-            ?.takeIf { it >= 0L }
-            ?.takeIf { isSizeWithinTolerance(it, expectedSize, tolerance) }
+        return ManagedDownloadCommitVerifier.verifiedCommittedByteCount(
+            expectedSizeBytes = expectedSizeBytes,
+            reportedSizeBytes = reportedSizeBytes,
+            countedSizeBytes = countedSizeBytes,
+            toleranceBytes = toleranceBytes
+        )
     }
 
     private fun requireVerifiedCommittedByteCount(
@@ -3716,30 +3679,16 @@ internal object ManagedDownloadStorage {
             .firstNotNullOfOrNull { child -> child.toDocumentFile(context) }
     }
 
-    // 只给封面目录补 .nomedia，避免把用户手选的整个下载根目录从媒体库里隐藏
     internal fun shouldCreateNoMediaMarker(subdirectory: String): Boolean {
-        return subdirectory == COVER_SUBDIRECTORY
+        return ManagedDownloadTreeNaming.shouldCreateNoMediaMarker(subdirectory)
     }
 
     internal fun matchesManagedSubdirectoryName(actualName: String, desiredName: String): Boolean {
-        if (actualName == desiredName) {
-            return true
-        }
-        if (!actualName.startsWith("$desiredName (") || !actualName.endsWith(")")) {
-            return false
-        }
-        val suffix = actualName.removePrefix("$desiredName (").removeSuffix(")")
-        return suffix.isNotBlank() && suffix.all(Char::isDigit)
+        return ManagedDownloadTreeNaming.matchesManagedSubdirectoryName(actualName, desiredName)
     }
 
     private fun managedSubdirectoryOrdinal(actualName: String, desiredName: String): Int {
-        if (actualName == desiredName) {
-            return 0
-        }
-        return actualName.removePrefix("$desiredName (")
-            .removeSuffix(")")
-            .toIntOrNull()
-            ?: Int.MAX_VALUE
+        return ManagedDownloadTreeNaming.managedSubdirectoryOrdinal(actualName, desiredName)
     }
 
     private data class NamedDirectoryRoot(
@@ -3923,53 +3872,23 @@ internal object ManagedDownloadStorage {
     }
 
     private fun normalizeDirectoryUri(uriString: String?): String? {
-        return uriString?.trim()?.takeIf(String::isNotBlank)
+        return ManagedDownloadDirectoryIdentity.normalizeDirectoryUri(uriString)
     }
 
     private fun normalizeConfiguredDirectoryUri(uriString: String?): String? {
-        val normalized = normalizeDirectoryUri(uriString)
-            ?.substringBefore('#')
-            ?.substringBefore('?')
-            ?.trimEnd('/')
-            ?.takeIf { it.isNotBlank() }
-            ?: return null
-        val authority = extractDirectoryAuthority(normalized).takeIf(String::isNotBlank) ?: return normalized
-        extractEncodedDirectoryDocumentId(normalized, "/tree/")
-            ?.let { encodedDocumentId ->
-                return "content://$authority/tree/$encodedDocumentId"
-            }
-        extractEncodedDirectoryDocumentId(normalized, "/document/")
-            ?.let { encodedDocumentId ->
-                return "content://$authority/tree/$encodedDocumentId"
-            }
-        return normalized
+        return ManagedDownloadDirectoryIdentity.normalizeConfiguredDirectoryUri(uriString)
     }
 
     private fun extractDirectoryDocumentId(uriString: String, marker: String): String? {
-        val encodedId = extractEncodedDirectoryDocumentId(uriString, marker) ?: return null
-        return runCatching {
-            URLDecoder.decode(encodedId, StandardCharsets.UTF_8.name())
-        }.getOrDefault(encodedId)
+        return ManagedDownloadDirectoryIdentity.extractDirectoryDocumentId(uriString, marker)
     }
 
     private fun extractEncodedDirectoryDocumentId(uriString: String, marker: String): String? {
-        val markerIndex = uriString.indexOf(marker)
-        if (markerIndex < 0) return null
-        val startIndex = markerIndex + marker.length
-        val endIndex = uriString.indexOfAny(charArrayOf('/', '?', '#'), startIndex)
-            .takeIf { it >= 0 }
-            ?: uriString.length
-        return uriString.substring(startIndex, endIndex).takeIf { it.isNotBlank() }
+        return ManagedDownloadDirectoryIdentity.extractEncodedDirectoryDocumentId(uriString, marker)
     }
 
     private fun extractDirectoryAuthority(uriString: String): String {
-        val schemeSeparatorIndex = uriString.indexOf("://")
-        if (schemeSeparatorIndex < 0) return ""
-        val authorityStartIndex = schemeSeparatorIndex + 3
-        val authorityEndIndex = uriString.indexOfAny(charArrayOf('/', '?', '#'), authorityStartIndex)
-            .takeIf { it >= 0 }
-            ?: uriString.length
-        return uriString.substring(authorityStartIndex, authorityEndIndex)
+        return ManagedDownloadDirectoryIdentity.extractDirectoryAuthority(uriString)
     }
 
     private fun resolveCachedTreeRoot(normalizedUri: String, identity: String): RootHandle.TreeRoot? {
@@ -4117,31 +4036,11 @@ internal object ManagedDownloadStorage {
     }
 
     internal fun isDocumentReferenceUnderManagedTree(reference: String, managedTreeUri: String): Boolean {
-        val referenceAuthority = extractDirectoryAuthority(reference).takeIf(String::isNotBlank) ?: return false
-        val rootAuthority = extractDirectoryAuthority(managedTreeUri).takeIf(String::isNotBlank) ?: return false
-        if (referenceAuthority != rootAuthority) {
-            return false
-        }
-        val rootDocumentId = extractDirectoryDocumentId(managedTreeUri, "/tree/")
-            ?: extractDirectoryDocumentId(managedTreeUri, "/document/")
-            ?: return false
-        val referenceDocumentId = extractDirectoryDocumentId(reference, "/document/")
-            ?: return false
-        return isDocumentIdInsideManagedRoot(
-            documentId = referenceDocumentId,
-            rootDocumentId = rootDocumentId
-        )
+        return ManagedDownloadDirectoryIdentity.isDocumentReferenceUnderManagedTree(reference, managedTreeUri)
     }
 
     internal fun isDocumentIdInsideManagedRoot(documentId: String, rootDocumentId: String): Boolean {
-        if (documentId == rootDocumentId) {
-            return false
-        }
-        if (rootDocumentId.endsWith(":")) {
-            return documentId.startsWith(rootDocumentId)
-        }
-        val prefix = if (rootDocumentId.endsWith("/")) rootDocumentId else "$rootDocumentId/"
-        return documentId.startsWith(prefix)
+        return ManagedDownloadDirectoryIdentity.isDocumentIdInsideManagedRoot(documentId, rootDocumentId)
     }
 
     private fun deleteInternal(
