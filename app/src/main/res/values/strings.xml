@@ -1117,6 +1117,8 @@
     <string name="settings_nowplaying_audio_reactive_desc">控制正在播放页面的音频律动效果</string>
     <string name="settings_nowplaying_dynamic_background">正在播放动态背景</string>
     <string name="settings_nowplaying_dynamic_background_desc">控制正在播放页面的动态背景效果</string>
+    <string name="settings_nowplaying_disable_cover_blur_required">需关闭模糊封面背景</string>
+    <string name="settings_nowplaying_dynamic_background_required">需先开启正在播放动态背景</string>
     <string name="theme_color_tech_blue">科技·蓝</string>
     <string name="theme_color_soft_purple">柔和·紫</string>
     <string name="theme_color_passion_red">热情·红</string>

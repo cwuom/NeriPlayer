@@ -145,6 +145,20 @@ internal fun SettingsMotionSection(
                 dynamicBackgroundApiAvailable &&
                     nowPlayingDynamicBackgroundEnabled &&
                     dynamicBackgroundAvailable
+            val coverBlurConflictSuffix = stringResource(R.string.settings_nowplaying_disable_cover_blur_required)
+            val dynamicBackgroundDisabledSuffix = when {
+                !dynamicBackgroundApiAvailable -> stringResource(R.string.settings_android13_required)
+                nowPlayingCoverBlurBackgroundEnabled -> coverBlurConflictSuffix
+                else -> null
+            }
+            val audioReactiveDisabledSuffix = when {
+                !dynamicBackgroundApiAvailable -> stringResource(R.string.settings_android13_required)
+                nowPlayingCoverBlurBackgroundEnabled -> coverBlurConflictSuffix
+                !nowPlayingDynamicBackgroundEnabled -> stringResource(
+                    R.string.settings_nowplaying_dynamic_background_required
+                )
+                else -> null
+            }
 
             val safeCoverBlurToggle: (Boolean) -> Unit = { enabled ->
                 if (coverBlurAvailable) {
@@ -237,7 +251,7 @@ internal fun SettingsMotionSection(
 
             MotionSwitchItem(
                 setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOWPLAYING_AUDIO_REACTIVE_ENABLED),
-                disabledSuffix = stringResource(R.string.settings_android13_required),
+                disabledSuffix = audioReactiveDisabledSuffix,
                 checked = audioReactiveAvailable && nowPlayingAudioReactiveEnabled,
                 enabled = audioReactiveAvailable,
                 alpha = if (audioReactiveAvailable) 1f else 0.5f,
@@ -255,7 +269,7 @@ internal fun SettingsMotionSection(
 
             MotionSwitchItem(
                 setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOWPLAYING_DYNAMIC_BACKGROUND_ENABLED),
-                disabledSuffix = stringResource(R.string.settings_android13_required),
+                disabledSuffix = dynamicBackgroundDisabledSuffix,
                 checked = dynamicBackgroundAvailable && nowPlayingDynamicBackgroundEnabled,
                 enabled = dynamicBackgroundAvailable,
                 alpha = if (dynamicBackgroundAvailable) 1f else 0.5f,

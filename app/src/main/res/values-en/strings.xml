@@ -1117,6 +1117,8 @@
     <string name="settings_nowplaying_audio_reactive_desc">Enable audio-reactive motion in Now Playing</string>
     <string name="settings_nowplaying_dynamic_background">Now Playing Dynamic Background</string>
     <string name="settings_nowplaying_dynamic_background_desc">Enable animated background in Now Playing</string>
+    <string name="settings_nowplaying_disable_cover_blur_required">Turn off Cover Blur first</string>
+    <string name="settings_nowplaying_dynamic_background_required">Turn on Now Playing Dynamic Background first</string>
     <string name="theme_color_tech_blue">Tech Blue</string>
     <string name="theme_color_soft_purple">Soft Purple</string>
     <string name="theme_color_passion_red">Passion Red</string>
