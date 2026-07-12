@@ -259,6 +259,8 @@ private fun SongItem?.resolveUiCoverSource(context: android.content.Context): St
 
 private const val NOW_PLAYING_REMOTE_BLUR_IMAGE_SIZE_PX = 640
 private const val NOW_PLAYING_LOCAL_BLUR_IMAGE_SIZE_PX = 384
+private const val PLAYBACK_VISUAL_COVER_CLEAR_DELAY_MS = 900L
+private const val NOW_PLAYING_BACKGROUND_CROSSFADE_MS = 520
 
 private tailrec fun Context.findActivity(): Activity? {
     return when (this) {
@@ -282,6 +284,58 @@ private fun resolvedNowPlayingBlurStrength(coverUrl: String?, configuredBlurAmou
     } else {
         configuredBlurAmount.coerceAtMost(64f)
     }
+}
+
+internal fun resolvePlaybackVisualCoverUrl(
+    currentCoverUrl: String?,
+    previousVisualCoverUrl: String?,
+    hasCurrentSong: Boolean,
+    clearDelayElapsed: Boolean
+): String? {
+    val normalizedCoverUrl = currentCoverUrl?.trim()?.takeIf { it.isNotEmpty() }
+    return when {
+        normalizedCoverUrl != null -> normalizedCoverUrl
+        !hasCurrentSong || clearDelayElapsed -> null
+        else -> previousVisualCoverUrl
+    }
+}
+
+@Composable
+private fun rememberPlaybackVisualCoverUrl(
+    coverUrl: String?,
+    currentSongKey: String?
+): String? {
+    var visualCoverUrl by remember {
+        mutableStateOf(
+            resolvePlaybackVisualCoverUrl(
+                currentCoverUrl = coverUrl,
+                previousVisualCoverUrl = null,
+                hasCurrentSong = currentSongKey != null,
+                clearDelayElapsed = false
+            )
+        )
+    }
+
+    LaunchedEffect(coverUrl, currentSongKey) {
+        visualCoverUrl = resolvePlaybackVisualCoverUrl(
+            currentCoverUrl = coverUrl,
+            previousVisualCoverUrl = visualCoverUrl,
+            hasCurrentSong = currentSongKey != null,
+            clearDelayElapsed = false
+        )
+
+        if (coverUrl.isNullOrBlank() && currentSongKey != null && visualCoverUrl != null) {
+            delay(PLAYBACK_VISUAL_COVER_CLEAR_DELAY_MS)
+            visualCoverUrl = resolvePlaybackVisualCoverUrl(
+                currentCoverUrl = coverUrl,
+                previousVisualCoverUrl = visualCoverUrl,
+                hasCurrentSong = true,
+                clearDelayElapsed = true
+            )
+        }
+    }
+
+    return visualCoverUrl
 }
 
 @Composable
@@ -898,6 +952,11 @@ private fun NeriAppContent(
     var coverSeedHex by remember { mutableStateOf<String?>(null) }
     val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
     val displayCoverUrl = rememberSongDisplayCoverUrl(currentSong)
+    val currentSongKey = remember(currentSong) { currentSong?.stableKey() }
+    val playbackVisualCoverUrl = rememberPlaybackVisualCoverUrl(
+        coverUrl = displayCoverUrl,
+        currentSongKey = currentSongKey
+    )
     val scope = rememberCoroutineScope()
     var pendingTrafficRiskDownloadRequest by remember {
         mutableStateOf<GlobalDownloadManager.TrafficRiskDownloadRequest?>(null)
@@ -1096,21 +1155,21 @@ private fun NeriAppContent(
         }
     }
 
-    LaunchedEffect(displayCoverUrl, coverArtRefreshToken, showNowPlaying, dynamicColorEnabled, offlineMode) {
-        if (displayCoverUrl.isNullOrBlank() || !dynamicColorEnabled) {
+    LaunchedEffect(playbackVisualCoverUrl, coverArtRefreshToken, showNowPlaying, dynamicColorEnabled, offlineMode) {
+        if (playbackVisualCoverUrl.isNullOrBlank() || !dynamicColorEnabled) {
             coverSeedHex = null
             return@LaunchedEffect
         }
-        val cachedSample = CoverArtColorCache.peek(displayCoverUrl)
+        val cachedSample = CoverArtColorCache.peek(playbackVisualCoverUrl)
         if (cachedSample != null) {
             coverSeedHex = cachedSample.seedHex
         }
 
-        if (showNowPlaying && isRemoteImageSource(displayCoverUrl)) {
+        if (showNowPlaying && isRemoteImageSource(playbackVisualCoverUrl)) {
             coverArtImageLoader.enqueue(
                 offlineCachedImageRequest(
                     context = context,
-                    data = displayCoverUrl,
+                    data = playbackVisualCoverUrl,
                     sizePx = 256,
                     allowHardware = false,
                     offlineMode = offlineMode
@@ -1127,7 +1186,7 @@ private fun NeriAppContent(
             delay(warmupDelayMillis)
         }
 
-        CoverArtColorCache.preload(context, displayCoverUrl, offlineMode)?.let { sample ->
+        CoverArtColorCache.preload(context, playbackVisualCoverUrl, offlineMode)?.let { sample ->
             coverSeedHex = sample.seedHex
         }
     }
@@ -1384,14 +1443,14 @@ private fun NeriAppContent(
     }
 
     CompositionLocalProvider(LocalDensity provides finalDensity) {
-        val activeCoverSeedHex = if (displayCoverUrl == null) null else coverSeedHex
+        val activeCoverSeedHex = if (playbackVisualCoverUrl == null) null else coverSeedHex
         val effectiveSeedHex = if (dynamicColorEnabled) {
             activeCoverSeedHex ?: themeSeedColor
         } else {
             themeSeedColor
         }
         val useSystemDynamic =
-            dynamicColorEnabled && activeCoverSeedHex == null && displayCoverUrl == null
+            dynamicColorEnabled && activeCoverSeedHex == null && playbackVisualCoverUrl == null
 
         NeriTheme(
             followSystemDark = followSystemDark,
@@ -2487,7 +2546,7 @@ private fun NeriAppContent(
                         targetOffsetY = { fullHeight -> fullHeight }
                     ) + fadeOut(animationSpec = tween(durationMillis = 150))
                 ) {
-                    val currentCoverUrl = displayCoverUrl
+                    val currentCoverUrl = playbackVisualCoverUrl
                     val activeCoverSeedHex = if (currentCoverUrl == null) null else coverSeedHex
                     val effectiveSeedHex = if (dynamicColorEnabled) {
                         activeCoverSeedHex ?: themeSeedColor
@@ -2508,9 +2567,7 @@ private fun NeriAppContent(
                         BackHandler { showNowPlaying = false }
 
                         val nowPlayingQueue by PlayerManager.currentQueueFlow.collectAsStateWithLifecycle()
-                        val nowPlayingCoverUrl = remember(currentSong, context) {
-                            currentSong.resolveUiCoverSource(context)
-                        }
+                        val nowPlayingCoverUrl = currentCoverUrl
 
                         Box(
                             modifier = Modifier
@@ -2679,6 +2736,7 @@ private fun NeriAppContent(
                                 AsyncImage(
                                     model = ImageRequest.Builder(context)
                                         .data(nowPlayingCoverUrl)
+                                        .crossfade(NOW_PLAYING_BACKGROUND_CROSSFADE_MS)
                                         .allowHardware(false)
                                         .bitmapConfig(Bitmap.Config.RGB_565)
                                         .size(blurImageSizePx)
@@ -2712,9 +2770,7 @@ private fun NeriAppContent(
                                     },
                                     onError = {
                                         if (latestCoverBlurRequestKey == coverBlurRequestKey) {
-                                            stableCoverUrl = null
-                                            stableBlurStrength = null
-                                            coverBlurLoadFailed = true
+                                            coverBlurLoadFailed = stableCoverUrl.isNullOrBlank()
                                         }
                                     }
                                 )

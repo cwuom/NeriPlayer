@@ -58,6 +58,7 @@ import kotlin.math.abs
 private const val DynamicBackgroundFallbackColor = 0xFF808080.toInt()
 private const val StrongHueConflictDegrees = 105f
 private const val PaletteCoverDecodeSizePx = 320
+private const val DynamicBackgroundPaletteTransitionDurationMs = 520L
 
 private enum class DynamicBackgroundColorRole {
     Base,
@@ -70,6 +71,12 @@ private enum class DynamicBackgroundColorRole {
 private data class DynamicBackgroundPalette(
     val colors: FloatArray,
     val primaryColor: Int
+)
+
+private data class DynamicBackgroundShaderPalette(
+    val colors: FloatArray,
+    val lightOffset: Float,
+    val saturateOffset: Float
 )
 
 /**
@@ -96,6 +103,13 @@ fun HyperBackground(
     }
 
     var hostView by remember { mutableStateOf<View?>(null) }
+    var shaderInitialized by remember(painter, hostView, currentIsDark) {
+        mutableStateOf(false)
+    }
+    var targetShaderPalette by remember { mutableStateOf<DynamicBackgroundShaderPalette?>(null) }
+    var activeShaderPalette by remember(painter, currentIsDark) {
+        mutableStateOf<DynamicBackgroundShaderPalette?>(null)
+    }
 
     AndroidView(
         modifier = modifier,
@@ -125,67 +139,64 @@ fun HyperBackground(
 
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    LaunchedEffect(painter, hostView, currentIsDark, coverUrl, refreshKey, offlineMode, lifecycleOwner) {
+    LaunchedEffect(coverUrl, refreshKey, offlineMode, currentIsDark) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || coverUrl.isNullOrBlank()) {
+            return@LaunchedEffect
+        }
+        try {
+            val loader = Coil.imageLoader(context)
+            val req = ImageRequest.Builder(context)
+                .data(coverUrl)
+                .size(PaletteCoverDecodeSizePx)
+                .precision(Precision.INEXACT)
+                .allowHardware(false) // Palette 需要 software bitmap
+                .networkCachePolicy(
+                    if (offlineMode && isRemoteImageSource(coverUrl)) {
+                        CachePolicy.DISABLED
+                    } else {
+                        CachePolicy.ENABLED
+                    }
+                )
+                .build()
+            val result = withContext(Dispatchers.IO) { loader.execute(req) }
+            val bmp = (result as? SuccessResult)?.drawable?.toBitmap() ?: return@LaunchedEffect
+            val palette = withContext(Dispatchers.Default) {
+                Palette.from(bmp)
+                    .clearFilters() // 保留更真实的颜色
+                    .maximumColorCount(16)
+                    .generate()
+            }
+            targetShaderPalette = buildDynamicBackgroundShaderPalette(
+                palette = palette,
+                isDark = currentIsDark
+            )
+        } catch (_: Throwable) {
+            // 提色失败时保留上一组颜色，避免切歌瞬间退回默认背景
+        }
+    }
+
+    LaunchedEffect(painter, shaderInitialized, targetShaderPalette) {
+        val target = targetShaderPalette ?: return@LaunchedEffect
+        if (painter == null || !shaderInitialized) return@LaunchedEffect
+        val applied = animateDynamicBackgroundPalette(
+            painter = painter,
+            from = activeShaderPalette,
+            to = target
+        )
+        activeShaderPalette = applied
+    }
+
+    LaunchedEffect(painter, hostView, currentIsDark, lifecycleOwner) {
         if (painter == null || hostView == null) return@LaunchedEffect
         val v = hostView!!
 
         awaitViewReady(v)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !shaderInitialized) {
             try {
                 painter.showRuntimeShader(context, v, null, currentIsDark)
                 v.setRenderEffect(painter.renderEffect)
+                shaderInitialized = true
             } catch (_: Throwable) { return@LaunchedEffect }
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !coverUrl.isNullOrBlank()) {
-            try {
-                val loader = Coil.imageLoader(context)
-                val req = ImageRequest.Builder(context)
-                    .data(coverUrl)
-                    .size(PaletteCoverDecodeSizePx)
-                    .precision(Precision.INEXACT)
-                    .allowHardware(false) // Palette 需要 software bitmap
-                    .networkCachePolicy(
-                        if (offlineMode && isRemoteImageSource(coverUrl)) {
-                            CachePolicy.DISABLED
-                        } else {
-                            CachePolicy.ENABLED
-                        }
-                    )
-                    .build()
-                val result = withContext(Dispatchers.IO) { loader.execute(req) }
-                val bmp = (result as? SuccessResult)?.drawable?.toBitmap()
-
-                if (bmp != null) {
-                    val palette = withContext(Dispatchers.Default) {
-                        Palette.from(bmp)
-                            .clearFilters() // 保留更真实的颜色
-                            .maximumColorCount(16)
-                            .generate()
-                    }
-
-                    val dynamicPalette = buildDynamicBackgroundPalette(
-                        palette = palette,
-                        isDark = currentIsDark
-                    )
-
-                    // 亮度估计，调一点点亮度/饱和度
-                    val lumaValue = colorLuma(dynamicPalette.primaryColor)
-                    val lightOffset = when {
-                        currentIsDark -> (-0.06f + (0.12f * (lumaValue - 0.5f)))  // 暗色下略降亮，偏亮封面就少降一点
-                        else          -> ( 0.08f + (0.10f * (0.5f - lumaValue)))  // 亮色下略升亮，偏暗封面就多升一点
-                    }.coerceIn(-0.12f, 0.12f)
-
-                    val saturateOffset = (if (currentIsDark) 0.24f else 0.16f)
-
-                    // 喂给着色器
-                    painter.setColors(dynamicPalette.colors)
-                    painter.setLightOffset(lightOffset)
-                    painter.setSaturateOffset(saturateOffset)
-                }
-            } catch (_: Throwable) {
-                // 忽略提色失败，继续使用默认配色
-            }
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -229,6 +240,62 @@ fun HyperBackground(
             }
         }
     }
+}
+
+private fun buildDynamicBackgroundShaderPalette(
+    palette: Palette,
+    isDark: Boolean
+): DynamicBackgroundShaderPalette {
+    val dynamicPalette = buildDynamicBackgroundPalette(
+        palette = palette,
+        isDark = isDark
+    )
+    val lumaValue = colorLuma(dynamicPalette.primaryColor)
+    val lightOffset = when {
+        isDark -> -0.06f + (0.12f * (lumaValue - 0.5f))
+        else -> 0.08f + (0.10f * (0.5f - lumaValue))
+    }.coerceIn(-0.12f, 0.12f)
+    val saturateOffset = if (isDark) 0.24f else 0.16f
+    return DynamicBackgroundShaderPalette(
+        colors = dynamicPalette.colors,
+        lightOffset = lightOffset,
+        saturateOffset = saturateOffset
+    )
+}
+
+private suspend fun animateDynamicBackgroundPalette(
+    painter: BgEffectPainter,
+    from: DynamicBackgroundShaderPalette?,
+    to: DynamicBackgroundShaderPalette
+): DynamicBackgroundShaderPalette {
+    if (from == null || from.colors.size != to.colors.size) {
+        painter.setColors(to.colors)
+        painter.setLightOffset(to.lightOffset)
+        painter.setSaturateOffset(to.saturateOffset)
+        return to
+    }
+
+    val startColors = from.colors.copyOf()
+    var startNanos = 0L
+    var finished = false
+    while (!finished) {
+        withFrameNanos { frameNanos ->
+            if (startNanos == 0L) {
+                startNanos = frameNanos
+            }
+            val rawFraction = ((frameNanos - startNanos).toDouble() /
+                (DynamicBackgroundPaletteTransitionDurationMs * 1_000_000.0)).toFloat()
+            val fraction = smoothStep01(rawFraction.coerceIn(0f, 1f))
+            painter.setColors(lerpFloatArray(startColors, to.colors, fraction))
+            painter.setLightOffset(lerpFloat(from.lightOffset, to.lightOffset, fraction))
+            painter.setSaturateOffset(lerpFloat(from.saturateOffset, to.saturateOffset, fraction))
+            finished = rawFraction >= 1f
+        }
+    }
+    painter.setColors(to.colors)
+    painter.setLightOffset(to.lightOffset)
+    painter.setSaturateOffset(to.saturateOffset)
+    return to
 }
 
 private fun buildDynamicBackgroundPalette(
@@ -427,4 +494,17 @@ private fun hueDistanceDegrees(first: Float, second: Float): Float {
 
 private fun lerpFloat(start: Float, stop: Float, fraction: Float): Float {
     return start + (stop - start) * fraction.coerceIn(0f, 1f)
+}
+
+private fun lerpFloatArray(start: FloatArray, stop: FloatArray, fraction: Float): FloatArray {
+    val result = FloatArray(start.size)
+    for (index in start.indices) {
+        result[index] = lerpFloat(start[index], stop[index], fraction)
+    }
+    return result
+}
+
+private fun smoothStep01(value: Float): Float {
+    val t = value.coerceIn(0f, 1f)
+    return t * t * (3f - 2f * t)
 }
