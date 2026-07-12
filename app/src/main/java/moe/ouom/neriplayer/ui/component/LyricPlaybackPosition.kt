@@ -16,6 +16,7 @@ import kotlin.math.abs
 
 private const val InterpolatedPlaybackResyncThresholdMs = 220L
 private const val InterpolatedPlaybackBackwardToleranceMs = 24L
+private const val InterpolatedPlaybackFrameIntervalNanos = 33_000_000L
 
 @Stable
 internal class InterpolatedPlaybackPositionState(initialPositionMs: Long) {
@@ -50,8 +51,16 @@ internal fun rememberInterpolatedPlaybackPositionState(
         }
 
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            var lastRenderedFrameNanos = 0L
             while (isActive) {
                 val frameNanos = withFrameNanos { it }
+                if (
+                    lastRenderedFrameNanos != 0L &&
+                    frameNanos - lastRenderedFrameNanos < InterpolatedPlaybackFrameIntervalNanos
+                ) {
+                    continue
+                }
+                lastRenderedFrameNanos = frameNanos
                 val predictedPositionMs = resolveInterpolatedPlaybackPosition(
                     anchorPositionMs = state.anchorPositionMs,
                     anchorRealtimeNanos = state.anchorRealtimeNanos,
