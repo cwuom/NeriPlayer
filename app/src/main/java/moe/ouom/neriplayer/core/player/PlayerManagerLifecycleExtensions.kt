@@ -2976,6 +2976,9 @@ internal fun PlayerManager.releaseImpl() {
         NPLogger.d("NERI-PlayerManager", "release(): completed")
     } finally {
         initialized = false
+        runCatching { conditionalHttpFactory?.close() }
+            .onFailure { NPLogger.w("NERI-PlayerManager", "release(): final conditional factory close failed", it) }
+        conditionalHttpFactory = null
         UsbExclusiveSessionController.emergencyShutdown("player_release_finally")
         UsbExclusiveSystemSoundGuard.forceRelease(application, "player_release_finally")
         StartupAudioFocusController.forceRelease("player_release_finally")

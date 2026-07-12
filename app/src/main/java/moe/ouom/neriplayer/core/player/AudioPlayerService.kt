@@ -104,15 +104,26 @@ import moe.ouom.neriplayer.util.isOfflineModeNow
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
 
 private suspend inline fun <T> kotlinx.coroutines.flow.Flow<T>.collectSafely(
+    source: String,
     crossinline action: suspend (T) -> Unit
 ) {
-    collect { value ->
+    while (true) {
         try {
-            action(value)
-        } catch (_: kotlinx.coroutines.CancellationException) {
-            throw kotlinx.coroutines.CancellationException()
-        } catch (e: Throwable) {
-            NPLogger.e("NERI-APS", "Service collect error", e)
+            collect { value ->
+                try {
+                    action(value)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    NPLogger.e("NERI-APS", "$source collect handler failed", e)
+                }
+            }
+            return
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            NPLogger.e("NERI-APS", "$source collect failed; restarting", e)
+            delay(SERVICE_FLOW_COLLECTOR_RESTART_DELAY_MS)
         }
     }
 }
@@ -147,6 +158,7 @@ private const val MEDIA_ARTWORK_SIZE_PX = 1024
 private const val NOTIFICATION_ARTWORK_SIZE_PX = 256
 private const val MEDIA_ARTWORK_MAX_RETRY_ATTEMPTS = 2
 private const val MEDIA_ARTWORK_RETRY_COOLDOWN_MS = 3_000L
+private const val SERVICE_FLOW_COLLECTOR_RESTART_DELAY_MS = 1_000L
 private const val USB_EXCLUSIVE_KEEPALIVE_INTERVAL_MS = 15_000L
 private const val USB_EXCLUSIVE_KEEPALIVE_STALL_WARN_MS = 25_000L
 private const val USB_EXCLUSIVE_KEEPALIVE_STALL_RECOVERY_TICKS = 1
@@ -712,7 +724,7 @@ class AudioPlayerService : Service() {
         PlayerManager.initialize(application as Application)
 
         serviceScope.launch {
-            PlayerManager.currentSongFlow.collectSafely {
+            PlayerManager.currentSongFlow.collectSafely("currentSongFlow") {
                 if (it == null && !hasPlaybackSurfaceContent()) {
                     if (!hasReceivedStartCommand) {
                         return@collectSafely
@@ -730,67 +742,67 @@ class AudioPlayerService : Service() {
         }
         val listenTogetherSessionManager = AppContainer.listenTogetherSessionManager
         serviceScope.launch {
-            listenTogetherSessionManager.sessionState.collectSafely {
+            listenTogetherSessionManager.sessionState.collectSafely("listenTogetherSessionState") {
                 handleListenTogetherServiceStateChanged("session")
             }
         }
         serviceScope.launch {
-            listenTogetherSessionManager.roomState.collectSafely {
+            listenTogetherSessionManager.roomState.collectSafely("listenTogetherRoomState") {
                 handleListenTogetherServiceStateChanged("room")
             }
         }
         serviceScope.launch {
             GlobalDownloadManager.downloadPresenceVersion
-                .collectSafely {
+                .collectSafely("downloadPresenceVersion") {
                     updateMetadata()
                     updateNotification()
                 }
         }
         serviceScope.launch {
-            PlayerManager.externalBluetoothLyricLineFlow.collectSafely {
+            PlayerManager.externalBluetoothLyricLineFlow.collectSafely("externalBluetoothLyricLineFlow") {
                 updateMetadata()
             }
         }
         serviceScope.launch {
-            PlayerManager.currentAudioDeviceFlow.collectSafely {
+            PlayerManager.currentAudioDeviceFlow.collectSafely("currentAudioDeviceFlow") {
                 updateMetadata()
             }
         }
 
         serviceScope.launch {
-            PlayerManager.isPlayingFlow.collectSafely {
+            PlayerManager.isPlayingFlow.collectSafely("isPlayingFlow") {
                 updatePlaybackState()
                 updateNotification()
                 updateUsbExclusiveServiceKeepAlive("is_playing")
             }
         }
         serviceScope.launch {
-            PlayerManager.playbackControlPlayingFlow.collectSafely {
+            PlayerManager.playbackControlPlayingFlow.collectSafely("playbackControlPlayingFlow") {
                 updateNotification()
                 updateUsbExclusiveServiceKeepAlive("playback_control")
             }
         }
         serviceScope.launch {
-            PlayerManager.playWhenReadyFlow.collectSafely {
+            PlayerManager.playWhenReadyFlow.collectSafely("playWhenReadyFlow") {
                 updatePlaybackState()
                 updateNotification()
                 updateUsbExclusiveServiceKeepAlive("play_when_ready")
             }
         }
         serviceScope.launch {
-            PlayerManager.playerPlaybackStateFlow.collectSafely {
-                updatePlaybackState()
+            PlayerManager.playerPlaybackStateFlow.collectSafely("playerPlaybackStateFlow") {
+                updatePlaybackState(force = true)
                 updateNotification()
                 updateUsbExclusiveServiceKeepAlive("player_state")
             }
         }
         serviceScope.launch {
-            UsbExclusiveSessionController.state.collectSafely {
+            UsbExclusiveSessionController.state.collectSafely("usbExclusiveSessionState") {
                 updateUsbExclusiveServiceKeepAlive("usb_native_state")
             }
         }
         serviceScope.launch {
-            UsbExclusiveAudioPathTracker.state.collectSafely {
+            UsbExclusiveAudioPathTracker.state.collectSafely("usbExclusiveAudioPathState") {
                 updateUsbExclusiveServiceKeepAlive("usb_path_state")
             }
         }
@@ -800,24 +812,24 @@ class AudioPlayerService : Service() {
                     positionMs.coerceAtLeast(0L) / PLAYBACK_STATE_PROGRESS_BUCKET_MS
                 }
                 .distinctUntilChanged()
-                .collectSafely {
+                .collectSafely("playbackPositionFlow") {
                     updatePlaybackState()
                 }
         }
         serviceScope.launch {
-            PlayerManager.playbackSoundStateFlow.collectSafely {
+            PlayerManager.playbackSoundStateFlow.collectSafely("playbackSoundStateFlow") {
                 updatePlaybackState()
             }
         }
 
         serviceScope.launch {
-            PlayerManager.sleepTimerManager.timerState.collectSafely {
+            PlayerManager.sleepTimerManager.timerState.collectSafely("sleepTimerState") {
                 updateNotification()
             }
         }
 
         serviceScope.launch {
-            externalBluetoothLyricLineFlow.collectSafely {
+            externalBluetoothLyricLineFlow.collectSafely("statusBarLyricLineFlow") {
                 if (statusBarLyricsEnable) {
                     updateNotification()
                 }
@@ -1565,15 +1577,25 @@ class AudioPlayerService : Service() {
         )
         // 划掉任务不代表用户停止播放，正在播的会话要保留进程重建恢复意图
         if (PlayerManager.hasItems()) {
-            PlayerManager.flushPlaybackStatsAsync("task_removed")
-            PlayerManager.scheduleStatePersist(
-                positionMs = PlayerManager.playbackPositionFlow.value,
-                shouldResumePlayback = PlayerManager.playWhenReadyFlow.value ||
-                    PlayerManager.isPlayingFlow.value,
-                debounceMs = 0L
-            )
-            updateNotification()
+            flushPlaybackStatsSafely("task_removed", "task removed")
+            runCatching {
+                PlayerManager.scheduleStatePersist(
+                    positionMs = PlayerManager.playbackPositionFlow.value,
+                    shouldResumePlayback = PlayerManager.playWhenReadyFlow.value ||
+                        PlayerManager.isPlayingFlow.value,
+                    debounceMs = 0L
+                )
+            }.onFailure {
+                NPLogger.w("NERI-APS", "state persist failed during task removed", it)
+            }
+            runCatching { updateNotification() }
+                .onFailure { NPLogger.w("NERI-APS", "notification update failed during task removed", it) }
         }
+    }
+
+    private fun flushPlaybackStatsSafely(reason: String, context: String) {
+        runCatching { PlayerManager.flushPlaybackStatsAsync(reason) }
+            .onFailure { NPLogger.w("NERI-APS", "playback stats flush failed during $context", it) }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -1587,8 +1609,7 @@ class AudioPlayerService : Service() {
         try {
             isServiceForegroundActive = false
             isServiceInstanceActive = false
-            runCatching { PlayerManager.flushPlaybackStatsAsync("service_destroy") }
-                .onFailure { NPLogger.w("NERI-APS", "playback stats flush failed during destroy", it) }
+            flushPlaybackStatsSafely("service_destroy", "destroy")
             if (this::becomingNoisyReceiver.isInitialized) {
                 runCatching { unregisterReceiver(becomingNoisyReceiver) }
                     .onFailure { NPLogger.w("NERI-APS", "unregisterReceiver failed during destroy", it) }
@@ -1631,7 +1652,7 @@ class AudioPlayerService : Service() {
             "onTrimMemory level=$level ${buildStateSummary()}"
         )
         if (level >= TRIM_MEMORY_UI_HIDDEN && PlayerManager.hasItems()) {
-            PlayerManager.flushPlaybackStatsAsync("service_trim_memory_$level")
+            flushPlaybackStatsSafely("service_trim_memory_$level", "trim memory")
         }
     }
 
@@ -1642,7 +1663,7 @@ class AudioPlayerService : Service() {
             "onLowMemory ${buildStateSummary()}"
         )
         if (PlayerManager.hasItems()) {
-            PlayerManager.flushPlaybackStatsAsync("service_low_memory")
+            flushPlaybackStatsSafely("service_low_memory", "low memory")
         }
     }
 
