@@ -172,7 +172,7 @@ class PlaybackEffectsController {
         if (
             lastAppliedEqualizerEnabled == config.equalizerEnabled &&
             lastAppliedEqualizerLevels == appliedLevels &&
-            runCatching { eq.enabled }.getOrDefault(false)
+            runCatching { eq.enabled }.getOrDefault(false) == config.equalizerEnabled
         ) {
             return
         }
@@ -196,11 +196,9 @@ class PlaybackEffectsController {
         }
 
         runCatching {
-            if (!eq.enabled) {
-                eq.enabled = true
-            }
+            eq.enabled = config.equalizerEnabled
         }.onFailure {
-            NPLogger.e(TAG, "applyEqualizer(): failed to enable equalizer", it)
+            NPLogger.e(TAG, "applyEqualizer(): failed to set equalizer enabled=${config.equalizerEnabled}", it)
         }
 
         lastAppliedEqualizerEnabled =

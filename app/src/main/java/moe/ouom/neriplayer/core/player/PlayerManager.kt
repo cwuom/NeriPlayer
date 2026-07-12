@@ -1518,7 +1518,9 @@ object PlayerManager {
         stopTracking: Boolean = false
     ) {
         if (!initialized) return
-        drainPlaybackStatsPersistJobBlocking("${reason}_pending")
+        val pendingJob = synchronized(playbackStatsPersistLock) {
+            playbackStatsPersistJob
+        }
         val currentSnapshot = synchronized(playbackStatsTracker) {
             if (stopTracking) {
                 playbackStatsTracker.onPlayingChanged(false) ?: playbackStatsTracker.flushFinal()
@@ -1526,18 +1528,29 @@ object PlayerManager {
                 playbackStatsTracker.flushFinal()
             }
         }
+        if (stopTracking) {
+            synchronized(playbackStatsTracker) {
+                playbackStatsTracker.onSongChanged(null)
+            }
+        }
+        val hasPendingWork = (pendingJob != null && !pendingJob.isCompleted)
+        if (!hasPendingWork && currentSnapshot == null) return
         if (currentSnapshot != null) {
             NPLogger.d(
                 "NERI-PlayerManager",
                 "flushPlaybackStatsBlocking: reason=$reason, song=${currentSnapshot.song.name}, listenedMs=${currentSnapshot.listenedMs}, playCountIncrement=${currentSnapshot.playCountIncrement}"
             )
-            moe.ouom.neriplayer.core.player.state.blockingIo {
+        }
+        // drain + flush 合并为单次 blockingIo，最大阻塞 2s
+        moe.ouom.neriplayer.core.player.state.blockingIo(timeoutMs = 2_000L) {
+            pendingJob?.join()
+            if (currentSnapshot != null) {
                 recordPlaybackStatsSnapshot(currentSnapshot)
             }
         }
-        if (stopTracking) {
-            synchronized(playbackStatsTracker) {
-                playbackStatsTracker.onSongChanged(null)
+        synchronized(playbackStatsPersistLock) {
+            if (playbackStatsPersistJob === pendingJob && pendingJob?.isCompleted == true) {
+                playbackStatsPersistJob = null
             }
         }
     }

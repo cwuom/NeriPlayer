@@ -567,10 +567,16 @@ size_t PcmPipeline::fill(uint8_t* output, size_t bytes, bool playbackEnabled) {
     const bool silentOutput = !playbackEnabled || read == 0;
     if (silentOutput) {
         markSilentOutputLocked();
+        // 暂停或欠采样时缓冲区已知全零，跳过逐样本 decode 直接计数
+        const int silentFrames = outputFormat_.frameBytes > 0
+            ? static_cast<int>(bytes / static_cast<size_t>(outputFormat_.frameBytes))
+            : 0;
+        silentOutputFrames_ += silentFrames;
+        lastOutputPeak_ = 0.0f;
     } else {
         applyGain(output, bytes);
+        updateOutputSignalStatsLocked(output, bytes);
     }
-    updateOutputSignalStatsLocked(output, bytes);
     return read;
 }
 

@@ -1026,15 +1026,11 @@ internal fun PlayerManager.handleAudioBecomingNoisyImpl(): Boolean {
         "NERI-PlayerManager",
         "handleAudioBecomingNoisy(): currentDevice=${currentDevice?.type}:${currentDevice?.name}, isPlaying=${_isPlayingFlow.value}"
     )
-    if (currentDevice == null || !isHeadsetLikeOutput(currentDevice.type)) {
-        NPLogger.d("NERI-PlayerManager", "handleAudioBecomingNoisy(): ignored because output is not headset-like")
-        return false
-    }
-    if (usbExclusivePlaybackEnabled && isUsbOutputType(currentDevice.type)) {
+    if (usbExclusivePlaybackEnabled && currentDevice != null && isUsbOutputType(currentDevice.type)) {
         NPLogger.d("NERI-PlayerManager", "handleAudioBecomingNoisy(): ignored for USB exclusive route")
         return false
     }
-    if (requiresDisconnectConfirmation(currentDevice.type)) {
+    if (currentDevice != null && requiresDisconnectConfirmation(currentDevice.type)) {
         if (!shouldPauseForBluetoothDisconnect(currentDevice, null)) {
             NPLogger.d("NERI-PlayerManager", "handleAudioBecomingNoisy(): bluetooth confirmation rejected")
             return false
@@ -2889,7 +2885,6 @@ internal fun PlayerManager.releaseImpl() {
         bluetoothDisconnectPauseJob?.cancel()
         bluetoothDisconnectPauseJob = null
         flushPlaybackStatsBlocking("release", stopTracking = true)
-        drainPlaybackStatsPersistJobBlocking("release")
         playbackSoundPersistJob?.cancel()
         playbackSoundPersistJob = null
         usbAudioSinkReconfigureJob?.cancel()

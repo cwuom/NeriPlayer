@@ -60,6 +60,9 @@ object UsbExclusiveSessionController {
     private var lastPlayerPcmWriteIssueLogAtMs = 0L
     @Volatile
     private var lastPlayerPcmBackpressureLogAtMs = 0L
+    @Volatile
+    private var lastPlayerPcmStateEmitAtMs = 0L
+    private const val PCM_STATE_EMIT_INTERVAL_MS = 500L
 
     private data class PendingPlayerPcmOpenBlock(
         val reason: String,
@@ -893,11 +896,14 @@ object UsbExclusiveSessionController {
                     )
                 }
             } else {
-                val report = UsbExclusiveNativeBridge.runtimeReport(handle)
-                _state.value = current.copy(
-                    completedAudioFrames = UsbExclusiveNativeBridge.completedAudioFrames(handle),
-                    queuedAudioFrames = UsbExclusiveNativeBridge.queuedPlayerFrames(handle)
-                ).withRuntimeReport(report)
+                val nowMs = SystemClock.elapsedRealtime()
+                if (nowMs - lastPlayerPcmStateEmitAtMs >= PCM_STATE_EMIT_INTERVAL_MS) {
+                    lastPlayerPcmStateEmitAtMs = nowMs
+                    _state.value = current.copy(
+                        completedAudioFrames = UsbExclusiveNativeBridge.completedAudioFrames(handle),
+                        queuedAudioFrames = UsbExclusiveNativeBridge.queuedPlayerFrames(handle)
+                    )
+                }
             }
             return written
         } finally {

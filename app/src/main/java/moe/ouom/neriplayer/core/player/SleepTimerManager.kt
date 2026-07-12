@@ -170,6 +170,25 @@ class SleepTimerManager(
         }
     }
 
+    // 通知专用：> 60s 时只显示分钟，减少通知重建频率
+    fun formatRemainingTimeForNotification(): String {
+        val state = _timerState.value
+        if (!state.isActive || state.mode != SleepTimerMode.COUNTDOWN) {
+            return ""
+        }
+
+        val totalSeconds = state.remainingMillis / 1000
+        if (totalSeconds <= 60) {
+            return formatRemainingTime()
+        }
+        val hours = totalSeconds / 3600
+        val displayMinutes = ((totalSeconds % 3600) + 59) / 60
+        return when {
+            hours > 0 -> String.format(Locale.ROOT, "%d:%02d:00", hours, displayMinutes.coerceAtMost(59))
+            else -> String.format(Locale.ROOT, "%d:00", displayMinutes)
+        }
+    }
+
     private fun updateTimerState(
         state: SleepTimerState,
         notifyStateChanged: Boolean = true

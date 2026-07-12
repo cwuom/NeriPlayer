@@ -530,7 +530,7 @@ class AudioPlayerService : Service() {
         UsbExclusiveWakeLock.acquire(this, "service_keepalive")
         UsbExclusiveSessionController.refresh(this)
         updatePlaybackState(force = true)
-        updateNotification(force = true)
+        updateNotification()
 
         val nativeState = UsbExclusiveSessionController.state.value
         val pathState = UsbExclusiveAudioPathTracker.state.value
@@ -1098,7 +1098,7 @@ class AudioPlayerService : Service() {
         val contentText = if (timerState.isActive) {
             val timerInfo = when (timerState.mode) {
                 SleepTimerMode.COUNTDOWN -> {
-                    val remaining = PlayerManager.sleepTimerManager.formatRemainingTime()
+                    val remaining = PlayerManager.sleepTimerManager.formatRemainingTimeForNotification()
                     getString(R.string.notification_timer_remaining, remaining)
                 }
                 SleepTimerMode.FINISH_CURRENT -> getString(R.string.notification_stop_after_current)
@@ -1201,7 +1201,7 @@ class AudioPlayerService : Service() {
         val text = if (timerState.isActive) {
             val timerInfo = when (timerState.mode) {
                 SleepTimerMode.COUNTDOWN -> {
-                    val remaining = PlayerManager.sleepTimerManager.formatRemainingTime()
+                    val remaining = PlayerManager.sleepTimerManager.formatRemainingTimeForNotification()
                     getString(R.string.notification_timer_remaining, remaining)
                 }
                 SleepTimerMode.FINISH_CURRENT -> getString(R.string.notification_stop_after_current)

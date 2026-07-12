@@ -1707,6 +1707,13 @@ internal object ManagedDownloadStorage {
             async(Dispatchers.IO) {
                 cleanupLimiter.withPermit {
                     progressTracker?.startCleanup(copiedEntries.size, migrationEntry.original.entry.name)
+                    val sourceSize = migrationEntry.original.entry.sizeBytes
+                    val copiedSize = migrationEntry.copiedEntry.sizeBytes
+                    if (sourceSize > 0L && copiedSize > 0L && !isSizeWithinTolerance(copiedSize, sourceSize, SAF_COMMITTED_SIZE_TOLERANCE_BYTES)) {
+                        NPLogger.w(TAG, "迁移后目标大小不匹配，跳过删除源文件: ${migrationEntry.original.entry.name}, source=$sourceSize, copied=$copiedSize")
+                        progressTracker?.finishCleanup(migrationEntry.original.entry.name)
+                        return@withPermit 1
+                    }
                     val deleted = runCatching {
                         deleteInternal(
                             context = context,
@@ -2033,6 +2040,12 @@ internal object ManagedDownloadStorage {
                             input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
                         }
                     } ?: throw IOException("无法打开下载目录输出流")
+                    verifyDocumentCommittedLength(
+                        context = context,
+                        uri = pendingTarget.uri,
+                        expectedSizeBytes = actualSizeBytes,
+                        description = "staging→SAF: $createdPendingName"
+                    )
                     seedMetadataEntry = writeSeedMetadataBeforeAudioCommit(
                         context = context,
                         root = root,
@@ -3631,11 +3644,13 @@ internal object ManagedDownloadStorage {
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                     copiedBytes = copyStreamWithProgress(input, output, onProgress)
                 } ?: throw IOException("无法写入根目录文件: ${targetPlan.entry.name}")
+                val expectedSize = if (sourceEntry.sizeBytes > 0L) sourceEntry.sizeBytes
+                    else copiedBytes.coerceAtLeast(0L)
                 val entry = verifiedTreeStoredEntry(
                     context = context,
                     target = target,
                     expectedName = targetPlan.entry.name,
-                    expectedSizeBytes = copiedBytes.coerceAtLeast(0L),
+                    expectedSizeBytes = expectedSize,
                     fallbackLastModifiedMs = writtenAtMs,
                     description = displayName
                 )
@@ -4713,17 +4728,23 @@ internal object ManagedDownloadStorage {
         managedTreeRoots: Collection<String>
     ): Boolean {
         val normalizedReference = reference.takeIf(String::isNotBlank) ?: return false
-        if (normalizedReference in trustedReferences) {
-            return true
-        }
+        val isTrusted = normalizedReference in trustedReferences
         if (normalizedReference.startsWith("/")) {
-            return managedFileRoots.any { rootPath ->
+            val underRoot = managedFileRoots.any { rootPath ->
                 isFileReferenceUnderManagedRoot(normalizedReference, rootPath)
             }
+            if (!underRoot && isTrusted) {
+                NPLogger.w(TAG, "受信引用不在托管根内，拒绝删除: $normalizedReference")
+            }
+            return underRoot
         }
-        return managedTreeRoots.any { rootUri ->
+        val underTree = managedTreeRoots.any { rootUri ->
             isDocumentReferenceUnderManagedTree(normalizedReference, rootUri)
         }
+        if (!underTree && isTrusted) {
+            NPLogger.w(TAG, "受信引用不在托管根内，拒绝删除: $normalizedReference")
+        }
+        return underTree
     }
 
     internal fun isFileReferenceUnderManagedRoot(reference: String, managedRootPath: String): Boolean {

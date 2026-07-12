@@ -414,27 +414,24 @@ class MainActivity : ComponentActivity() {
                         return@LaunchedEffect
                     }
                     rootLifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                        while (true) {
-                            val warningState = loadGitHubSyncWarningState()
-                            val shouldWarn = (warningState.hasRepoInfo || warningState.hasSyncHistory) &&
-                                !warningState.isConfigured &&
-                                !hasShownTokenWarning &&
-                                !warningState.isDismissed
+                        val warningState = loadGitHubSyncWarningState()
+                        val shouldWarn = (warningState.hasRepoInfo || warningState.hasSyncHistory) &&
+                            !warningState.isConfigured &&
+                            !hasShownTokenWarning &&
+                            !warningState.isDismissed
 
-                            if (shouldWarn) {
-                                NPLogger.d("MainActivity", "显示 GitHub 配置警告")
-                                showTokenWarningDialog = true
-                                hasShownTokenWarning = true
-                            } else if (warningState.isConfigured) {
-                                hasShownTokenWarning = false
-                                if (warningState.isDismissed) {
-                                    withContext(Dispatchers.IO) {
-                                        moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
-                                            .setTokenWarningDismissed(false)
-                                    }
+                        if (shouldWarn) {
+                            NPLogger.d("MainActivity", "显示 GitHub 配置警告")
+                            showTokenWarningDialog = true
+                            hasShownTokenWarning = true
+                        } else if (warningState.isConfigured) {
+                            hasShownTokenWarning = false
+                            if (warningState.isDismissed) {
+                                withContext(Dispatchers.IO) {
+                                    moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
+                                        .setTokenWarningDismissed(false)
                                 }
                             }
-                            delay(3_000L)
                         }
                     }
                 }

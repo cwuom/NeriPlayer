@@ -551,11 +551,18 @@ fun LocalPlaylistDetailScreen(
                 contract = ActivityResultContracts.OpenDocumentTree()
             ) { uri ->
                 uri ?: return@rememberLauncherForActivityResult
-                runCatching {
+                val persistGranted = runCatching {
                     context.contentResolver.takePersistableUriPermission(
                         uri,
                         Intent.FLAG_GRANT_READ_URI_PERMISSION
                     )
+                }.isSuccess
+                if (!persistGranted) {
+                    scope.launch {
+                        snackbarHostState.showSnackbar(
+                            "目录持久授权失败，导入的歌曲在应用重启后可能无法访问"
+                        )
+                    }
                 }
                 startFolderAudioScan(uri)
             }
