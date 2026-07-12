@@ -52,4 +52,17 @@ class UsbExclusiveRuntimeReportTest {
         assertTrue(metrics.isQueueFull)
         assertFalse(metrics.isBenignBackpressure)
     }
+
+    @Test
+    fun `runtime metrics expose recoverable iso packet errors`() {
+        val metrics = buildString {
+            append("source=player_pcm isoPacketErrors=2 isoPacketErrorTransfers=1 ")
+            append("isoPacketErrorScore=2 running=true transportFailed=false lastError=none")
+        }.usbRuntimeMetrics()
+
+        assertEquals(2L, metrics.isoPacketErrors)
+        assertEquals(1L, metrics.isoPacketErrorTransfers)
+        assertEquals(2, metrics.isoPacketErrorScore)
+        assertTrue(metrics.hasHealthyTransport)
+    }
 }

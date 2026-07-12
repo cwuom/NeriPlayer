@@ -82,6 +82,8 @@ import moe.ouom.neriplayer.core.player.PlayerManager.externalBluetoothLyricLineF
 import moe.ouom.neriplayer.core.player.PlayerManager.statusBarLyricsEnable
 import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothMetadataText
 import moe.ouom.neriplayer.core.player.metadata.shouldUseExternalBluetoothLyrics
+import moe.ouom.neriplayer.core.player.policy.UsbExclusiveKeepAliveProgress
+import moe.ouom.neriplayer.core.player.policy.evaluateUsbExclusiveKeepAliveProgress
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.UsbExclusiveSessionController
@@ -452,6 +454,7 @@ class AudioPlayerService : Service() {
     private var usbExclusiveKeepAliveJob: Job? = null
     private var usbExclusiveKeepAliveTick: Long = 0L
     private var lastUsbExclusiveKeepAliveAtMs: Long = 0L
+    private var lastUsbExclusiveNativeHandle: Long = 0L
     private var lastUsbExclusiveCompletedFrames: Long = -1L
     private var usbExclusiveKeepAliveStallTicks: Int = 0
 
@@ -481,6 +484,7 @@ class AudioPlayerService : Service() {
                     NPLogger.i("NERI-APS", "USB exclusive keepalive stopped because playback is inactive")
                     usbExclusiveKeepAliveTick = 0L
                     lastUsbExclusiveKeepAliveAtMs = 0L
+                    lastUsbExclusiveNativeHandle = 0L
                     lastUsbExclusiveCompletedFrames = -1L
                     usbExclusiveKeepAliveStallTicks = 0
                     usbExclusiveKeepAliveJob = null
@@ -526,10 +530,15 @@ class AudioPlayerService : Service() {
         } else {
             NPLogger.i("NERI-APS", message)
         }
-        recoverUsbExclusivePlaybackIfKeepAliveStalled(nativeState.completedAudioFrames, message)
+        recoverUsbExclusivePlaybackIfKeepAliveStalled(
+            nativeHandle = nativeState.handle,
+            completedFrames = nativeState.completedAudioFrames,
+            diagnosticMessage = message
+        )
     }
 
     private fun recoverUsbExclusivePlaybackIfKeepAliveStalled(
+        nativeHandle: Long,
         completedFrames: Long,
         diagnosticMessage: String
     ) {
@@ -542,17 +551,30 @@ class AudioPlayerService : Service() {
             nativeState.source == "player_pcm" &&
             nativeState.streaming
         if (!shouldCheckStall) {
+            lastUsbExclusiveNativeHandle = nativeHandle
             lastUsbExclusiveCompletedFrames = completedFrames
             usbExclusiveKeepAliveStallTicks = 0
             return
         }
-        if (lastUsbExclusiveCompletedFrames >= 0L && completedFrames <= lastUsbExclusiveCompletedFrames) {
-            usbExclusiveKeepAliveStallTicks += 1
-        } else {
-            usbExclusiveKeepAliveStallTicks = 0
+        val decision = evaluateUsbExclusiveKeepAliveProgress(
+            previousHandle = lastUsbExclusiveNativeHandle,
+            currentHandle = nativeHandle,
+            previousCompletedFrames = lastUsbExclusiveCompletedFrames,
+            currentCompletedFrames = completedFrames,
+            previousStallTicks = usbExclusiveKeepAliveStallTicks,
+            recoveryTicks = USB_EXCLUSIVE_KEEPALIVE_STALL_RECOVERY_TICKS
+        )
+        if (decision.progress == UsbExclusiveKeepAliveProgress.COUNTER_RESET) {
+            NPLogger.i(
+                "NERI-APS",
+                "USB exclusive keepalive reset frame baseline after native counter reset: " +
+                    "handle=$nativeHandle previous=$lastUsbExclusiveCompletedFrames current=$completedFrames"
+            )
         }
+        lastUsbExclusiveNativeHandle = nativeHandle
         lastUsbExclusiveCompletedFrames = completedFrames
-        if (usbExclusiveKeepAliveStallTicks < USB_EXCLUSIVE_KEEPALIVE_STALL_RECOVERY_TICKS) return
+        usbExclusiveKeepAliveStallTicks = decision.stallTicks
+        if (!decision.shouldRecover) return
         usbExclusiveKeepAliveStallTicks = 0
         NPLogger.w(
             "NERI-APS",
@@ -573,6 +595,7 @@ class AudioPlayerService : Service() {
         usbExclusiveKeepAliveJob = null
         usbExclusiveKeepAliveTick = 0L
         lastUsbExclusiveKeepAliveAtMs = 0L
+        lastUsbExclusiveNativeHandle = 0L
         lastUsbExclusiveCompletedFrames = -1L
         usbExclusiveKeepAliveStallTicks = 0
         NPLogger.d("NERI-APS", "USB exclusive keepalive idle reason=$reason")

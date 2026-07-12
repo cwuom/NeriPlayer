@@ -6,6 +6,9 @@ data class UsbExclusiveRuntimeMetrics(
     val subslotBytes: Int? = null,
     val transferBytes: Long? = null,
     val lastTransferBytes: Long? = null,
+    val isoPacketErrors: Long? = null,
+    val isoPacketErrorTransfers: Long? = null,
+    val isoPacketErrorScore: Int? = null,
     val pcmLevelBytes: Long? = null,
     val pcmCapacityBytes: Long? = null,
     val pcmFreeBytes: Long? = null,
@@ -57,6 +60,9 @@ internal fun String.usbRuntimeMetrics(): UsbExclusiveRuntimeMetrics {
         subslotBytes = valueAfter("subslotBytes")?.toIntOrNull(),
         transferBytes = valueAfter("transferBytes")?.toLongOrNull(),
         lastTransferBytes = valueAfter("lastTransferBytes")?.toLongOrNull(),
+        isoPacketErrors = valueAfter("isoPacketErrors")?.toLongOrNull(),
+        isoPacketErrorTransfers = valueAfter("isoPacketErrorTransfers")?.toLongOrNull(),
+        isoPacketErrorScore = valueAfter("isoPacketErrorScore")?.toIntOrNull(),
         pcmLevelBytes = levelPart?.substringBefore('/')?.toLongOrNull(),
         pcmCapacityBytes = levelPart
             ?.substringAfter('/', missingDelimiterValue = "")

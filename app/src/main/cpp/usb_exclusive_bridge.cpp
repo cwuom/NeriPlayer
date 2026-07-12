@@ -21,6 +21,7 @@
 
 #include "libusb/libusb.h"
 #include "usb_iso_packet_scheduler.h"
+#include "usb_iso_transfer_health.h"
 #include "usb_pcm_pipeline.h"
 #include "usb_uac1_format.h"
 
@@ -128,6 +129,9 @@ struct UsbExclusiveHandle {
     double tonePhase = 0.0;
     std::atomic<int> completedTransfers { 0 };
     std::atomic<int> submitErrors { 0 };
+    std::atomic<int> isoPacketErrors { 0 };
+    std::atomic<int> isoPacketErrorTransfers { 0 };
+    std::atomic<int> isoPacketErrorScore { 0 };
     std::atomic<int64_t> scheduledPackets { 0 };
     std::atomic<int64_t> scheduledFrames { 0 };
     std::atomic<int> packetFramesMin { std::numeric_limits<int>::max() };
@@ -1035,6 +1039,9 @@ bool startStreamingInternal(
     handle->streamSource.store(source);
     handle->completedTransfers.store(0);
     handle->submitErrors.store(0);
+    handle->isoPacketErrors.store(0);
+    handle->isoPacketErrorTransfers.store(0);
+    handle->isoPacketErrorScore.store(0);
     handle->scheduledPackets.store(0);
     handle->scheduledFrames.store(0);
     handle->packetFramesMin.store(std::numeric_limits<int>::max());
@@ -1296,12 +1303,20 @@ void LIBUSB_CALL transferCallback(libusb_transfer* transfer) noexcept {
         const bool transferCompleted = transfer->status == LIBUSB_TRANSFER_COMPLETED;
         bool packetsCompleted = transferCompleted;
         bool packetReportedNoDevice = false;
+        int failedPacketCount = 0;
+        int firstFailedPacketIndex = -1;
+        int firstFailedPacketStatus = LIBUSB_TRANSFER_COMPLETED;
         int64_t completedPacketBytes = 0;
         if (transferCompleted) {
             for (int packetIndex = 0; packetIndex < transfer->num_iso_packets; ++packetIndex) {
                 const libusb_iso_packet_descriptor& packet = transfer->iso_packet_desc[packetIndex];
                 if (packet.status != LIBUSB_TRANSFER_COMPLETED) {
                     packetsCompleted = false;
+                    failedPacketCount += 1;
+                    if (firstFailedPacketIndex < 0) {
+                        firstFailedPacketIndex = packetIndex;
+                        firstFailedPacketStatus = packet.status;
+                    }
                 }
                 if (packet.status == LIBUSB_TRANSFER_NO_DEVICE) {
                     packetReportedNoDevice = true;
@@ -1316,6 +1331,10 @@ void LIBUSB_CALL transferCallback(libusb_transfer* transfer) noexcept {
             : 0;
         settlePreparedPlayerFrames(handle, userData, completedPacketFrames);
         if (packetsCompleted) {
+            const int currentScore = handle->isoPacketErrorScore.load();
+            handle->isoPacketErrorScore.store(
+                neri::usb::updateIsoPacketErrorScore(currentScore, 0)
+            );
             const int completedBefore = handle->completedTransfers.fetch_add(1);
             if (completedBefore == 0) {
                 LOGI(
@@ -1324,6 +1343,41 @@ void LIBUSB_CALL transferCallback(libusb_transfer* transfer) noexcept {
                     transfer->length,
                     transfer->actual_length
                 );
+            }
+        } else if (transferCompleted && !packetReportedNoDevice) {
+            const int errorTransfers = handle->isoPacketErrorTransfers.fetch_add(1) + 1;
+            const int totalPacketErrors = handle->isoPacketErrors.fetch_add(failedPacketCount) +
+                failedPacketCount;
+            const int errorScore = neri::usb::updateIsoPacketErrorScore(
+                handle->isoPacketErrorScore.load(),
+                failedPacketCount
+            );
+            handle->isoPacketErrorScore.store(errorScore);
+            const bool fatalPacketBurst = neri::usb::shouldFailForIsoPacketErrors(errorScore);
+            if (errorTransfers <= 3 || (errorTransfers & (errorTransfers - 1)) == 0 ||
+                fatalPacketBurst) {
+                LOGW(
+                    "USB isochronous packet error: failedPackets=%d firstPacket=%d "
+                    "firstStatus=%d score=%d/%d errorTransfers=%d totalPacketErrors=%d "
+                    "completed=%d inFlight=%d actual=%d fatal=%d",
+                    failedPacketCount,
+                    firstFailedPacketIndex,
+                    firstFailedPacketStatus,
+                    errorScore,
+                    neri::usb::kIsoPacketErrorFailureScore,
+                    errorTransfers,
+                    totalPacketErrors,
+                    handle->completedTransfers.load(),
+                    handle->inFlightTransfers.load(),
+                    transfer->actual_length,
+                    fatalPacketBurst ? 1 : 0
+                );
+            }
+            if (fatalPacketBurst) {
+                handle->submitErrors.fetch_add(1);
+                handle->transportFailed.store(true);
+                setError(handle, "iso_packet_status_failed");
+                return;
             }
         } else if (transfer->status != LIBUSB_TRANSFER_CANCELLED) {
             if (transfer->status == LIBUSB_TRANSFER_NO_DEVICE || packetReportedNoDevice) {
@@ -2685,6 +2739,10 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativeRuntimeR
             " inFlight=" + std::to_string(holder->inFlightTransfers.load()) +
             " completedTransfers=" + std::to_string(holder->completedTransfers.load()) +
             " submitErrors=" + std::to_string(holder->submitErrors.load()) +
+            " isoPacketErrors=" + std::to_string(holder->isoPacketErrors.load()) +
+            " isoPacketErrorTransfers=" +
+                std::to_string(holder->isoPacketErrorTransfers.load()) +
+            " isoPacketErrorScore=" + std::to_string(holder->isoPacketErrorScore.load()) +
             " scheduledPackets=" + std::to_string(holder->scheduledPackets.load()) +
             " scheduledFrames=" + std::to_string(holder->scheduledFrames.load()) +
             " pcmLevel=" + std::to_string(pcm.levelBytes) + "/" +
