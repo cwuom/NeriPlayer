@@ -2700,7 +2700,11 @@ object AudioDownloadManager {
     }
 
     /** 解析下载歌曲对应的本地封面，供离线 UI 兜底使用 */
-    fun getLocalCoverUri(context: Context, song: SongItem): String? {
+    fun getLocalCoverUri(
+        context: Context,
+        song: SongItem,
+        resolveLocalMediaFallback: Boolean = true
+    ): String? {
         val allowBlockingLookup = canBlockStorageLookup()
         val localAudio = ManagedDownloadStorage.peekDownloadedAudio(song)
             ?: if (allowBlockingLookup && ManagedDownloadStorage.ensureSnapshotCacheReady(context)) {
@@ -2725,14 +2729,15 @@ object AudioDownloadManager {
         if (localAudio != null || !allowBlockingLookup) {
             return null
         }
+        if (!resolveLocalMediaFallback) {
+            return null
+        }
+        if (!LocalSongSupport.isLocalSong(song)) {
+            return null
+        }
 
-        val localAudioUri = song.localFilePath
-            ?.takeIf { File(it).exists() }
-            ?.let { Uri.fromFile(File(it)) }
-            ?: song.mediaUri?.takeIf { it.isNotBlank() }?.toUri()
-            ?: return null
         return runCatching {
-            LocalMediaSupport.inspect(context, localAudioUri).coverUri
+            LocalMediaSupport.resolveCoverUri(context, song)
         }.getOrElse {
             NPLogger.w(TAG, "resolve local cover fallback failed: ${it.message}")
             null

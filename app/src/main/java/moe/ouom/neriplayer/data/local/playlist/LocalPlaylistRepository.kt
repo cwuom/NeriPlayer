@@ -308,11 +308,12 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
         songs: List<SongItem>,
         includeLocalMetadataFallback: Boolean = false
     ): MutableList<SongItem> {
+        val duplicateIndex = SongDuplicateIndex(includeLocalMetadataFallback)
         val distinct = mutableListOf<SongItem>()
         songs.forEach { song ->
-            if (!hasExistingSong(distinct, song, includeLocalMetadataFallback)) {
-                distinct += song
-            }
+            if (duplicateIndex.contains(song)) return@forEach
+            duplicateIndex.add(song)
+            distinct += song
         }
         return distinct
     }
@@ -322,14 +323,34 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
         candidates: List<SongItem>,
         includeLocalMetadataFallback: Boolean = false
     ): List<SongItem> {
-        val accepted = existingSongs.toMutableList()
+        val accepted = SongDuplicateIndex(includeLocalMetadataFallback).apply {
+            existingSongs.forEach(::add)
+        }
         return candidates.filter { candidate ->
-            if (hasExistingSong(accepted, candidate, includeLocalMetadataFallback)) {
+            if (accepted.contains(candidate)) {
                 false
             } else {
-                accepted += candidate
+                accepted.add(candidate)
                 true
             }
+        }
+    }
+
+    private class SongDuplicateIndex(
+        private val includeLocalMetadataFallback: Boolean
+    ) {
+        private val identities = HashSet<SongIdentity>()
+        private val localKeys = HashSet<String>()
+
+        fun add(song: SongItem) {
+            identities += song.identity()
+            localKeys += LocalSongSupport.localDuplicateKeys(song, includeLocalMetadataFallback)
+        }
+
+        fun contains(song: SongItem): Boolean {
+            if (song.identity() in identities) return true
+            val keys = LocalSongSupport.localDuplicateKeys(song, includeLocalMetadataFallback)
+            return keys.any(localKeys::contains)
         }
     }
 
@@ -370,6 +391,10 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     }
 
     suspend fun createPlaylistWithScannedSongs(name: String, songs: List<SongItem>): LocalPlaylist {
+        return createPlaylistWithPreparedSongs(name, songs)
+    }
+
+    suspend fun createPlaylistWithPreparedSongs(name: String, songs: List<SongItem>): LocalPlaylist {
         return createPlaylistWithSongs(
             name = name,
             songs = songs,
@@ -584,6 +609,14 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     }
 
     suspend fun addScannedSongsToPlaylistAndCount(playlistId: Long, songs: List<SongItem>): Int {
+        return addPreparedSongsToPlaylistAndCount(playlistId, songs)
+    }
+
+    suspend fun addPreparedSongsToPlaylist(playlistId: Long, songs: List<SongItem>) {
+        addPreparedSongsToPlaylistAndCount(playlistId, songs)
+    }
+
+    suspend fun addPreparedSongsToPlaylistAndCount(playlistId: Long, songs: List<SongItem>): Int {
         return addSongsToPlaylistAndCount(
             playlistId = playlistId,
             songs = songs,
@@ -719,6 +752,48 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
         }
     }
 
+    suspend fun refreshScannedLocalSongMetadata(
+        songs: List<SongItem>,
+        includeEmbeddedAssets: Boolean = false,
+        onProgress: (processed: Int, total: Int) -> Unit = { _, _ -> }
+    ) {
+        withContext(Dispatchers.IO) {
+            val candidates = distinctPlaylistSongs(
+                songs = songs.filter { LocalSongSupport.isLocalSong(it, context) },
+                includeLocalMetadataFallback = true
+            )
+            onProgress(0, candidates.size)
+            if (candidates.isEmpty()) {
+                return@withContext
+            }
+
+            val refreshDispatcher = Dispatchers.IO.limitedParallelism(LOCAL_METADATA_REFRESH_PARALLELISM)
+            var processedCount = 0
+            candidates.chunked(LOCAL_METADATA_REFRESH_BATCH_SIZE).forEach { batch ->
+                val updates = coroutineScope {
+                    batch.map { originalSong ->
+                        async(refreshDispatcher) {
+                            val hydratedSong = if (includeEmbeddedAssets) {
+                                LocalAudioImportManager.hydrateLocalSongMetadata(
+                                    context,
+                                    originalSong
+                                )
+                            } else {
+                                LocalAudioImportManager.hydrateLocalSongTextMetadata(context, originalSong)
+                            }
+                            originalSong to hydratedSong
+                        }
+                    }.awaitAll()
+                }.filter { (originalSong, hydratedSong) ->
+                    hydratedSong != originalSong
+                }
+                applySongMetadataUpdates(updates)
+                processedCount += batch.size
+                onProgress(processedCount, candidates.size)
+            }
+        }
+    }
+
     suspend fun addSongToPlaylist(playlistId: Long, song: SongItem) {
         addSongsToPlaylist(playlistId, listOf(song))
     }
@@ -775,6 +850,68 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             }
             // 播放期自动补 metadata 只需要把本地视图写稳，不该顺手唤醒整条云同步链
             publish(updated, triggerSync = false)
+        }
+    }
+
+    private fun applySongMetadataUpdates(updates: List<Pair<SongItem, SongItem>>) {
+        if (updates.isEmpty()) {
+            return
+        }
+
+        val updateIndex = SongMetadataUpdateIndex(updates)
+        var changed = false
+        val updated = _playlists.value.map { playlist ->
+            var playlistChanged = false
+            val refreshedSongs = playlist.songs.map { currentSong ->
+                val newSongInfo = updateIndex.find(currentSong) ?: return@map currentSong
+                val mergedSongInfo = mergeSongMetadataForPersistence(
+                    currentSong = currentSong,
+                    newSongInfo = newSongInfo
+                )
+                if (currentSong == mergedSongInfo) {
+                    currentSong
+                } else {
+                    saveCoverMapping(mergedSongInfo)
+                    changed = true
+                    playlistChanged = true
+                    mergedSongInfo
+                }
+            }.toMutableList()
+
+            if (playlistChanged) {
+                playlist.copy(songs = refreshedSongs)
+            } else {
+                playlist
+            }
+        }
+
+        if (changed) {
+            publish(updated, triggerSync = false)
+        }
+    }
+
+    private class SongMetadataUpdateIndex(updates: List<Pair<SongItem, SongItem>>) {
+        private val byIdentity = HashMap<SongIdentity, SongItem>(updates.size * 2)
+        private val byLocalKey = HashMap<String, SongItem>(updates.size * 3)
+
+        init {
+            updates.forEach { (originalSong, hydratedSong) ->
+                byIdentity[originalSong.identity()] = hydratedSong
+                LocalSongSupport.localDuplicateKeys(
+                    song = originalSong,
+                    includeMetadataFallback = true
+                ).forEach { key ->
+                    byLocalKey.putIfAbsent(key, hydratedSong)
+                }
+            }
+        }
+
+        fun find(song: SongItem): SongItem? {
+            byIdentity[song.identity()]?.let { return it }
+            return LocalSongSupport.localDuplicateKeys(
+                song = song,
+                includeMetadataFallback = true
+            ).firstNotNullOfOrNull(byLocalKey::get)
         }
     }
 
@@ -1696,6 +1833,8 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
 
     companion object {
         const val MAX_PLAYLIST_NAME_LENGTH = 10
+        private const val LOCAL_METADATA_REFRESH_BATCH_SIZE = 48
+        private const val LOCAL_METADATA_REFRESH_PARALLELISM = 4
         private const val NETEASE_ALBUM_PREFIX = "Netease"
         private const val NETEASE_COMPARE_FAILED_MESSAGE =
             "网易云云端比对失败，已停止同步以避免误同步"

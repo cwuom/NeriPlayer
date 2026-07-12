@@ -392,14 +392,14 @@ fun LocalArtistDetailScreen(
                 onCreateAndExport = { name ->
                     val selectedSongs = songs.filter { it.stableKey() in selectedKeys }
                     scope.launch {
-                        repo.createPlaylistWithSongs(name, selectedSongs)
+                        repo.createPlaylistWithPreparedSongs(name, selectedSongs)
                     }
                     exitSelectionMode()
                 },
                 onExportToPlaylist = { target ->
                     val selectedSongs = songs.filter { it.stableKey() in selectedKeys }
                     scope.launch {
-                        repo.addSongsToPlaylist(target.id, selectedSongs)
+                        repo.addPreparedSongsToPlaylist(target.id, selectedSongs)
                     }
                     exitSelectionMode()
                 }
@@ -527,7 +527,10 @@ private fun LocalArtistSongRow(
     offlineMode: Boolean
 ) {
     val context = LocalContext.current
-    val coverUrl = rememberSongDisplayCoverUrl(song)
+    val coverUrl = rememberSongDisplayCoverUrl(
+        song = song,
+        resolveLocalFallback = false
+    )
     val rowContainerColor = if (selected) {
         MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f)
     } else {

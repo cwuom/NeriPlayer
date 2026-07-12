@@ -50,6 +50,7 @@ import java.io.RandomAccessFile
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.util.LinkedHashMap
 import kotlin.math.max
 import androidx.core.net.toUri
 
@@ -60,6 +61,9 @@ private const val NUL_CHAR = '\u0000'
 private const val BOM_CHAR = '\uFEFF'
 private const val REPLACEMENT_CHAR = '\uFFFD'
 private const val SHARED_LOCAL_MEDIA_DIR = "shared_media_exports"
+private const val LOCAL_COVER_LOOKUP_CACHE_LIMIT = 768
+private const val NEARBY_COVER_LOOKUP_CACHE_LIMIT = 2048
+private const val DIRECTORY_COVER_LOOKUP_CACHE_LIMIT = 256
 
 data class LocalMediaDetails(
     val sourceUri: Uri,
@@ -228,12 +232,57 @@ object LocalMediaSupport {
     private val lyricExtensions = listOf("lrc", "txt")
     private val coverFileNames = listOf("cover", "folder", "front")
     private val imageExtensions = listOf("jpg", "jpeg", "png", "webp")
+    private data class LocalCoverCacheHit(val coverUri: String?)
+    private data class FilePathCacheHit(val path: String?)
+    private val localCoverLookupCache = object : LinkedHashMap<String, String?>(
+        LOCAL_COVER_LOOKUP_CACHE_LIMIT,
+        0.75f,
+        true
+    ) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String?>): Boolean {
+            return size > LOCAL_COVER_LOOKUP_CACHE_LIMIT
+        }
+    }
+    private val nearbyCoverLookupCache = object : LinkedHashMap<String, String?>(
+        NEARBY_COVER_LOOKUP_CACHE_LIMIT,
+        0.75f,
+        true
+    ) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String?>): Boolean {
+            return size > NEARBY_COVER_LOOKUP_CACHE_LIMIT
+        }
+    }
+    private val directoryCoverLookupCache = object : LinkedHashMap<String, String?>(
+        DIRECTORY_COVER_LOOKUP_CACHE_LIMIT,
+        0.75f,
+        true
+    ) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String?>): Boolean {
+            return size > DIRECTORY_COVER_LOOKUP_CACHE_LIMIT
+        }
+    }
 
     private data class AudioTrackTechInfo(
         val audioMimeType: String?,
         val bitrateKbps: Int?,
         val sampleRateHz: Int?,
         val channelCount: Int?
+    )
+
+    private data class RetrieverTextMetadata(
+        val title: String? = null,
+        val artist: String? = null,
+        val album: String? = null,
+        val albumArtist: String? = null,
+        val composer: String? = null,
+        val genre: String? = null,
+        val year: Int? = null,
+        val trackNumber: Int? = null,
+        val discNumber: Int? = null,
+        val durationMs: Long? = null,
+        val mimeType: String? = null,
+        val bitrateKbps: Int? = null,
+        val sampleRateHz: Int? = null
     )
 
     private data class ResolvedInspectableLocalMedia(
@@ -363,6 +412,20 @@ object LocalMediaSupport {
         return null
     }
 
+    fun inspectMetadataOnly(context: Context, song: SongItem): LocalMediaDetails? {
+        for (uri in song.localMediaUriCandidates()) {
+            if (!uri.isSupportedLocalMediaUri()) {
+                continue
+            }
+            runCatching { inspectMetadataOnly(context, uri) }
+                .onSuccess { return it }
+                .onFailure {
+                    NPLogger.w(TAG, "inspect metadata-only candidate failed for $uri: ${it.message}")
+                }
+        }
+        return null
+    }
+
     fun resolveLocalFile(context: Context, uri: Uri): File? {
         if (!uri.isSupportedLocalMediaUri()) return null
         val resolvedPath = directFilePath(uri)
@@ -407,7 +470,8 @@ object LocalMediaSupport {
             context = context,
             uri = resolved.playableUri,
             file = file,
-            includeEmbeddedAssets = false
+            includeEmbeddedAssets = false,
+            includeAudioProperties = false
         )
         val title = pickReadableLocalTitle(
             sourceUri = uri,
@@ -464,6 +528,124 @@ object LocalMediaSupport {
                 ?: artist,
             embeddedCover = false
         )
+    }
+
+    fun inspectMetadataOnly(context: Context, uri: Uri): LocalMediaDetails {
+        val resolved = resolveInspectableLocalMedia(
+            context = context,
+            uri = uri,
+            allowDescriptorFallback = true
+        )
+        val queried = resolved.queried
+        val file = resolved.file
+        val containerMetadata = file?.let(::parseContainerMetadata)
+        val tagLibMetadata = inspectTagLibMetadata(
+            context = context,
+            uri = resolved.playableUri,
+            file = file,
+            includeEmbeddedAssets = false,
+            includeAudioProperties = false
+        )
+        val retrieverMetadata = readRetrieverTextMetadata(context, resolved.playableUri)
+        val title = pickReadableLocalTitle(
+            sourceUri = uri,
+            fallbackTitle = resolved.fallbackTitle,
+            tagLibMetadata?.title,
+            retrieverMetadata.title,
+            containerMetadata?.title,
+            queried.title
+        ) ?: resolved.fallbackTitle
+        val artist = tagLibMetadata?.artist
+            ?: retrieverMetadata.artist
+            ?: retrieverMetadata.albumArtist
+            ?: containerMetadata?.artist?.takeIf { it.isNotBlank() }
+            ?: queried.artist?.takeIf { it.isNotBlank() }
+            ?: context.getString(R.string.music_unknown_artist)
+        val album = tagLibMetadata?.album
+            ?: retrieverMetadata.album
+            ?: containerMetadata?.album?.takeIf { it.isNotBlank() }
+            ?: queried.album?.takeIf { it.isNotBlank() }
+        val usesFallbackAlbum = album == null
+        val resolvedAlbum = album ?: context.getString(R.string.local_files)
+
+        return LocalMediaDetails(
+            sourceUri = uri,
+            displayName = resolved.displayName,
+            title = title,
+            artist = artist,
+            album = resolvedAlbum,
+            usesFallbackAlbum = usesFallbackAlbum,
+            albumArtist = tagLibMetadata?.albumArtist
+                ?: retrieverMetadata.albumArtist
+                ?: containerMetadata?.albumArtist,
+            composer = tagLibMetadata?.composer
+                ?: retrieverMetadata.composer
+                ?: containerMetadata?.composer,
+            genre = tagLibMetadata?.genre
+                ?: retrieverMetadata.genre
+                ?: containerMetadata?.genre,
+            year = tagLibMetadata?.year ?: retrieverMetadata.year ?: containerMetadata?.year,
+            trackNumber = tagLibMetadata?.trackNumber
+                ?: retrieverMetadata.trackNumber
+                ?: containerMetadata?.trackNumber,
+            discNumber = tagLibMetadata?.discNumber
+                ?: retrieverMetadata.discNumber
+                ?: containerMetadata?.discNumber,
+            durationMs = tagLibMetadata?.durationMs
+                ?: retrieverMetadata.durationMs
+                ?: queried.durationMs
+                ?: 0L,
+            fileExtension = resolved.fileExtension,
+            mimeType = queried.mimeType ?: retrieverMetadata.mimeType,
+            audioMimeType = null,
+            bitrateKbps = tagLibMetadata?.bitrateKbps ?: retrieverMetadata.bitrateKbps,
+            sampleRateHz = tagLibMetadata?.sampleRateHz ?: retrieverMetadata.sampleRateHz,
+            channelCount = tagLibMetadata?.channelCount,
+            bitsPerSample = null,
+            sizeBytes = queried.sizeBytes ?: file?.length(),
+            lastModifiedMs = queried.lastModifiedMs ?: file?.lastModified(),
+            filePath = file?.absolutePath ?: queried.filePath,
+            coverUri = null,
+            coverSource = null,
+            lyricContent = null,
+            lyricPath = null,
+            lyricSource = null,
+            originalTitle = title,
+            originalArtist = tagLibMetadata?.artist
+                ?: retrieverMetadata.artist
+                ?: containerMetadata?.artist?.takeIf { it.isNotBlank() }
+                ?: queried.artist?.takeIf { it.isNotBlank() }
+                ?: artist,
+            embeddedCover = false
+        )
+    }
+
+    fun resolveCoverUri(context: Context, song: SongItem): String? {
+        val uri = song.localMediaUri() ?: return null
+        return resolveCoverUri(context, uri)
+    }
+
+    fun resolveCoverUri(context: Context, uri: Uri): String? {
+        val resolved = runCatching {
+            resolveInspectableLocalMedia(
+                context = context,
+                uri = uri,
+                allowDescriptorFallback = true
+            )
+        }.getOrElse {
+            NPLogger.w(TAG, "resolve cover source failed for $uri: ${it.message}")
+            return null
+        }
+        val cacheKey = localCoverLookupKey(uri, resolved)
+        cachedLocalCoverLookup(cacheKey)?.let { return it.coverUri }
+
+        val resolvedCover = findNearbyCover(resolved.file)?.toURI()?.toString()
+            ?: findCachedEmbeddedCover(context, resolved.resolvedPath ?: uri.toString())
+            ?: findCachedEmbeddedCover(context, "${resolved.resolvedPath ?: uri}#taglib")
+            ?: extractEmbeddedCoverWithRetriever(context, uri, resolved)
+            ?: extractEmbeddedCoverWithTagLib(context, uri, resolved)
+        rememberLocalCoverLookup(cacheKey, resolvedCover)
+        return resolvedCover
     }
 
     fun inspect(context: Context, uri: Uri): LocalMediaDetails {
@@ -1122,11 +1304,52 @@ object LocalMediaSupport {
         }
     }
 
+    private fun readRetrieverTextMetadata(context: Context, uri: Uri): RetrieverTextMetadata {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(context, uri)
+            RetrieverTextMetadata(
+                title = retriever.extractNonBlankMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE),
+                artist = retriever.extractNonBlankMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST),
+                album = retriever.extractNonBlankMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM),
+                albumArtist = retriever.extractNonBlankMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST),
+                composer = retriever.extractNonBlankMetadata(MediaMetadataRetriever.METADATA_KEY_COMPOSER),
+                genre = retriever.extractNonBlankMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE),
+                year = retriever.extractNonBlankMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR)
+                    ?.extractYear(),
+                trackNumber = parseIndexedMetadata(
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER)
+                ),
+                discNumber = parseIndexedMetadata(
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DISC_NUMBER)
+                ),
+                durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    ?.toLongOrNull(),
+                mimeType = retriever.extractNonBlankMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE),
+                bitrateKbps = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)
+                    ?.toIntOrNull()
+                    ?.let { max(0, (it + 500) / 1000) },
+                sampleRateHz = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_SAMPLERATE)
+                        ?.toIntOrNull()
+                } else {
+                    null
+                }
+            )
+        } catch (error: Exception) {
+            NPLogger.w(TAG, "read retriever metadata failed for $uri: ${error.message}")
+            RetrieverTextMetadata()
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
     private fun inspectTagLibMetadata(
         context: Context,
         uri: Uri,
         file: File?,
-        includeEmbeddedAssets: Boolean = true
+        includeEmbeddedAssets: Boolean = true,
+        includeAudioProperties: Boolean = true
     ): TagLibMetadata? {
         return openTagLibDescriptor(context, uri, file)?.use { descriptor ->
             val metadata = runCatching {
@@ -1135,10 +1358,14 @@ object LocalMediaSupport {
                 NPLogger.w(TAG, "TagLib metadata failed for $uri: ${it.message}")
                 null
             }
-            val audioProperties = runCatching {
-                TagLib.getAudioProperties(descriptor.dup().detachFd())
-            }.getOrElse {
-                NPLogger.w(TAG, "TagLib audio properties failed for $uri: ${it.message}")
+            val audioProperties = if (includeAudioProperties) {
+                runCatching {
+                    TagLib.getAudioProperties(descriptor.dup().detachFd())
+                }.getOrElse {
+                    NPLogger.w(TAG, "TagLib audio properties failed for $uri: ${it.message}")
+                    null
+                }
+            } else {
                 null
             }
 
@@ -1206,8 +1433,66 @@ object LocalMediaSupport {
         if (!file.exists() || !file.isFile) return null
         return when (file.extension.lowercase()) {
             "wav", "wave" -> parseWaveMetadata(file)
-            else -> null
+            "mp1", "mp2", "mp3", "aac" -> parseId3FileMetadata(file)
+            else -> parseId3FileMetadata(file)
         }
+    }
+
+    internal fun parseId3FileMetadata(file: File): ContainerMetadata? {
+        if (!file.exists() || !file.isFile) return null
+        return runCatching {
+            RandomAccessFile(file, "r").use { raf ->
+                mergeContainerMetadata(
+                    primary = readId3v2FileMetadata(raf),
+                    fallback = readId3v1FileMetadata(raf)
+                )
+            }
+        }.getOrElse {
+            NPLogger.w(TAG, "parseId3FileMetadata failed for ${file.absolutePath}: ${it.message}")
+            null
+        }
+    }
+
+    private fun readId3v2FileMetadata(raf: RandomAccessFile): ContainerMetadata? {
+        if (raf.length() < 10L) return null
+        raf.seek(0)
+        val header = ByteArray(10)
+        raf.readFully(header)
+        if (header.readAscii(0, 3) != "ID3") return null
+
+        val tagSize = header.readSynchsafeInt(6)
+        if (tagSize <= 0) return null
+        val readableSize = minOf(
+            raf.length(),
+            10L + tagSize.toLong(),
+            MAX_CONTAINER_METADATA_BYTES
+        ).toInt()
+        if (readableSize <= 10) return null
+
+        raf.seek(0)
+        val tagBytes = ByteArray(readableSize)
+        raf.readFully(tagBytes)
+        return parseId3Metadata(tagBytes)
+    }
+
+    private fun readId3v1FileMetadata(raf: RandomAccessFile): ContainerMetadata? {
+        if (raf.length() < 128L) return null
+        raf.seek(raf.length() - 128L)
+        val tag = ByteArray(128)
+        raf.readFully(tag)
+        if (tag.readAscii(0, 3) != "TAG") return null
+
+        val trackNumber = tag[125]
+            .takeIf { it == 0.toByte() }
+            ?.let { tag[126].toInt() and 0xFF }
+            ?.takeIf { it > 0 }
+        return ContainerMetadata(
+            title = tag.copyOfRange(3, 33).decodeContainerText(),
+            artist = tag.copyOfRange(33, 63).decodeContainerText(),
+            album = tag.copyOfRange(63, 93).decodeContainerText(),
+            year = tag.copyOfRange(93, 97).decodeContainerText()?.extractYear(),
+            trackNumber = trackNumber
+        ).takeIf { it.hasAnyValue() }
     }
 
     internal fun parseWaveMetadata(file: File): ContainerMetadata? {
@@ -1417,11 +1702,96 @@ object LocalMediaSupport {
             discNumber != null
     }
 
+    private fun localCoverLookupKey(uri: Uri, resolved: ResolvedInspectableLocalMedia): String {
+        val file = resolved.file
+        return buildString {
+            append(file?.absolutePath ?: uri.toString())
+            append('|')
+            append(file?.length() ?: resolved.queried.sizeBytes ?: -1L)
+            append('|')
+            append(file?.lastModified() ?: resolved.queried.lastModifiedMs ?: -1L)
+        }
+    }
+
+    private fun cachedLocalCoverLookup(cacheKey: String): LocalCoverCacheHit? {
+        synchronized(localCoverLookupCache) {
+            if (!localCoverLookupCache.containsKey(cacheKey)) return null
+            return LocalCoverCacheHit(localCoverLookupCache[cacheKey])
+        }
+    }
+
+    private fun rememberLocalCoverLookup(cacheKey: String, coverUri: String?) {
+        synchronized(localCoverLookupCache) {
+            localCoverLookupCache[cacheKey] = coverUri
+        }
+    }
+
+    private fun extractEmbeddedCoverWithRetriever(
+        context: Context,
+        uri: Uri,
+        resolved: ResolvedInspectableLocalMedia
+    ): String? {
+        val uriKey = resolved.resolvedPath ?: uri.toString()
+        findCachedEmbeddedCover(context, uriKey)?.let { return it }
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(context, resolved.playableUri)
+            saveEmbeddedCover(context, uriKey, retriever.embeddedPicture)
+        } catch (error: Exception) {
+            NPLogger.w(TAG, "resolve embedded cover failed for $uri: ${error.message}")
+            null
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
+    private fun extractEmbeddedCoverWithTagLib(
+        context: Context,
+        uri: Uri,
+        resolved: ResolvedInspectableLocalMedia
+    ): String? {
+        val uriKey = "${resolved.resolvedPath ?: uri}#taglib"
+        findCachedEmbeddedCover(context, uriKey)?.let { return it }
+        val coverBytes = openTagLibDescriptor(context, resolved.playableUri, resolved.file)?.use { descriptor ->
+            runCatching {
+                val metadata = TagLib.getMetadata(descriptor.dup().detachFd(), true)
+                metadata?.pictures
+                    ?.firstOrNull { it.pictureType.equals("Front Cover", ignoreCase = true) }
+                    ?.data
+                    ?: metadata?.pictures?.firstOrNull()?.data
+            }.getOrElse {
+                NPLogger.w(TAG, "TagLib cover failed for $uri: ${it.message}")
+                null
+            }
+        }
+        return saveEmbeddedCover(context, uriKey, coverBytes)
+    }
+
+    private fun findCachedEmbeddedCover(context: Context, uriKey: String): String? {
+        val file = embeddedCoverFile(context, uriKey)
+        return file
+            .takeIf { it.isFile && it.length() > 0L }
+            ?.toURI()
+            ?.toString()
+    }
+
+    private fun embeddedCoverFile(context: Context, uriKey: String): File {
+        val coverDir = File(context.filesDir, "local_audio_covers").apply { mkdirs() }
+        return File(coverDir, "${stableKey(uriKey)}.jpg")
+    }
+
     private fun saveEmbeddedCover(context: Context, uriKey: String, embeddedPicture: ByteArray?): String? {
         if (embeddedPicture == null || embeddedPicture.isEmpty()) return null
-        val coverDir = File(context.filesDir, "local_audio_covers").apply { mkdirs() }
-        val file = File(coverDir, "${stableKey(uriKey)}.jpg")
-        file.writeBytes(embeddedPicture)
+        val file = embeddedCoverFile(context, uriKey)
+        if (file.isFile && file.length() > 0L) {
+            return file.toURI().toString()
+        }
+        val tempFile = File(file.parentFile ?: context.filesDir, ".${file.name}.tmp")
+        tempFile.writeBytes(embeddedPicture)
+        if (!tempFile.renameTo(file)) {
+            file.writeBytes(embeddedPicture)
+            tempFile.delete()
+        }
         return file.toURI().toString()
     }
 
@@ -1450,18 +1820,23 @@ object LocalMediaSupport {
         val actualFile = file ?: return null
         val parent = actualFile.parentFile ?: return null
         val baseName = actualFile.nameWithoutExtension
+        val cacheKey = nearbyCoverLookupKey(actualFile, parent, baseName)
+        cachedNearbyCover(cacheKey)?.let { hit ->
+            return hit.path?.let(::File)?.takeIf { it.exists() }
+        }
 
+        val cover = findNearbyCoverUncached(parent, baseName)
+        rememberNearbyCover(cacheKey, cover)
+        return cover
+    }
+
+    private fun findNearbyCoverUncached(parent: File, baseName: String): File? {
         imageExtensions.forEach { ext ->
             val sameName = File(parent, "$baseName.$ext")
             if (sameName.exists()) return sameName
         }
 
-        coverFileNames.forEach { candidate ->
-            imageExtensions.forEach { ext ->
-                val sibling = File(parent, "$candidate.$ext")
-                if (sibling.exists()) return sibling
-            }
-        }
+        findDirectoryCover(parent)?.let { return it }
 
         val coverDir = File(parent, "Covers")
         if (coverDir.exists()) {
@@ -1472,6 +1847,55 @@ object LocalMediaSupport {
         }
 
         return null
+    }
+
+    private fun findDirectoryCover(parent: File): File? {
+        val cacheKey = directoryCoverLookupKey(parent)
+        cachedDirectoryCover(cacheKey)?.let { hit ->
+            return hit.path?.let(::File)?.takeIf { it.exists() }
+        }
+
+        val cover = coverFileNames.firstNotNullOfOrNull { candidate ->
+            imageExtensions.firstNotNullOfOrNull { ext ->
+                File(parent, "$candidate.$ext").takeIf { it.exists() }
+            }
+        }
+        rememberDirectoryCover(cacheKey, cover)
+        return cover
+    }
+
+    private fun nearbyCoverLookupKey(file: File, parent: File, baseName: String): String {
+        return "${parent.absolutePath}|${parent.lastModified()}|${file.length()}|$baseName"
+    }
+
+    private fun directoryCoverLookupKey(parent: File): String {
+        return "${parent.absolutePath}|${parent.lastModified()}"
+    }
+
+    private fun cachedNearbyCover(cacheKey: String): FilePathCacheHit? {
+        synchronized(nearbyCoverLookupCache) {
+            if (!nearbyCoverLookupCache.containsKey(cacheKey)) return null
+            return FilePathCacheHit(nearbyCoverLookupCache[cacheKey])
+        }
+    }
+
+    private fun rememberNearbyCover(cacheKey: String, cover: File?) {
+        synchronized(nearbyCoverLookupCache) {
+            nearbyCoverLookupCache[cacheKey] = cover?.absolutePath
+        }
+    }
+
+    private fun cachedDirectoryCover(cacheKey: String): FilePathCacheHit? {
+        synchronized(directoryCoverLookupCache) {
+            if (!directoryCoverLookupCache.containsKey(cacheKey)) return null
+            return FilePathCacheHit(directoryCoverLookupCache[cacheKey])
+        }
+    }
+
+    private fun rememberDirectoryCover(cacheKey: String, cover: File?) {
+        synchronized(directoryCoverLookupCache) {
+            directoryCoverLookupCache[cacheKey] = cover?.absolutePath
+        }
     }
 
     private fun parseIndexedMetadata(value: String?): Int? {
@@ -1498,7 +1922,6 @@ object LocalMediaSupport {
     ): Boolean {
         val normalized = candidate.trim()
         if (normalized.isBlank()) return false
-        if (normalized.all(Char::isDigit)) return false
         if (normalized.startsWith("content://", ignoreCase = true)) return false
         if (normalized.startsWith("file://", ignoreCase = true)) return false
         return normalized != sourceUri.lastPathSegment || normalized == fallbackTitle
@@ -1620,6 +2043,12 @@ private fun android.database.Cursor.getOptionalLong(columnName: String): Long? {
     val index = getColumnIndex(columnName)
     if (index == -1 || isNull(index)) return null
     return getLong(index)
+}
+
+private fun MediaMetadataRetriever.extractNonBlankMetadata(keyCode: Int): String? {
+    return extractMetadata(keyCode)
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
 }
 
 private fun Map<String, Array<String>>?.readFirstValue(vararg keys: String): String? {

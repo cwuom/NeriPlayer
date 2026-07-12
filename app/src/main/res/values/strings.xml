@@ -452,6 +452,9 @@
     <string name="local_playlist_scan_metadata_empty">没有带元数据的本地音频</string>
     <string name="local_playlist_import_audio_no_new">没有新的本地音频需要导入</string>
     <string name="local_playlist_add_scanned_no_new">所选歌曲已在目标歌单中</string>
+    <string name="local_playlist_metadata_processing_title">正在处理歌曲信息</string>
+    <string name="local_playlist_metadata_processing_message">正在读取本地歌曲名、歌手和专辑信息（%1$d/%2$d）</string>
+    <string name="local_playlist_metadata_processing_message_unknown">正在读取本地歌曲名、歌手和专辑信息</string>
     <string name="local_playlist_rename">重命名歌单</string>
     <string name="local_playlist_delete">删除歌单</string>
     <string name="local_playlist_delete_confirm">确定要删除此歌单吗？此操作不可恢复！</string>

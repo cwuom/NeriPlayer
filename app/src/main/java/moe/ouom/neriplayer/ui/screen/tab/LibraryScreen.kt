@@ -134,6 +134,8 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.LibraryViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
+import moe.ouom.neriplayer.ui.util.rememberPlaylistDisplayCoverUrl
+import moe.ouom.neriplayer.util.fastScrollableImageRequest
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatPlayCount
@@ -1316,14 +1318,16 @@ private fun LocalPlaylistList(
                                     Spacer(modifier = Modifier.size(24.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
                                 }
-                                val cover = system.displayCoverUrl(context)
+                                val cover = rememberPlaylistDisplayCoverUrl(
+                                    playlist = system,
+                                    resolveLocalFallback = false
+                                )
                                 if (!cover.isNullOrEmpty()) {
                                     AsyncImage(
-                                        model = offlineCachedImageRequest(
+                                        model = fastScrollableImageRequest(
                                             context = context,
                                             data = cover,
-                                            sizePx = 192,
-                                            allowHardware = false,
+                                            sizePx = 160,
                                             offlineMode = offlineMode
                                         ),
                                         contentDescription = null,
@@ -1424,14 +1428,16 @@ private fun LocalPlaylistList(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                 }
-                                val cover = pl.displayCoverUrl(context)
+                                val cover = rememberPlaylistDisplayCoverUrl(
+                                    playlist = pl,
+                                    resolveLocalFallback = false
+                                )
                                 if (!cover.isNullOrEmpty()) {
                                     AsyncImage(
-                                        model = offlineCachedImageRequest(
+                                        model = fastScrollableImageRequest(
                                             context = context,
                                             data = cover,
-                                            sizePx = 192,
-                                            allowHardware = false,
+                                            sizePx = 160,
                                             offlineMode = offlineMode
                                         ),
                                         contentDescription = null,
@@ -1595,14 +1601,16 @@ private fun LocalPlaylistList(
                                     Spacer(modifier = Modifier.size(24.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
                                 }
-                                val cover = system.displayCoverUrl(context)
+                                val cover = rememberPlaylistDisplayCoverUrl(
+                                    playlist = system,
+                                    resolveLocalFallback = false
+                                )
                                 if (!cover.isNullOrEmpty()) {
                                     AsyncImage(
-                                        model = offlineCachedImageRequest(
+                                        model = fastScrollableImageRequest(
                                             context = context,
                                             data = cover,
-                                            sizePx = 192,
-                                            allowHardware = false,
+                                            sizePx = 160,
                                             offlineMode = offlineMode
                                         ),
                                         contentDescription = null,

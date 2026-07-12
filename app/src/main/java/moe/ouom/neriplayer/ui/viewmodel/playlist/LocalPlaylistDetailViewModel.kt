@@ -69,6 +69,12 @@ data class LocalScanPreviewState(
     val selectedKeys: Set<String> = emptySet()
 )
 
+data class LocalMetadataProcessingState(
+    val isProcessing: Boolean = false,
+    val processedCount: Int = 0,
+    val totalCount: Int = 0
+)
+
 @Suppress("unused")
 class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(application) {
     private companion object {
@@ -84,9 +90,14 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     private val _scanPreviewState = MutableStateFlow(LocalScanPreviewState())
     val scanPreviewState: StateFlow<LocalScanPreviewState> = _scanPreviewState
 
+    private val _metadataProcessingState = MutableStateFlow(LocalMetadataProcessingState())
+    val metadataProcessingState: StateFlow<LocalMetadataProcessingState> = _metadataProcessingState
+
     private var playlistId: Long = 0L
     private var playlistCollectJob: Job? = null
     private var scanJob: Job? = null
+    private var metadataRefreshJob: Job? = null
+    private var metadataRefreshSessionId: Long = 0L
     private var scanSessionId: Long = 0L
 
     fun start(id: Long) {
@@ -238,6 +249,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     ) {
         viewModelScope.launch {
             val importedCount = repo.addScannedSongsToLocalFilesPlaylistAndCount(songs)
+            scheduleScannedMetadataRefresh(songs)
             onResult(
                 LocalAudioImportUiResult(
                     importedCount = importedCount,
@@ -254,6 +266,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     ) {
         viewModelScope.launch {
             val playlist = repo.createPlaylistWithScannedSongs(name, songs)
+            scheduleScannedMetadataRefresh(songs)
             onResult(
                 LocalAudioImportUiResult(
                     importedCount = playlist.songs.size,
@@ -270,6 +283,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     ) {
         viewModelScope.launch {
             val importedCount = repo.addScannedSongsToPlaylistAndCount(targetPlaylistId, songs)
+            scheduleScannedMetadataRefresh(songs)
             onResult(
                 LocalAudioImportUiResult(
                     importedCount = importedCount,
@@ -330,6 +344,42 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
 
     private fun isActiveScanSession(sessionId: Long, currentJob: Job): Boolean {
         return scanJob === currentJob && scanSessionId == sessionId
+    }
+
+    private fun scheduleScannedMetadataRefresh(songs: List<SongItem>) {
+        val localSongs = songs.filter { LocalSongSupport.isLocalSong(it, app) }
+        if (localSongs.isEmpty()) {
+            _metadataProcessingState.value = LocalMetadataProcessingState()
+            return
+        }
+
+        metadataRefreshJob?.cancel()
+        val sessionId = ++metadataRefreshSessionId
+        _metadataProcessingState.value = LocalMetadataProcessingState(
+            isProcessing = true,
+            processedCount = 0,
+            totalCount = localSongs.size
+        )
+        metadataRefreshJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repo.refreshScannedLocalSongMetadata(
+                    songs = localSongs,
+                    includeEmbeddedAssets = false
+                ) { processed, total ->
+                    if (metadataRefreshSessionId == sessionId) {
+                        _metadataProcessingState.value = LocalMetadataProcessingState(
+                            isProcessing = processed < total,
+                            processedCount = processed,
+                            totalCount = total
+                        )
+                    }
+                }
+            } finally {
+                if (metadataRefreshSessionId == sessionId) {
+                    _metadataProcessingState.value = LocalMetadataProcessingState()
+                }
+            }
+        }
     }
 
     private fun prepareScannedSongs(songs: List<SongItem>): List<SongItem> {

@@ -159,6 +159,8 @@ internal fun buildNearbySidecarCopyPlans(
 object LocalAudioImportManager {
     private const val TAG = "LocalAudioImport"
     private const val FOLDER_SCAN_METADATA_PARALLELISM = 8
+    private const val FOLDER_SCAN_DEEP_METADATA_LIMIT = 120
+    private const val SCAN_NEARBY_COVER_LIMIT = 120
     private const val SCAN_PROGRESS_LOG_INTERVAL = 200
     private const val SLOW_SCAN_ITEM_THRESHOLD_MS = 120L
     private const val MAX_EXTERNAL_IMPORT_COUNT = 500
@@ -262,13 +264,28 @@ object LocalAudioImportManager {
         val metadataStartedAt = SystemClock.elapsedRealtime()
         val processedCount = AtomicInteger(0)
         val slowItemCount = AtomicInteger(0)
+        val useDeepMetadata = traversalResult.candidates.size <= FOLDER_SCAN_DEEP_METADATA_LIMIT
+        if (!useDeepMetadata) {
+            NPLogger.d(
+                TAG,
+                "scanFolderSongs uses quick metadata: candidates=${traversalResult.candidates.size}, deepLimit=$FOLDER_SCAN_DEEP_METADATA_LIMIT"
+            )
+        }
         val songs = coroutineScope {
             val scanDispatcher = Dispatchers.IO.limitedParallelism(FOLDER_SCAN_METADATA_PARALLELISM)
             traversalResult.candidates.map { candidate ->
                 async(scanDispatcher) {
                     val itemStartedAt = SystemClock.elapsedRealtime()
                     runCatching {
-                        buildFolderScannedSong(context, candidate.uri)
+                        if (useDeepMetadata) {
+                            buildFolderScannedSong(context, candidate.uri)
+                        } else {
+                            buildQuickImportedSong(
+                                context = context,
+                                uri = candidate.uri,
+                                resolveNearbyCover = false
+                            )
+                        }
                     }.onFailure {
                         NPLogger.w(TAG, "scanFolderSongs skipped ${candidate.uri}: ${it.message}")
                     }.also {
@@ -330,6 +347,13 @@ object LocalAudioImportManager {
 
         runCatching {
             context.contentResolver.query(audioUri, projection, selection, null, null)?.use { cursor ->
+                val resolveNearbyCover = cursor.count <= SCAN_NEARBY_COVER_LIMIT
+                if (!resolveNearbyCover) {
+                    NPLogger.d(
+                        TAG,
+                        "scanDeviceSongs skips nearby cover lookup: rows=${cursor.count}, coverLimit=$SCAN_NEARBY_COVER_LIMIT"
+                    )
+                }
                 val idxId = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
                 val idxTitle = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
                 val idxArtist = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
@@ -356,7 +380,11 @@ object LocalAudioImportManager {
                         ?: idxDisplayName.takeIf { it >= 0 }?.let(cursor::getString)
                         ?: contentUri.lastPathSegment
                         ?: contentUri.toString()
-                    val nearbyCoverUri = LocalMediaSupport.findNearbyCover(resolvedFile)?.toURI()?.toString()
+                    val nearbyCoverUri = if (resolveNearbyCover) {
+                        LocalMediaSupport.findNearbyCover(resolvedFile)?.toURI()?.toString()
+                    } else {
+                        null
+                    }
 
                     songs += buildQuickImportedSong(
                         seed = QuickImportedSongSeed(
@@ -516,14 +544,38 @@ object LocalAudioImportManager {
         )
     }
 
-    fun hydrateLocalSongMetadata(context: Context, song: SongItem): SongItem {
+    fun hydrateLocalSongMetadata(
+        context: Context,
+        song: SongItem,
+        includeEmbeddedAssets: Boolean = true
+    ): SongItem {
         if (!LocalSongSupport.isLocalSong(song, context)) {
             return song
         }
         val details = runCatching {
-            LocalMediaSupport.inspect(context, song)
+            if (includeEmbeddedAssets) {
+                LocalMediaSupport.inspect(context, song)
+            } else {
+                LocalMediaSupport.inspectMetadataOnly(context, song)
+            }
         }.onFailure {
             NPLogger.w(TAG, "hydrate local metadata failed for ${song.name}: ${it.message}")
+        }.getOrNull() ?: return song
+
+        return mergeImportedSongMetadata(
+            quickSong = song,
+            detailedSong = LocalMediaSupport.toSongItem(details)
+        )
+    }
+
+    fun hydrateLocalSongTextMetadata(context: Context, song: SongItem): SongItem {
+        if (!LocalSongSupport.isLocalSong(song, context)) {
+            return song
+        }
+        val details = runCatching {
+            LocalMediaSupport.inspectMetadataOnly(context, song)
+        }.onFailure {
+            NPLogger.w(TAG, "hydrate local text metadata failed for ${song.name}: ${it.message}")
         }.getOrNull() ?: return song
 
         return mergeImportedSongMetadata(
@@ -535,7 +587,6 @@ object LocalAudioImportManager {
     private fun isReadableScannedTitle(title: String?): Boolean {
         val trimmed = title?.trim().orEmpty()
         if (trimmed.isBlank()) return false
-        if (trimmed.all(Char::isDigit)) return false
         if (trimmed.startsWith("content://", ignoreCase = true)) return false
         if (trimmed.startsWith("file://", ignoreCase = true)) return false
         return true
@@ -544,7 +595,6 @@ object LocalAudioImportManager {
     private fun isReadableQuickImportedTitle(title: String?): Boolean {
         val trimmed = title?.trim().orEmpty()
         if (trimmed.isBlank()) return false
-        if (trimmed.all(Char::isDigit)) return false
         if (trimmed.startsWith("content://", ignoreCase = true)) return false
         if (trimmed.startsWith("file://", ignoreCase = true)) return false
         return true
@@ -778,14 +828,22 @@ object LocalAudioImportManager {
             ?: runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
     }
 
-    private fun buildQuickImportedSong(context: Context, uri: Uri): SongItem {
+    private fun buildQuickImportedSong(
+        context: Context,
+        uri: Uri,
+        resolveNearbyCover: Boolean = true
+    ): SongItem {
         val resolvedFile = resolveSourceFile(context, uri)
         val queryInfo = queryQuickImportedAudioInfo(context, uri)
         val displayName = resolvedFile?.name
             ?: queryInfo.displayName
             ?: uri.lastPathSegment
             ?: uri.toString()
-        val nearbyCoverUri = LocalMediaSupport.findNearbyCover(resolvedFile)?.toURI()?.toString()
+        val nearbyCoverUri = if (resolveNearbyCover) {
+            LocalMediaSupport.findNearbyCover(resolvedFile)?.toURI()?.toString()
+        } else {
+            null
+        }
 
         return buildQuickImportedSong(
             seed = QuickImportedSongSeed(

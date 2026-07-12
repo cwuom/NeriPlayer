@@ -117,6 +117,50 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
+    fun `buildQuickImportedSong keeps numeric title metadata`() {
+        val importedFile = tempFolder.newFile("fallback_name.flac")
+
+        val song = LocalAudioImportManager.buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = importedFile.absolutePath,
+                displayName = importedFile.name,
+                title = "88617",
+                artist = "Artist",
+                album = "Album",
+                durationMs = 10_000L,
+                localFile = importedFile
+            ),
+            unknownArtistLabel = "Unknown Artist"
+        )
+
+        assertEquals("88617", song.name)
+        assertEquals("Artist", song.artist)
+        assertEquals("Album", song.album)
+    }
+
+    @Test
+    fun `buildQuickImportedSong keeps numeric title metadata with spaces`() {
+        val importedFile = tempFolder.newFile("fallback_name_with_space.flac")
+
+        val song = LocalAudioImportManager.buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = importedFile.absolutePath,
+                displayName = importedFile.name,
+                title = "886 17",
+                artist = "Artist",
+                album = "Album",
+                durationMs = 10_000L,
+                localFile = importedFile
+            ),
+            unknownArtistLabel = "Unknown Artist"
+        )
+
+        assertEquals("886 17", song.name)
+        assertEquals("Artist", song.artist)
+        assertEquals("Album", song.album)
+    }
+
+    @Test
     fun `buildQuickImportedSong applies custom naming template when query metadata is missing`() {
         val previousTemplate = ManagedDownloadStorage.currentDownloadFileNameTemplate()
         ManagedDownloadStorage.updateDownloadFileNameTemplate("%album% - %title%")

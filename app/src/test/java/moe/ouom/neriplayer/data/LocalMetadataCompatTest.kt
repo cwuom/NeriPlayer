@@ -73,6 +73,51 @@ class LocalMetadataCompatTest {
         assertEquals("Qing Tian", metadata?.album)
     }
 
+    @Test
+    fun `parseId3FileMetadata keeps numeric title with spaces`() {
+        val file = File.createTempFile("local-id3-title-", ".mp3").apply {
+            writeBytes(
+                buildId3v22Tag(
+                    mapOf(
+                        "TT2" to "886 17",
+                        "TP1" to "Artist",
+                        "TAL" to "Album"
+                    )
+                ) + byteArrayOf(0xFF.toByte(), 0xFB.toByte(), 0, 0)
+            )
+            deleteOnExit()
+        }
+
+        val metadata = LocalMediaSupport.parseId3FileMetadata(file)
+
+        assertEquals("886 17", metadata?.title)
+        assertEquals("Artist", metadata?.artist)
+        assertEquals("Album", metadata?.album)
+    }
+
+    @Test
+    fun `parseId3FileMetadata falls back to legacy id3v1 tag`() {
+        val file = File.createTempFile("local-id3v1-title-", ".mp3").apply {
+            writeBytes(
+                byteArrayOf(0xFF.toByte(), 0xFB.toByte(), 0, 0) +
+                    buildId3v1Tag(
+                        title = "886 17",
+                        artist = "Artist",
+                        album = "Album",
+                        year = "2026"
+                    )
+            )
+            deleteOnExit()
+        }
+
+        val metadata = LocalMediaSupport.parseId3FileMetadata(file)
+
+        assertEquals("886 17", metadata?.title)
+        assertEquals("Artist", metadata?.artist)
+        assertEquals("Album", metadata?.album)
+        assertEquals(2026, metadata?.year)
+    }
+
     private fun createWaveTempFile(content: ByteArray): File {
         return File.createTempFile("local-metadata-", ".wav").apply {
             writeBytes(content)
@@ -130,8 +175,30 @@ class LocalMetadataCompatTest {
         return header.toByteArray()
     }
 
+    private fun buildId3v1Tag(
+        title: String,
+        artist: String,
+        album: String,
+        year: String
+    ): ByteArray {
+        val output = ByteArrayOutputStream()
+        output.writeAscii("TAG")
+        output.writeFixedText(title, 30)
+        output.writeFixedText(artist, 30)
+        output.writeFixedText(album, 30)
+        output.writeFixedText(year, 4)
+        output.writeFixedText("", 30)
+        output.write(0)
+        return output.toByteArray()
+    }
+
     private fun ByteArrayOutputStream.writeAscii(value: String) {
         write(value.toByteArray(StandardCharsets.US_ASCII))
+    }
+
+    private fun ByteArrayOutputStream.writeFixedText(value: String, size: Int) {
+        val bytes = value.toByteArray(StandardCharsets.ISO_8859_1)
+        write(bytes.copyOf(size))
     }
 
     private fun ByteArrayOutputStream.writeLittleEndianInt(value: Int) {

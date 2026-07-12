@@ -33,34 +33,63 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
 fun SongItem.displayCoverUrl(): String? = customCoverUrl ?: coverUrl
 
-fun SongItem.displayCoverUrl(context: Context): String? {
+fun SongItem.displayCoverUrl(
+    context: Context,
+    resolveLocalMetadataFallback: Boolean = true
+): String? {
+    customCoverUrl?.takeIf { it.isNotBlank() }?.let { return it }
     val current = coverUrl?.takeIf { it.isNotBlank() }
     val onMainThread = Looper.myLooper() == Looper.getMainLooper()
-    val localCover = AudioDownloadManager.getLocalCoverUri(context, this)
+    val localCover = if (resolveLocalMetadataFallback && shouldResolveLocalCoverFallback(current)) {
+        AudioDownloadManager.getLocalCoverUri(
+            context = context,
+            song = this,
+            resolveLocalMediaFallback = true
+        )
+    } else {
+        null
+    }
     resolveDisplayCoverUrl(
-        customCoverUrl = customCoverUrl,
+        customCoverUrl = null,
         currentCoverUrl = current,
         localCoverUrl = localCover,
         onMainThread = onMainThread
     )?.let { return it }
     if (!isLocalSong()) return current
-    if (onMainThread) return current
-    LocalMediaSupport.inspect(context, this)?.coverUri?.takeIf { it.isNotBlank() }?.let { return it }
-    return current
+    if (onMainThread || !resolveLocalMetadataFallback) return current
+    return LocalMediaSupport.resolveCoverUri(context, this)?.takeIf { it.isNotBlank() } ?: current
 }
 
 fun SongItem.displayName(): String = customName ?: name
 fun SongItem.displayArtist(): String = customArtist ?: artist
 
-fun LocalPlaylist.displayCoverUrl(): String? = customCoverUrl ?: songs.lastOrNull()?.displayCoverUrl()
+fun LocalPlaylist.displayCoverUrl(): String? {
+    return customCoverUrl ?: songs.asReversed().firstNotNullOfOrNull { song ->
+        song.displayCoverUrl()?.takeIf { it.isNotBlank() }
+    }
+}
 
-fun LocalPlaylist.displayCoverUrl(context: Context): String? {
-    return customCoverUrl ?: songs.lastOrNull()?.displayCoverUrl(context)
+fun LocalPlaylist.displayCoverUrl(
+    context: Context,
+    resolveLocalMetadataFallback: Boolean = true
+): String? {
+    return customCoverUrl ?: songs.asReversed().firstNotNullOfOrNull { song ->
+        song.displayCoverUrl(
+            context = context,
+            resolveLocalMetadataFallback = resolveLocalMetadataFallback
+        )?.takeIf { it.isNotBlank() }
+    }
 }
 
 private fun String.isRemoteCoverSource(): Boolean {
     return startsWith("http://", ignoreCase = true) ||
         startsWith("https://", ignoreCase = true)
+}
+
+private fun SongItem.shouldResolveLocalCoverFallback(currentCoverUrl: String?): Boolean {
+    if (!isLocalSong()) return true
+    if (currentCoverUrl.isNullOrBlank()) return true
+    return currentCoverUrl.isRemoteCoverSource()
 }
 
 internal fun resolveDisplayCoverUrl(
