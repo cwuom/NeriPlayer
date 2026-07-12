@@ -25,6 +25,7 @@ internal class DownloadTaskStore(
     private val _isSingleDownloading = MutableStateFlow(false)
     private val _downloadTasks = MutableStateFlow<List<DownloadTask>>(emptyList())
     private val _activeBatchDownloadJobCount = MutableStateFlow(0)
+    @Volatile private var songKeyIndex = emptyMap<String, Int>()
 
     val downloadTasks: StateFlow<List<DownloadTask>> = _downloadTasks.asStateFlow()
 
@@ -95,9 +96,13 @@ internal class DownloadTaskStore(
     }
 
     fun findTask(songKey: String): DownloadTask? {
-        return _downloadTasks.value.firstOrNull { task ->
-            task.song.stableKey() == songKey
+        val tasks = _downloadTasks.value
+        val idx = songKeyIndex[songKey]
+        if (idx != null && idx < tasks.size) {
+            val task = tasks[idx]
+            if (task.song.stableKey() == songKey) return task
         }
+        return tasks.firstOrNull { it.song.stableKey() == songKey }
     }
 
     fun hasActiveDownloadOperations(): Boolean {
@@ -113,16 +118,14 @@ internal class DownloadTaskStore(
             return
         }
         mutate { tasks ->
-            val taskIndex = tasks.indexOfFirst { task ->
-                task.song.stableKey() == progress.songKey &&
-                    task.status == DownloadStatus.DOWNLOADING &&
-                    shouldApplyTaskMutation(task, progress.attemptId)
-            }
-            if (taskIndex < 0) {
+            val taskIndex = songKeyIndex[progress.songKey] ?: -1
+            if (taskIndex < 0) return@mutate tasks
+            val currentTask = tasks[taskIndex]
+            if (currentTask.status != DownloadStatus.DOWNLOADING ||
+                !shouldApplyTaskMutation(currentTask, progress.attemptId)
+            ) {
                 return@mutate tasks
             }
-
-            val currentTask = tasks[taskIndex]
             if (currentTask.progress == progress) {
                 return@mutate tasks
             }
@@ -147,7 +150,7 @@ internal class DownloadTaskStore(
         val songKey = song.stableKey()
         var preparedAttemptId: Long? = null
         mutate { tasks ->
-            val existingIndex = tasks.indexOfFirst { it.song.stableKey() == songKey }
+            val existingIndex = songKeyIndex[songKey] ?: -1
             if (existingIndex < 0) {
                 val attemptId = nextAttemptId()
                 preparedAttemptId = attemptId
@@ -199,10 +202,7 @@ internal class DownloadTaskStore(
         val preparedAttemptIds = linkedMapOf<String, Long>()
         mutate { tasks ->
             val updatedTasks = tasks.toMutableList()
-            val existingIndexesBySongKey = HashMap<String, Int>(tasks.size)
-            tasks.forEachIndexed { index, task ->
-                existingIndexesBySongKey.putIfAbsent(task.song.stableKey(), index)
-            }
+            val existingIndexesBySongKey = HashMap<String, Int>(songKeyIndex)
             distinctSongs.forEach { song ->
                 val songKey = song.stableKey()
                 val existingIndex = existingIndexesBySongKey[songKey]
@@ -287,7 +287,7 @@ internal class DownloadTaskStore(
         val songKey = song.stableKey()
         mutate { tasks ->
             clearProgressPublishState(songKey)
-            val existingIndex = tasks.indexOfFirst { it.song.stableKey() == songKey }
+            val existingIndex = songKeyIndex[songKey] ?: -1
             if (existingIndex >= 0) {
                 val existingTask = tasks[existingIndex]
                 if (
@@ -335,7 +335,7 @@ internal class DownloadTaskStore(
 
     fun removeDownloadTask(songKey: String, expectedAttemptId: Long? = null) {
         mutate { tasks ->
-            val taskIndex = tasks.indexOfFirst { it.song.stableKey() == songKey }
+            val taskIndex = songKeyIndex[songKey] ?: -1
             if (taskIndex < 0) {
                 return@mutate tasks
             }
@@ -426,11 +426,9 @@ internal class DownloadTaskStore(
         songKey: String,
         expectedAttemptId: Long? = null
     ): Boolean {
-        return isActiveDownloadAttempt(
-            tasks = _downloadTasks.value,
-            songKey = songKey,
-            expectedAttemptId = expectedAttemptId
-        )
+        val task = findTask(songKey) ?: return false
+        if (!shouldApplyTaskMutation(task, expectedAttemptId)) return false
+        return task.status == DownloadStatus.QUEUED || task.status == DownloadStatus.DOWNLOADING
     }
 
     private fun shouldPublishProgress(progress: AudioDownloadManager.DownloadProgress): Boolean {
@@ -490,9 +488,19 @@ internal class DownloadTaskStore(
             val updatedTasks = transform(currentTasks)
             if (updatedTasks != currentTasks) {
                 _downloadTasks.value = updatedTasks
+                songKeyIndex = buildSongKeyIndex(updatedTasks)
             }
             return updatedTasks
         }
+    }
+
+    private fun buildSongKeyIndex(tasks: List<DownloadTask>): Map<String, Int> {
+        if (tasks.isEmpty()) return emptyMap()
+        val index = HashMap<String, Int>(tasks.size * 2)
+        tasks.forEachIndexed { i, task ->
+            index.putIfAbsent(task.song.stableKey(), i)
+        }
+        return index
     }
 
     private inline fun updateTask(
@@ -502,7 +510,7 @@ internal class DownloadTaskStore(
     ): Boolean {
         var applied = false
         mutate { tasks ->
-            val taskIndex = tasks.indexOfFirst { it.song.stableKey() == songKey }
+            val taskIndex = songKeyIndex[songKey] ?: -1
             if (taskIndex < 0) {
                 return@mutate tasks
             }
