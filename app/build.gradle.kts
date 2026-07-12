@@ -12,7 +12,9 @@ plugins {
     id("kotlin-parcelize")
 }
 
-val allowUnsignedRelease = (project.findProperty("allowUnsignedRelease") as String?)?.toBoolean() == true
+val isGithubPullRequest = providers.environmentVariable("GITHUB_EVENT_NAME").orNull == "pull_request"
+val allowUnsignedRelease =
+    (project.findProperty("allowUnsignedRelease") as String?)?.toBoolean() == true || isGithubPullRequest
 val releaseKeystorePath = project.findProperty("KEYSTORE_FILE") as String? ?: "neri.jks"
 val releaseKeystoreFile = project.file(releaseKeystorePath)
 val releaseStorePassword = project.findProperty("KEYSTORE_PASSWORD") as String?
