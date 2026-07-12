@@ -168,10 +168,11 @@ internal object SyncPlaybackStatMapper {
     }
 
     internal fun normalizeCounterShards(
-        shards: List<SyncPlaybackCounterShard>
+        shards: List<SyncPlaybackCounterShard?>?
     ): List<SyncPlaybackCounterShard> {
-        return shards
+        return shards.orEmpty()
             .asSequence()
+            .filterNotNull()
             .filter { it.deviceId.isNotBlank() }
             .map { shard ->
                 val lastPlayedAt = shard.lastPlayedAt.coerceAtLeast(0L)

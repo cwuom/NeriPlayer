@@ -66,20 +66,21 @@ internal object SyncPlaybackStatsMergePolicy {
         playbackStatsClearedAt: Long
     ): SyncTrackStat? {
         if (!shouldKeepAfterClear(stat, playbackStatsClearedAt)) return null
+        val counterShards = SyncPlaybackStatMapper.normalizeCounterShards(stat.counterShards)
         if (playbackStatsClearedAt <= 0L) return stat.copy(
-            counterShards = SyncPlaybackStatMapper.normalizeCounterShards(stat.counterShards)
+            counterShards = counterShards
         )
 
         val normalizedFirstPlayedAt = stat.firstPlayedAt
             .takeIf { it >= playbackStatsClearedAt && it <= stat.lastPlayedAt }
             ?: stat.lastPlayedAt
         val normalizedShards = SyncPlaybackStatMapper.normalizeCounterShards(
-            stat.counterShards.filter { it.lastPlayedAt >= playbackStatsClearedAt }
+            counterShards.filter { it.lastPlayedAt >= playbackStatsClearedAt }
         )
         return stat.copy(
             firstPlayedAt = normalizedFirstPlayedAt,
-            counterBaseListenMs = if (stat.counterShards.isEmpty()) stat.counterBaseListenMs else 0L,
-            counterBasePlayCount = if (stat.counterShards.isEmpty()) stat.counterBasePlayCount else 0,
+            counterBaseListenMs = if (counterShards.isEmpty()) stat.counterBaseListenMs else 0L,
+            counterBasePlayCount = if (counterShards.isEmpty()) stat.counterBasePlayCount else 0,
             counterShards = normalizedShards
         )
     }
@@ -89,20 +90,21 @@ internal object SyncPlaybackStatsMergePolicy {
         playbackStatsClearedAt: Long
     ): SyncPlaybackStatBucket? {
         if (!shouldKeepAfterClear(bucket, playbackStatsClearedAt)) return null
+        val counterShards = SyncPlaybackStatMapper.normalizeCounterShards(bucket.counterShards)
         if (playbackStatsClearedAt <= 0L) return bucket.copy(
-            counterShards = SyncPlaybackStatMapper.normalizeCounterShards(bucket.counterShards)
+            counterShards = counterShards
         )
 
         val normalizedFirstPlayedAt = bucket.firstPlayedAt
             .takeIf { it >= playbackStatsClearedAt && it <= bucket.lastPlayedAt }
             ?: bucket.lastPlayedAt
         val normalizedShards = SyncPlaybackStatMapper.normalizeCounterShards(
-            bucket.counterShards.filter { it.lastPlayedAt >= playbackStatsClearedAt }
+            counterShards.filter { it.lastPlayedAt >= playbackStatsClearedAt }
         )
         return bucket.copy(
             firstPlayedAt = normalizedFirstPlayedAt,
-            counterBaseListenMs = if (bucket.counterShards.isEmpty()) bucket.counterBaseListenMs else 0L,
-            counterBasePlayCount = if (bucket.counterShards.isEmpty()) bucket.counterBasePlayCount else 0,
+            counterBaseListenMs = if (counterShards.isEmpty()) bucket.counterBaseListenMs else 0L,
+            counterBasePlayCount = if (counterShards.isEmpty()) bucket.counterBasePlayCount else 0,
             counterShards = normalizedShards
         )
     }
