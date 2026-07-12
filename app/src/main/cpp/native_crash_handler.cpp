@@ -317,7 +317,7 @@ size_t CaptureBacktrace(void** frames, size_t max_frames) {
     return state.frame_count;
 }
 
-void DumpBacktrace(int fd) {
+void DumpBacktrace(int fd, bool symbolize_frames) {
     WriteText(fd, "\n=== Native Backtrace ===\n");
 
     void* frames[kMaxBacktraceFrames] = {};
@@ -328,6 +328,10 @@ void DumpBacktrace(int fd) {
     }
 
     for (size_t index = 0; index < frame_count; ++index) {
+        if (!symbolize_frames) {
+            WriteFormat(fd, "#%02zu pc %p  <symbolication deferred>\n", index, frames[index]);
+            continue;
+        }
         Dl_info info {};
         if (dladdr(frames[index], &info) != 0) {
             const uintptr_t offset = info.dli_saddr == nullptr
@@ -477,7 +481,7 @@ void WriteSignalCrashLog(int signal_number, const siginfo_t* info, void* context
 
     WriteCommonMetadata(fd, tid);
     DumpRegisters(fd, context);
-    DumpBacktrace(fd);
+    DumpBacktrace(fd, false);
     DumpFileSection(fd, "Process Status (/proc/self/status)", "/proc/self/status");
     DumpFileSection(fd, "Memory Maps (/proc/self/maps)", "/proc/self/maps");
     FinalizeCrashFile(fd, file_name);
@@ -497,7 +501,7 @@ void WriteTerminateLog(const char* reason) {
     WriteFormat(fd, "Reason: %s\n", reason == nullptr ? "unknown" : reason);
 
     WriteCommonMetadata(fd, tid);
-    DumpBacktrace(fd);
+    DumpBacktrace(fd, true);
     DumpFileSection(fd, "Process Status (/proc/self/status)", "/proc/self/status");
     DumpFileSection(fd, "Memory Maps (/proc/self/maps)", "/proc/self/maps");
     FinalizeCrashFile(fd, file_name);

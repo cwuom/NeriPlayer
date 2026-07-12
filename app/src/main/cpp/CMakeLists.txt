@@ -41,9 +41,13 @@ target_compile_options(
     usb
     PRIVATE
     -O2
-    -fomit-frame-pointer
     -w
 )
+
+if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a" OR
+   CMAKE_ANDROID_ARCH_ABI STREQUAL "x86_64")
+    target_compile_options(usb PRIVATE -fomit-frame-pointer)
+endif()
 
 add_library(
     neri_native

@@ -1467,7 +1467,6 @@ void LIBUSB_CALL transferCallback(libusb_transfer* transfer) noexcept {
             );
             return;
         }
-        handle->transportFailed.store(false);
     } catch (const std::exception& error) {
         settlePreparedPlayerFrames(handle, userData, false);
         handle->submitErrors.fetch_add(1);
@@ -1902,12 +1901,28 @@ void quarantineCloseHandle(const std::shared_ptr<UsbExclusiveHandle>& handle) no
                 std::chrono::milliseconds(kQuarantineTotalTimeoutMs);
             while (handle->inFlightTransfers.load() > 0) {
                 if (std::chrono::steady_clock::now() >= totalDeadline) {
+                    handle->transportFailed.store(true);
+                    handle->deviceOnline.store(false);
+                    handle->playbackEnabled.store(false);
+                    handle->stopRequested.store(true);
+                    try {
+                        setError(handle.get(), "quarantine_drain_timeout");
+                    } catch (...) {
+                    }
                     LOGE(
-                        "USB close quarantine hard timeout: index=%d inFlight=%d, forcing cleanup",
+                        "USB close quarantine hard timeout: index=%d inFlight=%d, parking handle",
                         quarantineIndex,
                         handle->inFlightTransfers.load()
                     );
-                    break;
+                    // keep active transfers alive because libusb may still own their callbacks
+                    auto* parkedHandle = new (std::nothrow) std::shared_ptr<UsbExclusiveHandle>(handle);
+                    static_cast<void>(parkedHandle);
+                    {
+                        std::lock_guard<std::mutex> transitionGuard(g_usbInterfaceTransitionLock);
+                        markInterfaceTransitionLocked();
+                    }
+                    g_quarantinedDrainHandles.fetch_sub(1);
+                    return;
                 }
                 interruptUsbEventHandler(handle.get());
                 const auto hardDeadline = std::chrono::steady_clock::now() +
@@ -1931,8 +1946,9 @@ void quarantineCloseHandle(const std::shared_ptr<UsbExclusiveHandle>& handle) no
         }).detach();
     } catch (const std::system_error& error) {
         // keep the handle alive because active transfers can still callback
-        auto* leakedHandle = new std::shared_ptr<UsbExclusiveHandle>(handle);
+        auto* leakedHandle = new (std::nothrow) std::shared_ptr<UsbExclusiveHandle>(handle);
         static_cast<void>(leakedHandle);
+        g_quarantinedDrainHandles.fetch_sub(1);
         LOGE(
             "USB close quarantine thread failed: %s activeQuarantines=%d",
             error.what(),
@@ -1940,8 +1956,9 @@ void quarantineCloseHandle(const std::shared_ptr<UsbExclusiveHandle>& handle) no
         );
     } catch (...) {
         // keep the handle alive because active transfers can still callback
-        auto* leakedHandle = new std::shared_ptr<UsbExclusiveHandle>(handle);
+        auto* leakedHandle = new (std::nothrow) std::shared_ptr<UsbExclusiveHandle>(handle);
         static_cast<void>(leakedHandle);
+        g_quarantinedDrainHandles.fetch_sub(1);
         LOGE(
             "USB close quarantine thread failed: unknown activeQuarantines=%d",
             g_quarantinedDrainHandles.load()
@@ -2031,8 +2048,11 @@ Java_moe_ouom_neriplayer_core_player_usb_UsbExclusiveNativeBridge_nativeOpen(
             return 0L;
         }
         std::unique_lock<std::mutex> transitionGuard(g_usbInterfaceTransitionLock);
-        const int remainingCooldownMs = remainingInterfaceTransitionCooldownMsLocked();
-        if (remainingCooldownMs > 0) {
+        while (true) {
+            const int remainingCooldownMs = remainingInterfaceTransitionCooldownMsLocked();
+            if (remainingCooldownMs <= 0) {
+                break;
+            }
             LOGI("nativeOpen waits for USB interface cooldown: %dms", remainingCooldownMs);
             transitionGuard.unlock();
             std::this_thread::sleep_for(std::chrono::milliseconds(remainingCooldownMs));
