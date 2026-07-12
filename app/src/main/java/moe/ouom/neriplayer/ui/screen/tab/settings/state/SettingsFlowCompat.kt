@@ -24,24 +24,17 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.state
  */
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.StateFlow
 import moe.ouom.neriplayer.R
 
-/** 兼容性：不用依赖 collectAsState / lifecycle-compose，手动收集 StateFlow */
+/** 兼容性：统一走生命周期感知收集，避免设置页后台继续订阅 */
 @Composable
 internal fun <T> StateFlow<T>.collectAsStateWithLifecycleCompat(): State<T> {
-    val flow = this
-    val state = remember(flow) { mutableStateOf(flow.value) }
-    LaunchedEffect(flow) {
-        flow.collect { state.value = it }
-    }
-    return state
+    return collectAsStateWithLifecycle()
 }
 
 /** 格式化同步时间 */

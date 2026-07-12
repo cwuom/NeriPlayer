@@ -148,7 +148,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -186,6 +185,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
@@ -398,19 +398,19 @@ fun NowPlayingScreen(
     showNowPlayingTitle: Boolean = true,
     offlineMode: Boolean = false,
 ) {
-    val currentSong by PlayerManager.currentSongFlow.collectAsState()
-    val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
-    val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsState()
-    val usbPlaybackPreparing by PlayerManager.usbExclusivePlaybackPreparingFlow.collectAsState()
-    val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsState()
-    val repeatMode by PlayerManager.repeatModeFlow.collectAsState()
-    val durationMs by PlayerManager.playbackDurationFlow.collectAsState()
-    val sleepTimerState by PlayerManager.sleepTimerManager.timerState.collectAsState()
-    val currentPlaybackAudioInfo by PlayerManager.currentPlaybackAudioInfoFlow.collectAsState()
+    val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
+    val isPlaying by PlayerManager.isPlayingFlow.collectAsStateWithLifecycle()
+    val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsStateWithLifecycle()
+    val usbPlaybackPreparing by PlayerManager.usbExclusivePlaybackPreparingFlow.collectAsStateWithLifecycle()
+    val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsStateWithLifecycle()
+    val repeatMode by PlayerManager.repeatModeFlow.collectAsStateWithLifecycle()
+    val durationMs by PlayerManager.playbackDurationFlow.collectAsStateWithLifecycle()
+    val sleepTimerState by PlayerManager.sleepTimerManager.timerState.collectAsStateWithLifecycle()
+    val currentPlaybackAudioInfo by PlayerManager.currentPlaybackAudioInfoFlow.collectAsStateWithLifecycle()
     val settingsRepo = remember { AppContainer.settingsRepo }
     val listenTogetherSessionManager = remember { AppContainer.listenTogetherSessionManager }
-    val listenTogetherSessionState by listenTogetherSessionManager.sessionState.collectAsState()
-    val listenTogetherRoomState by listenTogetherSessionManager.roomState.collectAsState()
+    val listenTogetherSessionState by listenTogetherSessionManager.sessionState.collectAsStateWithLifecycle()
+    val listenTogetherRoomState by listenTogetherSessionManager.roomState.collectAsStateWithLifecycle()
     val playbackProgressSeekEnabled = resolveListenTogetherProgressSeekEnabled(
         sessionUserUuid = listenTogetherSessionState.userUuid,
         fallbackRole = listenTogetherSessionState.role,
@@ -421,28 +421,28 @@ fun NowPlayingScreen(
     )
     val showProgressQualitySwitch by settingsRepo
         .nowPlayingProgressShowQualitySwitchFlow
-        .collectAsState(initial = true)
+        .collectAsStateWithLifecycle(initialValue = true)
     val nowPlayingToolbarDockEnabled by settingsRepo
         .nowPlayingToolbarDockEnabledFlow
-        .collectAsState(initial = true)
+        .collectAsStateWithLifecycle(initialValue = true)
     val showProgressAudioCodec by settingsRepo
         .nowPlayingProgressShowAudioCodecFlow
-        .collectAsState(initial = true)
+        .collectAsStateWithLifecycle(initialValue = true)
     val showProgressAudioSpec by settingsRepo
         .nowPlayingProgressShowAudioSpecFlow
-        .collectAsState(initial = true)
+        .collectAsStateWithLifecycle(initialValue = true)
     val cloudMusicLyricDefaultOffsetMs by settingsRepo
         .cloudMusicLyricDefaultOffsetMsFlow
-        .collectAsState(initial = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS)
+        .collectAsStateWithLifecycle(initialValue = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS)
     val qqMusicLyricDefaultOffsetMs by settingsRepo
         .qqMusicLyricDefaultOffsetMsFlow
-        .collectAsState(initial = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS)
+        .collectAsStateWithLifecycle(initialValue = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS)
     val lyricTranslationUsePhonetic by settingsRepo
         .lyricTranslationUsePhoneticFlow
-        .collectAsState(initial = false)
+        .collectAsStateWithLifecycle(initialValue = false)
 
     // 订阅当前播放链接
-    val currentMediaUrl by PlayerManager.currentMediaUrlFlow.collectAsState()
+    val currentMediaUrl by PlayerManager.currentMediaUrlFlow.collectAsStateWithLifecycle()
     val isFromNeteaseTag =
         currentSong?.album?.startsWith(PlayerManager.NETEASE_SOURCE_TAG) == true
     val isFromBiliTag =
@@ -461,9 +461,9 @@ fun NowPlayingScreen(
     }
     var playbackSourceType by remember { mutableStateOf<PlaybackSourceType?>(null) }
 
-    val playlists by PlayerManager.playlistsFlow.collectAsState()
+    val playlists by PlayerManager.playlistsFlow.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val coverDownloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
+    val coverDownloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
     val currentCoverUrl = remember(currentSong, context, coverDownloadPresenceVersion) {
         currentSong?.displayCoverUrl(context)
     }
@@ -484,7 +484,7 @@ fun NowPlayingScreen(
     }
     val isFavorite = favOverride ?: isFavoriteComputed
 
-    val queue by PlayerManager.currentQueueFlow.collectAsState()
+    val queue by PlayerManager.currentQueueFlow.collectAsStateWithLifecycle()
     val displayedQueue = remember(queue) { queue }
     val currentIndexInDisplay = remember(displayedQueue, currentSong) {
         displayedQueue.indexOfFirst {
@@ -1555,7 +1555,7 @@ fun NowPlayingScreen(
                         ) {
                             if (lyrics.isNotEmpty()) {
                                 if (advancedLyricsEnabled) {
-                                    val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
+                                    val currentPosition by PlayerManager.playbackPositionFlow.collectAsStateWithLifecycle()
                                     val effectiveLyricTimeMs = previewPositionOverrideMs ?: currentPosition
                                     AdvancedLyricsView(
                                         lyrics = lyrics,
@@ -1999,15 +1999,15 @@ fun MoreOptionsSheet(
     val keyboardController = LocalSoftwareKeyboardController.current
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val currentSong by PlayerManager.currentSongFlow.collectAsState()
+    val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
     val actualSong = currentSong?.takeIf { it.sameIdentityAs(originalSong) } ?: originalSong
     val isLocalSong = actualSong.isLocalSong()
-    val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsState(initial = false)
+    val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsStateWithLifecycle(initialValue = false)
     val qualityOptions = currentPlaybackAudioInfo?.qualityOptions.orEmpty()
     val canSwitchQuality = qualityOptions.size > 1
     val currentQualityLabel = currentPlaybackAudioInfo?.qualityLabel
-    val playbackSoundState by PlayerManager.playbackSoundStateFlow.collectAsState()
-    val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
+    val playbackSoundState by PlayerManager.playbackSoundStateFlow.collectAsStateWithLifecycle()
+    val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
     val hasLocalDownload = remember(downloadPresenceVersion, originalSong) {
         hasCachedLocalDownload(originalSong)
     }
@@ -2017,7 +2017,7 @@ fun MoreOptionsSheet(
             .map { tasks -> tasks.firstOrNull { it.song.stableKey() == downloadSongKey } }
             .distinctUntilChanged()
     }
-    val currentDownloadTask by currentDownloadTaskFlow.collectAsState(initial = null)
+    val currentDownloadTask by currentDownloadTaskFlow.collectAsStateWithLifecycle(initialValue = null)
     val shouldHideDownloadAction = remember(hasLocalDownload, currentDownloadTask) {
         shouldHideDownloadActionForSong(hasLocalDownload, currentDownloadTask)
     }
@@ -2419,7 +2419,7 @@ fun MoreOptionsSheet(
 
                 "Search" -> {
                     // 搜索界面
-                    val searchState by viewModel.manualSearchState.collectAsState()
+                    val searchState by viewModel.manualSearchState.collectAsStateWithLifecycle()
                     val searchResultsListState = rememberLazyListState()
 
                     Column(
@@ -2773,10 +2773,10 @@ fun LyricBehaviorSheet(
     var currentOffset by remember { mutableLongStateOf(song.userLyricOffsetMs) }
     val scope = rememberCoroutineScope()
     val settingsRepo = remember { AppContainer.settingsRepo }
-    val showLyricTranslation by settingsRepo.showLyricTranslationFlow.collectAsState(initial = true)
+    val showLyricTranslation by settingsRepo.showLyricTranslationFlow.collectAsStateWithLifecycle(initialValue = true)
     val lyricTranslationUsePhonetic by settingsRepo
         .lyricTranslationUsePhoneticFlow
-        .collectAsState(initial = false)
+        .collectAsStateWithLifecycle(initialValue = false)
     val sliderMinOffset = minOf(MIN_LYRIC_DEFAULT_OFFSET_MS, currentOffset)
     val sliderMaxOffset = maxOf(MAX_LYRIC_DEFAULT_OFFSET_MS, currentOffset)
     val sliderSteps = (((sliderMaxOffset - sliderMinOffset) / LYRIC_DEFAULT_OFFSET_STEP_MS).toInt() - 1)
@@ -2958,7 +2958,7 @@ fun EditSongInfoSheet(
     val focusManager = LocalFocusManager.current
 
     // 监听当前播放的歌曲，以便在"获取歌曲信息"后更新UI
-    val currentSong by PlayerManager.currentSongFlow.collectAsState()
+    val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
     val actualSong = if (currentSong?.sameIdentityAs(originalSong) == true) {
         currentSong!!
     } else {
@@ -2983,7 +2983,7 @@ fun EditSongInfoSheet(
     // 标记用户是否手动编辑过，避免自动重置
     var userHasEdited by remember { mutableStateOf(false) }
 
-    val searchState by viewModel.manualSearchState.collectAsState()
+    val searchState by viewModel.manualSearchState.collectAsStateWithLifecycle()
 
     val scrollState = rememberScrollState()
 
@@ -3642,7 +3642,7 @@ private fun NowPlayingProgressSection(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
+    val currentPosition by PlayerManager.playbackPositionFlow.collectAsStateWithLifecycle()
     val latestOnPreviewPositionChange by rememberUpdatedState(onPreviewPositionChange)
     val lyricSeekHaptic = rememberLyricSeekHapticFeedback(
         lyrics = lyrics,
@@ -3782,7 +3782,7 @@ private fun NowPlayingLyricsPane(
     onLyricLongClick: (LyricEntry) -> Unit,
     translatedLyrics: List<LyricEntry>? = null
 ) {
-    val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
+    val currentPosition by PlayerManager.playbackPositionFlow.collectAsStateWithLifecycle()
     val effectivePositionMs = previewPositionOverrideMs ?: currentPosition
     AppleMusicLyric(
         lyrics = lyrics,
