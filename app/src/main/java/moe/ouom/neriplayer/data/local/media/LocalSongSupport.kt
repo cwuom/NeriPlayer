@@ -100,6 +100,10 @@ object LocalSongSupport {
                 ?.trim()
                 ?.takeIf { it.isNotBlank() && song.channelId.equals("local", ignoreCase = true) }
             localAudioId?.let { add("audio:$it") }
+            song.sourceStableKey
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { add("source:$it") }
 
             if (includeMetadataFallback) {
                 addMetadataFallbackKeys(song)

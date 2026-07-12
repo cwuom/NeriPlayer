@@ -106,6 +106,7 @@ data class SongItem(
     val audioId: String? = null,
     val subAudioId: String? = null,
     val playlistContextId: String? = null,
+    val sourceStableKey: String? = null,
     val streamUrl: String? = null,
     val neteaseArtists: List<NeteaseArtistSummary>? = emptyList(),
     val addedAt: Long = 0L

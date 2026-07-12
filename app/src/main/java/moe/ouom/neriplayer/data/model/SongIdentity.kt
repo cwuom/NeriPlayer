@@ -54,6 +54,7 @@ fun SongIdentity.stableKey(): String = buildString {
 
 fun SongItem.identity(): SongIdentity {
     normalizedRemoteIdentity()?.let { return it }
+    normalizedDownloadedSourceIdentity()?.let { return it }
     return SongIdentity(
         id = normalizedYouTubeMusicId(this) ?: id,
         album = normalizedYouTubeMusicAlbum(this),
@@ -152,6 +153,17 @@ private fun SongItem.normalizedRemoteIdentity(): SongIdentity? {
     )
 }
 
+private fun SongItem.normalizedDownloadedSourceIdentity(): SongIdentity? {
+    if (!LocalSongSupport.isLocalSong(this, null)) return null
+    val sourceKey = sourceStableKey
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: return null
+    val sourceIdentity = parseStableSongIdentity(sourceKey) ?: return null
+    if (sourceIdentity.album == LocalSongSupport.LOCAL_ALBUM_IDENTITY) return null
+    return sourceIdentity
+}
+
 private fun SyncSong.normalizedRemoteIdentity(): SongIdentity? {
     val videoId = extractYouTubeMusicVideoId(mediaUri)
     if (videoId != null) {
@@ -187,6 +199,19 @@ private fun SyncSong.normalizedRemoteIdentity(): SongIdentity? {
         album = channel,
         mediaUri = null
     )
+}
+
+private fun parseStableSongIdentity(stableKey: String): SongIdentity? {
+    val firstSeparator = stableKey.indexOf('|')
+    if (firstSeparator <= 0) return null
+    val secondSeparator = stableKey.indexOf('|', firstSeparator + 1)
+    if (secondSeparator <= firstSeparator) return null
+
+    val id = stableKey.substring(0, firstSeparator).toLongOrNull() ?: return null
+    val album = stableKey.substring(firstSeparator + 1, secondSeparator)
+    val mediaUri = stableKey.substring(secondSeparator + 1).takeIf { it.isNotBlank() }
+    if (album.isBlank()) return null
+    return SongIdentity(id = id, album = album, mediaUri = mediaUri)
 }
 
 private fun normalizedChannelId(

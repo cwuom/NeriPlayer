@@ -74,7 +74,8 @@ internal data class QuickImportedSongSeed(
     val album: String?,
     val durationMs: Long?,
     val localFile: File? = null,
-    val nearbyCoverUri: String? = null
+    val nearbyCoverUri: String? = null,
+    val sourceStableKey: String? = null
 )
 
 private data class QuickImportedAudioInfo(
@@ -492,7 +493,8 @@ object LocalAudioImportManager {
             localFileName = resolvedDisplayName.ifBlank { null },
             localFilePath = seed.localFile?.absolutePath,
             channelId = "local",
-            audioId = stableId.toString()
+            audioId = stableId.toString(),
+            sourceStableKey = seed.sourceStableKey
         )
     }
 
@@ -520,6 +522,7 @@ object LocalAudioImportManager {
             localFilePath = resolvedLocalPath,
             mediaUri = quickSong.mediaUri ?: detailedSong.mediaUri
         ) ?: quickSong.mediaUri ?: detailedSong.mediaUri
+        val resolvedSourceStableKey = quickSong.sourceStableKey ?: detailedSong.sourceStableKey
 
         return quickSong.copy(
             id = resolvedId,
@@ -540,7 +543,8 @@ object LocalAudioImportManager {
             localFileName = quickSong.localFileName ?: detailedSong.localFileName,
             localFilePath = resolvedLocalPath,
             channelId = quickSong.channelId ?: detailedSong.channelId ?: "local",
-            audioId = resolvedAudioId
+            audioId = resolvedAudioId,
+            sourceStableKey = resolvedSourceStableKey
         )
     }
 
@@ -706,7 +710,8 @@ object LocalAudioImportManager {
                 album = details.album.takeUnless { details.usesFallbackAlbum },
                 durationMs = details.durationMs,
                 localFile = details.filePath?.let(::File)?.takeIf(File::exists),
-                nearbyCoverUri = details.coverUri
+                nearbyCoverUri = details.coverUri,
+                sourceStableKey = details.sourceStableKey
             ),
             unknownArtistLabel = context.getString(R.string.music_unknown_artist)
         )

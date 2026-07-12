@@ -7,6 +7,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -79,6 +81,34 @@ class LocalPlaylistRepositoryTest {
         assertEquals(contentAlias.localFileName, playlist.songs.single().localFileName)
     }
 
+    @Test
+    fun `adding downloaded local copy to favorites keeps original favorite order`() = runTest {
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "local_playlists.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false
+        )
+        val remoteSong = remoteNeteaseSong(addedAt = 11L)
+        repository.updatePlaylists(
+            listOf(
+                LocalPlaylist(
+                    id = FavoritesPlaylist.SYSTEM_ID,
+                    name = "我喜欢的音乐",
+                    songs = mutableListOf(remoteSong),
+                    modifiedAt = 10L
+                )
+            )
+        )
+
+        repository.addToFavorites(downloadedLocalCopy(remoteSong))
+
+        val favorites = repository.playlists.value.single()
+        assertEquals(1, favorites.songs.size)
+        assertEquals(remoteSong, favorites.songs.single())
+        assertEquals(11L, favorites.songs.single().addedAt)
+    }
+
     private fun mockContext(): Context {
         val context = mock(Context::class.java)
         `when`(context.filesDir).thenReturn(tempFolder.root)
@@ -118,6 +148,40 @@ class LocalPlaylistRepositoryTest {
             localFilePath = localFilePath,
             channelId = "local",
             audioId = id.toString()
+        )
+    }
+
+    private fun remoteNeteaseSong(addedAt: Long = 0L): SongItem {
+        return SongItem(
+            id = 42L,
+            name = "song",
+            artist = "artist",
+            album = "NeteaseAlbum",
+            albumId = 7L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "42",
+            addedAt = addedAt
+        )
+    }
+
+    private fun downloadedLocalCopy(source: SongItem): SongItem {
+        val path = File(tempFolder.root, "song.mp3").absolutePath
+        return SongItem(
+            id = 99L,
+            name = source.name,
+            artist = source.artist,
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = source.durationMs,
+            coverUrl = null,
+            mediaUri = path,
+            localFileName = "song.mp3",
+            localFilePath = path,
+            channelId = "local",
+            audioId = "99",
+            sourceStableKey = source.stableKey()
         )
     }
 }

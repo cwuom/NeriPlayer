@@ -2360,7 +2360,8 @@ object GlobalDownloadManager {
             originalLyric = originalLyric,
             originalTranslatedLyric = originalTranslatedLyric,
             localFileName = storedAudio?.name ?: filePath.substringAfterLast('/').takeIf(String::isNotBlank),
-            localFilePath = storedAudio?.localFilePath ?: filePath.takeIf { it.startsWith("/") }
+            localFilePath = storedAudio?.localFilePath ?: filePath.takeIf { it.startsWith("/") },
+            sourceStableKey = stableKey
         )
     }
 

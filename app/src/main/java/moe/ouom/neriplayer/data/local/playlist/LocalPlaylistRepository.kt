@@ -505,7 +505,15 @@ class LocalPlaylistRepository private constructor(
                 if (index == -1) return@commitPlaylistMutation
 
                 val favorites = list[index]
-                if (hasExistingSong(favorites.songs, hydratedSong)) return@commitPlaylistMutation
+                if (
+                    hasExistingSong(
+                        existingSongs = favorites.songs,
+                        candidate = hydratedSong,
+                        includeLocalMetadataFallback = true
+                    )
+                ) {
+                    return@commitPlaylistMutation
+                }
 
                 clearPlaylistSongDeletions(favorites.id, listOf(hydratedSong))
                 list[index] = favorites.copy(

@@ -44,6 +44,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.isFileInsideDirectory
+import org.json.JSONObject
 import java.io.File
 import java.io.InputStream
 import java.io.RandomAccessFile
@@ -96,7 +97,8 @@ data class LocalMediaDetails(
     val lyricSource: String?,
     val originalTitle: String?,
     val originalArtist: String?,
-    val embeddedCover: Boolean
+    val embeddedCover: Boolean,
+    val sourceStableKey: String? = null
 )
 
 fun SongItem.isLocalSong(): Boolean = LocalSongSupport.isLocalSong(this)
@@ -322,7 +324,8 @@ object LocalMediaSupport {
         val sampleRateHz: Int? = null,
         val channelCount: Int? = null,
         val lyrics: String? = null,
-        val coverBytes: ByteArray? = null
+        val coverBytes: ByteArray? = null,
+        val sourceStableKey: String? = null
     ) {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -342,6 +345,7 @@ object LocalMediaSupport {
                 sampleRateHz == other.sampleRateHz &&
                 channelCount == other.channelCount &&
                 lyrics == other.lyrics &&
+                sourceStableKey == other.sourceStableKey &&
                 (coverBytes?.contentEquals(other.coverBytes) ?: (other.coverBytes == null))
         }
 
@@ -360,6 +364,7 @@ object LocalMediaSupport {
             result = 31 * result + (sampleRateHz ?: 0)
             result = 31 * result + (channelCount ?: 0)
             result = 31 * result + (lyrics?.hashCode() ?: 0)
+            result = 31 * result + (sourceStableKey?.hashCode() ?: 0)
             result = 31 * result + (coverBytes?.contentHashCode() ?: 0)
             return result
         }
@@ -526,7 +531,8 @@ object LocalMediaSupport {
                 ?: containerMetadata?.artist?.takeIf { it.isNotBlank() }
                 ?: queried.artist?.takeIf { it.isNotBlank() }
                 ?: artist,
-            embeddedCover = false
+            embeddedCover = false,
+            sourceStableKey = tagLibMetadata?.sourceStableKey
         )
     }
 
@@ -616,7 +622,8 @@ object LocalMediaSupport {
                 ?: containerMetadata?.artist?.takeIf { it.isNotBlank() }
                 ?: queried.artist?.takeIf { it.isNotBlank() }
                 ?: artist,
-            embeddedCover = false
+            embeddedCover = false,
+            sourceStableKey = tagLibMetadata?.sourceStableKey
         )
     }
 
@@ -813,7 +820,8 @@ object LocalMediaSupport {
                 },
                 originalTitle = title,
                 originalArtist = tagLibMetadata?.artist ?: containerMetadata?.artist ?: queried.artist ?: artist,
-                embeddedCover = embeddedCover || tagLibCoverUri != null
+                embeddedCover = embeddedCover || tagLibCoverUri != null,
+                sourceStableKey = tagLibMetadata?.sourceStableKey
             )
         } catch (error: Exception) {
             NPLogger.w(TAG, "inspect metadata fallback for $uri: ${error.message}")
@@ -880,7 +888,8 @@ object LocalMediaSupport {
                     ?: containerMetadata?.artist?.takeIf { it.isNotBlank() }
                     ?: queried.artist?.takeIf { it.isNotBlank() }
                     ?: artist,
-                embeddedCover = tagLibCoverUri != null
+                embeddedCover = tagLibCoverUri != null,
+                sourceStableKey = tagLibMetadata?.sourceStableKey
             )
         } finally {
             runCatching { retriever.release() }
@@ -1000,7 +1009,8 @@ object LocalMediaSupport {
             localFileName = details.displayName,
             localFilePath = details.filePath,
             channelId = "local",
-            audioId = stableId.toString()
+            audioId = stableId.toString(),
+            sourceStableKey = details.sourceStableKey
         )
     }
 
@@ -1406,7 +1416,8 @@ object LocalMediaSupport {
                 } else {
                     null
                 },
-                coverBytes = coverBytes?.takeIf { it.isNotEmpty() }
+                coverBytes = coverBytes?.takeIf { it.isNotEmpty() },
+                sourceStableKey = propertyMap.readNeriSourceStableKey()
             )
         }
     }
@@ -2060,6 +2071,19 @@ private fun Map<String, Array<String>>?.readFirstValue(vararg keys: String): Str
             ?.replace(BOM_CHAR.toString(), "")
             ?.trim(NUL_CHAR, ' ')
             ?.takeIf { it.isNotBlank() }
+    }
+}
+
+private fun Map<String, Array<String>>?.readNeriSourceStableKey(): String? {
+    readFirstValue("NERI_STABLE_KEY", "NERI STABLE KEY")
+        ?.let { return it }
+
+    return readFirstValue("COMMENT")?.let { comment ->
+        runCatching {
+            JSONObject(comment).optString("stableKey")
+                .trim()
+                .takeIf { it.isNotBlank() }
+        }.getOrNull()
     }
 }
 

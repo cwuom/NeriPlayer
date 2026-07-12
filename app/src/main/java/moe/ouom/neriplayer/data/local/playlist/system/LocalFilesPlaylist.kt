@@ -26,7 +26,6 @@ package moe.ouom.neriplayer.data.local.playlist.system
 import android.content.Context
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
-import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.util.LanguageManager
 
 object LocalFilesPlaylist {
@@ -69,7 +68,7 @@ object LocalFilesPlaylist {
             name = currentName(context),
             songs = playlists
                 .flatMap { it.songs }
-                .distinctBy { it.identity() }
+                .distinctSystemSongs()
                 .toMutableList(),
             modifiedAt = playlists.maxOfOrNull { it.modifiedAt } ?: System.currentTimeMillis(),
             customCoverUrl = playlists.lastOrNull { !it.customCoverUrl.isNullOrBlank() }?.customCoverUrl
