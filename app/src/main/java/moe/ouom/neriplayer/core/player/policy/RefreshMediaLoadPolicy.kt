@@ -11,7 +11,15 @@ internal data class RefreshRequestSemantics(
     val resumePlaybackAfterRefresh: Boolean,
     val allowFallback: Boolean,
     val reason: String,
-    val resumedPlaybackCommandSource: PlaybackCommandSource?
+    val resumedPlaybackCommandSource: PlaybackCommandSource?,
+    val youtubeRecoveryStrategy: YouTubePlaybackRecoveryStrategy? = null,
+    val cacheKeyToInvalidateBeforeResolve: String? = null
+)
+
+internal data class YouTubePlaybackRecoveryStrategy(
+    val preferredQualityOverride: String,
+    val requireDirect: Boolean,
+    val preferM4a: Boolean
 )
 
 internal data class RefreshInFlightOwner(

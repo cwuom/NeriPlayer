@@ -94,7 +94,15 @@ class RefreshMediaLoadPolicyTest {
             owner.copy(resumePlaybackAfterRefresh = !owner.resumePlaybackAfterRefresh),
             owner.copy(allowFallback = !owner.allowFallback),
             owner.copy(reason = "other_reason"),
-            owner.copy(resumedPlaybackCommandSource = PlaybackCommandSource.REMOTE_SYNC)
+            owner.copy(resumedPlaybackCommandSource = PlaybackCommandSource.REMOTE_SYNC),
+            owner.copy(
+                youtubeRecoveryStrategy = YouTubePlaybackRecoveryStrategy(
+                    preferredQualityOverride = "high",
+                    requireDirect = true,
+                    preferM4a = true
+                )
+            ),
+            owner.copy(cacheKeyToInvalidateBeforeResolve = "stale-youtube-cache")
         )
 
         differentSemantics.forEach { incoming ->

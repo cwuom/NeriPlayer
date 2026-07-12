@@ -254,6 +254,7 @@ internal fun PlayerManager.initializeImpl(
                     return
                 }
 
+                val currentSong = _currentSongFlow.value
                 val currentUrl = _currentMediaUrl.value
                 val isOfflineCache = currentUrl?.startsWith("http://offline.cache/") == true
 
@@ -266,12 +267,24 @@ internal fun PlayerManager.initializeImpl(
                     return
                 }
 
-                if (shouldAttemptUrlRefresh(error, _currentSongFlow.value, isOfflineCache)) {
-                    val shouldBypassRefreshCooldown = pendingSeekPositionOrNull() != null &&
-                        YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeSeek(
-                            _currentSongFlow.value,
-                            currentUrl
-                        )
+                if (shouldAttemptUrlRefresh(error, currentSong, isOfflineCache)) {
+                    val youtubeRecoveryStrategy = youtubePlaybackRecoveryStrategyForError(
+                        error = error,
+                        song = currentSong,
+                        isOfflineCache = isOfflineCache
+                    )
+                    val cacheKeyToInvalidateBeforeResolve = if (youtubeRecoveryStrategy != null) {
+                        offlineCacheKeyFromUrl(currentUrl)
+                    } else {
+                        null
+                    }
+                    val shouldBypassRefreshCooldown = (
+                        pendingSeekPositionOrNull() != null &&
+                            YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeSeek(
+                                currentSong,
+                                currentUrl
+                            )
+                        ) || cacheKeyToInvalidateBeforeResolve != null
                     val resumePositionMs = pendingSeekPositionOrNull()
                         ?: player.currentPosition.coerceAtLeast(0L)
                     val resumePlaybackAfterRefresh = player.playWhenReady || player.isPlaying
@@ -282,7 +295,9 @@ internal fun PlayerManager.initializeImpl(
                         bypassCooldown = shouldBypassRefreshCooldown,
                         fallbackSeekPositionMs = resumePositionMs,
                         resumePlaybackAfterRefresh = resumePlaybackAfterRefresh,
-                        resumedPlaybackCommandSource = activePlaybackCommandSource
+                        resumedPlaybackCommandSource = activePlaybackCommandSource,
+                        youtubeRecoveryStrategy = youtubeRecoveryStrategy,
+                        cacheKeyToInvalidateBeforeResolve = cacheKeyToInvalidateBeforeResolve
                     )
                     return
                 }

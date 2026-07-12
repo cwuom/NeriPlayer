@@ -84,6 +84,7 @@ import moe.ouom.neriplayer.core.player.policy.PlaybackCommand
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.RefreshInFlightController
 import moe.ouom.neriplayer.core.player.policy.RefreshRequestSemantics
+import moe.ouom.neriplayer.core.player.policy.YouTubePlaybackRecoveryStrategy
 import moe.ouom.neriplayer.core.player.policy.resolvePendingMediaLoadPosition
 import moe.ouom.neriplayer.core.player.policy.resolvePlaybackSoundConfigForEngine
 import moe.ouom.neriplayer.core.player.policy.resolveExoRepeatMode
@@ -1602,21 +1603,29 @@ object PlayerManager {
 
     /**
      */
-    internal fun computeCacheKey(song: SongItem): String {
+    internal fun computeCacheKey(
+        song: SongItem,
+        youtubeQualityOverride: String? = null,
+        youtubePreferM4aOverride: Boolean? = null
+    ): String {
         return when {
             isLocalSong(song) -> "local-${song.stableKey().hashCode()}"
             isYouTubeMusicTrack(song) -> {
                 val videoId = song.audioId ?: extractYouTubeMusicVideoId(song.mediaUri).orEmpty()
-                computeYouTubeCacheKey(videoId, effectiveYouTubeQuality())
+                computeYouTubeCacheKey(
+                    videoId = videoId,
+                    preferredQuality = youtubeQualityOverride ?: effectiveYouTubeQuality(),
+                    preferM4a = youtubePreferM4aOverride ?: YOUTUBE_PLAYBACK_PREFER_M4A
+                )
             }
             isBiliTrack(song) -> {
-            val cidPart = song.subAudioId ?: song.album.split('|').getOrNull(1)
-            val biliSongId = song.audioId ?: song.id.toString()
-            if (cidPart != null) {
-                "bili-$biliSongId-$cidPart-${effectiveBiliQuality()}"
-            } else {
-                "bili-$biliSongId-${effectiveBiliQuality()}"
-            }
+                val cidPart = song.subAudioId ?: song.album.split('|').getOrNull(1)
+                val biliSongId = song.audioId ?: song.id.toString()
+                if (cidPart != null) {
+                    "bili-$biliSongId-$cidPart-${effectiveBiliQuality()}"
+                } else {
+                    "bili-$biliSongId-${effectiveBiliQuality()}"
+                }
             }
             else -> "netease-${song.id}-${effectiveNeteaseQuality()}"
         }
@@ -1624,9 +1633,14 @@ object PlayerManager {
 
     internal fun computeYouTubeCacheKey(
         videoId: String,
-        preferredQuality: String = effectiveYouTubeQuality()
+        preferredQuality: String = effectiveYouTubeQuality(),
+        preferM4a: Boolean = YOUTUBE_PLAYBACK_PREFER_M4A
     ): String {
-        return "ytmusic-$videoId-$preferredQuality-m4a"
+        return if (preferM4a) {
+            "ytmusic-$videoId-$preferredQuality-stable-m4a"
+        } else {
+            "ytmusic-$videoId-$preferredQuality"
+        }
     }
 
     internal fun buildMediaItem(
@@ -1723,7 +1737,9 @@ object PlayerManager {
         bypassCooldown: Boolean = false,
         fallbackSeekPositionMs: Long? = null,
         resumePlaybackAfterRefresh: Boolean = true,
-        resumedPlaybackCommandSource: PlaybackCommandSource? = null
+        resumedPlaybackCommandSource: PlaybackCommandSource? = null,
+        youtubeRecoveryStrategy: YouTubePlaybackRecoveryStrategy? = null,
+        cacheKeyToInvalidateBeforeResolve: String? = null
     ) = refreshCurrentSongUrlImpl(
         resumePositionMs = resumePositionMs,
         allowFallback = allowFallback,
@@ -1731,7 +1747,9 @@ object PlayerManager {
         bypassCooldown = bypassCooldown,
         fallbackSeekPositionMs = fallbackSeekPositionMs,
         resumePlaybackAfterRefresh = resumePlaybackAfterRefresh,
-        resumedPlaybackCommandSource = resumedPlaybackCommandSource
+        resumedPlaybackCommandSource = resumedPlaybackCommandSource,
+        youtubeRecoveryStrategy = youtubeRecoveryStrategy,
+        cacheKeyToInvalidateBeforeResolve = cacheKeyToInvalidateBeforeResolve
     )
 
     internal fun handleTrackEndedIfNeeded(source: String) =
