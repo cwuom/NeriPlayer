@@ -81,31 +81,31 @@
             </intent-filter>
         </activity>
         <activity
-            android:name=".activity.NeteaseWebLoginActivity"
+            android:name=".activity.auth.NeteaseWebLoginActivity"
             android:exported="false"
             android:process=":netease_login"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar"
         />
         <activity
-            android:name=".activity.NeteaseQrLoginActivity"
+            android:name=".activity.auth.NeteaseQrLoginActivity"
             android:exported="false"
             android:process=":netease_login"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar"
         />
         <activity
-            android:name="moe.ouom.neriplayer.activity.BiliWebLoginActivity"
+            android:name=".activity.auth.BiliWebLoginActivity"
             android:exported="false"
             android:process=":bili_web_login"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar"
             />
         <activity
-            android:name="moe.ouom.neriplayer.activity.BiliQrLoginActivity"
+            android:name=".activity.auth.BiliQrLoginActivity"
             android:exported="false"
             android:process=":bili_web_login"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar"
             />
         <activity
-            android:name=".activity.YouTubeWebLoginActivity"
+            android:name=".activity.auth.YouTubeWebLoginActivity"
             android:exported="false"
             android:process=":youtube_web_login"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar"

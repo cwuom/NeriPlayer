@@ -26,7 +26,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
@@ -58,8 +58,8 @@ fun PlaybackStatsScreen(
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
     offlineMode: Boolean = false
 ) {
-    val stats by AppContainer.playbackStatsRepo.statsFlow.collectAsState()
-    val dailyStats by AppContainer.playbackStatsRepo.dailyStatsFlow.collectAsState()
+    val stats by AppContainer.playbackStatsRepo.statsFlow.collectAsStateWithLifecycle()
+    val dailyStats by AppContainer.playbackStatsRepo.dailyStatsFlow.collectAsStateWithLifecycle()
     val mini = LocalMiniPlayerHeight.current
     var selectedPeriod by remember { mutableStateOf(PlaybackStatsPeriod.ALL) }
     var sortMode by remember { mutableStateOf(StatsSortMode.PLAY_COUNT) }

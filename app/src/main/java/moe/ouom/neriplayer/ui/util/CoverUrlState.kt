@@ -2,12 +2,12 @@ package moe.ouom.neriplayer.ui.util
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.withContext
@@ -38,7 +38,7 @@ fun rememberSongDisplayCoverUrl(
 ): String? {
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
-    val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
+    val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
     val songKey = remember(song, resolveLocalFallback) {
         song?.coverResolutionKey(resolveLocalFallback)
     }
@@ -90,7 +90,7 @@ fun rememberPlaylistDisplayCoverUrl(
 ): String? {
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
-    val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
+    val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
     val playlistKey = remember(playlist, resolveLocalFallback) {
         playlist?.coverResolutionKey(resolveLocalFallback)
     }

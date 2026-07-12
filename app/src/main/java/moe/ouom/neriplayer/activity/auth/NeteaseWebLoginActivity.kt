@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.activity
+package moe.ouom.neriplayer.activity.auth
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -19,35 +19,30 @@ package moe.ouom.neriplayer.activity
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.activity/BiliWebLoginActivity
- * Created: 2025/8/13
+ * File: moe.ouom.neriplayer.activity.auth/NeteaseWebLoginActivity
+ * Created: 2025/8/12
  */
 
 import android.annotation.SuppressLint
 import android.content.Intent
-import android.graphics.Bitmap
 import android.graphics.Color
-import android.net.http.SslError
 import android.net.Uri
 import android.os.Bundle
 import android.view.MenuItem
 import android.view.ViewGroup
-import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
-import android.webkit.SslErrorHandler
+import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
-import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.coordinatorlayout.widget.CoordinatorLayout
-import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -58,46 +53,35 @@ import com.google.android.material.color.MaterialColors
 import com.google.android.material.snackbar.Snackbar
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
-import moe.ouom.neriplayer.data.auth.web.shouldAutoCompleteBiliWebLogin
+import moe.ouom.neriplayer.data.auth.web.normalizeNeteaseWebLoginCookies
+import moe.ouom.neriplayer.data.auth.web.shouldAutoCompleteNeteaseWebLogin
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.hostMatchesAnyDomain
 import moe.ouom.neriplayer.util.isAllowedMainFrameRequest
 import moe.ouom.neriplayer.util.lockPortraitIfPhone
 
-/**
- * 用内置 WebView 登录哔哩哔哩
- * 登录后读取 Cookie 并返回 JSON(Map<String,String>)
- *
- * 通过 Intent Extra 约定返回：
- *   - RESULT_COOKIE: String(JSON of Map<String,String>)
- */
-class BiliWebLoginActivity : ComponentActivity() {
+class NeteaseWebLoginActivity : ComponentActivity() {
 
     companion object {
-        const val RESULT_COOKIE = "result_cookie_json"
-        private const val LOG_TAG = "NERI-BiliLogin"
-        private const val LOGIN_URL = "https://passport.bilibili.com/login"
-
+        const val RESULT_COOKIE = "result_cookie_map_json"
+        private const val LOG_TAG = "NERI-NeteaseLogin"
+        private const val TARGET_URL = "https://music.163.com/"
         private val ALLOWED_LOGIN_DOMAINS = setOf(
-            "bilibili.com",
-            "hdslb.com",
-            "biliimg.com"
+            "163.com",
+            "126.net",
+            "163yun.com"
         )
-
-        private val IMPORTANT_COOKIE_KEYS = listOf(
-            "SESSDATA",
-            "bili_jct",
-            "DedeUserID",
-            "DedeUserID__ckMd5",
-            "buvid3",
-            "sid"
-        )
+        private const val DESKTOP_UA =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+                    "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                    "Chrome/124.0.0.0 Safari/537.36"
     }
 
     private lateinit var webView: WebView
     private lateinit var toolbar: MaterialToolbar
     private var foregroundWebLoginToken: AutoCloseable? = null
     private var hasReturned = false
+    private var initialCookies: Map<String, String> = emptyMap()
     private val loginCompletionWatcher = WebLoginCompletionWatcher(::maybeReturnIfLoggedIn)
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -106,8 +90,7 @@ class BiliWebLoginActivity : ComponentActivity() {
         lockPortraitIfPhone()
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        NPLogger.d(LOG_TAG, "Bilibili login activity created")
-        foregroundWebLoginToken = ForegroundWebLoginGuard.enter("bilibili")
+        foregroundWebLoginToken = ForegroundWebLoginGuard.enter("netease")
 
         val root = CoordinatorLayout(this).apply {
             fitsSystemWindows = false
@@ -134,7 +117,7 @@ class BiliWebLoginActivity : ComponentActivity() {
             )
         }
         toolbar = MaterialToolbar(this).apply {
-            title = getString(R.string.bili_web_login)
+            title = getString(R.string.netease_web_login)
             setNavigationIcon(R.drawable.ic_arrow_back_24)
             setNavigationOnClickListener { finish() }
             inflateMenu(R.menu.menu_netease_web_login)
@@ -149,27 +132,31 @@ class BiliWebLoginActivity : ComponentActivity() {
             ).apply {
                 behavior = AppBarLayout.ScrollingViewBehavior()
             }
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-            settings.allowFileAccess = false
-            settings.allowContentAccess = false
-            settings.javaScriptCanOpenWindowsAutomatically = true
-
-            settings.cacheMode = WebSettings.LOAD_NO_CACHE
+            settings.apply {
+                javaScriptEnabled = true
+                domStorageEnabled = true
+                mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                allowFileAccess = false
+                allowContentAccess = false
+                userAgentString = DESKTOP_UA
+                useWideViewPort = true
+                loadWithOverviewMode = true
+                setSupportZoom(true)
+                builtInZoomControls = true
+                displayZoomControls = false
+            }
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-
             webChromeClient = InnerChromeClient()
             webViewClient = InnerClient()
         }
-        // 后台 YouTube 预热 WebView 可能残留了全局定时器暂停状态，这里先抢回前台时钟
+        // WebView 的 JS 定时器是进程级的，前台登录页先主动恢复一次更稳
         webView.resumeTimers()
-        forceFreshWebContext()
 
         root.addView(webView)
         root.addView(appBar)
         appBar.bringToFront()
+
         setContentView(root)
 
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
@@ -184,7 +171,7 @@ class BiliWebLoginActivity : ComponentActivity() {
             this,
             object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
-                    if (this@BiliWebLoginActivity::webView.isInitialized && webView.canGoBack()) {
+                    if (this@NeteaseWebLoginActivity::webView.isInitialized && webView.canGoBack()) {
                         webView.goBack()
                     } else {
                         finish()
@@ -193,24 +180,9 @@ class BiliWebLoginActivity : ComponentActivity() {
             }
         )
 
+        initialCookies = readCookieMap()
         loginCompletionWatcher.start()
-        reloadLoginPage("create")
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        NPLogger.d(LOG_TAG, "Bilibili login activity received new intent")
-        forceFreshWebContext()
-        reloadLoginPage("newIntent")
-    }
-
-    override fun onPause() {
-        CookieManager.getInstance().flush()
-        if (this::webView.isInitialized) {
-            webView.onPause()
-        }
-        super.onPause()
+        webView.loadUrl(TARGET_URL)
     }
 
     override fun onResume() {
@@ -219,6 +191,13 @@ class BiliWebLoginActivity : ComponentActivity() {
             webView.resumeTimers()
             webView.onResume()
         }
+    }
+
+    override fun onPause() {
+        if (this::webView.isInitialized) {
+            webView.onPause()
+        }
+        super.onPause()
     }
 
     override fun onDestroy() {
@@ -248,105 +227,56 @@ class BiliWebLoginActivity : ComponentActivity() {
 
     private fun readAndReturnCookies() {
         try {
-            CookieManager.getInstance().flush()
-            val map = readCookieForDomains(
-                listOf(
-                    ".bilibili.com",
-                    "bilibili.com",
-                    "www.bilibili.com",
-                    "m.bilibili.com",
-                    "passport.bilibili.com"
-                )
-            )
-            if (!shouldAutoCompleteBiliWebLogin(map)) {
+            val map = readCookieMap()
+            if (map.isEmpty()) {
                 Snackbar.make(webView, getString(R.string.snackbar_cookie_empty), Snackbar.LENGTH_SHORT).show()
                 return
             }
 
-            val json = org.json.JSONObject().apply {
-                map.forEach { (key, value) -> put(key, value) }
-            }.toString()
+            val json = org.json.JSONObject(map as Map<*, *>).toString()
             setResult(RESULT_OK, Intent().putExtra(RESULT_COOKIE, json))
             finish()
-        } catch (error: Throwable) {
+        } catch (e: Throwable) {
             Snackbar.make(
                 webView,
-                getString(R.string.snackbar_read_failed, error.message ?: error.javaClass.simpleName),
+                getString(R.string.snackbar_read_failed, e.message ?: e.javaClass.simpleName),
                 Snackbar.LENGTH_LONG
             ).show()
         }
     }
 
-    private fun forceFreshWebContext() {
-        NPLogger.d(LOG_TAG, "Clearing Bilibili WebView state")
-        val cm = CookieManager.getInstance()
-        val urls = listOf(
-            "https://bilibili.com",
-            "https://passport.bilibili.com",
-            "https://www.bilibili.com",
-            "https://m.bilibili.com"
-        )
-        val keys = listOf(
-            "SESSDATA",
-            "bili_jct",
-            "DedeUserID",
-            "DedeUserID__ckMd5",
-            "buvid3",
-            "buvid4",
-            "sid"
-        )
-        urls.forEach { url ->
-            keys.forEach { k ->
-                expireCookie(cm, url, k, domain = null)
-                expireCookie(cm, url, k, domain = ".bilibili.com")
-                expireCookie(cm, url, k, domain = "bilibili.com")
+    private fun cookieStringToMap(raw: String): MutableMap<String, String> {
+        val map = linkedMapOf<String, String>()
+        raw.split(';')
+            .map { it.trim() }
+            .filter { it.isNotBlank() && it.contains('=') }
+            .forEach { part ->
+                val idx = part.indexOf('=')
+                val key = part.substring(0, idx).trim()
+                val value = part.substring(idx + 1).trim()
+                if (key.isNotEmpty()) map[key] = value
             }
-        }
-        cm.flush()
-
-        listOf(
-            "https://bilibili.com",
-            "https://passport.bilibili.com",
-            "https://www.bilibili.com",
-            "https://m.bilibili.com"
-        ).forEach(WebStorage.getInstance()::deleteOrigin)
-        if (this::webView.isInitialized) {
-            webView.clearCache(true)
-            webView.clearHistory()
-        }
+        return map
     }
 
-    private fun expireCookie(
-        cookieManager: CookieManager,
-        url: String,
-        key: String,
-        domain: String?
-    ) {
-        val domainPart = domain?.let { "; Domain=$it" }.orEmpty()
-        cookieManager.setCookie(
-            url,
-            "$key=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0$domainPart; Path=/; Secure"
-        )
-    }
-
-    private fun reloadLoginPage(reason: String) {
-        if (hasReturned || !this::webView.isInitialized) {
-            return
+    private fun readCookieMap(): Map<String, String> {
+        val cm = CookieManager.getInstance()
+        val main = cm.getCookie("https://music.163.com").orEmpty()
+        val api = cm.getCookie("https://interface.music.163.com").orEmpty()
+        val api3 = cm.getCookie("https://interface3.music.163.com").orEmpty()
+        val merged = listOf(main, api, api3).filter { it.isNotBlank() }.joinToString("; ")
+        if (merged.isBlank()) {
+            return emptyMap()
         }
-        NPLogger.d(LOG_TAG, "Loading Bilibili login reason=$reason url=$LOGIN_URL")
-        if (!webView.url.isNullOrBlank()) {
-            webView.stopLoading()
-        }
-        webView.loadUrl(LOGIN_URL)
+        return normalizeNeteaseWebLoginCookies(cookieStringToMap(merged))
     }
 
     private inner class InnerClient : WebViewClient() {
-
         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
             val currentRequest = request ?: return false
             val uri = currentRequest.url
             if (!isAllowedMainFrameRequest(currentRequest) { isAllowedLoginUri(it) }) {
-                NPLogger.w(LOG_TAG, "Blocked unexpected navigation: $uri")
+                NPLogger.w("NERI-NeteaseLogin", "Blocked unexpected navigation: $uri")
                 return true
             }
             if (currentRequest.isForMainFrame) {
@@ -355,10 +285,9 @@ class BiliWebLoginActivity : ComponentActivity() {
             return false
         }
 
-        override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+        override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
             super.onPageStarted(view, url, favicon)
-            NPLogger.d(LOG_TAG, "Page started: $url")
-            val host = runCatching { url?.toUri()?.host }.getOrNull()
+            val host = runCatching { url?.let(Uri::parse)?.host }.getOrNull()
             if (hostMatchesAnyDomain(host, ALLOWED_LOGIN_DOMAINS)) {
                 loginCompletionWatcher.scheduleCheck()
             }
@@ -374,8 +303,7 @@ class BiliWebLoginActivity : ComponentActivity() {
 
         override fun onPageFinished(view: WebView?, url: String?) {
             super.onPageFinished(view, url)
-            NPLogger.d(LOG_TAG, "Page finished: $url")
-            val host = runCatching { url?.toUri()?.host }.getOrNull()
+            val host = runCatching { url?.let(Uri::parse)?.host }.getOrNull()
             if (hostMatchesAnyDomain(host, ALLOWED_LOGIN_DOMAINS)) {
                 loginCompletionWatcher.scheduleCheck()
             }
@@ -411,31 +339,14 @@ class BiliWebLoginActivity : ComponentActivity() {
                 )
             }
         }
-
-        override fun onReceivedSslError(
-            view: WebView?,
-            handler: SslErrorHandler?,
-            error: SslError?
-        ) {
-            NPLogger.e(LOG_TAG, "SSL error: $error")
-            handler?.cancel()
-        }
     }
 
     private inner class InnerChromeClient : WebChromeClient() {
-
-        override fun onProgressChanged(view: WebView?, newProgress: Int) {
-            super.onProgressChanged(view, newProgress)
-            if (newProgress == 100 || newProgress % 25 == 0) {
-                NPLogger.d(LOG_TAG, "Progress=$newProgress url=${view?.url}")
-            }
-        }
 
         override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
             val message = consoleMessage ?: return super.onConsoleMessage(consoleMessage)
             val logMessage = "Console ${message.messageLevel()} " +
                 "${message.sourceId()}:${message.lineNumber()} ${message.message().compactForLog()}"
-
             when (message.messageLevel()) {
                 ConsoleMessage.MessageLevel.ERROR -> NPLogger.e(LOG_TAG, logMessage)
                 ConsoleMessage.MessageLevel.WARNING -> NPLogger.w(LOG_TAG, logMessage)
@@ -450,28 +361,16 @@ class BiliWebLoginActivity : ComponentActivity() {
             return true
         }
         CookieManager.getInstance().flush()
-        val cookieMap = readCookieForDomains(
-            listOf(
-                ".bilibili.com",
-                "bilibili.com",
-                "www.bilibili.com",
-                "m.bilibili.com"
-            )
-        )
-        if (!shouldAutoCompleteBiliWebLogin(cookieMap)) {
-            NPLogger.d(
-                LOG_TAG,
-                "Still waiting for stable login cookies, observed=${cookieMap.keys.intersect(IMPORTANT_COOKIE_KEYS.toSet())}"
-            )
+        val currentCookies = readCookieMap()
+        if (!shouldAutoCompleteNeteaseWebLogin(initialCookies, currentCookies)) {
+            NPLogger.d("NERI-NeteaseLogin", "Waiting for stable NetEase login cookies.")
             return false
         }
 
         hasReturned = true
-        val json = org.json.JSONObject().apply {
-            cookieMap.forEach { (k, v) -> put(k, v) }
-        }.toString()
+        val json = org.json.JSONObject(currentCookies as Map<*, *>).toString()
         setResult(RESULT_OK, Intent().putExtra(RESULT_COOKIE, json))
-        NPLogger.d(LOG_TAG, "Login OK, cookie keys=${cookieMap.keys}")
+        NPLogger.d("NERI-NeteaseLogin", "Login OK, cookie keys=${currentCookies.keys}")
         finish()
         return true
     }
@@ -499,29 +398,10 @@ class BiliWebLoginActivity : ComponentActivity() {
         if (resolvedUri.toString() == "about:blank") {
             return true
         }
-        if (!resolvedUri.scheme.equals("https", ignoreCase = true)) {
+        val scheme = resolvedUri.scheme.orEmpty()
+        if (!scheme.equals("https", ignoreCase = true) && !scheme.equals("http", ignoreCase = true)) {
             return false
         }
         return hostMatchesAnyDomain(resolvedUri.host, ALLOWED_LOGIN_DOMAINS)
-    }
-
-    private fun readCookieForDomains(domains: List<String>): Map<String, String> {
-        val cm = CookieManager.getInstance()
-        val result = linkedMapOf<String, String>()
-        domains.forEach { d ->
-            val raw = cm.getCookie("https://$d").orEmpty()
-            if (raw.isBlank()) return@forEach
-            raw.split(';')
-                .map { it.trim() }
-                .forEach { pair ->
-                    val eq = pair.indexOf('=')
-                    if (eq > 0) {
-                        val k = pair.substring(0, eq)
-                        val v = pair.substring(eq + 1)
-                        result[k] = v
-                    }
-                }
-        }
-        return result
     }
 }

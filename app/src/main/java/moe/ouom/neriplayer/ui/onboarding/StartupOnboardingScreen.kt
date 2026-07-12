@@ -60,7 +60,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -92,6 +91,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -166,14 +166,14 @@ fun StartupOnboardingScreen() {
             ?: LanguageManager.Language.SYSTEM
     }
 
-    val uiDensityScale by repo.uiDensityScaleFlow.collectAsState(initial = 1.0f)
+    val uiDensityScale by repo.uiDensityScaleFlow.collectAsStateWithLifecycle(initialValue = 1.0f)
     var pendingUiScale by rememberSaveable { mutableFloatStateOf(uiDensityScale) }
     LaunchedEffect(uiDensityScale) {
         if ((pendingUiScale - uiDensityScale).absoluteValue > 0.001f) {
             pendingUiScale = uiDensityScale
         }
     }
-    val lyricFontScale by repo.lyricFontScaleFlow.collectAsState(initial = 1.0f)
+    val lyricFontScale by repo.lyricFontScaleFlow.collectAsStateWithLifecycle(initialValue = 1.0f)
     var pendingLyricFontScale by rememberSaveable { mutableFloatStateOf(lyricFontScale) }
     LaunchedEffect(lyricFontScale) {
         if ((pendingLyricFontScale - lyricFontScale).absoluteValue > 0.001f) {
@@ -181,11 +181,11 @@ fun StartupOnboardingScreen() {
         }
     }
 
-    val backgroundImageUri by repo.backgroundImageUriFlow.collectAsState(initial = null)
-    val backgroundImageBlur by repo.backgroundImageBlurFlow.collectAsState(initial = 0f)
-    val backgroundImageAlpha by repo.backgroundImageAlphaFlow.collectAsState(initial = 0.3f)
-    val followSystemDark by repo.followSystemDarkFlow.collectAsState(initial = true)
-    val forceDark by repo.forceDarkFlow.collectAsState(initial = false)
+    val backgroundImageUri by repo.backgroundImageUriFlow.collectAsStateWithLifecycle(initialValue = null)
+    val backgroundImageBlur by repo.backgroundImageBlurFlow.collectAsStateWithLifecycle(initialValue = 0f)
+    val backgroundImageAlpha by repo.backgroundImageAlphaFlow.collectAsStateWithLifecycle(initialValue = 0.3f)
+    val followSystemDark by repo.followSystemDarkFlow.collectAsStateWithLifecycle(initialValue = true)
+    val forceDark by repo.forceDarkFlow.collectAsStateWithLifecycle(initialValue = false)
     val systemDark = isSystemInDarkTheme()
     val isDarkTheme = when {
         forceDark -> true
@@ -225,13 +225,13 @@ fun StartupOnboardingScreen() {
     var showClearGitHubConfigDialog by remember { mutableStateOf(false) }
 
     val neteaseVm: NeteaseAuthViewModel = viewModel()
-    val neteaseState by neteaseVm.uiState.collectAsState()
+    val neteaseState by neteaseVm.uiState.collectAsStateWithLifecycle()
     val biliVm: BiliAuthViewModel = viewModel()
-    val biliState by biliVm.uiState.collectAsState()
+    val biliState by biliVm.uiState.collectAsStateWithLifecycle()
     val youTubeVm: YouTubeAuthViewModel = viewModel()
-    val youTubeState by youTubeVm.uiState.collectAsState()
+    val youTubeState by youTubeVm.uiState.collectAsStateWithLifecycle()
     val githubVm: GitHubSyncViewModel = viewModel()
-    val githubState by githubVm.uiState.collectAsState()
+    val githubState by githubVm.uiState.collectAsStateWithLifecycle()
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()

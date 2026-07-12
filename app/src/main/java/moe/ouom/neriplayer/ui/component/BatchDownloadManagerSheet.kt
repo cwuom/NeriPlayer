@@ -24,7 +24,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -33,6 +32,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.DownloadTask
 import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
@@ -49,8 +49,8 @@ fun BatchDownloadManagerSheet(
     progressSummaryText: String,
     onDismiss: () -> Unit
 ) {
-    val taskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
-    val activeDownloadOperations by GlobalDownloadManager.activeDownloadOperationsFlow.collectAsState()
+    val taskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsStateWithLifecycle()
+    val activeDownloadOperations by GlobalDownloadManager.activeDownloadOperationsFlow.collectAsStateWithLifecycle()
     val taskListPendingCount = remember(downloadTasks) {
         countPendingDownloadTasks(downloadTasks)
     }

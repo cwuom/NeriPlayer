@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.activity
+package moe.ouom.neriplayer.activity.auth
 
 import android.os.Handler
 import android.os.Looper

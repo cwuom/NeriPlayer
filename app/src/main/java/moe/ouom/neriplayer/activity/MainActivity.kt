@@ -76,7 +76,6 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -98,6 +97,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.CancellationException
@@ -111,6 +111,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.NeriPlayerApplication
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.activity.sync.GitHubSyncWarningRepository
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.AudioPlayerService
@@ -145,13 +146,6 @@ import moe.ouom.neriplayer.util.SafeModeManager
 import moe.ouom.neriplayer.util.lockPortraitIfPhone
 
 private enum class AppStage { Loading, Disclaimer, Onboarding, Main }
-
-private data class GitHubSyncWarningState(
-    val hasRepoInfo: Boolean,
-    val hasSyncHistory: Boolean,
-    val isConfigured: Boolean,
-    val isDismissed: Boolean
-)
 
 private data class PendingAudioServiceStart(
     val requestToken: Long,
@@ -216,6 +210,9 @@ class MainActivity : ComponentActivity() {
     private var hasWindowFocusForClipboardInspection = false
     private val listenTogetherStatusMessage = MutableStateFlow<String?>(null)
     private val listenTogetherStatusFlow = listenTogetherStatusMessage.asStateFlow()
+    private val gitHubSyncWarningRepository by lazy {
+        GitHubSyncWarningRepository(applicationContext)
+    }
     private var safeModeActive = false
 
     override fun attachBaseContext(newBase: Context) {
@@ -265,8 +262,10 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            val devModeEnabled by settingsRepository.devModeEnabledFlow.collectAsState(initial = false)
-            val alwaysRecordLogsEnabled by settingsRepository.alwaysRecordLogsEnabledFlow.collectAsState(initial = false)
+            val devModeEnabled by settingsRepository.devModeEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
+            val alwaysRecordLogsEnabled by settingsRepository.alwaysRecordLogsEnabledFlow.collectAsStateWithLifecycle(
+                initialValue = false
+            )
             LaunchedEffect(devModeEnabled, alwaysRecordLogsEnabled) {
                 // 日志初始化只在配置变更时更新，避免每次根组合重组都触发
                 NPLogger.init(
@@ -275,17 +274,20 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            val dynamicColor by settingsRepository.dynamicColorFlow.collectAsState(
-                initial = startupThemeSnapshot.dynamicColor
+            val dynamicColor by settingsRepository.dynamicColorFlow.collectAsStateWithLifecycle(
+                initialValue = startupThemeSnapshot.dynamicColor
             )
-            val forceDark by settingsRepository.forceDarkFlow.collectAsState(
-                initial = startupThemeSnapshot.forceDark
+            val forceDark by settingsRepository.forceDarkFlow.collectAsStateWithLifecycle(
+                initialValue = startupThemeSnapshot.forceDark
             )
-            val followSystemDark by settingsRepository.followSystemDarkFlow.collectAsState(
-                initial = startupThemeSnapshot.followSystemDark
+            val followSystemDark by settingsRepository.followSystemDarkFlow.collectAsStateWithLifecycle(
+                initialValue = startupThemeSnapshot.followSystemDark
             )
-            val disclaimerAcceptedNullable by settingsRepository.disclaimerAcceptedFlow.collectAsState(initial = null)
-            val startupOnboardingCompletedNullable by settingsRepository.startupOnboardingCompletedFlow.collectAsState(initial = null)
+            val disclaimerAcceptedNullable by settingsRepository.disclaimerAcceptedFlow.collectAsStateWithLifecycle(
+                initialValue = null
+            )
+            val startupOnboardingCompletedNullable by settingsRepository.startupOnboardingCompletedFlow
+                .collectAsStateWithLifecycle(initialValue = null)
 
             val themeMode = remember(forceDark, followSystemDark) {
                 ThemeMode.fromPreferenceFlags(
@@ -386,7 +388,7 @@ class MainActivity : ComponentActivity() {
                     false -> AppStage.Disclaimer
                 }
                 val pendingMobileDataDownloadInterruptionRequest by
-                    GlobalDownloadManager.mobileDataDownloadInterruptionRequest.collectAsState()
+                    GlobalDownloadManager.mobileDataDownloadInterruptionRequest.collectAsStateWithLifecycle()
                 val rootLifecycleOwner = LocalLifecycleOwner.current
                 var hasShownTokenWarning by rememberSaveable { mutableStateOf(false) }
                 var showTokenWarningDialog by rememberSaveable { mutableStateOf(false) }
@@ -414,7 +416,7 @@ class MainActivity : ComponentActivity() {
                         return@LaunchedEffect
                     }
                     rootLifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                        val warningState = loadGitHubSyncWarningState()
+                        val warningState = gitHubSyncWarningRepository.loadState()
                         val shouldWarn = (warningState.hasRepoInfo || warningState.hasSyncHistory) &&
                             !warningState.isConfigured &&
                             !hasShownTokenWarning &&
@@ -427,10 +429,7 @@ class MainActivity : ComponentActivity() {
                         } else if (warningState.isConfigured) {
                             hasShownTokenWarning = false
                             if (warningState.isDismissed) {
-                                withContext(Dispatchers.IO) {
-                                    moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
-                                        .setTokenWarningDismissed(false)
-                                }
+                                gitHubSyncWarningRepository.setDismissed(false)
                             }
                         }
                     }
@@ -483,10 +482,12 @@ class MainActivity : ComponentActivity() {
                             val lifecycleOwner = LocalLifecycleOwner.current
                             val scope = rememberCoroutineScope()
                             var joiningInvite by remember { mutableStateOf(false) }
-                            val pendingInvite by listenTogetherInviteFlow.collectAsState()
-                            val listenTogetherStatus by listenTogetherStatusFlow.collectAsState()
-                            val listenTogetherSessionState by AppContainer.listenTogetherSessionManager.sessionState.collectAsState()
-                            val listenTogetherRoomState by AppContainer.listenTogetherSessionManager.roomState.collectAsState()
+                            val pendingInvite by listenTogetherInviteFlow.collectAsStateWithLifecycle()
+                            val listenTogetherStatus by listenTogetherStatusFlow.collectAsStateWithLifecycle()
+                            val listenTogetherSessionState by AppContainer.listenTogetherSessionManager.sessionState
+                                .collectAsStateWithLifecycle()
+                            val listenTogetherRoomState by AppContainer.listenTogetherSessionManager.roomState
+                                .collectAsStateWithLifecycle()
                             val isListenTogetherRoomActive = !listenTogetherSessionState.roomId.isNullOrBlank()
                             var hadActiveListenTogetherRoom by rememberSaveable { mutableStateOf(false) }
                             var lastShownListenTogetherNotice by rememberSaveable { mutableStateOf<String?>(null) }
@@ -740,9 +741,8 @@ class MainActivity : ComponentActivity() {
                         },
                         onDismissReminder = {
                             showTokenWarningDialog = false
-                            startupScope.launch(Dispatchers.IO) {
-                                moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
-                                    .setTokenWarningDismissed(true)
+                            startupScope.launch {
+                                gitHubSyncWarningRepository.setDismissed(true)
                             }
                         }
                     )
@@ -1027,16 +1027,6 @@ class MainActivity : ComponentActivity() {
                 markMutation = false
             )
         }
-    }
-
-    private suspend fun loadGitHubSyncWarningState(): GitHubSyncWarningState = withContext(Dispatchers.IO) {
-        val storage = moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
-        GitHubSyncWarningState(
-            hasRepoInfo = !storage.getRepoOwner().isNullOrEmpty() || !storage.getRepoName().isNullOrEmpty(),
-            hasSyncHistory = storage.getLastSyncTime() > 0,
-            isConfigured = storage.isConfigured(),
-            isDismissed = storage.isTokenWarningDismissed()
-        )
     }
 
     private fun shouldOfferListenTogetherLeaveAction(message: String): Boolean {

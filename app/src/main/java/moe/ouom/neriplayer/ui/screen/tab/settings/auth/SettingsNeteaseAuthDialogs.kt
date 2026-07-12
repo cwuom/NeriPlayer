@@ -55,8 +55,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.activity.NeteaseQrLoginActivity
-import moe.ouom.neriplayer.activity.NeteaseWebLoginActivity
+import moe.ouom.neriplayer.activity.auth.NeteaseQrLoginActivity
+import moe.ouom.neriplayer.activity.auth.NeteaseWebLoginActivity
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.InlineMessage

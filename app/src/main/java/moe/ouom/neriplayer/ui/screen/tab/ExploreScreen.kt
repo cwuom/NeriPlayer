@@ -88,7 +88,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -110,6 +109,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -181,14 +181,16 @@ fun ExploreScreen(
             initializer { ExploreViewModel(context.applicationContext as Application) }
         }
     )
-    val ui by vm.uiState.collectAsState()
+    val ui by vm.uiState.collectAsStateWithLifecycle()
     var searchQuery by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
-    val backgroundImageUri by AppContainer.settingsRepo.backgroundImageUriFlow.collectAsState(initial = null)
+    val backgroundImageUri by AppContainer.settingsRepo.backgroundImageUriFlow.collectAsStateWithLifecycle(
+        initialValue = null
+    )
 
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
-    val allLocalPlaylists by repo.playlists.collectAsState(initial = emptyList())
+    val allLocalPlaylists by repo.playlists.collectAsStateWithLifecycle(initialValue = emptyList())
     val favoriteSongKeys = remember(allLocalPlaylists, context) {
         FavoritesPlaylist.firstOrNull(allLocalPlaylists, context)
             ?.songs
@@ -196,7 +198,7 @@ fun ExploreScreen(
             .mapTo(mutableSetOf()) { it.stableKey() }
     }
     val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
-    val favorites by favoriteRepo.favorites.collectAsState()
+    val favorites by favoriteRepo.favorites.collectAsStateWithLifecycle()
     val favoriteKeys = remember(favorites) {
         favorites.mapTo(mutableSetOf()) { "${it.source}:${it.id}" }
     }
@@ -212,7 +214,7 @@ fun ExploreScreen(
     var showExportSheet by remember { mutableStateOf(false) }
 
     val isInternational by AppContainer.settingsRepo.internationalizationEnabledFlow
-        .collectAsState(initial = false)
+        .collectAsStateWithLifecycle(initialValue = false)
     val orderedSearchSources = remember(isInternational) {
         if (isInternational) {
             listOf(

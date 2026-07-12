@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.SleepTimerMode
 import moe.ouom.neriplayer.R
@@ -44,7 +45,7 @@ import moe.ouom.neriplayer.R
 fun SleepTimerDialog(
     onDismiss: () -> Unit
 ) {
-    val timerState by PlayerManager.sleepTimerManager.timerState.collectAsState()
+    val timerState by PlayerManager.sleepTimerManager.timerState.collectAsStateWithLifecycle()
     var sliderValue by remember { mutableFloatStateOf(30f) }
 
     AlertDialog(

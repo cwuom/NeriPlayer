@@ -46,6 +46,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.countQueuedDownloadTasks
@@ -68,10 +69,10 @@ fun DownloadProgressScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
-    val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
-    val taskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
-    val activeDownloadOperations by GlobalDownloadManager.activeDownloadOperationsFlow.collectAsState()
+    val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsStateWithLifecycle()
+    val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsStateWithLifecycle()
+    val taskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsStateWithLifecycle()
+    val activeDownloadOperations by GlobalDownloadManager.activeDownloadOperationsFlow.collectAsStateWithLifecycle()
     val pendingTaskCount = taskSummary.pendingTaskCount
     val queuedTaskCount = taskSummary.queuedTaskCount
     val visibleBatchProgress = batchDownloadProgress?.takeIf { progress ->
