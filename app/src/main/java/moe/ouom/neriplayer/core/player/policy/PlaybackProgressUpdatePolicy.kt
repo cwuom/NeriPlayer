@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.core.player.policy
 
+internal const val PLAYBACK_PROGRESS_STARTUP_UPDATE_INTERVAL_MS = 80L
+internal const val PLAYBACK_PROGRESS_INTERACTIVE_UPDATE_INTERVAL_MS = 100L
+internal const val PLAYBACK_PROGRESS_BACKGROUND_UPDATE_INTERVAL_MS = 750L
+
 internal fun shouldRunPlaybackProgressUpdates(
     initialized: Boolean,
     pendingMediaLoad: Boolean,
@@ -27,6 +31,12 @@ internal fun resolvePlaybackProgressUpdateIntervalMs(
     playbackProgressAdvanceReported: Boolean,
     interactiveNowPlayingVisible: Boolean
 ): Long {
-    if (!playbackProgressAdvanceReported) return 80L
-    return if (interactiveNowPlayingVisible) 200L else 750L
+    if (!playbackProgressAdvanceReported) {
+        return PLAYBACK_PROGRESS_STARTUP_UPDATE_INTERVAL_MS
+    }
+    return if (interactiveNowPlayingVisible) {
+        PLAYBACK_PROGRESS_INTERACTIVE_UPDATE_INTERVAL_MS
+    } else {
+        PLAYBACK_PROGRESS_BACKGROUND_UPDATE_INTERVAL_MS
+    }
 }

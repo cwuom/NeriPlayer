@@ -66,7 +66,7 @@ class PlaybackProgressUpdatePolicyTest {
     @Test
     fun `progress cadence keeps startup high frequency before first advance`() {
         assertEquals(
-            80L,
+            PLAYBACK_PROGRESS_STARTUP_UPDATE_INTERVAL_MS,
             resolvePlaybackProgressUpdateIntervalMs(
                 playbackProgressAdvanceReported = false,
                 interactiveNowPlayingVisible = false
@@ -77,14 +77,15 @@ class PlaybackProgressUpdatePolicyTest {
     @Test
     fun `progress cadence slows down after startup according to visibility`() {
         assertEquals(
-            200L,
+            PLAYBACK_PROGRESS_INTERACTIVE_UPDATE_INTERVAL_MS,
             resolvePlaybackProgressUpdateIntervalMs(
                 playbackProgressAdvanceReported = true,
                 interactiveNowPlayingVisible = true
             )
         )
+        assertEquals(100L, PLAYBACK_PROGRESS_INTERACTIVE_UPDATE_INTERVAL_MS)
         assertEquals(
-            750L,
+            PLAYBACK_PROGRESS_BACKGROUND_UPDATE_INTERVAL_MS,
             resolvePlaybackProgressUpdateIntervalMs(
                 playbackProgressAdvanceReported = true,
                 interactiveNowPlayingVisible = false
