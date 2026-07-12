@@ -31,6 +31,8 @@ import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
@@ -61,6 +63,7 @@ data class FavoritePlaylist(
 class FavoritePlaylistRepository private constructor(private val context: Context) {
     private val gson = Gson()
     private val file = File(context.filesDir, "favorite_playlists.json")
+    private val mutex = Mutex()
 
     private val _snapshots = MutableStateFlow<List<FavoritePlaylist>>(emptyList())
     private val _favorites = MutableStateFlow<List<FavoritePlaylist>>(emptyList())
@@ -150,6 +153,7 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
         songs: List<SongItem>
     ) {
         withContext(Dispatchers.IO) {
+            mutex.withLock {
             val list = _snapshots.value.toMutableList()
             val existingIndex = list.indexOfFirst { it.id == id && it.source == source }
             val existing = list.getOrNull(existingIndex)
@@ -183,11 +187,13 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
             }
 
             publish(list)
+            }
         }
     }
 
     suspend fun removeFavorite(id: Long, source: String) {
         withContext(Dispatchers.IO) {
+            mutex.withLock {
             val list = _snapshots.value.toMutableList()
             val existingIndex = list.indexOfFirst { it.id == id && it.source == source }
             if (existingIndex == -1) {
@@ -211,6 +217,7 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
                 isDeleted = true
             )
             publish(list)
+            }
         }
     }
 
@@ -226,6 +233,7 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
         songs: List<SongItem>
     ) {
         withContext(Dispatchers.IO) {
+            mutex.withLock {
             val list = _snapshots.value.toMutableList()
             val existingIndex = list.indexOfFirst { it.id == id && it.source == source }
             if (existingIndex == -1) return@withContext
@@ -251,11 +259,13 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
                 isDeleted = false
             )
             publish(list)
+            }
         }
     }
 
     suspend fun reorderFavorites(newOrder: List<String>) {
         withContext(Dispatchers.IO) {
+            mutex.withLock {
             val currentVisible = _favorites.value
             if (currentVisible.isEmpty()) return@withContext
 
@@ -282,12 +292,15 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
                 reorderedByKey["${snapshot.source}:${snapshot.id}"] ?: snapshot
             }
             publish(updated)
+            }
         }
     }
 
     suspend fun replaceFavoritesFromSync(favorites: List<FavoritePlaylist>) {
         withContext(Dispatchers.IO) {
-            publish(favorites, triggerSync = false)
+            mutex.withLock {
+                publish(favorites, triggerSync = false)
+            }
         }
     }
 

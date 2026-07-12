@@ -103,6 +103,20 @@ import moe.ouom.neriplayer.util.SafeModeManager
 import moe.ouom.neriplayer.util.isOfflineModeNow
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
 
+private suspend inline fun <T> kotlinx.coroutines.flow.Flow<T>.collectSafely(
+    crossinline action: suspend (T) -> Unit
+) {
+    collect { value ->
+        try {
+            action(value)
+        } catch (_: kotlinx.coroutines.CancellationException) {
+            throw kotlinx.coroutines.CancellationException()
+        } catch (e: Throwable) {
+            NPLogger.e("NERI-APS", "Service collect error", e)
+        }
+    }
+}
+
 private data class PlaybackNotificationSnapshot(
     val songKey: String?,
     val title: String,
@@ -698,15 +712,15 @@ class AudioPlayerService : Service() {
         PlayerManager.initialize(application as Application)
 
         serviceScope.launch {
-            PlayerManager.currentSongFlow.collect {
+            PlayerManager.currentSongFlow.collectSafely {
                 if (it == null && !hasPlaybackSurfaceContent()) {
                     if (!hasReceivedStartCommand) {
-                        return@collect
+                        return@collectSafely
                     }
                     NPLogger.w("NERI-APS", "currentSongFlow requested self-stop because playback surface is empty")
                     stopForegroundIfStarted("playlist_became_empty")
                     stopSelf()
-                    return@collect
+                    return@collectSafely
                 }
                 updateMetadata()
                 updatePlaybackState(force = true)
@@ -716,67 +730,67 @@ class AudioPlayerService : Service() {
         }
         val listenTogetherSessionManager = AppContainer.listenTogetherSessionManager
         serviceScope.launch {
-            listenTogetherSessionManager.sessionState.collect {
+            listenTogetherSessionManager.sessionState.collectSafely {
                 handleListenTogetherServiceStateChanged("session")
             }
         }
         serviceScope.launch {
-            listenTogetherSessionManager.roomState.collect {
+            listenTogetherSessionManager.roomState.collectSafely {
                 handleListenTogetherServiceStateChanged("room")
             }
         }
         serviceScope.launch {
             GlobalDownloadManager.downloadPresenceVersion
-                .collect {
+                .collectSafely {
                     updateMetadata()
                     updateNotification()
                 }
         }
         serviceScope.launch {
-            PlayerManager.externalBluetoothLyricLineFlow.collect {
+            PlayerManager.externalBluetoothLyricLineFlow.collectSafely {
                 updateMetadata()
             }
         }
         serviceScope.launch {
-            PlayerManager.currentAudioDeviceFlow.collect {
+            PlayerManager.currentAudioDeviceFlow.collectSafely {
                 updateMetadata()
             }
         }
 
         serviceScope.launch {
-            PlayerManager.isPlayingFlow.collect {
+            PlayerManager.isPlayingFlow.collectSafely {
                 updatePlaybackState()
                 updateNotification()
                 updateUsbExclusiveServiceKeepAlive("is_playing")
             }
         }
         serviceScope.launch {
-            PlayerManager.playbackControlPlayingFlow.collect {
+            PlayerManager.playbackControlPlayingFlow.collectSafely {
                 updateNotification()
                 updateUsbExclusiveServiceKeepAlive("playback_control")
             }
         }
         serviceScope.launch {
-            PlayerManager.playWhenReadyFlow.collect {
+            PlayerManager.playWhenReadyFlow.collectSafely {
                 updatePlaybackState()
                 updateNotification()
                 updateUsbExclusiveServiceKeepAlive("play_when_ready")
             }
         }
         serviceScope.launch {
-            PlayerManager.playerPlaybackStateFlow.collect {
+            PlayerManager.playerPlaybackStateFlow.collectSafely {
                 updatePlaybackState()
                 updateNotification()
                 updateUsbExclusiveServiceKeepAlive("player_state")
             }
         }
         serviceScope.launch {
-            UsbExclusiveSessionController.state.collect {
+            UsbExclusiveSessionController.state.collectSafely {
                 updateUsbExclusiveServiceKeepAlive("usb_native_state")
             }
         }
         serviceScope.launch {
-            UsbExclusiveAudioPathTracker.state.collect {
+            UsbExclusiveAudioPathTracker.state.collectSafely {
                 updateUsbExclusiveServiceKeepAlive("usb_path_state")
             }
         }
@@ -786,24 +800,24 @@ class AudioPlayerService : Service() {
                     positionMs.coerceAtLeast(0L) / PLAYBACK_STATE_PROGRESS_BUCKET_MS
                 }
                 .distinctUntilChanged()
-                .collect {
+                .collectSafely {
                     updatePlaybackState()
                 }
         }
         serviceScope.launch {
-            PlayerManager.playbackSoundStateFlow.collect {
+            PlayerManager.playbackSoundStateFlow.collectSafely {
                 updatePlaybackState()
             }
         }
 
         serviceScope.launch {
-            PlayerManager.sleepTimerManager.timerState.collect {
+            PlayerManager.sleepTimerManager.timerState.collectSafely {
                 updateNotification()
             }
         }
 
         serviceScope.launch {
-            externalBluetoothLyricLineFlow.collect {
+            externalBluetoothLyricLineFlow.collectSafely {
                 if (statusBarLyricsEnable) {
                     updateNotification()
                 }

@@ -611,7 +611,7 @@ class ListenTogetherSessionManager(
                     applySoftDriftCorrection(
                         driftMs = syncPlan.driftMs,
                         signedDriftMs = syncPlan.signedDriftMs,
-                        allowSoftSync = false
+                        allowSoftSync = true
                     )
                 }
                 if (syncPlan.shouldIssuePlay) {
@@ -1804,6 +1804,11 @@ class ListenTogetherSessionManager(
             return
         }
         val attempt = reconnectAttempt + 1
+        if (attempt > MAX_RECONNECT_ATTEMPTS) {
+            NPLogger.w(TAG, "scheduleReconnect(): max attempts reached ($MAX_RECONNECT_ATTEMPTS), giving up, reason=$reason")
+            closeRoomLocally("reconnect_max_attempts_exceeded")
+            return
+        }
         val delayMs = reconnectDelayMs(attempt)
         reconnectAttempt = attempt
         NPLogger.w(
@@ -2626,14 +2631,18 @@ class ListenTogetherSessionManager(
                 "\"error\":\"not found in do\"" in normalized
         }
 
+        private const val MAX_RECONNECT_ATTEMPTS = 15
+
         private fun reconnectDelayMs(attempt: Int): Long {
-            return when (attempt) {
+            val baseMs = when (attempt) {
                 1 -> 1_500L
                 2 -> 3_000L
                 3 -> 5_000L
                 4 -> 8_000L
                 else -> 12_000L
             }
+            val jitter = (baseMs * 0.2 * (Math.random() * 2.0 - 1.0)).toLong()
+            return baseMs + jitter
         }
     }
 }

@@ -36,7 +36,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.drawable.toBitmap
 import coil.Coil
@@ -120,12 +123,14 @@ fun HyperBackground(
         }
     }
 
+    val lifecycleOwner = LocalLifecycleOwner.current
+
     val level by PlayerManager.audioLevelFlow.collectAsState(0f)
     val beat  by PlayerManager.beatImpulseFlow.collectAsState(0f)
     val currentLevel by rememberUpdatedState(level)
     val currentBeat by rememberUpdatedState(beat)
 
-    LaunchedEffect(painter, hostView, currentIsDark, coverUrl, refreshKey, offlineMode) {
+    LaunchedEffect(painter, hostView, currentIsDark, coverUrl, refreshKey, offlineMode, lifecycleOwner) {
         if (painter == null || hostView == null) return@LaunchedEffect
         val v = hostView!!
 
@@ -189,27 +194,29 @@ fun HyperBackground(
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            var startNs = 0L
-            var smoothLevel = 0f
-            var smoothBeat = 0f
-            while (isActive) {
-                withFrameNanos { t ->
-                    if (startNs == 0L) startNs = t
-                    val seconds = ((t - startNs) / 1_000_000_000.0).toFloat()
-                    painter.setAnimTime(seconds % 62.831852f)
+            lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                var startNs = 0L
+                var smoothLevel = 0f
+                var smoothBeat = 0f
+                while (isActive) {
+                    withFrameNanos { t ->
+                        if (startNs == 0L) startNs = t
+                        val seconds = ((t - startNs) / 1_000_000_000.0).toFloat()
+                        painter.setAnimTime(seconds % 62.831852f)
 
-                    val targetLevel = currentLevel.coerceIn(0f, 1f)
-                    val targetBeat = (currentBeat * 0.94f).coerceIn(0f, 1f)
-                    val levelRate = if (targetLevel > smoothLevel) 0.12f else 0.045f
-                    val beatRate = if (targetBeat > smoothBeat) 0.46f else 0.12f
-                    smoothLevel += (targetLevel - smoothLevel) * levelRate
-                    smoothBeat += (targetBeat - smoothBeat) * beatRate
-                    painter.setReactive(smoothLevel, smoothBeat)
+                        val targetLevel = currentLevel.coerceIn(0f, 1f)
+                        val targetBeat = (currentBeat * 0.94f).coerceIn(0f, 1f)
+                        val levelRate = if (targetLevel > smoothLevel) 0.12f else 0.045f
+                        val beatRate = if (targetBeat > smoothBeat) 0.46f else 0.12f
+                        smoothLevel += (targetLevel - smoothLevel) * levelRate
+                        smoothBeat += (targetBeat - smoothBeat) * beatRate
+                        painter.setReactive(smoothLevel, smoothBeat)
 
-                    val w = v.width; val h = v.height
-                    if (w > 0 && h > 0) painter.setResolution(w.toFloat(), h.toFloat())
-                    painter.updateMaterials()
-                    v.setRenderEffect(painter.renderEffect)
+                        val w = v.width; val h = v.height
+                        if (w > 0 && h > 0) painter.setResolution(w.toFloat(), h.toFloat())
+                        painter.updateMaterials()
+                        v.setRenderEffect(painter.renderEffect)
+                    }
                 }
             }
         }

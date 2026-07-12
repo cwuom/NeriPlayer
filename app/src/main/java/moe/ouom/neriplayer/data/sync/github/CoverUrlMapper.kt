@@ -40,7 +40,7 @@ class CoverUrlMapper private constructor(private val storageDir: File) {
     private val file: File = File(storageDir, "cover_url_mapping.json")
 
     // 本地地址 -> 网络地址的映射
-    private val mapping = mutableMapOf<String, String>()
+    private val mapping = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     init {
         loadFromDisk()

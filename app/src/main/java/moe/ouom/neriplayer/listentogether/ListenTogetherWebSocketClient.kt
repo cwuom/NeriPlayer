@@ -20,6 +20,7 @@ class ListenTogetherWebSocketClient(
 
     private var webSocket: WebSocket? = null
 
+    @Synchronized
     fun connect(
         wsUrl: String,
         listener: Listener
@@ -74,14 +75,17 @@ class ListenTogetherWebSocketClient(
         webSocket = activeSocket
     }
 
+    @Synchronized
     fun sendEvent(event: ListenTogetherEvent): Boolean {
         return webSocket?.send(json.encodeToString(event)) == true
     }
 
+    @Synchronized
     fun sendPing(): Boolean {
         return webSocket?.send("""{"type":"ping"}""") == true
     }
 
+    @Synchronized
     fun disconnect(code: Int = 1000, reason: String = "client_closed") {
         webSocket?.close(code, reason)
         webSocket = null
