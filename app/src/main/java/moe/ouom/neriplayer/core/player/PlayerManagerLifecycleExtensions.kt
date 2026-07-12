@@ -2874,94 +2874,94 @@ internal fun PlayerManager.releaseImpl() {
         clearActivePlaybackCandidates()
         StartupAudioFocusController.release("player_release")
 
-    try {
-        val audioManager: AudioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        audioDeviceCallback?.let { audioManager.unregisterAudioDeviceCallback(it) }
-    } catch (e: Exception) {
-        NPLogger.w("NERI-PlayerManager", "release(): unregisterAudioDeviceCallback failed", e)
-    }
-    audioDeviceCallback = null
+        try {
+            val audioManager: AudioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            audioDeviceCallback?.let { audioManager.unregisterAudioDeviceCallback(it) }
+        } catch (e: Exception) {
+            NPLogger.w("NERI-PlayerManager", "release(): unregisterAudioDeviceCallback failed", e)
+        }
+        audioDeviceCallback = null
 
-    stopProgressUpdates()
-    cancelVolumeFade(resetToFull = true)
-    clearAudioRouteMuteSuppression(reason = "release")
-    cancelPendingPauseRequest(resetVolumeToFull = true)
-    bluetoothDisconnectPauseJob?.cancel()
-    bluetoothDisconnectPauseJob = null
-    flushPlaybackStatsBlocking("release", stopTracking = true)
-    drainPlaybackStatsPersistJobBlocking("release")
-    playbackSoundPersistJob?.cancel()
-    playbackSoundPersistJob = null
-    usbAudioSinkReconfigureJob?.cancel()
-    usbAudioSinkReconfigureJob = null
-    usbExclusiveSystemAudioReleaseJob?.cancel()
-    usbExclusiveSystemAudioReleaseJob = null
-    usbExclusiveSystemAudioResumeJob?.cancel()
-    usbExclusiveSystemAudioResumeJob = null
-    usbExclusiveSystemAudioWatchdogJob?.cancel()
-    usbExclusiveSystemAudioWatchdogJob = null
-    usbExclusiveToggleTransitionJob?.cancel()
-    usbExclusiveToggleTransitionJob = null
-    usbExclusiveSystemAudioReleaseInProgress = false
-    usbExclusiveToggleTransitionActive = false
-    usbExclusiveToggleTransitionReason = ""
-    markUsbExclusivePlaybackPreparing(false, "player_release")
-    usbExclusiveRecoveryJob?.cancel()
-    usbExclusiveRecoveryJob = null
-    usbExclusiveForegroundRecoveryJob?.cancel()
-    usbExclusiveForegroundRecoveryJob = null
-    usbExclusiveBackgroundAuditJob?.cancel()
-    usbExclusiveBackgroundAuditJob = null
-    UsbExclusiveSessionController.forceStopAllSessions("player_release")
-    UsbExclusiveSystemSoundGuard.releaseWhenNativeIdle(application, "player_release")
-    playJob?.cancel()
-    playJob = null
-    lyriconUpdateJob?.cancel()
-    lyriconUpdateJob = null
-    externalBluetoothLyricsLoadJob?.cancel()
-    externalBluetoothLyricsLoadJob = null
-    externalBluetoothLyrics = emptyList()
-    floatingTranslatedLyrics = emptyList()
-    externalBluetoothLyricsSongKey = null
-    externalBluetoothLyricsEnabled = false
-    floatingLyricsEnabled = false
-    floatingLyricsShowTranslation = true
-    statusBarLyricsEnable = false
-    clearExternalBluetoothLyricLine()
-    FloatingLyricsOverlayManager.release()
-    LyriconManager.release()
+        stopProgressUpdates()
+        cancelVolumeFade(resetToFull = true)
+        clearAudioRouteMuteSuppression(reason = "release")
+        cancelPendingPauseRequest(resetVolumeToFull = true)
+        bluetoothDisconnectPauseJob?.cancel()
+        bluetoothDisconnectPauseJob = null
+        flushPlaybackStatsBlocking("release", stopTracking = true)
+        drainPlaybackStatsPersistJobBlocking("release")
+        playbackSoundPersistJob?.cancel()
+        playbackSoundPersistJob = null
+        usbAudioSinkReconfigureJob?.cancel()
+        usbAudioSinkReconfigureJob = null
+        usbExclusiveSystemAudioReleaseJob?.cancel()
+        usbExclusiveSystemAudioReleaseJob = null
+        usbExclusiveSystemAudioResumeJob?.cancel()
+        usbExclusiveSystemAudioResumeJob = null
+        usbExclusiveSystemAudioWatchdogJob?.cancel()
+        usbExclusiveSystemAudioWatchdogJob = null
+        usbExclusiveToggleTransitionJob?.cancel()
+        usbExclusiveToggleTransitionJob = null
+        usbExclusiveSystemAudioReleaseInProgress = false
+        usbExclusiveToggleTransitionActive = false
+        usbExclusiveToggleTransitionReason = ""
+        markUsbExclusivePlaybackPreparing(false, "player_release")
+        usbExclusiveRecoveryJob?.cancel()
+        usbExclusiveRecoveryJob = null
+        usbExclusiveForegroundRecoveryJob?.cancel()
+        usbExclusiveForegroundRecoveryJob = null
+        usbExclusiveBackgroundAuditJob?.cancel()
+        usbExclusiveBackgroundAuditJob = null
+        UsbExclusiveSessionController.forceStopAllSessions("player_release")
+        UsbExclusiveSystemSoundGuard.releaseWhenNativeIdle(application, "player_release")
+        playJob?.cancel()
+        playJob = null
+        lyriconUpdateJob?.cancel()
+        lyriconUpdateJob = null
+        externalBluetoothLyricsLoadJob?.cancel()
+        externalBluetoothLyricsLoadJob = null
+        externalBluetoothLyrics = emptyList()
+        floatingTranslatedLyrics = emptyList()
+        externalBluetoothLyricsSongKey = null
+        externalBluetoothLyricsEnabled = false
+        floatingLyricsEnabled = false
+        floatingLyricsShowTranslation = true
+        statusBarLyricsEnable = false
+        clearExternalBluetoothLyricLine()
+        FloatingLyricsOverlayManager.release()
+        LyriconManager.release()
 
-    if (isPlayerInitialized()) {
-        runCatching { player.stop() }
-        player.release()
-    }
-    _playbackSoundState.value = playbackEffectsController.release()
-    _playWhenReadyFlow.value = false
-    _playerPlaybackStateFlow.value = Player.STATE_IDLE
-    if (isCacheInitialized()) {
-        cache.release()
-    }
-    conditionalHttpFactory?.close()
-    conditionalHttpFactory = null
+        if (isPlayerInitialized()) {
+            runCatching { player.stop() }
+            player.release()
+        }
+        _playbackSoundState.value = playbackEffectsController.release()
+        _playWhenReadyFlow.value = false
+        _playerPlaybackStateFlow.value = Player.STATE_IDLE
+        if (isCacheInitialized()) {
+            cache.release()
+        }
+        conditionalHttpFactory?.close()
+        conditionalHttpFactory = null
 
-    mainScope.cancel()
-    ioScope.cancel()
+        mainScope.cancel()
+        ioScope.cancel()
 
-    _isPlayingFlow.value = false
-    _currentMediaUrl.value = null
-    _currentPlaybackAudioInfo.value = null
-    currentMediaUrlResolvedAtMs = 0L
-    setCurrentSongForPlayback(null)
-    _currentQueueFlow.value = emptyList()
-    clearPendingSeekPosition()
-    _playbackPositionMs.value = 0L
+        _isPlayingFlow.value = false
+        _currentMediaUrl.value = null
+        _currentPlaybackAudioInfo.value = null
+        currentMediaUrlResolvedAtMs = 0L
+        setCurrentSongForPlayback(null)
+        _currentQueueFlow.value = emptyList()
+        clearPendingSeekPosition()
+        _playbackPositionMs.value = 0L
 
-    currentPlaylist = emptyList()
-    currentIndex = -1
-    shuffleBag.clear()
-    shuffleHistory.clear()
-    shuffleFuture.clear()
-    consecutivePlayFailures = 0
+        currentPlaylist = emptyList()
+        currentIndex = -1
+        shuffleBag.clear()
+        shuffleHistory.clear()
+        shuffleFuture.clear()
+        consecutivePlayFailures = 0
 
         NPLogger.d("NERI-PlayerManager", "release(): completed")
     } finally {
