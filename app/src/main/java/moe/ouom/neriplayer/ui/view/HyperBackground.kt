@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.ui.view
 
 import android.os.Build
 import android.view.View
+import androidx.annotation.RequiresApi
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -71,13 +72,51 @@ private enum class DynamicBackgroundColorRole {
 private data class DynamicBackgroundPalette(
     val colors: FloatArray,
     val primaryColor: Int
-)
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as DynamicBackgroundPalette
+
+        if (primaryColor != other.primaryColor) return false
+        if (!colors.contentEquals(other.colors)) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = primaryColor
+        result = 31 * result + colors.contentHashCode()
+        return result
+    }
+}
 
 private data class DynamicBackgroundShaderPalette(
     val colors: FloatArray,
     val lightOffset: Float,
     val saturateOffset: Float
-)
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as DynamicBackgroundShaderPalette
+
+        if (lightOffset != other.lightOffset) return false
+        if (saturateOffset != other.saturateOffset) return false
+        if (!colors.contentEquals(other.colors)) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = lightOffset.hashCode()
+        result = 31 * result + saturateOffset.hashCode()
+        result = 31 * result + colors.contentHashCode()
+        return result
+    }
+}
 
 /**
  * 渲染 Hyper 背景
@@ -176,6 +215,7 @@ fun HyperBackground(
     }
 
     LaunchedEffect(painter, shaderInitialized, targetShaderPalette) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return@LaunchedEffect
         val target = targetShaderPalette ?: return@LaunchedEffect
         if (painter == null || !shaderInitialized) return@LaunchedEffect
         val applied = animateDynamicBackgroundPalette(
@@ -263,6 +303,7 @@ private fun buildDynamicBackgroundShaderPalette(
     )
 }
 
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
 private suspend fun animateDynamicBackgroundPalette(
     painter: BgEffectPainter,
     from: DynamicBackgroundShaderPalette?,
