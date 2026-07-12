@@ -487,10 +487,12 @@ private fun ensureAccentColor(color: Int, fallback: Int): Int {
 
     val fallbackHsl = FloatArray(3)
     ColorUtils.colorToHSL(fallback, fallbackHsl)
-    val resolvedHue = when {
-        hsl[1] > 0.04f -> hsl[0]
-        fallbackHsl[1] > 0.04f -> fallbackHsl[0]
-        else -> 320f
+    val resolvedHue = if (hsl[1] > 0.04f) {
+        hsl[0]
+    } else if (fallbackHsl[1] > 0.04f) {
+        fallbackHsl[0]
+    } else {
+        320f
     }
     hsl[0] = resolvedHue
     hsl[1] = 0.48f
