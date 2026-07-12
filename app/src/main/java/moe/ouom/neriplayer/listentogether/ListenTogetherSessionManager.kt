@@ -1108,7 +1108,7 @@ class ListenTogetherSessionManager(
         val snapshot = _sessionState.value
         if (!isCurrentUserController(snapshot)) return
         val requestSequence = message.requestSequence ?: 0L
-        if (requestSequence in 1 downTo lastHandledForwardedRequestSequence) {
+        if (requestSequence in 1..lastHandledForwardedRequestSequence) {
             NPLogger.d(
                 TAG,
                 "handleMemberControlRequested(): ignore duplicate/outdated requestSequence=$requestSequence, lastHandled=$lastHandledForwardedRequestSequence"

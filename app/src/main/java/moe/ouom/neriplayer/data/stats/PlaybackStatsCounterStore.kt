@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
 import moe.ouom.neriplayer.data.sync.github.SyncTrackStat
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.writeTextAtomically
 import java.io.File
 
 data class PlaybackStatsSyncCounterSnapshot(
@@ -160,7 +161,7 @@ internal class PlaybackStatsCounterStore(
             state = nextState
         }
         runCatching {
-            counterFile.writeText(gson.toJson(nextState))
+            counterFile.writeTextAtomically(gson.toJson(nextState))
         }.onFailure { error ->
             NPLogger.e("PlaybackStatsRepo", "Failed to persist stats counters", error)
         }

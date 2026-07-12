@@ -41,6 +41,7 @@ import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
+import moe.ouom.neriplayer.util.writeTextAtomically
 import moe.ouom.neriplayer.data.sync.github.SyncRecentPlayDeletion
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -110,7 +111,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
 
     private fun persistToDisk(list: List<PlayedEntry>) {
         runCatching {
-            file.writeText(gson.toJson(list))
+            file.writeTextAtomically(gson.toJson(list))
         }.onFailure { error ->
             NPLogger.e("PlayHistoryRepo", "Failed to persist play history", error)
         }

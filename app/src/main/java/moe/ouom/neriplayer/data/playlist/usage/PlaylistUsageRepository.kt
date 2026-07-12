@@ -38,6 +38,7 @@ import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.util.LanguageManager
+import moe.ouom.neriplayer.util.writeTextAtomically
 import java.io.File
 
 data class UsageEntry(
@@ -124,7 +125,7 @@ class PlaylistUsageRepository(private val app: Context) {
     }
 
     private fun saveAsync(list: List<UsageEntry>) {
-        scope.launch { runCatching { file.writeText(gson.toJson(list)) } }
+        scope.launch { runCatching { file.writeTextAtomically(gson.toJson(list)) } }
     }
 
     fun recordOpen(

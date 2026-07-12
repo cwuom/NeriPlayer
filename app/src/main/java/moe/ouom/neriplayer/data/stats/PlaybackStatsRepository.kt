@@ -21,6 +21,7 @@ import moe.ouom.neriplayer.data.sync.github.SyncTrackStat
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.writeTextAtomically
 import java.io.File
 
 data class TrackStat(
@@ -108,7 +109,7 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
 
     private fun persistToDisk(list: List<TrackStat>) {
         runCatching {
-            file.writeText(gson.toJson(list))
+            file.writeTextAtomically(gson.toJson(list))
         }.onFailure { error ->
             NPLogger.e("PlaybackStatsRepo", "Failed to persist stats", error)
         }
@@ -116,7 +117,7 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
 
     private fun persistDailyStatsToDisk(list: List<PlaybackStatBucket>) {
         runCatching {
-            dailyFile.writeText(gson.toJson(list))
+            dailyFile.writeTextAtomically(gson.toJson(list))
         }.onFailure { error ->
             NPLogger.e("PlaybackStatsRepo", "Failed to persist daily stats", error)
         }
@@ -124,7 +125,7 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
 
     private fun persistMetadata(clearedAt: Long) {
         runCatching {
-            metadataFile.writeText(gson.toJson(PlaybackStatsMetadata(clearedAt)))
+            metadataFile.writeTextAtomically(gson.toJson(PlaybackStatsMetadata(clearedAt)))
         }.onFailure { error ->
             NPLogger.e("PlaybackStatsRepo", "Failed to persist stats metadata", error)
         }

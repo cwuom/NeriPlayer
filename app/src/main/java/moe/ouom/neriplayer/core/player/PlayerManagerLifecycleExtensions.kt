@@ -2963,9 +2963,9 @@ internal fun PlayerManager.releaseImpl() {
     shuffleFuture.clear()
     consecutivePlayFailures = 0
 
-        initialized = false
         NPLogger.d("NERI-PlayerManager", "release(): completed")
     } finally {
+        initialized = false
         UsbExclusiveSessionController.emergencyShutdown("player_release_finally")
         UsbExclusiveSystemSoundGuard.forceRelease(application, "player_release_finally")
         StartupAudioFocusController.forceRelease("player_release_finally")

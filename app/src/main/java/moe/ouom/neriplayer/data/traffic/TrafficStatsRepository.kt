@@ -15,6 +15,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.stats.playbackStatsDayStartAt
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.writeTextAtomically
 import moe.ouom.neriplayer.util.currentTrafficNetworkType
 import java.io.File
 
@@ -130,7 +131,7 @@ class TrafficStatsRepository private constructor(
 
     private fun persistDailyStatsToDisk(list: List<TrafficStatsBucket>) {
         runCatching {
-            dailyFile.writeText(gson.toJson(list))
+            dailyFile.writeTextAtomically(gson.toJson(list))
         }.onFailure {
             NPLogger.e(TAG, "Failed to persist traffic stats", it)
         }
