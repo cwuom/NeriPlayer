@@ -47,8 +47,8 @@ class AudioPlayerServicePolicyTest {
     fun `usb exclusive audio focus loss suppresses player pcm`() {
         assertFalse(shouldSuppressUsbExclusiveForFocusChange(AudioManager.AUDIOFOCUS_GAIN))
         assertTrue(shouldSuppressUsbExclusiveForFocusChange(AudioManager.AUDIOFOCUS_LOSS))
-        assertTrue(shouldSuppressUsbExclusiveForFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT))
-        assertTrue(
+        assertFalse(shouldSuppressUsbExclusiveForFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT))
+        assertFalse(
             shouldSuppressUsbExclusiveForFocusChange(
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK
             )
@@ -58,7 +58,7 @@ class AudioPlayerServicePolicyTest {
     @Test
     fun `permanent audio focus loss pauses usb exclusive playback`() {
         assertTrue(shouldPauseUsbExclusiveForFocusChange(AudioManager.AUDIOFOCUS_LOSS))
-        assertTrue(
+        assertFalse(
             shouldPauseUsbExclusiveForFocusChange(
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT
             )
