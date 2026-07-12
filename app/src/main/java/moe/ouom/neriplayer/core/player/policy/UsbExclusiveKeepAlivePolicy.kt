@@ -4,6 +4,7 @@ internal enum class UsbExclusiveKeepAliveProgress {
     BASELINE,
     ADVANCED,
     COUNTER_RESET,
+    FAKE_PROGRESS,
     STALLED
 }
 
@@ -18,6 +19,12 @@ internal fun evaluateUsbExclusiveKeepAliveProgress(
     currentHandle: Long,
     previousCompletedFrames: Long,
     currentCompletedFrames: Long,
+    previousSignalBytes: Long = -1L,
+    currentSignalBytes: Long = -1L,
+    previousZeroFillBytes: Long = -1L,
+    currentZeroFillBytes: Long = -1L,
+    previousOutputPeak: Float = Float.NaN,
+    currentOutputPeak: Float = Float.NaN,
     previousStallTicks: Int,
     recoveryTicks: Int
 ): UsbExclusiveKeepAliveDecision {
@@ -42,6 +49,22 @@ internal fun evaluateUsbExclusiveKeepAliveProgress(
     }
 
     if (currentCompletedFrames > previousCompletedFrames) {
+        val signalKnown = previousSignalBytes >= 0L && currentSignalBytes >= previousSignalBytes
+        val zeroFillKnown =
+            previousZeroFillBytes >= 0L && currentZeroFillBytes >= previousZeroFillBytes
+        val signalAdvanced = signalKnown && currentSignalBytes > previousSignalBytes
+        val zeroFillAdvanced = zeroFillKnown && currentZeroFillBytes > previousZeroFillBytes
+        val peakKnown = !previousOutputPeak.isNaN() && !currentOutputPeak.isNaN()
+        val outputAudible = !peakKnown || currentOutputPeak > USB_EXCLUSIVE_SILENT_OUTPUT_PEAK_MAX
+        if (!signalAdvanced && zeroFillAdvanced && !outputAudible) {
+            val requiredTicks = recoveryTicks.coerceAtLeast(1)
+            val stallTicks = (previousStallTicks + 1).coerceAtMost(requiredTicks)
+            return UsbExclusiveKeepAliveDecision(
+                progress = UsbExclusiveKeepAliveProgress.FAKE_PROGRESS,
+                stallTicks = stallTicks,
+                shouldRecover = stallTicks >= requiredTicks
+            )
+        }
         return UsbExclusiveKeepAliveDecision(
             progress = UsbExclusiveKeepAliveProgress.ADVANCED,
             stallTicks = 0,
@@ -57,3 +80,5 @@ internal fun evaluateUsbExclusiveKeepAliveProgress(
         shouldRecover = stallTicks >= requiredTicks
     )
 }
+
+private const val USB_EXCLUSIVE_SILENT_OUTPUT_PEAK_MAX = 0.0001f

@@ -283,6 +283,8 @@ object PlayerManager {
     internal const val STARTUP_STALL_LOCAL_TIMEOUT_MS = 5_000L
     internal const val STARTUP_STALL_REMOTE_TIMEOUT_MS = 12_000L
     internal const val STARTUP_STALL_YOUTUBE_TIMEOUT_MS = 25_000L
+    internal const val STARTUP_STALL_READY_EARLY_TIMEOUT_MS = 5_000L
+    internal const val STARTUP_STALL_USB_EARLY_TIMEOUT_MS = 4_000L
     internal const val STARTUP_STALL_MAX_RECOVERY_ATTEMPTS = 3
     internal const val QUALITY_CHANGE_REFRESH_DEBOUNCE_MS = 0L
     internal const val MIN_FADE_STEPS = 4
@@ -613,6 +615,29 @@ object PlayerManager {
 
     internal fun markUsbExclusiveFocusDisrupted(change: Int) {
         markUsbExclusiveShortDisruption("audio_focus:$change")
+    }
+
+    internal fun pauseForUsbExclusiveFocusLoss(change: Int) {
+        if (!usbExclusivePlaybackEnabled || allowMixedPlaybackEnabled || !initialized) return
+        if (!isPlayerInitialized()) return
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainScope.launch { pauseForUsbExclusiveFocusLoss(change) }
+            return
+        }
+        if (!resumePlaybackRequested && !_playWhenReadyFlow.value && !_isPlayingFlow.value) {
+            return
+        }
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "pause USB exclusive playback after audio focus loss: change=$change " +
+                "playWhenReady=${_playWhenReadyFlow.value} isPlaying=${_isPlayingFlow.value}"
+        )
+        pauseImpl(
+            forcePersist = false,
+            commandSource = PlaybackCommandSource.REMOTE_SYNC,
+            allowFadeOut = false,
+            debugReason = "usb_focus_loss:$change"
+        )
     }
 
     fun markUsbExclusiveShortDisruption(reason: String) {
@@ -1512,6 +1537,32 @@ object PlayerManager {
         }
     }
 
+    internal fun flushPlaybackStatsAsyncImpl(
+        reason: String,
+        stopTracking: Boolean = false
+    ) {
+        if (!initialized) return
+        val currentSnapshot = synchronized(playbackStatsTracker) {
+            if (stopTracking) {
+                playbackStatsTracker.onPlayingChanged(false) ?: playbackStatsTracker.flushFinal()
+            } else {
+                playbackStatsTracker.flushFinal()
+            }
+        }
+        if (currentSnapshot != null) {
+            NPLogger.d(
+                "NERI-PlayerManager",
+                "flushPlaybackStatsAsync: reason=$reason, song=${currentSnapshot.song.name}, listenedMs=${currentSnapshot.listenedMs}, playCountIncrement=${currentSnapshot.playCountIncrement}"
+            )
+            persistPlaybackStatsSnapshotAsync(currentSnapshot)
+        }
+        if (stopTracking) {
+            synchronized(playbackStatsTracker) {
+                playbackStatsTracker.onSongChanged(null)
+            }
+        }
+    }
+
     /**
      */
     internal fun syncExoRepeatMode() {
@@ -1661,6 +1712,11 @@ object PlayerManager {
         reason: String,
         stopTracking: Boolean = false
     ) = flushPlaybackStatsBlockingImpl(reason, stopTracking)
+
+    internal fun flushPlaybackStatsAsync(
+        reason: String,
+        stopTracking: Boolean = false
+    ) = flushPlaybackStatsAsyncImpl(reason, stopTracking)
 
     fun playPlaylist(
         songs: List<SongItem>,

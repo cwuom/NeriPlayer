@@ -525,16 +525,26 @@ void RestorePreviousHandler(int signal_number) {
     sigaction(signal_number, &default_action, nullptr);
 }
 
+[[noreturn]] void ForwardSignalToPreviousHandler(int signal_number) {
+    RestorePreviousHandler(signal_number);
+
+    sigset_t unblocked_signals;
+    sigemptyset(&unblocked_signals);
+    sigaddset(&unblocked_signals, signal_number);
+    sigprocmask(SIG_UNBLOCK, &unblocked_signals, nullptr);
+
+    syscall(__NR_tgkill, getpid(), GetCurrentThreadId(), signal_number);
+    _exit(128 + signal_number);
+}
+
 void HandleSignal(int signal_number, siginfo_t* info, void* context) {
     if (g_handling_crash != 0) {
-        _exit(128 + signal_number);
+        ForwardSignalToPreviousHandler(signal_number);
     }
 
     g_handling_crash = 1;
     WriteSignalCrashLog(signal_number, info, context);
-    RestorePreviousHandler(signal_number);
-    raise(signal_number);
-    _exit(128 + signal_number);
+    ForwardSignalToPreviousHandler(signal_number);
 }
 
 void HandleTerminate() {

@@ -68,4 +68,25 @@ class UsbExclusiveKeepAlivePolicyTest {
         assertEquals(0, decision.stallTicks)
         assertFalse(decision.shouldRecover)
     }
+
+    @Test
+    fun `zero fill progress without signal advance is treated as fake progress`() {
+        val decision = evaluateUsbExclusiveKeepAliveProgress(
+            previousHandle = 7L,
+            currentHandle = 7L,
+            previousCompletedFrames = 500_000L,
+            currentCompletedFrames = 500_768L,
+            previousSignalBytes = 1_024L,
+            currentSignalBytes = 1_024L,
+            previousZeroFillBytes = 0L,
+            currentZeroFillBytes = 4_096L,
+            previousOutputPeak = 0f,
+            currentOutputPeak = 0f,
+            previousStallTicks = 0,
+            recoveryTicks = 1
+        )
+
+        assertEquals(UsbExclusiveKeepAliveProgress.FAKE_PROGRESS, decision.progress)
+        assertTrue(decision.shouldRecover)
+    }
 }

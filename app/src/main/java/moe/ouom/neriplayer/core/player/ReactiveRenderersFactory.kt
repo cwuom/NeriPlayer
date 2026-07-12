@@ -25,23 +25,17 @@ package moe.ouom.neriplayer.core.player
 
 
 import android.content.Context
-import android.os.Handler
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.decoder.ffmpeg.FfmpegAudioRenderer
 import androidx.media3.exoplayer.DefaultRenderersFactory
-import androidx.media3.exoplayer.Renderer
-import androidx.media3.exoplayer.audio.AudioRendererEventListener
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.TeeAudioProcessor
-import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
-import java.util.ArrayList
 
 /**
  * 自定义 RenderersFactory：
  * - 注入 TeeAudioProcessor 将 PCM 能量送入 AudioReactive，供可视化/背景特效使用
- * - 添加 FFMpeg 音频渲染器以支持更多音频编码
+ * - FFmpeg renderer 交给 Media3 扩展模式注册，避免抢在平台解码器前面
  */
 @UnstableApi
 class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(context) {
@@ -59,34 +53,5 @@ class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(conte
             .setEnableAudioTrackPlaybackParams(false)
             .build()
         return UsbExclusiveAudioSink(context.applicationContext, fallbackSink)
-    }
-
-    override fun buildAudioRenderers(
-        context: Context,
-        extensionRendererMode: Int,
-        mediaCodecSelector: MediaCodecSelector,
-        enableDecoderFallback: Boolean,
-        audioSink: AudioSink,
-        eventHandler: Handler,
-        eventListener: AudioRendererEventListener,
-        out: ArrayList<Renderer>
-    ) {
-        val ffmpegAudioRenderer = FfmpegAudioRenderer(
-            eventHandler,
-            eventListener,
-            audioSink
-        )
-        out.add(ffmpegAudioRenderer)
-
-        super.buildAudioRenderers(
-            context,
-            extensionRendererMode,
-            mediaCodecSelector,
-            enableDecoderFallback,
-            audioSink,
-            eventHandler,
-            eventListener,
-            out
-        )
     }
 }

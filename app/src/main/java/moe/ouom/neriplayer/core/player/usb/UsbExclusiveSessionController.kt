@@ -1445,6 +1445,7 @@ object UsbExclusiveSessionController {
             playerSignalFrames = metrics.playerSignalFrames ?: playerSignalFrames,
             playerSilentFrames = metrics.playerSilentFrames ?: playerSilentFrames,
             playerSignalBytes = metrics.playerSignalBytes ?: playerSignalBytes,
+            playerZeroFillBytes = metrics.playerZeroFillBytes ?: playerZeroFillBytes,
             outputPeak = metrics.outputPeak ?: outputPeak,
             lastOutputPeak = metrics.lastOutputPeak ?: lastOutputPeak
         )

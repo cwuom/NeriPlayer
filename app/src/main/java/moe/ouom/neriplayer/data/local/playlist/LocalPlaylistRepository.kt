@@ -33,6 +33,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
@@ -59,12 +61,24 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.Collections
 import java.util.Locale
 
-class LocalPlaylistRepository private constructor(private val context: Context) {
+class LocalPlaylistRepository private constructor(
+    private val context: Context,
+    private val file: File = File(context.filesDir, "local_playlists.json"),
+    private val normalizePlaylists: (List<LocalPlaylist>) -> List<LocalPlaylist> = { playlists ->
+        SystemLocalPlaylists.normalize(playlists, context)
+    },
+    private val autoSyncEnabled: Boolean = true
+) {
     private val gson = Gson()
-    private val file = File(context.filesDir, "local_playlists.json")
+    private val playlistCommitMutex = Mutex()
     private val syncStorage by lazy { SecureTokenStorage(context) }
     private val recentNeteaseLikedIds = Collections.synchronizedSet(mutableSetOf<Long>())
 
@@ -132,7 +146,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             emptyList()
         }
 
-        val normalized = SystemLocalPlaylists.normalize(loaded, context)
+        val normalized = normalizePlaylists(loaded)
         _playlists.value = normalized
         _playlistCount.value = normalized.size
         if (normalized != loaded) {
@@ -144,26 +158,72 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
         playlists: List<LocalPlaylist> = _playlists.value,
         triggerSync: Boolean = true
     ) {
-        runCatching {
+        val writeSucceeded = runCatching {
             val json = gson.toJson(playlists)
-            val parent = file.parentFile ?: context.filesDir
-            val tmp = File(parent, "${file.name}.tmp")
-            tmp.writeText(json)
-            if (!tmp.renameTo(file)) {
-                file.writeText(json)
-                tmp.delete()
-            }
+            writeTextAtomically(json)
         }.onFailure {
             NPLogger.e("LocalPlaylistRepo", "Failed to write playlists", it)
-        }
+        }.isSuccess
 
-        if (triggerSync) {
+        if (writeSucceeded && triggerSync && autoSyncEnabled) {
             triggerAutoSync()
         }
     }
 
-    private fun publish(playlists: List<LocalPlaylist>, triggerSync: Boolean = true) {
-        val normalized = SystemLocalPlaylists.normalize(playlists, context)
+    private fun writeTextAtomically(text: String) {
+        val parent = file.parentFile ?: context.filesDir
+        if (!parent.exists() && !parent.mkdirs()) {
+            throw IOException("Failed to create playlist storage directory: ${parent.absolutePath}")
+        }
+
+        val tmp = File.createTempFile("${file.name}.", ".tmp", parent)
+        try {
+            FileOutputStream(tmp).use { output ->
+                output.write(text.toByteArray(Charsets.UTF_8))
+                output.fd.sync()
+            }
+            moveIntoPlace(tmp, file)
+            fsyncDirectory(parent)
+        } catch (e: Exception) {
+            tmp.delete()
+            throw e
+        }
+    }
+
+    private fun moveIntoPlace(source: File, target: File) {
+        val sourcePath = source.toPath()
+        val targetPath = target.toPath()
+        try {
+            Files.move(
+                sourcePath,
+                targetPath,
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE
+            )
+            return
+        } catch (_: Exception) {
+            // 有些文件系统不支持 ATOMIC_MOVE，普通同目录替换仍然不会截断正式文件
+        }
+
+        Files.move(sourcePath, targetPath, StandardCopyOption.REPLACE_EXISTING)
+    }
+
+    private fun fsyncDirectory(directory: File) {
+        runCatching {
+            FileInputStream(directory).use { input ->
+                input.fd.sync()
+            }
+        }
+    }
+
+    private suspend fun <T> commitPlaylistMutation(block: () -> T): T {
+        return playlistCommitMutex.withLock {
+            block()
+        }
+    }
+
+    private fun publishLocked(playlists: List<LocalPlaylist>, triggerSync: Boolean = true) {
+        val normalized = normalizePlaylists(playlists)
         if (normalized == _playlists.value) {
             return
         }
@@ -370,15 +430,17 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
 
     suspend fun createPlaylist(name: String) {
         withContext(Dispatchers.IO) {
-            val list = _playlists.value.toMutableList()
-            list.add(
-                LocalPlaylist(
-                    id = nextPlaylistId(list),
-                    name = sanitizePlaylistName(name),
-                    modifiedAt = System.currentTimeMillis()
+            commitPlaylistMutation {
+                val list = _playlists.value.toMutableList()
+                list.add(
+                    LocalPlaylist(
+                        id = nextPlaylistId(list),
+                        name = sanitizePlaylistName(name),
+                        modifiedAt = System.currentTimeMillis()
+                    )
                 )
-            )
-            publish(list)
+                publishLocked(list)
+            }
         }
     }
 
@@ -408,7 +470,6 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
         hydrateLocalMetadata: Boolean
     ): LocalPlaylist {
         return withContext(Dispatchers.IO) {
-            val list = _playlists.value.toMutableList()
             val now = System.currentTimeMillis()
             val distinctSongs = distinctPlaylistSongs(
                 stampSongsForPlaylistInsert(
@@ -416,15 +477,18 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
                     addedAt = now
                 )
             )
-            val playlist = LocalPlaylist(
-                id = nextPlaylistId(list),
-                name = sanitizePlaylistName(name),
-                songs = distinctSongs,
-                modifiedAt = now
-            )
-            list.add(playlist)
-            publish(list)
-            playlist
+            commitPlaylistMutation {
+                val list = _playlists.value.toMutableList()
+                val playlist = LocalPlaylist(
+                    id = nextPlaylistId(list),
+                    name = sanitizePlaylistName(name),
+                    songs = distinctSongs,
+                    modifiedAt = now
+                )
+                list.add(playlist)
+                publishLocked(list)
+                playlist
+            }
         }
     }
 
@@ -435,56 +499,62 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
                 songs = hydrateLocalSongsForPersistence(listOf(song)),
                 addedAt = now
             ).first()
-            val list = _playlists.value.toMutableList()
-            val index = list.indexOfFirst { FavoritesPlaylist.isSystemPlaylist(it, context) }
-            if (index == -1) return@withContext
+            commitPlaylistMutation {
+                val list = _playlists.value.toMutableList()
+                val index = list.indexOfFirst { FavoritesPlaylist.isSystemPlaylist(it, context) }
+                if (index == -1) return@commitPlaylistMutation
 
-            val favorites = list[index]
-            if (hasExistingSong(favorites.songs, hydratedSong)) return@withContext
+                val favorites = list[index]
+                if (hasExistingSong(favorites.songs, hydratedSong)) return@commitPlaylistMutation
 
-            clearPlaylistSongDeletions(favorites.id, listOf(hydratedSong))
-            list[index] = favorites.copy(
-                songs = (favorites.songs + hydratedSong).toMutableList(),
-                modifiedAt = now
-            )
-            publish(list)
+                clearPlaylistSongDeletions(favorites.id, listOf(hydratedSong))
+                list[index] = favorites.copy(
+                    songs = (favorites.songs + hydratedSong).toMutableList(),
+                    modifiedAt = now
+                )
+                publishLocked(list)
+            }
         }
     }
 
     suspend fun removeFromFavorites(song: SongItem) {
         withContext(Dispatchers.IO) {
-            val list = _playlists.value.toMutableList()
-            val index = list.indexOfFirst { FavoritesPlaylist.isSystemPlaylist(it, context) }
-            if (index == -1) return@withContext
+            commitPlaylistMutation {
+                val list = _playlists.value.toMutableList()
+                val index = list.indexOfFirst { FavoritesPlaylist.isSystemPlaylist(it, context) }
+                if (index == -1) return@commitPlaylistMutation
 
-            val favorites = list[index]
-            val removedSongs = favorites.songs.filter { it.sameIdentityAs(song) }
-            val updatedSongs = favorites.songs.filterNot { it.sameIdentityAs(song) }.toMutableList()
-            if (updatedSongs.size == favorites.songs.size) return@withContext
+                val favorites = list[index]
+                val removedSongs = favorites.songs.filter { it.sameIdentityAs(song) }
+                val updatedSongs = favorites.songs.filterNot { it.sameIdentityAs(song) }.toMutableList()
+                if (updatedSongs.size == favorites.songs.size) return@commitPlaylistMutation
 
-            val deletedAt = System.currentTimeMillis()
-            recordPlaylistSongDeletions(favorites.id, removedSongs, deletedAt)
-            list[index] = favorites.copy(
-                songs = updatedSongs,
-                modifiedAt = deletedAt
-            )
-            publish(list)
+                val deletedAt = System.currentTimeMillis()
+                recordPlaylistSongDeletions(favorites.id, removedSongs, deletedAt)
+                list[index] = favorites.copy(
+                    songs = updatedSongs,
+                    modifiedAt = deletedAt
+                )
+                publishLocked(list)
+            }
         }
     }
 
     suspend fun renamePlaylist(playlistId: Long, newName: String) {
         withContext(Dispatchers.IO) {
-            val updated = _playlists.value.map { playlist ->
-                if (playlist.id != playlistId || SystemLocalPlaylists.isSystemPlaylist(playlist, context)) {
-                    playlist
-                } else {
-                    playlist.copy(
-                        name = sanitizePlaylistName(newName, excludedPlaylistId = playlistId),
-                        modifiedAt = System.currentTimeMillis()
-                    )
+            commitPlaylistMutation {
+                val updated = _playlists.value.map { playlist ->
+                    if (playlist.id != playlistId || SystemLocalPlaylists.isSystemPlaylist(playlist, context)) {
+                        playlist
+                    } else {
+                        playlist.copy(
+                            name = sanitizePlaylistName(newName, excludedPlaylistId = playlistId),
+                            modifiedAt = System.currentTimeMillis()
+                        )
+                    }
                 }
+                publishLocked(updated)
             }
-            publish(updated)
         }
     }
 
@@ -492,107 +562,122 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
         withContext(Dispatchers.IO) {
             if (songs.isEmpty()) return@withContext
             val toRemove = songSet(songs)
-            val updated = _playlists.value.map { playlist ->
-                if (playlist.id != playlistId) return@map playlist
-                val removedSongs = playlist.songs.filter { it.identity() in toRemove }
-                val filtered = playlist.songs.filterNot { it.identity() in toRemove }.toMutableList()
-                if (filtered.size == playlist.songs.size) {
-                    playlist
-                } else {
-                    val deletedAt = System.currentTimeMillis()
-                    recordPlaylistSongDeletions(playlist.id, removedSongs, deletedAt)
-                    playlist.copy(songs = filtered, modifiedAt = deletedAt)
+            commitPlaylistMutation {
+                val updated = _playlists.value.map { playlist ->
+                    if (playlist.id != playlistId) return@map playlist
+                    val removedSongs = playlist.songs.filter { it.identity() in toRemove }
+                    val filtered = playlist.songs.filterNot { it.identity() in toRemove }.toMutableList()
+                    if (filtered.size == playlist.songs.size) {
+                        playlist
+                    } else {
+                        val deletedAt = System.currentTimeMillis()
+                        recordPlaylistSongDeletions(playlist.id, removedSongs, deletedAt)
+                        playlist.copy(songs = filtered, modifiedAt = deletedAt)
+                    }
                 }
+                publishLocked(updated)
             }
-            publish(updated)
         }
     }
 
     suspend fun clearPlaylistSongs(playlistId: Long) {
         withContext(Dispatchers.IO) {
-            var changed = false
-            val updated = _playlists.value.map { playlist ->
-                if (playlist.id != playlistId || playlist.songs.isEmpty()) {
-                    return@map playlist
+            commitPlaylistMutation {
+                var changed = false
+                val updated = _playlists.value.map { playlist ->
+                    if (playlist.id != playlistId || playlist.songs.isEmpty()) {
+                        return@map playlist
+                    }
+                    changed = true
+                    val deletedAt = System.currentTimeMillis()
+                    recordPlaylistSongDeletions(playlist.id, playlist.songs, deletedAt)
+                    playlist.copy(
+                        songs = mutableListOf(),
+                        modifiedAt = deletedAt
+                    )
                 }
-                changed = true
-                val deletedAt = System.currentTimeMillis()
-                recordPlaylistSongDeletions(playlist.id, playlist.songs, deletedAt)
-                playlist.copy(
-                    songs = mutableListOf(),
-                    modifiedAt = deletedAt
-                )
+                if (!changed) return@commitPlaylistMutation
+                publishLocked(updated)
             }
-            if (!changed) return@withContext
-            publish(updated)
         }
     }
 
     suspend fun removeSongsFromPlaylistById(playlistId: Long, songIds: List<Long>) {
         withContext(Dispatchers.IO) {
             if (songIds.isEmpty()) return@withContext
-            val updated = _playlists.value.map { playlist ->
-                if (playlist.id != playlistId) return@map playlist
-                val removedSongs = playlist.songs.filter { it.id in songIds }
-                val filtered = playlist.songs.filterNot { it.id in songIds }.toMutableList()
-                if (filtered.size == playlist.songs.size) {
-                    return@map playlist
+            commitPlaylistMutation {
+                val updated = _playlists.value.map { playlist ->
+                    if (playlist.id != playlistId) return@map playlist
+                    val removedSongs = playlist.songs.filter { it.id in songIds }
+                    val filtered = playlist.songs.filterNot { it.id in songIds }.toMutableList()
+                    if (filtered.size == playlist.songs.size) {
+                        return@map playlist
+                    }
+                    val deletedAt = System.currentTimeMillis()
+                    recordPlaylistSongDeletions(playlist.id, removedSongs, deletedAt)
+                    playlist.copy(songs = filtered, modifiedAt = deletedAt)
                 }
-                val deletedAt = System.currentTimeMillis()
-                recordPlaylistSongDeletions(playlist.id, removedSongs, deletedAt)
-                playlist.copy(songs = filtered, modifiedAt = deletedAt)
+                publishLocked(updated)
             }
-            publish(updated)
         }
     }
 
     suspend fun deletePlaylist(playlistId: Long): Boolean {
         return withContext(Dispatchers.IO) {
-            val playlist = _playlists.value.firstOrNull { it.id == playlistId } ?: return@withContext false
-            if (SystemLocalPlaylists.isSystemPlaylist(playlist, context)) return@withContext false
+            commitPlaylistMutation {
+                val playlist = _playlists.value.firstOrNull { it.id == playlistId }
+                    ?: return@commitPlaylistMutation false
+                if (SystemLocalPlaylists.isSystemPlaylist(playlist, context)) {
+                    return@commitPlaylistMutation false
+                }
 
-            val updated = _playlists.value.filterNot { it.id == playlistId }
-            runCatching {
-                syncStorage.addDeletedPlaylistId(playlistId)
-                clearPlaylistSongDeletions(playlistId)
-            }.onFailure {
-                NPLogger.e("LocalPlaylistRepo", "Failed to track deleted playlist", it)
+                val updated = _playlists.value.filterNot { it.id == playlistId }
+                runCatching {
+                    syncStorage.addDeletedPlaylistId(playlistId)
+                    clearPlaylistSongDeletions(playlistId)
+                }.onFailure {
+                    NPLogger.e("LocalPlaylistRepo", "Failed to track deleted playlist", it)
+                }
+                publishLocked(updated)
+                true
             }
-            publish(updated)
-            true
         }
     }
 
     suspend fun moveSong(playlistId: Long, fromIndex: Int, toIndex: Int) {
         withContext(Dispatchers.IO) {
-            val updated = _playlists.value.map { playlist ->
-                if (playlist.id != playlistId) return@map playlist
-                if (fromIndex !in playlist.songs.indices || toIndex !in playlist.songs.indices) return@map playlist
+            commitPlaylistMutation {
+                val updated = _playlists.value.map { playlist ->
+                    if (playlist.id != playlistId) return@map playlist
+                    if (fromIndex !in playlist.songs.indices || toIndex !in playlist.songs.indices) return@map playlist
 
-                val songs = playlist.songs.toMutableList().apply {
-                    val song = removeAt(fromIndex)
-                    add(toIndex, song)
+                    val songs = playlist.songs.toMutableList().apply {
+                        val song = removeAt(fromIndex)
+                        add(toIndex, song)
+                    }
+                    playlist.copy(songs = songs, modifiedAt = System.currentTimeMillis())
                 }
-                playlist.copy(songs = songs, modifiedAt = System.currentTimeMillis())
+                publishLocked(updated)
             }
-            publish(updated)
         }
     }
 
     suspend fun reorderSongs(playlistId: Long, newOrder: List<SongIdentity>) {
         withContext(Dispatchers.IO) {
-            val updated = _playlists.value.map { playlist ->
-                if (playlist.id != playlistId) return@map playlist
-                val byIdentity = playlist.songs.associateBy { it.identity() }
-                val ordered = newOrder.mapNotNull { byIdentity[it] }.toMutableList()
-                playlist.songs.forEach { song ->
-                    if (ordered.none { it.sameIdentityAs(song) }) {
-                        ordered += song
+            commitPlaylistMutation {
+                val updated = _playlists.value.map { playlist ->
+                    if (playlist.id != playlistId) return@map playlist
+                    val byIdentity = playlist.songs.associateBy { it.identity() }
+                    val ordered = newOrder.mapNotNull { byIdentity[it] }.toMutableList()
+                    playlist.songs.forEach { song ->
+                        if (ordered.none { it.sameIdentityAs(song) }) {
+                            ordered += song
+                        }
                     }
+                    playlist.copy(songs = ordered, modifiedAt = System.currentTimeMillis())
                 }
-                playlist.copy(songs = ordered, modifiedAt = System.currentTimeMillis())
+                publishLocked(updated)
             }
-            publish(updated)
         }
     }
 
@@ -636,28 +721,42 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
                 songs = hydrateLocalSongsForPersistence(songs, hydrateLocalMetadata),
                 addedAt = now
             )
-            var addedCount = 0
-            val updated = _playlists.value.map { playlist ->
-                if (playlist.id != playlistId) return@map playlist
-                if (isLocalFilesPlaylist(playlist.id, playlist.name)) {
-                    return@map playlist
-                }
-
-                val toAdd = filterNewSongs(playlist.songs, hydratedSongs)
-                if (toAdd.isEmpty()) {
-                    playlist
-                } else {
-                    addedCount += toAdd.size
-                    clearPlaylistSongDeletions(playlist.id, toAdd)
-                    playlist.copy(
-                        songs = (playlist.songs + toAdd).toMutableList(),
-                        modifiedAt = now
-                    )
-                }
+            commitPlaylistMutation {
+                addStampedSongsToPlaylistLocked(playlistId, hydratedSongs, now)
             }
-            publish(updated)
-            addedCount
         }
+    }
+
+    private fun addStampedSongsToPlaylistLocked(
+        playlistId: Long,
+        songs: List<SongItem>,
+        now: Long
+    ): Int {
+        if (songs.isEmpty()) {
+            return 0
+        }
+
+        var addedCount = 0
+        val updated = _playlists.value.map { playlist ->
+            if (playlist.id != playlistId) return@map playlist
+            if (isLocalFilesPlaylist(playlist.id, playlist.name)) {
+                return@map playlist
+            }
+
+            val toAdd = filterNewSongs(playlist.songs, songs)
+            if (toAdd.isEmpty()) {
+                playlist
+            } else {
+                addedCount += toAdd.size
+                clearPlaylistSongDeletions(playlist.id, toAdd)
+                playlist.copy(
+                    songs = (playlist.songs + toAdd).toMutableList(),
+                    modifiedAt = now
+                )
+            }
+        }
+        publishLocked(updated)
+        return addedCount
     }
 
     suspend fun syncLocalFilesPlaylist(
@@ -669,31 +768,33 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
                 songs = hydrateLocalSongsForPersistence(songs),
                 includeLocalMetadataFallback = true
             )
-            val currentLocalFiles = LocalFilesPlaylist.firstOrNull(_playlists.value, context)
-            if (
-                normalizedSongs.isEmpty() &&
-                !allowEmptyReplacement &&
-                currentLocalFiles?.songs?.isNotEmpty() == true
-            ) {
-                NPLogger.w(
-                    "LocalPlaylistRepo",
-                    "Skip replacing Local Files playlist with empty scan result"
-                )
-                return@withContext false
-            }
-
-            val updated = _playlists.value.map { playlist ->
-                if (!isLocalFilesPlaylist(playlist.id, playlist.name)) {
-                    playlist
-                } else {
-                    playlist.copy(
-                        songs = normalizedSongs,
-                        modifiedAt = System.currentTimeMillis()
+            commitPlaylistMutation {
+                val currentLocalFiles = LocalFilesPlaylist.firstOrNull(_playlists.value, context)
+                if (
+                    normalizedSongs.isEmpty() &&
+                    !allowEmptyReplacement &&
+                    currentLocalFiles?.songs?.isNotEmpty() == true
+                ) {
+                    NPLogger.w(
+                        "LocalPlaylistRepo",
+                        "Skip replacing Local Files playlist with empty scan result"
                     )
+                    return@commitPlaylistMutation false
                 }
+
+                val updated = _playlists.value.map { playlist ->
+                    if (!isLocalFilesPlaylist(playlist.id, playlist.name)) {
+                        playlist
+                    } else {
+                        playlist.copy(
+                            songs = normalizedSongs,
+                            modifiedAt = System.currentTimeMillis()
+                        )
+                    }
+                }
+                publishLocked(updated)
+                true
             }
-            publish(updated)
-            true
         }
     }
 
@@ -726,29 +827,31 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
                 songs = hydrateLocalSongsForPersistence(songs, hydrateLocalMetadata),
                 addedAt = now
             )
-            var addedCount = 0
-            val updated = _playlists.value.map { playlist ->
-                if (!isLocalFilesPlaylist(playlist.id, playlist.name)) {
-                    return@map playlist
-                }
+            commitPlaylistMutation {
+                var addedCount = 0
+                val updated = _playlists.value.map { playlist ->
+                    if (!isLocalFilesPlaylist(playlist.id, playlist.name)) {
+                        return@map playlist
+                    }
 
-                val toAdd = filterNewSongs(
-                    existingSongs = playlist.songs,
-                    candidates = hydratedSongs,
-                    includeLocalMetadataFallback = true
-                )
-                if (toAdd.isEmpty()) {
-                    playlist
-                } else {
-                    addedCount += toAdd.size
-                    playlist.copy(
-                        songs = (playlist.songs + toAdd).toMutableList(),
-                        modifiedAt = now
+                    val toAdd = filterNewSongs(
+                        existingSongs = playlist.songs,
+                        candidates = hydratedSongs,
+                        includeLocalMetadataFallback = true
                     )
+                    if (toAdd.isEmpty()) {
+                        playlist
+                    } else {
+                        addedCount += toAdd.size
+                        playlist.copy(
+                            songs = (playlist.songs + toAdd).toMutableList(),
+                            modifiedAt = now
+                        )
+                    }
                 }
+                publishLocked(updated)
+                addedCount
             }
-            publish(updated)
-            addedCount
         }
     }
 
@@ -808,85 +911,99 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
 
     suspend fun exportSongsToPlaylistByIdentity(sourcePlaylistId: Long, targetPlaylistId: Long, songs: List<SongItem>) {
         withContext(Dispatchers.IO) {
-            val source = _playlists.value.firstOrNull { it.id == sourcePlaylistId } ?: return@withContext
             val wanted = songSet(songs)
-            val inSourceOrder = source.songs.filter { it.identity() in wanted }
-            addSongsToPlaylist(targetPlaylistId, inSourceOrder)
+            val now = System.currentTimeMillis()
+            commitPlaylistMutation {
+                val source = _playlists.value.firstOrNull { it.id == sourcePlaylistId }
+                    ?: return@commitPlaylistMutation
+                val inSourceOrder = source.songs.filter { it.identity() in wanted }
+                val stampedSongs = stampSongsForPlaylistInsert(inSourceOrder, now)
+                addStampedSongsToPlaylistLocked(targetPlaylistId, stampedSongs, now)
+            }
         }
     }
 
     suspend fun exportSongsToPlaylistById(sourcePlaylistId: Long, targetPlaylistId: Long, songIds: List<Long>) {
         withContext(Dispatchers.IO) {
-            val source = _playlists.value.firstOrNull { it.id == sourcePlaylistId } ?: return@withContext
-            val inSourceOrder = source.songs.filter { it.id in songIds }
-            addSongsToPlaylist(targetPlaylistId, inSourceOrder)
+            val now = System.currentTimeMillis()
+            commitPlaylistMutation {
+                val source = _playlists.value.firstOrNull { it.id == sourcePlaylistId }
+                    ?: return@commitPlaylistMutation
+                val inSourceOrder = source.songs.filter { it.id in songIds }
+                val stampedSongs = stampSongsForPlaylistInsert(inSourceOrder, now)
+                addStampedSongsToPlaylistLocked(targetPlaylistId, stampedSongs, now)
+            }
         }
     }
 
     suspend fun updateSongMetadata(originalSong: SongItem, newSongInfo: SongItem) {
         withContext(Dispatchers.IO) {
-            var changed = false
-            val updated = _playlists.value.map { playlist ->
-                val songIndex = playlist.songs.indexOfFirst { it.sameIdentityAs(originalSong) }
-                if (songIndex == -1) {
-                    playlist
-                } else {
-                    val mergedSongInfo = mergeSongMetadataForPersistence(
-                        currentSong = playlist.songs[songIndex],
-                        newSongInfo = newSongInfo
-                    )
-                    if (playlist.songs[songIndex] == mergedSongInfo) {
-                        return@map playlist
+            commitPlaylistMutation {
+                var changed = false
+                val updated = _playlists.value.map { playlist ->
+                    val songIndex = playlist.songs.indexOfFirst { it.sameIdentityAs(originalSong) }
+                    if (songIndex == -1) {
+                        playlist
+                    } else {
+                        val mergedSongInfo = mergeSongMetadataForPersistence(
+                            currentSong = playlist.songs[songIndex],
+                            newSongInfo = newSongInfo
+                        )
+                        if (playlist.songs[songIndex] == mergedSongInfo) {
+                            return@map playlist
+                        }
+                        saveCoverMapping(mergedSongInfo)
+                        val songs = playlist.songs.toMutableList()
+                        songs[songIndex] = mergedSongInfo
+                        changed = true
+                        playlist.copy(songs = songs)
                     }
-                    saveCoverMapping(mergedSongInfo)
-                    val songs = playlist.songs.toMutableList()
-                    songs[songIndex] = mergedSongInfo
-                    changed = true
-                    playlist.copy(songs = songs)
                 }
+                if (!changed) {
+                    return@commitPlaylistMutation
+                }
+                // 播放期自动补 metadata 只需要把本地视图写稳，不该顺手唤醒整条云同步链
+                publishLocked(updated, triggerSync = false)
             }
-            if (!changed) {
-                return@withContext
-            }
-            // 播放期自动补 metadata 只需要把本地视图写稳，不该顺手唤醒整条云同步链
-            publish(updated, triggerSync = false)
         }
     }
 
-    private fun applySongMetadataUpdates(updates: List<Pair<SongItem, SongItem>>) {
+    private suspend fun applySongMetadataUpdates(updates: List<Pair<SongItem, SongItem>>) {
         if (updates.isEmpty()) {
             return
         }
 
-        val updateIndex = SongMetadataUpdateIndex(updates)
-        var changed = false
-        val updated = _playlists.value.map { playlist ->
-            var playlistChanged = false
-            val refreshedSongs = playlist.songs.map { currentSong ->
-                val newSongInfo = updateIndex.find(currentSong) ?: return@map currentSong
-                val mergedSongInfo = mergeSongMetadataForPersistence(
-                    currentSong = currentSong,
-                    newSongInfo = newSongInfo
-                )
-                if (currentSong == mergedSongInfo) {
-                    currentSong
+        commitPlaylistMutation {
+            val updateIndex = SongMetadataUpdateIndex(updates)
+            var changed = false
+            val updated = _playlists.value.map { playlist ->
+                var playlistChanged = false
+                val refreshedSongs = playlist.songs.map { currentSong ->
+                    val newSongInfo = updateIndex.find(currentSong) ?: return@map currentSong
+                    val mergedSongInfo = mergeSongMetadataForPersistence(
+                        currentSong = currentSong,
+                        newSongInfo = newSongInfo
+                    )
+                    if (currentSong == mergedSongInfo) {
+                        currentSong
+                    } else {
+                        saveCoverMapping(mergedSongInfo)
+                        changed = true
+                        playlistChanged = true
+                        mergedSongInfo
+                    }
+                }.toMutableList()
+
+                if (playlistChanged) {
+                    playlist.copy(songs = refreshedSongs)
                 } else {
-                    saveCoverMapping(mergedSongInfo)
-                    changed = true
-                    playlistChanged = true
-                    mergedSongInfo
+                    playlist
                 }
-            }.toMutableList()
-
-            if (playlistChanged) {
-                playlist.copy(songs = refreshedSongs)
-            } else {
-                playlist
             }
-        }
 
-        if (changed) {
-            publish(updated, triggerSync = false)
+            if (changed) {
+                publishLocked(updated, triggerSync = false)
+            }
         }
     }
 
@@ -945,38 +1062,40 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             return
         }
         withContext(Dispatchers.IO) {
-            var changed = false
-            val updated = _playlists.value.map { playlist ->
-                var playlistChanged = false
-                val updatedSongs = playlist.songs.map { song ->
-                    if (
-                        shouldRebaseLyricOffsetForSource(
-                            lyricSource = song.matchedLyricSource,
-                            targetSource = targetSource,
-                            userOffsetMs = song.userLyricOffsetMs
-                        )
-                    ) {
-                        changed = true
-                        playlistChanged = true
-                        song.copy(
-                            userLyricOffsetMs = rebaseLyricUserOffsetMs(
-                                userOffsetMs = song.userLyricOffsetMs,
-                                previousDefaultOffsetMs = previousDefaultOffsetMs,
-                                newDefaultOffsetMs = newDefaultOffsetMs
+            commitPlaylistMutation {
+                var changed = false
+                val updated = _playlists.value.map { playlist ->
+                    var playlistChanged = false
+                    val updatedSongs = playlist.songs.map { song ->
+                        if (
+                            shouldRebaseLyricOffsetForSource(
+                                lyricSource = song.matchedLyricSource,
+                                targetSource = targetSource,
+                                userOffsetMs = song.userLyricOffsetMs
                             )
-                        )
+                        ) {
+                            changed = true
+                            playlistChanged = true
+                            song.copy(
+                                userLyricOffsetMs = rebaseLyricUserOffsetMs(
+                                    userOffsetMs = song.userLyricOffsetMs,
+                                    previousDefaultOffsetMs = previousDefaultOffsetMs,
+                                    newDefaultOffsetMs = newDefaultOffsetMs
+                                )
+                            )
+                        } else {
+                            song
+                        }
+                    }
+                    if (!playlistChanged) {
+                        playlist
                     } else {
-                        song
+                        playlist.copy(songs = updatedSongs.toMutableList())
                     }
                 }
-                if (!playlistChanged) {
-                    playlist
-                } else {
-                    playlist.copy(songs = updatedSongs.toMutableList())
+                if (changed) {
+                    publishLocked(updated, triggerSync = false)
                 }
-            }
-            if (changed) {
-                publish(updated, triggerSync = false)
             }
         }
     }
@@ -997,37 +1116,41 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
 
     suspend fun updatePlaylists(playlists: List<LocalPlaylist>) {
         withContext(Dispatchers.IO) {
-            val preservedLocalFiles = LocalFilesPlaylist.firstOrNull(_playlists.value, context)
-            val merged = playlists
-                .filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
-                .toMutableList()
-            preservedLocalFiles?.let(merged::add)
-            publish(merged, triggerSync = false)
+            commitPlaylistMutation {
+                val preservedLocalFiles = LocalFilesPlaylist.firstOrNull(_playlists.value, context)
+                val merged = playlists
+                    .filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
+                    .toMutableList()
+                preservedLocalFiles?.let(merged::add)
+                publishLocked(merged, triggerSync = false)
+            }
         }
     }
 
     suspend fun reorderPlaylists(newOrder: List<Long>) {
         withContext(Dispatchers.IO) {
-            val current = _playlists.value
-            val system = current.filter { SystemLocalPlaylists.isSystemPlaylist(it, context) }
-            val others = current.filterNot { SystemLocalPlaylists.isSystemPlaylist(it, context) }
-            if (others.size <= 1) return@withContext
+            commitPlaylistMutation {
+                val current = _playlists.value
+                val system = current.filter { SystemLocalPlaylists.isSystemPlaylist(it, context) }
+                val others = current.filterNot { SystemLocalPlaylists.isSystemPlaylist(it, context) }
+                if (others.size <= 1) return@commitPlaylistMutation
 
-            val byId = others.associateBy { it.id }
-            val ordered = newOrder.mapNotNull { byId[it] }.toMutableList()
-            others.forEach { playlist ->
-                if (ordered.none { it.id == playlist.id }) ordered += playlist
-            }
-            if (ordered.map(LocalPlaylist::id) == others.map(LocalPlaylist::id)) {
-                return@withContext
-            }
+                val byId = others.associateBy { it.id }
+                val ordered = newOrder.mapNotNull { byId[it] }.toMutableList()
+                others.forEach { playlist ->
+                    if (ordered.none { it.id == playlist.id }) ordered += playlist
+                }
+                if (ordered.map(LocalPlaylist::id) == others.map(LocalPlaylist::id)) {
+                    return@commitPlaylistMutation
+                }
 
-            val modifiedAt = System.currentTimeMillis()
-            val reordered = ordered.map { playlist ->
-                // 歌单顺序属于全局状态，重排后统一刷新 modifiedAt，便于同步层感知顺序变化
-                playlist.copy(modifiedAt = modifiedAt)
+                val modifiedAt = System.currentTimeMillis()
+                val reordered = ordered.map { playlist ->
+                    // 歌单顺序属于全局状态，重排后统一刷新 modifiedAt，便于同步层感知顺序变化
+                    playlist.copy(modifiedAt = modifiedAt)
+                }
+                publishLocked(reordered + system)
             }
-            publish(reordered + system)
         }
     }
 
@@ -1847,6 +1970,20 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: LocalPlaylistRepository(context.applicationContext).also { INSTANCE = it }
             }
+        }
+
+        internal fun createForTest(
+            context: Context,
+            file: File,
+            normalizePlaylists: (List<LocalPlaylist>) -> List<LocalPlaylist> = { it },
+            autoSyncEnabled: Boolean = false
+        ): LocalPlaylistRepository {
+            return LocalPlaylistRepository(
+                context = context,
+                file = file,
+                normalizePlaylists = normalizePlaylists,
+                autoSyncEnabled = autoSyncEnabled
+            )
         }
     }
 }

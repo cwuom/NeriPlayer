@@ -376,6 +376,12 @@ internal object ManagedDownloadStorage {
         val createdNew: Boolean
     )
 
+    private data class ManagedDeletePolicy(
+        val managedFileRoots: List<String>,
+        val managedTreeRoots: List<String>,
+        val trustedReferences: Set<String>
+    )
+
     private data class MigrationTargetIndex(
         val rootEntriesByName: Map<String, StoredEntry>,
         val coverEntriesByName: Map<String, StoredEntry>,
@@ -1703,6 +1709,7 @@ internal object ManagedDownloadStorage {
                         deleteInternal(
                             context = context,
                             reference = migrationEntry.original.entry.reference,
+                            allowedRoot = sourceRoot,
                             invalidateSnapshot = false
                         )
                     }.onFailure {
@@ -1732,6 +1739,7 @@ internal object ManagedDownloadStorage {
                         deleteInternal(
                             context = context,
                             reference = migrationEntry.copiedEntry.reference,
+                            allowedRoot = targetRoot,
                             invalidateSnapshot = false
                         )
                     }.onFailure {
@@ -1960,100 +1968,116 @@ internal object ManagedDownloadStorage {
         if (expectedSizeBytes != null && expectedSizeBytes > 0L && actualSizeBytes != expectedSizeBytes) {
             throw IOException("下载文件大小不匹配: $actualSizeBytes/$expectedSizeBytes")
         }
-        val storedEntry = try {
-            when (val root = resolveRootBlocking(context)) {
-                is RootHandle.FileRoot -> {
-                    val finalName = reserveUniqueFileChildName(root.dir, fileName)
-                    val pendingTarget = File(root.dir, buildPendingAudioWriteName(finalName))
-                    var seedMetadataEntry: StoredEntry? = null
-                    try {
-                        if (!tempFile.renameTo(pendingTarget)) {
-                            tempFile.copyTo(pendingTarget, overwrite = false)
+        val storedEntry = when (val root = resolveRootBlocking(context)) {
+            is RootHandle.FileRoot -> {
+                val finalName = reserveUniqueFileChildName(root.dir, fileName)
+                val pendingTarget = File(root.dir, buildPendingAudioWriteName(finalName))
+                var seedMetadataEntry: StoredEntry? = null
+                try {
+                    tempFile.inputStream().use { input ->
+                        pendingTarget.outputStream().use { output ->
+                            input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
                         }
-                        seedMetadataEntry = writeSeedMetadataBeforeAudioCommit(
-                            context = context,
-                            root = root,
-                            audioName = finalName,
-                            seedMetadataJson = seedMetadataJson
-                        )
-                        val target = File(root.dir, finalName)
-                        if (!pendingTarget.renameTo(target)) {
-                            throw IOException("无法提交下载文件: $finalName")
-                        }
-                        target.toStoredEntry()
-                    } catch (error: Throwable) {
-                        if (pendingTarget.exists()) {
-                            pendingTarget.delete()
-                        }
-                        deleteSeedMetadataAfterAudioCommitFailure(context, seedMetadataEntry)
-                        forgetFileChildName(root.dir, finalName)
-                        throw error
                     }
+                    verifyFileCommittedLength(
+                        target = pendingTarget,
+                        expectedSizeBytes = actualSizeBytes,
+                        description = pendingTarget.name
+                    )
+                    seedMetadataEntry = writeSeedMetadataBeforeAudioCommit(
+                        context = context,
+                        root = root,
+                        audioName = finalName,
+                        seedMetadataJson = seedMetadataJson
+                    )
+                    val target = File(root.dir, finalName)
+                    if (!pendingTarget.renameTo(target)) {
+                        throw IOException("无法提交下载文件: $finalName")
+                    }
+                    val verifiedSize = verifyFileCommittedLength(
+                        target = target,
+                        expectedSizeBytes = actualSizeBytes,
+                        description = finalName
+                    )
+                    target.toStoredEntry().copy(sizeBytes = verifiedSize)
+                } catch (error: Throwable) {
+                    if (pendingTarget.exists()) {
+                        pendingTarget.delete()
+                    }
+                    deleteSeedMetadataAfterAudioCommitFailure(context, root, seedMetadataEntry)
+                    forgetFileChildName(root.dir, finalName)
+                    throw error
                 }
+            }
 
-                is RootHandle.TreeRoot -> {
-                    val finalName = reserveUniqueTreeChildName(context, root.tree, fileName)
-                    var seedMetadataEntry: StoredEntry? = null
-                    try {
-                        val committedAtMs = System.currentTimeMillis()
-                        val pendingName = buildPendingAudioWriteName(finalName)
-                        val pendingTarget = createRootFile(
+            is RootHandle.TreeRoot -> {
+                val finalName = reserveUniqueTreeChildName(context, root.tree, fileName)
+                var seedMetadataEntry: StoredEntry? = null
+                var pendingTarget: DocumentFile? = null
+                var pendingName: String? = null
+                try {
+                    val committedAtMs = System.currentTimeMillis()
+                    val createdPendingName = buildPendingAudioWriteName(finalName)
+                    pendingName = createdPendingName
+                    pendingTarget = createRootFile(
+                        context = context,
+                        parent = root.tree,
+                        desiredName = createdPendingName,
+                        mimeType = mimeTypeFromName(finalName, mimeType),
+                        replace = false
+                    )
+                    context.contentResolver.openOutputStream(pendingTarget.uri, "w")?.use { output ->
+                        tempFile.inputStream().use { input ->
+                            input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                        }
+                    } ?: throw IOException("无法打开下载目录输出流")
+                    seedMetadataEntry = writeSeedMetadataBeforeAudioCommit(
+                        context = context,
+                        root = root,
+                        audioName = finalName,
+                        seedMetadataJson = seedMetadataJson
+                    )
+                    if (pendingTarget.renameTo(finalName)) {
+                        val entry = verifiedTreeStoredEntry(
+                            context = context,
+                            target = pendingTarget,
+                            expectedName = finalName,
+                            expectedSizeBytes = actualSizeBytes,
+                            fallbackLastModifiedMs = committedAtMs,
+                            description = finalName
+                        )
+                        forgetTreeChildName(root.tree, createdPendingName)
+                        if (entry.name != finalName) {
+                            forgetTreeChildName(root.tree, finalName)
+                        }
+                        rememberTreeChild(root.tree, entry)
+                        entry
+                    } else {
+                        commitTreeAudioAfterRenameFailure(
                             context = context,
                             parent = root.tree,
-                            desiredName = pendingName,
-                            mimeType = mimeTypeFromName(finalName, mimeType),
-                            replace = false
+                            pendingTarget = pendingTarget,
+                            pendingName = createdPendingName,
+                            finalName = finalName,
+                            mimeType = mimeType,
+                            tempFile = tempFile,
+                            actualSizeBytes = actualSizeBytes,
+                            committedAtMs = committedAtMs
                         )
-                        context.contentResolver.openOutputStream(pendingTarget.uri, "w")?.use { output ->
-                            tempFile.inputStream().use { input ->
-                                input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
-                            }
-                        } ?: throw IOException("无法打开下载目录输出流")
-                        seedMetadataEntry = writeSeedMetadataBeforeAudioCommit(
-                            context = context,
-                            root = root,
-                            audioName = finalName,
-                            seedMetadataJson = seedMetadataJson
-                        )
-                        if (pendingTarget.renameTo(finalName)) {
-                            val storedName = pendingTarget.resolvedTreeStoredName(finalName)
-                            forgetTreeChildName(root.tree, pendingName)
-                            if (storedName != finalName) {
-                                forgetTreeChildName(root.tree, finalName)
-                            }
-                            val entry = pendingTarget.toStoredEntry(
-                                knownName = storedName,
-                                knownSizeBytes = actualSizeBytes,
-                                knownLastModifiedMs = committedAtMs,
-                                knownIsDirectory = false
-                            )
-                                ?: throw IOException("无法读取已写入的下载文件")
-                            rememberTreeChild(root.tree, entry)
-                            entry
-                        } else {
-                            commitTreeAudioAfterRenameFailure(
-                                context = context,
-                                parent = root.tree,
-                                pendingTarget = pendingTarget,
-                                pendingName = pendingName,
-                                finalName = finalName,
-                                mimeType = mimeType,
-                                tempFile = tempFile,
-                                actualSizeBytes = actualSizeBytes,
-                                committedAtMs = committedAtMs
-                            )
-                        }
-                    } catch (error: Throwable) {
-                        deleteSeedMetadataAfterAudioCommitFailure(context, seedMetadataEntry)
-                        forgetTreeChildName(root.tree, finalName)
-                        throw error
                     }
+                } catch (error: Throwable) {
+                    pendingTarget?.let { target ->
+                        deleteContentReference(context, target.uri.toString(), target.uri)
+                    }
+                    pendingName?.let { forgetTreeChildName(root.tree, it) }
+                    deleteSeedMetadataAfterAudioCommitFailure(context, root, seedMetadataEntry)
+                    forgetTreeChildName(root.tree, finalName)
+                    throw error
                 }
             }
-        } finally {
-            if (tempFile.exists()) {
-                tempFile.delete()
-            }
+        }
+        if (tempFile.exists() && !tempFile.delete()) {
+            NPLogger.w(TAG, "删除下载临时文件失败: ${tempFile.name}")
         }
         if (!updateSnapshotCacheAfterStoredEntryWrite(context, storedEntry, SnapshotEntryBucket.AUDIO)) {
             invalidateSnapshotCache(context)
@@ -2087,6 +2111,7 @@ internal object ManagedDownloadStorage {
 
     private fun deleteSeedMetadataAfterAudioCommitFailure(
         context: Context,
+        root: RootHandle,
         metadataEntry: StoredEntry?
     ) {
         metadataEntry ?: return
@@ -2094,6 +2119,7 @@ internal object ManagedDownloadStorage {
             deleteInternal(
                 context = context,
                 reference = metadataEntry.reference,
+                allowedRoot = root,
                 invalidateSnapshot = false
             )
         }
@@ -2944,6 +2970,9 @@ internal object ManagedDownloadStorage {
             if (unfinalizedMetadataEntries.isEmpty()) {
                 return@runCatching StartupRecoveryResult()
             }
+            val managedSidecarReferences = listSubdirectoryEntries(context, root, COVER_SUBDIRECTORY)
+                .plus(listSubdirectoryEntries(context, root, LYRIC_SUBDIRECTORY))
+                .mapTo(linkedSetOf(), StoredEntry::reference)
             val protectedReferences = parsedMetadataEntries
                 .asSequence()
                 .filterNot { (_, metadata) -> isUnfinalizedDownloadedMetadata(metadata) }
@@ -2952,6 +2981,7 @@ internal object ManagedDownloadStorage {
                 }
                 .filterNot(String?::isNullOrBlank)
                 .map(String?::orEmpty)
+                .filter(managedSidecarReferences::contains)
                 .toSet()
             val referencesToDelete = linkedSetOf<String>()
             unfinalizedMetadataEntries.forEach { (entry, metadata) ->
@@ -2964,6 +2994,7 @@ internal object ManagedDownloadStorage {
                 listOf(metadata.coverPath, metadata.lyricPath, metadata.translatedLyricPath)
                     .filterNot(String?::isNullOrBlank)
                     .map(String?::orEmpty)
+                    .filter(managedSidecarReferences::contains)
                     .filterNot(protectedReferences::contains)
                     .forEach(referencesToDelete::add)
             }
@@ -3452,12 +3483,14 @@ internal object ManagedDownloadStorage {
             if (storedName != finalName) {
                 forgetTreeChildName(parent, finalName)
             }
-            val entry = target.toStoredEntry(
-                knownName = storedName,
-                knownSizeBytes = actualSizeBytes,
-                knownLastModifiedMs = committedAtMs,
-                knownIsDirectory = false
-            ) ?: throw IOException("无法读取已写入的下载文件")
+            val entry = verifiedTreeStoredEntry(
+                context = context,
+                target = target,
+                expectedName = storedName,
+                expectedSizeBytes = actualSizeBytes,
+                fallbackLastModifiedMs = committedAtMs,
+                description = finalName
+            )
             rememberTreeChild(parent, entry)
             entry
         } finally {
@@ -3502,10 +3535,16 @@ internal object ManagedDownloadStorage {
         val storedEntry = when (root) {
             is RootHandle.FileRoot -> {
                 val target = File(root.dir, displayName)
+                var copiedBytes = 0L
                 target.outputStream().use { output ->
-                    input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                    copiedBytes = input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
                 }
-                target.toStoredEntry()
+                val verifiedSize = verifyFileCommittedLength(
+                    target = target,
+                    expectedSizeBytes = copiedBytes,
+                    description = displayName
+                )
+                target.toStoredEntry().copy(sizeBytes = verifiedSize)
             }
 
             is RootHandle.TreeRoot -> {
@@ -3515,13 +3554,14 @@ internal object ManagedDownloadStorage {
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                     copiedBytes = input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
                 } ?: throw IOException("无法写入根目录文件: $displayName")
-                val storedName = target.resolvedTreeStoredName(displayName)
-                val entry = target.toStoredEntry(
-                    knownName = storedName,
-                    knownSizeBytes = copiedBytes.coerceAtLeast(0L),
-                    knownLastModifiedMs = writtenAtMs,
-                    knownIsDirectory = false
-                ) ?: throw IOException("无法读取已写入的目录文件: $displayName")
+                val entry = verifiedTreeStoredEntry(
+                    context = context,
+                    target = target,
+                    expectedName = displayName,
+                    expectedSizeBytes = copiedBytes.coerceAtLeast(0L),
+                    fallbackLastModifiedMs = writtenAtMs,
+                    description = displayName
+                )
                 rememberTreeChild(root.tree, entry)
                 entry
             }
@@ -3560,8 +3600,13 @@ internal object ManagedDownloadStorage {
                 targetFile.outputStream().use { output ->
                     copiedBytes = copyStreamWithProgress(input, output, onProgress)
                 }
+                val verifiedSize = verifyFileCommittedLength(
+                    target = targetFile,
+                    expectedSizeBytes = copiedBytes,
+                    description = target.entry.name
+                )
                 StoredWriteResult(
-                    entry = targetFile.toStoredEntry().copy(sizeBytes = copiedBytes.coerceAtLeast(0L)),
+                    entry = targetFile.toStoredEntry().copy(sizeBytes = verifiedSize),
                     createdNew = true
                 )
             }
@@ -3584,13 +3629,14 @@ internal object ManagedDownloadStorage {
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                     copiedBytes = copyStreamWithProgress(input, output, onProgress)
                 } ?: throw IOException("无法写入根目录文件: ${targetPlan.entry.name}")
-                val storedName = target.resolvedTreeStoredName(targetPlan.entry.name)
-                val entry = target.toStoredEntry(
-                    knownName = storedName,
-                    knownSizeBytes = copiedBytes.coerceAtLeast(0L),
-                    knownLastModifiedMs = writtenAtMs,
-                    knownIsDirectory = false
-                ) ?: throw IOException("无法读取已写入的目录文件: $displayName")
+                val entry = verifiedTreeStoredEntry(
+                    context = context,
+                    target = target,
+                    expectedName = targetPlan.entry.name,
+                    expectedSizeBytes = copiedBytes.coerceAtLeast(0L),
+                    fallbackLastModifiedMs = writtenAtMs,
+                    description = displayName
+                )
                 rememberTreeChild(root.tree, entry)
                 StoredWriteResult(
                     entry = entry,
@@ -3623,6 +3669,140 @@ internal object ManagedDownloadStorage {
             onProgress(copiedBytes)
         }
         return copiedBytes
+    }
+
+    internal fun verifiedCommittedByteCount(
+        expectedSizeBytes: Long,
+        reportedSizeBytes: Long?,
+        countedSizeBytes: Long?
+    ): Long? {
+        val expectedSize = expectedSizeBytes.coerceAtLeast(0L)
+        val reportedSize = reportedSizeBytes?.takeIf { it >= 0L }
+        if (reportedSize != null) {
+            return reportedSize.takeIf { it == expectedSize }
+        }
+        return countedSizeBytes
+            ?.takeIf { it >= 0L }
+            ?.takeIf { it == expectedSize }
+    }
+
+    private fun requireVerifiedCommittedByteCount(
+        expectedSizeBytes: Long,
+        reportedSizeBytes: Long?,
+        countedSizeBytes: Long?,
+        description: String
+    ): Long {
+        return verifiedCommittedByteCount(
+            expectedSizeBytes = expectedSizeBytes,
+            reportedSizeBytes = reportedSizeBytes,
+            countedSizeBytes = countedSizeBytes
+        ) ?: throw IOException(
+            "提交后的目标大小不匹配: $description, expected=${expectedSizeBytes.coerceAtLeast(0L)}, " +
+                "reported=${reportedSizeBytes ?: "unavailable"}, counted=${countedSizeBytes ?: "unavailable"}"
+        )
+    }
+
+    private fun verifyFileCommittedLength(
+        target: File,
+        expectedSizeBytes: Long,
+        description: String
+    ): Long {
+        val reportedSize = target.takeIf { it.exists() && it.isFile }?.length()
+        return requireVerifiedCommittedByteCount(
+            expectedSizeBytes = expectedSizeBytes,
+            reportedSizeBytes = reportedSize,
+            countedSizeBytes = null,
+            description = description
+        )
+    }
+
+    private fun verifyDocumentCommittedLength(
+        context: Context,
+        uri: Uri,
+        expectedSizeBytes: Long,
+        description: String
+    ): Long {
+        val reportedSize = queryDocumentSizeBytes(context, uri)
+        val countedSize = if (reportedSize == null) {
+            countDocumentBytes(context, uri)
+        } else {
+            null
+        }
+        return requireVerifiedCommittedByteCount(
+            expectedSizeBytes = expectedSizeBytes,
+            reportedSizeBytes = reportedSize,
+            countedSizeBytes = countedSize,
+            description = description
+        )
+    }
+
+    private fun queryDocumentSizeBytes(context: Context, uri: Uri): Long? {
+        return runCatching {
+            context.contentResolver.query(
+                uri,
+                arrayOf(DocumentsContract.Document.COLUMN_SIZE),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                val sizeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+                if (sizeIndex < 0 || !cursor.moveToFirst() || cursor.isNull(sizeIndex)) {
+                    null
+                } else {
+                    cursor.getLong(sizeIndex).takeIf { it >= 0L }
+                }
+            }
+        }.onFailure {
+            NPLogger.w(TAG, "查询 SAF 目标大小失败: $uri, ${it.message}")
+        }.getOrNull()
+    }
+
+    private fun countDocumentBytes(context: Context, uri: Uri): Long? {
+        return runCatching {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                countInputStreamBytes(input)
+            }
+        }.onFailure {
+            NPLogger.w(TAG, "回读 SAF 目标失败: $uri, ${it.message}")
+        }.getOrNull()
+    }
+
+    private fun countInputStreamBytes(input: InputStream): Long {
+        val buffer = ByteArray(STREAM_COPY_BUFFER_SIZE_BYTES)
+        var countedBytes = 0L
+        while (true) {
+            val readCount = input.read(buffer)
+            if (readCount < 0) {
+                return countedBytes
+            }
+            if (readCount == 0) {
+                continue
+            }
+            countedBytes += readCount
+        }
+    }
+
+    private fun verifiedTreeStoredEntry(
+        context: Context,
+        target: DocumentFile,
+        expectedName: String,
+        expectedSizeBytes: Long,
+        fallbackLastModifiedMs: Long,
+        description: String
+    ): StoredEntry {
+        val storedName = target.resolvedTreeStoredName(expectedName)
+        val verifiedSize = verifyDocumentCommittedLength(
+            context = context,
+            uri = target.uri,
+            expectedSizeBytes = expectedSizeBytes,
+            description = description
+        )
+        return target.toStoredEntry(
+            knownName = storedName,
+            knownSizeBytes = verifiedSize,
+            knownLastModifiedMs = target.lastModified().takeIf { it > 0L } ?: fallbackLastModifiedMs,
+            knownIsDirectory = false
+        ) ?: throw IOException("无法读取已写入的目录文件: $description")
     }
 
     private fun buildMigrationTargetIndex(
@@ -3810,7 +3990,12 @@ internal object ManagedDownloadStorage {
                 ensureManagedMediaScanIsolation(subdirectory, dir)
                 val target = File(dir, displayName)
                 target.outputStream().use { it.write(bytes) }
-                target.toStoredEntry()
+                val verifiedSize = verifyFileCommittedLength(
+                    target = target,
+                    expectedSizeBytes = bytes.size.toLong(),
+                    description = displayName
+                )
+                target.toStoredEntry().copy(sizeBytes = verifiedSize)
             }
 
             is RootHandle.TreeRoot -> {
@@ -3821,14 +4006,14 @@ internal object ManagedDownloadStorage {
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                     output.write(bytes)
                 } ?: throw IOException("无法写入目录文件: $displayName")
-                val storedName = target.resolvedTreeStoredName(displayName)
-                val entry = target.toStoredEntry(
-                    knownName = storedName,
-                    knownSizeBytes = bytes.size.toLong(),
-                    knownLastModifiedMs = writtenAtMs,
-                    knownIsDirectory = false
-                )
-                entry?.also { rememberTreeChild(directory, it) }
+                verifiedTreeStoredEntry(
+                    context = context,
+                    target = target,
+                    expectedName = displayName,
+                    expectedSizeBytes = bytes.size.toLong(),
+                    fallbackLastModifiedMs = writtenAtMs,
+                    description = displayName
+                ).also { rememberTreeChild(directory, it) }
             }
         }
         storedEntry?.let { entry ->
@@ -3890,10 +4075,16 @@ internal object ManagedDownloadStorage {
                 val dir = File(root.dir, subdirectory).apply { mkdirs() }
                 ensureManagedMediaScanIsolation(subdirectory, dir)
                 val target = File(dir, displayName)
+                var copiedBytes = 0L
                 target.outputStream().use { output ->
-                    input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                    copiedBytes = input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
                 }
-                target.toStoredEntry()
+                val verifiedSize = verifyFileCommittedLength(
+                    target = target,
+                    expectedSizeBytes = copiedBytes,
+                    description = displayName
+                )
+                target.toStoredEntry().copy(sizeBytes = verifiedSize)
             }
 
             is RootHandle.TreeRoot -> {
@@ -3906,13 +4097,14 @@ internal object ManagedDownloadStorage {
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                     copiedBytes = input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
                 } ?: throw IOException("无法写入目录文件: $displayName")
-                val storedName = target.resolvedTreeStoredName(displayName)
-                val entry = target.toStoredEntry(
-                    knownName = storedName,
-                    knownSizeBytes = copiedBytes.coerceAtLeast(0L),
-                    knownLastModifiedMs = writtenAtMs,
-                    knownIsDirectory = false
-                ) ?: throw IOException("无法读取已写入的目录文件: $displayName")
+                val entry = verifiedTreeStoredEntry(
+                    context = context,
+                    target = target,
+                    expectedName = displayName,
+                    expectedSizeBytes = copiedBytes.coerceAtLeast(0L),
+                    fallbackLastModifiedMs = writtenAtMs,
+                    description = displayName
+                )
                 rememberTreeChild(directory, entry)
                 entry
             }
@@ -3954,8 +4146,13 @@ internal object ManagedDownloadStorage {
                 targetFile.outputStream().use { output ->
                     copiedBytes = copyStreamWithProgress(input, output, onProgress)
                 }
+                val verifiedSize = verifyFileCommittedLength(
+                    target = targetFile,
+                    expectedSizeBytes = copiedBytes,
+                    description = target.entry.name
+                )
                 StoredWriteResult(
-                    entry = targetFile.toStoredEntry().copy(sizeBytes = copiedBytes.coerceAtLeast(0L)),
+                    entry = targetFile.toStoredEntry().copy(sizeBytes = verifiedSize),
                     createdNew = true
                 )
             }
@@ -3981,13 +4178,14 @@ internal object ManagedDownloadStorage {
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                     copiedBytes = copyStreamWithProgress(input, output, onProgress)
                 } ?: throw IOException("无法写入目录文件: ${targetPlan.entry.name}")
-                val storedName = target.resolvedTreeStoredName(targetPlan.entry.name)
-                val entry = target.toStoredEntry(
-                    knownName = storedName,
-                    knownSizeBytes = copiedBytes.coerceAtLeast(0L),
-                    knownLastModifiedMs = writtenAtMs,
-                    knownIsDirectory = false
-                ) ?: throw IOException("无法读取已写入的目录文件: $displayName")
+                val entry = verifiedTreeStoredEntry(
+                    context = context,
+                    target = target,
+                    expectedName = targetPlan.entry.name,
+                    expectedSizeBytes = copiedBytes.coerceAtLeast(0L),
+                    fallbackLastModifiedMs = writtenAtMs,
+                    description = displayName
+                )
                 rememberTreeChild(directory, entry)
                 StoredWriteResult(
                     entry = entry,
@@ -4007,8 +4205,14 @@ internal object ManagedDownloadStorage {
         val storedEntry = when (root) {
             is RootHandle.FileRoot -> {
                 val target = File(root.dir, displayName)
-                target.writeText(content, Charsets.UTF_8)
-                target.toStoredEntry()
+                val encoded = content.toByteArray(Charsets.UTF_8)
+                target.writeBytes(encoded)
+                val verifiedSize = verifyFileCommittedLength(
+                    target = target,
+                    expectedSizeBytes = encoded.size.toLong(),
+                    description = displayName
+                )
+                target.toStoredEntry().copy(sizeBytes = verifiedSize)
             }
 
             is RootHandle.TreeRoot -> {
@@ -4018,13 +4222,14 @@ internal object ManagedDownloadStorage {
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                     output.write(encoded)
                 } ?: throw IOException("无法写入元数据文件: $displayName")
-                val storedName = target.resolvedTreeStoredName(displayName)
-                val entry = target.toStoredEntry(
-                    knownName = storedName,
-                    knownSizeBytes = encoded.size.toLong(),
-                    knownLastModifiedMs = writtenAtMs,
-                    knownIsDirectory = false
-                ) ?: throw IOException("无法读取已写入的元数据文件: $displayName")
+                val entry = verifiedTreeStoredEntry(
+                    context = context,
+                    target = target,
+                    expectedName = displayName,
+                    expectedSizeBytes = encoded.size.toLong(),
+                    fallbackLastModifiedMs = writtenAtMs,
+                    description = displayName
+                )
                 rememberTreeChild(root.tree, entry)
                 entry
             }
@@ -4460,14 +4665,97 @@ internal object ManagedDownloadStorage {
         }
     }
 
+    private fun buildManagedDeletePolicy(
+        context: Context,
+        allowedRoot: RootHandle? = null,
+        trustedReferences: Set<String>? = null
+    ): ManagedDeletePolicy {
+        val roots = listOf(allowedRoot ?: resolveRootBlocking(context))
+        val snapshotTrustedReferences = trustedReferences
+            ?: if (allowedRoot == null) {
+                cachedDownloadLibrarySnapshot(context)?.knownReferences.orEmpty()
+            } else {
+                emptySet()
+            }
+        return ManagedDeletePolicy(
+            managedFileRoots = roots.mapNotNull { root ->
+                (root as? RootHandle.FileRoot)?.dir?.absolutePath
+            },
+            managedTreeRoots = roots.mapNotNull { root ->
+                (root as? RootHandle.TreeRoot)?.tree?.uri?.toString()
+            },
+            trustedReferences = snapshotTrustedReferences
+        )
+    }
+
+    internal fun isReferenceAllowedForManagedDelete(
+        reference: String,
+        trustedReferences: Set<String>,
+        managedFileRoots: Collection<String>,
+        managedTreeRoots: Collection<String>
+    ): Boolean {
+        val normalizedReference = reference.takeIf(String::isNotBlank) ?: return false
+        if (normalizedReference in trustedReferences) {
+            return true
+        }
+        if (normalizedReference.startsWith("/")) {
+            return managedFileRoots.any { rootPath ->
+                isFileReferenceUnderManagedRoot(normalizedReference, rootPath)
+            }
+        }
+        return managedTreeRoots.any { rootUri ->
+            isDocumentReferenceUnderManagedTree(normalizedReference, rootUri)
+        }
+    }
+
+    internal fun isFileReferenceUnderManagedRoot(reference: String, managedRootPath: String): Boolean {
+        val root = runCatching { File(managedRootPath).canonicalFile }.getOrNull() ?: return false
+        val target = runCatching { File(reference).canonicalFile }.getOrNull() ?: return false
+        if (target == root) {
+            return false
+        }
+        return generateSequence(target.parentFile) { file -> file.parentFile }
+            .any { parent -> parent == root }
+    }
+
+    internal fun isDocumentReferenceUnderManagedTree(reference: String, managedTreeUri: String): Boolean {
+        val referenceAuthority = extractDirectoryAuthority(reference).takeIf(String::isNotBlank) ?: return false
+        val rootAuthority = extractDirectoryAuthority(managedTreeUri).takeIf(String::isNotBlank) ?: return false
+        if (referenceAuthority != rootAuthority) {
+            return false
+        }
+        val rootDocumentId = extractDirectoryDocumentId(managedTreeUri, "/tree/")
+            ?: extractDirectoryDocumentId(managedTreeUri, "/document/")
+            ?: return false
+        val referenceDocumentId = extractDirectoryDocumentId(reference, "/document/")
+            ?: return false
+        return isDocumentIdInsideManagedRoot(
+            documentId = referenceDocumentId,
+            rootDocumentId = rootDocumentId
+        )
+    }
+
+    internal fun isDocumentIdInsideManagedRoot(documentId: String, rootDocumentId: String): Boolean {
+        if (documentId == rootDocumentId) {
+            return false
+        }
+        if (rootDocumentId.endsWith(":")) {
+            return documentId.startsWith(rootDocumentId)
+        }
+        val prefix = if (rootDocumentId.endsWith("/")) rootDocumentId else "$rootDocumentId/"
+        return documentId.startsWith(prefix)
+    }
+
     private fun deleteInternal(
         context: Context,
         reference: String?,
+        allowedRoot: RootHandle? = null,
         invalidateSnapshot: Boolean = true
     ): Boolean {
         return deleteReferencesInternal(
             context = context,
             references = listOf(reference),
+            allowedRoot = allowedRoot,
             invalidateSnapshot = invalidateSnapshot
         ).isNotEmpty()
     }
@@ -4475,6 +4763,7 @@ internal object ManagedDownloadStorage {
     private fun deleteReferencesInternal(
         context: Context,
         references: Collection<String?>,
+        allowedRoot: RootHandle? = null,
         invalidateSnapshot: Boolean
     ): Set<String> {
         val normalizedReferences = references
@@ -4483,9 +4772,10 @@ internal object ManagedDownloadStorage {
         if (normalizedReferences.isEmpty()) {
             return emptySet()
         }
+        val deletePolicy = buildManagedDeletePolicy(context, allowedRoot)
         val deletedReferences = linkedSetOf<String>()
         normalizedReferences.forEach { reference ->
-            val deleted = deleteReferenceBlocking(context, reference)
+            val deleted = deleteReferenceBlocking(context, reference, deletePolicy)
             if (deleted) {
                 deletedReferences += reference
             }
@@ -4505,6 +4795,7 @@ internal object ManagedDownloadStorage {
     private suspend fun deleteReferencesInternalConcurrently(
         context: Context,
         references: Collection<String?>,
+        allowedRoot: RootHandle? = null,
         invalidateSnapshot: Boolean
     ): Set<String> {
         val normalizedReferences = references
@@ -4515,11 +4806,12 @@ internal object ManagedDownloadStorage {
         }
         val startedAtMs = System.currentTimeMillis()
         val deleteLimiter = Semaphore(SAF_REFERENCE_DELETE_PARALLELISM)
+        val deletePolicy = buildManagedDeletePolicy(context, allowedRoot)
         val deletedReferences = coroutineScope {
             normalizedReferences.map { reference ->
                 async(Dispatchers.IO) {
                     deleteLimiter.withPermit {
-                        reference.takeIf { deleteReferenceBlocking(context, reference) }
+                        reference.takeIf { deleteReferenceBlocking(context, reference, deletePolicy) }
                     }
                 }
             }.awaitAll().filterNotNull().toSet()
@@ -4570,7 +4862,22 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    private fun deleteReferenceBlocking(context: Context, reference: String): Boolean {
+    private fun deleteReferenceBlocking(
+        context: Context,
+        reference: String,
+        deletePolicy: ManagedDeletePolicy
+    ): Boolean {
+        if (
+            !isReferenceAllowedForManagedDelete(
+                reference = reference,
+                trustedReferences = deletePolicy.trustedReferences,
+                managedFileRoots = deletePolicy.managedFileRoots,
+                managedTreeRoots = deletePolicy.managedTreeRoots
+            )
+        ) {
+            NPLogger.w(TAG, "拒绝删除非托管下载引用: $reference")
+            return false
+        }
         return when {
             reference.startsWith("/") -> {
                 val file = File(reference)

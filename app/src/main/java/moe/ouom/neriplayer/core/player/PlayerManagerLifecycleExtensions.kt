@@ -2046,6 +2046,7 @@ private fun PlayerManager.scheduleUsbExclusiveBackgroundAudit(reason: String) {
                     "backpressureCurrentMs=${nativeState.pcmBackpressureCurrentMs} " +
                     "signalFrames=${nativeState.playerSignalFrames} " +
                     "silentFrames=${nativeState.playerSilentFrames} " +
+                    "zeroFillBytes=${nativeState.playerZeroFillBytes} " +
                     "outputPeak=${nativeState.outputPeak} " +
                     "lastOutputPeak=${nativeState.lastOutputPeak} " +
                     "playerState=${playbackStateName(playerState)} " +
@@ -2067,7 +2068,7 @@ internal fun PlayerManager.recoverUsbExclusivePlaybackIfUnhealthy(
     if (!usbExclusivePlaybackEnabled || allowMixedPlaybackEnabled || !isPlayerInitialized()) {
         return false
     }
-    if (!isPlaybackActiveForUsbExclusiveSwitch()) return false
+    if (!forceRecovery && !isPlaybackActiveForUsbExclusiveSwitch()) return false
     if (Looper.myLooper() != Looper.getMainLooper()) {
         mainScope.launch { recoverUsbExclusivePlaybackIfUnhealthy(reason, forceRecovery) }
         return true

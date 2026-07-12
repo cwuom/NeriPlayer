@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.player
 
+import android.media.AudioManager
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.lifecycle.Lifecycle
 import moe.ouom.neriplayer.core.player.policy.shouldBootstrapPlaybackServiceOnAppLaunch
@@ -40,6 +41,34 @@ class AudioPlayerServicePolicyTest {
         assertTrue(actions and PlaybackStateCompat.ACTION_SKIP_TO_NEXT != 0L)
         assertTrue(actions and PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS != 0L)
         assertTrue(actions and PlaybackStateCompat.ACTION_SEEK_TO != 0L)
+    }
+
+    @Test
+    fun `usb exclusive audio focus loss suppresses player pcm`() {
+        assertFalse(shouldSuppressUsbExclusiveForFocusChange(AudioManager.AUDIOFOCUS_GAIN))
+        assertTrue(shouldSuppressUsbExclusiveForFocusChange(AudioManager.AUDIOFOCUS_LOSS))
+        assertTrue(shouldSuppressUsbExclusiveForFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT))
+        assertTrue(
+            shouldSuppressUsbExclusiveForFocusChange(
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK
+            )
+        )
+    }
+
+    @Test
+    fun `permanent audio focus loss pauses usb exclusive playback`() {
+        assertTrue(shouldPauseUsbExclusiveForFocusChange(AudioManager.AUDIOFOCUS_LOSS))
+        assertTrue(
+            shouldPauseUsbExclusiveForFocusChange(
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT
+            )
+        )
+        assertFalse(
+            shouldPauseUsbExclusiveForFocusChange(
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK
+            )
+        )
+        assertFalse(shouldPauseUsbExclusiveForFocusChange(AudioManager.AUDIOFOCUS_GAIN))
     }
 
     @Test

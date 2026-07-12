@@ -42,6 +42,22 @@ private data class PendingMemberControlRequest(
     val attempts: Int
 )
 
+private data class AcceptedRoomState(
+    val state: ListenTogetherRoomState,
+    val expectedPositionMs: Long?
+)
+
+private enum class RoomStateSource(val logName: String) {
+    HTTP_REFRESH("http_refresh"),
+    HTTP_CONTROL_FALLBACK("http_control_fallback"),
+    HTTP_SESSION_UPDATE("http_session_update"),
+    WEB_SOCKET_STATE("websocket_state"),
+    WEB_SOCKET_CONTROL_RESULT("websocket_control_result"),
+    WEB_SOCKET_ROOM_STATUS("websocket_room_status"),
+    WEB_SOCKET_ROOM_CLOSED("websocket_room_closed"),
+    LOCAL_SYNTHETIC("local_synthetic")
+}
+
 internal const val LISTEN_TOGETHER_MAX_SHAREABLE_QUEUE_SIZE = 2_000
 
 class ListenTogetherSessionManager(
@@ -187,14 +203,18 @@ class ListenTogetherSessionManager(
         NPLogger.d(TAG, "refreshRoomState(): baseUrl=$baseUrl, roomId=$validatedRoomId")
         val response = api.getRoomState(baseUrl, validatedRoomId)
         response.state?.let {
-            applyRoomState(it, response.expectedPositionMs)
-            if (!isCurrentUserController()) {
+            val accepted = acceptRoomState(
+                state = it,
+                expectedPositionMs = response.expectedPositionMs,
+                source = RoomStateSource.HTTP_REFRESH
+            )
+            if (accepted != null && !isCurrentUserController()) {
                 applyRoomStateToPlayer(
-                    it,
+                    accepted.state,
                     causeType = null,
-                    expectedPositionMs = response.expectedPositionMs
+                    expectedPositionMs = accepted.expectedPositionMs
                 )
-                maybeRequestControllerLink(it, "refresh_room_state")
+                maybeRequestControllerLink(accepted.state, "refresh_room_state")
             }
         }
         NPLogger.d(
@@ -283,15 +303,20 @@ class ListenTogetherSessionManager(
                                     TAG,
                                     "websocket.controlResult(): apply committed state locally, type=${applied.causedBy?.type}, version=${applied.version}"
                                 )
-                                if (applied.causedBy?.type == "TRACK_FINISHED") {
+                                val accepted = acceptRoomState(
+                                    state = applied.state,
+                                    expectedPositionMs = applied.expectedPositionMs,
+                                    source = RoomStateSource.WEB_SOCKET_CONTROL_RESULT,
+                                    cause = applied.causedBy
+                                )
+                                if (accepted != null && applied.causedBy?.type == "TRACK_FINISHED") {
                                     awaitingTrackFinishStableKey = null
                                 }
-                                applyRoomState(applied.state, applied.expectedPositionMs)
-                                if (!isCurrentUserController()) {
+                                if (accepted != null && !isCurrentUserController()) {
                                     applyRoomStateToPlayer(
-                                        applied.state,
+                                        accepted.state,
                                         applied.causedBy?.type,
-                                        applied.expectedPositionMs
+                                        accepted.expectedPositionMs
                                     )
                                 }
                             }
@@ -869,25 +894,67 @@ class ListenTogetherSessionManager(
             roomNotice = null
         )
         response.state?.let {
-            applyRoomState(it, null)
+            val accepted = acceptRoomState(
+                state = it,
+                expectedPositionMs = null,
+                source = RoomStateSource.HTTP_SESSION_UPDATE
+            ) ?: return@let
             applyRoomStateToPlayer(
-                it,
+                accepted.state,
                 causeType = resolveListenTogetherJoinAutoPauseCause(
                     autoPauseOnJoin = response.autoPauseOnJoin,
                     role = _sessionState.value.role,
-                    state = it
+                    state = accepted.state
                 )
             )
         }
     }
 
-    private fun applyRoomState(
+    private fun acceptRoomState(
         state: ListenTogetherRoomState,
-        expectedPositionMs: Long?
+        expectedPositionMs: Long?,
+        source: RoomStateSource,
+        cause: ListenTogetherCause? = null
+    ): AcceptedRoomState? {
+        val currentState = _roomState.value
+        val latestVersion = latestAcceptedRoomVersion(currentState)
+        if (state.version < latestVersion) {
+            NPLogger.d(
+                TAG,
+                "acceptRoomState(): drop stale source=${source.logName}, roomId=${state.roomId}, version=${state.version}, latest=$latestVersion"
+            )
+            return null
+        }
+        if (shouldDropControllerLocalEcho(state, cause, latestVersion)) {
+            NPLogger.d(
+                TAG,
+                "acceptRoomState(): drop controller echo source=${source.logName}, roomId=${state.roomId}, version=${state.version}, latest=$latestVersion, causedBy=${cause?.type}:${cause?.eventId}"
+            )
+            return null
+        }
+        if (currentState != null && state.version == latestVersion) {
+            lastAppliedRoomVersion = maxOf(lastAppliedRoomVersion, currentState.version)
+            updateRoomPositionSupplement(currentState, expectedPositionMs, source)
+            return AcceptedRoomState(
+                state = currentState,
+                expectedPositionMs = expectedPositionMs
+            )
+        }
+        commitRoomState(state, expectedPositionMs, source)
+        return AcceptedRoomState(
+            state = state,
+            expectedPositionMs = expectedPositionMs
+        )
+    }
+
+    private fun commitRoomState(
+        state: ListenTogetherRoomState,
+        expectedPositionMs: Long?,
+        source: RoomStateSource
     ) {
         NPLogger.d(
             TAG,
-            "applyRoomState(): roomId=${state.roomId}, version=${state.version}, members=${state.members.size}, expectedPositionMs=$expectedPositionMs"
+            "commitRoomState(): source=${source.logName}, roomId=${state.roomId}, version=${state.version}, members=${state.members.size}, expectedPositionMs=$expectedPositionMs"
         )
         lastAppliedRoomVersion = maxOf(lastAppliedRoomVersion, state.version)
         _roomState.value = state
@@ -908,6 +975,31 @@ class ListenTogetherSessionManager(
             roomNotice = roomNoticeForState(state)
         )
         maybeRecoverMissingListenerMembership(state, reason = "apply_room_state")
+    }
+
+    private fun updateRoomPositionSupplement(
+        currentState: ListenTogetherRoomState,
+        expectedPositionMs: Long?,
+        source: RoomStateSource
+    ) {
+        if (expectedPositionMs == null) {
+            NPLogger.d(
+                TAG,
+                "acceptRoomState(): keep current structure source=${source.logName}, roomId=${currentState.roomId}, version=${currentState.version}"
+            )
+            return
+        }
+        NPLogger.d(
+            TAG,
+            "acceptRoomState(): position supplement source=${source.logName}, roomId=${currentState.roomId}, version=${currentState.version}, expectedPositionMs=$expectedPositionMs"
+        )
+        _sessionState.value = _sessionState.value.copy(
+            expectedPositionMs = expectedPositionMs
+        )
+    }
+
+    private fun latestAcceptedRoomVersion(currentState: ListenTogetherRoomState?): Long {
+        return maxOf(lastAppliedRoomVersion, currentState?.version ?: -1L)
     }
 
     private fun ensureListenTogetherForegroundService(reason: String) {
@@ -931,13 +1023,6 @@ class ListenTogetherSessionManager(
 
     private fun handleSocketRoomState(message: ListenTogetherSocketEnvelope) {
         val state = message.state ?: return
-        if (shouldIgnoreStaleRoomState(state, message.causedBy)) {
-            NPLogger.d(
-                TAG,
-                "handleSocketRoomState(): stale version=${state.version}, lastApplied=$lastAppliedRoomVersion"
-            )
-            return
-        }
         if (shouldIgnoreIncomingState(message.causedBy)) {
             NPLogger.d(
                 TAG,
@@ -953,11 +1038,16 @@ class ListenTogetherSessionManager(
             markInboundEvent(message.causedBy?.eventId)
             return
         }
+        val accepted = acceptRoomState(
+            state = state,
+            expectedPositionMs = message.expectedPositionMs,
+            source = RoomStateSource.WEB_SOCKET_STATE,
+            cause = message.causedBy
+        ) ?: return
         if (message.causedBy?.type == "TRACK_FINISHED") {
             awaitingTrackFinishStableKey = null
         }
         markInboundEvent(message.causedBy?.eventId)
-        applyRoomState(state, message.expectedPositionMs)
         val currentUserUuid = _sessionState.value.userUuid
         if (
             isCurrentUserController() &&
@@ -972,11 +1062,11 @@ class ListenTogetherSessionManager(
             return
         }
         applyRoomStateToPlayer(
-            state,
+            accepted.state,
             message.causedBy?.type,
-            message.expectedPositionMs
+            accepted.expectedPositionMs
         )
-        maybeRequestControllerLink(state, message.causedBy?.type)
+        maybeRequestControllerLink(accepted.state, message.causedBy?.type)
         maybePublishControllerRecoveryHeartbeat(message)
     }
 
@@ -1061,28 +1151,36 @@ class ListenTogetherSessionManager(
 
     private fun handleRoomSuspended(message: ListenTogetherSocketEnvelope) {
         val state = message.state ?: return
-        if (shouldIgnoreStaleRoomState(state, message.causedBy)) return
         NPLogger.w(
             TAG,
             "handleRoomSuspended(): roomId=${state.roomId}, controllerOfflineSince=${state.controllerOfflineSince}"
         )
-        applyRoomState(state, message.expectedPositionMs)
+        val accepted = acceptRoomState(
+            state = state,
+            expectedPositionMs = message.expectedPositionMs,
+            source = RoomStateSource.WEB_SOCKET_ROOM_STATUS,
+            cause = message.causedBy
+        ) ?: return
         _sessionState.value = _sessionState.value.copy(
-            roomNotice = roomNoticeForState(state, message.message)
+            roomNotice = roomNoticeForState(accepted.state, message.message)
         )
     }
 
     private fun handleRoomResumed(message: ListenTogetherSocketEnvelope) {
         val state = message.state ?: return
-        if (shouldIgnoreStaleRoomState(state, message.causedBy)) return
         NPLogger.d(TAG, "handleRoomResumed(): roomId=${state.roomId}, version=${state.version}")
-        applyRoomState(state, message.expectedPositionMs)
+        val accepted = acceptRoomState(
+            state = state,
+            expectedPositionMs = message.expectedPositionMs,
+            source = RoomStateSource.WEB_SOCKET_ROOM_STATUS,
+            cause = message.causedBy
+        ) ?: return
         val currentUserUuid = _sessionState.value.userUuid
         if (!isCurrentUserController() || message.causedBy?.userUuid != currentUserUuid) {
-            applyRoomStateToPlayer(state, message.message, message.expectedPositionMs)
+            applyRoomStateToPlayer(accepted.state, message.message, accepted.expectedPositionMs)
         }
         _sessionState.value = _sessionState.value.copy(
-            roomNotice = roomNoticeForState(state, message.message),
+            roomNotice = roomNoticeForState(accepted.state, message.message),
             lastError = null
         )
     }
@@ -1093,7 +1191,14 @@ class ListenTogetherSessionManager(
             TAG,
             "handleRoomClosed(): roomId=${message.roomId ?: state?.roomId}, message=${message.message}"
         )
-        state?.let { _roomState.value = it }
+        state?.let {
+            acceptRoomState(
+                state = it,
+                expectedPositionMs = message.expectedPositionMs,
+                source = RoomStateSource.WEB_SOCKET_ROOM_CLOSED,
+                cause = message.causedBy
+            )
+        }
         closeRoomLocally(message.message ?: roomNoticeForState(state))
     }
 
@@ -1261,7 +1366,11 @@ class ListenTogetherSessionManager(
                 baseTimestampMs = System.currentTimeMillis()
             )
         )
-        applyRoomState(syntheticState, committedEvent.positionMs ?: message.expectedPositionMs)
+        commitRoomState(
+            state = syntheticState,
+            expectedPositionMs = committedEvent.positionMs ?: message.expectedPositionMs,
+            source = RoomStateSource.LOCAL_SYNTHETIC
+        )
         applyRoomStateToPlayer(
             syntheticState,
             message.causedBy?.type ?: committedEvent.type,
@@ -1311,17 +1420,17 @@ class ListenTogetherSessionManager(
         return state.currentStableKey() == waitingStableKey
     }
 
-    private fun shouldIgnoreStaleRoomState(
+    private fun shouldDropControllerLocalEcho(
         state: ListenTogetherRoomState,
-        cause: ListenTogetherCause?
+        cause: ListenTogetherCause?,
+        latestVersion: Long
     ): Boolean {
-        if (state.version <= lastAppliedRoomVersion) return true
         if (cause?.type == "TRACK_FINISHED") return false
         val currentUserId = _sessionState.value.userUuid
         return currentUserId == (state.controllerUserUuid ?: state.controllerUserId) &&
                 cause?.userUuid == currentUserId &&
                 SystemClock.elapsedRealtime() - lastControllerLocalControlAtElapsedMs < CONTROLLER_LOCAL_CONTROL_COOLDOWN_MS &&
-                state.version <= lastAppliedRoomVersion + 1
+                state.version <= latestVersion + 1
     }
 
     private fun startHeartbeat() {
@@ -1841,14 +1950,19 @@ class ListenTogetherSessionManager(
             TAG,
             "handleHttpFallbackControlResponse(): applied, type=${event.type}, reason=$reason, version=${applied.version}"
         )
-        applyRoomState(state, applied.expectedPositionMs)
-        if (!isCurrentUserController()) {
+        val accepted = acceptRoomState(
+            state = state,
+            expectedPositionMs = applied.expectedPositionMs,
+            source = RoomStateSource.HTTP_CONTROL_FALLBACK,
+            cause = applied.causedBy
+        )
+        if (accepted != null && !isCurrentUserController()) {
             applyRoomStateToPlayer(
-                state = state,
+                state = accepted.state,
                 causeType = applied.causedBy?.type,
-                expectedPositionMs = applied.expectedPositionMs
+                expectedPositionMs = accepted.expectedPositionMs
             )
-            maybeRequestControllerLink(state, applied.causedBy?.type)
+            maybeRequestControllerLink(accepted.state, applied.causedBy?.type)
         }
     }
 

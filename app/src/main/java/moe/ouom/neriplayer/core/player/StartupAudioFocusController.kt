@@ -204,8 +204,15 @@ internal object StartupAudioFocusController {
                 hasFocus
             }
             if (usbExclusiveGuard) {
+                val suppressPlayerPcm = shouldSuppressUsbExclusiveForFocusChange(change)
+                if (suppressPlayerPcm) {
+                    PlayerManager.markUsbExclusiveFocusDisrupted(change)
+                }
+                if (shouldPauseUsbExclusiveForFocusChange(change)) {
+                    PlayerManager.pauseForUsbExclusiveFocusLoss(change)
+                }
                 UsbExclusiveSessionController.setPlayerFocusSuppressed(
-                    suppressed = false,
+                    suppressed = suppressPlayerPcm,
                     reason = "audio_focus_change:$change"
                 )
             }
@@ -228,4 +235,22 @@ internal object StartupAudioFocusController {
         usbExclusiveGuardEnabled
     }
 
+}
+
+internal fun shouldSuppressUsbExclusiveForFocusChange(change: Int): Boolean {
+    return when (change) {
+        AudioManager.AUDIOFOCUS_GAIN -> false
+        AudioManager.AUDIOFOCUS_LOSS,
+        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> true
+        else -> true
+    }
+}
+
+internal fun shouldPauseUsbExclusiveForFocusChange(change: Int): Boolean {
+    return when (change) {
+        AudioManager.AUDIOFOCUS_LOSS,
+        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> true
+        else -> false
+    }
 }

@@ -456,6 +456,9 @@ class AudioPlayerService : Service() {
     private var lastUsbExclusiveKeepAliveAtMs: Long = 0L
     private var lastUsbExclusiveNativeHandle: Long = 0L
     private var lastUsbExclusiveCompletedFrames: Long = -1L
+    private var lastUsbExclusiveSignalBytes: Long = -1L
+    private var lastUsbExclusiveZeroFillBytes: Long = -1L
+    private var lastUsbExclusiveOutputPeak: Float = Float.NaN
     private var usbExclusiveKeepAliveStallTicks: Int = 0
 
     private fun shouldKeepServiceSticky(): Boolean {
@@ -520,7 +523,9 @@ class AudioPlayerService : Service() {
         val levelLine = "pcm=${nativeState.pcmLevelBytes}/${nativeState.pcmCapacityBytes} " +
             "free=${nativeState.pcmFreeBytes} backpressureCurrentMs=${nativeState.pcmBackpressureCurrentMs}"
         val signalLine = "signalFrames=${nativeState.playerSignalFrames} " +
-            "silentFrames=${nativeState.playerSilentFrames} peak=${nativeState.lastOutputPeak}"
+            "silentFrames=${nativeState.playerSilentFrames} " +
+            "zeroFillBytes=${nativeState.playerZeroFillBytes} " +
+            "peak=${nativeState.lastOutputPeak}"
         val message = "USB exclusive keepalive tick=$usbExclusiveKeepAliveTick gapMs=$gapMs " +
             "path=${pathState.effectivePath} native=${nativeState.source}/${nativeState.streaming} " +
             "wakeLock=${UsbExclusiveWakeLock.isHeld()} completedFrames=${nativeState.completedAudioFrames} " +
@@ -553,6 +558,9 @@ class AudioPlayerService : Service() {
         if (!shouldCheckStall) {
             lastUsbExclusiveNativeHandle = nativeHandle
             lastUsbExclusiveCompletedFrames = completedFrames
+            lastUsbExclusiveSignalBytes = nativeState.playerSignalBytes
+            lastUsbExclusiveZeroFillBytes = nativeState.playerZeroFillBytes
+            lastUsbExclusiveOutputPeak = nativeState.lastOutputPeak
             usbExclusiveKeepAliveStallTicks = 0
             return
         }
@@ -561,6 +569,12 @@ class AudioPlayerService : Service() {
             currentHandle = nativeHandle,
             previousCompletedFrames = lastUsbExclusiveCompletedFrames,
             currentCompletedFrames = completedFrames,
+            previousSignalBytes = lastUsbExclusiveSignalBytes,
+            currentSignalBytes = nativeState.playerSignalBytes,
+            previousZeroFillBytes = lastUsbExclusiveZeroFillBytes,
+            currentZeroFillBytes = nativeState.playerZeroFillBytes,
+            previousOutputPeak = lastUsbExclusiveOutputPeak,
+            currentOutputPeak = nativeState.lastOutputPeak,
             previousStallTicks = usbExclusiveKeepAliveStallTicks,
             recoveryTicks = USB_EXCLUSIVE_KEEPALIVE_STALL_RECOVERY_TICKS
         )
@@ -573,6 +587,9 @@ class AudioPlayerService : Service() {
         }
         lastUsbExclusiveNativeHandle = nativeHandle
         lastUsbExclusiveCompletedFrames = completedFrames
+        lastUsbExclusiveSignalBytes = nativeState.playerSignalBytes
+        lastUsbExclusiveZeroFillBytes = nativeState.playerZeroFillBytes
+        lastUsbExclusiveOutputPeak = nativeState.lastOutputPeak
         usbExclusiveKeepAliveStallTicks = decision.stallTicks
         if (!decision.shouldRecover) return
         usbExclusiveKeepAliveStallTicks = 0
@@ -1532,10 +1549,15 @@ class AudioPlayerService : Service() {
             "NERI-APS",
             "onTaskRemoved hasItems=${PlayerManager.hasItems()} isPlaying=${PlayerManager.isPlayingFlow.value}"
         )
-        // 从最近任务移除时不再直接停播，只禁止这次会话后续自动恢复
+        // 划掉任务不代表用户停止播放，正在播的会话要保留进程重建恢复意图
         if (PlayerManager.hasItems()) {
-            PlayerManager.flushPlaybackStatsBlocking("task_removed")
-            PlayerManager.suppressFutureAutoResumeForCurrentSession(forcePersist = true)
+            PlayerManager.flushPlaybackStatsAsync("task_removed")
+            PlayerManager.scheduleStatePersist(
+                positionMs = PlayerManager.playbackPositionFlow.value,
+                shouldResumePlayback = PlayerManager.playWhenReadyFlow.value ||
+                    PlayerManager.isPlayingFlow.value,
+                debounceMs = 0L
+            )
             updateNotification()
         }
     }
@@ -1595,7 +1617,7 @@ class AudioPlayerService : Service() {
             "onTrimMemory level=$level ${buildStateSummary()}"
         )
         if (level >= TRIM_MEMORY_UI_HIDDEN && PlayerManager.hasItems()) {
-            PlayerManager.flushPlaybackStatsBlocking("service_trim_memory_$level")
+            PlayerManager.flushPlaybackStatsAsync("service_trim_memory_$level")
         }
     }
 
@@ -1606,7 +1628,7 @@ class AudioPlayerService : Service() {
             "onLowMemory ${buildStateSummary()}"
         )
         if (PlayerManager.hasItems()) {
-            PlayerManager.flushPlaybackStatsBlocking("service_low_memory")
+            PlayerManager.flushPlaybackStatsAsync("service_low_memory")
         }
     }
 

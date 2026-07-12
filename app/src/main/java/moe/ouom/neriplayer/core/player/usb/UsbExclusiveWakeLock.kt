@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.core.player.usb
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.os.PowerManager
 import moe.ouom.neriplayer.util.NPLogger
@@ -8,10 +7,10 @@ import moe.ouom.neriplayer.util.NPLogger
 internal object UsbExclusiveWakeLock {
     private const val TAG = "NERI-UsbWakeLock"
     private const val LOCK_TAG = "NeriPlayer:UsbExclusivePlayback"
+    private const val LEASE_TIMEOUT_MS = 10L * 60L * 1000L
     private val lock = Any()
     private var wakeLock: PowerManager.WakeLock? = null
 
-    @SuppressLint("WakelockTimeout")
     fun acquire(context: Context, reason: String) {
         synchronized(lock) {
             val playbackWakeLock = wakeLock ?: runCatching { createWakeLock(context) }
@@ -19,9 +18,13 @@ internal object UsbExclusiveWakeLock {
                 .getOrNull()
                 ?.also { wakeLock = it }
                 ?: return
-            if (runCatching { playbackWakeLock.isHeld }.getOrDefault(false)) return
-            runCatching { playbackWakeLock.acquire() }
-                .onSuccess { NPLogger.d(TAG, "acquired reason=$reason") }
+            val alreadyHeld = runCatching { playbackWakeLock.isHeld }.getOrDefault(false)
+            runCatching { playbackWakeLock.acquire(LEASE_TIMEOUT_MS) }
+                .onSuccess {
+                    if (!alreadyHeld) {
+                        NPLogger.d(TAG, "acquired reason=$reason timeoutMs=$LEASE_TIMEOUT_MS")
+                    }
+                }
                 .onFailure { error -> NPLogger.w(TAG, "acquire failed reason=$reason", error) }
         }
     }

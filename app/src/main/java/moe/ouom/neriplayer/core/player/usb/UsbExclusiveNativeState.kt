@@ -25,6 +25,7 @@ data class UsbExclusiveNativeState(
     val playerSignalFrames: Long = 0L,
     val playerSilentFrames: Long = 0L,
     val playerSignalBytes: Long = 0L,
+    val playerZeroFillBytes: Long = 0L,
     val outputPeak: Float = 0f,
     val lastOutputPeak: Float = 0f,
     val runtimeReport: String = "idle",

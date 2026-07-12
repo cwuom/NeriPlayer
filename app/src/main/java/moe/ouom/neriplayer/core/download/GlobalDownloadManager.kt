@@ -1941,8 +1941,8 @@ object GlobalDownloadManager {
         val resolvedSongId = metadata?.songId ?: songId.takeIf { it > 0L }
         val currentAudioName = storedAudio?.name
         val lyricReferences = buildList {
-            metadata?.lyricPath?.let(::add)
-            metadata?.translatedLyricPath?.let(::add)
+            trustedManagedMetadataReference(metadata?.lyricPath, snapshot)?.let(::add)
+            trustedManagedMetadataReference(metadata?.translatedLyricPath, snapshot)?.let(::add)
             addAll(
                 findAllIndexedLyricReferences(
                     candidateBaseNames = candidateBaseNames,
@@ -1961,7 +1961,7 @@ object GlobalDownloadManager {
             )
         }
         val coverReferences = buildList {
-            metadata?.coverPath?.let(::add)
+            trustedManagedMetadataReference(metadata?.coverPath, snapshot)?.let(::add)
             val indexedCoverBaseNames = storedAudio
                 ?.let { candidateManagedDownloadBaseNames(it.nameWithoutExtension) }
                 ?: candidateBaseNames
@@ -1990,6 +1990,15 @@ object GlobalDownloadManager {
                     }
                 }
         }
+    }
+
+    internal fun trustedManagedMetadataReference(
+        reference: String?,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): String? {
+        return reference
+            ?.takeIf(String::isNotBlank)
+            ?.takeIf(snapshot.knownReferences::contains)
     }
 
     private suspend fun buildManagedDownloadDeletePlans(

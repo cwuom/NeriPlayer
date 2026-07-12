@@ -65,6 +65,7 @@ class SecureTokenStorage(private val context: Context) {
         private const val KEY_SYNC_MUTATION_VERSION = "sync_mutation_version"
         private const val MAX_RECENT_PLAY_DELETIONS = 500
         private const val MAX_PLAYLIST_SONG_DELETIONS = 5000
+        private val syncMutationLock = Any()
     }
 
     private fun openEncryptedPrefsWithRecovery(): SharedPreferences {
@@ -368,13 +369,17 @@ class SecureTokenStorage(private val context: Context) {
     }
 
     fun getSyncMutationVersion(): Long {
-        return encryptedPrefs.getLong(KEY_SYNC_MUTATION_VERSION, 0L)
+        return synchronized(syncMutationLock) {
+            encryptedPrefs.getLong(KEY_SYNC_MUTATION_VERSION, 0L)
+        }
     }
 
     fun markSyncMutation(): Long {
-        val nextVersion = getSyncMutationVersion() + 1L
-        encryptedPrefs.edit { putLong(KEY_SYNC_MUTATION_VERSION, nextVersion) }
-        return nextVersion
+        return synchronized(syncMutationLock) {
+            val nextVersion = encryptedPrefs.getLong(KEY_SYNC_MUTATION_VERSION, 0L) + 1L
+            encryptedPrefs.edit { putLong(KEY_SYNC_MUTATION_VERSION, nextVersion) }
+            nextVersion
+        }
     }
 
     fun snapshot(): GitHubSyncConfigSnapshot {

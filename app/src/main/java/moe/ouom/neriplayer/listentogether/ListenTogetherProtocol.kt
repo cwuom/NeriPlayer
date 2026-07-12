@@ -226,8 +226,9 @@ fun buildListenTogetherWsUrl(baseUrl: String, roomId: String, token: String): St
         .encodedPath("/api/rooms/$roomId/ws")
         .setQueryParameter("token", token)
         .build()
-    return url.newBuilder()
-        .scheme(if (url.isHttps) "wss" else "ws")
-        .build()
-        .toString()
+    val httpUrl = url.toString()
+    return when {
+        url.isHttps -> httpUrl.replaceFirst("https://", "wss://")
+        else -> httpUrl.replaceFirst("http://", "ws://")
+    }
 }

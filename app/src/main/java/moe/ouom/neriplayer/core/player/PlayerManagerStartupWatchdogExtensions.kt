@@ -12,6 +12,9 @@ import moe.ouom.neriplayer.core.player.model.PlaybackUrlCandidate
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.hasPlaybackProgressAdvancedSinceBaseline
+import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathState
+import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathTracker
+import moe.ouom.neriplayer.core.player.usb.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.policy.resolvePlaybackStartPlan
 import moe.ouom.neriplayer.util.NPLogger
 
@@ -59,9 +62,28 @@ internal fun PlayerManager.schedulePlaybackStartupWatchdog(reason: String) {
     val startPositionMs = runCatching { player.currentPosition.coerceAtLeast(0L) }
         .getOrDefault(_playbackPositionMs.value.coerceAtLeast(0L))
     val startedAtMs = SystemClock.elapsedRealtime()
+    val earlyTimeoutMs = startupEarlyWatchdogTimeoutMs(timeoutMs)
 
     playbackStartupWatchdogJob = mainScope.launch {
-        delay(timeoutMs)
+        if (earlyTimeoutMs in 1 until timeoutMs) {
+            delay(earlyTimeoutMs)
+            if (playbackStartupWatchdogToken != watchdogToken) return@launch
+            if (requestToken != playbackRequestToken) return@launch
+            if (isEarlyStartupPlaybackStalled(startPositionMs)) {
+                NPLogger.w(
+                    "NERI-PlayerManager",
+                    "playback startup early stall: reason=$reason, elapsedMs=${SystemClock.elapsedRealtime() - startedAtMs}, " +
+                        "state=${playbackStateName(player.playbackState)}, positionMs=${player.currentPosition.coerceAtLeast(0L)}, " +
+                        "usb=${usbExclusivePlaybackEnabled}, native=${UsbExclusiveSessionController.state.value.source}/" +
+                        "${UsbExclusiveSessionController.state.value.streaming}, attempts=$startupStallRecoveryAttempts"
+                )
+                recoverPlaybackStartupStall(requestToken)
+                return@launch
+            }
+            delay(timeoutMs - earlyTimeoutMs)
+        } else {
+            delay(timeoutMs)
+        }
         if (playbackStartupWatchdogToken != watchdogToken) return@launch
         if (requestToken != playbackRequestToken) return@launch
         if (!isStartupPlaybackStalled(startPositionMs)) return@launch
@@ -101,6 +123,38 @@ private fun PlayerManager.startupWatchdogTimeoutMs(): Long {
     return STARTUP_STALL_REMOTE_TIMEOUT_MS
 }
 
+private fun PlayerManager.startupEarlyWatchdogTimeoutMs(timeoutMs: Long): Long {
+    val earlyTimeoutMs = if (usbExclusivePlaybackEnabled) {
+        STARTUP_STALL_USB_EARLY_TIMEOUT_MS
+    } else {
+        STARTUP_STALL_READY_EARLY_TIMEOUT_MS
+    }
+    return earlyTimeoutMs.coerceAtMost(timeoutMs)
+}
+
+private fun PlayerManager.isEarlyStartupPlaybackStalled(startPositionMs: Long): Boolean {
+    if (!shouldWatchPlaybackStartup()) return false
+    val currentPositionMs = player.currentPosition.coerceAtLeast(0L)
+    val advancedMs = currentPositionMs - startPositionMs.coerceAtLeast(0L)
+    if (advancedMs > STARTUP_STALL_POSITION_TOLERANCE_MS) return false
+    if (usbExclusivePlaybackEnabled && isUsbExclusiveStartupOutputPathActive()) return true
+    return player.playbackState == Player.STATE_READY && player.playWhenReady
+}
+
+private fun PlayerManager.isUsbExclusiveStartupOutputPathActive(): Boolean {
+    if (!usbExclusivePlaybackEnabled) return false
+    val nativeState = UsbExclusiveSessionController.state.value
+    val pathState = UsbExclusiveAudioPathTracker.state.value
+    val requestedNative = pathState.requestedPath == UsbExclusiveAudioPathState.REQUESTED_NATIVE_USB
+    val effectiveNative = pathState.effectivePath == UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB
+    val playerNativeSession = nativeState.source == "player_pcm" && nativeState.opened
+    val hasNativeWork =
+        nativeState.streaming ||
+            nativeState.queuedAudioFrames > 0L ||
+            nativeState.pcmLevelBytes > 0L
+    return (requestedNative || effectiveNative || playerNativeSession) && hasNativeWork
+}
+
 private fun PlayerManager.isStartupPlaybackStalled(startPositionMs: Long): Boolean {
     if (!shouldWatchPlaybackStartup()) return false
     val currentPositionMs = player.currentPosition.coerceAtLeast(0L)
@@ -111,6 +165,10 @@ private fun PlayerManager.isStartupPlaybackStalled(startPositionMs: Long): Boole
 private fun PlayerManager.recoverPlaybackStartupStall(requestToken: Long) {
     if (requestToken != playbackRequestToken) return
     startupStallRecoveryAttempts += 1
+
+    if (tryRecoverUsbExclusiveStartupStall(requestToken)) {
+        return
+    }
 
     if (tryRestartSystemFallbackSinkForStartupStall(requestToken)) {
         return
@@ -146,6 +204,21 @@ private fun PlayerManager.recoverPlaybackStartupStall(requestToken: Long) {
 
     consecutivePlayFailures++
     advanceAfterPlaybackFailure(source = "startup_stall")
+}
+
+private fun PlayerManager.tryRecoverUsbExclusiveStartupStall(requestToken: Long): Boolean {
+    if (!usbExclusivePlaybackEnabled || allowMixedPlaybackEnabled) return false
+    if (!isPlayerInitialized() || requestToken != playbackRequestToken) return false
+    if (startupStallRecoveryAttempts > STARTUP_STALL_MAX_RECOVERY_ATTEMPTS) return false
+    val positionMs = player.currentPosition.coerceAtLeast(0L)
+    resetPlaybackProgressAdvanceBaseline(positionMs)
+    val scheduledRecovery = recoverUsbExclusivePlaybackIfUnhealthy(
+        reason = "startup_zero_progress",
+        forceRecovery = true
+    )
+    if (!scheduledRecovery) return false
+    schedulePlaybackStartupWatchdog(reason = "usb_exclusive_startup_recovery")
+    return true
 }
 
 private fun PlayerManager.tryRestartSystemFallbackSinkForStartupStall(requestToken: Long): Boolean {

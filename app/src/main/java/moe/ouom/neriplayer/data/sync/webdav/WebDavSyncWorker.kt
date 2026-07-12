@@ -105,7 +105,8 @@ class WebDavSyncWorker(
             } else {
                 val error = syncResult.exceptionOrNull()
                 if (error is WebDavSyncInProgressException) {
-                    return@withContext Result.success()
+                    NPLogger.d(TAG, "WebDAV sync is waiting for the global sync lock, retry later")
+                    return@withContext Result.retry()
                 }
                 NPLogger.e(TAG, "WebDAV sync failed", error)
                 if (

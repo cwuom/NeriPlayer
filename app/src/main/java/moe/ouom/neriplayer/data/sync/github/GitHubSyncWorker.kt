@@ -166,8 +166,8 @@ class GitHubSyncWorker(
             } else {
                 val error = syncResult.exceptionOrNull()
                 if (error is GitHubSyncInProgressException) {
-                    NPLogger.d(TAG, "Sync skipped because another sync is already running")
-                    return@withContext Result.success()
+                    NPLogger.d(TAG, "Sync is waiting for the global sync lock, retry later")
+                    return@withContext Result.retry()
                 }
                 NPLogger.e(TAG, "Sync failed", error)
 
