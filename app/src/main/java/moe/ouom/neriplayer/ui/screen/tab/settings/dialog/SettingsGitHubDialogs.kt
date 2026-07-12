@@ -38,7 +38,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,6 +55,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
+import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncViewModel
 
 @Composable
@@ -73,7 +73,7 @@ internal fun SettingsGitHubDialogs(
     }
 
     if (showGitHubConfigDialog) {
-        val githubState by githubVm.uiState.collectAsState()
+        val githubState by githubVm.uiState.collectAsStateWithLifecycleCompat()
         var githubToken by remember { mutableStateOf("") }
         var githubRepoName by remember { mutableStateOf("neriplayer-backup") }
         var useExistingRepo by remember { mutableStateOf(false) }

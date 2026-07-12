@@ -10,7 +10,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,6 +24,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
+import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.viewmodel.WebDavSyncViewModel
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -44,7 +44,7 @@ internal fun SettingsWebDavDialogs(
     }
 
     if (showWebDavConfigDialog) {
-        val webDavState by webDavVm.uiState.collectAsState()
+        val webDavState by webDavVm.uiState.collectAsStateWithLifecycleCompat()
         val storage = remember(context) { WebDavStorage(context) }
         var serverUrl by remember(showWebDavConfigDialog) {
             mutableStateOf(storage.getServerUrl().orEmpty())

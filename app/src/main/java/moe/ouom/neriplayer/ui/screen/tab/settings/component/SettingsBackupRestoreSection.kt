@@ -68,7 +68,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -93,6 +92,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
 
 @Composable
@@ -139,8 +139,8 @@ internal fun SettingsBackupRestoreSection(
         val context = androidx.compose.ui.platform.LocalContext.current
         val githubVm: GitHubSyncViewModel = viewModel()
         val webDavVm: WebDavSyncViewModel = viewModel()
-        val githubState by githubVm.uiState.collectAsState()
-        val webDavState by webDavVm.uiState.collectAsState()
+        val githubState by githubVm.uiState.collectAsStateWithLifecycleCompat()
+        val webDavState by webDavVm.uiState.collectAsStateWithLifecycleCompat()
         var showPlayHistoryModeDialog by remember { mutableStateOf(false) }
         var showConfigExportWarningDialog by remember { mutableStateOf(false) }
         val storage = remember(context) { SecureTokenStorage(context) }
