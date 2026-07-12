@@ -23,25 +23,18 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileNotFoundException
-import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.net.URLDecoder
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
@@ -50,45 +43,6 @@ import kotlin.math.abs
 internal object ManagedDownloadStorage {
     private const val TAG = "ManagedDownloadStorage"
     private const val LOG_HOT_AUDIO_HITS = false
-    private const val ROOT_DIR_NAME = "NeriPlayer"
-    private const val COVER_SUBDIRECTORY = "Covers"
-    private const val LYRIC_SUBDIRECTORY = "Lyrics"
-    private const val DOWNLOAD_STAGING_DIR_NAME = "download_staging"
-    private const val DOWNLOAD_STAGING_FILE_PREFIX = "npdl_"
-    private const val DOWNLOAD_STAGING_FILE_SUFFIX = ".download"
-    private const val DOWNLOAD_STAGING_HLS_CHECKPOINT_SUFFIX = ".hls.json"
-    private const val DOWNLOAD_STAGING_RESUME_METADATA_SUFFIX = ".resume.json"
-    private const val DOWNLOAD_STAGING_MAX_AGE_MS = 7L * 24L * 60L * 60L * 1000L
-    private const val PENDING_AUDIO_WRITE_MARKER = ".npdl_pending"
-    private const val NO_MEDIA_FILE_NAME = ".nomedia"
-    private const val SNAPSHOT_CACHE_FILE_NAME = "managed_download_snapshot_v1.json"
-    private const val PENDING_DOWNLOAD_QUEUE_FILE_NAME = "pending_download_queue_v1.json"
-    private const val CANCELLED_DOWNLOAD_KEYS_FILE_NAME = "cancelled_download_keys_v1.json"
-    private const val PENDING_DOWNLOAD_QUEUE_VERSION = 1
-    private const val CANCELLED_DOWNLOAD_KEYS_VERSION = 1
-    private const val SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS = 1_200L
-    private const val TREE_ROOT_CACHE_VALIDATE_INTERVAL_MS = 1_500L
-    private const val TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS = 2_000L
-    private const val TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS = 60_000L
-    private const val FILE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS = 60_000L
-    private const val MIGRATION_PROGRESS_EMIT_INTERVAL_MS = 80L
-    @Suppress("SpellCheckingInspection")
-    private const val METADATA_SUFFIX = ".npmeta.json"
-    private const val MIGRATION_COPY_PARALLELISM = 8
-    private const val MIGRATION_TREE_COPY_PARALLELISM = 2
-    private const val MIGRATION_REWRITE_PARALLELISM = 4
-    private const val MIGRATION_TREE_REWRITE_PARALLELISM = 2
-    private const val MIGRATION_DELETE_PARALLELISM = 8
-    private const val MIGRATION_TREE_DELETE_PARALLELISM = 2
-    private const val MIGRATION_IO_MAX_ATTEMPTS = 3
-    private const val MIGRATION_IO_RETRY_DELAY_MS = 150L
-    private const val SAF_DELETE_MAX_ATTEMPTS = 3
-    private const val SAF_DELETE_RETRY_DELAY_MS = 80L
-    private const val SAF_REFERENCE_DELETE_PARALLELISM = 6
-    private const val STREAM_COPY_BUFFER_SIZE_BYTES = 1 * 1024 * 1024
-    private const val SAF_COMMITTED_SIZE_TOLERANCE_BYTES = 1L
-    private val audioExtensions = setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "webm", "eac3")
-    private val imageExtensions = setOf("jpg", "jpeg", "png", "webp")
 
     @Volatile
     private var customDirectoryUri: String? = null
@@ -104,8 +58,6 @@ internal object ManagedDownloadStorage {
 
     private val snapshotBuildLock = Any()
     private val snapshotPersistenceLock = Any()
-    private val pendingDownloadQueueLock = Any()
-    private val cancelledDownloadKeysLock = Any()
     private val snapshotScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val treeDirectoryLocks = ConcurrentHashMap<String, Any>()
     private val treeSubdirectoryCache = ConcurrentHashMap<String, DocumentFile>()
@@ -115,7 +67,6 @@ internal object ManagedDownloadStorage {
     private val childNameReservationLocks = ConcurrentHashMap<String, Any>()
     private val ensuredNoMediaMarkers = ConcurrentHashMap<String, Boolean>()
     private val pendingAudioWriteIdGenerator = AtomicLong(0L)
-    private val atomicFileWriteIdGenerator = AtomicLong(0L)
 
     @Volatile
     private var snapshotPersistJob: Job? = null
@@ -1067,7 +1018,7 @@ internal object ManagedDownloadStorage {
         val metadataFile = buildWorkingResumeMetadataFile(workingFile)
         runCatching {
             metadataFile.parentFile?.mkdirs()
-            metadataFile.writeText(song.toWorkingResumeMetadataJson().toString(), Charsets.UTF_8)
+            metadataFile.writeText(ManagedDownloadStorageJsonCodec.workingResumeMetadataToJson(song).toString(), Charsets.UTF_8)
         }.onFailure { error ->
             NPLogger.w(TAG, "写入下载恢复元数据失败: ${metadataFile.name}, ${error.message}")
         }
@@ -1201,25 +1152,11 @@ internal object ManagedDownloadStorage {
         songs: List<SongItem>,
         nowMs: Long = System.currentTimeMillis()
     ) {
-        val distinctSongs = songs.distinctBy { it.stableKey() }
-        if (distinctSongs.isEmpty()) {
-            return
-        }
-        synchronized(pendingDownloadQueueLock) {
-            val existingEntries = readPendingDownloadQueueFile(queueFile)
-            val mergedEntries = mergePendingDownloadQueueEntries(
-                existingEntries = existingEntries,
-                songs = distinctSongs,
-                nowMs = nowMs
-            )
-            writePendingDownloadQueueFile(queueFile, mergedEntries, nowMs)
-        }
+        ManagedDownloadQueueStore.upsertPendingDownloadQueueInFile(queueFile, songs, nowMs)
     }
 
     internal fun listPendingQueuedDownloadsFromFile(queueFile: File): List<PendingDownloadQueueEntry> {
-        return synchronized(pendingDownloadQueueLock) {
-            readPendingDownloadQueueFile(queueFile)
-        }
+        return ManagedDownloadQueueStore.listPendingQueuedDownloadsFromFile(queueFile)
     }
 
     internal fun removePendingDownloadQueueEntriesFromFile(
@@ -1227,30 +1164,14 @@ internal object ManagedDownloadStorage {
         songKeys: Collection<String>,
         nowMs: Long = System.currentTimeMillis()
     ) {
-        val keys = songKeys.filter(String::isNotBlank).toSet()
-        if (keys.isEmpty()) {
-            return
-        }
-        synchronized(pendingDownloadQueueLock) {
-            val existingEntries = readPendingDownloadQueueFile(queueFile)
-            if (existingEntries.isEmpty()) {
-                return
-            }
-            val retainedEntries = existingEntries.filterNot { it.stableKey in keys }
-            if (retainedEntries.size == existingEntries.size) {
-                return
-            }
-            writePendingDownloadQueueFile(queueFile, retainedEntries, nowMs)
-        }
+        ManagedDownloadQueueStore.removePendingDownloadQueueEntriesFromFile(queueFile, songKeys, nowMs)
     }
 
     internal fun clearPendingDownloadQueueFile(
         queueFile: File,
         nowMs: Long = System.currentTimeMillis()
     ) {
-        synchronized(pendingDownloadQueueLock) {
-            writePendingDownloadQueueFile(queueFile, emptyList(), nowMs)
-        }
+        ManagedDownloadQueueStore.clearPendingDownloadQueueFile(queueFile, nowMs)
     }
 
     internal fun markCancelledDownloadKeysInFile(
@@ -1258,20 +1179,11 @@ internal object ManagedDownloadStorage {
         songKeys: Collection<String>,
         nowMs: Long = System.currentTimeMillis()
     ) {
-        val keys = songKeys.filter(String::isNotBlank).toSet()
-        if (keys.isEmpty()) {
-            return
-        }
-        synchronized(cancelledDownloadKeysLock) {
-            val mergedKeys = listCancelledDownloadKeysFromFileLocked(keysFile) + keys
-            writeCancelledDownloadKeysFile(keysFile, mergedKeys, nowMs)
-        }
+        ManagedDownloadQueueStore.markCancelledDownloadKeysInFile(keysFile, songKeys, nowMs)
     }
 
     internal fun listCancelledDownloadKeysFromFile(keysFile: File): Set<String> {
-        return synchronized(cancelledDownloadKeysLock) {
-            listCancelledDownloadKeysFromFileLocked(keysFile)
-        }
+        return ManagedDownloadQueueStore.listCancelledDownloadKeysFromFile(keysFile)
     }
 
     internal fun removeCancelledDownloadKeysFromFile(
@@ -1279,23 +1191,14 @@ internal object ManagedDownloadStorage {
         songKeys: Collection<String>,
         nowMs: Long = System.currentTimeMillis()
     ) {
-        val keys = songKeys.filter(String::isNotBlank).toSet()
-        if (keys.isEmpty()) {
-            return
-        }
-        synchronized(cancelledDownloadKeysLock) {
-            val retainedKeys = listCancelledDownloadKeysFromFileLocked(keysFile) - keys
-            writeCancelledDownloadKeysFile(keysFile, retainedKeys, nowMs)
-        }
+        ManagedDownloadQueueStore.removeCancelledDownloadKeysFromFile(keysFile, songKeys, nowMs)
     }
 
     internal fun clearCancelledDownloadKeysFile(
         keysFile: File,
         nowMs: Long = System.currentTimeMillis()
     ) {
-        synchronized(cancelledDownloadKeysLock) {
-            writeCancelledDownloadKeysFile(keysFile, emptySet(), nowMs)
-        }
+        ManagedDownloadQueueStore.clearCancelledDownloadKeysFile(keysFile, nowMs)
     }
 
     internal fun listPendingResumableDownloadsInDirectory(
@@ -2756,15 +2659,26 @@ internal object ManagedDownloadStorage {
     ): String {
         return JSONObject().apply {
             put("cacheKey", cacheKey)
-            put("audioEntries", snapshot.audioEntries.toJsonArray())
-            put("metadataEntries", snapshot.metadataEntriesByAudioName.values.toList().toJsonArray())
+            put("audioEntries", ManagedDownloadStorageJsonCodec.storedEntriesToJsonArray(snapshot.audioEntries))
+            put(
+                "metadataEntries",
+                ManagedDownloadStorageJsonCodec.storedEntriesToJsonArray(
+                    snapshot.metadataEntriesByAudioName.values.toList()
+                )
+            )
             put("metadataByAudioName", JSONObject().apply {
                 snapshot.metadataByAudioName.forEach { (audioName, metadata) ->
-                    put(audioName, metadata.toJson())
+                    put(audioName, ManagedDownloadStorageJsonCodec.downloadedAudioMetadataToJson(metadata))
                 }
             })
-            put("coverEntries", snapshot.coverEntriesByName.values.toList().toJsonArray())
-            put("lyricEntries", snapshot.lyricEntriesByName.values.toList().toJsonArray())
+            put(
+                "coverEntries",
+                ManagedDownloadStorageJsonCodec.storedEntriesToJsonArray(snapshot.coverEntriesByName.values.toList())
+            )
+            put(
+                "lyricEntries",
+                ManagedDownloadStorageJsonCodec.storedEntriesToJsonArray(snapshot.lyricEntriesByName.values.toList())
+            )
         }.toString()
     }
 
@@ -2778,18 +2692,20 @@ internal object ManagedDownloadStorage {
             return null
         }
 
-        val audioEntries = root.optJSONArray("audioEntries").toStoredEntries()
-        val metadataEntries = root.optJSONArray("metadataEntries").toStoredEntries()
+        val audioEntries = ManagedDownloadStorageJsonCodec.storedEntriesFromJsonArray(root.optJSONArray("audioEntries"))
+        val metadataEntries = ManagedDownloadStorageJsonCodec.storedEntriesFromJsonArray(
+            root.optJSONArray("metadataEntries")
+        )
         val metadataRoot = root.optJSONObject("metadataByAudioName") ?: JSONObject()
         val metadataByAudioName = buildMap {
             metadataRoot.keys().forEach { audioName ->
                 metadataRoot.optJSONObject(audioName)
-                    ?.toDownloadedAudioMetadata()
+                    ?.let(ManagedDownloadStorageJsonCodec::downloadedAudioMetadataFromJsonObject)
                     ?.let { put(audioName, it) }
             }
         }
-        val coverEntries = root.optJSONArray("coverEntries").toStoredEntries()
-        val lyricEntries = root.optJSONArray("lyricEntries").toStoredEntries()
+        val coverEntries = ManagedDownloadStorageJsonCodec.storedEntriesFromJsonArray(root.optJSONArray("coverEntries"))
+        val lyricEntries = ManagedDownloadStorageJsonCodec.storedEntriesFromJsonArray(root.optJSONArray("lyricEntries"))
         return cacheKey to composeSnapshot(
             audioEntries = audioEntries,
             metadataEntries = metadataEntries,
@@ -5021,170 +4937,9 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    private fun List<StoredEntry>.toJsonArray(): JSONArray {
-        return JSONArray().also { jsonArray ->
-            forEach { entry -> jsonArray.put(entry.toJson()) }
-        }
-    }
-
-    private fun StoredEntry.toJson(): JSONObject {
-        return JSONObject().apply {
-            put("name", name)
-            put("reference", reference)
-            put("mediaUri", mediaUri)
-            put("localFilePath", localFilePath)
-            put("sizeBytes", sizeBytes)
-            put("lastModifiedMs", lastModifiedMs)
-            put("isDirectory", isDirectory)
-        }
-    }
-
-    private fun JSONArray?.toStoredEntries(): List<StoredEntry> {
-        if (this == null) return emptyList()
-        return buildList(length()) {
-            for (index in 0 until length()) {
-                optJSONObject(index)?.toStoredEntry()?.let(::add)
-            }
-        }
-    }
-
-    private fun JSONObject.toStoredEntry(): StoredEntry? {
-        val name = optString("name").takeIf(String::isNotBlank) ?: return null
-        val reference = optString("reference").takeIf(String::isNotBlank) ?: return null
-        val mediaUri = optString("mediaUri").takeIf(String::isNotBlank) ?: reference
-        return StoredEntry(
-            name = name,
-            reference = reference,
-            mediaUri = mediaUri,
-            localFilePath = optString("localFilePath").takeIf(String::isNotBlank),
-            sizeBytes = optLong("sizeBytes"),
-            lastModifiedMs = optLong("lastModifiedMs"),
-            isDirectory = optBoolean("isDirectory")
-        )
-    }
-
-    private fun DownloadedAudioMetadata.toJson(): JSONObject {
-        return JSONObject().apply {
-            put("stableKey", stableKey)
-            put("songId", songId)
-            put("identityAlbum", identityAlbum)
-            put("name", name)
-            put("artist", artist)
-            put("coverUrl", coverUrl)
-            put("matchedLyric", matchedLyric)
-            put("matchedTranslatedLyric", matchedTranslatedLyric)
-            put("matchedLyricSource", matchedLyricSource)
-            put("matchedSongId", matchedSongId)
-            put("userLyricOffsetMs", userLyricOffsetMs)
-            put("customCoverUrl", customCoverUrl)
-            put("customName", customName)
-            put("customArtist", customArtist)
-            put("originalName", originalName)
-            put("originalArtist", originalArtist)
-            put("originalCoverUrl", originalCoverUrl)
-            put("originalLyric", originalLyric)
-            put("originalTranslatedLyric", originalTranslatedLyric)
-            put("mediaUri", mediaUri)
-            put("channelId", channelId)
-            put("audioId", audioId)
-            put("subAudioId", subAudioId)
-            put("coverPath", coverPath)
-            put("lyricPath", lyricPath)
-            put("translatedLyricPath", translatedLyricPath)
-            put("durationMs", durationMs)
-            put("downloadFinalized", downloadFinalized)
-        }
-    }
-
-    private fun SongItem.toWorkingResumeMetadataJson(): JSONObject {
-        return JSONObject().apply {
-            put("id", id)
-            put("name", name)
-            put("artist", artist)
-            put("album", album)
-            put("albumId", albumId)
-            put("durationMs", durationMs)
-            put("coverUrl", coverUrl)
-            put("mediaUri", mediaUri)
-            put("matchedLyric", matchedLyric)
-            put("matchedTranslatedLyric", matchedTranslatedLyric)
-            put("matchedLyricSource", matchedLyricSource?.name)
-            put("matchedSongId", matchedSongId)
-            put("userLyricOffsetMs", userLyricOffsetMs)
-            put("customCoverUrl", customCoverUrl)
-            put("customName", customName)
-            put("customArtist", customArtist)
-            put("originalName", originalName)
-            put("originalArtist", originalArtist)
-            put("originalCoverUrl", originalCoverUrl)
-            put("originalLyric", originalLyric)
-            put("originalTranslatedLyric", originalTranslatedLyric)
-            put("localFileName", localFileName)
-            put("localFilePath", localFilePath)
-            put("channelId", channelId)
-            put("audioId", audioId)
-            put("subAudioId", subAudioId)
-            put("playlistContextId", playlistContextId)
-            put("streamUrl", streamUrl)
-            put(
-                "neteaseArtists",
-                JSONArray().also { artistsArray ->
-                    neteaseArtists.orEmpty().forEach { artistSummary ->
-                        artistsArray.put(
-                            JSONObject().apply {
-                                put("id", artistSummary.id)
-                                put("name", artistSummary.name)
-                            }
-                        )
-                    }
-                }
-            )
-        }
-    }
-
-    private fun JSONObject.toWorkingResumeMetadataSong(): SongItem? {
-        val id = optLong("id").takeIf { has("id") } ?: return null
-        val name = optString("name").takeIf(String::isNotBlank) ?: return null
-        val artist = optString("artist").takeIf(String::isNotBlank) ?: return null
-        val album = optString("album").takeIf(String::isNotBlank) ?: return null
-        return SongItem(
-            id = id,
-            name = name,
-            artist = artist,
-            album = album,
-            albumId = optLong("albumId"),
-            durationMs = optLong("durationMs"),
-            coverUrl = optString("coverUrl").takeIf { has("coverUrl") && !isNull("coverUrl") },
-            mediaUri = optString("mediaUri").takeIf(String::isNotBlank),
-            matchedLyric = optPresentString("matchedLyric"),
-            matchedTranslatedLyric = optPresentString("matchedTranslatedLyric"),
-            matchedLyricSource = optString("matchedLyricSource")
-                .takeIf(String::isNotBlank)
-                ?.let { value -> runCatching { MusicPlatform.valueOf(value) }.getOrNull() },
-            matchedSongId = optString("matchedSongId").takeIf(String::isNotBlank),
-            userLyricOffsetMs = optLong("userLyricOffsetMs"),
-            customCoverUrl = optString("customCoverUrl").takeIf(String::isNotBlank),
-            customName = optString("customName").takeIf(String::isNotBlank),
-            customArtist = optString("customArtist").takeIf(String::isNotBlank),
-            originalName = optString("originalName").takeIf(String::isNotBlank),
-            originalArtist = optString("originalArtist").takeIf(String::isNotBlank),
-            originalCoverUrl = optString("originalCoverUrl").takeIf(String::isNotBlank),
-            originalLyric = optPresentString("originalLyric"),
-            originalTranslatedLyric = optPresentString("originalTranslatedLyric"),
-            localFileName = optString("localFileName").takeIf(String::isNotBlank),
-            localFilePath = optString("localFilePath").takeIf(String::isNotBlank),
-            channelId = optString("channelId").takeIf(String::isNotBlank),
-            audioId = optString("audioId").takeIf(String::isNotBlank),
-            subAudioId = optString("subAudioId").takeIf(String::isNotBlank),
-            playlistContextId = optString("playlistContextId").takeIf(String::isNotBlank),
-            streamUrl = optString("streamUrl").takeIf(String::isNotBlank),
-            neteaseArtists = optJSONArray("neteaseArtists").toNeteaseArtistSummaries()
-        )
-    }
-
     internal fun parseWorkingResumeMetadataSong(rawJson: String): SongItem? {
         return runCatching {
-            JSONObject(rawJson).toWorkingResumeMetadataSong()
+            ManagedDownloadStorageJsonCodec.workingResumeMetadataSongFromJson(rawJson)
         }.onFailure {
             NPLogger.w(TAG, "解析下载恢复元数据失败: ${it.message}")
         }.getOrNull()
@@ -5198,289 +4953,31 @@ internal object ManagedDownloadStorage {
         return File(context.filesDir, CANCELLED_DOWNLOAD_KEYS_FILE_NAME)
     }
 
-    private fun mergePendingDownloadQueueEntries(
-        existingEntries: List<PendingDownloadQueueEntry>,
-        songs: List<SongItem>,
-        nowMs: Long
-    ): List<PendingDownloadQueueEntry> {
-        val merged = linkedMapOf<String, PendingDownloadQueueEntry>()
-        existingEntries
-            .sortedBy(PendingDownloadQueueEntry::order)
-            .forEach { entry ->
-                merged.putIfAbsent(entry.stableKey, entry)
-            }
-
-        var nextOrder = (merged.values.maxOfOrNull(PendingDownloadQueueEntry::order) ?: -1) + 1
-        songs.forEach { song ->
-            val stableKey = song.stableKey()
-            val existingEntry = merged[stableKey]
-            merged[stableKey] = PendingDownloadQueueEntry(
-                stableKey = stableKey,
-                song = song,
-                order = existingEntry?.order ?: nextOrder++,
-                queuedAtMs = existingEntry?.queuedAtMs ?: nowMs
-            )
-        }
-
-        return merged.values
-            .sortedBy(PendingDownloadQueueEntry::order)
-            .mapIndexed { index, entry -> entry.copy(order = index) }
-    }
-
-    private fun readPendingDownloadQueueFile(queueFile: File): List<PendingDownloadQueueEntry> {
-        val rawPayload = runCatching {
-            queueFile.takeIf(File::exists)
-                ?.readText(Charsets.UTF_8)
-                ?.takeIf(String::isNotBlank)
-        }.onFailure {
-            NPLogger.w(TAG, "读取未完成下载队列失败: ${it.message}")
-        }.getOrNull() ?: return emptyList()
-
-        return runCatching {
-            parsePendingDownloadQueuePayload(rawPayload)
-        }.onFailure {
-            NPLogger.w(TAG, "解析未完成下载队列失败: ${it.message}")
-        }.getOrDefault(emptyList())
-    }
-
-    private fun writePendingDownloadQueueFile(
-        queueFile: File,
-        entries: List<PendingDownloadQueueEntry>,
-        updatedAtMs: Long
-    ) {
-        if (entries.isEmpty()) {
-            deletePendingDownloadQueueFile(queueFile)
-            return
-        }
-
-        runCatching {
-            writeTextAtomically(
-                target = queueFile,
-                content = serializePendingDownloadQueuePayload(entries, updatedAtMs)
-            )
-        }.onFailure {
-            NPLogger.w(TAG, "写入未完成下载队列失败: ${it.message}")
-        }
-    }
-
-    private fun deletePendingDownloadQueueFile(queueFile: File) {
-        runCatching {
-            if (queueFile.exists() && !queueFile.delete()) {
-                throw IOException("delete failed: ${queueFile.name}")
-            }
-        }.onFailure {
-            NPLogger.w(TAG, "删除未完成下载队列失败: ${it.message}")
-        }
-    }
-
-    private fun listCancelledDownloadKeysFromFileLocked(keysFile: File): Set<String> {
-        val rawPayload = runCatching {
-            keysFile.takeIf(File::exists)
-                ?.readText(Charsets.UTF_8)
-                ?.takeIf(String::isNotBlank)
-        }.onFailure {
-            NPLogger.w(TAG, "读取已取消下载标记失败: ${it.message}")
-        }.getOrNull() ?: return emptySet()
-
-        return runCatching {
-            parseCancelledDownloadKeysPayload(rawPayload)
-        }.onFailure {
-            NPLogger.w(TAG, "解析已取消下载标记失败: ${it.message}")
-        }.getOrDefault(emptySet())
-    }
-
-    private fun writeCancelledDownloadKeysFile(
-        keysFile: File,
-        songKeys: Set<String>,
-        updatedAtMs: Long
-    ) {
-        if (songKeys.isEmpty()) {
-            deleteCancelledDownloadKeysFile(keysFile)
-            return
-        }
-
-        runCatching {
-            writeTextAtomically(
-                target = keysFile,
-                content = serializeCancelledDownloadKeysPayload(songKeys, updatedAtMs)
-            )
-        }.onFailure {
-            NPLogger.w(TAG, "写入已取消下载标记失败: ${it.message}")
-        }
-    }
-
-    private fun deleteCancelledDownloadKeysFile(keysFile: File) {
-        runCatching {
-            if (keysFile.exists() && !keysFile.delete()) {
-                throw IOException("delete failed: ${keysFile.name}")
-            }
-        }.onFailure {
-            NPLogger.w(TAG, "删除已取消下载标记失败: ${it.message}")
-        }
-    }
-
     internal fun serializePendingDownloadQueuePayload(
         entries: List<PendingDownloadQueueEntry>,
         updatedAtMs: Long
     ): String {
-        return JSONObject().apply {
-            put("version", PENDING_DOWNLOAD_QUEUE_VERSION)
-            put("updatedAtMs", updatedAtMs)
-            put(
-                "entries",
-                JSONArray().also { entriesArray ->
-                    entries
-                        .sortedBy(PendingDownloadQueueEntry::order)
-                        .forEach { entry ->
-                            entriesArray.put(entry.toPendingDownloadQueueJson())
-                        }
-                }
-            )
-        }.toString()
+        return ManagedDownloadStorageJsonCodec.serializePendingDownloadQueuePayload(entries, updatedAtMs)
     }
 
     internal fun parsePendingDownloadQueuePayload(rawJson: String): List<PendingDownloadQueueEntry> {
-        val root = JSONObject(rawJson)
-        val entries = root.optJSONArray("entries") ?: return emptyList()
-        val restoredEntries = mutableListOf<PendingDownloadQueueEntry>()
-        for (index in 0 until entries.length()) {
-            entries.optJSONObject(index)
-                ?.toPendingDownloadQueueEntry()
-                ?.let(restoredEntries::add)
-        }
-        return restoredEntries
-            .sortedBy(PendingDownloadQueueEntry::order)
-            .distinctBy(PendingDownloadQueueEntry::stableKey)
-            .mapIndexed { index, entry -> entry.copy(order = index) }
+        return ManagedDownloadStorageJsonCodec.parsePendingDownloadQueuePayload(rawJson)
     }
 
     internal fun serializeCancelledDownloadKeysPayload(
         songKeys: Set<String>,
         updatedAtMs: Long
     ): String {
-        return JSONObject().apply {
-            put("version", CANCELLED_DOWNLOAD_KEYS_VERSION)
-            put("updatedAtMs", updatedAtMs)
-            put(
-                "keys",
-                JSONArray().also { keysArray ->
-                    songKeys
-                        .filter(String::isNotBlank)
-                        .sorted()
-                        .forEach(keysArray::put)
-                }
-            )
-        }.toString()
+        return ManagedDownloadStorageJsonCodec.serializeCancelledDownloadKeysPayload(songKeys, updatedAtMs)
     }
 
     internal fun parseCancelledDownloadKeysPayload(rawJson: String): Set<String> {
-        val root = JSONObject(rawJson)
-        val keys = root.optJSONArray("keys") ?: return emptySet()
-        return buildSet {
-            for (index in 0 until keys.length()) {
-                keys.optString(index)
-                    .takeIf(String::isNotBlank)
-                    ?.let(::add)
-            }
-        }
-    }
-
-    private fun PendingDownloadQueueEntry.toPendingDownloadQueueJson(): JSONObject {
-        return JSONObject().apply {
-            put("stableKey", stableKey)
-            put("order", order)
-            put("queuedAtMs", queuedAtMs)
-            put("song", song.toWorkingResumeMetadataJson())
-        }
-    }
-
-    private fun JSONObject.toPendingDownloadQueueEntry(): PendingDownloadQueueEntry? {
-        val song = optJSONObject("song")?.toWorkingResumeMetadataSong() ?: return null
-        val stableKey = song.stableKey()
-        return PendingDownloadQueueEntry(
-            stableKey = stableKey,
-            song = song,
-            order = optInt("order", Int.MAX_VALUE),
-            queuedAtMs = optLong("queuedAtMs").coerceAtLeast(0L)
-        )
-    }
-
-    private fun writeTextAtomically(target: File, content: String) {
-        val parent = target.parentFile
-        parent?.mkdirs()
-        val tempFile = File(
-            parent ?: File("."),
-            "${target.name}.tmp.${atomicFileWriteIdGenerator.incrementAndGet()}.${System.nanoTime()}"
-        )
-        try {
-            FileOutputStream(tempFile).use { output ->
-                output.write(content.toByteArray(Charsets.UTF_8))
-                output.fd.sync()
-            }
-            moveFileAtomically(tempFile, target)
-        } catch (error: Exception) {
-            runCatching {
-                if (tempFile.exists()) {
-                    tempFile.delete()
-                }
-            }
-            throw error
-        }
-    }
-
-    private fun moveFileAtomically(source: File, target: File) {
-        try {
-            Files.move(
-                source.toPath(),
-                target.toPath(),
-                StandardCopyOption.REPLACE_EXISTING,
-                StandardCopyOption.ATOMIC_MOVE
-            )
-        } catch (_: AtomicMoveNotSupportedException) {
-            Files.move(
-                source.toPath(),
-                target.toPath(),
-                StandardCopyOption.REPLACE_EXISTING
-            )
-        }
-    }
-
-    private fun JSONObject.toDownloadedAudioMetadata(): DownloadedAudioMetadata {
-        return DownloadedAudioMetadata(
-            stableKey = optString("stableKey").takeIf(String::isNotBlank),
-            songId = optLong("songId").takeIf { it > 0L },
-            identityAlbum = optString("identityAlbum").takeIf(String::isNotBlank),
-            name = optString("name").takeIf(String::isNotBlank),
-            artist = optString("artist").takeIf(String::isNotBlank),
-            coverUrl = optString("coverUrl").takeIf(String::isNotBlank),
-            matchedLyric = optPresentString("matchedLyric"),
-            matchedTranslatedLyric = optPresentString("matchedTranslatedLyric"),
-            matchedLyricSource = optString("matchedLyricSource").takeIf(String::isNotBlank),
-            matchedSongId = optString("matchedSongId").takeIf(String::isNotBlank),
-            userLyricOffsetMs = optLong("userLyricOffsetMs"),
-            customCoverUrl = optString("customCoverUrl").takeIf(String::isNotBlank),
-            customName = optString("customName").takeIf(String::isNotBlank),
-            customArtist = optString("customArtist").takeIf(String::isNotBlank),
-            originalName = optString("originalName").takeIf(String::isNotBlank),
-            originalArtist = optString("originalArtist").takeIf(String::isNotBlank),
-            originalCoverUrl = optString("originalCoverUrl").takeIf(String::isNotBlank),
-            originalLyric = optPresentString("originalLyric"),
-            originalTranslatedLyric = optPresentString("originalTranslatedLyric"),
-            mediaUri = optString("mediaUri").takeIf(String::isNotBlank),
-            channelId = optString("channelId").takeIf(String::isNotBlank),
-            audioId = optString("audioId").takeIf(String::isNotBlank),
-            subAudioId = optString("subAudioId").takeIf(String::isNotBlank),
-            coverPath = optString("coverPath").takeIf(String::isNotBlank),
-            lyricPath = optString("lyricPath").takeIf(String::isNotBlank),
-            translatedLyricPath = optString("translatedLyricPath").takeIf(String::isNotBlank),
-            durationMs = optLong("durationMs"),
-            downloadFinalized = optOptionalBoolean("downloadFinalized")
-        )
+        return ManagedDownloadStorageJsonCodec.parseCancelledDownloadKeysPayload(rawJson)
     }
 
     internal fun parseDownloadedAudioMetadataJson(rawJson: String): DownloadedAudioMetadata? {
         return runCatching {
-            JSONObject(rawJson).toDownloadedAudioMetadata()
+            ManagedDownloadStorageJsonCodec.downloadedAudioMetadataFromJsonObject(JSONObject(rawJson))
         }.onFailure {
             NPLogger.w(TAG, "解析写回元数据失败: ${it.message}")
         }.getOrNull()
@@ -5501,39 +4998,6 @@ internal object ManagedDownloadStorage {
         actual: DownloadedAudioMetadata?
     ): Boolean {
         return actual == expected
-    }
-
-    private fun JSONObject.optPresentString(fieldName: String): String? {
-        if (!has(fieldName) || isNull(fieldName)) {
-            return null
-        }
-        return optString(fieldName)
-    }
-
-    private fun JSONObject.optOptionalBoolean(fieldName: String): Boolean? {
-        if (!has(fieldName) || isNull(fieldName)) {
-            return null
-        }
-        return optBoolean(fieldName)
-    }
-
-    private fun JSONArray?.toNeteaseArtistSummaries(): List<NeteaseArtistSummary> {
-        if (this == null) {
-            return emptyList()
-        }
-        return buildList(length()) {
-            for (index in 0 until length()) {
-                val root = optJSONObject(index) ?: continue
-                val artistId = root.optLong("id").takeIf { root.has("id") } ?: continue
-                val artistName = root.optString("name").takeIf(String::isNotBlank) ?: continue
-                add(
-                    NeteaseArtistSummary(
-                        id = artistId,
-                        name = artistName
-                    )
-                )
-            }
-        }
     }
 
     private fun updateSnapshotCacheAfterMetadataWrite(
