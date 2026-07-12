@@ -694,7 +694,12 @@ class LocalPlaylistRepository private constructor(
     }
 
     suspend fun addScannedSongsToPlaylistAndCount(playlistId: Long, songs: List<SongItem>): Int {
-        return addPreparedSongsToPlaylistAndCount(playlistId, songs)
+        return addSongsToPlaylistAndCount(
+            playlistId = playlistId,
+            songs = songs,
+            hydrateLocalMetadata = false,
+            includeLocalMetadataFallback = true
+        )
     }
 
     suspend fun addPreparedSongsToPlaylist(playlistId: Long, songs: List<SongItem>) {
@@ -712,7 +717,8 @@ class LocalPlaylistRepository private constructor(
     private suspend fun addSongsToPlaylistAndCount(
         playlistId: Long,
         songs: List<SongItem>,
-        hydrateLocalMetadata: Boolean
+        hydrateLocalMetadata: Boolean,
+        includeLocalMetadataFallback: Boolean = false
     ): Int {
         return withContext(Dispatchers.IO) {
             if (songs.isEmpty()) return@withContext 0
@@ -722,7 +728,12 @@ class LocalPlaylistRepository private constructor(
                 addedAt = now
             )
             commitPlaylistMutation {
-                addStampedSongsToPlaylistLocked(playlistId, hydratedSongs, now)
+                addStampedSongsToPlaylistLocked(
+                    playlistId = playlistId,
+                    songs = hydratedSongs,
+                    now = now,
+                    includeLocalMetadataFallback = includeLocalMetadataFallback
+                )
             }
         }
     }
@@ -730,7 +741,8 @@ class LocalPlaylistRepository private constructor(
     private fun addStampedSongsToPlaylistLocked(
         playlistId: Long,
         songs: List<SongItem>,
-        now: Long
+        now: Long,
+        includeLocalMetadataFallback: Boolean = false
     ): Int {
         if (songs.isEmpty()) {
             return 0
@@ -743,7 +755,11 @@ class LocalPlaylistRepository private constructor(
                 return@map playlist
             }
 
-            val toAdd = filterNewSongs(playlist.songs, songs)
+            val toAdd = filterNewSongs(
+                existingSongs = playlist.songs,
+                candidates = songs,
+                includeLocalMetadataFallback = includeLocalMetadataFallback
+            )
             if (toAdd.isEmpty()) {
                 playlist
             } else {

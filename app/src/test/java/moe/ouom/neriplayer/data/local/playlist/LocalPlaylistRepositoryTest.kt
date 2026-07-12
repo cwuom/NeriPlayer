@@ -47,6 +47,38 @@ class LocalPlaylistRepositoryTest {
         )
     }
 
+    @Test
+    fun `scanned adds skip local metadata duplicates in regular playlist`() = runTest {
+        val playlistId = 43L
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "local_playlists.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false
+        )
+        repository.updatePlaylists(listOf(LocalPlaylist(id = playlistId, name = "扫描歌单")))
+
+        val contentAlias = scannedAliasSong(
+            id = 1L,
+            mediaUri = "content://media/external/audio/media/100"
+        )
+        val pathAlias = scannedAliasSong(
+            id = 2L,
+            mediaUri = File(tempFolder.root, "周杰伦 - 晴天.mp3").absolutePath,
+            localFilePath = File(tempFolder.root, "周杰伦 - 晴天.mp3").absolutePath
+        )
+
+        val firstAdd = repository.addScannedSongsToPlaylistAndCount(playlistId, listOf(contentAlias))
+        val secondAdd = repository.addScannedSongsToPlaylistAndCount(playlistId, listOf(pathAlias))
+        val playlist = repository.playlists.value.single { it.id == playlistId }
+
+        assertEquals(1, firstAdd)
+        assertEquals(0, secondAdd)
+        assertEquals(1, playlist.songs.size)
+        assertEquals(contentAlias.mediaUri, playlist.songs.single().mediaUri)
+        assertEquals(contentAlias.localFileName, playlist.songs.single().localFileName)
+    }
+
     private fun mockContext(): Context {
         val context = mock(Context::class.java)
         `when`(context.filesDir).thenReturn(tempFolder.root)
@@ -65,6 +97,27 @@ class LocalPlaylistRepositoryTest {
             coverUrl = null,
             mediaUri = path,
             localFilePath = path
+        )
+    }
+
+    private fun scannedAliasSong(
+        id: Long,
+        mediaUri: String,
+        localFilePath: String? = null
+    ): SongItem {
+        return SongItem(
+            id = id,
+            name = "晴天",
+            artist = "周杰伦",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 269_000L,
+            coverUrl = null,
+            mediaUri = mediaUri,
+            localFileName = "周杰伦 - 晴天.mp3",
+            localFilePath = localFilePath,
+            channelId = "local",
+            audioId = id.toString()
         )
     }
 }

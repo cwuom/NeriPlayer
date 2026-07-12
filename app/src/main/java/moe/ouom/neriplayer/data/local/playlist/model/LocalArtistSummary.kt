@@ -2,7 +2,10 @@ package moe.ouom.neriplayer.data.local.playlist.model
 
 import android.content.Context
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.displayArtist
+import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import java.util.Locale
@@ -39,9 +42,7 @@ fun buildLocalArtistSummaries(
     playlists: List<LocalPlaylist>,
     context: Context
 ): List<LocalArtistSummary> {
-    val sourceSongs = playlists
-        .flatMap { it.songs }
-        .distinctBy { it.identity() }
+    val sourceSongs = distinctLocalArtistSourceSongs(playlists.flatMap { it.songs })
 
     return buildLocalArtistSummaries(
         songs = sourceSongs,
@@ -53,10 +54,11 @@ internal fun buildLocalArtistSummaries(
     songs: List<SongItem>,
     unknownArtist: String
 ): List<LocalArtistSummary> {
-    if (songs.isEmpty()) return emptyList()
+    val sourceSongs = distinctLocalArtistSourceSongs(songs)
+    if (sourceSongs.isEmpty()) return emptyList()
 
     val groups = linkedMapOf<String, MutableLocalArtistGroup>()
-    songs.forEach { song ->
+    sourceSongs.forEach { song ->
         localArtistNamesForSong(song, unknownArtist).forEach { artistName ->
             val key = localArtistStableKey(artistName)
             groups.getOrPut(key) { MutableLocalArtistGroup(artistName) }
@@ -74,6 +76,80 @@ internal fun buildLocalArtistSummaries(
                 summary.name.lowercase(Locale.ROOT)
             }
         )
+}
+
+private fun distinctLocalArtistSourceSongs(songs: List<SongItem>): List<SongItem> {
+    if (songs.size <= 1) return songs
+
+    val duplicateIndex = LocalArtistSongDuplicateIndex()
+    return songs.filter { song ->
+        if (duplicateIndex.contains(song)) {
+            false
+        } else {
+            duplicateIndex.add(song)
+            true
+        }
+    }
+}
+
+private class LocalArtistSongDuplicateIndex {
+    private val identities = HashSet<SongIdentity>()
+    private val localKeys = HashSet<String>()
+    private val localMetadataKeys = HashSet<String>()
+    private val remoteMetadataKeys = HashSet<String>()
+
+    fun add(song: SongItem) {
+        identities += song.identity()
+        localKeys += LocalSongSupport.localDuplicateKeys(
+            song = song,
+            includeMetadataFallback = true
+        )
+
+        val metadataKeys = localArtistMetadataDuplicateKeys(song)
+        if (LocalSongSupport.isLocalSong(song, null)) {
+            localMetadataKeys += metadataKeys
+        } else {
+            remoteMetadataKeys += metadataKeys
+        }
+    }
+
+    fun contains(song: SongItem): Boolean {
+        if (song.identity() in identities) return true
+
+        val songLocalKeys = LocalSongSupport.localDuplicateKeys(
+            song = song,
+            includeMetadataFallback = true
+        )
+        if (songLocalKeys.any(localKeys::contains)) return true
+
+        val metadataKeys = localArtistMetadataDuplicateKeys(song)
+        if (LocalSongSupport.isLocalSong(song, null)) {
+            return metadataKeys.any(localMetadataKeys::contains) ||
+                metadataKeys.any(remoteMetadataKeys::contains)
+        }
+        return metadataKeys.any(localMetadataKeys::contains)
+    }
+}
+
+private fun localArtistMetadataDuplicateKeys(song: SongItem): Set<String> {
+    val durationMs = song.durationMs.takeIf { it > 0L } ?: return emptySet()
+    val title = normalizeLocalArtistDuplicateText(
+        song.originalName?.takeIf { it.isNotBlank() } ?: song.displayName()
+    )
+    val artist = normalizeLocalArtistDuplicateText(
+        song.originalArtist?.takeIf { it.isNotBlank() } ?: song.displayArtist()
+    )
+    if (title.isBlank() || artist.isBlank()) {
+        return emptySet()
+    }
+    return setOf("meta:$title|$artist|$durationMs")
+}
+
+private fun normalizeLocalArtistDuplicateText(value: String): String {
+    return value
+        .trim()
+        .lowercase(Locale.ROOT)
+        .replace(LOCAL_ARTIST_DUPLICATE_WHITESPACE_PATTERN, " ")
 }
 
 internal fun splitLocalArtistNames(
@@ -152,6 +228,7 @@ private val LOCAL_ARTIST_TEXT_SPLIT_PATTERN = Regex(
 )
 
 private val SPACED_SLASH_SPLIT_PATTERN = Regex("""\s+[/／]\s+""")
+private val LOCAL_ARTIST_DUPLICATE_WHITESPACE_PATTERN = Regex("\\s+")
 
 private const val FNV_64_OFFSET_BASIS = -3750763034362895579L
 private const val FNV_64_PRIME = 1099511628211L

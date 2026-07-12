@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.local.playlist.model
 
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import org.junit.Assert.assertEquals
@@ -74,6 +75,68 @@ class LocalArtistSummaryTest {
     }
 
     @Test
+    fun `downloaded local file rescans are collapsed in artist summaries`() {
+        val contentEntry = song(
+            id = 10L,
+            name = "晴天",
+            artist = "周杰伦",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            durationMs = 269_000L,
+            mediaUri = "content://media/external/audio/media/10",
+            localFileName = "周杰伦 - 晴天.mp3"
+        )
+        val fileEntry = song(
+            id = 11L,
+            name = "晴天",
+            artist = "周杰伦",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            durationMs = 269_000L,
+            mediaUri = "/storage/emulated/0/Music/NeriPlayer/周杰伦 - 晴天.mp3",
+            localFileName = "周杰伦 - 晴天.mp3",
+            localFilePath = "/storage/emulated/0/Music/NeriPlayer/周杰伦 - 晴天.mp3"
+        )
+
+        val summary = buildLocalArtistSummaries(
+            songs = listOf(contentEntry, fileEntry),
+            unknownArtist = "Unknown Artist"
+        ).single()
+
+        assertEquals("周杰伦", summary.name)
+        assertEquals(listOf(contentEntry), summary.songs)
+    }
+
+    @Test
+    fun `downloaded local copy does not duplicate original remote song in artist summaries`() {
+        val remoteEntry = song(
+            id = 20L,
+            name = "一路向北",
+            artist = "周杰伦",
+            album = "netease",
+            durationMs = 295_000L,
+            channelId = "netease",
+            audioId = "18888"
+        )
+        val localCopy = song(
+            id = 21L,
+            name = "一路向北",
+            artist = "周杰伦",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            durationMs = 295_000L,
+            mediaUri = "/storage/emulated/0/Music/NeriPlayer/周杰伦 - 一路向北.mp3",
+            localFileName = "周杰伦 - 一路向北.mp3",
+            localFilePath = "/storage/emulated/0/Music/NeriPlayer/周杰伦 - 一路向北.mp3"
+        )
+
+        val summary = buildLocalArtistSummaries(
+            songs = listOf(remoteEntry, localCopy),
+            unknownArtist = "Unknown Artist"
+        ).single()
+
+        assertEquals("周杰伦", summary.name)
+        assertEquals(listOf(remoteEntry), summary.songs)
+    }
+
+    @Test
     fun `blank artist falls back to unknown artist`() {
         assertEquals(
             listOf("Unknown Artist"),
@@ -85,16 +148,29 @@ class LocalArtistSummaryTest {
         id: Long,
         name: String,
         artist: String,
+        album: String = "album",
+        durationMs: Long = 0L,
+        mediaUri: String? = null,
+        localFileName: String? = null,
+        localFilePath: String? = null,
+        channelId: String? = null,
+        audioId: String? = null,
         neteaseArtists: List<NeteaseArtistSummary>? = emptyList()
     ): SongItem {
+        val isLocalReference = mediaUri != null || localFilePath != null
         return SongItem(
             id = id,
             name = name,
             artist = artist,
-            album = "album",
+            album = album,
             albumId = 1L,
-            durationMs = 0L,
+            durationMs = durationMs,
             coverUrl = null,
+            mediaUri = mediaUri,
+            localFileName = localFileName,
+            localFilePath = localFilePath,
+            channelId = channelId ?: if (isLocalReference) "local" else null,
+            audioId = audioId ?: if (isLocalReference) id.toString() else null,
             neteaseArtists = neteaseArtists,
             addedAt = id
         )
