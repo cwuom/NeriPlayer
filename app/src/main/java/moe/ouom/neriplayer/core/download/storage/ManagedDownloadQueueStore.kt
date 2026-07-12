@@ -1,5 +1,6 @@
-package moe.ouom.neriplayer.core.download
+package moe.ouom.neriplayer.core.download.storage
 
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger

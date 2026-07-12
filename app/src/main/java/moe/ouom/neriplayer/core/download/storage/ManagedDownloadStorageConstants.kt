@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.core.download
+package moe.ouom.neriplayer.core.download.storage
 
 internal const val ROOT_DIR_NAME = "NeriPlayer"
 internal const val COVER_SUBDIRECTORY = "Covers"
