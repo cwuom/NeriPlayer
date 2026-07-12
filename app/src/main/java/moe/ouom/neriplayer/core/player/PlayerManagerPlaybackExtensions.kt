@@ -31,6 +31,7 @@ import moe.ouom.neriplayer.core.player.policy.resolvePlaybackContinuationStartPl
 import moe.ouom.neriplayer.core.player.policy.resolvePlaybackFailureAdvanceAction
 import moe.ouom.neriplayer.core.player.policy.resolveManagedPlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.resolveManualResumePlaybackDecision
+import moe.ouom.neriplayer.core.player.policy.resolvePlaybackProgressUpdateIntervalMs
 import moe.ouom.neriplayer.core.player.policy.shouldApplyResolvedMedia
 import moe.ouom.neriplayer.core.player.policy.shouldApplyResolvedMediaSideEffects
 import moe.ouom.neriplayer.core.player.policy.shouldPausePlaybackWhenToggling
@@ -627,6 +628,7 @@ internal fun PlayerManager.playAtIndex(
                     )
                     preparePlayerForManagedStart(startPlan)
                     resetTrackEndDeduplicationState()
+                    applyWakeModeForPlaybackUrl(selectedUrl)
                     player.setMediaItem(mediaItem)
                     loadedMediaRequestToken = requestToken
                     pendingMediaLoadActive = false
@@ -1435,6 +1437,10 @@ internal fun PlayerManager.startProgressUpdates() {
     )
     progressJob = mainScope.launch {
         while (isActive) {
+            val updateIntervalMs = resolvePlaybackProgressUpdateIntervalMs(
+                playbackProgressAdvanceReported = playbackProgressAdvanceReported,
+                interactiveNowPlayingVisible = interactiveNowPlayingVisible
+            )
             val positionMs = runCatching {
                 resolveDisplayedPlaybackPosition(player.currentPosition.coerceAtLeast(0L))
             }.onFailure { error ->
@@ -1445,7 +1451,7 @@ internal fun PlayerManager.startProgressUpdates() {
                 )
             }.getOrNull()
             if (positionMs == null) {
-                delay(PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS)
+                delay(updateIntervalMs)
                 continue
             }
             _playbackPositionMs.value = positionMs
@@ -1464,9 +1470,9 @@ internal fun PlayerManager.startProgressUpdates() {
                 _playbackDurationMs.value = durationMs
             }
             val lyriconPositionMs = if (durationMs > 0L) {
-                (positionMs + PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS).coerceAtMost(durationMs)
+                (positionMs + updateIntervalMs).coerceAtMost(durationMs)
             } else {
-                positionMs + PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS
+                positionMs + updateIntervalMs
             }
             if (lyriconEnabled) {
                 LyriconManager.setPosition(lyriconPositionMs)
@@ -1480,7 +1486,7 @@ internal fun PlayerManager.startProgressUpdates() {
                 }
             )
             maybePersistPlaybackStatsProgress()
-            delay(PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS)
+            delay(updateIntervalMs)
         }
     }
 }

@@ -95,6 +95,83 @@ class SyncPlaybackStatsMergePolicyTest {
     }
 
     @Test
+    fun `merge sharded counters sums independent device deltas once`() {
+        val local = trackStat(
+            identityKey = "same",
+            totalListenMs = 1_500L,
+            playCount = 12,
+            firstPlayedAt = 100L,
+            lastPlayedAt = 200L,
+            counterBaseListenMs = 1_000L,
+            counterBasePlayCount = 10,
+            counterShards = listOf(counterShard("device-a", 500L, 2, 150L, 200L))
+        )
+        val remote = trackStat(
+            identityKey = "same",
+            totalListenMs = 1_700L,
+            playCount = 13,
+            firstPlayedAt = 100L,
+            lastPlayedAt = 300L,
+            name = "newer",
+            counterBaseListenMs = 1_000L,
+            counterBasePlayCount = 10,
+            counterShards = listOf(counterShard("device-b", 700L, 3, 220L, 300L))
+        )
+
+        val merged = SyncPlaybackStatsMergePolicy.merge(
+            local = listOf(local),
+            remote = listOf(remote),
+            playbackStatsClearedAt = 0L
+        )
+
+        assertEquals(1, merged.size)
+        assertEquals("newer", merged.single().name)
+        assertEquals(2_200L, merged.single().totalListenMs)
+        assertEquals(15, merged.single().playCount)
+        assertEquals(2, merged.single().counterShards.size)
+
+        val repeated = SyncPlaybackStatsMergePolicy.merge(
+            local = merged,
+            remote = listOf(remote),
+            playbackStatsClearedAt = 0L
+        )
+
+        assertEquals(2_200L, repeated.single().totalListenMs)
+        assertEquals(15, repeated.single().playCount)
+    }
+
+    @Test
+    fun `merge mixed legacy and sharded counters does not double count legacy base`() {
+        val legacyRemote = trackStat(
+            identityKey = "same",
+            totalListenMs = 2_000L,
+            playCount = 10,
+            firstPlayedAt = 100L,
+            lastPlayedAt = 200L
+        )
+        val local = trackStat(
+            identityKey = "same",
+            totalListenMs = 2_300L,
+            playCount = 11,
+            firstPlayedAt = 100L,
+            lastPlayedAt = 300L,
+            counterBaseListenMs = 2_000L,
+            counterBasePlayCount = 10,
+            counterShards = listOf(counterShard("device-a", 300L, 1, 250L, 300L))
+        )
+
+        val merged = SyncPlaybackStatsMergePolicy.merge(
+            local = listOf(local),
+            remote = listOf(legacyRemote),
+            playbackStatsClearedAt = 0L
+        )
+
+        assertEquals(2_300L, merged.single().totalListenMs)
+        assertEquals(11, merged.single().playCount)
+        assertEquals(1, merged.single().counterShards.size)
+    }
+
+    @Test
     fun `merge buckets keeps per day breakdown for remote sync`() {
         val local = trackBucket(
             identityKey = "same",
@@ -153,7 +230,10 @@ class SyncPlaybackStatsMergePolicyTest {
         playCount: Int = 1,
         firstPlayedAt: Long,
         lastPlayedAt: Long,
-        name: String = identityKey
+        name: String = identityKey,
+        counterBaseListenMs: Long = 0L,
+        counterBasePlayCount: Int = 0,
+        counterShards: List<SyncPlaybackCounterShard> = emptyList()
     ): SyncTrackStat {
         return SyncTrackStat(
             identityKey = identityKey,
@@ -163,7 +243,10 @@ class SyncPlaybackStatsMergePolicyTest {
             totalListenMs = totalListenMs,
             playCount = playCount,
             lastPlayedAt = lastPlayedAt,
-            firstPlayedAt = firstPlayedAt
+            firstPlayedAt = firstPlayedAt,
+            counterBaseListenMs = counterBaseListenMs,
+            counterBasePlayCount = counterBasePlayCount,
+            counterShards = counterShards
         )
     }
 
@@ -186,6 +269,23 @@ class SyncPlaybackStatsMergePolicyTest {
             playCount = playCount,
             lastPlayedAt = lastPlayedAt,
             firstPlayedAt = firstPlayedAt
+        )
+    }
+
+    private fun counterShard(
+        deviceId: String,
+        totalListenMs: Long,
+        playCount: Int,
+        firstPlayedAt: Long,
+        lastPlayedAt: Long
+    ): SyncPlaybackCounterShard {
+        return SyncPlaybackCounterShard(
+            deviceId = deviceId,
+            epochStartedAt = 0L,
+            totalListenMs = totalListenMs,
+            playCount = playCount,
+            firstPlayedAt = firstPlayedAt,
+            lastPlayedAt = lastPlayedAt
         )
     }
 }

@@ -16,7 +16,11 @@ internal object SyncPlaybackStatMapper {
             !LocalSongSupport.isLocalSong(bucket.album, bucket.mediaUri, bucket.albumId, context)
     }
 
-    fun fromTrackStat(stat: TrackStat): SyncTrackStat {
+    fun fromTrackStat(
+        stat: TrackStat,
+        counterShards: List<SyncPlaybackCounterShard> = emptyList()
+    ): SyncTrackStat {
+        val normalizedShards = normalizeCounterShards(counterShards)
         return SyncTrackStat(
             identityKey = stat.identityKey,
             name = stat.name,
@@ -30,11 +34,18 @@ internal object SyncPlaybackStatMapper {
             durationMs = stat.durationMs,
             mediaUri = LocalSongSupport.sanitizeMediaUriForSync(stat.mediaUri),
             id = stat.id,
-            albumId = stat.albumId
+            albumId = stat.albumId,
+            counterBaseListenMs = counterBaseListenMs(stat.totalListenMs, normalizedShards),
+            counterBasePlayCount = counterBasePlayCount(stat.playCount, normalizedShards),
+            counterShards = normalizedShards
         )
     }
 
-    fun fromPlaybackStatBucket(bucket: PlaybackStatBucket): SyncPlaybackStatBucket {
+    fun fromPlaybackStatBucket(
+        bucket: PlaybackStatBucket,
+        counterShards: List<SyncPlaybackCounterShard> = emptyList()
+    ): SyncPlaybackStatBucket {
+        val normalizedShards = normalizeCounterShards(counterShards)
         return SyncPlaybackStatBucket(
             dayStartAt = bucket.dayStartAt,
             identityKey = bucket.identityKey,
@@ -49,7 +60,10 @@ internal object SyncPlaybackStatMapper {
             durationMs = bucket.durationMs,
             mediaUri = LocalSongSupport.sanitizeMediaUriForSync(bucket.mediaUri),
             id = bucket.id,
-            albumId = bucket.albumId
+            albumId = bucket.albumId,
+            counterBaseListenMs = counterBaseListenMs(bucket.totalListenMs, normalizedShards),
+            counterBasePlayCount = counterBasePlayCount(bucket.playCount, normalizedShards),
+            counterShards = normalizedShards
         )
     }
 
@@ -68,7 +82,10 @@ internal object SyncPlaybackStatMapper {
             lastPlayedAt = lastPlayedAt,
             firstPlayedAt = firstPlayedAt,
             durationMs = stat.durationMs.coerceAtLeast(0L),
-            mediaUri = LocalSongSupport.sanitizeMediaUriForSync(stat.mediaUri)
+            mediaUri = LocalSongSupport.sanitizeMediaUriForSync(stat.mediaUri),
+            counterBaseListenMs = stat.counterBaseListenMs.coerceAtLeast(0L),
+            counterBasePlayCount = stat.counterBasePlayCount.coerceAtLeast(0),
+            counterShards = normalizeCounterShards(stat.counterShards)
         )
     }
 
@@ -88,7 +105,10 @@ internal object SyncPlaybackStatMapper {
             lastPlayedAt = lastPlayedAt,
             firstPlayedAt = firstPlayedAt,
             durationMs = bucket.durationMs.coerceAtLeast(0L),
-            mediaUri = LocalSongSupport.sanitizeMediaUriForSync(bucket.mediaUri)
+            mediaUri = LocalSongSupport.sanitizeMediaUriForSync(bucket.mediaUri),
+            counterBaseListenMs = bucket.counterBaseListenMs.coerceAtLeast(0L),
+            counterBasePlayCount = bucket.counterBasePlayCount.coerceAtLeast(0),
+            counterShards = normalizeCounterShards(bucket.counterShards)
         )
     }
 
@@ -105,7 +125,10 @@ internal object SyncPlaybackStatMapper {
             a.durationMs == b.durationMs &&
             a.mediaUri == b.mediaUri &&
             a.id == b.id &&
-            a.albumId == b.albumId
+            a.albumId == b.albumId &&
+            a.counterBaseListenMs == b.counterBaseListenMs &&
+            a.counterBasePlayCount == b.counterBasePlayCount &&
+            normalizeCounterShards(a.counterShards) == normalizeCounterShards(b.counterShards)
     }
 
     fun sameMetadata(a: SyncPlaybackStatBucket, b: SyncPlaybackStatBucket): Boolean {
@@ -122,6 +145,71 @@ internal object SyncPlaybackStatMapper {
             a.durationMs == b.durationMs &&
             a.mediaUri == b.mediaUri &&
             a.id == b.id &&
-            a.albumId == b.albumId
+            a.albumId == b.albumId &&
+            a.counterBaseListenMs == b.counterBaseListenMs &&
+            a.counterBasePlayCount == b.counterBasePlayCount &&
+            normalizeCounterShards(a.counterShards) == normalizeCounterShards(b.counterShards)
+    }
+
+    private fun counterBaseListenMs(
+        totalListenMs: Long,
+        counterShards: List<SyncPlaybackCounterShard>
+    ): Long {
+        val shardTotal = counterShards.sumOf { it.totalListenMs.coerceAtLeast(0L) }
+        return (totalListenMs.coerceAtLeast(0L) - shardTotal).coerceAtLeast(0L)
+    }
+
+    private fun counterBasePlayCount(
+        playCount: Int,
+        counterShards: List<SyncPlaybackCounterShard>
+    ): Int {
+        val shardTotal = counterShards.sumOf { it.playCount.coerceAtLeast(0) }
+        return (playCount.coerceAtLeast(0) - shardTotal).coerceAtLeast(0)
+    }
+
+    internal fun normalizeCounterShards(
+        shards: List<SyncPlaybackCounterShard>
+    ): List<SyncPlaybackCounterShard> {
+        return shards
+            .asSequence()
+            .filter { it.deviceId.isNotBlank() }
+            .map { shard ->
+                val lastPlayedAt = shard.lastPlayedAt.coerceAtLeast(0L)
+                val firstPlayedAt = shard.firstPlayedAt.coerceAtLeast(0L).let {
+                    if (lastPlayedAt > 0L && (it == 0L || it > lastPlayedAt)) lastPlayedAt else it
+                }
+                shard.copy(
+                    epochStartedAt = shard.epochStartedAt.coerceAtLeast(0L),
+                    totalListenMs = shard.totalListenMs.coerceAtLeast(0L),
+                    playCount = shard.playCount.coerceAtLeast(0),
+                    firstPlayedAt = firstPlayedAt,
+                    lastPlayedAt = lastPlayedAt
+                )
+            }
+            .groupBy { it.deviceId to it.epochStartedAt }
+            .map { (_, snapshots) ->
+                snapshots.reduce(::mergeCounterShard)
+            }
+            .sortedWith(compareBy<SyncPlaybackCounterShard> { it.deviceId }.thenBy { it.epochStartedAt })
+    }
+
+    private fun mergeCounterShard(
+        left: SyncPlaybackCounterShard,
+        right: SyncPlaybackCounterShard
+    ): SyncPlaybackCounterShard {
+        return left.copy(
+            totalListenMs = maxOf(left.totalListenMs, right.totalListenMs),
+            playCount = maxOf(left.playCount, right.playCount),
+            firstPlayedAt = minPositivePlayedAt(left.firstPlayedAt, right.firstPlayedAt),
+            lastPlayedAt = maxOf(left.lastPlayedAt, right.lastPlayedAt)
+        )
+    }
+
+    private fun minPositivePlayedAt(left: Long, right: Long): Long {
+        return when {
+            left <= 0L -> right
+            right <= 0L -> left
+            else -> minOf(left, right)
+        }
     }
 }

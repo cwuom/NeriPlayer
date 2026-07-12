@@ -553,6 +553,7 @@ private suspend fun PlayerManager.applyResolvedMediaItem(
             }
         ) return@withContext
         if (!gate.runMutation { resetTrackEndDeduplicationState() }) return@withContext
+        if (!gate.runMutation { applyWakeModeForPlaybackUrl(selectedUrl) }) return@withContext
         if (!gate.runMutation { player.setMediaItem(mediaItem) }) return@withContext
         if (!gate.runMutation { loadedMediaRequestToken = semantics.requestGeneration }) return@withContext
         if (!gate.runMutation { pendingMediaLoadActive = false }) return@withContext

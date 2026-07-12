@@ -316,12 +316,26 @@ class GitHubSyncManager private constructor(context: Context) {
                 it.copy(mediaUri = LocalSongSupport.sanitizeMediaUriForSync(it.mediaUri))
             }
 
+        val playbackCounterSnapshot = playbackStatsRepo.syncCounterSnapshot()
         val syncPlaybackStats = playbackStatsRepo.statsFlow.value
             .filter { SyncPlaybackStatMapper.shouldSync(it, localizedContext) }
-            .map(SyncPlaybackStatMapper::fromTrackStat)
+            .map { stat ->
+                SyncPlaybackStatMapper.fromTrackStat(
+                    stat = stat,
+                    counterShards = playbackCounterSnapshot.trackShards(stat.identityKey)
+                )
+            }
         val syncPlaybackStatBuckets = playbackStatsRepo.dailyStatsFlow.value
             .filter { SyncPlaybackStatMapper.shouldSync(it, localizedContext) }
-            .map(SyncPlaybackStatMapper::fromPlaybackStatBucket)
+            .map { bucket ->
+                SyncPlaybackStatMapper.fromPlaybackStatBucket(
+                    bucket = bucket,
+                    counterShards = playbackCounterSnapshot.dailyShards(
+                        dayStartAt = bucket.dayStartAt,
+                        identityKey = bucket.identityKey
+                    )
+                )
+            }
 
         return SyncData(
             deviceId = getDeviceId(),

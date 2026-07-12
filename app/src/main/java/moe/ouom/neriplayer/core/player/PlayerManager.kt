@@ -87,6 +87,7 @@ import moe.ouom.neriplayer.core.player.policy.RefreshRequestSemantics
 import moe.ouom.neriplayer.core.player.policy.resolvePendingMediaLoadPosition
 import moe.ouom.neriplayer.core.player.policy.resolvePlaybackSoundConfigForEngine
 import moe.ouom.neriplayer.core.player.policy.resolveExoRepeatMode
+import moe.ouom.neriplayer.core.player.policy.resolvePlaybackWakeMode
 import moe.ouom.neriplayer.core.player.policy.shouldShowPauseButtonForPlaybackControls
 import moe.ouom.neriplayer.core.player.policy.shouldBootstrapPlaybackServiceOnAppLaunch
 import moe.ouom.neriplayer.core.player.policy.shouldRunPlaybackServiceInForeground
@@ -135,6 +136,10 @@ object PlayerManager {
     internal val initializationLock = Any()
     internal lateinit var application: Application
     internal lateinit var player: ExoPlayer
+    private var currentWakeMode: Int = C.WAKE_MODE_NONE
+
+    @Volatile
+    internal var interactiveNowPlayingVisible: Boolean = false
 
     internal lateinit var cache: Cache
     internal var conditionalHttpFactory: ConditionalHttpDataSourceFactory? = null
@@ -1635,6 +1640,17 @@ object PlayerManager {
                 }
             }
             .build()
+    }
+
+    internal fun applyWakeModeForPlaybackUrl(url: String?) {
+        val wakeMode = resolvePlaybackWakeMode(url)
+        if (wakeMode == currentWakeMode) return
+        player.setWakeMode(wakeMode)
+        currentWakeMode = wakeMode
+    }
+
+    fun updateInteractiveNowPlayingVisible(visible: Boolean) {
+        interactiveNowPlayingVisible = visible
     }
 
     internal fun cancelVolumeFade(resetToFull: Boolean = false) =

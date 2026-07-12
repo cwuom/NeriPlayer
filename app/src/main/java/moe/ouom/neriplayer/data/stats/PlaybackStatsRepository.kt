@@ -14,6 +14,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
+import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatsMergePolicy
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.github.SyncTrackStat
@@ -56,6 +57,7 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
     private val dailyFile: File by lazy { File(app.filesDir, "playback_stats_daily.json") }
     private val metadataFile: File by lazy { File(app.filesDir, "playback_stats_meta.json") }
     private val mutex = Mutex()
+    private val counterStore by lazy { PlaybackStatsCounterStore(app, gson) }
     private val _stats = MutableStateFlow(loadFromDisk())
     private val _statsClearedAt = MutableStateFlow(loadMetadata().clearedAt)
     private val _dailyStats = MutableStateFlow(loadDailyStatsFromDisk())
@@ -141,6 +143,10 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                 markMutation = true
             )
         }
+    }
+
+    fun syncCounterSnapshot(): PlaybackStatsSyncCounterSnapshot {
+        return counterStore.snapshot()
     }
 
     fun recordSession(song: SongItem, listenedMs: Long) {
@@ -249,6 +255,14 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
             )
             _dailyStats.value = dailyStats
             persistDailyStatsToDisk(dailyStats)
+            counterStore.recordLocalDelta(
+                identityKey = key,
+                dayStartAt = playbackStatsDayStartAt(now),
+                listenedMs = safeListenedMs,
+                playCountIncrement = sessionCountIncrement,
+                playedAt = now,
+                epochStartedAt = _statsClearedAt.value.coerceAtLeast(0L)
+            )
             if (scheduleSync) {
                 triggerSync()
             }
@@ -312,6 +326,7 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                 persistToDisk(emptyList())
                 persistDailyStatsToDisk(emptyList())
                 persistMetadata(clearedAt)
+                counterStore.reset(clearedAt)
                 triggerSync()
             }
         }
@@ -327,6 +342,7 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                 _dailyStats.value = updatedDailyStats
                 persistToDisk(updated)
                 persistDailyStatsToDisk(updatedDailyStats)
+                counterStore.removeTracks(keys)
                 triggerSync()
             }
         }
@@ -339,17 +355,23 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
         syncDailyStats: List<SyncPlaybackStatBucket> = emptyList()
     ) {
         mutex.withLock {
+            val counterSnapshot = syncCounterSnapshot()
             val effectiveClearedAt = if (respectLocalClear) {
                 maxOf(_statsClearedAt.value, playbackStatsClearedAt)
             } else {
                 playbackStatsClearedAt
             }
             val current = _stats.value
-                .filter { shouldKeepLocalAfterClear(it, effectiveClearedAt) }
+                .filter { shouldKeepTrackStatAfterClear(it, effectiveClearedAt) }
                 .associateBy { it.identityKey }
                 .toMutableMap()
             val normalizedRemoteStats = SyncPlaybackStatsMergePolicy.merge(
-                local = emptyList(),
+                local = current.values.map { stat ->
+                    SyncPlaybackStatMapper.fromTrackStat(
+                        stat = stat,
+                        counterShards = counterSnapshot.trackShards(stat.identityKey)
+                    )
+                },
                 remote = syncStats,
                 playbackStatsClearedAt = effectiveClearedAt
             )
@@ -378,10 +400,10 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                     )
                 } else {
                     current[remote.identityKey] = local.copy(
-                        totalListenMs = maxOf(local.totalListenMs, remote.totalListenMs),
-                        playCount = maxOf(local.playCount, remote.playCount),
-                        lastPlayedAt = maxOf(local.lastPlayedAt, remote.lastPlayedAt),
-                        firstPlayedAt = minOf(local.firstPlayedAt, remote.firstPlayedAt),
+                        totalListenMs = remote.totalListenMs,
+                        playCount = remote.playCount,
+                        lastPlayedAt = remote.lastPlayedAt,
+                        firstPlayedAt = remote.firstPlayedAt,
                         name = if (remote.lastPlayedAt > local.lastPlayedAt) remote.name else local.name,
                         artist = if (remote.lastPlayedAt > local.lastPlayedAt) remote.artist else local.artist,
                         coverUrl = if (remote.lastPlayedAt > local.lastPlayedAt) remote.coverUrl else local.coverUrl
@@ -401,11 +423,19 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
             }
 
             val currentDailyStats = _dailyStats.value
-                .filter { shouldKeepDailyAfterClear(it, effectiveClearedAt) }
+                .filter { shouldKeepDailyBucketAfterClear(it, effectiveClearedAt) }
                 .associateBy { it.dayStartAt to it.identityKey }
                 .toMutableMap()
             val normalizedRemoteDailyStats = SyncPlaybackStatsMergePolicy.mergeBuckets(
-                local = emptyList(),
+                local = currentDailyStats.values.map { bucket ->
+                    SyncPlaybackStatMapper.fromPlaybackStatBucket(
+                        bucket = bucket,
+                        counterShards = counterSnapshot.dailyShards(
+                            dayStartAt = bucket.dayStartAt,
+                            identityKey = bucket.identityKey
+                        )
+                    )
+                },
                 remote = syncDailyStats,
                 playbackStatsClearedAt = effectiveClearedAt
             )
@@ -432,84 +462,16 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
             _dailyStats.value = updatedDailyStats
             persistDailyStatsToDisk(updatedDailyStats)
             persistToDisk(updated)
+            counterStore.replaceFromSync(
+                syncStats = normalizedRemoteStats,
+                syncDailyStats = normalizedRemoteDailyStats,
+                epochStartedAt = effectiveClearedAt
+            )
         }
     }
 
     fun getStatForTrack(identityKey: String): TrackStat? {
         return _stats.value.firstOrNull { it.identityKey == identityKey }
-    }
-
-    private fun shouldKeepLocalAfterClear(stat: TrackStat, playbackStatsClearedAt: Long): Boolean {
-        if (playbackStatsClearedAt <= 0L) return true
-        return stat.lastPlayedAt >= playbackStatsClearedAt
-    }
-
-    private fun shouldKeepDailyAfterClear(
-        bucket: PlaybackStatBucket,
-        playbackStatsClearedAt: Long
-    ): Boolean {
-        if (playbackStatsClearedAt <= 0L) return true
-        return bucket.lastPlayedAt >= playbackStatsClearedAt
-    }
-
-    private fun shouldStartNewStatsEpoch(stat: TrackStat, playbackStatsClearedAt: Long): Boolean {
-        if (playbackStatsClearedAt <= 0L) return false
-        val firstPlayedAt = stat.firstPlayedAt.takeIf { it > 0L } ?: stat.lastPlayedAt
-        return firstPlayedAt < playbackStatsClearedAt || stat.lastPlayedAt < playbackStatsClearedAt
-    }
-
-    private fun mergeDailyBucket(
-        local: PlaybackStatBucket,
-        remote: SyncPlaybackStatBucket
-    ): PlaybackStatBucket {
-        val remoteBucket = remote.toPlaybackStatBucket()
-        val useRemoteMetadata = remote.lastPlayedAt > local.lastPlayedAt
-        return local.copy(
-            id = if (useRemoteMetadata) remoteBucket.id else local.id,
-            name = if (useRemoteMetadata) remoteBucket.name else local.name,
-            artist = if (useRemoteMetadata) remoteBucket.artist else local.artist,
-            album = if (useRemoteMetadata) remoteBucket.album else local.album,
-            albumId = if (useRemoteMetadata) remoteBucket.albumId else local.albumId,
-            coverUrl = if (useRemoteMetadata) remoteBucket.coverUrl else local.coverUrl,
-            durationMs = if (useRemoteMetadata) remoteBucket.durationMs else local.durationMs,
-            totalListenMs = maxOf(local.totalListenMs, remoteBucket.totalListenMs),
-            playCount = maxOf(local.playCount, remoteBucket.playCount),
-            lastPlayedAt = maxOf(local.lastPlayedAt, remoteBucket.lastPlayedAt),
-            firstPlayedAt = minPositivePlayedAt(local.firstPlayedAt, remoteBucket.firstPlayedAt),
-            mediaUri = if (useRemoteMetadata) remoteBucket.mediaUri else local.mediaUri
-        )
-    }
-
-    private fun SyncPlaybackStatBucket.toPlaybackStatBucket(): PlaybackStatBucket {
-        return PlaybackStatBucket(
-            dayStartAt = dayStartAt,
-            id = id,
-            name = name,
-            artist = artist,
-            album = album,
-            albumId = albumId,
-            coverUrl = coverUrl,
-            durationMs = durationMs,
-            totalListenMs = totalListenMs,
-            playCount = playCount,
-            lastPlayedAt = lastPlayedAt,
-            firstPlayedAt = firstPlayedAt,
-            mediaUri = mediaUri,
-            localFilePath = null,
-            localFileName = null,
-            customName = null,
-            customArtist = null,
-            customCoverUrl = null,
-            identityKey = identityKey
-        )
-    }
-
-    private fun minPositivePlayedAt(left: Long, right: Long): Long {
-        return when {
-            left <= 0L -> right
-            right <= 0L -> left
-            else -> minOf(left, right)
-        }
     }
 
     companion object {

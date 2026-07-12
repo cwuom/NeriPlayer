@@ -214,7 +214,7 @@ internal fun PlayerManager.initializeImpl(
             .setMediaSourceFactory(mediaSourceFactory)
             .build()
             .apply {
-                setWakeMode(C.WAKE_MODE_NETWORK)
+                setWakeMode(C.WAKE_MODE_NONE)
             }
         _playbackSoundState.value = playbackEffectsController.attachPlayer(player)
         applyPlaybackSoundConfig(playbackSoundConfig, persist = false)

@@ -289,6 +289,7 @@ private suspend fun PlayerManager.applyPlaybackCandidate(
     val mediaItem = buildMediaItem(song, candidate.url, cacheKey, candidate.mimeType)
     preparePlayerForManagedStart(resolvePlaybackStartPlan(shouldFadeIn = false, fadeDurationMs = 0L))
     resetTrackEndDeduplicationState()
+    applyWakeModeForPlaybackUrl(candidate.url)
     player.setMediaItem(mediaItem)
     loadedMediaRequestToken = requestToken
     pendingMediaLoadActive = false

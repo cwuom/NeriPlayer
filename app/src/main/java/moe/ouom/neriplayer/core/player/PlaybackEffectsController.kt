@@ -121,6 +121,12 @@ class PlaybackEffectsController {
             lastAppliedEqualizerEnabled = false
             return
         }
+        if (!config.equalizerEnabled) {
+            val wasAvailable = lastEqualizerAvailable || equalizer != null
+            releaseEqualizer(availableAfterRelease = wasAvailable)
+            NPLogger.d(TAG, "applyEqualizer(): released disabled equalizer for sessionId=$sessionId")
+            return
+        }
 
         val eq = ensureEqualizer(sessionId) ?: run {
             lastEqualizerAvailable = false
@@ -201,11 +207,6 @@ class PlaybackEffectsController {
             config.equalizerEnabled && runCatching { eq.enabled }.getOrDefault(false)
         lastAppliedEqualizerLevels = updatedAppliedLevels
 
-        if (!config.equalizerEnabled) {
-            NPLogger.d(TAG, "applyEqualizer(): flattened equalizer for sessionId=$sessionId instead of disabling effect")
-            return
-        }
-
         NPLogger.d(
             TAG,
             "applyEqualizer(): applied preset=${config.presetId}, rawMin=${resolvedLevels.minOrNull()}, rawMax=${resolvedLevels.maxOrNull()}, headroomMb=$equalizerHeadroomMb, appliedMin=${appliedLevels.minOrNull()}, appliedMax=${appliedLevels.maxOrNull()}, loudnessGainMb=${config.loudnessGainMb}"
@@ -285,14 +286,14 @@ class PlaybackEffectsController {
         return created
     }
 
-    private fun releaseEqualizer() {
+    private fun releaseEqualizer(availableAfterRelease: Boolean = false) {
         runCatching { equalizer?.enabled = false }
         runCatching { equalizer?.release() }
         equalizer = null
         equalizerSessionId = null
         lastAppliedEqualizerLevels = emptyList()
         lastAppliedEqualizerEnabled = false
-        lastEqualizerAvailable = false
+        lastEqualizerAvailable = availableAfterRelease
     }
 
     private fun releaseLoudnessEnhancer() {

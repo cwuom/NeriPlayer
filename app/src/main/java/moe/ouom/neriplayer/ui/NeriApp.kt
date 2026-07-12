@@ -846,6 +846,25 @@ private fun NeriAppContent(
     var coverArtRefreshToken by remember { mutableIntStateOf(0) }
     var showUsbExclusiveBackgroundPermissionDialog by rememberSaveable { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
+    var lifecycleResumed by remember(lifecycleOwner) {
+        mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            lifecycleResumed = when (event) {
+                Lifecycle.Event.ON_RESUME -> true
+                Lifecycle.Event.ON_PAUSE,
+                Lifecycle.Event.ON_STOP,
+                Lifecycle.Event.ON_DESTROY -> false
+                else -> lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     val followSystemDark = pendingFollowSystemDark ?: storedFollowSystemDark
     val forceDark = pendingForceDark ?: storedForceDark
@@ -1452,16 +1471,21 @@ private fun NeriAppContent(
             val effectiveAudioReactiveEnabled =
                 nowPlayingAudioReactiveEnabled && effectiveDynamicBackgroundEnabled
 
-            DisposableEffect(showNowPlaying, effectiveAudioReactiveEnabled) {
-                AudioReactive.enabled = showNowPlaying && effectiveAudioReactiveEnabled
+            DisposableEffect(showNowPlaying, effectiveAudioReactiveEnabled, lifecycleResumed) {
+                AudioReactive.enabled = showNowPlaying && effectiveAudioReactiveEnabled && lifecycleResumed
                 onDispose { AudioReactive.enabled = false }
             }
 
+            DisposableEffect(showNowPlaying, lifecycleResumed) {
+                PlayerManager.updateInteractiveNowPlayingVisible(showNowPlaying && lifecycleResumed)
+                onDispose { PlayerManager.updateInteractiveNowPlayingVisible(false) }
+            }
+
             val activity = remember(context) { context.findActivity() }
-            DisposableEffect(activity, showNowPlaying, nowPlayingKeepScreenOn) {
+            DisposableEffect(activity, showNowPlaying, nowPlayingKeepScreenOn, lifecycleResumed) {
                 val window = activity?.window
                 val keepScreenOnFlag = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-                val shouldKeepScreenOn = showNowPlaying && nowPlayingKeepScreenOn
+                val shouldKeepScreenOn = showNowPlaying && nowPlayingKeepScreenOn && lifecycleResumed
                 val wasKeepScreenOn = window?.attributes?.flags?.and(keepScreenOnFlag) == keepScreenOnFlag
                 if (shouldKeepScreenOn) {
                     window?.addFlags(keepScreenOnFlag)

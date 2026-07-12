@@ -414,6 +414,16 @@ enum class ConflictResolution {
 }
 
 @Serializable
+data class SyncPlaybackCounterShard(
+    @ProtoNumber(1) val deviceId: String,
+    @ProtoNumber(2) val epochStartedAt: Long = 0L,
+    @ProtoNumber(3) val totalListenMs: Long = 0L,
+    @ProtoNumber(4) val playCount: Int = 0,
+    @ProtoNumber(5) val firstPlayedAt: Long = 0L,
+    @ProtoNumber(6) val lastPlayedAt: Long = 0L
+)
+
+@Serializable
 data class SyncTrackStat(
     @ProtoNumber(1) val identityKey: String,
     @ProtoNumber(2) val name: String,
@@ -427,7 +437,10 @@ data class SyncTrackStat(
     @ProtoNumber(10) val durationMs: Long = 0L,
     @ProtoNumber(11) val mediaUri: String? = null,
     @ProtoNumber(12) val id: Long = 0L,
-    @ProtoNumber(13) val albumId: Long = 0L
+    @ProtoNumber(13) val albumId: Long = 0L,
+    @ProtoNumber(14) val counterBaseListenMs: Long = 0L,
+    @ProtoNumber(15) val counterBasePlayCount: Int = 0,
+    @ProtoNumber(16) val counterShards: List<SyncPlaybackCounterShard> = emptyList()
 )
 
 @Serializable
@@ -445,5 +458,8 @@ data class SyncPlaybackStatBucket(
     @ProtoNumber(11) val durationMs: Long = 0L,
     @ProtoNumber(12) val mediaUri: String? = null,
     @ProtoNumber(13) val id: Long = 0L,
-    @ProtoNumber(14) val albumId: Long = 0L
+    @ProtoNumber(14) val albumId: Long = 0L,
+    @ProtoNumber(15) val counterBaseListenMs: Long = 0L,
+    @ProtoNumber(16) val counterBasePlayCount: Int = 0,
+    @ProtoNumber(17) val counterShards: List<SyncPlaybackCounterShard> = emptyList()
 )

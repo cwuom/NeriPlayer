@@ -22,3 +22,11 @@ internal fun hasPlaybackProgressAdvancedSinceBaseline(
     val baseline = baselinePositionMs.coerceAtLeast(0L)
     return current - baseline > toleranceMs.coerceAtLeast(0L)
 }
+
+internal fun resolvePlaybackProgressUpdateIntervalMs(
+    playbackProgressAdvanceReported: Boolean,
+    interactiveNowPlayingVisible: Boolean
+): Long {
+    if (!playbackProgressAdvanceReported) return 80L
+    return if (interactiveNowPlayingVisible) 200L else 750L
+}

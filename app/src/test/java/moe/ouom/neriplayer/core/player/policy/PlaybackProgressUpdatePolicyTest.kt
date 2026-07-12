@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.player.policy
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -58,6 +59,35 @@ class PlaybackProgressUpdatePolicyTest {
                 currentPositionMs = 30_700L,
                 baselinePositionMs = 30_000L,
                 toleranceMs = 500L
+            )
+        )
+    }
+
+    @Test
+    fun `progress cadence keeps startup high frequency before first advance`() {
+        assertEquals(
+            80L,
+            resolvePlaybackProgressUpdateIntervalMs(
+                playbackProgressAdvanceReported = false,
+                interactiveNowPlayingVisible = false
+            )
+        )
+    }
+
+    @Test
+    fun `progress cadence slows down after startup according to visibility`() {
+        assertEquals(
+            200L,
+            resolvePlaybackProgressUpdateIntervalMs(
+                playbackProgressAdvanceReported = true,
+                interactiveNowPlayingVisible = true
+            )
+        )
+        assertEquals(
+            750L,
+            resolvePlaybackProgressUpdateIntervalMs(
+                playbackProgressAdvanceReported = true,
+                interactiveNowPlayingVisible = false
             )
         )
     }
