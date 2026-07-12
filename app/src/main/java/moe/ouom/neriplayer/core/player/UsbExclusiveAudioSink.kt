@@ -313,8 +313,9 @@ internal class UsbExclusiveAudioSink(
             remaining = remaining,
             directBuffer = buffer.isDirect
         )
+        val nativeVolume = effectiveNativeVolume()
         val written = if (requestedWriteSize > 0) {
-            writeNative(buffer, requestedWriteSize)
+            writeNative(buffer, requestedWriteSize, nativeVolume)
         } else {
             0
         }
@@ -373,7 +374,8 @@ internal class UsbExclusiveAudioSink(
         writtenFrames += written / max(1, frameBytes)
         inputEnded = false
         original.limit(original.position() + written)
-        AudioReactive.teeSink.handleBuffer(original)
+        // usb native 在后级才乘系统音量，这里同步视觉采样增益
+        AudioReactive.handlePcmBuffer(original, effectiveVolume = nativeVolume)
         return written == remaining
     }
 
@@ -879,9 +881,8 @@ internal class UsbExclusiveAudioSink(
             "channels=${format.channelCount} encoding=${format.pcmEncoding}"
     }
 
-    private fun writeNative(buffer: ByteBuffer, size: Int): Int {
+    private fun writeNative(buffer: ByteBuffer, size: Int, nativeVolume: Float): Int {
         if (nativeHandle == 0L || size <= 0) return 0
-        val nativeVolume = effectiveNativeVolume()
         publishNativeVolume(nativeVolume)
         if (buffer.isDirect) {
             return UsbExclusiveSessionController.writePlayerPcm(

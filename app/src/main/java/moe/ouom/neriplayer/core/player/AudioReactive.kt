@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.pow
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
@@ -44,7 +45,8 @@ object AudioReactive {
     var enabled = false
 
     private const val MIN_BEAT_GAP_NS = 120_000_000L
-    private const val DECAY_PER_CALL = 0.90f
+    private const val BEAT_DECAY_REFERENCE_NS = 16_666_667L
+    private const val BEAT_DECAY_PER_REFERENCE = 0.90
     private const val EPS = 1e-9
 
     private var encoding: Int = C.ENCODING_PCM_16BIT
@@ -56,6 +58,7 @@ object AudioReactive {
     private var emaSlow = 0.0
     private var noiseEma = 0.0
     private var lastBeatNs = 0L
+    private var lastBeatUpdateNs = 0L
 
     private val _level = MutableStateFlow(0f) // 0..1
     private val _beat  = MutableStateFlow(0f) // 0..1 带衰减
@@ -68,103 +71,176 @@ object AudioReactive {
             this@AudioReactive.channels   = max(1, channelCount)
             this@AudioReactive.encoding   = encoding
             emaFast = 0.0; emaSlow = 0.0; noiseEma = 0.0
+            lastBeatNs = 0L
+            lastBeatUpdateNs = 0L
+            _level.value = 0f
+            _beat.value = 0f
         }
 
         override fun handleBuffer(buffer: ByteBuffer) {
-            if (!enabled || !buffer.hasRemaining()) return
+            handlePcmBuffer(buffer)
+        }
+    }
 
-            val lvl = when (encoding) {
-                C.ENCODING_PCM_FLOAT -> rmsFloat(buffer)
-                C.ENCODING_PCM_16BIT -> rms16(buffer)
-                C.ENCODING_PCM_24BIT -> rms24(buffer)
-                C.ENCODING_PCM_32BIT -> rms32(buffer)
-                else -> rms16(buffer) // 默认回退到16位处理
-            }
+    fun handlePcmBuffer(
+        buffer: ByteBuffer,
+        effectiveVolume: Float = 1f
+    ) {
+        handlePcmBuffer(
+            buffer = buffer,
+            effectiveVolume = effectiveVolume,
+            nowNs = System.nanoTime()
+        )
+    }
 
-            // lvl ~ [0..1] 线性幅值
+    internal fun handlePcmBuffer(
+        buffer: ByteBuffer,
+        effectiveVolume: Float,
+        nowNs: Long
+    ) {
+        if (!enabled || !buffer.hasRemaining()) return
 
+        val rawLevel = when (encoding) {
+            C.ENCODING_PCM_8BIT -> rms8(buffer)
+            C.ENCODING_PCM_FLOAT -> rmsFloat(buffer)
+            C.ENCODING_PCM_16BIT -> rms16(buffer, ByteOrder.LITTLE_ENDIAN)
+            C.ENCODING_PCM_16BIT_BIG_ENDIAN -> rms16(buffer, ByteOrder.BIG_ENDIAN)
+            C.ENCODING_PCM_24BIT -> rms24(buffer, bigEndian = false)
+            C.ENCODING_PCM_24BIT_BIG_ENDIAN -> rms24(buffer, bigEndian = true)
+            C.ENCODING_PCM_32BIT -> rms32(buffer, ByteOrder.LITTLE_ENDIAN)
+            C.ENCODING_PCM_32BIT_BIG_ENDIAN -> rms32(buffer, ByteOrder.BIG_ENDIAN)
+            else -> rms16(buffer, ByteOrder.LITTLE_ENDIAN)
+        }
+        val gain = effectiveVolume.coerceIn(0f, 1f).toDouble()
+        val lvl = (rawLevel * gain).coerceIn(0.0, 1.0)
 
-            val aFast = 0.5   // 攻速
-            val aSlow = 0.05  // 释速
-            emaFast = aFast * lvl + (1 - aFast) * emaFast
-            emaSlow = aSlow * lvl + (1 - aSlow) * emaSlow
+        val aFast = 0.5   // 攻速
+        val aSlow = 0.05  // 释速
+        emaFast = aFast * lvl + (1 - aFast) * emaFast
+        emaSlow = aSlow * lvl + (1 - aSlow) * emaSlow
 
-            // 正向能量增量
-            val delta = max(0.0, emaFast - emaSlow)
-            noiseEma = 0.02 * delta + 0.98 * noiseEma // 自适应噪声地板
-            val threshold = 3.0 * (noiseEma + EPS)
+        val delta = max(0.0, emaFast - emaSlow)
+        noiseEma = 0.02 * delta + 0.98 * noiseEma // 自适应噪声地板
+        val threshold = 3.0 * (noiseEma + EPS)
 
-            val now = System.nanoTime()
-            var newBeat = false
-            if (delta > threshold && now - lastBeatNs > MIN_BEAT_GAP_NS) {
-                lastBeatNs = now
-                _beat.value = 1f
-                newBeat = true
+        var newBeat = false
+        if (delta > threshold && nowNs - lastBeatNs > MIN_BEAT_GAP_NS) {
+            lastBeatNs = nowNs
+            lastBeatUpdateNs = nowNs
+            _beat.value = 1f
+            newBeat = true
+        } else {
+            decayBeat(nowNs)
+        }
+
+        val perceptual = sqrt(lvl).toFloat()
+        _level.value = if (newBeat) max(perceptual, min(1f, perceptual + 0.08f)) else perceptual
+    }
+
+    internal fun resetForTest() {
+        enabled = false
+        encoding = C.ENCODING_PCM_16BIT
+        channels = 2
+        sampleRate = 44100
+        emaFast = 0.0
+        emaSlow = 0.0
+        noiseEma = 0.0
+        lastBeatNs = 0L
+        lastBeatUpdateNs = 0L
+        _level.value = 0f
+        _beat.value = 0f
+    }
+
+    private fun decayBeat(nowNs: Long) {
+        if (lastBeatUpdateNs == 0L) {
+            lastBeatUpdateNs = nowNs
+            return
+        }
+        val elapsedNs = (nowNs - lastBeatUpdateNs).coerceAtLeast(0L)
+        lastBeatUpdateNs = nowNs
+        if (elapsedNs == 0L) return
+        val references = elapsedNs.toDouble() / BEAT_DECAY_REFERENCE_NS.toDouble()
+        _beat.value *= BEAT_DECAY_PER_REFERENCE.pow(references).toFloat()
+    }
+
+    private fun rms8(buf: ByteBuffer): Double {
+        val dup = buf.duplicate()
+        var sum = 0.0
+        var count = 0
+        while (dup.remaining() >= 1) {
+            val f = ((dup.get().toInt() and 0xFF) - 128) / 128.0
+            sum += f * f
+            count++
+        }
+        if (count == 0) return 0.0
+        return sqrt(sum / count)
+    }
+
+    private fun rms16(buf: ByteBuffer, byteOrder: ByteOrder): Double {
+        val dup = buf.duplicate().order(byteOrder)
+        var sum = 0.0
+        var count = 0
+        while (dup.remaining() >= 2) {
+            val s = dup.short.toInt()
+            val f = s / 32768.0
+            sum += f * f
+            count++
+        }
+        if (count == 0) return 0.0
+        return sqrt(sum / count)
+    }
+
+    private fun rms24(buf: ByteBuffer, bigEndian: Boolean): Double {
+        val dup = buf.duplicate()
+        var sum = 0.0
+        var count = 0
+        while (dup.remaining() >= 3) {
+            val b0 = dup.get().toInt() and 0xFF
+            val b1 = dup.get().toInt() and 0xFF
+            val b2 = dup.get().toInt() and 0xFF
+            val sample = if (bigEndian) {
+                (b0 shl 16) or (b1 shl 8) or b2
             } else {
-                _beat.value *= DECAY_PER_CALL
+                b0 or (b1 shl 8) or (b2 shl 16)
             }
+            val signedSample = if (sample and 0x800000 != 0) {
+                sample or 0xFF000000.toInt()
+            } else {
+                sample
+            }
+            val f = signedSample / 8388608.0
+            sum += f * f
+            count++
+        }
+        if (count == 0) return 0.0
+        return sqrt(sum / count)
+    }
 
-            val perceptual = sqrt(min(1.0, max(0.0, lvl))).toFloat()
-            _level.value = if (newBeat) max(perceptual, min(1f, perceptual + 0.08f)) else perceptual
+    private fun rms32(buf: ByteBuffer, byteOrder: ByteOrder): Double {
+        val dup = buf.duplicate().order(byteOrder)
+        var sum = 0.0
+        var count = 0
+        while (dup.remaining() >= 4) {
+            val s = dup.int.toLong()
+            val f = s / 2147483648.0
+            sum += f * f
+            count++
         }
+        if (count == 0) return 0.0
+        return sqrt(sum / count)
+    }
 
-        private fun rms16(buf: ByteBuffer): Double {
-            val dup = buf.duplicate().order(ByteOrder.LITTLE_ENDIAN)
-            var sum = 0.0
-            var count = 0
-            while (dup.remaining() >= 2) {
-                val s = dup.short.toInt() // -32768..32767
-                val f = s / 32768.0
-                sum += f * f
-                count++
-            }
-            if (count == 0) return 0.0
-            return sqrt(sum / count)
+    private fun rmsFloat(buf: ByteBuffer): Double {
+        val dup = buf.duplicate().order(ByteOrder.LITTLE_ENDIAN)
+        var sum = 0.0
+        var count = 0
+        while (dup.remaining() >= 4) {
+            val f = dup.float
+            val normalized = if (f.isFinite()) f.coerceIn(-1f, 1f).toDouble() else 0.0
+            sum += normalized * normalized
+            count++
         }
-
-        private fun rms24(buf: ByteBuffer): Double {
-            val dup = buf.duplicate().order(ByteOrder.LITTLE_ENDIAN)
-            var sum = 0.0
-            var count = 0
-            while (dup.remaining() >= 3) {
-                // 将3个字节手动组合成一个24位有符号整数
-                val sample = (dup.get().toInt() and 0xFF) or
-                        ((dup.get().toInt() and 0xFF) shl 8) or
-                        ((dup.get().toInt() and 0xFF) shl 16)
-                // 符号位扩展
-                val signedSample = if (sample and 0x800000 != 0) sample or 0xFF000000.toInt() else sample
-                val f = signedSample / 8388608.0 // 2^23
-                sum += f * f
-                count++
-            }
-            if (count == 0) return 0.0
-            return sqrt(sum / count)
-        }
-
-        private fun rms32(buf: ByteBuffer): Double {
-            val dup = buf.duplicate().order(ByteOrder.LITTLE_ENDIAN)
-            var sum = 0.0
-            var count = 0
-            while (dup.remaining() >= 4) {
-                val s = dup.int.toLong() // -2147483648..2147483647
-                val f = s / 2147483648.0
-                sum += f * f
-                count++
-            }
-            if (count == 0) return 0.0
-            return sqrt(sum / count)
-        }
-        private fun rmsFloat(buf: ByteBuffer): Double {
-            val dup = buf.duplicate().order(ByteOrder.LITTLE_ENDIAN)
-            var sum = 0.0
-            var count = 0
-            while (dup.remaining() >= 4) {
-                val f = dup.float.toDouble() // -1..1
-                sum += f * f
-                count++
-            }
-            if (count == 0) return 0.0
-            return sqrt(sum / count)
-        }
+        if (count == 0) return 0.0
+        return sqrt(sum / count)
     }
 }
