@@ -120,7 +120,8 @@
 
    如果 `KEYSTORE_FILE` 使用相对路径，会按 `app/` 模块目录解析。
    当前 Release 构建**不会**回退到 debug signing config；
-   未提供可用 keystore 时会直接失败。
+   未提供可用 keystore 时会直接失败。仅 CI/PR 的打包校验可以显式传入
+   `-PallowUnsignedRelease=true` 构建未签名 Release。
 
 2. 构建默认 Release：
    ```bash

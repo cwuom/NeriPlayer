@@ -12,6 +12,17 @@ plugins {
     id("kotlin-parcelize")
 }
 
+val allowUnsignedRelease = (project.findProperty("allowUnsignedRelease") as String?)?.toBoolean() == true
+val releaseKeystorePath = project.findProperty("KEYSTORE_FILE") as String? ?: "neri.jks"
+val releaseKeystoreFile = project.file(releaseKeystorePath)
+val releaseStorePassword = project.findProperty("KEYSTORE_PASSWORD") as String?
+val releaseKeyAlias = project.findProperty("KEY_ALIAS") as String? ?: "key0"
+val releaseKeyPassword = project.findProperty("KEY_PASSWORD") as String?
+val releaseSigningReady = releaseKeystoreFile.exists() &&
+    !releaseStorePassword.isNullOrBlank() &&
+    releaseKeyAlias.isNotBlank() &&
+    !releaseKeyPassword.isNullOrBlank()
+
 android {
     namespace = "moe.ouom.neriplayer"
     val buildUUID = UUID.randomUUID()
@@ -21,14 +32,11 @@ android {
 
     signingConfigs {
         create("release") {
-            val storePath = project.findProperty("KEYSTORE_FILE") as String? ?: "neri.jks"
-            val resolvedStoreFile = project.layout.projectDirectory.file(storePath).asFile
-
-            if (resolvedStoreFile.exists()) {
-                storeFile = resolvedStoreFile
-                storePassword = project.findProperty("KEYSTORE_PASSWORD") as String? ?: ""
-                keyAlias = project.findProperty("KEY_ALIAS") as String? ?: "key0"
-                keyPassword = project.findProperty("KEY_PASSWORD") as String? ?: ""
+            if (releaseSigningReady) {
+                storeFile = releaseKeystoreFile
+                storePassword = releaseStorePassword.orEmpty()
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword.orEmpty()
             }
         }
     }
@@ -83,7 +91,9 @@ android {
                     abiFilters += defaultReleaseAbiFilters
                 }
             }
-            signingConfig = releaseSigningConfig
+            if (releaseSigningReady) {
+                signingConfig = releaseSigningConfig
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -147,10 +157,18 @@ gradle.taskGraph.whenReady {
                 listOf("assemble", "bundle", "package", "sign").any(task.name::startsWith)
             )
     }
-    if (releasePackagingRequested && android.signingConfigs.getByName("release").storeFile?.exists() != true) {
+    if (releasePackagingRequested && !allowUnsignedRelease && !releaseSigningReady) {
+        val missingSigningParts = buildList {
+            if (!releaseKeystoreFile.exists()) add("KEYSTORE_FILE=$releaseKeystorePath")
+            if (releaseStorePassword.isNullOrBlank()) add("KEYSTORE_PASSWORD")
+            if (releaseKeyAlias.isBlank()) add("KEY_ALIAS")
+            if (releaseKeyPassword.isNullOrBlank()) add("KEY_PASSWORD")
+        }.joinToString()
+
         throw GradleException(
-            "Release keystore not found. Pass -PKEYSTORE_FILE, -PKEYSTORE_PASSWORD, " +
-                "-PKEY_ALIAS and -PKEY_PASSWORD to build a release APK."
+            "Release signing material is required. Missing: $missingSigningParts. " +
+                "Pass -PKEYSTORE_FILE, -PKEYSTORE_PASSWORD, -PKEY_ALIAS and -PKEY_PASSWORD " +
+                "or use -PallowUnsignedRelease=true for PR validation builds."
         )
     }
 }

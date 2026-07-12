@@ -135,6 +135,8 @@ extra Gradle property.
    If `KEYSTORE_FILE` is relative, it is resolved against the `app/` module
    directory. The current Release build does **not** fall back to the debug
    signing config. If no usable keystore is available, the build fails directly.
+   Only CI/PR packaging checks should pass `-PallowUnsignedRelease=true` to build
+   an unsigned Release.
 
 2. Build the default Release APK:
    ```bash

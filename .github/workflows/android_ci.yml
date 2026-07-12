@@ -155,7 +155,7 @@ jobs:
 
       - name: Build unsigned Release for PR
         if: github.event_name == 'pull_request'
-        run: ./gradlew :app:assembleRelease --warning-mode all --stacktrace
+        run: ./gradlew :app:assembleRelease -PallowUnsignedRelease=true --warning-mode all --stacktrace
 
       - name: Build signed Release for master
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
