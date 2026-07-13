@@ -27,6 +27,7 @@ import android.os.Build
 import android.view.View
 import androidx.annotation.RequiresApi
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,6 +53,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.util.media.isRemoteImageSource
 import kotlin.math.abs
@@ -135,12 +137,13 @@ fun HyperBackground(
     offlineMode: Boolean = false
 ) {
     val context = LocalContext.current
+    val applicationContext = context.applicationContext
     val currentIsDark by rememberUpdatedState(isDark)
 
     // 仅 T+ 创建 painter
-    val painter = remember(currentIsDark) {
+    val painter = remember(currentIsDark, applicationContext) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            BgEffectPainter(context)
+            BgEffectPainter(applicationContext)
         } else null
     }
 
@@ -167,6 +170,18 @@ fun HyperBackground(
             hostView = v
         }
     )
+
+    DisposableEffect(hostView) {
+        val view = hostView
+        onDispose {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                runCatching { view?.setRenderEffect(null) }
+                    .onFailure { error ->
+                        NPLogger.w("NERI-HyperBg", "clear render effect failed", error)
+                    }
+            }
+        }
+    }
 
     // 等待视图真正 ready
     suspend fun awaitViewReady(v: View) {
@@ -257,6 +272,8 @@ fun HyperBackground(
                 var nextRenderNs = Long.MIN_VALUE
                 var smoothLevel = 0f
                 var smoothBeat = 0f
+                var lastRenderWidth = 0
+                var lastRenderHeight = 0
                 val levelJob = launch {
                     PlayerManager.audioLevelFlow.collect { currentLevel = it }
                 }
@@ -296,8 +313,17 @@ fun HyperBackground(
                             smoothBeat += (targetBeat - smoothBeat) * beatRate
                             painter.setReactive(smoothLevel, smoothBeat)
 
-                            val w = v.width; val h = v.height
-                            if (w > 0 && h > 0) painter.setResolution(w.toFloat(), h.toFloat())
+                            val width = v.width
+                            val height = v.height
+                            if (
+                                width > 0 &&
+                                height > 0 &&
+                                (width != lastRenderWidth || height != lastRenderHeight)
+                            ) {
+                                painter.setResolution(width.toFloat(), height.toFloat())
+                                lastRenderWidth = width
+                                lastRenderHeight = height
+                            }
                             painter.updateMaterials()
                             v.setRenderEffect(painter.renderEffect)
                             v.postInvalidateOnAnimation()
@@ -384,7 +410,7 @@ private suspend fun animateDynamicBackgroundPalette(
     return to
 }
 
-private fun nextDynamicBackgroundRenderNs(
+internal fun nextDynamicBackgroundRenderNs(
     frameNs: Long,
     currentNextNs: Long,
     intervalNs: Long
