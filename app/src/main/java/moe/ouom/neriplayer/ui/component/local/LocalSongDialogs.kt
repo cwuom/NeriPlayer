@@ -65,6 +65,22 @@ import moe.ouom.neriplayer.util.format.convertTimestampToDate
 import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.format.formatFileSize
 
+internal data class LocalSongDetailsLoadState(
+    val details: LocalMediaDetails?,
+    val error: String?
+)
+
+internal fun resolveLocalSongDetailsLoadState(
+    details: LocalMediaDetails?,
+    unavailableMessage: String
+): LocalSongDetailsLoadState {
+    return if (details != null) {
+        LocalSongDetailsLoadState(details = details, error = null)
+    } else {
+        LocalSongDetailsLoadState(details = null, error = unavailableMessage)
+    }
+}
+
 @Composable
 fun LocalSongDetailsDialog(
     song: SongItem,
@@ -80,7 +96,14 @@ fun LocalSongDetailsDialog(
         details = null
         error = null
         runCatching { withContext(Dispatchers.IO) { LocalMediaSupport.inspect(context, song) } }
-            .onSuccess { details = it }
+            .onSuccess {
+                val loadState = resolveLocalSongDetailsLoadState(
+                    details = it,
+                    unavailableMessage = context.getString(R.string.local_song_details_unavailable)
+                )
+                details = loadState.details
+                error = loadState.error
+            }
             .onFailure { error = it.message ?: it.javaClass.simpleName }
     }
 

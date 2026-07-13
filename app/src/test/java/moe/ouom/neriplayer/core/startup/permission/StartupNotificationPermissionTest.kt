@@ -1,11 +1,20 @@
 package moe.ouom.neriplayer.core.startup.permission
 
 import android.os.Build
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class StartupNotificationPermissionTest {
+    @Test
+    fun `permission name matches Android notification permission`() {
+        assertEquals(
+            "android.permission.POST_NOTIFICATIONS",
+            StartupNotificationPermission.permission
+        )
+    }
+
     @Test
     fun `does not request notification permission before Android 13`() {
         assertFalse(

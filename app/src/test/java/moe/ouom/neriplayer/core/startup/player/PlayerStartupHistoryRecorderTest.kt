@@ -17,12 +17,14 @@ class PlayerStartupHistoryRecorderTest {
         val initialSong = song(id = 1L)
         val currentSong = MutableStateFlow<SongItem?>(initialSong)
         val recorded = mutableListOf<SongItem>()
+        val recorder = PlayerStartupHistoryRecorder(
+            currentSongFlow = currentSong,
+            recordSong = recorded::add,
+            startupSongToSkip = currentSong.value,
+            settleDelayMs = 700L
+        )
         val job = launch {
-            PlayerStartupHistoryRecorder(
-                currentSongFlow = currentSong,
-                recordSong = recorded::add,
-                settleDelayMs = 700L
-            ).run()
+            recorder.run()
         }
 
         runCurrent()
@@ -36,12 +38,14 @@ class PlayerStartupHistoryRecorderTest {
         val currentSong = MutableStateFlow<SongItem?>(null)
         val recorded = mutableListOf<SongItem>()
         val nextSong = song(id = 2L)
+        val recorder = PlayerStartupHistoryRecorder(
+            currentSongFlow = currentSong,
+            recordSong = recorded::add,
+            startupSongToSkip = currentSong.value,
+            settleDelayMs = 700L
+        )
         val job = launch {
-            PlayerStartupHistoryRecorder(
-                currentSongFlow = currentSong,
-                recordSong = recorded::add,
-                settleDelayMs = 700L
-            ).run()
+            recorder.run()
         }
 
         currentSong.value = nextSong
@@ -61,12 +65,14 @@ class PlayerStartupHistoryRecorderTest {
         val recorded = mutableListOf<SongItem>()
         val firstSong = song(id = 3L)
         val secondSong = song(id = 4L)
+        val recorder = PlayerStartupHistoryRecorder(
+            currentSongFlow = currentSong,
+            recordSong = recorded::add,
+            startupSongToSkip = currentSong.value,
+            settleDelayMs = 700L
+        )
         val job = launch {
-            PlayerStartupHistoryRecorder(
-                currentSongFlow = currentSong,
-                recordSong = recorded::add,
-                settleDelayMs = 700L
-            ).run()
+            recorder.run()
         }
 
         currentSong.value = firstSong
@@ -81,6 +87,55 @@ class PlayerStartupHistoryRecorderTest {
         job.cancel()
 
         assertEquals(listOf(secondSong), recorded)
+    }
+
+    @Test
+    fun `does not record restored song metadata refresh`() = runTest {
+        val initialSong = song(id = 5L)
+        val currentSong = MutableStateFlow<SongItem?>(initialSong)
+        val recorded = mutableListOf<SongItem>()
+        val recorder = PlayerStartupHistoryRecorder(
+            currentSongFlow = currentSong,
+            recordSong = recorded::add,
+            startupSongToSkip = currentSong.value,
+            settleDelayMs = 700L
+        )
+        val job = launch {
+            recorder.run()
+        }
+
+        runCurrent()
+        currentSong.value = initialSong.copy(customName = "Updated title")
+        advanceTimeBy(700L)
+        runCurrent()
+        job.cancel()
+
+        assertEquals(emptyList<SongItem>(), recorded)
+    }
+
+    @Test
+    fun `records new song after restored song baseline`() = runTest {
+        val initialSong = song(id = 6L)
+        val currentSong = MutableStateFlow<SongItem?>(initialSong)
+        val recorded = mutableListOf<SongItem>()
+        val nextSong = song(id = 7L)
+        val recorder = PlayerStartupHistoryRecorder(
+            currentSongFlow = currentSong,
+            recordSong = recorded::add,
+            startupSongToSkip = currentSong.value,
+            settleDelayMs = 700L
+        )
+        val job = launch {
+            recorder.run()
+        }
+
+        runCurrent()
+        currentSong.value = nextSong
+        advanceTimeBy(700L)
+        runCurrent()
+        job.cancel()
+
+        assertEquals(listOf(nextSong), recorded)
     }
 
     private fun song(id: Long): SongItem {

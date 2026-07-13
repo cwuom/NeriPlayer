@@ -1025,11 +1025,13 @@ private fun NeriAppContent(
             serviceSyncCoordinator.collectLocalPlaybackCommands()
         }
 
+        val historyRecorder = PlayerStartupHistoryRecorder(
+            currentSongFlow = PlayerManager.currentSongFlow,
+            recordSong = AppContainer.playHistoryRepo::record,
+            startupSongToSkip = PlayerManager.currentSongFlow.value
+        )
         launch {
-            PlayerStartupHistoryRecorder(
-                currentSongFlow = PlayerManager.currentSongFlow,
-                recordSong = AppContainer.playHistoryRepo::record
-            ).run()
+            historyRecorder.run()
         }
 
     }

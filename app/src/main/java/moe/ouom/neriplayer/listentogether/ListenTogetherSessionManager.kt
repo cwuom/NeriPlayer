@@ -543,9 +543,18 @@ class ListenTogetherSessionManager(
 
     suspend fun sendControlEvent(event: ListenTogetherEvent): ListenTogetherControlResponse {
         val snapshot = _sessionState.value
-        val baseUrl = snapshot.baseUrl ?: error("baseUrl missing")
-        val roomId = snapshot.roomId ?: error("roomId missing")
-        val token = snapshot.token ?: error("token missing")
+        val baseUrl = snapshot.baseUrl
+        if (baseUrl.isNullOrBlank()) {
+            return ListenTogetherControlResponse(ok = false, error = "baseUrl missing")
+        }
+        val roomId = snapshot.roomId
+        if (roomId.isNullOrBlank()) {
+            return ListenTogetherControlResponse(ok = false, error = "roomId missing")
+        }
+        val token = snapshot.token
+        if (token.isNullOrBlank()) {
+            return ListenTogetherControlResponse(ok = false, error = "token missing")
+        }
         return api.sendControlEvent(baseUrl, roomId, token, event)
     }
 
