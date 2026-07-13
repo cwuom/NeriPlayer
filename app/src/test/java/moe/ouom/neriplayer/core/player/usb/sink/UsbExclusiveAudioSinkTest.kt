@@ -8,6 +8,7 @@ import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
 import androidx.media3.exoplayer.audio.AudioSink
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import org.junit.After
 import org.junit.Test
 import org.mockito.Mockito.mock

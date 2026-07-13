@@ -1,19 +1,16 @@
 package moe.ouom.neriplayer.core.download.storage.commit
 
 import android.content.Context
-import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.STREAM_COPY_BUFFER_SIZE_BYTES
 import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntryMapper
-import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationTargetResolver
 import moe.ouom.neriplayer.core.download.storage.migration.StoredWriteResult
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories
-import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
 
 internal class ManagedDownloadStorageCommitWriter(
     private val treeChildRegistry: ManagedDownloadTreeChildRegistry,
@@ -21,6 +18,11 @@ internal class ManagedDownloadStorageCommitWriter(
     private val treeFileCommitter: ManagedDownloadTreeFileCommitter,
     private val tag: String
 ) {
+    private val migrationTargetResolver = ManagedDownloadCommitMigrationTargetResolver(
+        treeChildRegistry = treeChildRegistry,
+        tag = tag
+    )
+
     fun writeMigrationRootStream(
         context: Context,
         root: ManagedDownloadRootHandle,
@@ -278,7 +280,7 @@ internal class ManagedDownloadStorageCommitWriter(
         targetEntry: ManagedDownloadStorage.StoredEntry?,
         onProgress: ((Long) -> Unit)?
     ): StoredWriteResult {
-        val target = resolveFileMigrationTarget(
+        val target = migrationTargetResolver.resolveFileTarget(
             parent = root.dir,
             displayName = displayName,
             sourceEntry = sourceEntry,
@@ -320,7 +322,7 @@ internal class ManagedDownloadStorageCommitWriter(
         targetEntry: ManagedDownloadStorage.StoredEntry?,
         onProgress: ((Long) -> Unit)?
     ): StoredWriteResult {
-        val targetPlan = resolveTreeMigrationTarget(
+        val targetPlan = migrationTargetResolver.resolveTreeTarget(
             context = context,
             parent = root.tree,
             displayName = displayName,
@@ -371,7 +373,7 @@ internal class ManagedDownloadStorageCommitWriter(
     ): StoredWriteResult {
         val dir = File(root.dir, subdirectory).apply { mkdirs() }
         treeDirectories.ensureManagedMediaScanIsolation(subdirectory, dir)
-        val target = resolveFileMigrationTarget(
+        val target = migrationTargetResolver.resolveFileTarget(
             parent = dir,
             displayName = displayName,
             sourceEntry = sourceEntry,
@@ -417,7 +419,7 @@ internal class ManagedDownloadStorageCommitWriter(
         val directory = treeDirectories.findOrCreateDirectory(context, root.tree, subdirectory)
             ?: throw IOException("无法创建目录: $subdirectory")
         treeDirectories.ensureManagedMediaScanIsolation(context, subdirectory, directory)
-        val targetPlan = resolveTreeMigrationTarget(
+        val targetPlan = migrationTargetResolver.resolveTreeTarget(
             context = context,
             parent = directory,
             displayName = displayName,
@@ -451,64 +453,4 @@ internal class ManagedDownloadStorageCommitWriter(
         return StoredWriteResult(entry = entry, createdNew = true)
     }
 
-    private fun resolveFileMigrationTarget(
-        parent: File,
-        displayName: String,
-        sourceEntry: ManagedDownloadStorage.StoredEntry,
-        targetNames: Set<String>,
-        targetEntry: ManagedDownloadStorage.StoredEntry? = null
-    ): StoredWriteResult {
-        return ManagedDownloadMigrationTargetResolver.resolveFileTarget(
-            parent = parent,
-            displayName = displayName,
-            sourceEntry = sourceEntry,
-            targetNames = targetNames,
-            targetEntry = targetEntry,
-            readExistingEntry = { existing ->
-                existing.takeIf(File::isFile)?.let(ManagedDownloadStoredEntryMapper::fromFile)
-            },
-            reserveName = { reservedName -> treeChildRegistry.reserveUniqueFileChildName(parent, reservedName) },
-            rememberName = { childName -> treeChildRegistry.rememberFileChildName(parent, childName) },
-            onReuseMetadata = { existingEntry ->
-                moe.ouom.neriplayer.core.logging.NPLogger.d(tag, "迁移复用目标 metadata: ${existingEntry.name}")
-            },
-            onReuseFile = { existingEntry ->
-                moe.ouom.neriplayer.core.logging.NPLogger.d(tag, "迁移复用目标文件: ${existingEntry.name}")
-            }
-        )
-    }
-
-    private fun resolveTreeMigrationTarget(
-        context: Context,
-        parent: DocumentFile,
-        displayName: String,
-        sourceEntry: ManagedDownloadStorage.StoredEntry,
-        targetNames: Set<String>,
-        targetEntry: ManagedDownloadStorage.StoredEntry? = null
-    ): StoredWriteResult {
-        val existingChildEntry = if (displayName in targetNames) {
-            treeChildRegistry.cachedTreeChild(context, parent, displayName)
-                ?.takeUnless(QueriedTreeChild::isDirectory)
-                ?.let(ManagedDownloadStoredEntryMapper::fromTreeChild)
-        } else {
-            null
-        }
-        return ManagedDownloadMigrationTargetResolver.resolveTreeTarget(
-            displayName = displayName,
-            sourceEntry = sourceEntry,
-            targetNames = targetNames,
-            targetEntry = targetEntry,
-            existingChildEntry = existingChildEntry,
-            reserveName = { reservedName -> treeChildRegistry.reserveUniqueTreeChildName(context, parent, reservedName) },
-            rememberName = { childName ->
-                treeChildRegistry.rememberTreeChildName(parent, childName, isReservation = true)
-            },
-            onReuseMetadata = { existingEntry ->
-                moe.ouom.neriplayer.core.logging.NPLogger.d(tag, "迁移复用目标 SAF metadata: ${existingEntry.name}")
-            },
-            onReuseFile = { existingEntry ->
-                moe.ouom.neriplayer.core.logging.NPLogger.d(tag, "迁移复用目标 SAF 文件: ${existingEntry.name}")
-            }
-        )
-    }
 }

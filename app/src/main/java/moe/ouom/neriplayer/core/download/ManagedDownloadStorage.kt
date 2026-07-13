@@ -15,7 +15,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Semaphore
@@ -29,6 +28,8 @@ import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadStorageCo
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadTreeFileCommitter
 import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadDeleteGuard
 import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadDeletePolicy
+import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadReferenceDeleteExecutor
+import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadReferenceDeleteResult
 import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirectoryIdentity
 import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntryMapper
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadMetadataCodec
@@ -36,12 +37,13 @@ import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadCoverLook
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadManagedAudioPolicy
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadStorageLookup
 import moe.ouom.neriplayer.core.download.storage.migration.CopiedMigrationEntry
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationCopyWorker
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationEntryCollector
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationFinalizer
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationNamePlanner
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationPolicy
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationTargetIndexBuilder
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationEntry
-import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationNamePlan
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationProgressReporter
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationTargetIndex
 import moe.ouom.neriplayer.core.download.storage.migration.StoredWriteResult
@@ -115,6 +117,73 @@ internal object ManagedDownloadStorage {
         treeDirectories = treeDirectories,
         treeFileCommitter = treeFileCommitter,
         tag = TAG
+    )
+    private val migrationCopyWorker = ManagedDownloadMigrationCopyWorker(
+        tag = TAG,
+        openInputStream = { context, entry -> openStoredEntryInputStream(context, entry) },
+        mimeTypeFor = ::migrationMimeTypeFor,
+        writeRootStream = { context, root, displayName, mimeType, input, sourceEntry, targetNames, targetEntry, onProgress ->
+            writeMigrationRootStream(
+                context = context,
+                root = root,
+                displayName = displayName,
+                mimeType = mimeType,
+                input = input,
+                sourceEntry = sourceEntry,
+                targetNames = targetNames,
+                targetEntry = targetEntry,
+                onProgress = onProgress
+            )
+        },
+        writeSubdirectoryStream = { context, root, subdirectory, displayName, mimeType, input, sourceEntry, targetNames, targetEntry, onProgress ->
+            writeMigrationSubdirectoryStream(
+                context = context,
+                root = root,
+                subdirectory = subdirectory,
+                displayName = displayName,
+                mimeType = mimeType,
+                input = input,
+                sourceEntry = sourceEntry,
+                targetNames = targetNames,
+                targetEntry = targetEntry,
+                onProgress = onProgress
+            )
+        }
+    )
+    private val referenceDeleteExecutor = ManagedDownloadReferenceDeleteExecutor(
+        tag = TAG,
+        isReferenceAllowed = { reference, trustedReferences, managedFileRoots, managedTreeRoots ->
+            isReferenceAllowedForManagedDelete(
+                reference = reference,
+                trustedReferences = trustedReferences,
+                managedFileRoots = managedFileRoots,
+                managedTreeRoots = managedTreeRoots
+            )
+        }
+    )
+    private val migrationFinalizer = ManagedDownloadMigrationFinalizer(
+        tag = TAG,
+        rewriteParallelism = ::migrationRewriteParallelism,
+        deleteParallelism = ::migrationDeleteParallelism,
+        readText = { context, reference -> readTextInternal(context, reference) },
+        writeRootText = { context, root, displayName, content ->
+            writeRootText(
+                context = context,
+                root = root,
+                displayName = displayName,
+                content = content,
+                invalidateSnapshot = false
+            )
+        },
+        deleteReference = { context, reference, root ->
+            deleteInternal(
+                context = context,
+                reference = reference,
+                allowedRoot = root,
+                invalidateSnapshot = false
+            )
+        },
+        rewriteMetadataReferences = ::rewriteManagedMetadataReferences
     )
     private val pendingAudioWriteNames = ManagedDownloadPendingAudioWriteNames()
 
@@ -483,7 +552,7 @@ internal object ManagedDownloadStorage {
                 entries.map { migrationEntry ->
                     async(Dispatchers.IO) {
                         copyLimiter.withPermit {
-                            copyManagedMigrationEntry(
+                            migrationCopyWorker.copyEntry(
                                 context = context,
                                 targetRoot = targetRoot,
                                 migrationEntry = migrationEntry,
@@ -510,7 +579,6 @@ internal object ManagedDownloadStorage {
                 context = context,
                 targetRoot = targetRoot,
                 copiedEntries = copiedEntries,
-                parallelism = migrationRewriteParallelism(targetRoot),
                 progressTracker = progressTracker
             )
             if (rewriteFailedFiles > 0) {
@@ -539,79 +607,6 @@ internal object ManagedDownloadStorage {
         } finally {
             _migrationProgressFlow.value = null
         }
-    }
-
-    private data class ManagedMigrationCopyResult(
-        val copiedEntry: CopiedMigrationEntry?
-    )
-
-    private suspend fun copyManagedMigrationEntry(
-        context: Context,
-        targetRoot: RootHandle,
-        migrationEntry: ManagedMigrationEntry,
-        targetIndex: ManagedMigrationTargetIndex,
-        namePlan: ManagedMigrationNamePlan,
-        progressTracker: ManagedMigrationProgressReporter? = null
-    ): ManagedMigrationCopyResult {
-        val copiedEntry = retryManagedMigrationWrite(
-            reference = migrationEntry.entry.reference
-        ) {
-            progressTracker?.startCopy(migrationEntry)
-            try {
-                openStoredEntryInputStream(context, migrationEntry.entry)?.use { input ->
-                    if (migrationEntry.subdirectory == null) {
-                        writeMigrationRootStream(
-                            context = context,
-                            root = targetRoot,
-                            displayName = namePlan.targetNameFor(migrationEntry),
-                            mimeType = migrationMimeTypeFor(migrationEntry),
-                            input = input,
-                            sourceEntry = migrationEntry.entry,
-                            targetNames = targetIndex.namesFor(migrationEntry.subdirectory),
-                            targetEntry = targetIndex.entryFor(
-                                migrationEntry.subdirectory,
-                                namePlan.targetNameFor(migrationEntry)
-                            ),
-                            onProgress = { copiedBytes ->
-                                progressTracker?.onCopyProgress(migrationEntry, copiedBytes)
-                            }
-                        )
-                    } else {
-                        writeMigrationSubdirectoryStream(
-                            context = context,
-                            root = targetRoot,
-                            subdirectory = migrationEntry.subdirectory,
-                            displayName = namePlan.targetNameFor(migrationEntry),
-                            mimeType = migrationMimeTypeFor(migrationEntry),
-                            input = input,
-                            sourceEntry = migrationEntry.entry,
-                            targetNames = targetIndex.namesFor(migrationEntry.subdirectory),
-                            targetEntry = targetIndex.entryFor(
-                                migrationEntry.subdirectory,
-                                namePlan.targetNameFor(migrationEntry)
-                            ),
-                            onProgress = { copiedBytes ->
-                                progressTracker?.onCopyProgress(migrationEntry, copiedBytes)
-                            }
-                        )
-                    }
-                } ?: throw IOException("无法读取源下载文件: ${migrationEntry.entry.name}")
-            } catch (error: Throwable) {
-                progressTracker?.failCopy(migrationEntry)
-                throw error
-            }.also {
-                progressTracker?.completeCopy(migrationEntry)
-            }
-        }
-            ?: return ManagedMigrationCopyResult(copiedEntry = null)
-
-        return ManagedMigrationCopyResult(
-            copiedEntry = CopiedMigrationEntry(
-                original = migrationEntry,
-                copiedEntry = copiedEntry.entry,
-                createdNew = copiedEntry.createdNew
-            )
-        )
     }
 
     fun releasePersistedDirectoryPermission(context: Context, uriString: String?) {
@@ -998,57 +993,14 @@ internal object ManagedDownloadStorage {
         context: Context,
         targetRoot: RootHandle,
         copiedEntries: List<CopiedMigrationEntry>,
-        parallelism: Int,
         progressTracker: ManagedMigrationProgressReporter? = null
-    ): Int = coroutineScope {
-        if (copiedEntries.isEmpty()) return@coroutineScope 0
-        val referenceMap = copiedEntries.associate { copied ->
-            copied.original.entry.reference to copied.copiedEntry.reference
-        }
-        val rewriteLimiter = Semaphore(parallelism)
-        copiedEntries
-            .filter { it.original.entry.name.endsWith(METADATA_SUFFIX) }
-            .map { copied ->
-                async(Dispatchers.IO) {
-                    rewriteLimiter.withPermit {
-                        progressTracker?.startRewrite(copied.copiedEntry.name)
-                        val raw = readTextInternal(context, copied.copiedEntry.reference)
-                        val rewritten = runCatching {
-                            val metadataText = raw
-                                ?: throw IOException("无法读取已迁移 metadata: ${copied.copiedEntry.name}")
-                            rewriteManagedMetadataReferences(metadataText, referenceMap)
-                        }.onFailure {
-                            NPLogger.w(TAG, "迁移后重写 metadata 引用失败: ${copied.copiedEntry.reference}, ${it.message}")
-                        }.getOrNull()
-                        if (rewritten == null) {
-                            progressTracker?.finishRewrite(copied.copiedEntry.name)
-                            return@withPermit 1
-                        }
-                        if (rewritten == raw) {
-                            progressTracker?.finishRewrite(copied.copiedEntry.name)
-                            return@withPermit 0
-                        }
-                        runCatching {
-                            writeRootText(
-                                context = context,
-                                root = targetRoot,
-                                displayName = copied.copiedEntry.name,
-                                content = rewritten,
-                                invalidateSnapshot = false
-                            )
-                        }.onFailure {
-                            NPLogger.w(TAG, "回写迁移后的 metadata 失败: ${copied.copiedEntry.reference}, ${it.message}")
-                        }.getOrElse {
-                            progressTracker?.finishRewrite(copied.copiedEntry.name)
-                            return@withPermit 1
-                        }
-                        progressTracker?.finishRewrite(copied.copiedEntry.name)
-                        0
-                    }
-                }
-            }
-            .awaitAll()
-            .sum()
+    ): Int {
+        return migrationFinalizer.rewriteMigratedMetadataReferences(
+            context = context,
+            targetRoot = targetRoot,
+            copiedEntries = copiedEntries,
+            progressTracker = progressTracker
+        )
     }
 
     private suspend fun cleanupMigratedEntries(
@@ -1056,64 +1008,25 @@ internal object ManagedDownloadStorage {
         copiedEntries: List<CopiedMigrationEntry>,
         sourceRoot: RootHandle,
         progressTracker: ManagedMigrationProgressReporter? = null
-    ): Int = coroutineScope {
-        if (copiedEntries.isEmpty()) return@coroutineScope 0
-        val cleanupLimiter = Semaphore(migrationDeleteParallelism(sourceRoot))
-        copiedEntries.map { migrationEntry ->
-            async(Dispatchers.IO) {
-                cleanupLimiter.withPermit {
-                    progressTracker?.startCleanup(copiedEntries.size, migrationEntry.original.entry.name)
-                    val sourceSize = migrationEntry.original.entry.sizeBytes
-                    val copiedSize = migrationEntry.copiedEntry.sizeBytes
-                    if (sourceSize > 0L && copiedSize > 0L && !isSizeWithinTolerance(copiedSize, sourceSize, SAF_COMMITTED_SIZE_TOLERANCE_BYTES)) {
-                        NPLogger.w(TAG, "迁移后目标大小不匹配，跳过删除源文件: ${migrationEntry.original.entry.name}, source=$sourceSize, copied=$copiedSize")
-                        progressTracker?.finishCleanup(migrationEntry.original.entry.name)
-                        return@withPermit 1
-                    }
-                    val deleted = runCatching {
-                        deleteInternal(
-                            context = context,
-                            reference = migrationEntry.original.entry.reference,
-                            allowedRoot = sourceRoot,
-                            invalidateSnapshot = false
-                        )
-                    }.onFailure {
-                        NPLogger.w(TAG, "迁移后删除旧下载文件失败: ${migrationEntry.original.entry.reference}, ${it.message}")
-                    }.getOrDefault(false)
-                    progressTracker?.finishCleanup(migrationEntry.original.entry.name)
-                    if (deleted) 0 else 1
-                }
-            }
-        }.awaitAll().sum()
+    ): Int {
+        return migrationFinalizer.cleanupMigratedEntries(
+            context = context,
+            copiedEntries = copiedEntries,
+            sourceRoot = sourceRoot,
+            progressTracker = progressTracker
+        )
     }
 
     private suspend fun rollbackMigratedEntries(
         context: Context,
         copiedEntries: List<CopiedMigrationEntry>,
         targetRoot: RootHandle
-    ): Int = coroutineScope {
-        if (copiedEntries.isEmpty()) return@coroutineScope 0
-        val cleanupLimiter = Semaphore(migrationDeleteParallelism(targetRoot))
-        copiedEntries.map { migrationEntry ->
-            async(Dispatchers.IO) {
-                cleanupLimiter.withPermit {
-                    if (!migrationEntry.createdNew) {
-                        return@withPermit 0
-                    }
-                    val deleted = runCatching {
-                        deleteInternal(
-                            context = context,
-                            reference = migrationEntry.copiedEntry.reference,
-                            allowedRoot = targetRoot,
-                            invalidateSnapshot = false
-                        )
-                    }.onFailure {
-                        NPLogger.w(TAG, "回滚迁移目标文件失败: ${migrationEntry.copiedEntry.reference}, ${it.message}")
-                    }.getOrDefault(false)
-                    if (deleted) 0 else 1
-                }
-            }
-        }.awaitAll().sum()
+    ): Int {
+        return migrationFinalizer.rollbackMigratedEntries(
+            context = context,
+            copiedEntries = copiedEntries,
+            targetRoot = targetRoot
+        )
     }
 
     internal fun rewriteManagedMetadataReferences(
@@ -1890,18 +1803,6 @@ internal object ManagedDownloadStorage {
         )
     }
 
-    private fun isSizeWithinTolerance(
-        actualSizeBytes: Long,
-        expectedSizeBytes: Long,
-        toleranceBytes: Long
-    ): Boolean {
-        return ManagedDownloadCommitVerifier.isSizeWithinTolerance(
-            actualSizeBytes = actualSizeBytes,
-            expectedSizeBytes = expectedSizeBytes,
-            toleranceBytes = toleranceBytes
-        )
-    }
-
     internal fun verifiedCommittedByteCount(
         expectedSizeBytes: Long,
         reportedSizeBytes: Long?,
@@ -1980,16 +1881,10 @@ internal object ManagedDownloadStorage {
     private fun buildMigrationNamePlan(
         entries: List<ManagedMigrationEntry>,
         targetIndex: ManagedMigrationTargetIndex
-    ): ManagedMigrationNamePlan {
-        return ManagedDownloadMigrationNamePlanner.buildNamePlan(
-            entries = entries.map(ManagedMigrationEntry::toRef),
-            targetIndex = targetIndex
-        )
-    }
-
-    private fun ManagedMigrationNamePlan.targetNameFor(entry: ManagedMigrationEntry): String {
-        return targetNameFor(entry.toRef())
-    }
+    ) = ManagedDownloadMigrationNamePlanner.buildNamePlan(
+        entries = entries.map(ManagedMigrationEntry::toRef),
+        targetIndex = targetIndex
+    )
 
     private fun writeSubdirectoryBytesBlocking(
         context: Context,
@@ -2152,27 +2047,6 @@ internal object ManagedDownloadStorage {
         )
     }
 
-    private suspend fun <T> retryManagedMigrationWrite(
-        reference: String,
-        block: () -> T
-    ): T? {
-        repeat(MIGRATION_IO_MAX_ATTEMPTS) { attempt ->
-            val result = runCatching(block).onFailure { error ->
-                NPLogger.w(
-                    TAG,
-                    "迁移下载文件失败: $reference, attempt=${attempt + 1}/$MIGRATION_IO_MAX_ATTEMPTS, ${error.message}"
-                )
-            }.getOrNull()
-            if (result != null) {
-                return result
-            }
-            if (attempt < MIGRATION_IO_MAX_ATTEMPTS - 1) {
-                delay(MIGRATION_IO_RETRY_DELAY_MS * (attempt + 1))
-            }
-        }
-        return null
-    }
-
     private fun normalizeDirectoryUri(uriString: String?): String? {
         return rootResolver.normalizeDirectoryUri(uriString)
     }
@@ -2269,30 +2143,13 @@ internal object ManagedDownloadStorage {
         allowedRoot: RootHandle? = null,
         invalidateSnapshot: Boolean
     ): Set<String> {
-        val normalizedReferences = references
-            .mapNotNull { it?.takeIf(String::isNotBlank) }
-            .distinct()
-        if (normalizedReferences.isEmpty()) {
-            return emptySet()
-        }
-        val deletePolicy = buildManagedDeletePolicy(context, allowedRoot)
-        val deletedReferences = linkedSetOf<String>()
-        normalizedReferences.forEach { reference ->
-            val deleted = deleteReferenceBlocking(context, reference, deletePolicy)
-            if (deleted) {
-                deletedReferences += reference
-            }
-        }
-        if (invalidateSnapshot) {
-            forgetDeletedReferencesFromCaches(deletedReferences)
-            val hasUnconfirmedDeletes = deletedReferences.size != normalizedReferences.size
-            if (hasUnconfirmedDeletes) {
-                invalidateSnapshotCache(context)
-            } else if (deletedReferences.isNotEmpty() && !updateSnapshotCacheAfterDelete(context, deletedReferences)) {
-                invalidateSnapshotCache(context)
-            }
-        }
-        return deletedReferences
+        val deleteResult = referenceDeleteExecutor.deleteReferences(
+            context = context,
+            references = references,
+            deletePolicy = buildManagedDeletePolicy(context, allowedRoot)
+        )
+        applyDeleteResultToSnapshot(context, deleteResult, invalidateSnapshot)
+        return deleteResult.deletedReferences
     }
 
     private suspend fun deleteReferencesInternalConcurrently(
@@ -2301,38 +2158,30 @@ internal object ManagedDownloadStorage {
         allowedRoot: RootHandle? = null,
         invalidateSnapshot: Boolean
     ): Set<String> {
-        val normalizedReferences = references
-            .mapNotNull { it?.takeIf(String::isNotBlank) }
-            .distinct()
-        if (normalizedReferences.isEmpty()) {
-            return emptySet()
-        }
-        val startedAtMs = System.currentTimeMillis()
-        val deleteLimiter = Semaphore(SAF_REFERENCE_DELETE_PARALLELISM)
-        val deletePolicy = buildManagedDeletePolicy(context, allowedRoot)
-        val deletedReferences = coroutineScope {
-            normalizedReferences.map { reference ->
-                async(Dispatchers.IO) {
-                    deleteLimiter.withPermit {
-                        reference.takeIf { deleteReferenceBlocking(context, reference, deletePolicy) }
-                    }
-                }
-            }.awaitAll().filterNotNull().toSet()
-        }
-        if (invalidateSnapshot) {
-            forgetDeletedReferencesFromCaches(deletedReferences)
-            val hasUnconfirmedDeletes = deletedReferences.size != normalizedReferences.size
-            if (hasUnconfirmedDeletes) {
-                invalidateSnapshotCache(context)
-            } else if (deletedReferences.isNotEmpty() && !updateSnapshotCacheAfterDelete(context, deletedReferences)) {
-                invalidateSnapshotCache(context)
-            }
-        }
-        NPLogger.d(
-            TAG,
-            "批量删除引用完成: requested=${normalizedReferences.size}, deleted=${deletedReferences.size}, costMs=${System.currentTimeMillis() - startedAtMs}"
+        val deleteResult = referenceDeleteExecutor.deleteReferencesConcurrently(
+            context = context,
+            references = references,
+            deletePolicy = buildManagedDeletePolicy(context, allowedRoot)
         )
-        return deletedReferences
+        applyDeleteResultToSnapshot(context, deleteResult, invalidateSnapshot)
+        return deleteResult.deletedReferences
+    }
+
+    private fun applyDeleteResultToSnapshot(
+        context: Context,
+        deleteResult: ManagedDownloadReferenceDeleteResult,
+        invalidateSnapshot: Boolean
+    ) {
+        if (!invalidateSnapshot) {
+            return
+        }
+        val deletedReferences = deleteResult.deletedReferences
+        forgetDeletedReferencesFromCaches(deletedReferences)
+        if (deleteResult.hasUnconfirmedDeletes) {
+            invalidateSnapshotCache(context)
+        } else if (deletedReferences.isNotEmpty() && !updateSnapshotCacheAfterDelete(context, deletedReferences)) {
+            invalidateSnapshotCache(context)
+        }
     }
 
     private fun forgetDeletedReferencesFromCaches(deletedReferences: Set<String>) {
@@ -2341,54 +2190,16 @@ internal object ManagedDownloadStorage {
         treeDirectories.forgetDeletedReferences(deletedReferences)
     }
 
-    private fun deleteReferenceBlocking(
-        context: Context,
-        reference: String,
-        deletePolicy: ManagedDownloadDeletePolicy
-    ): Boolean {
-        if (
-            !isReferenceAllowedForManagedDelete(
-                reference = reference,
-                trustedReferences = deletePolicy.trustedReferences,
-                managedFileRoots = deletePolicy.managedFileRoots,
-                managedTreeRoots = deletePolicy.managedTreeRoots
-            )
-        ) {
-            NPLogger.w(TAG, "拒绝删除非托管下载引用: $reference")
-            return false
-        }
-        return when {
-            reference.startsWith("/") -> {
-                val file = File(reference)
-                !file.exists() || file.delete()
-            }
-
-            else -> {
-                val uri = runCatching { reference.toUri() }.getOrNull() ?: return false
-                deleteContentReference(
-                    context = context,
-                    reference = reference,
-                    uri = uri
-                )
-            }
-        }
-    }
-
     private fun deleteContentReference(
         context: Context,
         reference: String,
         uri: Uri
     ): Boolean {
-        val deleted = ManagedDownloadReferenceIo.deleteContentReference(
+        return referenceDeleteExecutor.deleteContentReference(
             context = context,
+            reference = reference,
             uri = uri,
-            maxAttempts = SAF_DELETE_MAX_ATTEMPTS,
-            retryDelayMs = SAF_DELETE_RETRY_DELAY_MS
         )
-        if (!deleted) {
-            NPLogger.w(TAG, "删除下载 content 引用失败: $reference")
-        }
-        return deleted
     }
 
     internal fun isMissingManagedDocumentFailure(error: Throwable): Boolean {

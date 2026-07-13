@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.policy.refresh
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
+import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
