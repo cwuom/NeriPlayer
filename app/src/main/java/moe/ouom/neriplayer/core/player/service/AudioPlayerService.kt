@@ -108,8 +108,10 @@ import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherPlaybackState
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
-import moe.ouom.neriplayer.data.traffic.isOfflineModeNow
+import moe.ouom.neriplayer.data.settings.DEFAULT_PLAYBACK_SERVICE_IDLE_SHUTDOWN_MINUTES
+import moe.ouom.neriplayer.data.settings.PlaybackServiceIdleShutdownPreference
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.traffic.isOfflineModeNow
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 
 private suspend inline fun <T> kotlinx.coroutines.flow.Flow<T>.collectSafely(
@@ -177,7 +179,6 @@ private const val SERVICE_FLOW_COLLECTOR_RESTART_DELAY_MS = 1_000L
 private const val USB_EXCLUSIVE_KEEPALIVE_INTERVAL_MS = 15_000L
 private const val USB_EXCLUSIVE_KEEPALIVE_STALL_WARN_MS = 25_000L
 private const val USB_EXCLUSIVE_KEEPALIVE_STALL_RECOVERY_TICKS = 1
-private const val PLAYBACK_SERVICE_IDLE_SHUTDOWN_DELAY_MS = 10 * 60 * 1_000L
 
 internal fun isLocalPlaybackCommandSyncSource(
     source: String,
@@ -511,7 +512,9 @@ class AudioPlayerService : Service() {
     private var favoriteSongKeys: Set<String> = emptySet()
     private val idleShutdownCoordinator = PlaybackServiceIdleShutdownCoordinator(
         scope = serviceScope,
-        delayMs = PLAYBACK_SERVICE_IDLE_SHUTDOWN_DELAY_MS,
+        delayMs = PlaybackServiceIdleShutdownPreference.delayMs(
+            DEFAULT_PLAYBACK_SERVICE_IDLE_SHUTDOWN_MINUTES
+        ),
         isEligible = ::isEligibleForIdleShutdown,
         currentStartId = { latestStartId },
         onShutdown = ::stopIdlePlaybackService,
@@ -926,6 +929,17 @@ class AudioPlayerService : Service() {
         playerRuntimeReady = true
         refreshFavoriteSongKeys()
 
+        serviceScope.launch {
+            AppContainer.settingsRepo.playbackServiceIdleShutdownMinutesFlow
+                .collectSafely("playbackServiceIdleShutdownMinutesFlow") { minutes ->
+                    val delayMs = PlaybackServiceIdleShutdownPreference.delayMs(minutes)
+                    NPLogger.i(
+                        "NERI-APS",
+                        "Playback service idle shutdown updated: minutes=$minutes delayMs=$delayMs"
+                    )
+                    idleShutdownCoordinator.updateDelayMs(delayMs)
+                }
+        }
         serviceScope.launch {
             PlayerManager.currentSongFlow.collectSafely("currentSongFlow") {
                 if (it == null && !hasPlaybackSurfaceContent()) {

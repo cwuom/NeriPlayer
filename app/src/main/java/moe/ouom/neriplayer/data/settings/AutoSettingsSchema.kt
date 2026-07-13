@@ -96,6 +96,22 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
+            key = "playback_service_idle_shutdown_minutes",
+            type = SettingValueType.Int,
+            defaultInt = DEFAULT_PLAYBACK_SERVICE_IDLE_SHUTDOWN_MINUTES,
+            order = 45,
+            ui = SettingUiType.Custom,
+            normalizer = PlaybackServiceIdleShutdownPreference::class
+        )
+        val playbackServiceIdleShutdownMinutes = autoIntSetting(
+            key = "playback_service_idle_shutdown_minutes",
+            defaultValue = DEFAULT_PLAYBACK_SERVICE_IDLE_SHUTDOWN_MINUTES,
+            titleRes = R.string.settings_playback_idle_shutdown,
+            descriptionRes = R.string.settings_playback_idle_shutdown_desc,
+            icon = AutoSettingIcon.Bolt
+        )
+
+        @AutoSetting(
             key = "dev_mode_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = false,
@@ -600,7 +616,7 @@ object AutoSettingsSchema {
         val lyricTranslationUsePhonetic = autoSetting(
             titleRes = R.string.lyrics_translation_use_phonetic,
             descriptionRes = R.string.lyrics_translation_use_phonetic_desc,
-            icon = AutoSettingIcon.Subtitles
+            icon = AutoSettingIcon.Keyboard
         )
     }
 

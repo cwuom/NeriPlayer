@@ -792,6 +792,11 @@
     <string name="settings_about_desc">版本信息、项目主页和开发者模式</string>
     <string name="settings_always_record_logs">始终记录日志</string>
     <string name="settings_always_record_logs_desc">无视调试模式开关，持续写入应用运行日志</string>
+    <string name="settings_playback_idle_shutdown">暂停后退出播放服务</string>
+    <string name="settings_playback_idle_shutdown_desc">暂停达到设定时长后移除播放通知并停止前台播放服务，以降低后台耗电；播放队列和进度会保留</string>
+    <string name="settings_playback_idle_shutdown_dialog_title">暂停多久后退出</string>
+    <string name="settings_playback_idle_shutdown_off">不自动退出</string>
+    <string name="settings_playback_idle_shutdown_minutes">%1$d 分钟</string>
     <string name="settings_clear_config">清除配置</string>
     <string name="settings_ui_scale">UI 缩放</string>
     <string name="settings_ui_scale_dpi">UI 缩放 (DPI)</string>

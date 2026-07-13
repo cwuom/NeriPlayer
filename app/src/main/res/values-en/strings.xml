@@ -792,6 +792,11 @@
     <string name="settings_about_desc">Version, project home, and developer mode</string>
     <string name="settings_always_record_logs">Always Record Logs</string>
     <string name="settings_always_record_logs_desc">Keep writing runtime logs even when debug mode is off</string>
+    <string name="settings_playback_idle_shutdown">Exit playback service when paused</string>
+    <string name="settings_playback_idle_shutdown_desc">After the selected pause duration, remove the playback notification and stop the foreground playback service to reduce battery use. The queue and progress are kept.</string>
+    <string name="settings_playback_idle_shutdown_dialog_title">Exit after being paused for</string>
+    <string name="settings_playback_idle_shutdown_off">Never</string>
+    <string name="settings_playback_idle_shutdown_minutes">%1$d minutes</string>
     <string name="settings_clear_config">Clear Configuration</string>
     <string name="settings_ui_scale">UI Scale</string>
     <string name="settings_ui_scale_dpi">UI Scale (DPI)</string>

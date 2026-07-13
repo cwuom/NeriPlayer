@@ -12,6 +12,7 @@ import com.google.devtools.ksp.symbol.KSAnnotation
 import com.google.devtools.ksp.symbol.KSClassDeclaration
 import com.google.devtools.ksp.symbol.KSDeclaration
 import com.google.devtools.ksp.symbol.KSPropertyDeclaration
+import com.google.devtools.ksp.symbol.KSType
 import moe.ouom.neriplayer.ksp.annotations.AutoSetting
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingsCatalog
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingsSection
@@ -1069,7 +1070,10 @@ private inline fun <reified T : Enum<T>> KSAnnotation.enumArgumentOrNull(name: S
 
 private fun KSAnnotation.classArgument(name: String): String? {
     val value = argument(name) ?: return null
-    val qualifiedName = value.toString()
+    val qualifiedName = when (value) {
+        is KSType -> value.declaration.qualifiedName?.asString() ?: value.toString()
+        else -> value.toString()
+    }
     return qualifiedName.takeUnless {
         it == "kotlin.Unit" || it == "Unit" || it == "Unit::class"
     }

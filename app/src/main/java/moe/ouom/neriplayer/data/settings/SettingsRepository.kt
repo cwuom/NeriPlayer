@@ -160,6 +160,9 @@ class SettingsRepository(private val context: Context) {
     val alwaysRecordLogsEnabledFlow: Flow<Boolean> =
         settingFlow(AutoSettingsSchema.general.alwaysRecordLogsEnabled)
 
+    val playbackServiceIdleShutdownMinutesFlow: Flow<Int> =
+        autoSettingsRepository.playbackServiceIdleShutdownMinutesFlow
+
     val themeSeedColorFlow: Flow<String> =
         dataStoreSettingFlow { it[SettingsKeys.THEME_SEED_COLOR] ?: ThemeDefaults.DEFAULT_SEED_COLOR_HEX }
 

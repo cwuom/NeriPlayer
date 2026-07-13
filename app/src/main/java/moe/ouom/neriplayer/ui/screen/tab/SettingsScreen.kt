@@ -145,6 +145,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsBiliAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsNeteaseAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsYouTubeAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibility
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.PlaybackServiceIdleShutdownSetting
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsAudioQualitySection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsBackupRestoreSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsDownloadSection
@@ -1016,6 +1017,7 @@ fun SettingsScreen(
                             scope = scope,
                             sectionScope = AutoSettingsScopes.general
                         )
+                        PlaybackServiceIdleShutdownSetting(autoSettingsRepository)
                         LanguageSettingItem(onBeforeRestart = onBeforeLanguageRestart)
                         ListItem(
                             leadingContent = {

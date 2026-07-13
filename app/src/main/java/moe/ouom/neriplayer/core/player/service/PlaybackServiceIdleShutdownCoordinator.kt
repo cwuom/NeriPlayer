@@ -7,15 +7,16 @@ import kotlinx.coroutines.launch
 
 internal class PlaybackServiceIdleShutdownCoordinator(
     private val scope: CoroutineScope,
-    private val delayMs: Long,
+    delayMs: Long,
     private val isEligible: () -> Boolean,
     private val currentStartId: () -> Int,
     private val onShutdown: (Int) -> Unit,
 ) {
+    private var delayMs = delayMs.coerceAtLeast(0L)
     private var shutdownJob: Job? = null
 
     fun refresh() {
-        if (!isEligible()) {
+        if (delayMs <= 0L || !isEligible()) {
             cancel()
             return
         }
@@ -31,6 +32,15 @@ internal class PlaybackServiceIdleShutdownCoordinator(
             }
             onShutdown(scheduledStartId)
         }
+    }
+
+    fun updateDelayMs(newDelayMs: Long) {
+        val normalizedDelayMs = newDelayMs.coerceAtLeast(0L)
+        if (normalizedDelayMs == delayMs) return
+
+        cancel()
+        delayMs = normalizedDelayMs
+        refresh()
     }
 
     fun cancel() {

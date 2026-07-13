@@ -71,4 +71,66 @@ class PlaybackServiceIdleShutdownCoordinatorTest {
 
         assertEquals(0, shutdownCount)
     }
+
+    @Test
+    fun `changing delay restarts full idle window`() = runTest {
+        var shutdownCount = 0
+        val coordinator = PlaybackServiceIdleShutdownCoordinator(
+            scope = this,
+            delayMs = 1_000L,
+            isEligible = { true },
+            currentStartId = { 4 },
+            onShutdown = { shutdownCount += 1 },
+        )
+
+        coordinator.refresh()
+        advanceTimeBy(500L)
+        coordinator.updateDelayMs(2_000L)
+        advanceTimeBy(1_500L)
+        runCurrent()
+        assertEquals(0, shutdownCount)
+
+        advanceTimeBy(500L)
+        runCurrent()
+        assertEquals(1, shutdownCount)
+    }
+
+    @Test
+    fun `zero delay disables pending shutdown`() = runTest {
+        var shutdownCount = 0
+        val coordinator = PlaybackServiceIdleShutdownCoordinator(
+            scope = this,
+            delayMs = 1_000L,
+            isEligible = { true },
+            currentStartId = { 5 },
+            onShutdown = { shutdownCount += 1 },
+        )
+
+        coordinator.refresh()
+        coordinator.updateDelayMs(0L)
+        advanceTimeBy(2_000L)
+        runCurrent()
+
+        assertEquals(0, shutdownCount)
+    }
+
+    @Test
+    fun `same delay keeps the original idle window`() = runTest {
+        var shutdownCount = 0
+        val coordinator = PlaybackServiceIdleShutdownCoordinator(
+            scope = this,
+            delayMs = 1_000L,
+            isEligible = { true },
+            currentStartId = { 6 },
+            onShutdown = { shutdownCount += 1 },
+        )
+
+        coordinator.refresh()
+        advanceTimeBy(500L)
+        coordinator.updateDelayMs(1_000L)
+        advanceTimeBy(500L)
+        runCurrent()
+
+        assertEquals(1, shutdownCount)
+    }
 }

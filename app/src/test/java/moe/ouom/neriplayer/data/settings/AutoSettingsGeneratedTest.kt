@@ -18,6 +18,7 @@ class AutoSettingsGeneratedTest {
     fun generatedBackupKeysCoverSettingsSchema() {
         val booleanKeyNames = AutoSettingsBackupKeys.booleanKeys.map { it.name }.toSet()
         val floatKeyNames = AutoSettingsBackupKeys.floatKeys.map { it.name }.toSet()
+        val intKeyNames = AutoSettingsBackupKeys.intKeys.map { it.name }.toSet()
         val longKeyNames = AutoSettingsBackupKeys.longKeys.map { it.name }.toSet()
         val stringKeyNames = AutoSettingsBackupKeys.stringKeys.map { it.name }.toSet()
 
@@ -28,6 +29,10 @@ class AutoSettingsGeneratedTest {
         assertTrue(
             "general switch should be exportable",
             "haptic_feedback_enabled" in booleanKeyNames
+        )
+        assertTrue(
+            "general idle shutdown duration should be exportable",
+            "playback_service_idle_shutdown_minutes" in intKeyNames
         )
         assertTrue(
             "motion switch should be exportable",
@@ -236,6 +241,10 @@ class AutoSettingsGeneratedTest {
         assertEquals(
             AutoSettingIcon.Subtitles,
             AutoSettingsSchema.display.showLyricTranslation.icon
+        )
+        assertEquals(
+            AutoSettingIcon.Keyboard,
+            AutoSettingsSchema.display.lyricTranslationUsePhonetic.icon
         )
         assertEquals(
             R.drawable.ic_lyrics,

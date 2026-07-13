@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.core.player.model.encodePlaybackEqualizerBandLevels
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
+import moe.ouom.neriplayer.data.settings.PlaybackServiceIdleShutdownPreference
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsBackupKeys
@@ -130,6 +131,8 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
                     normalizePlaybackLoudnessGainMb(value)
                 SettingsKeys.DOWNLOAD_PARALLELISM.name ->
                     normalizeDownloadParallelism(value)
+                SettingsKeys.PLAYBACK_SERVICE_IDLE_SHUTDOWN_MINUTES.name ->
+                    PlaybackServiceIdleShutdownPreference.normalize(value)
                 else -> value
             }
             if (normalized != value) {
