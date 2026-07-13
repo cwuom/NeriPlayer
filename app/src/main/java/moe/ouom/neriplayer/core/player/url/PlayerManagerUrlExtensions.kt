@@ -35,6 +35,7 @@ import moe.ouom.neriplayer.core.player.policy.refresh.shouldApplyRefreshResult
 import moe.ouom.neriplayer.core.player.policy.refresh.YouTubePlaybackRecoveryStrategy
 import moe.ouom.neriplayer.core.player.playback.advanceAfterPlaybackFailure
 import moe.ouom.neriplayer.core.player.playback.preparePlayerForManagedStart
+import moe.ouom.neriplayer.core.player.prefetch.consumeGenericUrlPrefetch
 import moe.ouom.neriplayer.core.player.quality.effectiveBiliQuality
 import moe.ouom.neriplayer.core.player.quality.effectiveNeteaseQuality
 import moe.ouom.neriplayer.core.player.quality.effectiveYouTubeQuality
@@ -58,7 +59,8 @@ internal suspend fun PlayerManager.resolveSongUrl(
     song: SongItem,
     forceRefresh: Boolean = false,
     youtubeRecoveryStrategy: YouTubePlaybackRecoveryStrategy? = null,
-    sideEffects: RefreshResolverSideEffects = RefreshResolverSideEffects()
+    sideEffects: RefreshResolverSideEffects = RefreshResolverSideEffects(),
+    allowGenericPrefetchCache: Boolean = true
 ): SongUrlResult {
     NPLogger.d(
         "NERI-PlayerManager",
@@ -130,6 +132,9 @@ internal suspend fun PlayerManager.resolveSongUrl(
             audioInfo = cachedAudioInfo,
             cacheKeyOverride = cacheKey
         )
+    }
+    if (!forceRefresh && allowGenericPrefetchCache && !isYouTubeTrack) {
+        consumeGenericUrlPrefetch(cacheKey)?.let { return it }
     }
     val result = when {
         isYouTubeTrack -> getYouTubeMusicAudioUrl(

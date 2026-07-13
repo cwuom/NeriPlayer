@@ -83,6 +83,7 @@ import moe.ouom.neriplayer.core.player.playback.restorePlaybackAfterTransientAud
 import moe.ouom.neriplayer.core.player.playback.startProgressUpdates
 import moe.ouom.neriplayer.core.player.playback.suppressPlaybackForAudioRouteLoss
 import moe.ouom.neriplayer.core.player.playback.PlaybackStatsTracker
+import moe.ouom.neriplayer.core.player.prefetch.prefetchNextGenericTrackUrl
 import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStateSnapshot
 import moe.ouom.neriplayer.core.player.persistence.applyRestoredStateSnapshot
 import moe.ouom.neriplayer.core.player.persistence.restoreState
@@ -246,6 +247,7 @@ internal fun PlayerManager.initializeImpl(
 
         player = ExoPlayer.Builder(app, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
+            .setLoadControl(buildAudioLoadControl())
             .build()
             .apply {
                 setWakeMode(C.WAKE_MODE_NONE)
@@ -416,13 +418,14 @@ internal fun PlayerManager.initializeImpl(
                     schedulePlaybackStartupWatchdog(reason = "state_buffering")
                 }
                 if (state == Player.STATE_READY) {
-                    if (shouldAcceptPlayerCallback(
-                            playbackRequestToken,
-                            loadedMediaRequestToken,
-                            isPendingMediaLoadActive()
-                        )
-                    ) {
+                    val accepted = shouldAcceptPlayerCallback(
+                        playbackRequestToken,
+                        loadedMediaRequestToken,
+                        isPendingMediaLoadActive()
+                    )
+                    if (accepted) {
                         maybeBackfillCurrentSongDurationFromPlayer()
+                        prefetchNextGenericTrackUrl()
                     }
                     if (player.playWhenReady || player.isPlaying) {
                         startProgressUpdates()
@@ -3004,6 +3007,10 @@ internal fun PlayerManager.releaseImpl() {
         UsbExclusiveSystemSoundGuard.releaseWhenNativeIdle(application, "player_release")
         playJob?.cancel()
         playJob = null
+        currentGenericUrlPrefetchJob?.cancel()
+        currentGenericUrlPrefetchJob = null
+        currentGenericUrlPrefetchKey = null
+        genericUrlPrefetchCache.clear()
         lyriconUpdateJob?.cancel()
         lyriconUpdateJob = null
         externalBluetoothLyricsLoadJob?.cancel()

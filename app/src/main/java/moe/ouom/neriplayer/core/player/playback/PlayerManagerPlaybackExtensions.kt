@@ -44,6 +44,7 @@ import moe.ouom.neriplayer.core.player.policy.pending.shouldApplyResolvedMedia
 import moe.ouom.neriplayer.core.player.policy.pending.shouldApplyResolvedMediaSideEffects
 import moe.ouom.neriplayer.core.player.policy.command.shouldPausePlaybackWhenToggling
 import moe.ouom.neriplayer.core.player.policy.progress.shouldRunPlaybackProgressUpdates
+import moe.ouom.neriplayer.core.player.prefetch.cancelGenericUrlPrefetchUnlessReusableForSong
 import moe.ouom.neriplayer.core.player.prefetch.cancelYouTubePrefetchUnlessReusableForSong
 import moe.ouom.neriplayer.core.player.prefetch.kickoffYouTubePlaybackIntentWarmup
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
@@ -563,6 +564,7 @@ internal fun PlayerManager.playAtIndex(
 
     playJob?.cancel()
     cancelYouTubePrefetchUnlessReusableForSong(song, reason = "play_at_index")
+    cancelGenericUrlPrefetchUnlessReusableForSong(song, reason = "play_at_index")
     playbackRequestToken += 1
     val requestToken = playbackRequestToken
     maybeHydrateLocalSongForPlayback(index, song, requestToken)

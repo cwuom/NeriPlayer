@@ -100,6 +100,7 @@ import moe.ouom.neriplayer.core.player.policy.refresh.RefreshInFlightController
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshRequestSemantics
 import moe.ouom.neriplayer.core.player.policy.storage.RestorableLocalMediaState
 import moe.ouom.neriplayer.core.player.policy.storage.resolveRestorableLocalMediaState
+import moe.ouom.neriplayer.core.player.prefetch.GenericUrlPrefetchCache
 import moe.ouom.neriplayer.core.player.prefetch.prefetchYouTubePlayableUrlWindowImpl
 import moe.ouom.neriplayer.core.player.prefetch.prefetchYouTubeQueueWindowImpl
 import moe.ouom.neriplayer.core.player.policy.refresh.YouTubePlaybackRecoveryStrategy
@@ -488,6 +489,9 @@ object PlayerManager {
     internal var currentYouTubePrefetchJob: Job? = null
     internal var currentYouTubePrefetchVideoIds: Set<String> = emptySet()
     internal val youtubeStreamWarmupJobs = ConcurrentHashMap<String, Job>()
+    internal val genericUrlPrefetchCache = GenericUrlPrefetchCache()
+    internal var currentGenericUrlPrefetchJob: Job? = null
+    internal var currentGenericUrlPrefetchKey: String? = null
     @Volatile
     internal var playbackRequestToken = 0L
     @Volatile
