@@ -284,6 +284,21 @@ private const val CoverSourceBadgeRevealDelayMs =
 private const val QueueSheetMaxHeightFraction = 0.9f
 private val LyricOffsetStepMsFloat = LYRIC_DEFAULT_OFFSET_STEP_MS.toFloat()
 
+internal enum class NowPlayingWideLyricsMode {
+    NO_LYRICS,
+    ADVANCED,
+    SYNCED
+}
+
+internal fun resolveNowPlayingWideLyricsMode(
+    hasLyrics: Boolean,
+    advancedLyricsEnabled: Boolean
+): NowPlayingWideLyricsMode = when {
+    !hasLyrics -> NowPlayingWideLyricsMode.NO_LYRICS
+    advancedLyricsEnabled -> NowPlayingWideLyricsMode.ADVANCED
+    else -> NowPlayingWideLyricsMode.SYNCED
+}
+
 internal fun shouldHideDownloadActionForSong(
     hasLocalDownload: Boolean,
     currentTask: moe.ouom.neriplayer.core.download.DownloadTask?
@@ -1556,8 +1571,13 @@ fun NowPlayingScreen(
                                 .weight(1f)
                                 .fillMaxHeight()
                         ) {
-                            if (lyrics.isNotEmpty()) {
-                                if (advancedLyricsEnabled) {
+                            when (
+                                resolveNowPlayingWideLyricsMode(
+                                    hasLyrics = lyrics.isNotEmpty(),
+                                    advancedLyricsEnabled = advancedLyricsEnabled
+                                )
+                            ) {
+                                NowPlayingWideLyricsMode.ADVANCED -> {
                                     val currentPosition by PlayerManager.playbackPositionFlow.collectAsStateWithLifecycle()
                                     val effectiveLyricTimeMs = previewPositionOverrideMs ?: currentPosition
                                     AdvancedLyricsView(
@@ -1594,7 +1614,37 @@ fun NowPlayingScreen(
                                         },
                                         onSeekTo = { position -> PlayerManager.seekTo(position) }
                                     )
-                                } else {
+                                }
+
+                                NowPlayingWideLyricsMode.SYNCED -> {
+                                    NowPlayingLyricsPane(
+                                        lyrics = plainLyrics,
+                                        previewPositionOverrideMs = previewPositionOverrideMs,
+                                        modifier = Modifier.fillMaxSize(),
+                                        textColor = MaterialTheme.colorScheme.onBackground,
+                                        fontSize = scaledLyricFontSize(18f, lyricFontScale).sp,
+                                        translationFontSize = scaledLyricFontSize(14f, lyricFontScale).sp,
+                                        visualSpec = LyricVisualSpec(),
+                                        lyricOffsetMs = totalOffset,
+                                        lyricBlurEnabled = lyricBlurEnabled,
+                                        lyricBlurAmount = lyricBlurAmount,
+                                        isPlaying = isPlaying && previewPositionOverrideMs == null,
+                                        playbackSpeed = playbackSoundState.speed,
+                                        onLyricClick = { entry ->
+                                            PlayerManager.seekTo(entry.startTimeMs)
+                                        },
+                                        onLyricLongClick = { entry ->
+                                            lyricShareInitialLine = entry
+                                        },
+                                        translatedLyrics = if (showLyricTranslation) {
+                                            secondaryPlainLyrics
+                                        } else {
+                                            null
+                                        }
+                                    )
+                                }
+
+                                NowPlayingWideLyricsMode.NO_LYRICS -> {
                                     Column(
                                         modifier = Modifier
                                             .fillMaxSize()
@@ -1610,34 +1660,12 @@ fun NowPlayingScreen(
                                         )
                                         Spacer(Modifier.height(12.dp))
                                         Text(
-                                            text = stringResource(R.string.lyrics_title),
+                                            text = stringResource(R.string.lyrics_no_lyrics),
                                             style = MaterialTheme.typography.titleMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             textAlign = TextAlign.Center
                                         )
                                     }
-                                }
-                            } else {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(horizontal = 28.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.LibraryMusic,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-                                        modifier = Modifier.size(36.dp)
-                                    )
-                                    Spacer(Modifier.height(12.dp))
-                                    Text(
-                                        text = stringResource(R.string.lyrics_no_lyrics),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        textAlign = TextAlign.Center
-                                    )
                                 }
                             }
                         }

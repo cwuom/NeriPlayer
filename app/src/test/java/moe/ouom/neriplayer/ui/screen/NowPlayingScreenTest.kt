@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -11,6 +12,39 @@ import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
 import moe.ouom.neriplayer.data.model.SongItem
 
 class NowPlayingScreenTest {
+
+    @Test
+    fun `wide lyrics use synced renderer when advanced lyrics are disabled`() {
+        assertEquals(
+            NowPlayingWideLyricsMode.SYNCED,
+            resolveNowPlayingWideLyricsMode(
+                hasLyrics = true,
+                advancedLyricsEnabled = false
+            )
+        )
+    }
+
+    @Test
+    fun `wide lyrics keep advanced renderer when enabled`() {
+        assertEquals(
+            NowPlayingWideLyricsMode.ADVANCED,
+            resolveNowPlayingWideLyricsMode(
+                hasLyrics = true,
+                advancedLyricsEnabled = true
+            )
+        )
+    }
+
+    @Test
+    fun `wide lyrics show empty state only when lyrics are unavailable`() {
+        assertEquals(
+            NowPlayingWideLyricsMode.NO_LYRICS,
+            resolveNowPlayingWideLyricsMode(
+                hasLyrics = false,
+                advancedLyricsEnabled = false
+            )
+        )
+    }
 
     @Test
     fun `download action remains visible when completed task exists but local file is gone`() {
