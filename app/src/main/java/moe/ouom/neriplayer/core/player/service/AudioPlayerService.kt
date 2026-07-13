@@ -149,6 +149,7 @@ private data class PlaybackNotificationSnapshot(
     val requiresInteractiveFavoriteConfirmation: Boolean,
     val largeIconReady: Boolean,
     val coverSource: String?,
+    val statusBarLyricLine: String?,
 )
 
 private data class PlaybackMetadataSnapshot(
@@ -1481,6 +1482,12 @@ class AudioPlayerService : Service() {
         } else {
             song?.displayArtist() ?: ""
         }
+        val currentStatusBarLyricLine = if (statusBarLyricsEnable) {
+            PlayerManager.externalBluetoothLyricLineFlow.value
+                ?.takeIf { it.isNotBlank() && it != "null" }
+        } else {
+            null
+        }
         return PlaybackNotificationSnapshot(
             songKey = song?.stableKey(),
             title = song?.displayName() ?: "NeriPlayer",
@@ -1491,6 +1498,7 @@ class AudioPlayerService : Service() {
             requiresInteractiveFavoriteConfirmation = requiresInteractiveFavoriteConfirmation(song),
             largeIconReady = currentNotificationLargeIcon != null,
             coverSource = currentCoverSource,
+            statusBarLyricLine = currentStatusBarLyricLine,
         )
     }
 
