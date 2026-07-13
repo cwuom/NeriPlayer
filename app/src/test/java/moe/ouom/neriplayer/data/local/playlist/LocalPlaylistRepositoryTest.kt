@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -499,6 +500,60 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
+    fun `new membership token is captured by later deletion`() = runTest {
+        val playlistId = 145L
+        val syncStore = RecordingSyncMutationStore()
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "membership_token_delete.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false,
+            syncMutationStore = syncStore
+        )
+        repository.updatePlaylists(listOf(LocalPlaylist(id = playlistId, name = "tokens")))
+
+        val song = remoteNeteaseSong(id = 146L)
+        repository.addPreparedSongsToPlaylist(playlistId, listOf(song))
+        val membershipToken = repository.playlists.value
+            .single()
+            .songs
+            .single()
+            .syncMembershipTokens
+            .orEmpty()
+            .single()
+
+        repository.removeSongsFromPlaylistByIdentity(playlistId, listOf(song))
+
+        val deletion = syncStore.applied
+            .flatMap(LocalPlaylistSyncMutation::addedSongDeletions)
+            .single()
+        assertEquals(listOf(membershipToken), deletion.removedMembershipTokens)
+    }
+
+    @Test
+    fun `restored playlist id is committed before external sync is scheduled`() = runTest {
+        val syncStore = RecordingSyncMutationStore()
+        var autoSyncTriggerCount = 0
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "restored_playlist_sync.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = true,
+            syncMutationStore = syncStore,
+            autoSyncTrigger = { autoSyncTriggerCount++ }
+        )
+
+        repository.updatePlaylists(
+            playlists = listOf(LocalPlaylist(id = 147L, name = "restored")),
+            triggerSync = true,
+            restoredPlaylistIds = setOf(147L)
+        )
+
+        assertEquals(listOf(147L), syncStore.applied.single().restoredPlaylistIds)
+        assertEquals(1, autoSyncTriggerCount)
+    }
+
+    @Test
     fun `startup replay schedules auto sync after mutation is applied`() = runTest {
         val song = remoteNeteaseSong(id = 142L)
         val storage = RecordingStorage(
@@ -806,8 +861,19 @@ class LocalPlaylistRepositoryTest {
         private val failApply: Boolean = false
     ) : LocalPlaylistSyncMutationStore {
         val applied = mutableListOf<LocalPlaylistSyncMutation>()
+        private var nextCounter = 1L
 
         override fun getOrCreateDeviceId(): String = "test-device"
+
+        override fun nextSyncCausalTokens(count: Int): List<SyncCausalToken> {
+            require(count >= 0)
+            return List(count) {
+                SyncCausalToken(
+                    deviceId = getOrCreateDeviceId(),
+                    counter = nextCounter++
+                )
+            }
+        }
 
         override fun apply(mutation: LocalPlaylistSyncMutation) {
             if (failApply) throw IOException("simulated sync mutation failure")

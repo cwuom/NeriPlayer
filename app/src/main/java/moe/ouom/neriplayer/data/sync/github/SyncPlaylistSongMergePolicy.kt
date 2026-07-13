@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.data.sync.github
 
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.identity
+import moe.ouom.neriplayer.data.sync.model.normalizedSyncCausalTokens
 
 internal object SyncPlaylistSongMergePolicy {
     data class Result(
@@ -21,12 +22,17 @@ internal object SyncPlaylistSongMergePolicy {
     ): Result {
         val localIsEmpty = localSongs.isEmpty()
         val remoteIsEmpty = remoteSongs.isEmpty()
+        val localHasMembershipTokens = hasMembershipTokens(localSongs)
+        val remoteHasMembershipTokens = hasMembershipTokens(remoteSongs)
         val preferRemoteFavorites = isFavorites && localIsEmpty && !remoteIsEmpty && lastSyncTime <= 0L
 
         when {
             preferRemoteFavorites -> return Result(deduplicateSongs(remoteSongs), true)
 
             localIsEmpty && !remoteIsEmpty -> {
+                if (remoteHasMembershipTokens) {
+                    return Result(deduplicateSongs(remoteSongs), true)
+                }
                 val localClearWins = localChangedAfterSync && localModifiedAt >= remoteModifiedAt
                 return if (localClearWins) {
                     Result(emptyList(), false)
@@ -36,6 +42,9 @@ internal object SyncPlaylistSongMergePolicy {
             }
 
             remoteIsEmpty && !localIsEmpty -> {
+                if (localHasMembershipTokens) {
+                    return Result(deduplicateSongs(localSongs), false)
+                }
                 val remoteClearWins = remoteChangedAfterSync && remoteModifiedAt > localModifiedAt
                 return if (remoteClearWins) {
                     Result(emptyList(), true)
@@ -45,10 +54,16 @@ internal object SyncPlaylistSongMergePolicy {
             }
 
             remoteChangedAfterSync && !localChangedAfterSync -> {
-                return Result(deduplicateSongs(remoteSongs), true)
+                return Result(
+                    songs = mergeMembershipTokensIntoPrimary(remoteSongs, localSongs),
+                    isUpdated = true
+                )
             }
             localChangedAfterSync && !remoteChangedAfterSync -> {
-                return Result(deduplicateSongs(localSongs), false)
+                return Result(
+                    songs = mergeMembershipTokensIntoPrimary(localSongs, remoteSongs),
+                    isUpdated = false
+                )
             }
         }
 
@@ -63,16 +78,11 @@ internal object SyncPlaylistSongMergePolicy {
     }
 
     fun deduplicateSongs(songs: List<SyncSong>): List<SyncSong> {
-        if (songs.size < 2) return songs
+        if (songs.isEmpty()) return songs
 
-        val index = SongMergeIndex()
-        val result = mutableListOf<SyncSong>()
-        songs.forEach { song ->
-            if (index.addIfAbsent(song)) {
-                result += song
-            }
-        }
-        return result
+        return SongMergeAccumulator()
+            .apply { songs.forEach(::addIfAbsent) }
+            .toList()
     }
 
     private fun mergeSongsPreservingLocal(
@@ -81,15 +91,26 @@ internal object SyncPlaylistSongMergePolicy {
     ): List<SyncSong> {
         if (remoteSongs.isEmpty()) return localSongs
 
-        val index = SongMergeIndex()
-        val merged = localSongs.toMutableList()
-        localSongs.forEach(index::addIfAbsent)
-        remoteSongs.forEach { remoteSong ->
-            if (index.addIfAbsent(remoteSong)) {
-                merged += remoteSong
+        return SongMergeAccumulator()
+            .apply {
+                localSongs.forEach(::addIfAbsent)
+                remoteSongs.forEach(::addIfAbsent)
             }
-        }
-        return merged
+            .toList()
+    }
+
+    private fun mergeMembershipTokensIntoPrimary(
+        primarySongs: List<SyncSong>,
+        secondarySongs: List<SyncSong>
+    ): List<SyncSong> {
+        val accumulator = SongMergeAccumulator()
+        primarySongs.forEach(accumulator::addIfAbsent)
+        secondarySongs.forEach(accumulator::mergeExactMembershipTokens)
+        return accumulator.toList()
+    }
+
+    private fun hasMembershipTokens(songs: List<SyncSong>): Boolean {
+        return songs.any { it.syncMembershipTokens.orEmpty().isNotEmpty() }
     }
 
     private fun sameSongList(left: List<SyncSong>, right: List<SyncSong>): Boolean {
@@ -98,10 +119,9 @@ internal object SyncPlaylistSongMergePolicy {
     }
 
     private fun sameSongForMerge(left: SyncSong, right: SyncSong): Boolean {
-        return sameSongForMerge(
-            left = left.toMergeCandidate(),
-            right = right.toMergeCandidate()
-        )
+        return sameSongForMerge(left.toMergeCandidate(), right.toMergeCandidate()) &&
+            left.syncMembershipTokens.orEmpty().normalizedSyncCausalTokens() ==
+            right.syncMembershipTokens.orEmpty().normalizedSyncCausalTokens()
     }
 
     private fun sameSongForMerge(left: SongMergeCandidate, right: SongMergeCandidate): Boolean {
@@ -185,6 +205,54 @@ internal object SyncPlaylistSongMergePolicy {
             fallbackSourcesByKey
                 .getOrPut(fallbackKey) { SourceBucket() }
                 .add(candidate.sourceHint)
+        }
+    }
+
+    private class SongMergeAccumulator {
+        private val mergeIndex = SongMergeIndex()
+        private val exactIndices = mutableMapOf<SongIdentity, Int>()
+        private val songs = mutableListOf<SyncSong>()
+
+        fun addIfAbsent(song: SyncSong) {
+            val normalizedSong = normalizeMembershipTokens(song)
+            val identity = normalizedSong.identity()
+            val exactIndex = exactIndices[identity]
+            if (exactIndex != null) {
+                mergeMembershipTokensAt(exactIndex, normalizedSong)
+                return
+            }
+            if (!mergeIndex.addIfAbsent(normalizedSong)) return
+
+            exactIndices[identity] = songs.size
+            songs += normalizedSong
+        }
+
+        fun mergeExactMembershipTokens(song: SyncSong) {
+            val exactIndex = exactIndices[song.identity()] ?: return
+            mergeMembershipTokensAt(exactIndex, song)
+        }
+
+        fun toList(): List<SyncSong> = songs
+
+        private fun mergeMembershipTokensAt(index: Int, other: SyncSong) {
+            val current = songs[index]
+            val mergedTokens = (
+                current.syncMembershipTokens.orEmpty() +
+                    other.syncMembershipTokens.orEmpty()
+            )
+                .normalizedSyncCausalTokens()
+            if (mergedTokens != current.syncMembershipTokens.orEmpty()) {
+                songs[index] = current.copy(syncMembershipTokens = mergedTokens)
+            }
+        }
+
+        private fun normalizeMembershipTokens(song: SyncSong): SyncSong {
+            val normalizedTokens = song.syncMembershipTokens.orEmpty().normalizedSyncCausalTokens()
+            return if (normalizedTokens == song.syncMembershipTokens) {
+                song
+            } else {
+                song.copy(syncMembershipTokens = normalizedTokens)
+            }
         }
     }
 

@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.data.model
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 
 @Parcelize
 data class SongItem(
@@ -36,5 +37,6 @@ data class SongItem(
     val sourceStableKey: String? = null,
     val streamUrl: String? = null,
     val neteaseArtists: List<NeteaseArtistSummary>? = emptyList(),
-    val addedAt: Long = 0L
+    val addedAt: Long = 0L,
+    val syncMembershipTokens: List<SyncCausalToken>? = emptyList()
 ) : Parcelable

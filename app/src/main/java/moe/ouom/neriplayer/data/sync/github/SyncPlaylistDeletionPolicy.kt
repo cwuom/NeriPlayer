@@ -1,22 +1,28 @@
 package moe.ouom.neriplayer.data.sync.github
 
+import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.sync.model.normalizedSyncCausalTokens
 
 internal object SyncPlaylistDeletionPolicy {
+    private val deletionMirrorComparator =
+        compareBy<SyncPlaylistSongDeletion> { it.deletedAt }
+            .thenBy { it.deviceId }
+
+    private val deletionOrderComparator =
+        compareByDescending<SyncPlaylistSongDeletion> { it.deletedAt }
+            .thenByDescending { it.deviceId }
+            .thenBy(SyncPlaylistSongDeletion::stableKey)
+
     fun mergeDeletions(
         local: List<SyncPlaylistSongDeletion>,
         remote: List<SyncPlaylistSongDeletion>
     ): List<SyncPlaylistSongDeletion> {
         return (local + remote)
             .groupBy(SyncPlaylistSongDeletion::stableKey)
-            .mapNotNull { (_, snapshots) ->
-                snapshots.maxWithOrNull(
-                    compareBy<SyncPlaylistSongDeletion> { it.deletedAt }
-                        .thenBy { it.deviceId }
-                )
-            }
-            .sortedByDescending { it.deletedAt }
+            .mapNotNull { (_, snapshots) -> mergeDeletionSnapshots(snapshots) }
+            .sortedWith(deletionOrderComparator)
     }
 
     fun applyDeletions(
@@ -28,7 +34,7 @@ internal object SyncPlaylistDeletionPolicy {
             return songs
         }
 
-        val deletionsBySong = deletions
+        val deletionsBySong = mergeDeletions(deletions, emptyList())
             .asSequence()
             .filter { it.playlistId == playlistId }
             .associateBy { it.identity().stableKey() }
@@ -36,9 +42,9 @@ internal object SyncPlaylistDeletionPolicy {
             return songs
         }
 
-        return songs.filter { song ->
+        return songs.mapNotNull { song ->
             val deletion = deletionsBySong[song.identity().stableKey()]
-            deletion == null || effectiveAddedAt(song) > deletion.deletedAt
+            if (deletion == null) song else applyDeletion(song, deletion)
         }
     }
 
@@ -50,7 +56,8 @@ internal object SyncPlaylistDeletionPolicy {
             return emptyList()
         }
 
-        val deletionByKey = deletions.associateBy(SyncPlaylistSongDeletion::stableKey)
+        val normalizedDeletions = mergeDeletions(deletions, emptyList())
+        val deletionByKey = normalizedDeletions.associateBy(SyncPlaylistSongDeletion::stableKey)
         val resolvedKeys = buildSet {
             playlists.asSequence()
                 .filterNot(SyncPlaylist::isDeleted)
@@ -58,16 +65,71 @@ internal object SyncPlaylistDeletionPolicy {
                     playlist.songs.forEach { song ->
                         val key = "${playlist.id}|${song.identity().stableKey()}"
                         val deletion = deletionByKey[key] ?: return@forEach
-                        if (effectiveAddedAt(song) > deletion.deletedAt) {
+                        if (
+                            deletion.removedMembershipTokens.orEmpty().isEmpty() &&
+                            effectiveAddedAt(song) > deletion.deletedAt
+                        ) {
                             add(key)
                         }
                     }
                 }
         }
 
-        return deletions
+        return normalizedDeletions
             .filterNot { it.stableKey() in resolvedKeys }
-            .sortedByDescending { it.deletedAt }
+            .sortedWith(deletionOrderComparator)
+    }
+
+    fun clearLegacyDeletionsForReaddedSongs(
+        deletions: List<SyncPlaylistSongDeletion>,
+        playlistId: Long,
+        identities: Collection<SongIdentity>
+    ): List<SyncPlaylistSongDeletion> {
+        if (deletions.isEmpty() || identities.isEmpty()) return deletions
+
+        val readdedKeys = identities.mapTo(mutableSetOf()) { identity ->
+            "$playlistId|${identity.stableKey()}"
+        }
+        return mergeDeletions(deletions, emptyList()).filterNot { deletion ->
+            deletion.stableKey() in readdedKeys &&
+                deletion.removedMembershipTokens.orEmpty().isEmpty()
+        }
+    }
+
+    private fun mergeDeletionSnapshots(
+        snapshots: List<SyncPlaylistSongDeletion>
+    ): SyncPlaylistSongDeletion? {
+        val mirror = snapshots.maxWithOrNull(deletionMirrorComparator) ?: return null
+        val removedTokens = snapshots
+            .flatMap { it.removedMembershipTokens.orEmpty() }
+            .normalizedSyncCausalTokens()
+        return if (removedTokens == mirror.removedMembershipTokens.orEmpty()) {
+            mirror
+        } else {
+            mirror.copy(removedMembershipTokens = removedTokens)
+        }
+    }
+
+    private fun applyDeletion(
+        song: SyncSong,
+        deletion: SyncPlaylistSongDeletion
+    ): SyncSong? {
+        val songTokens = song.syncMembershipTokens.orEmpty().normalizedSyncCausalTokens()
+        val removedTokens = deletion.removedMembershipTokens.orEmpty().normalizedSyncCausalTokens()
+        if (songTokens.isEmpty() || removedTokens.isEmpty()) {
+            return song.takeIf { effectiveAddedAt(it) > deletion.deletedAt }
+        }
+
+        val removedTokenSet = removedTokens.toHashSet()
+        val remainingTokens = songTokens
+            .filterNot(removedTokenSet::contains)
+            .normalizedSyncCausalTokens()
+        if (remainingTokens.isEmpty()) return null
+        return if (remainingTokens == song.syncMembershipTokens.orEmpty()) {
+            song
+        } else {
+            song.copy(syncMembershipTokens = remainingTokens)
+        }
     }
 
     private fun effectiveAddedAt(song: SyncSong): Long {

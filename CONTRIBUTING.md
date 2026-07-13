@@ -432,10 +432,13 @@
 2. 同步对象包含歌单、收藏歌单、最近播放、删除记录和播放统计。
 3. `songOrderVersion=0` 表示旧版顺序，`songOrderVersion=1` 表示当前展示顺序；
    序列化、合并和落回本地歌单时必须保留旧数据迁移。
-4. 合并策略主要在 `GitHubSyncManager.kt`，WebDAV 复用同一套数据模型和多数合并逻辑。
-5. 不要破坏 `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt` 的延迟同步、
+4. 歌单成员使用 `syncMembershipTokens` / `removedMembershipTokens` 表达
+   observed-remove 语义；新增字段必须兼容旧 JSON 与 ProtoBuf 的缺字段载荷，
+   带 token 的成员不能退回只比较 `addedAt/deletedAt` 的删除裁决。
+5. 合并策略主要在 `GitHubSyncManager.kt`，WebDAV 复用同一套数据模型和多数合并逻辑。
+6. 不要破坏 `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt` 的延迟同步、
    周期同步、validated network 检查和失败重试行为。
-6. 涉及敏感信息时统一走 `SecureTokenStorage.kt` 或 `WebDavStorage.kt`，
+7. 涉及敏感信息时统一走 `SecureTokenStorage.kt` 或 `WebDavStorage.kt`，
    不要放回 `DataStore` 或明文 JSON。
 
 #### 8. 修改下载存储

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.sync.github
 
+import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -46,7 +47,36 @@ class SyncDataChangeDetectorTest {
         assertFalse(SyncDataChangeDetector.hasDataChanged(data, data.copy()))
     }
 
+    @Test
+    fun `detects playlist membership token change`() {
+        val remote = syncData(
+            playlists = listOf(playlist(song(1).copy(syncMembershipTokens = listOf(token(1L)))))
+        )
+        val merged = syncData(
+            playlists = listOf(playlist(song(1).copy(syncMembershipTokens = listOf(token(2L)))))
+        )
+
+        assertTrue(SyncDataChangeDetector.hasDataChanged(remote, merged))
+    }
+
+    @Test
+    fun `detects observed token change in playlist deletion`() {
+        val remote = syncData(
+            playlistSongDeletions = listOf(
+                playlistSongDeletion(1).copy(removedMembershipTokens = listOf(token(1L)))
+            )
+        )
+        val merged = syncData(
+            playlistSongDeletions = listOf(
+                playlistSongDeletion(1).copy(removedMembershipTokens = listOf(token(2L)))
+            )
+        )
+
+        assertTrue(SyncDataChangeDetector.hasDataChanged(remote, merged))
+    }
+
     private fun syncData(
+        playlists: List<SyncPlaylist> = emptyList(),
         recentPlays: List<SyncRecentPlay> = emptyList(),
         recentPlayDeletions: List<SyncRecentPlayDeletion> = emptyList(),
         playlistSongDeletions: List<SyncPlaylistSongDeletion> = emptyList()
@@ -54,6 +84,7 @@ class SyncDataChangeDetectorTest {
         return SyncData(
             deviceId = "device",
             deviceName = "test-device",
+            playlists = playlists,
             recentPlays = recentPlays,
             recentPlayDeletions = recentPlayDeletions,
             playlistSongDeletions = playlistSongDeletions
@@ -100,5 +131,19 @@ class SyncDataChangeDetectorTest {
             mediaUri = "https://media.example/$index",
             addedAt = index.toLong()
         )
+    }
+
+    private fun playlist(song: SyncSong): SyncPlaylist {
+        return SyncPlaylist(
+            id = 7L,
+            name = "playlist",
+            songs = listOf(song),
+            createdAt = 1L,
+            modifiedAt = 1L
+        )
+    }
+
+    private fun token(counter: Long): SyncCausalToken {
+        return SyncCausalToken("device", counter)
     }
 }

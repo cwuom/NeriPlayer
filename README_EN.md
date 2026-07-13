@@ -652,7 +652,9 @@ Current sync targets:
 - 🌐 **Network requirement**: sync runs through `WorkManager` and requires a
   **validated network**.
 - 🧩 **Conflict handling**: three-way merge handles playlists, favorites, history,
-  deletion records, and playback stats.
+  deletion records, and playback stats. Newly added or restored songs carry
+  membership tokens, so an older deletion only removes membership it actually
+  observed instead of deleting restored content during the next sync.
 - 🪶 **Data Saver**: uses `ProtoBuf + GZIP` as `backup.bin`; JSON is used when
   Data Saver is disabled.
 - 📦 **Remote format**: a GitHub repository is not end-to-end encryption.

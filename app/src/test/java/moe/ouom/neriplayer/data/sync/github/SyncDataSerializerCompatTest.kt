@@ -2,6 +2,7 @@
 
 package moe.ouom.neriplayer.data.sync.github
 
+import com.google.gson.Gson
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.encodeToByteArray
@@ -10,6 +11,8 @@ import kotlinx.serialization.protobuf.ProtoNumber
 import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.local.playlist.model.LEGACY_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
+import moe.ouom.neriplayer.data.sync.model.normalizedSyncCausalTokens
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -34,6 +37,15 @@ class SyncDataSerializerCompatTest {
                     createdAt = 10L,
                     modifiedAt = 20L
                 )
+            ),
+            playlistSongDeletions = listOf(
+                OldSyncPlaylistSongDeletion(
+                    playlistId = 1L,
+                    songId = 123L,
+                    album = "album",
+                    deletedAt = 30L,
+                    deviceId = "old-device"
+                )
             )
         )
 
@@ -45,8 +57,12 @@ class SyncDataSerializerCompatTest {
         assertEquals("", song.album)
         assertEquals(0L, song.albumId)
         assertEquals(180_000L, song.durationMs)
+        assertEquals(emptyList<SyncCausalToken>(), song.syncMembershipTokens)
         assertEquals(LEGACY_SONG_ORDER_VERSION, decoded.playlists.single().songOrderVersion)
-        assertEquals(emptyList<SyncPlaylistSongDeletion>(), decoded.playlistSongDeletions)
+        assertEquals(
+            emptyList<SyncCausalToken>(),
+            decoded.playlistSongDeletions.single().removedMembershipTokens
+        )
     }
 
     @Test
@@ -99,6 +115,83 @@ class SyncDataSerializerCompatTest {
         assertEquals(emptyList<SyncPlaylistSongDeletion>(), decoded.playlistSongDeletions)
     }
 
+    @Test
+    fun `protobuf causal token fields round trip in deterministic order`() {
+        val tokens = listOf(
+            SyncCausalToken("device-b", 2L),
+            SyncCausalToken("device-a", 1L),
+            SyncCausalToken("device-b", 2L)
+        ).normalizedSyncCausalTokens()
+        val song = syncSong(name = "causal", coverUrl = null, addedAt = 1L)
+            .copy(syncMembershipTokens = tokens)
+        val data = SyncData(
+            deviceId = "device-a",
+            deviceName = "Device A",
+            playlists = listOf(
+                SyncPlaylist(
+                    id = 1L,
+                    name = "playlist",
+                    songs = listOf(song),
+                    createdAt = 1L,
+                    modifiedAt = 2L
+                )
+            ),
+            playlistSongDeletions = listOf(
+                SyncPlaylistSongDeletion(
+                    playlistId = 1L,
+                    songId = song.id,
+                    album = song.album,
+                    deletedAt = 3L,
+                    deviceId = "device-a",
+                    removedMembershipTokens = tokens
+                )
+            )
+        )
+
+        val decoded = ProtoBuf.decodeFromByteArray<SyncData>(ProtoBuf.encodeToByteArray(data))
+
+        assertEquals(tokens, decoded.playlists.single().songs.single().syncMembershipTokens)
+        assertEquals(tokens, decoded.playlistSongDeletions.single().removedMembershipTokens)
+    }
+
+    @Test
+    fun `legacy gson models with missing causal tokens map to empty lists`() {
+        val legacyJson = """
+            {
+              "id": 123,
+              "name": "legacy",
+              "artist": "artist",
+              "album": "album",
+              "albumId": 1,
+              "durationMs": 1000
+            }
+        """.trimIndent()
+        val legacySong = Gson().fromJson(legacyJson, moe.ouom.neriplayer.data.model.SongItem::class.java)
+        val legacySyncSong = Gson().fromJson(legacyJson, SyncSong::class.java)
+        val legacyDeletion = Gson().fromJson(
+            """
+                {
+                  "playlistId": 1,
+                  "songId": 123,
+                  "album": "album",
+                  "deletedAt": 10,
+                  "deviceId": "legacy-device"
+                }
+            """.trimIndent(),
+            SyncPlaylistSongDeletion::class.java
+        )
+
+        val syncSong = SyncSong.fromSongItem(legacySong)
+
+        assertEquals(emptyList<SyncCausalToken>(), syncSong.syncMembershipTokens)
+        assertEquals(emptyList<SyncCausalToken>(), syncSong.toSongItem().syncMembershipTokens)
+        assertEquals(emptyList<SyncCausalToken>(), legacySyncSong.toSongItem().syncMembershipTokens)
+        assertEquals(
+            emptyList<SyncCausalToken>(),
+            legacyDeletion.removedMembershipTokens.normalizedSyncCausalTokens()
+        )
+    }
+
     @Serializable
     private data class OldSyncData(
         @ProtoNumber(1) val version: String = "2.0",
@@ -106,7 +199,8 @@ class SyncDataSerializerCompatTest {
         @ProtoNumber(3) val deviceName: String,
         @ProtoNumber(4) val lastModified: Long = 0L,
         @ProtoNumber(5) val playlists: List<OldSyncPlaylist> = emptyList(),
-        @ProtoNumber(6) val favoritePlaylists: List<OldSyncFavoritePlaylist> = emptyList()
+        @ProtoNumber(6) val favoritePlaylists: List<OldSyncFavoritePlaylist> = emptyList(),
+        @ProtoNumber(13) val playlistSongDeletions: List<OldSyncPlaylistSongDeletion> = emptyList()
     )
 
     @Serializable
@@ -131,6 +225,16 @@ class SyncDataSerializerCompatTest {
         @ProtoNumber(1) val id: Long,
         @ProtoNumber(2) val name: String,
         @ProtoNumber(3) val coverUrl: String?
+    )
+
+    @Serializable
+    private data class OldSyncPlaylistSongDeletion(
+        @ProtoNumber(1) val playlistId: Long,
+        @ProtoNumber(2) val songId: Long,
+        @ProtoNumber(3) val album: String,
+        @ProtoNumber(4) val mediaUri: String? = null,
+        @ProtoNumber(5) val deletedAt: Long,
+        @ProtoNumber(6) val deviceId: String
     )
 
     private fun syncSong(

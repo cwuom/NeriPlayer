@@ -57,6 +57,7 @@ import moe.ouom.neriplayer.data.sync.github.CoverUrlMapper
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.github.SyncPlaylistSongDeletion
+import moe.ouom.neriplayer.data.sync.model.normalizedSyncCausalTokens
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -310,8 +311,32 @@ class LocalPlaylistRepository private constructor(
     }
 
     private fun normalizePlaylistOrder(playlists: List<LocalPlaylist>): List<LocalPlaylist> {
-        val migrated = migratePlaylistSongOrder(playlists)
-        return migratePlaylistSongOrder(normalizePlaylists(migrated))
+        val normalizedMemberships = normalizeSongMembershipTokens(playlists)
+        val migrated = migratePlaylistSongOrder(normalizedMemberships)
+        return migratePlaylistSongOrder(
+            normalizeSongMembershipTokens(normalizePlaylists(migrated))
+        )
+    }
+
+    private fun normalizeSongMembershipTokens(
+        playlists: List<LocalPlaylist>
+    ): List<LocalPlaylist> {
+        var changed = false
+        val normalized = playlists.map { playlist ->
+            var playlistChanged = false
+            val songs = playlist.songs.mapTo(mutableListOf()) { song ->
+                val normalizedTokens = song.syncMembershipTokens.normalizedSyncCausalTokens()
+                if (normalizedTokens == song.syncMembershipTokens) {
+                    song
+                } else {
+                    changed = true
+                    playlistChanged = true
+                    song.copy(syncMembershipTokens = normalizedTokens)
+                }
+            }
+            if (playlistChanged) playlist.copy(songs = songs) else playlist
+        }
+        return if (changed) normalized else playlists
     }
 
     private fun migrateLegacySongsToDisplayOrder(
@@ -554,8 +579,17 @@ class LocalPlaylistRepository private constructor(
     private fun songSet(songs: List<SongItem>): Set<SongIdentity> = songs.map { it.identity() }.toSet()
 
     private fun stampSongsForPlaylistInsert(songs: List<SongItem>, addedAt: Long): List<SongItem> {
+        if (songs.isEmpty()) return emptyList()
+
+        val membershipTokens = syncMutationStore.nextSyncCausalTokens(songs.size)
+        check(membershipTokens.size == songs.size) {
+            "Expected ${songs.size} sync membership tokens, got ${membershipTokens.size}"
+        }
         return songs.mapIndexed { index, song ->
-            song.copy(addedAt = (addedAt - index).coerceAtLeast(1L))
+            song.copy(
+                addedAt = (addedAt - index).coerceAtLeast(1L),
+                syncMembershipTokens = listOf(membershipTokens[index])
+            )
         }
     }
 
@@ -637,7 +671,8 @@ class LocalPlaylistRepository private constructor(
                     album = identity.album,
                     mediaUri = LocalSongSupport.sanitizeMediaUriForSync(identity.mediaUri),
                     deletedAt = deletedAt,
-                    deviceId = deviceId
+                    deviceId = deviceId,
+                    removedMembershipTokens = song.syncMembershipTokens.orEmpty()
                 )
             }
             .toList()
@@ -1511,15 +1546,29 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-    suspend fun updatePlaylists(playlists: List<LocalPlaylist>) {
+    suspend fun updatePlaylists(
+        playlists: List<LocalPlaylist>,
+        triggerSync: Boolean = false,
+        restoredPlaylistIds: Set<Long> = emptySet()
+    ) {
         withContext(Dispatchers.IO) {
             commitPlaylistMutation {
+                val previousPlaylists = _playlists.value
                 val preservedLocalFiles = LocalFilesPlaylist.firstOrNull(_playlists.value, context)
                 val merged = playlists
                     .filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
                     .toMutableList()
                 preservedLocalFiles?.let(merged::add)
-                publishLocked(merged, triggerSync = false)
+                publishLocked(
+                    playlists = merged,
+                    triggerSync = triggerSync,
+                    syncMutation = LocalPlaylistSyncMutation(
+                        restoredPlaylistIds = restoredPlaylistIds.sorted()
+                    )
+                )
+                if (triggerSync && _playlists.value == previousPlaylists) {
+                    check(triggerAutoSync()) { "Failed to schedule external playlist sync" }
+                }
             }
         }
     }
@@ -2384,7 +2433,8 @@ class LocalPlaylistRepository private constructor(
                 normalizePlaylists = normalizePlaylists,
                 autoSyncEnabled = autoSyncEnabled,
                 storage = storage,
-                providedSyncMutationStore = syncMutationStore,
+                providedSyncMutationStore =
+                    syncMutationStore ?: InMemoryLocalPlaylistSyncMutationStore(),
                 providedAutoSyncTrigger = autoSyncTrigger
             )
         }

@@ -38,6 +38,8 @@ import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
+import moe.ouom.neriplayer.data.sync.model.normalizedSyncCausalTokens
 
 /**
  * 同步数据结构
@@ -183,7 +185,8 @@ data class SyncSong(
     @ProtoNumber(23) val channelId: String? = null,
     @ProtoNumber(24) val audioId: String? = null,
     @ProtoNumber(25) val subAudioId: String? = null,
-    @ProtoNumber(26) val playlistContextId: String? = null
+    @ProtoNumber(26) val playlistContextId: String? = null,
+    @ProtoNumber(27) val syncMembershipTokens: List<SyncCausalToken> = emptyList()
 ) {
     companion object {
         fun fromSongItemOrNull(song: SongItem, context: Context? = null): SyncSong? {
@@ -226,7 +229,8 @@ data class SyncSong(
                 channelId = song.channelId,
                 audioId = song.audioId,
                 subAudioId = song.subAudioId,
-                playlistContextId = song.playlistContextId
+                playlistContextId = song.playlistContextId,
+                syncMembershipTokens = song.syncMembershipTokens.normalizedSyncCausalTokens()
             )
         }
     }
@@ -260,7 +264,8 @@ data class SyncSong(
             audioId = audioId,
             subAudioId = subAudioId,
             playlistContextId = playlistContextId,
-            addedAt = addedAt
+            addedAt = addedAt,
+            syncMembershipTokens = syncMembershipTokens.normalizedSyncCausalTokens()
         )
     }
 }
@@ -300,7 +305,8 @@ data class SyncPlaylistSongDeletion(
     @ProtoNumber(3) val album: String,
     @ProtoNumber(4) val mediaUri: String? = null,
     @ProtoNumber(5) val deletedAt: Long,
-    @ProtoNumber(6) val deviceId: String
+    @ProtoNumber(6) val deviceId: String,
+    @ProtoNumber(7) val removedMembershipTokens: List<SyncCausalToken> = emptyList()
 ) {
     fun identity(): SongIdentity = SongIdentity(
         id = songId,

@@ -99,6 +99,10 @@ internal object SyncDataChangeDetector {
             if (remotePlaylistDeletions[i].identity() != mergedPlaylistDeletions[i].identity()) return true
             if (remotePlaylistDeletions[i].deletedAt != mergedPlaylistDeletions[i].deletedAt) return true
             if (remotePlaylistDeletions[i].deviceId != mergedPlaylistDeletions[i].deviceId) return true
+            if (
+                remotePlaylistDeletions[i].removedMembershipTokens.orEmpty().toSet() !=
+                mergedPlaylistDeletions[i].removedMembershipTokens.orEmpty().toSet()
+            ) return true
         }
         return false
     }
@@ -128,6 +132,7 @@ internal object SyncDataChangeDetector {
             a.channelId == b.channelId &&
             a.audioId == b.audioId &&
             a.subAudioId == b.subAudioId &&
-            a.playlistContextId == b.playlistContextId
+            a.playlistContextId == b.playlistContextId &&
+            a.syncMembershipTokens.orEmpty().toSet() == b.syncMembershipTokens.orEmpty().toSet()
     }
 }

@@ -4,6 +4,8 @@ import androidx.annotation.Keep
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.github.SyncPlaylistSongDeletion
+import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
+import java.util.concurrent.atomic.AtomicLong
 
 @Keep
 internal data class PlaylistSongDeletionRemoval(
@@ -17,13 +19,15 @@ internal data class LocalPlaylistSyncMutation(
     val addedSongDeletions: List<SyncPlaylistSongDeletion> = emptyList(),
     val removedSongDeletions: List<PlaylistSongDeletionRemoval> = emptyList(),
     val deletedPlaylistIds: List<Long> = emptyList(),
-    val clearedPlaylistDeletionIds: List<Long> = emptyList()
+    val clearedPlaylistDeletionIds: List<Long> = emptyList(),
+    val restoredPlaylistIds: List<Long> = emptyList()
 ) {
     val isEmpty: Boolean
         get() = addedSongDeletions.isEmpty() &&
             removedSongDeletions.isEmpty() &&
             deletedPlaylistIds.isEmpty() &&
-            clearedPlaylistDeletionIds.isEmpty()
+            clearedPlaylistDeletionIds.isEmpty() &&
+            restoredPlaylistIds.orEmpty().isEmpty()
 
     fun withExpectedPrimaryDigest(digest: String): LocalPlaylistSyncMutation {
         return copy(expectedPrimaryDigest = digest)
@@ -37,7 +41,10 @@ internal data class LocalPlaylistSyncMutation(
             removedSongDeletions = removedSongDeletions + other.removedSongDeletions,
             deletedPlaylistIds = (deletedPlaylistIds + other.deletedPlaylistIds).distinct(),
             clearedPlaylistDeletionIds =
-                (clearedPlaylistDeletionIds + other.clearedPlaylistDeletionIds).distinct()
+                (clearedPlaylistDeletionIds + other.clearedPlaylistDeletionIds).distinct(),
+            restoredPlaylistIds = (
+                restoredPlaylistIds.orEmpty() + other.restoredPlaylistIds.orEmpty()
+            ).distinct()
         )
     }
 }
@@ -50,6 +57,8 @@ internal data class LocalPlaylistSyncMutationOutbox(
 internal interface LocalPlaylistSyncMutationStore {
     fun getOrCreateDeviceId(): String
 
+    fun nextSyncCausalTokens(count: Int): List<SyncCausalToken>
+
     fun apply(mutation: LocalPlaylistSyncMutation)
 }
 
@@ -57,6 +66,10 @@ internal class SecureLocalPlaylistSyncMutationStore(
     private val storage: SecureTokenStorage
 ) : LocalPlaylistSyncMutationStore {
     override fun getOrCreateDeviceId(): String = storage.getOrCreateDeviceId()
+
+    override fun nextSyncCausalTokens(count: Int): List<SyncCausalToken> {
+        return storage.nextSyncCausalTokens(count)
+    }
 
     override fun apply(mutation: LocalPlaylistSyncMutation) {
         if (mutation.addedSongDeletions.isNotEmpty()) {
@@ -67,5 +80,24 @@ internal class SecureLocalPlaylistSyncMutationStore(
         }
         mutation.deletedPlaylistIds.forEach(storage::addDeletedPlaylistId)
         mutation.clearedPlaylistDeletionIds.forEach(storage::removePlaylistSongDeletionsForPlaylist)
+        storage.removeDeletedPlaylistIds(mutation.restoredPlaylistIds.orEmpty().toSet())
     }
+}
+
+internal class InMemoryLocalPlaylistSyncMutationStore : LocalPlaylistSyncMutationStore {
+    private val nextCounter = AtomicLong(1L)
+
+    override fun getOrCreateDeviceId(): String = "in-memory-sync-device"
+
+    override fun nextSyncCausalTokens(count: Int): List<SyncCausalToken> {
+        require(count >= 0)
+        return List(count) {
+            SyncCausalToken(
+                deviceId = getOrCreateDeviceId(),
+                counter = nextCounter.getAndIncrement()
+            )
+        }
+    }
+
+    override fun apply(mutation: LocalPlaylistSyncMutation) = Unit
 }

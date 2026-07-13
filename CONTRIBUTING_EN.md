@@ -485,11 +485,15 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 3. `songOrderVersion=0` represents legacy order, while `songOrderVersion=1`
    represents current display order. Serialization, merging, and local restoration
    must preserve the migration path for older data.
-4. Most merge logic lives in `GitHubSyncManager.kt`; WebDAV reuses the same data
+4. Playlist membership uses `syncMembershipTokens` / `removedMembershipTokens`
+   for observed-remove semantics. New fields must remain readable when legacy JSON
+   or ProtoBuf payloads omit them; tokenized membership must not fall back to a
+   timestamp-only deletion decision.
+5. Most merge logic lives in `GitHubSyncManager.kt`; WebDAV reuses the same data
    model and much of the merge behavior.
-5. Do not break the delayed sync, periodic sync, validated-network checks, or retry
+6. Do not break the delayed sync, periodic sync, validated-network checks, or retry
    behavior in `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt`.
-6. Sensitive data must go through `SecureTokenStorage.kt` or `WebDavStorage.kt`.
+7. Sensitive data must go through `SecureTokenStorage.kt` or `WebDavStorage.kt`.
    Do not store it in `DataStore` or plaintext JSON.
 
 #### 8. Modify download storage

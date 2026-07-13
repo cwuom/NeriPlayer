@@ -33,7 +33,6 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.config.LimitedTextReader
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.identity
@@ -158,6 +157,18 @@ class BackupManager(private val context: Context) {
                 val playbackStatsRepo = PlaybackStatsRepository.getInstance(context)
                 val currentPlaylists = playlistRepo.playlists.value.toMutableList()
                 val playlistLookup = buildPlaylistLookup(currentPlaylists)
+                val syncStorage = SecureTokenStorage(context)
+                var restoreAddedAtFloor = maxOf(
+                    System.currentTimeMillis(),
+                    currentPlaylists.asSequence()
+                        .flatMap { it.songs.asSequence() }
+                        .maxOfOrNull { it.addedAt }
+                        ?: 0L,
+                    syncStorage.getPlaylistSongDeletions()
+                        .maxOfOrNull { it.deletedAt }
+                        ?: 0L
+                )
+                val restoredPlaylistIds = linkedSetOf<Long>()
 
                 var importedCount = 0
                 var skippedCount = 0
@@ -185,10 +196,18 @@ class BackupManager(private val context: Context) {
                     if (existingIndex != -1) {
                         // 如果存在同名歌单，进行智能合并
                         val existingPlaylist = currentPlaylists[existingIndex]
-                        val mergeResult = mergePlaylists(existingPlaylist, syncPlaylist)
+                        val mergeResult = BackupPlaylistRestorePolicy.mergePlaylist(
+                            existing = existingPlaylist,
+                            imported = syncPlaylist,
+                            addedAtFloor = restoreAddedAtFloor,
+                            modifiedAt = System.currentTimeMillis(),
+                            allocateTokens = syncStorage::nextSyncCausalTokens
+                        )
 
                         if (mergeResult.hasChanges) {
-                            currentPlaylists[existingIndex] = mergeResult.mergedPlaylist
+                            currentPlaylists[existingIndex] = mergeResult.playlist
+                            restoreAddedAtFloor = mergeResult.maxAssignedAddedAt
+                            restoredPlaylistIds += existingPlaylist.id
                             mergedCount++
                             NPLogger.d(
                                 TAG,
@@ -206,16 +225,20 @@ class BackupManager(private val context: Context) {
                     } else {
                         // 创建新的歌单
                         val newPlaylistId = nextImportedPlaylistId(playlistLookup, importedCount)
-                        val normalizedImport = syncPlaylist.normalizedForDisplayOrder()
-                        val newPlaylist = LocalPlaylist(
-                            id = newPlaylistId,
-                            name = importedPlaylistName,
-                            songs = normalizedImport.songs.map { it.toSongItem() }.toMutableList(),
-                            songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
+                        val restoreResult = BackupPlaylistRestorePolicy.createPlaylist(
+                            playlistId = newPlaylistId,
+                            playlistName = importedPlaylistName,
+                            imported = syncPlaylist,
+                            addedAtFloor = restoreAddedAtFloor,
+                            modifiedAt = System.currentTimeMillis(),
+                            allocateTokens = syncStorage::nextSyncCausalTokens
                         )
+                        val newPlaylist = restoreResult.playlist
 
                         currentPlaylists.add(newPlaylist)
                         registerPlaylist(playlistLookup, newPlaylist, currentPlaylists.lastIndex)
+                        restoreAddedAtFloor = restoreResult.maxAssignedAddedAt
+                        restoredPlaylistIds += newPlaylistId
                         importedCount++
                         NPLogger.d(
                             TAG,
@@ -230,7 +253,11 @@ class BackupManager(private val context: Context) {
                 }
 
                 // 更新仓库
-                playlistRepo.updatePlaylists(currentPlaylists)
+                playlistRepo.updatePlaylists(
+                    playlists = currentPlaylists,
+                    triggerSync = true,
+                    restoredPlaylistIds = restoredPlaylistIds
+                )
                 importRecentPlays(historyRepo, backupData.recentPlays.orEmpty())
                 importPlaybackStats(
                     playbackStatsRepo = playbackStatsRepo,
@@ -238,7 +265,6 @@ class BackupManager(private val context: Context) {
                     playbackStatBuckets = backupData.playbackStatBuckets.orEmpty(),
                     playbackStatsClearedAt = backupData.playbackStatsClearedAt
                 )
-                SecureTokenStorage(context).markSyncMutation()
 
                 val result = ImportResult(
                     importedCount = importedCount,
@@ -256,37 +282,6 @@ class BackupManager(private val context: Context) {
             NPLogger.e(TAG, context.getString(R.string.backup_import_failed), e)
             Result.failure(e)
         }
-    }
-
-    /**
-     * 智能合并歌单，只添加缺失的歌曲
-     */
-    private fun mergePlaylists(existing: LocalPlaylist, imported: SyncPlaylist): MergeResult {
-        val existingSongIds = existing.songs.mapTo(HashSet(existing.songs.size)) { it.identity() }
-        val normalizedImport = imported.normalizedForDisplayOrder()
-        val newSongs = normalizedImport.songs
-            .filter { it.identity() !in existingSongIds }
-            .map { it.toSongItem() }
-        
-        if (newSongs.isEmpty()) {
-            return MergeResult(
-                mergedPlaylist = existing,
-                hasChanges = false,
-                addedSongs = 0
-            )
-        }
-        
-        val mergedSongs = (newSongs + existing.songs).toMutableList()
-        val mergedPlaylist = existing.copy(
-            songs = mergedSongs,
-            songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
-        )
-        
-        return MergeResult(
-            mergedPlaylist = mergedPlaylist,
-            hasChanges = true,
-            addedSongs = newSongs.size
-        )
     }
 
     private fun buildPlaylistLookup(playlists: List<LocalPlaylist>): PlaylistLookup {

@@ -34,8 +34,8 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import moe.ouom.neriplayer.data.config.GitHubSyncConfigSnapshot
 import moe.ouom.neriplayer.data.model.SongIdentity
-import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import java.util.UUID
 
 /**
@@ -63,9 +63,11 @@ class SecureTokenStorage(private val context: Context) {
         private const val KEY_TOKEN_WARNING_DISMISSED = "token_warning_dismissed"
         private const val KEY_DATA_SAVER_MODE = "data_saver_mode"
         private const val KEY_SYNC_MUTATION_VERSION = "sync_mutation_version"
+        private const val KEY_SYNC_CAUSAL_COUNTER = "sync_causal_counter"
         private const val MAX_RECENT_PLAY_DELETIONS = 500
         private const val MAX_PLAYLIST_SONG_DELETIONS = 5000
         private val syncMutationLock = Any()
+        private val syncCausalTokenLock = Any()
     }
 
     private fun openEncryptedPrefsWithRecovery(): SharedPreferences {
@@ -148,7 +150,15 @@ class SecureTokenStorage(private val context: Context) {
 
     /** 保存设备ID */
     fun saveDeviceId(deviceId: String) {
-        encryptedPrefs.edit { putString(KEY_DEVICE_ID, deviceId) }
+        require(deviceId.isNotBlank()) { "Device ID must not be blank" }
+        synchronized(syncCausalTokenLock) {
+            val deviceChanged = getDeviceId() != deviceId
+            val editor = encryptedPrefs.edit().putString(KEY_DEVICE_ID, deviceId)
+            if (deviceChanged) {
+                editor.remove(KEY_SYNC_CAUSAL_COUNTER)
+            }
+            check(editor.commit()) { "Failed to persist sync causal device state" }
+        }
     }
 
     /** 获取设备ID */
@@ -164,6 +174,31 @@ class SecureTokenStorage(private val context: Context) {
         return getDeviceId()
             ?.takeIf { it.isNotBlank() }
             ?: UUID.randomUUID().toString().also(::saveDeviceId)
+    }
+
+    fun nextSyncCausalTokens(count: Int): List<SyncCausalToken> {
+        require(count >= 0) { "Token count must not be negative" }
+        if (count == 0) return emptyList()
+
+        return synchronized(syncCausalTokenLock) {
+            val deviceId = getOrCreateDeviceId()
+            val currentCounter = encryptedPrefs.getLong(KEY_SYNC_CAUSAL_COUNTER, 0L)
+            check(currentCounter >= 0L) { "Stored sync causal counter is invalid" }
+            val nextCounter = Math.addExact(currentCounter, count.toLong())
+            // token 范围必须先落盘，避免崩溃后重复分配
+            check(
+                encryptedPrefs.edit()
+                    .putLong(KEY_SYNC_CAUSAL_COUNTER, nextCounter)
+                    .commit()
+            ) { "Failed to persist sync causal counter" }
+
+            List(count) { index ->
+                SyncCausalToken(
+                    deviceId = deviceId,
+                    counter = currentCounter + index + 1L
+                )
+            }
+        }
     }
 
     /** 保存最后同步时间 */
@@ -334,11 +369,11 @@ class SecureTokenStorage(private val context: Context) {
         if (identities.isEmpty()) {
             return
         }
-        val stableKeys = identities.mapTo(mutableSetOf()) { identity ->
-            "$playlistId|${identity.stableKey()}"
-        }
-        val remaining = getPlaylistSongDeletions()
-            .filterNot { it.stableKey() in stableKeys }
+        val remaining = SyncPlaylistDeletionPolicy.clearLegacyDeletionsForReaddedSongs(
+            deletions = getPlaylistSongDeletions(),
+            playlistId = playlistId,
+            identities = identities
+        )
         setPlaylistSongDeletions(remaining)
     }
 
@@ -434,15 +469,22 @@ class SecureTokenStorage(private val context: Context) {
     private fun normalizePlaylistSongDeletions(
         deletions: List<SyncPlaylistSongDeletion>
     ): List<SyncPlaylistSongDeletion> {
-        return deletions
-            .groupBy { it.stableKey() }
-            .mapNotNull { (_, snapshots) ->
-                snapshots.maxWithOrNull(
-                    compareBy<SyncPlaylistSongDeletion> { it.deletedAt }
-                        .thenBy { it.deviceId }
-                ) ?: return@mapNotNull null
-            }
-            .sortedByDescending { it.deletedAt }
-            .take(MAX_PLAYLIST_SONG_DELETIONS)
+        val merged = SyncPlaylistDeletionPolicy.mergeDeletions(deletions, emptyList())
+        val causalDeletions = merged.filter { deletion ->
+            deletion.removedMembershipTokens.orEmpty().isNotEmpty()
+        }
+        val remainingLegacyCapacity =
+            (MAX_PLAYLIST_SONG_DELETIONS - causalDeletions.size).coerceAtLeast(0)
+        val retainedLegacyDeletions = merged
+            .asSequence()
+            .filter { deletion -> deletion.removedMembershipTokens.orEmpty().isEmpty() }
+            .take(remainingLegacyCapacity)
+            .toList()
+        return (causalDeletions + retainedLegacyDeletions)
+            .sortedWith(
+                compareByDescending<SyncPlaylistSongDeletion> { it.deletedAt }
+                    .thenByDescending { it.deviceId }
+                    .thenBy(SyncPlaylistSongDeletion::stableKey)
+            )
     }
 }
