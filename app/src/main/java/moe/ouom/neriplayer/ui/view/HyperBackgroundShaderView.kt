@@ -22,6 +22,10 @@ package moe.ouom.neriplayer.ui.view
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.Shader
 import android.os.Build
 import android.util.AttributeSet
 import android.view.View
@@ -32,15 +36,34 @@ internal class HyperBackgroundShaderView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
 ) : View(context, attrs) {
+    private val shaderPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
     var effectPainter: BgEffectPainter? = null
         set(value) {
             if (field === value) return
             field = value
+            shaderPaint.shader = value?.mBgRuntimeShader?.apply {
+                setInputShader(
+                    "uTex",
+                    LinearGradient(
+                        0f,
+                        0f,
+                        1f,
+                        0f,
+                        Color.TRANSPARENT,
+                        Color.TRANSPARENT,
+                        Shader.TileMode.CLAMP
+                    )
+                )
+            }
             invalidate()
         }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        effectPainter?.draw(canvas, width, height)
+        val painter = effectPainter ?: return
+        if (!canvas.isHardwareAccelerated || width <= 0 || height <= 0) return
+        painter.setResolution(width.toFloat(), height.toFloat())
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), shaderPaint)
     }
 }
