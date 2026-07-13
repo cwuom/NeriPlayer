@@ -42,6 +42,7 @@ import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportResult
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseLikeSyncResult
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongIdentity
@@ -119,7 +120,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     }
 
     fun rename(newName: String) {
-        viewModelScope.launch {
+        launchPlaylistMutation("renamePlaylist") {
             repo.renamePlaylist(playlistId, newName)
         }
     }
@@ -250,14 +251,19 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         onResult: (LocalAudioImportUiResult) -> Unit
     ) {
         viewModelScope.launch {
-            val importedCount = repo.addScannedSongsToLocalFilesPlaylistAndCount(songs)
-            scheduleScannedMetadataRefresh(LocalFilesPlaylist.SYSTEM_ID, songs)
-            onResult(
-                LocalAudioImportUiResult(
-                    importedCount = importedCount,
-                    failedCount = 0
+            runLocalPlaylistMutationSafely("applyScannedSongs") {
+                repo.addScannedSongsToLocalFilesPlaylistAndCount(songs)
+            }.onSuccess { importedCount ->
+                scheduleScannedMetadataRefresh(LocalFilesPlaylist.SYSTEM_ID, songs)
+                onResult(
+                    LocalAudioImportUiResult(
+                        importedCount = importedCount,
+                        failedCount = 0
+                    )
                 )
-            )
+            }.onFailure {
+                onResult(LocalAudioImportUiResult(importedCount = 0, failedCount = songs.size))
+            }
         }
     }
 
@@ -267,14 +273,19 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         onResult: (LocalAudioImportUiResult) -> Unit
     ) {
         viewModelScope.launch {
-            val playlist = repo.createPlaylistWithScannedSongs(name, songs)
-            scheduleScannedMetadataRefresh(playlist.id, songs)
-            onResult(
-                LocalAudioImportUiResult(
-                    importedCount = playlist.songs.size,
-                    failedCount = 0
+            runLocalPlaylistMutationSafely("createPlaylistWithScannedSongs") {
+                repo.createPlaylistWithScannedSongs(name, songs)
+            }.onSuccess { playlist ->
+                scheduleScannedMetadataRefresh(playlist.id, songs)
+                onResult(
+                    LocalAudioImportUiResult(
+                        importedCount = playlist.songs.size,
+                        failedCount = 0
+                    )
                 )
-            )
+            }.onFailure {
+                onResult(LocalAudioImportUiResult(importedCount = 0, failedCount = songs.size))
+            }
         }
     }
 
@@ -284,47 +295,53 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         onResult: (LocalAudioImportUiResult) -> Unit
     ) {
         viewModelScope.launch {
-            val importedCount = repo.addScannedSongsToPlaylistAndCount(targetPlaylistId, songs)
-            scheduleScannedMetadataRefresh(targetPlaylistId, songs)
-            onResult(
-                LocalAudioImportUiResult(
-                    importedCount = importedCount,
-                    failedCount = 0
+            runLocalPlaylistMutationSafely("addScannedSongsToPlaylist") {
+                repo.addScannedSongsToPlaylistAndCount(targetPlaylistId, songs)
+            }.onSuccess { importedCount ->
+                scheduleScannedMetadataRefresh(targetPlaylistId, songs)
+                onResult(
+                    LocalAudioImportUiResult(
+                        importedCount = importedCount,
+                        failedCount = 0
+                    )
                 )
-            )
+            }.onFailure {
+                onResult(LocalAudioImportUiResult(importedCount = 0, failedCount = songs.size))
+            }
         }
     }
 
     fun removeSongs(songs: List<SongItem>) {
-        viewModelScope.launch {
-            if (songs.isEmpty()) return@launch
+        if (songs.isEmpty()) return
+        launchPlaylistMutation("removeSongs") {
             repo.removeSongsFromPlaylistByIdentity(playlistId, songs)
         }
     }
 
     fun clearSongs() {
-        viewModelScope.launch {
+        launchPlaylistMutation("clearSongs") {
             repo.clearPlaylistSongs(playlistId)
         }
     }
 
     fun delete(onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
-            val ok = repo.deletePlaylist(playlistId)
-            onResult(ok)
+            runLocalPlaylistMutationSafely("deletePlaylist") {
+                repo.deletePlaylist(playlistId)
+            }.onSuccess(onResult).onFailure { onResult(false) }
         }
     }
 
     fun moveSong(from: Int, to: Int) {
-        viewModelScope.launch { repo.moveSong(playlistId, from, to) }
+        launchPlaylistMutation("moveSong") { repo.moveSong(playlistId, from, to) }
     }
 
     fun reorderSongs(newOrder: List<SongIdentity>) {
-        viewModelScope.launch { repo.reorderSongs(playlistId, newOrder) }
+        launchPlaylistMutation("reorderSongs") { repo.reorderSongs(playlistId, newOrder) }
     }
 
     fun removeSong(songId: Long) {
-        viewModelScope.launch { repo.removeSongFromPlaylist(playlistId, songId) }
+        launchPlaylistMutation("removeSong") { repo.removeSongFromPlaylist(playlistId, songId) }
     }
 
     fun syncFavoritesToNeteaseLiked(onResult: (NeteaseLikeSyncResult) -> Unit) {
@@ -367,17 +384,19 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         )
         metadataRefreshJob = viewModelScope.launch(Dispatchers.IO) {
             try {
-                repo.refreshScannedLocalSongMetadata(
-                    songs = localSongs,
-                    includeEmbeddedAssets = false
-                ) { processed, total ->
-                    if (metadataRefreshSessionId == sessionId) {
-                        _metadataProcessingState.value = LocalMetadataProcessingState(
-                            isProcessing = processed < total,
-                            playlistId = targetPlaylistId,
-                            processedCount = processed,
-                            totalCount = total
-                        )
+                runLocalPlaylistMutationSafely("refreshScannedLocalSongMetadata") {
+                    repo.refreshScannedLocalSongMetadata(
+                        songs = localSongs,
+                        includeEmbeddedAssets = false
+                    ) { processed, total ->
+                        if (metadataRefreshSessionId == sessionId) {
+                            _metadataProcessingState.value = LocalMetadataProcessingState(
+                                isProcessing = processed < total,
+                                playlistId = targetPlaylistId,
+                                processedCount = processed,
+                                totalCount = total
+                            )
+                        }
                     }
                 }
             } finally {
@@ -385,6 +404,15 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                     _metadataProcessingState.value = LocalMetadataProcessingState()
                 }
             }
+        }
+    }
+
+    private fun launchPlaylistMutation(
+        operation: String,
+        mutation: suspend () -> Unit
+    ) {
+        viewModelScope.launch {
+            runLocalPlaylistMutationSafely(operation, mutation)
         }
     }
 

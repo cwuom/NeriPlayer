@@ -80,6 +80,7 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.data.local.playlist.model.buildLocalArtistSummaries
 import moe.ouom.neriplayer.data.local.playlist.model.localArtistStableId
 import moe.ouom.neriplayer.data.local.playlist.model.localArtistStableKey
@@ -517,14 +518,14 @@ fun LocalArtistDetailScreen(
                 onDismissRequest = { showExportSheet = false },
                 onCreateAndExport = { name ->
                     val selectedSongs = songs.filter { it.stableKey() in selectedKeys }
-                    scope.launch {
+                    scope.launchLocalPlaylistMutation("createPlaylistFromLocalArtist") {
                         repo.createPlaylistWithPreparedSongs(name, selectedSongs)
                     }
                     exitSelectionMode()
                 },
                 onExportToPlaylist = { target ->
                     val selectedSongs = songs.filter { it.stableKey() in selectedKeys }
-                    scope.launch {
+                    scope.launchLocalPlaylistMutation("exportSongsFromLocalArtist") {
                         repo.addPreparedSongsToPlaylist(target.id, selectedSongs)
                     }
                     exitSelectionMode()

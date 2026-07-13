@@ -165,6 +165,7 @@ import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.model.displayArtist
@@ -1733,7 +1734,7 @@ fun LocalPlaylistDetailScreen(
                                 songs = songs,
                                 actionLabel = context.getString(R.string.playlist_add_to)
                             ) {
-                                scope.launch {
+                                scope.launchLocalPlaylistMutation("createPlaylistFromLocalPlaylist") {
                                     repo.createPlaylistWithPreparedSongs(name, songs)
                                 }
                                 exitSelectionMode()
@@ -1748,7 +1749,7 @@ fun LocalPlaylistDetailScreen(
                                 songs = songs,
                                 actionLabel = context.getString(R.string.playlist_add_to)
                             ) {
-                                scope.launch {
+                                scope.launchLocalPlaylistMutation("exportSongsFromLocalPlaylist") {
                                     repo.addPreparedSongsToPlaylist(target.id, songs)
                                 }
                                 exitSelectionMode()

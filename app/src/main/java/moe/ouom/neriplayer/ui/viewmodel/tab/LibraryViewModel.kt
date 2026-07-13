@@ -40,6 +40,7 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicLibraryPlaylist
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
@@ -317,23 +318,34 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun createLocalPlaylist(name: String) {
-        viewModelScope.launch { localRepo.createPlaylist(name) }
+        launchPlaylistMutation("createLocalPlaylist") { localRepo.createPlaylist(name) }
     }
 
     fun addSongToFavorites(song: SongItem) {
-        viewModelScope.launch { localRepo.addToFavorites(song) }
+        launchPlaylistMutation("addSongToFavorites") { localRepo.addToFavorites(song) }
     }
 
     fun renameLocalPlaylist(playlistId: Long, newName: String) {
-        viewModelScope.launch { localRepo.renamePlaylist(playlistId, newName) }
+        launchPlaylistMutation("renameLocalPlaylist") {
+            localRepo.renamePlaylist(playlistId, newName)
+        }
     }
 
     fun deleteLocalPlaylist(playlistId: Long) {
-        viewModelScope.launch { localRepo.deletePlaylist(playlistId) }
+        launchPlaylistMutation("deleteLocalPlaylist") { localRepo.deletePlaylist(playlistId) }
     }
 
     fun reorderLocalPlaylists(order: List<Long>) {
-        viewModelScope.launch { localRepo.reorderPlaylists(order) }
+        launchPlaylistMutation("reorderLocalPlaylists") { localRepo.reorderPlaylists(order) }
+    }
+
+    private fun launchPlaylistMutation(
+        operation: String,
+        mutation: suspend () -> Unit
+    ) {
+        viewModelScope.launch {
+            runLocalPlaylistMutationSafely(operation, mutation)
+        }
     }
 
     private fun parseNeteasePlaylists(raw: String): List<PlaylistSummary> {

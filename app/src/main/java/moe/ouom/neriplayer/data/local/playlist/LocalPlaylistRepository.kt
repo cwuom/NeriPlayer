@@ -26,7 +26,6 @@ package moe.ouom.neriplayer.data.local.playlist
 import android.annotation.SuppressLint
 import android.content.Context
 import com.google.gson.Gson
-import com.google.gson.JsonParser
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -64,6 +63,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
 import java.util.Collections
 import java.util.Locale
 
@@ -74,11 +74,16 @@ class LocalPlaylistRepository private constructor(
         SystemLocalPlaylists.normalize(playlists, context)
     },
     private val autoSyncEnabled: Boolean = true,
-    private val storage: LocalPlaylistStorage = LocalPlaylistFileStorage(file, context.filesDir)
+    private val storage: LocalPlaylistStorage = LocalPlaylistFileStorage(file, context.filesDir),
+    private val providedSyncMutationStore: LocalPlaylistSyncMutationStore? = null,
+    private val providedAutoSyncTrigger: (() -> Unit)? = null
 ) {
     private val gson = Gson()
     private val playlistCommitMutex = Mutex()
     private val syncStorage by lazy { SecureTokenStorage(context) }
+    private val syncMutationStore by lazy {
+        providedSyncMutationStore ?: SecureLocalPlaylistSyncMutationStore(syncStorage)
+    }
     private val recentNeteaseLikedIds = Collections.synchronizedSet(mutableSetOf<Long>())
 
     private data class NeteaseResolvedCandidate(
@@ -127,12 +132,22 @@ class LocalPlaylistRepository private constructor(
     val playlists: StateFlow<List<LocalPlaylist>> = _playlists
     private val _playlistCount = MutableStateFlow(0)
     val playlistCount: StateFlow<Int> = _playlistCount
+    private val _syncMutationPending = MutableStateFlow(false)
+    val syncMutationPending: StateFlow<Boolean> = _syncMutationPending
     private var preserveBackupOnNextWrite = false
     private var corruptPrimaryNeedsQuarantine = false
+    private var replaceBackupOnNextWrite = false
 
     private data class PlaylistLoadResult(
         val playlists: List<LocalPlaylist>,
-        val allowMigrationWrite: Boolean
+        val migrationRequired: Boolean,
+        val allowMigrationWrite: Boolean,
+        val committedPrimaryText: String?
+    )
+
+    private data class ParsedPlaylistCandidate(
+        val decoded: List<LocalPlaylist>,
+        val normalized: List<LocalPlaylist>
     )
 
     init {
@@ -141,16 +156,16 @@ class LocalPlaylistRepository private constructor(
 
     private fun loadFromDisk() {
         val loadResult = readStoredPlaylists()
-        val normalized = normalizePlaylistOrder(loadResult.playlists)
-        if (normalized != loadResult.playlists && loadResult.allowMigrationWrite) {
+        recoverPendingSyncMutation(loadResult.committedPrimaryText)
+        if (loadResult.migrationRequired && loadResult.allowMigrationWrite) {
             runCatching {
-                persistToDisk(normalized)
+                persistToDisk(loadResult.playlists)
             }.onFailure { error ->
                 NPLogger.e("LocalPlaylistRepo", "Failed to persist normalized playlists", error)
             }
         }
-        _playlists.value = normalized
-        _playlistCount.value = normalized.size
+        _playlists.value = loadResult.playlists
+        _playlistCount.value = loadResult.playlists.size
     }
 
     private fun readStoredPlaylists(): PlaylistLoadResult {
@@ -158,7 +173,7 @@ class LocalPlaylistRepository private constructor(
         val primaryText = primaryRead.getOrNull()
         if (primaryRead.isSuccess && primaryText == null) {
             return recoverFromBackup(primaryWasCorrupt = false)
-                ?: PlaylistLoadResult(emptyList(), allowMigrationWrite = true)
+                ?: emptyPlaylistLoadResult(allowMigrationWrite = true)
         }
 
         if (primaryRead.isFailure) {
@@ -169,16 +184,31 @@ class LocalPlaylistRepository private constructor(
             )
             preserveBackupOnNextWrite = true
             return recoverFromBackup(primaryWasCorrupt = false)
-                ?: PlaylistLoadResult(emptyList(), allowMigrationWrite = false)
+                ?: emptyPlaylistLoadResult(allowMigrationWrite = false)
         }
 
         val primaryParsed = parsePlaylists(primaryText.orEmpty(), "primary")
         if (primaryParsed != null) {
-            return PlaylistLoadResult(primaryParsed, allowMigrationWrite = true)
+            return PlaylistLoadResult(
+                playlists = primaryParsed.normalized,
+                migrationRequired = primaryParsed.normalized != primaryParsed.decoded,
+                allowMigrationWrite = true,
+                committedPrimaryText = primaryText
+            )
         }
 
         return recoverFromBackup(primaryWasCorrupt = true)
-            ?: PlaylistLoadResult(emptyList(), allowMigrationWrite = false)
+            ?: emptyPlaylistLoadResult(allowMigrationWrite = false)
+    }
+
+    private fun emptyPlaylistLoadResult(allowMigrationWrite: Boolean): PlaylistLoadResult {
+        val normalized = normalizePlaylistOrder(emptyList())
+        return PlaylistLoadResult(
+            playlists = normalized,
+            migrationRequired = normalized.isNotEmpty(),
+            allowMigrationWrite = allowMigrationWrite,
+            committedPrimaryText = null
+        )
     }
 
     private fun recoverFromBackup(primaryWasCorrupt: Boolean): PlaylistLoadResult? {
@@ -193,6 +223,9 @@ class LocalPlaylistRepository private constructor(
         }
 
         val backupParsed = backupText?.let { parsePlaylists(it, "backup") }
+        if (backupText != null && backupParsed == null) {
+            replaceBackupOnNextWrite = true
+        }
         val primaryReadyForRestore = if (primaryWasCorrupt) {
             corruptPrimaryNeedsQuarantine = true
             quarantineCorruptPrimary()
@@ -211,8 +244,10 @@ class LocalPlaylistRepository private constructor(
                 NPLogger.e("LocalPlaylistRepo", "Failed to restore playlist backup", error)
             }.isSuccess
         return PlaylistLoadResult(
-            playlists = backupParsed,
-            allowMigrationWrite = repairSucceeded
+            playlists = backupParsed.normalized,
+            migrationRequired = backupParsed.normalized != backupParsed.decoded,
+            allowMigrationWrite = repairSucceeded,
+            committedPrimaryText = backupText.takeIf { repairSucceeded }
         )
     }
 
@@ -234,27 +269,17 @@ class LocalPlaylistRepository private constructor(
             .isSuccess
     }
 
-    private fun parsePlaylists(text: String, source: String): List<LocalPlaylist>? {
+    private fun parsePlaylists(text: String, source: String): ParsedPlaylistCandidate? {
         return runCatching {
-            val root = JsonParser.parseString(text)
-            require(root.isJsonArray) { "Playlist $source root must be an array" }
-            root.asJsonArray.forEach { element ->
-                require(element.isJsonObject) { "Playlist $source contains a non-object entry" }
-                val playlistObject = element.asJsonObject
-                require(playlistObject.get("id")?.isJsonPrimitive == true) {
-                    "Playlist $source entry is missing id"
-                }
-                require(playlistObject.get("name")?.isJsonPrimitive == true) {
-                    "Playlist $source entry is missing name"
-                }
-                require(playlistObject.get("songs")?.isJsonArray == true) {
-                    "Playlist $source entry is missing songs"
-                }
-            }
+            validateLocalPlaylistJson(text, source)
             val type = object : TypeToken<List<LocalPlaylist>>() {}.type
-            requireNotNull(gson.fromJson<List<LocalPlaylist>>(text, type)) {
+            val decoded = requireNotNull(gson.fromJson<List<LocalPlaylist>>(text, type)) {
                 "Playlist $source contains JSON null"
             }
+            ParsedPlaylistCandidate(
+                decoded = decoded,
+                normalized = normalizePlaylistOrder(decoded)
+            )
         }.onFailure { error ->
             NPLogger.e("LocalPlaylistRepo", "Failed to parse $source playlists", error)
         }.getOrNull()
@@ -320,15 +345,17 @@ class LocalPlaylistRepository private constructor(
             .mapTo(mutableListOf()) { it.value }
     }
 
-    private fun persistToDisk(playlists: List<LocalPlaylist>) {
+    private fun persistToDisk(playlists: List<LocalPlaylist>, serialized: String = gson.toJson(playlists)) {
         if (corruptPrimaryNeedsQuarantine && !quarantineCorruptPrimary()) {
             throw IOException("Corrupt playlist storage could not be quarantined")
         }
         storage.commit(
-            text = gson.toJson(playlists),
-            rotateBackup = !preserveBackupOnNextWrite
+            text = serialized,
+            rotateBackup = !preserveBackupOnNextWrite,
+            replaceBackupWithCommittedPrimary = replaceBackupOnNextWrite
         )
         preserveBackupOnNextWrite = false
+        replaceBackupOnNextWrite = false
     }
 
     private suspend fun <T> commitPlaylistMutation(block: () -> T): T {
@@ -337,29 +364,166 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-    private fun publishLocked(playlists: List<LocalPlaylist>, triggerSync: Boolean = true) {
+    private fun publishLocked(
+        playlists: List<LocalPlaylist>,
+        triggerSync: Boolean = true,
+        syncMutation: LocalPlaylistSyncMutation = LocalPlaylistSyncMutation()
+    ) {
         val normalized = normalizePlaylistOrder(playlists)
         if (normalized == _playlists.value) {
             return
         }
-        persistToDisk(normalized)
+        val serialized = gson.toJson(normalized)
+        val pendingOutbox = preparePendingSyncMutationUpdate(
+            currentPrimaryText = storage.readPrimary(),
+            nextPrimaryDigest = primaryDigest(serialized),
+            syncMutation = syncMutation
+        )
+        writePendingSyncMutation(pendingOutbox)
+        persistToDisk(normalized, serialized)
         _playlists.value = normalized
         _playlistCount.value = normalized.size
-        if (triggerSync && autoSyncEnabled) {
+        if (pendingOutbox != null) {
+            val settled = runCatching {
+                settlePendingSyncMutation(pendingOutbox, triggerSync)
+            }.onFailure { error ->
+                _syncMutationPending.value = true
+                NPLogger.e(
+                    "LocalPlaylistRepo",
+                    "Playlist saved; sync mutation will be retried",
+                    error
+                )
+            }.isSuccess
+            if (!settled) return
+        } else if (triggerSync && autoSyncEnabled) {
             triggerAutoSync()
         }
     }
 
-    private fun triggerAutoSync() {
-        try {
-            syncStorage.markSyncMutation()
-            if (!syncStorage.isAutoSyncEnabled()) {
-                NPLogger.d("LocalPlaylistRepo", "Auto sync disabled, skip")
+    private fun recoverPendingSyncMutation(committedPrimaryText: String?) {
+        runCatching {
+            flushPendingSyncMutation(committedPrimaryText)
+        }.onFailure { error ->
+            NPLogger.e("LocalPlaylistRepo", "Failed to replay playlist sync mutation", error)
+        }
+    }
+
+    private fun flushPendingSyncMutation(primaryText: String? = storage.readPrimary()): Boolean {
+        val pendingText = storage.readPendingSyncMutation() ?: return false
+        val committedOutbox = decodeCommittedSyncMutationOutbox(pendingText, primaryText)
+        if (committedOutbox == null) {
+            storage.clearPendingSyncMutation()
+            _syncMutationPending.value = false
+            return false
+        }
+        if (gson.toJson(committedOutbox) != pendingText) {
+            storage.writePendingSyncMutation(gson.toJson(committedOutbox))
+        }
+        return settlePendingSyncMutation(committedOutbox, triggerSync = false)
+    }
+
+    private fun preparePendingSyncMutationUpdate(
+        currentPrimaryText: String?,
+        nextPrimaryDigest: String,
+        syncMutation: LocalPlaylistSyncMutation
+    ): LocalPlaylistSyncMutationOutbox? {
+        val committedMutations = storage.readPendingSyncMutation()
+            ?.let { decodeCommittedSyncMutationOutbox(it, currentPrimaryText) }
+            ?.mutations
+            .orEmpty()
+        if (committedMutations.isEmpty() && syncMutation.isEmpty) {
+            return null
+        }
+
+        val nextMutation = syncMutation.withExpectedPrimaryDigest(nextPrimaryDigest)
+        return LocalPlaylistSyncMutationOutbox(committedMutations + nextMutation)
+    }
+
+    private fun decodeCommittedSyncMutationOutbox(
+        text: String,
+        primaryText: String?
+    ): LocalPlaylistSyncMutationOutbox? {
+        val outbox = runCatching {
+            val root = JSONObject(text)
+            if (root.has("mutations")) {
+                requireNotNull(gson.fromJson(text, LocalPlaylistSyncMutationOutbox::class.java))
+            } else {
+                LocalPlaylistSyncMutationOutbox(
+                    mutations = listOf(
+                        requireNotNull(gson.fromJson(text, LocalPlaylistSyncMutation::class.java))
+                    )
+                )
             }
-            GitHubSyncWorker.scheduleDelayedSync(context, triggerByUserAction = false)
-            WebDavSyncWorker.scheduleDelayedSync(context, triggerByUserAction = false)
+        }.getOrElse { error ->
+            NPLogger.e("LocalPlaylistRepo", "Discarding corrupt playlist sync mutation", error)
+            return null
+        }
+        if (outbox.mutations.isEmpty() || primaryText == null) return null
+
+        val committedDigest = primaryDigest(primaryText)
+        val committedIndex = outbox.mutations.indexOfLast { mutation ->
+            mutation.expectedPrimaryDigest == committedDigest
+        }
+        if (committedIndex < 0) return null
+        return LocalPlaylistSyncMutationOutbox(
+            mutations = outbox.mutations.take(committedIndex + 1)
+        )
+    }
+
+    private fun writePendingSyncMutation(outbox: LocalPlaylistSyncMutationOutbox?) {
+        if (outbox == null) {
+            storage.clearPendingSyncMutation()
+        } else {
+            storage.writePendingSyncMutation(gson.toJson(outbox))
+        }
+    }
+
+    private fun settlePendingSyncMutation(
+        outbox: LocalPlaylistSyncMutationOutbox,
+        triggerSync: Boolean
+    ): Boolean {
+        val hasSyncMutation = outbox.mutations.any { mutation -> !mutation.isEmpty }
+        try {
+            outbox.mutations.forEach { mutation ->
+                if (!mutation.isEmpty) {
+                    syncMutationStore.apply(mutation)
+                }
+            }
+            if ((triggerSync || hasSyncMutation) && autoSyncEnabled && !triggerAutoSync()) {
+                throw IOException("Failed to schedule playlist sync mutation")
+            }
+            storage.clearPendingSyncMutation()
+            _syncMutationPending.value = false
+            return hasSyncMutation
+        } catch (error: Exception) {
+            _syncMutationPending.value = true
+            throw IOException("Playlist saved but sync mutation is pending", error)
+        }
+    }
+
+    private fun primaryDigest(text: String): String {
+        return MessageDigest.getInstance("SHA-256")
+            .digest(text.toByteArray(Charsets.UTF_8))
+            .joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
+    }
+
+    private fun triggerAutoSync(): Boolean {
+        return try {
+            val autoSyncTrigger = providedAutoSyncTrigger
+            if (autoSyncTrigger != null) {
+                autoSyncTrigger()
+            } else {
+                syncStorage.markSyncMutation()
+                if (!syncStorage.isAutoSyncEnabled()) {
+                    NPLogger.d("LocalPlaylistRepo", "Auto sync disabled, skip")
+                }
+                GitHubSyncWorker.scheduleDelayedSync(context, triggerByUserAction = false)
+                WebDavSyncWorker.scheduleDelayedSync(context, triggerByUserAction = false)
+            }
+            true
         } catch (e: Exception) {
             NPLogger.e("LocalPlaylistRepo", "Failed to schedule sync", e)
+            false
         }
     }
 
@@ -416,30 +580,40 @@ class LocalPlaylistRepository private constructor(
         return (newSongs + existingSongs).toMutableList()
     }
 
-    private fun recordPlaylistSongDeletions(
+    private fun buildPlaylistSongDeletionMutation(
         playlistId: Long,
         songs: List<SongItem>,
         deletedAt: Long
-    ) {
+    ): LocalPlaylistSyncMutation {
         val deletions = buildPlaylistSongDeletions(playlistId, songs, deletedAt)
-        if (deletions.isNotEmpty()) {
-            syncStorage.addPlaylistSongDeletions(deletions)
-        }
+        return LocalPlaylistSyncMutation(addedSongDeletions = deletions)
     }
 
-    private fun clearPlaylistSongDeletions(playlistId: Long, songs: List<SongItem>) {
+    private fun buildPlaylistSongDeletionRemoval(
+        playlistId: Long,
+        songs: List<SongItem>
+    ): LocalPlaylistSyncMutation {
         val remoteIdentities = songs
             .asSequence()
             .filterNot { LocalSongSupport.isLocalSong(it, context) }
             .map { it.identity() }
             .toList()
-        if (remoteIdentities.isNotEmpty()) {
-            syncStorage.removePlaylistSongDeletions(playlistId, remoteIdentities)
-        }
+        if (remoteIdentities.isEmpty()) return LocalPlaylistSyncMutation()
+        return LocalPlaylistSyncMutation(
+            removedSongDeletions = listOf(
+                PlaylistSongDeletionRemoval(
+                    playlistId = playlistId,
+                    identities = remoteIdentities
+                )
+            )
+        )
     }
 
-    private fun clearPlaylistSongDeletions(playlistId: Long) {
-        syncStorage.removePlaylistSongDeletionsForPlaylist(playlistId)
+    private fun buildPlaylistDeletionMutation(playlistId: Long): LocalPlaylistSyncMutation {
+        return LocalPlaylistSyncMutation(
+            deletedPlaylistIds = listOf(playlistId),
+            clearedPlaylistDeletionIds = listOf(playlistId)
+        )
     }
 
     private fun buildPlaylistSongDeletions(
@@ -451,7 +625,7 @@ class LocalPlaylistRepository private constructor(
             return emptyList()
         }
 
-        val deviceId = syncStorage.getOrCreateDeviceId()
+        val deviceId = syncMutationStore.getOrCreateDeviceId()
         return songs
             .asSequence()
             .filterNot { LocalSongSupport.isLocalSong(it, context) }
@@ -659,13 +833,16 @@ class LocalPlaylistRepository private constructor(
                     songs = listOf(hydratedSong),
                     addedAt = nextPlaylistSongAddedAt(favorites, now)
                 ).first()
-                clearPlaylistSongDeletions(favorites.id, listOf(hydratedSong))
+                val syncMutation = buildPlaylistSongDeletionRemoval(
+                    favorites.id,
+                    listOf(hydratedSong)
+                )
                 list[index] = favorites.copy(
                     songs = mergeNewSongsFirst(favorites.songs, listOf(stampedSong)),
                     modifiedAt = now,
                     songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                 )
-                publishLocked(list)
+                publishLocked(list, syncMutation = syncMutation)
             }
         }
     }
@@ -683,13 +860,17 @@ class LocalPlaylistRepository private constructor(
                 if (updatedSongs.size == favorites.songs.size) return@commitPlaylistMutation
 
                 val deletedAt = System.currentTimeMillis()
-                recordPlaylistSongDeletions(favorites.id, removedSongs, deletedAt)
+                val syncMutation = buildPlaylistSongDeletionMutation(
+                    favorites.id,
+                    removedSongs,
+                    deletedAt
+                )
                 list[index] = favorites.copy(
                     songs = updatedSongs,
                     modifiedAt = deletedAt,
                     songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                 )
-                publishLocked(list)
+                publishLocked(list, syncMutation = syncMutation)
             }
         }
     }
@@ -717,6 +898,7 @@ class LocalPlaylistRepository private constructor(
             if (songs.isEmpty()) return@withContext
             val toRemove = songSet(songs)
             commitPlaylistMutation {
+                var syncMutation = LocalPlaylistSyncMutation()
                 val updated = _playlists.value.map { playlist ->
                     if (playlist.id != playlistId) return@map playlist
                     val removedSongs = playlist.songs.filter { it.identity() in toRemove }
@@ -725,7 +907,11 @@ class LocalPlaylistRepository private constructor(
                         playlist
                     } else {
                         val deletedAt = System.currentTimeMillis()
-                        recordPlaylistSongDeletions(playlist.id, removedSongs, deletedAt)
+                        syncMutation += buildPlaylistSongDeletionMutation(
+                            playlist.id,
+                            removedSongs,
+                            deletedAt
+                        )
                         playlist.copy(
                             songs = filtered,
                             modifiedAt = deletedAt,
@@ -733,7 +919,7 @@ class LocalPlaylistRepository private constructor(
                         )
                     }
                 }
-                publishLocked(updated)
+                publishLocked(updated, syncMutation = syncMutation)
             }
         }
     }
@@ -742,13 +928,18 @@ class LocalPlaylistRepository private constructor(
         withContext(Dispatchers.IO) {
             commitPlaylistMutation {
                 var changed = false
+                var syncMutation = LocalPlaylistSyncMutation()
                 val updated = _playlists.value.map { playlist ->
                     if (playlist.id != playlistId || playlist.songs.isEmpty()) {
                         return@map playlist
                     }
                     changed = true
                     val deletedAt = System.currentTimeMillis()
-                    recordPlaylistSongDeletions(playlist.id, playlist.songs, deletedAt)
+                    syncMutation += buildPlaylistSongDeletionMutation(
+                        playlist.id,
+                        playlist.songs,
+                        deletedAt
+                    )
                     playlist.copy(
                         songs = mutableListOf(),
                         modifiedAt = deletedAt,
@@ -756,7 +947,7 @@ class LocalPlaylistRepository private constructor(
                     )
                 }
                 if (!changed) return@commitPlaylistMutation
-                publishLocked(updated)
+                publishLocked(updated, syncMutation = syncMutation)
             }
         }
     }
@@ -765,6 +956,7 @@ class LocalPlaylistRepository private constructor(
         withContext(Dispatchers.IO) {
             if (songIds.isEmpty()) return@withContext
             commitPlaylistMutation {
+                var syncMutation = LocalPlaylistSyncMutation()
                 val updated = _playlists.value.map { playlist ->
                     if (playlist.id != playlistId) return@map playlist
                     val removedSongs = playlist.songs.filter { it.id in songIds }
@@ -773,14 +965,18 @@ class LocalPlaylistRepository private constructor(
                         return@map playlist
                     }
                     val deletedAt = System.currentTimeMillis()
-                    recordPlaylistSongDeletions(playlist.id, removedSongs, deletedAt)
+                    syncMutation += buildPlaylistSongDeletionMutation(
+                        playlist.id,
+                        removedSongs,
+                        deletedAt
+                    )
                     playlist.copy(
                         songs = filtered,
                         modifiedAt = deletedAt,
                         songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                     )
                 }
-                publishLocked(updated)
+                publishLocked(updated, syncMutation = syncMutation)
             }
         }
     }
@@ -795,13 +991,10 @@ class LocalPlaylistRepository private constructor(
                 }
 
                 val updated = _playlists.value.filterNot { it.id == playlistId }
-                runCatching {
-                    syncStorage.addDeletedPlaylistId(playlistId)
-                    clearPlaylistSongDeletions(playlistId)
-                }.onFailure {
-                    NPLogger.e("LocalPlaylistRepo", "Failed to track deleted playlist", it)
-                }
-                publishLocked(updated)
+                publishLocked(
+                    playlists = updated,
+                    syncMutation = buildPlaylistDeletionMutation(playlistId)
+                )
                 true
             }
         }
@@ -919,6 +1112,7 @@ class LocalPlaylistRepository private constructor(
         }
 
         var addedCount = 0
+        var syncMutation = LocalPlaylistSyncMutation()
         val updated = _playlists.value.map { playlist ->
             if (playlist.id != playlistId) return@map playlist
             if (isLocalFilesPlaylist(playlist.id, playlist.name)) {
@@ -938,7 +1132,7 @@ class LocalPlaylistRepository private constructor(
                     addedAt = nextPlaylistSongAddedAt(playlist, now)
                 )
                 addedCount += toAdd.size
-                clearPlaylistSongDeletions(playlist.id, toAdd)
+                syncMutation += buildPlaylistSongDeletionRemoval(playlist.id, toAdd)
                 playlist.copy(
                     songs = mergeNewSongsFirst(playlist.songs, toAdd),
                     modifiedAt = now,
@@ -946,7 +1140,7 @@ class LocalPlaylistRepository private constructor(
                 )
             }
         }
-        publishLocked(updated)
+        publishLocked(updated, syncMutation = syncMutation)
         return addedCount
     }
 
@@ -2180,14 +2374,18 @@ class LocalPlaylistRepository private constructor(
             file: File,
             normalizePlaylists: (List<LocalPlaylist>) -> List<LocalPlaylist> = { it },
             autoSyncEnabled: Boolean = false,
-            storage: LocalPlaylistStorage = LocalPlaylistFileStorage(file, context.filesDir)
+            storage: LocalPlaylistStorage = LocalPlaylistFileStorage(file, context.filesDir),
+            syncMutationStore: LocalPlaylistSyncMutationStore? = null,
+            autoSyncTrigger: (() -> Unit)? = null
         ): LocalPlaylistRepository {
             return LocalPlaylistRepository(
                 context = context,
                 file = file,
                 normalizePlaylists = normalizePlaylists,
                 autoSyncEnabled = autoSyncEnabled,
-                storage = storage
+                storage = storage,
+                providedSyncMutationStore = syncMutationStore,
+                providedAutoSyncTrigger = autoSyncTrigger
             )
         }
     }

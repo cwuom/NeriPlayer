@@ -132,6 +132,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
@@ -696,14 +697,14 @@ fun DetailScreen(
                         onCreateAndExport = { name ->
                             val songs = ui.tracks
                                 .filter { selectedIds.contains(it.id) }
-                            scope.launch {
+                            scope.launchLocalPlaylistMutation("createPlaylistFromNetease") {
                                 repo.createPlaylistWithSongs(name, songs)
                             }
                         },
                         onExportToPlaylist = { playlist ->
                             val songs = ui.tracks
                                 .filter { selectedIds.contains(it.id) }
-                            scope.launch {
+                            scope.launchLocalPlaylistMutation("exportSongsFromNetease") {
                                 repo.addSongsToPlaylist(playlist.id, songs)
                             }
                         }

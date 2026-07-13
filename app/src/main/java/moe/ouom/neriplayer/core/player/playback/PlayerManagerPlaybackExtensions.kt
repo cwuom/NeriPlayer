@@ -11,6 +11,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
@@ -757,8 +758,10 @@ private fun PlayerManager.maybeHydrateLocalSongForPlayback(
             return@launch
         }
 
-        withContext(Dispatchers.IO) {
-            localRepo.updateSongMetadata(song, hydratedSong)
+        runLocalPlaylistMutationSafely("hydratePlaybackSongMetadata") {
+            withContext(Dispatchers.IO) {
+                localRepo.updateSongMetadata(song, hydratedSong)
+            }
         }
         scheduleStatePersist()
     }

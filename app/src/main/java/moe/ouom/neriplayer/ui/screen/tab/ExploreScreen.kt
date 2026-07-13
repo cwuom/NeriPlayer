@@ -122,6 +122,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
@@ -484,7 +485,7 @@ fun ExploreScreen(
                                         onPlayNext = { onSongPlayNext(song) },
                                         onAddToQueueEnd = { onSongAddToQueueEnd(song) },
                                         onToggleFavorite = {
-                                            scope.launch {
+                                            scope.launchLocalPlaylistMutation("toggleFavoriteFromExplore") {
                                                 if (isFavoriteSong) {
                                                     repo.removeFromFavorites(song)
                                                 } else {
@@ -684,7 +685,7 @@ fun ExploreScreen(
                 val songs = partsInfo!!.pages
                     .filter { selectedParts.contains(it.page) }
                     .map { page -> vm.toSongItem(page, partsInfo!!, clickedSongCoverUrl) }
-                scope.launch {
+                scope.launchLocalPlaylistMutation("createPlaylistFromExplore") {
                     repo.createPlaylistWithSongs(name, songs)
                 }
                 exitPartsSelection()
@@ -693,7 +694,7 @@ fun ExploreScreen(
                 val songs = partsInfo!!.pages
                     .filter { selectedParts.contains(it.page) }
                     .map { page -> vm.toSongItem(page, partsInfo!!, clickedSongCoverUrl) }
-                scope.launch {
+                scope.launchLocalPlaylistMutation("exportSongsFromExplore") {
                     repo.addSongsToPlaylist(playlist.id, songs)
                 }
                 exitPartsSelection()

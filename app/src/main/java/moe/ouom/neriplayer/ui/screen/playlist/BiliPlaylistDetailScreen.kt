@@ -81,6 +81,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
@@ -520,7 +521,7 @@ fun BiliPlaylistDetailScreen(
                                 .filter { selectedIds.contains(it.bvid) }
                                 .map { it.toSongItem() }
                         }
-                        scope.launch {
+                        scope.launchLocalPlaylistMutation("createPlaylistFromBili") {
                             repo.createPlaylistWithSongs(name, songs)
                         }
                         exitSelection()
@@ -539,7 +540,7 @@ fun BiliPlaylistDetailScreen(
                                 .filter { selectedIds.contains(it.bvid) }
                                 .map { it.toSongItem() }
                         }
-                        scope.launch {
+                        scope.launchLocalPlaylistMutation("exportSongsFromBili") {
                             repo.addSongsToPlaylist(playlist.id, songs)
                         }
                         exitSelection()

@@ -136,6 +136,7 @@ import androidx.compose.material3.CardDefaults
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -596,14 +597,14 @@ fun YouTubeMusicPlaylistDetailScreen(
                 onCreateAndExport = { name ->
                     val songs = ui.tracks
                         .filter { selectedKeys.contains(it.stableKey()) }
-                    scope.launch {
+                    scope.launchLocalPlaylistMutation("createPlaylistFromYouTubeMusic") {
                         repo.createPlaylistWithSongs(name, songs)
                     }
                 },
                 onExportToPlaylist = { playlist ->
                     val songs = ui.tracks
                         .filter { selectedKeys.contains(it.stableKey()) }
-                    scope.launch {
+                    scope.launchLocalPlaylistMutation("exportSongsFromYouTubeMusic") {
                         repo.addSongsToPlaylist(playlist.id, songs)
                     }
                 }

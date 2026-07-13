@@ -12,9 +12,19 @@ internal interface LocalPlaylistStorage {
 
     fun readBackup(): String?
 
-    fun commit(text: String, rotateBackup: Boolean = true)
+    fun commit(
+        text: String,
+        rotateBackup: Boolean = true,
+        replaceBackupWithCommittedPrimary: Boolean = false
+    )
 
     fun quarantinePrimary(): File?
+
+    fun readPendingSyncMutation(): String? = null
+
+    fun writePendingSyncMutation(text: String) = Unit
+
+    fun clearPendingSyncMutation() = Unit
 }
 
 internal class LocalPlaylistFileStorage(
@@ -23,22 +33,50 @@ internal class LocalPlaylistFileStorage(
 ) : LocalPlaylistStorage {
     private val parent = file.parentFile ?: fallbackParent
     private val backup = File(parent, "${file.name}.bak")
+    private val pendingSyncMutation = File(parent, "${file.name}.sync-pending.json")
 
     override fun readPrimary(): String? = file.takeIf(File::exists)?.readText()
 
     override fun readBackup(): String? = backup.takeIf(File::exists)?.readText()
 
-    override fun commit(text: String, rotateBackup: Boolean) {
+    override fun commit(
+        text: String,
+        rotateBackup: Boolean,
+        replaceBackupWithCommittedPrimary: Boolean
+    ) {
         ensureParentExists()
+        val primaryExisted = file.exists()
+        val rotatesExistingPrimary = rotateBackup && primaryExisted
+        val seedsCommittedPrimary = replaceBackupWithCommittedPrimary ||
+            (!backup.exists() && !rotatesExistingPrimary)
         val pending = writeSyncedTempFile("${file.name}.", ".tmp", text)
+        val pendingBackup = try {
+            if (seedsCommittedPrimary) {
+                writeSyncedTempFile("${backup.name}.", ".tmp", text)
+            } else {
+                null
+            }
+        } catch (error: Exception) {
+            pending.delete()
+            throw error
+        }
         try {
-            if (rotateBackup && file.exists()) {
+            if (rotatesExistingPrimary) {
                 replaceBackup(file)
+            }
+            if (pendingBackup != null) {
+                moveIntoPlace(pendingBackup, backup)
+                fsyncDirectory()
             }
             moveIntoPlace(pending, file)
             fsyncDirectory()
         } catch (error: Exception) {
             pending.delete()
+            pendingBackup?.delete()
+            if (!primaryExisted && !file.exists() && seedsCommittedPrimary) {
+                backup.delete()
+                fsyncDirectory()
+            }
             throw error
         }
     }
@@ -51,6 +89,30 @@ internal class LocalPlaylistFileStorage(
         moveIntoPlace(file, quarantine)
         fsyncDirectory()
         return quarantine
+    }
+
+    override fun readPendingSyncMutation(): String? {
+        return pendingSyncMutation.takeIf(File::exists)?.readText()
+    }
+
+    override fun writePendingSyncMutation(text: String) {
+        ensureParentExists()
+        val pending = writeSyncedTempFile("${pendingSyncMutation.name}.", ".tmp", text)
+        try {
+            moveIntoPlace(pending, pendingSyncMutation)
+            fsyncDirectory()
+        } catch (error: Exception) {
+            pending.delete()
+            throw error
+        }
+    }
+
+    override fun clearPendingSyncMutation() {
+        if (!pendingSyncMutation.exists()) return
+        if (!pendingSyncMutation.delete()) {
+            throw IOException("Failed to clear playlist sync mutation outbox")
+        }
+        fsyncDirectory()
     }
 
     private fun replaceBackup(source: File) {

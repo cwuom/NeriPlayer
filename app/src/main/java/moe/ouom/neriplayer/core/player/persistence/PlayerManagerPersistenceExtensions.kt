@@ -12,6 +12,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
@@ -1018,8 +1019,10 @@ internal suspend fun PlayerManager.updateUserLyricOffsetImpl(
     val latestSong = currentPlaylist.firstOrNull { it.sameIdentityAs(songToUpdate) }
         ?: _currentSongFlow.value?.takeIf { it.sameIdentityAs(songToUpdate) }
     if (latestSong != null) {
-        withContext(Dispatchers.IO) {
-            localRepo.updateSongMetadata(songToUpdate, latestSong)
+        runLocalPlaylistMutationSafely("updateUserLyricOffset") {
+            withContext(Dispatchers.IO) {
+                localRepo.updateSongMetadata(songToUpdate, latestSong)
+            }
         }
     }
 
@@ -1085,14 +1088,18 @@ internal suspend fun PlayerManager.rebaseUserLyricOffsetsForSourceImpl(
         setCurrentSongForPlayback(rebasedCurrentSong)
     }
 
-    withContext(Dispatchers.IO) {
-        localRepo.rebaseLyricOffsetsForSource(
-            targetSource = targetSource,
-            previousDefaultOffsetMs = previousDefaultOffsetMs,
-            newDefaultOffsetMs = newDefaultOffsetMs
-        )
+    val localUpdateSucceeded = runLocalPlaylistMutationSafely("rebaseLyricOffsetsForSource") {
+        withContext(Dispatchers.IO) {
+            localRepo.rebaseLyricOffsetsForSource(
+                targetSource = targetSource,
+                previousDefaultOffsetMs = previousDefaultOffsetMs,
+                newDefaultOffsetMs = newDefaultOffsetMs
+            )
+        }
     }
-    AppContainer.playlistUsageRepo.syncLocalEntries(localRepo.playlists.value)
+    if (localUpdateSucceeded.isSuccess) {
+        AppContainer.playlistUsageRepo.syncLocalEntries(localRepo.playlists.value)
+    }
 
     if (queueChanged || rebasedCurrentSong != null) {
         persistState()
@@ -1128,8 +1135,10 @@ internal suspend fun PlayerManager.updateSongLyricsImpl(
 
     val latestSong = currentPlaylist.firstOrNull { it.sameIdentityAs(songToUpdate) }
     if (latestSong != null) {
-        withContext(Dispatchers.IO) {
-            localRepo.updateSongMetadata(songToUpdate, latestSong)
+        runLocalPlaylistMutationSafely("updateSongLyrics") {
+            withContext(Dispatchers.IO) {
+                localRepo.updateSongMetadata(songToUpdate, latestSong)
+            }
         }
         GlobalDownloadManager.syncDownloadedSongMetadata(latestSong)
         AppContainer.playHistoryRepo.updateSongMetadata(songToUpdate, latestSong)
@@ -1168,8 +1177,10 @@ internal suspend fun PlayerManager.updateSongTranslatedLyricsImpl(
 
     val latestSong = currentPlaylist.firstOrNull { it.sameIdentityAs(songToUpdate) }
     if (latestSong != null) {
-        withContext(Dispatchers.IO) {
-            localRepo.updateSongMetadata(songToUpdate, latestSong)
+        runLocalPlaylistMutationSafely("updateSongTranslatedLyrics") {
+            withContext(Dispatchers.IO) {
+                localRepo.updateSongMetadata(songToUpdate, latestSong)
+            }
         }
         GlobalDownloadManager.syncDownloadedSongMetadata(latestSong)
         AppContainer.playHistoryRepo.updateSongMetadata(songToUpdate, latestSong)
@@ -1222,8 +1233,10 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
 
     val latestSong = currentPlaylist.firstOrNull { it.sameIdentityAs(songToUpdate) }
     if (latestSong != null) {
-        withContext(Dispatchers.IO) {
-            localRepo.updateSongMetadata(songToUpdate, latestSong)
+        runLocalPlaylistMutationSafely("updateSongLyricsAndTranslation") {
+            withContext(Dispatchers.IO) {
+                localRepo.updateSongMetadata(songToUpdate, latestSong)
+            }
         }
         GlobalDownloadManager.syncDownloadedSongMetadata(latestSong)
         AppContainer.playHistoryRepo.updateSongMetadata(songToUpdate, latestSong)
@@ -1260,8 +1273,10 @@ private suspend fun PlayerManager.updateSongInAllPlaces(
         setCurrentSongForPlayback(updatedSong)
     }
 
-    withContext(Dispatchers.IO) {
-        localRepo.updateSongMetadata(originalSong, updatedSong)
+    runLocalPlaylistMutationSafely("updateSongInAllPlaces") {
+        withContext(Dispatchers.IO) {
+            localRepo.updateSongMetadata(originalSong, updatedSong)
+        }
     }
     GlobalDownloadManager.syncDownloadedSongMetadata(updatedSong)
     AppContainer.playHistoryRepo.updateSongMetadata(originalSong, updatedSong)
