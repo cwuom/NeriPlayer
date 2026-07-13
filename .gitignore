@@ -41,3 +41,4 @@ AGENTS.md
 .agents/
 /ksp-annotations/build/
 /ksp-processor/build/
+/docs-private/
