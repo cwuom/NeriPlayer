@@ -26,6 +26,7 @@ internal data class ListenTogetherPlayerSyncPlan(
     val driftMs: Long,
     val shouldSeek: Boolean,
     val shouldIssuePlay: Boolean,
+    val shouldIssuePause: Boolean,
     val shouldForcePauseAfterRemoteLoad: Boolean,
     val desiredPlaying: Boolean,
     val localPlaying: Boolean
@@ -56,6 +57,9 @@ internal fun resolveListenTogetherPlayerSyncPlan(
         shouldReloadPlaylist &&
             context.causeType == "LINK_READY" &&
             !context.awaitingAuthoritativeStream
+    val shouldIssuePause =
+        !context.desiredPlaying &&
+            (shouldReloadPlaylist || context.localPlaying || context.localPlaybackAlreadyStarting)
     return ListenTogetherPlayerSyncPlan(
         shouldReloadPlaylist = shouldReloadPlaylist,
         effectiveExpectedPositionMs = effectiveExpectedPositionMs,
@@ -67,6 +71,7 @@ internal fun resolveListenTogetherPlayerSyncPlan(
             (!shouldReloadPlaylist || shouldResumeAfterReload) &&
             !context.localPlaybackAlreadyStarting &&
             !context.awaitingAuthoritativeStream,
+        shouldIssuePause = shouldIssuePause,
         shouldForcePauseAfterRemoteLoad = !context.desiredPlaying && shouldReloadPlaylist,
         desiredPlaying = context.desiredPlaying,
         localPlaying = context.localPlaying
