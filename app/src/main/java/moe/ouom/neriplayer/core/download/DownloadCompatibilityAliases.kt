@@ -7,6 +7,8 @@ import moe.ouom.neriplayer.core.download.catalog.findDownloadedSongCatalogMatch 
 import moe.ouom.neriplayer.core.download.catalog.matchesDownloadedSong as matchesDownloadedSongDelegate
 import moe.ouom.neriplayer.core.download.catalog.matchesDownloadedSongCatalogEntry as matchesDownloadedSongCatalogEntryDelegate
 import moe.ouom.neriplayer.core.download.catalog.resolveDownloadedSongPlaybackReference as resolveDownloadedSongPlaybackReferenceDelegate
+import moe.ouom.neriplayer.core.download.catalog.deserializeDownloadedSongsCatalog as deserializeDownloadedSongsCatalogDelegate
+import moe.ouom.neriplayer.core.download.catalog.serializeDownloadedSongsCatalog as serializeDownloadedSongsCatalogDelegate
 import moe.ouom.neriplayer.core.download.catalog.shouldPublishDownloadedSongCatalogUpdate as shouldPublishDownloadedSongCatalogUpdateDelegate
 import moe.ouom.neriplayer.core.download.catalog.upsertDownloadedSongCatalog as upsertDownloadedSongCatalogDelegate
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadArtifactPlanner as ManagedDownloadArtifactPlannerDelegate
@@ -24,6 +26,7 @@ import moe.ouom.neriplayer.core.download.policy.buildExpectedDownloadArtists as 
 import moe.ouom.neriplayer.core.download.policy.buildExpectedDownloadTitles as buildExpectedDownloadTitlesDelegate
 import moe.ouom.neriplayer.core.download.policy.isUnfinalizedDownloadedMetadata as isUnfinalizedDownloadedMetadataDelegate
 import moe.ouom.neriplayer.core.download.policy.resolveCompletedDownloadFinalizationAction as resolveCompletedDownloadFinalizationActionDelegate
+import moe.ouom.neriplayer.core.download.policy.resolveDownloadedLyricContent as resolveDownloadedLyricContentDelegate
 import moe.ouom.neriplayer.core.download.policy.resolveDownloadedLyricOverride as resolveDownloadedLyricOverrideDelegate
 import moe.ouom.neriplayer.core.download.policy.resolveDownloadedPlaybackHydrationDelayMs as resolveDownloadedPlaybackHydrationDelayMsDelegate
 import moe.ouom.neriplayer.core.download.policy.resolvePreExistingDownloadedAudioAction as resolvePreExistingDownloadedAudioActionDelegate
@@ -188,8 +191,22 @@ internal fun resolveDownloadedLyricOverride(
     indexedLyricContent
 )
 
-internal fun shouldTrustFastDownloadedSongCatalogHit(reference: String?, knownReferences: Set<String>?): Boolean =
-    shouldTrustFastDownloadedSongCatalogHitDelegate(reference, knownReferences)
+internal fun resolveDownloadedLyricContent(
+    fileLyric: String?,
+    embeddedMatchedLyric: String?,
+    embeddedOriginalLyric: String?,
+    localLyricContent: String?,
+    indexedLyricContent: String?
+): String? = resolveDownloadedLyricContentDelegate(
+    fileLyric,
+    embeddedMatchedLyric,
+    embeddedOriginalLyric,
+    localLyricContent,
+    indexedLyricContent
+)
+
+internal fun shouldTrustFastDownloadedSongCatalogHit(reference: String?, cachedKnownReferences: Set<String>?): Boolean =
+    shouldTrustFastDownloadedSongCatalogHitDelegate(reference, cachedKnownReferences)
 
 internal fun shouldProbeCompletedAudioAccessDuringPostProcessing(
     reference: String?,
@@ -247,6 +264,16 @@ internal fun shouldPublishDownloadedSongCatalogUpdate(
     currentSong: DownloadedSong,
     updatedSong: DownloadedSong
 ): Boolean = shouldPublishDownloadedSongCatalogUpdateDelegate(currentSong, updatedSong)
+
+internal fun serializeDownloadedSongsCatalog(
+    cacheKey: String,
+    songs: List<DownloadedSong>
+): String = serializeDownloadedSongsCatalogDelegate(cacheKey, songs)
+
+internal fun deserializeDownloadedSongsCatalog(
+    raw: String,
+    expectedCacheKey: String
+): List<DownloadedSong>? = deserializeDownloadedSongsCatalogDelegate(raw, expectedCacheKey)
 
 fun upsertDownloadedSongCatalog(currentSongs: List<DownloadedSong>, updatedSong: DownloadedSong): List<DownloadedSong> =
     upsertDownloadedSongCatalogDelegate(currentSongs, updatedSong)

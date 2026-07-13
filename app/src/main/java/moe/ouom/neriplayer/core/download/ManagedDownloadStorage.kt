@@ -1999,6 +1999,10 @@ internal object ManagedDownloadStorage {
         return ManagedDownloadTreeNaming.matchesManagedSubdirectoryName(actualName, desiredName)
     }
 
+    private fun ensureManagedMediaScanIsolation(subdirectory: String, directory: File) {
+        treeDirectories.ensureManagedMediaScanIsolation(subdirectory, directory)
+    }
+
     private fun findSubdirectories(
         context: Context,
         root: RootHandle,
