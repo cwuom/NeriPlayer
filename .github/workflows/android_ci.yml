@@ -145,11 +145,25 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
 
-      - name: Build Debug APK
-        run: ./gradlew :app:assembleDebug --warning-mode all --stacktrace
+      - name: Build optimized unsigned Release APK
+        run: ./gradlew :app:assembleRelease -PallowUnsignedRelease=true --warning-mode all --stacktrace
 
-      - name: Upload Debug APK
+      - name: Sign APK with Android debug keystore
+        run: |
+          ANDROID_SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          BUILD_TOOLS_DIR=$(ls -d "$ANDROID_SDK_ROOT/build-tools/"* | sort -V | tail -1)
+          echo "Using build-tools: $BUILD_TOOLS_DIR"
+          echo "android" | "$BUILD_TOOLS_DIR/apksigner" sign \
+            --ks ~/.android/debug.keystore \
+            --ks-pass stdin \
+            --ks-key-alias androiddebugkey \
+            --key-pass "pass:android" \
+            app/build/outputs/apk/release/app-release-unsigned.apk
+          # Rename signed APK
+          cp app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/NeriPlayer-signed.apk
+
+      - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
           name: neri-apk
-          path: app/build/outputs/apk/debug/**/*.apk
+          path: app/build/outputs/apk/release/NeriPlayer-signed.apk
