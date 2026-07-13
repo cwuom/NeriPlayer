@@ -7,6 +7,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
 set(LIBUSB_DIR ${CMAKE_SOURCE_DIR}/libusb)
+set(NERI_CRASH_DIR ${CMAKE_SOURCE_DIR}/crash)
+set(NERI_USB_DIR ${CMAKE_SOURCE_DIR}/usb)
+set(NERI_USB_EXCLUSIVE_DIR ${NERI_USB_DIR}/exclusive)
+set(NERI_USB_ISO_DIR ${NERI_USB_DIR}/iso)
+set(NERI_USB_PCM_DIR ${NERI_USB_DIR}/pcm)
+set(NERI_USB_UAC1_DIR ${NERI_USB_DIR}/uac1)
 
 add_library(
     usb
@@ -52,11 +58,11 @@ endif()
 add_library(
     neri_native
     SHARED
-    native_crash_handler.cpp
-    usb_exclusive_bridge.cpp
-    usb_pcm_codec.cpp
-    usb_pcm_pipeline.cpp
-    usb_uac1_format.cpp
+    ${NERI_CRASH_DIR}/native_crash_handler.cpp
+    ${NERI_USB_EXCLUSIVE_DIR}/usb_exclusive_bridge.cpp
+    ${NERI_USB_PCM_DIR}/usb_pcm_codec.cpp
+    ${NERI_USB_PCM_DIR}/usb_pcm_pipeline.cpp
+    ${NERI_USB_UAC1_DIR}/usb_uac1_format.cpp
 )
 
 set_target_properties(
@@ -83,6 +89,10 @@ target_include_directories(
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/libusb
     ${CMAKE_SOURCE_DIR}/libusb/os
+    ${NERI_USB_EXCLUSIVE_DIR}
+    ${NERI_USB_ISO_DIR}
+    ${NERI_USB_PCM_DIR}
+    ${NERI_USB_UAC1_DIR}
 )
 
 target_compile_definitions(

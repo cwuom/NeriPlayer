@@ -20,10 +20,10 @@
 #include <unordered_map>
 
 #include "libusb/libusb.h"
-#include "usb_iso_packet_scheduler.h"
-#include "usb_iso_transfer_health.h"
-#include "usb_pcm_pipeline.h"
-#include "usb_uac1_format.h"
+#include "usb/iso/usb_iso_packet_scheduler.h"
+#include "usb/iso/usb_iso_transfer_health.h"
+#include "usb/pcm/usb_pcm_pipeline.h"
+#include "usb/uac1/usb_uac1_format.h"
 
 #define LOG_TAG "NeriUsbExclusive"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)

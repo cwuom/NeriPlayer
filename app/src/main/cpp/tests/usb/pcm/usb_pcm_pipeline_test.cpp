@@ -1,4 +1,4 @@
-#include "usb_pcm_pipeline.h"
+#include "usb/pcm/usb_pcm_pipeline.h"
 
 #include <array>
 #include <cassert>

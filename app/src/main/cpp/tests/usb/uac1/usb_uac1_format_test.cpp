@@ -1,4 +1,4 @@
-#include "usb_uac1_format.h"
+#include "usb/uac1/usb_uac1_format.h"
 
 #include <cassert>
 #include <cstdint>
