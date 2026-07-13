@@ -90,6 +90,8 @@ import moe.ouom.neriplayer.listentogether.session.shouldIgnoreListenTogetherInco
 import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherNickname
 import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherRoomId
 import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherUserUuid
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
 
 class ListenTogetherSessionManager(
     private val api: ListenTogetherApi,
@@ -143,6 +145,9 @@ class ListenTogetherSessionManager(
     @Volatile
     private var estimatedServerClockOffsetMs: Long = 0L
 
+    private val clientInstanceId = UUID.randomUUID().toString()
+    private val clientSequence = AtomicLong(0L)
+
     private val _sessionState = MutableStateFlow(ListenTogetherSessionState())
     val sessionState: StateFlow<ListenTogetherSessionState> = _sessionState.asStateFlow()
 
@@ -158,6 +163,8 @@ class ListenTogetherSessionManager(
         roomStateProvider = { _roomState.value },
         isControllerProvider = { isCurrentUserController() },
         eventIdFactory = ::nextEventId,
+        clientInstanceIdProvider = { clientInstanceId },
+        clientSequenceFactory = ::nextClientSequence,
         localPlaybackStateNameProvider = ::currentLocalPlaybackStateName,
         localTransportActiveProvider = ::isLocalPlaybackTransportActive
     )
@@ -567,6 +574,8 @@ class ListenTogetherSessionManager(
             type = "UPDATE_SETTINGS",
             eventId = nextEventId(),
             clientTimeMs = System.currentTimeMillis(),
+            clientInstanceId = clientInstanceId,
+            clientSequence = nextClientSequence(),
             roomSettings = settings.normalized()
         )
         markOutboundEvent(event.eventId)
@@ -1930,6 +1939,8 @@ class ListenTogetherSessionManager(
     }
 
     private fun nextEventId(): String = nextListenTogetherEventId()
+
+    private fun nextClientSequence(): Long = clientSequence.incrementAndGet()
 
     private fun noteControllerLocalControl(command: PlaybackCommand) {
         if (command.source != PlaybackCommandSource.LOCAL) return

@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.listentogether
 
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import moe.ouom.neriplayer.listentogether.compat.buildTrackFinishedLegacyFallbackEvent
 import moe.ouom.neriplayer.listentogether.compat.isListenTogetherMemberControlTargetCurrent
 import moe.ouom.neriplayer.listentogether.compat.isListenTogetherPendingMemberControlSatisfied
@@ -280,6 +283,23 @@ class ListenTogetherEventCompatibilityTest {
         )
 
         assertEquals("netease:target", event.requestedStableKey())
+    }
+
+    @Test
+    fun `event client sequence survives json round trip`() {
+        val event = ListenTogetherEvent(
+            type = "PLAY",
+            eventId = "event-play",
+            clientInstanceId = "client-instance",
+            clientSequence = 42L
+        )
+
+        val decoded = Json.decodeFromString<ListenTogetherEvent>(
+            Json.encodeToString(event)
+        )
+
+        assertEquals("client-instance", decoded.clientInstanceId)
+        assertEquals(42L, decoded.clientSequence)
     }
 
     @Test

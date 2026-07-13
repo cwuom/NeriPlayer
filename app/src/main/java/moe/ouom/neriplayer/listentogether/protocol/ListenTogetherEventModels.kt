@@ -26,6 +26,8 @@ data class ListenTogetherEvent(
     val type: String,
     val eventId: String? = null,
     val clientTimeMs: Long? = null,
+    val clientInstanceId: String? = null,
+    val clientSequence: Long? = null,
     val positionMs: Long? = null,
     val currentIndex: Int? = null,
     val nextIndex: Int? = null,
