@@ -135,9 +135,12 @@ Current positioning:
   the Now Playing dynamic background is rendered frame-by-frame by
   `BgEffectPainter`, `RuntimeShader`, and `assets/hyper_background_effect.glsl`.
   The shader combines cover-derived colors, animated color blobs, and lightweight
-  grain while reacting to `uMusicLevel / uBeat`; it is not just a Gaussian-blurred cover.
+  grain while reacting to `uMusicLevel / uBeat`; it is not just a Gaussian-blurred
+  cover. The RuntimeShader/audio-reactive path requires Android 13+. Cover blur and
+  advanced blur require Android 12+, and older versions automatically use a
+  compatible fallback without those effects.
 - **Apple Music-style lyrics, backed by the playback pipeline**:
-  `AppleMusicLyric` and `AdvancedLyricsView` support word/character-timed
+  `SyncedLyricsView` and `AdvancedLyricsView` support word/character-timed
   highlighting, translated lyrics, phonetic display, lyric offset, click-to-seek,
   long-press sharing, depth blur, edge fade, and a full-screen Lyrics page.
   `LyricShareSheet` can select lyric lines, copy text, share the song, or render
@@ -204,8 +207,15 @@ Current positioning:
   app initialization and open safe mode for preview, copy, or export.
 - **Listen Together syncs the room, not just a progress bar**:
   the Android client and Cloudflare Worker maintain rooms, roles, queues,
-  playback state, controller-offline recovery, member control requests,
-  optional stream-link sharing, version-gated updates, and custom server URLs.
+  playback state, repeat/shuffle modes, controller-offline recovery, member
+  control requests, optional stream-link sharing, version-gated updates, and
+  custom server URLs. Repeat/shuffle changes use `PLAYBACK_MODE` /
+  `REQUEST_PLAYBACK_MODE`, while member controls and asynchronous stream-link
+  results validate the target stable track key so they cannot affect a track
+  that has already changed. The client also estimates server clock offset, corrects
+  position drift by threshold, and reloads the authoritative stream after an
+  asynchronous shared link arrives so pending local startup cannot override
+  the room's pause/play command.
   Durable Objects persist room state while WebSocket keeps active members in sync.
 
 ---
@@ -360,9 +370,9 @@ For release build and signing details, see
   language, platform auth, GitHub/WebDAV config, and Listen Together settings.
 - 🎧 **Listen Together**:
   create or join rooms, sync playback state over WebSocket, support host/listener
-  permissions, member-control toggles, auto-pause on member changes, optional
-  sharing of controller-resolved stream URLs, invite links, deep links, custom
-  server URLs, and host-offline detection.
+  permissions, member-control toggles, auto-pause on member changes,
+  repeat/shuffle mode sync, optional sharing of controller-resolved stream URLs,
+  invite links, deep links, custom server URLs, and host-offline detection.
 - 🌈 **Personalization and themes**:
   auto/light/dark mode, dynamic color, seed colors, theme styles, UI scaling,
   custom background image, haptic feedback, lyric font size, lyric blur,
@@ -372,7 +382,8 @@ For release build and signing details, see
   cover blur background, Apple Music-style lyrics, advanced lyrics, word-timed
   lyrics, translated lyrics, lyric offset, phonetic display, long-press lyric
   sharing, lyric card generation, lyric editing, font scaling, lyric-aware
-  haptics, and a full Lyrics page.
+  haptics, and a full Lyrics page. RuntimeShader animation is enabled on Android
+  13+, while cover/advanced blur requires Android 12+; older versions fall back.
 - 👆 **Mini Player gestures**:
   the bottom Mini Player supports horizontal swipe for previous/next while
   keeping tap-to-expand and play/pause controls.
@@ -485,6 +496,10 @@ For release build and signing details, see
   unavailable, and can switch to a matched Bilibili fallback source for
   restricted or preview-only tracks.
 - Playback state is persisted periodically for queue and state recovery.
+- Player code is split by responsibility across `playback/`, `url/`, `resolver/`,
+  `service/`, `effects/`, `lifecycle/`, `watchdog/`, and `usb/`. Shared song
+  models live under `data/model/`; legacy packages only retain a small set of
+  compatibility aliases and should not be used for new code.
 - Sleep timer, fade-in/fade-out, crossfade-next, and playback mode recovery are
   handled in the player layer.
 - Preemptive audio focus, mixed playback, pause on Bluetooth disconnect, and
@@ -680,6 +695,12 @@ and community feedback. They are not fixed-date commitments.
 
 ### Shipped recently
 
+- [x] Listen Together repeat/shuffle sync, stable-track-key target validation,
+  server clock-offset estimation, and authoritative stream recovery
+- [x] Responsibility-based package splits for player, download storage, startup,
+  lyric UI, and Listen Together
+- [x] Versioned local-playlist display order with compatible migration of older
+  GitHub/WebDAV sync data
 - [x] USB exclusive device selection, quality policies, background-playback guidance, and layered automatic recovery
 - [x] Fast local scan previews, background metadata hydration, and cover fallback resolution
 - [x] Listen Together stream-link sharing toggles, asynchronous stream resolution, and more stable room sync

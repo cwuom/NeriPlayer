@@ -72,7 +72,7 @@
 - **同步链路**：GitHub / WebDAV 的三路合并、删除记录、播放统计和远端格式兼容。
 - **本地数据**：歌单 JSON 原子写入、本地元信息补全、配置导入导出、
   授权加密存储和 DataStore 设置。
-- **歌词与播放页 UI**：`AdvancedLyricsView`、`AppleMusicLyric`、
+- **歌词与播放页 UI**：`AdvancedLyricsView`、`SyncedLyricsView`、
   `LyricShareSheet`、歌词音译显示、歌词长按分享和 Lyrics 全屏页。
 - **存储与缓存 UI**：`StorageUsageAnalyzer`、缓存清理选项、下载目录索引和 SAF 快照。
 - **一起听**：Android 客户端、Worker 协议字段、角色权限、队列、
@@ -174,6 +174,8 @@
 - `app/src/main/java/moe/ouom/neriplayer/activity/`
   - `MainActivity.kt` 是唯一对外入口，负责安全模式、启动流程、免责声明、
     启动引导、外部音频导入、一起听深链和顶层 Compose 宿主。
+  - 平台登录 Activity 位于 `activity/auth/`，并在独立次进程中运行；
+    `activity/sync/` 保存 Activity 侧的同步告警状态。
   - `NeteaseWebLoginActivity.kt`、`NeteaseQrLoginActivity.kt`、
     `BiliWebLoginActivity.kt`、`BiliQrLoginActivity.kt` 与 `YouTubeWebLoginActivity.kt`
     是内部平台登录页。
@@ -182,11 +184,18 @@
   - 顶层 Compose 应用骨架，负责 `NavHost`、动态底栏、
     `MiniPlayer`、`Now Playing` 覆盖层、Debug 路由、主题、缓存清理和播放服务同步。
 
-- `app/src/main/java/moe/ouom/neriplayer/ui/component/`
-  - `AdvancedLyricsView.kt` 与 `AppleMusicLyric.kt` 负责高级歌词排版、
+- `app/src/main/java/moe/ouom/neriplayer/ui/component/lyrics/`
+  - `AdvancedLyricsView.kt` 与 `SyncedLyricsView.kt` 负责高级歌词排版、
     逐字/逐词高亮、翻译/音译显示、点击跳转和长按回调。
   - `LyricShareSheet.kt` 负责歌词行选择、复制、歌曲分享和歌词卡片生成。
-  - `NeriMiniPlayer.kt` 负责底部迷你播放器、播放暂停和横向滑动切歌。
+  - 旧 `AppleMusicLyric` 名称只存在于 `ui/component/LyricsCompatibility.kt`
+    的 `@Deprecated` 包装中，新代码统一使用 `SyncedLyricsView`。
+
+- `app/src/main/java/moe/ouom/neriplayer/ui/component/playback/`
+  - `NeriMiniPlayer.kt` 负责底部迷你播放器、播放暂停和横向滑动切歌；
+    播放音效与睡眠定时器面板也在该目录。
+  - `ui/component/` 根目录中的同名文件主要是旧包兼容入口，新增实现应放入
+    `lyrics/`、`playback/`、`download/`、`navigation/` 等职责子包。
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/`
   - `LibraryScreen.kt` 负责媒体库顶层分类，本地内容可在歌单/歌手之间切换，
@@ -218,31 +227,45 @@
 - `app/src/main/java/moe/ouom/neriplayer/core/player/`
   - `PlayerManager.kt`：Media3 ExoPlayer 的统一管理层，
     负责音源解析、播放队列、缓存、状态恢复、失败重试和播放策略。
-  - `AudioPlayerService.kt`：前台播放服务、媒体通知、MediaSession 和媒体按钮。
-  - `AudioDownloadManager.kt`：下载核心链路，解析多平台流并写入本地。
-  - `PlaybackEffectsController.kt`：倍速、音调、响度增强和均衡器。
-  - `PlaybackStatsTracker.kt`：播放统计采集。
-  - `SleepTimerManager.kt`：睡眠定时器。
-  - `ConditionalHttpDataSourceFactory.kt`：为特定域名动态附加 Header。
-  - `PlayerManagerStartupWatchdogExtensions.kt`、`PlayerManagerLifecycleExtensions.kt`：
+  - `service/AudioPlayerService.kt`：前台播放服务、媒体通知、MediaSession 和媒体按钮。
+  - `download/AudioDownloadManager.kt`：下载核心链路；同目录的
+    `DownloadParallelism.kt` 定义并发边界。
+  - `effects/PlaybackEffectsController.kt`：倍速、音调、响度增强和均衡器。
+  - `playback/PlaybackStatsTracker.kt`：播放统计采集；播放命令与队列推进也在
+    `playback/PlayerManagerPlaybackExtensions.kt`。
+  - `timer/SleepTimerManager.kt`：睡眠定时器。
+  - `engine/datasource/ConditionalHttpDataSourceFactory.kt`：为特定域名动态附加 Header。
+  - `watchdog/PlayerManagerStartupWatchdogExtensions.kt`、
+    `lifecycle/PlayerManagerLifecycleExtensions.kt`：
     播放启动看门狗、前后台健康审计、失败恢复和 USB 独占异常回退。
-  - `PlayerManagerNeteaseAutoSourceSwitch.kt`：网易云无权限、
+  - `resolver/netease/PlayerManagerNeteaseAutoSourceSwitch.kt`：网易云无权限、
     无直链或试听片段时的 Bilibili 自动换源兜底。
-  - `YouTubeGoogleVideoRangeSupport.kt`、`YouTubeSeekRefreshPolicy.kt`、
+  - `resolver/youtube/YouTubeGoogleVideoRangeSupport.kt`、`YouTubeSeekRefreshPolicy.kt`、
     `prefetch/YouTubePrefetchRunner.kt`：YouTube Music 播放兼容策略。
   - `metadata/`：歌词、元数据、外部蓝牙歌词等播放页数据处理。
-  - `usb/`：USB 独占 native 会话、运行态快照、唤醒锁、写入规划和恢复控制，
+  - `model/`：播放器专用状态模型；跨数据层共享的歌曲模型不在此处。
+  - `usb/`：按 `device/`、`path/`、`session/`、`sink/`、`system/` 与
+    `transport/` 拆分 USB 独占会话、Native 桥、运行态快照和恢复控制，
     当前实现只覆盖 **UAC1.0** 设备。
 
 - `app/src/main/java/moe/ouom/neriplayer/core/download/`
   - `GlobalDownloadManager.kt` 维护全局下载任务与本地已下载列表。
-  - `ManagedDownloadStorage.kt` 管理应用目录/SAF 目录、迁移、快照和 `.nomedia`。
-  - `DownloadTaskStore.kt` 持久化下载任务、状态、进度和 attemptId。
-  - `DownloadLifecyclePolicies.kt` 集中封装下载恢复、取消清理和快速结算策略。
-  - `ManagedDownloadNaming.kt` 管理下载文件名模板和历史命名兼容。
-  - `DownloadedAudioTagWriter.kt` 写入音频标签。
+  - `ManagedDownloadStorage.kt` 是应用目录/SAF 目录的外观入口；具体实现已拆到
+    `storage/commit/`、`delete/`、`lookup/`、`migration/`、`recovery/`、
+    `snapshot/`、`tree/` 与 `working/` 等子包。
+  - `task/DownloadTaskStore.kt` 持久化下载任务、状态、进度和 attemptId。
+  - `policy/DownloadLifecyclePolicies.kt` 集中封装下载恢复、取消清理和快速结算策略。
+  - `naming/ManagedDownloadNaming.kt` 管理下载文件名模板和历史命名兼容。
+  - `metadata/DownloadedAudioTagWriter.kt` 写入音频标签；`catalog/` 管理已下载歌曲目录模型。
+
+- `app/src/main/java/moe/ouom/neriplayer/core/startup/`
+  - 启动阶段与决策已按 `app/`、`crash/`、`download/`、`logging/`、
+    `permission/`、`player/`、`safemode/`、`sync/` 和 `theme/` 拆分；
+    `MainActivity` 只负责协调这些组件与 UI 生命周期。
 
 - `app/src/main/java/moe/ouom/neriplayer/data/`
+  - `model/`：跨播放器、歌单、下载、同步、一起听和 UI 共享的 `SongItem`、
+    `SongIdentity` 与媒体模型扩展。
   - `settings/`：`DataStore` 设置、KSP schema、启动快照、主题快照和播放偏好快照。
   - `auth/`：网易云、Bilibili、YouTube 的 Cookie / Auth 本地存储与校验。
   - `platform/netease/`：网易云平台侧缓存，当前包含歌单详情本地缓存。
@@ -259,7 +282,15 @@
   - `sync/webdav/`：WebDAV 同步、远端配置、Worker 和 WebDAV API。
 
 - `app/src/main/java/moe/ouom/neriplayer/listentogether/`
-  - 一起听协议、WebSocket 客户端、Session 管理、邀请链接、同步规划和服务端地址校验。
+  - `protocol/` 定义房间、事件与传输模型，`network/` 负责 HTTP/WebSocket 与重连，
+    `playback/` 负责队列、权威直链和进度同步，`control/`、`session/`、`invite/`、
+    `mapping/`、`validation/` 分别承载控制、会话策略、邀请、模型映射和输入边界。
+  - 根目录保留 `ListenTogetherSessionManager.kt` 与少量兼容入口；新增协议逻辑
+    不应继续堆入根包。
+
+- `app/src/main/cpp/`
+  - Native 崩溃处理位于 `crash/`；USB 实现按 `usb/exclusive/`、`iso/`、
+    `pcm/`、`uac1/` 拆分，对应 Native 测试位于 `tests/usb/`。
 
 - `app/src/main/java/moe/ouom/neriplayer/core/lyricon/`
   - 词幕适配（Lyricon Provider）与 SuperLyric 输出，
@@ -281,6 +312,8 @@
 - `Bilibili` 已支持搜索、收藏夹和音频播放/下载，但不是完整视频发现流或评论区。
 - `YouTube Music` 已支持登录、首页/歌单浏览、详情、搜索、播放与下载。
 - 状态栏歌词依赖厂商私有能力，当前仅适用于部分支持设备。
+- `RuntimeShader` 流体/音频响应背景只在 Android 13+ 启用；封面模糊与高级模糊
+  只在 Android 12+ 启用，修改动效时必须保留低版本降级路径。
 - 歌词音译显示依赖平台返回的音译歌词或内嵌逐字歌词的 phonetic 字段；
   当前没有音译数据时，不应强行合成或展示空的第二行。
 - 歌词分享会通过 `FileProvider` 分享缓存目录中的歌词卡片文件；
@@ -312,6 +345,8 @@
   `ManagedDownloadStorage` 写入本地文件。
 - GitHub / WebDAV 同步只同步元数据，不同步音频缓存、下载文件、
   本地音频文件、Cookie 或播放 Token。
+- 本地歌单与同步歌单通过 `songOrderVersion` 区分顺序语义：`0` 是旧版顺序，
+  `1` 是当前展示顺序；读取旧数据时要兼容迁移，不能直接按新版顺序解释。
 - 平台 Cookie / 鉴权信息、GitHub Token、WebDAV 密码使用
   `Android Keystore + EncryptedSharedPreferences` 加密保存。
 - `DataStore` 只承担常规设置与非敏感状态，不承载平台登录凭据。
@@ -321,6 +356,8 @@
   专辑和封面；不要假设首次扫描结果已经是最终形态。
 - 一起听在 `shareAudioLinks=false` 时，房间快照和队列不应暴露 `streamUrl`；
   关闭该开关时还要立即清空已缓存直链，`REQUEST_LINK` 也应直接拒绝。
+- 一起听循环/随机模式通过 `PLAYBACK_MODE` / `REQUEST_PLAYBACK_MODE` 同步；
+  成员控制必须校验目标 stable track key，避免旧请求控制已经切换的歌曲。
 
 ---
 
@@ -348,8 +385,9 @@
 #### 3. 新增取流平台
 
 1. 参考 `bili/` 或 `youtube/` 设计客户端与播放仓库。
-2. 如需特殊 Header，扩展 `ConditionalHttpDataSourceFactory.kt`。
-3. 在 `PlayerManager` 的 URL 解析链路接入平台。
+2. 如需特殊 Header，扩展
+   `core/player/engine/datasource/ConditionalHttpDataSourceFactory.kt`。
+3. 在 `core/player/url/` 与对应 `resolver/` 的 URL 解析链路接入平台。
 4. 下载、歌词、封面和播放统计要保持边界清晰，
    不要把缓存和永久下载混成一套实现。
 5. 如需支持同步到网易云我喜欢的音乐，必须提供稳定的网易云歌曲 ID
@@ -357,8 +395,9 @@
 
 #### 4. 修改网易云自动换源
 
-1. 入口在 `PlayerManagerUrlExtensions.kt` 的网易云 URL 解析流程。
-2. 匹配与打分逻辑在 `PlayerManagerNeteaseAutoSourceSwitch.kt`。
+1. 入口在 `core/player/url/PlayerManagerUrlExtensions.kt` 的网易云 URL 解析流程。
+2. 匹配与打分逻辑在
+   `core/player/resolver/netease/PlayerManagerNeteaseAutoSourceSwitch.kt`。
 3. 自动换源只处理网易云无权限、无可用直链或试听片段兜底；
    不要把它扩展成跨平台聚合搜索。
 4. 调整匹配策略时要同时考虑歌名、歌手、分 P、时长误差和缓存 key 稳定性。
@@ -375,9 +414,10 @@
 
 #### 6. 修改 USB 独占播放
 
-1. 先阅读 `UsbExclusiveAudioSink.kt`、`core/player/usb/`、
-   `PlayerManagerStartupWatchdogExtensions.kt`、
-   `PlayerManagerLifecycleExtensions.kt` 和相关测试。
+1. 先阅读 `core/player/usb/sink/UsbExclusiveAudioSink.kt`、
+   `core/player/usb/transport/`、`core/player/usb/session/`、
+   `core/player/watchdog/PlayerManagerStartupWatchdogExtensions.kt`、
+   `core/player/lifecycle/PlayerManagerLifecycleExtensions.kt` 和相关测试。
 2. 当前 USB 独占实现只支持 **UAC1.0**；如要扩到 UAC2.0/更复杂设备，
    需要把文档、能力边界、诊断和兼容性假设一起更新。
 3. 同时考虑设备选择、采样率/位深策略、前后台缓冲区、唤醒锁、
@@ -390,16 +430,18 @@
 
 1. 先理解 `SyncDataModels.kt` 与 `SyncDataSerializer.kt` 的兼容策略。
 2. 同步对象包含歌单、收藏歌单、最近播放、删除记录和播放统计。
-3. 合并策略主要在 `GitHubSyncManager.kt`，WebDAV 复用同一套数据模型和多数合并逻辑。
-4. 不要破坏 `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt` 的延迟同步、
+3. `songOrderVersion=0` 表示旧版顺序，`songOrderVersion=1` 表示当前展示顺序；
+   序列化、合并和落回本地歌单时必须保留旧数据迁移。
+4. 合并策略主要在 `GitHubSyncManager.kt`，WebDAV 复用同一套数据模型和多数合并逻辑。
+5. 不要破坏 `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt` 的延迟同步、
    周期同步、validated network 检查和失败重试行为。
-5. 涉及敏感信息时统一走 `SecureTokenStorage.kt` 或 `WebDavStorage.kt`，
+6. 涉及敏感信息时统一走 `SecureTokenStorage.kt` 或 `WebDavStorage.kt`，
    不要放回 `DataStore` 或明文 JSON。
 
 #### 8. 修改下载存储
 
-1. 先阅读 `ManagedDownloadStorage.kt`、`ManagedDownloadNaming.kt`、
-   `DownloadTaskStore.kt`、`DownloadLifecyclePolicies.kt`
+1. 先阅读 `ManagedDownloadStorage.kt`、`naming/ManagedDownloadNaming.kt`、
+   `task/DownloadTaskStore.kt`、`policy/DownloadLifecyclePolicies.kt`
    和相关单元测试。
 2. 同时考虑默认应用目录、SAF 自定义目录、迁移、历史命名、元数据文件和 `.nomedia`。
 3. 下载任务先写入 `cache/download_staging/`，再提交到正式目录；
@@ -412,7 +454,8 @@
 
 #### 9. 修改歌词显示、分享或音译
 
-1. 播放页歌词主要在 `AdvancedLyricsView.kt`、`AppleMusicLyric.kt`
+1. 播放页歌词主要在 `ui/component/lyrics/AdvancedLyricsView.kt`、
+   `ui/component/lyrics/SyncedLyricsView.kt`
    和 `NowPlayingScreen.kt`。
 2. 全屏歌词页在 `LyricsScreen.kt`，歌词分享入口复用 `LyricShareSheet.kt`。
 3. 音译显示通过 `lyric_translation_use_phonetic` 设置控制，
@@ -459,9 +502,11 @@
    房间里已缓存的直链。
 5. `REQUEST_LINK` / `LINK_READY`、成员控制、房主离线恢复和版本门控更新
    要一起看，避免旧状态覆盖新状态。
-6. 房间号 6 位、昵称 1-24、队列上限 2000 和请求去重要视为协议边界，
+6. 循环/随机模式使用 `PLAYBACK_MODE` / `REQUEST_PLAYBACK_MODE`；成员请求与
+   `LINK_READY` 都要校验目标 stable track key，避免异步结果落到错误歌曲。
+7. 房间号 6 位、昵称 1-24、队列上限 2000 和请求去重要视为协议边界，
    不要只改 UI 校验而忘记服务端约束。
-7. 设置页支持自定义服务端地址和可用性测试，不要硬编码单一地址。
+8. 设置页支持自定义服务端地址和可用性测试，不要硬编码单一地址。
 
 ---
 
@@ -533,10 +578,12 @@ adb logcat | grep NeriPlayer
 - YouTube 登录、挑战解析、PoToken、取流、Range/Seek 策略与预取
 - 网易云歌词、本地 smoke test、自动换源和播放响应解析
 - USB 独占 keep-alive、启动看门狗、前后台恢复和音频焦点策略
-- 下载元数据、命名、目录迁移、`.nomedia`、删除语义和启动恢复
-- 本地扫描、元信息补全、封面回退和歌单原子写入
-- GitHub/WebDAV 同步序列化、删除策略、播放统计合并和上传重试
-- 一起听地址校验、版本门控更新、播放同步规划、Session 取消与协议校验
+- 下载元数据、命名、目录迁移、快照缓存、`.nomedia`、删除语义和启动恢复
+- 启动阶段、通知权限、播放服务启动、历史记录与安全模式恢复规划
+- 本地扫描、元信息补全、封面回退、系统歌单去重和歌单顺序稳定性
+- GitHub/WebDAV 同步序列化、旧歌单顺序迁移、删除策略、播放统计合并和上传重试
+- 一起听地址校验、版本门控、循环/随机模式、stable track key 目标校验、
+  播放同步规划、Session 控制/取消与协议兼容
 - 歌词视图、逐词时间、外部蓝牙歌词、播放音效和播放策略
 - 配置备份、设置生成、安全守卫、崩溃日志文件和安全模式相关逻辑
 

@@ -80,7 +80,7 @@ NeriPlayer covers a broad product surface. Protect these paths first:
   and remote format compatibility.
 - **Local data**: atomic playlist JSON writes, local metadata hydration,
   config import/export, encrypted auth storage, and DataStore settings.
-- **Lyrics and Now Playing UI**: `AdvancedLyricsView`, `AppleMusicLyric`,
+- **Lyrics and Now Playing UI**: `AdvancedLyricsView`, `SyncedLyricsView`,
   `LyricShareSheet`, phonetic lyric display, long-press lyric sharing, and the
   full-screen Lyrics page.
 - **Storage and cache UI**: `StorageUsageAnalyzer`, cache cleanup options,
@@ -191,6 +191,8 @@ Security reminders:
   - `MainActivity.kt`: the only external entry point. Handles safe mode, startup, disclaimer,
     onboarding, external audio imports, Listen Together deep links, and the top-level
     Compose host.
+  - Platform login activities live under `activity/auth/` and run in dedicated
+    secondary processes. `activity/sync/` stores Activity-side sync warning state.
   - `NeteaseWebLoginActivity.kt`, `NeteaseQrLoginActivity.kt`,
     `BiliWebLoginActivity.kt`, `BiliQrLoginActivity.kt`, and `YouTubeWebLoginActivity.kt`:
     internal platform sign-in pages.
@@ -199,12 +201,20 @@ Security reminders:
   - Top-level Compose app shell. Handles `NavHost`, dynamic bottom bar, `MiniPlayer`,
     `Now Playing` overlay, Debug routes, themes, cache cleanup, and playback service sync.
 
-- `app/src/main/java/moe/ouom/neriplayer/ui/component/`
-  - `AdvancedLyricsView.kt` and `AppleMusicLyric.kt`: advanced lyric layout,
+- `app/src/main/java/moe/ouom/neriplayer/ui/component/lyrics/`
+  - `AdvancedLyricsView.kt` and `SyncedLyricsView.kt`: advanced lyric layout,
     word/character highlighting, translation/phonetic display, click-to-seek,
     and long-press callbacks.
   - `LyricShareSheet.kt`: lyric-line selection, copy, song sharing, and lyric card generation.
+  - The old `AppleMusicLyric` name exists only as an `@Deprecated` wrapper in
+    `ui/component/LyricsCompatibility.kt`. New code should use `SyncedLyricsView`.
+
+- `app/src/main/java/moe/ouom/neriplayer/ui/component/playback/`
   - `NeriMiniPlayer.kt`: bottom Mini Player, play/pause, and horizontal swipe for previous/next.
+    Playback sound and sleep-timer sheets also live here.
+  - Same-named files in the `ui/component/` root are primarily legacy package
+    compatibility entry points. New implementations belong in responsibility-based
+    subpackages such as `lyrics/`, `playback/`, `download/`, and `navigation/`.
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/`
   - `LibraryScreen.kt`: top-level Library categories. Local content can switch
@@ -238,34 +248,48 @@ Security reminders:
 - `app/src/main/java/moe/ouom/neriplayer/core/player/`
   - `PlayerManager.kt`: unified Media3 ExoPlayer management, stream resolution, queue,
     cache, state recovery, retry, and playback policy.
-  - `AudioPlayerService.kt`: foreground playback service, media notification,
+  - `service/AudioPlayerService.kt`: foreground playback service, media notification,
     MediaSession, and media button handling.
-  - `AudioDownloadManager.kt`: resolves platform streams and saves downloads locally.
-  - `PlaybackEffectsController.kt`: speed, pitch, loudness enhancer, and equalizer.
-  - `PlaybackStatsTracker.kt`: playback stats tracking.
-  - `SleepTimerManager.kt`: sleep timer.
-  - `ConditionalHttpDataSourceFactory.kt`: adds platform-specific request headers.
-  - `PlayerManagerStartupWatchdogExtensions.kt` and `PlayerManagerLifecycleExtensions.kt`:
+  - `download/AudioDownloadManager.kt`: resolves platform streams and saves downloads;
+    `DownloadParallelism.kt` defines concurrency boundaries.
+  - `effects/PlaybackEffectsController.kt`: speed, pitch, loudness enhancer, and equalizer.
+  - `playback/PlaybackStatsTracker.kt`: playback stats tracking. Playback commands
+    and queue advancement live in `playback/PlayerManagerPlaybackExtensions.kt`.
+  - `timer/SleepTimerManager.kt`: sleep timer.
+  - `engine/datasource/ConditionalHttpDataSourceFactory.kt`: adds platform-specific request headers.
+  - `watchdog/PlayerManagerStartupWatchdogExtensions.kt` and
+    `lifecycle/PlayerManagerLifecycleExtensions.kt`:
     playback startup watchdogs, foreground/background health audits, failure recovery,
     and USB-exclusive fallback handling.
-  - `PlayerManagerNeteaseAutoSourceSwitch.kt`: Bilibili fallback for NetEase
+  - `resolver/netease/PlayerManagerNeteaseAutoSourceSwitch.kt`: Bilibili fallback for NetEase
     tracks that are restricted, have no playable URL, or only return previews.
-  - `YouTubeGoogleVideoRangeSupport.kt`, `YouTubeSeekRefreshPolicy.kt`, and
+  - `resolver/youtube/YouTubeGoogleVideoRangeSupport.kt`, `YouTubeSeekRefreshPolicy.kt`, and
     `prefetch/YouTubePrefetchRunner.kt`: YouTube Music playback compatibility policies.
   - `metadata/`: lyrics, metadata, and external Bluetooth lyrics handling.
-  - `usb/`: USB-exclusive native session control, runtime snapshots, wake locks,
-    write planning, and recovery controls. The current implementation only covers
-    **UAC1.0** devices.
+  - `model/`: player-specific state models. Cross-layer song models do not live here.
+  - `usb/`: split into `device/`, `path/`, `session/`, `sink/`, `system/`, and
+    `transport/` for USB-exclusive sessions, the native bridge, runtime snapshots,
+    and recovery controls. The current implementation only covers **UAC1.0** devices.
 
 - `app/src/main/java/moe/ouom/neriplayer/core/download/`
   - `GlobalDownloadManager.kt`: global download tasks and downloaded song list.
-  - `ManagedDownloadStorage.kt`: app directory / SAF directory, migration, snapshots, and `.nomedia`.
-  - `DownloadTaskStore.kt`: persisted download tasks, status, progress, and attempt IDs.
-  - `DownloadLifecyclePolicies.kt`: download recovery, cancellation cleanup, and fast-settle policies.
-  - `ManagedDownloadNaming.kt`: filename templates and legacy filename compatibility.
-  - `DownloadedAudioTagWriter.kt`: audio tag writing.
+  - `ManagedDownloadStorage.kt` is the facade for app-managed and SAF storage.
+    Implementation details are split across `storage/commit/`, `delete/`, `lookup/`,
+    `migration/`, `recovery/`, `snapshot/`, `tree/`, and `working/`.
+  - `task/DownloadTaskStore.kt`: persisted download tasks, status, progress, and attempt IDs.
+  - `policy/DownloadLifecyclePolicies.kt`: recovery, cancellation cleanup, and fast-settle policies.
+  - `naming/ManagedDownloadNaming.kt`: filename templates and legacy filename compatibility.
+  - `metadata/DownloadedAudioTagWriter.kt`: audio tag writing; `catalog/` owns
+    downloaded-song catalog models.
+
+- `app/src/main/java/moe/ouom/neriplayer/core/startup/`
+  - Startup stages and decisions are split across `app/`, `crash/`, `download/`,
+    `logging/`, `permission/`, `player/`, `safemode/`, `sync/`, and `theme/`.
+    `MainActivity` coordinates these components with the UI lifecycle.
 
 - `app/src/main/java/moe/ouom/neriplayer/data/`
+  - `model/`: shared `SongItem`, `SongIdentity`, and media model extensions used
+    by playback, playlists, downloads, sync, Listen Together, and UI.
   - `settings/`: `DataStore` settings, KSP schema, bootstrap snapshot, theme snapshot,
     and playback preference snapshot.
   - `auth/`: NetEase, Bilibili, and YouTube cookie/auth storage and validation.
@@ -284,8 +308,17 @@ Security reminders:
   - `sync/webdav/`: WebDAV sync, remote config, Worker, and WebDAV API.
 
 - `app/src/main/java/moe/ouom/neriplayer/listentogether/`
-  - Listen Together protocol, WebSocket client, session management, invites, sync planning,
-    and server URL validation.
+  - `protocol/` defines room, event, and transport models; `network/` owns
+    HTTP/WebSocket and reconnect behavior; `playback/` owns queues, authoritative
+    stream links, and position sync. `control/`, `session/`, `invite/`, `mapping/`,
+    and `validation/` own their corresponding policies and boundaries.
+  - The root retains `ListenTogetherSessionManager.kt` and a few compatibility
+    entry points. New protocol logic should not keep accumulating in the root package.
+
+- `app/src/main/cpp/`
+  - Native crash handling lives under `crash/`. USB code is split across
+    `usb/exclusive/`, `iso/`, `pcm/`, and `uac1/`, with matching native tests
+    under `tests/usb/`.
 
 - `app/src/main/java/moe/ouom/neriplayer/core/lyricon/`
   - Lyricon integration and SuperLyric output for current song, playback state, position,
@@ -310,6 +343,9 @@ Security reminders:
 - `YouTube Music` supports login, home/playlist browsing, details, search,
   playback, and downloads.
 - Status-bar lyrics depend on private vendor support and only work on select devices.
+- The RuntimeShader fluid/audio-reactive background is enabled only on Android 13+.
+  Cover blur and advanced blur require Android 12+, so animation changes must
+  preserve the fallback path for older versions.
 - Phonetic lyric display depends on phonetic lyrics returned by the platform or
   phonetic fields embedded in word-level lyrics. When no phonetic data exists,
   do not synthesize it or render an empty second line.
@@ -348,6 +384,9 @@ Security reminders:
   `ManagedDownloadStorage`.
 - GitHub / WebDAV sync only sync metadata. Audio caches, downloaded files, local
   media files, cookies, and playback tokens are not synced.
+- Local and synced playlists use `songOrderVersion` to distinguish order semantics:
+  `0` is the legacy order and `1` is the current display order. Older data must
+  be migrated compatibly instead of being interpreted directly as the new order.
 - Platform cookies/auth data, GitHub tokens, and WebDAV passwords are encrypted
   with `Android Keystore + EncryptedSharedPreferences`.
 - `DataStore` stores regular settings and non-sensitive state, not platform login credentials.
@@ -360,6 +399,9 @@ Security reminders:
 - When `shareAudioLinks=false` in Listen Together, room snapshots and queue items
   must not expose `streamUrl`. Turning the setting off must also clear any cached
   shared links immediately, and `REQUEST_LINK` must be rejected.
+- Listen Together repeat/shuffle changes use `PLAYBACK_MODE` /
+  `REQUEST_PLAYBACK_MODE`. Member controls must validate the target stable track
+  key so stale requests cannot control a track that has already changed.
 
 ---
 
@@ -387,8 +429,9 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 #### 3. Add a streaming platform
 
 1. Use `bili/` or `youtube/` as a reference for client and playback repository design.
-2. Extend `ConditionalHttpDataSourceFactory.kt` if special headers are needed.
-3. Add the platform to the `PlayerManager` URL resolution path.
+2. Extend `core/player/engine/datasource/ConditionalHttpDataSourceFactory.kt`
+   if special headers are needed.
+3. Add the platform under `core/player/url/` and its matching `resolver/` path.
 4. Keep downloads, lyrics, covers, and stats separated from transient streaming cache.
 5. If NetEase Liked Songs sync should support the new source, provide stable
    NetEase song IDs or a verified mapping and reuse candidate validation in
@@ -396,8 +439,10 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 
 #### 4. Modify NetEase auto source switching
 
-1. The entry point is the NetEase URL resolution flow in `PlayerManagerUrlExtensions.kt`.
-2. Matching and scoring live in `PlayerManagerNeteaseAutoSourceSwitch.kt`.
+1. The entry point is the NetEase URL resolution flow in
+   `core/player/url/PlayerManagerUrlExtensions.kt`.
+2. Matching and scoring live in
+   `core/player/resolver/netease/PlayerManagerNeteaseAutoSourceSwitch.kt`.
 3. Auto source switching is only a fallback for restricted, missing-URL, or
    preview-only NetEase playback. Do not turn it into cross-platform aggregate search.
 4. When changing matching, consider title, artist, video pages, duration
@@ -417,9 +462,10 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 
 #### 6. Modify USB exclusive playback
 
-1. Read `UsbExclusiveAudioSink.kt`, `core/player/usb/`,
-   `PlayerManagerStartupWatchdogExtensions.kt`,
-   `PlayerManagerLifecycleExtensions.kt`, and the related tests first.
+1. Read `core/player/usb/sink/UsbExclusiveAudioSink.kt`,
+   `core/player/usb/transport/`, `core/player/usb/session/`,
+   `core/player/watchdog/PlayerManagerStartupWatchdogExtensions.kt`,
+   `core/player/lifecycle/PlayerManagerLifecycleExtensions.kt`, and related tests first.
 2. The current USB-exclusive implementation supports **UAC1.0** only. If support
    is expanded to UAC2.0 or more complex devices, update the docs, boundaries,
    diagnostics, and compatibility assumptions together.
@@ -436,17 +482,21 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 1. Understand `SyncDataModels.kt` and `SyncDataSerializer.kt` compatibility first.
 2. Sync data includes playlists, favorite playlists, recent plays, deletion records,
    and playback stats.
-3. Most merge logic lives in `GitHubSyncManager.kt`; WebDAV reuses the same data
+3. `songOrderVersion=0` represents legacy order, while `songOrderVersion=1`
+   represents current display order. Serialization, merging, and local restoration
+   must preserve the migration path for older data.
+4. Most merge logic lives in `GitHubSyncManager.kt`; WebDAV reuses the same data
    model and much of the merge behavior.
-4. Do not break the delayed sync, periodic sync, validated-network checks, or retry
+5. Do not break the delayed sync, periodic sync, validated-network checks, or retry
    behavior in `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt`.
-5. Sensitive data must go through `SecureTokenStorage.kt` or `WebDavStorage.kt`.
+6. Sensitive data must go through `SecureTokenStorage.kt` or `WebDavStorage.kt`.
    Do not store it in `DataStore` or plaintext JSON.
 
 #### 8. Modify download storage
 
-1. Read `ManagedDownloadStorage.kt`, `ManagedDownloadNaming.kt`,
-   `DownloadTaskStore.kt`, `DownloadLifecyclePolicies.kt`, and related unit tests first.
+1. Read `ManagedDownloadStorage.kt`, `naming/ManagedDownloadNaming.kt`,
+   `task/DownloadTaskStore.kt`, `policy/DownloadLifecyclePolicies.kt`, and related
+   unit tests first.
 2. Consider app-managed storage, SAF custom directories, migration, legacy names,
    metadata files, and `.nomedia`.
 3. Download tasks write to `cache/download_staging/` before being committed to
@@ -460,8 +510,8 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 
 #### 9. Modify lyrics display, sharing, or phonetics
 
-1. Now Playing lyrics mainly live in `AdvancedLyricsView.kt`, `AppleMusicLyric.kt`,
-   and `NowPlayingScreen.kt`.
+1. Now Playing lyrics mainly live in `ui/component/lyrics/AdvancedLyricsView.kt`,
+   `ui/component/lyrics/SyncedLyricsView.kt`, and `NowPlayingScreen.kt`.
 2. The full-screen Lyrics page lives in `LyricsScreen.kt`, and lyric sharing reuses
    `LyricShareSheet.kt`.
 3. Phonetic display is controlled by the `lyric_translation_use_phonetic` setting,
@@ -515,9 +565,12 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 5. `REQUEST_LINK` / `LINK_READY`, member control, controller-offline recovery,
    and version-gated updates must be reviewed together so older state cannot
    overwrite newer room state.
-6. Treat the 6-character room ID, 1-24 character nickname, queue limit 2000,
+6. Repeat/shuffle mode uses `PLAYBACK_MODE` / `REQUEST_PLAYBACK_MODE`. Member
+   requests and `LINK_READY` must validate the target stable track key so async
+   results cannot land on the wrong track.
+7. Treat the 6-character room ID, 1-24 character nickname, queue limit 2000,
    and request de-duplication as protocol boundaries, not just UI validation details.
-7. Settings support custom server URLs and availability tests. Do not hard-code a single server.
+8. Settings support custom server URLs and availability tests. Do not hard-code a single server.
 
 ---
 
@@ -591,10 +644,12 @@ Existing focused tests cover areas such as:
 - YouTube login, challenge parsing, PoToken, playback, Range/Seek policy, and prefetching
 - NetEase lyrics, local smoke tests, auto source switching, and playback response parsing
 - USB-exclusive keep-alive, startup watchdogs, foreground/background recovery, and audio-focus policies
-- Download metadata, naming, directory migration, `.nomedia`, delete semantics, and startup recovery
-- Local scanning, metadata hydration, cover fallback resolution, and atomic playlist writes
-- GitHub/WebDAV sync serialization, deletion policy, playback-stat merging, and upload retry
-- Listen Together base URL validation, version-gated updates, playback sync planning, session cancellation, and protocol validation
+- Download metadata, naming, directory migration, snapshot caches, `.nomedia`, delete semantics, and startup recovery
+- Startup stages, notification permission, playback-service startup, history recording, and safe-mode recovery planning
+- Local scanning, metadata hydration, cover fallback resolution, system-playlist de-duplication, and stable playlist order
+- GitHub/WebDAV sync serialization, legacy playlist-order migration, deletion policy, playback-stat merging, and upload retry
+- Listen Together base URL validation, version gating, repeat/shuffle modes,
+  stable-track-key target validation, playback sync planning, session control/cancellation, and protocol compatibility
 - Lyrics UI, word timing, external Bluetooth lyrics, playback sound controls, and playback policies
 - Config backup, generated settings, security guards, crash log files, and safe-mode behavior
 
