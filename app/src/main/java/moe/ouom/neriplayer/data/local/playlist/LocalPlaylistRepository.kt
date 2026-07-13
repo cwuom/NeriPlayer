@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.data.local.playlist
 import android.annotation.SuppressLint
 import android.content.Context
 import com.google.gson.Gson
+import com.google.gson.JsonParser
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -62,21 +63,18 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
 import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.io.IOException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.util.Collections
 import java.util.Locale
 
 class LocalPlaylistRepository private constructor(
     private val context: Context,
-    private val file: File = File(context.filesDir, "local_playlists.json"),
+    file: File = File(context.filesDir, "local_playlists.json"),
     private val normalizePlaylists: (List<LocalPlaylist>) -> List<LocalPlaylist> = { playlists ->
         SystemLocalPlaylists.normalize(playlists, context)
     },
-    private val autoSyncEnabled: Boolean = true
+    private val autoSyncEnabled: Boolean = true,
+    private val storage: LocalPlaylistStorage = LocalPlaylistFileStorage(file, context.filesDir)
 ) {
     private val gson = Gson()
     private val playlistCommitMutex = Mutex()
@@ -129,30 +127,137 @@ class LocalPlaylistRepository private constructor(
     val playlists: StateFlow<List<LocalPlaylist>> = _playlists
     private val _playlistCount = MutableStateFlow(0)
     val playlistCount: StateFlow<Int> = _playlistCount
+    private var preserveBackupOnNextWrite = false
+    private var corruptPrimaryNeedsQuarantine = false
+
+    private data class PlaylistLoadResult(
+        val playlists: List<LocalPlaylist>,
+        val allowMigrationWrite: Boolean
+    )
 
     init {
         loadFromDisk()
     }
 
     private fun loadFromDisk() {
-        val loaded = try {
-            if (!file.exists()) {
-                emptyList()
-            } else {
-                val type = object : TypeToken<List<LocalPlaylist>>() {}.type
-                gson.fromJson<List<LocalPlaylist>>(file.readText(), type).orEmpty()
+        val loadResult = readStoredPlaylists()
+        val normalized = normalizePlaylistOrder(loadResult.playlists)
+        if (normalized != loadResult.playlists && loadResult.allowMigrationWrite) {
+            runCatching {
+                persistToDisk(normalized)
+            }.onFailure { error ->
+                NPLogger.e("LocalPlaylistRepo", "Failed to persist normalized playlists", error)
             }
-        } catch (e: Exception) {
-            NPLogger.e("LocalPlaylistRepo", "Failed to read playlists", e)
-            emptyList()
         }
-
-        val normalized = normalizePlaylistOrder(loaded)
         _playlists.value = normalized
         _playlistCount.value = normalized.size
-        if (normalized != loaded) {
-            saveToDisk(normalized, triggerSync = false)
+    }
+
+    private fun readStoredPlaylists(): PlaylistLoadResult {
+        val primaryRead = runCatching(storage::readPrimary)
+        val primaryText = primaryRead.getOrNull()
+        if (primaryRead.isSuccess && primaryText == null) {
+            return recoverFromBackup(primaryWasCorrupt = false)
+                ?: PlaylistLoadResult(emptyList(), allowMigrationWrite = true)
         }
+
+        if (primaryRead.isFailure) {
+            NPLogger.e(
+                "LocalPlaylistRepo",
+                "Failed to read primary playlist storage",
+                primaryRead.exceptionOrNull()
+            )
+            preserveBackupOnNextWrite = true
+            return recoverFromBackup(primaryWasCorrupt = false)
+                ?: PlaylistLoadResult(emptyList(), allowMigrationWrite = false)
+        }
+
+        val primaryParsed = parsePlaylists(primaryText.orEmpty(), "primary")
+        if (primaryParsed != null) {
+            return PlaylistLoadResult(primaryParsed, allowMigrationWrite = true)
+        }
+
+        return recoverFromBackup(primaryWasCorrupt = true)
+            ?: PlaylistLoadResult(emptyList(), allowMigrationWrite = false)
+    }
+
+    private fun recoverFromBackup(primaryWasCorrupt: Boolean): PlaylistLoadResult? {
+        val backupRead = runCatching(storage::readBackup)
+        val backupText = backupRead.getOrNull()
+        if (backupRead.isFailure) {
+            NPLogger.e(
+                "LocalPlaylistRepo",
+                "Failed to read playlist backup",
+                backupRead.exceptionOrNull()
+            )
+        }
+
+        val backupParsed = backupText?.let { parsePlaylists(it, "backup") }
+        val primaryReadyForRestore = if (primaryWasCorrupt) {
+            corruptPrimaryNeedsQuarantine = true
+            quarantineCorruptPrimary()
+        } else {
+            true
+        }
+        if (backupParsed == null) {
+            return null
+        }
+
+        val repairSucceeded = primaryReadyForRestore &&
+            runCatching {
+                storage.commit(backupText, rotateBackup = false)
+            }.onFailure { error ->
+                preserveBackupOnNextWrite = true
+                NPLogger.e("LocalPlaylistRepo", "Failed to restore playlist backup", error)
+            }.isSuccess
+        return PlaylistLoadResult(
+            playlists = backupParsed,
+            allowMigrationWrite = repairSucceeded
+        )
+    }
+
+    private fun quarantineCorruptPrimary(): Boolean {
+        return runCatching(storage::quarantinePrimary)
+            .onSuccess { quarantine ->
+                corruptPrimaryNeedsQuarantine = false
+                if (quarantine != null) {
+                    NPLogger.w(
+                        "LocalPlaylistRepo",
+                        "Quarantined corrupt playlist storage: ${quarantine.name}"
+                    )
+                }
+            }
+            .onFailure { error ->
+                preserveBackupOnNextWrite = true
+                NPLogger.e("LocalPlaylistRepo", "Failed to quarantine corrupt playlists", error)
+            }
+            .isSuccess
+    }
+
+    private fun parsePlaylists(text: String, source: String): List<LocalPlaylist>? {
+        return runCatching {
+            val root = JsonParser.parseString(text)
+            require(root.isJsonArray) { "Playlist $source root must be an array" }
+            root.asJsonArray.forEach { element ->
+                require(element.isJsonObject) { "Playlist $source contains a non-object entry" }
+                val playlistObject = element.asJsonObject
+                require(playlistObject.get("id")?.isJsonPrimitive == true) {
+                    "Playlist $source entry is missing id"
+                }
+                require(playlistObject.get("name")?.isJsonPrimitive == true) {
+                    "Playlist $source entry is missing name"
+                }
+                require(playlistObject.get("songs")?.isJsonArray == true) {
+                    "Playlist $source entry is missing songs"
+                }
+            }
+            val type = object : TypeToken<List<LocalPlaylist>>() {}.type
+            requireNotNull(gson.fromJson<List<LocalPlaylist>>(text, type)) {
+                "Playlist $source contains JSON null"
+            }
+        }.onFailure { error ->
+            NPLogger.e("LocalPlaylistRepo", "Failed to parse $source playlists", error)
+        }.getOrNull()
     }
 
     private fun migratePlaylistSongOrder(playlists: List<LocalPlaylist>): List<LocalPlaylist> {
@@ -215,66 +320,15 @@ class LocalPlaylistRepository private constructor(
             .mapTo(mutableListOf()) { it.value }
     }
 
-    private fun saveToDisk(
-        playlists: List<LocalPlaylist> = _playlists.value,
-        triggerSync: Boolean = true
-    ) {
-        val writeSucceeded = runCatching {
-            val json = gson.toJson(playlists)
-            writeTextAtomically(json)
-        }.onFailure {
-            NPLogger.e("LocalPlaylistRepo", "Failed to write playlists", it)
-        }.isSuccess
-
-        if (writeSucceeded && triggerSync && autoSyncEnabled) {
-            triggerAutoSync()
+    private fun persistToDisk(playlists: List<LocalPlaylist>) {
+        if (corruptPrimaryNeedsQuarantine && !quarantineCorruptPrimary()) {
+            throw IOException("Corrupt playlist storage could not be quarantined")
         }
-    }
-
-    private fun writeTextAtomically(text: String) {
-        val parent = file.parentFile ?: context.filesDir
-        if (!parent.exists() && !parent.mkdirs()) {
-            throw IOException("Failed to create playlist storage directory: ${parent.absolutePath}")
-        }
-
-        val tmp = File.createTempFile("${file.name}.", ".tmp", parent)
-        try {
-            FileOutputStream(tmp).use { output ->
-                output.write(text.toByteArray(Charsets.UTF_8))
-                output.fd.sync()
-            }
-            moveIntoPlace(tmp, file)
-            fsyncDirectory(parent)
-        } catch (e: Exception) {
-            tmp.delete()
-            throw e
-        }
-    }
-
-    private fun moveIntoPlace(source: File, target: File) {
-        val sourcePath = source.toPath()
-        val targetPath = target.toPath()
-        try {
-            Files.move(
-                sourcePath,
-                targetPath,
-                StandardCopyOption.REPLACE_EXISTING,
-                StandardCopyOption.ATOMIC_MOVE
-            )
-            return
-        } catch (_: Exception) {
-            // 有些文件系统不支持 ATOMIC_MOVE，普通同目录替换仍然不会截断正式文件
-        }
-
-        Files.move(sourcePath, targetPath, StandardCopyOption.REPLACE_EXISTING)
-    }
-
-    private fun fsyncDirectory(directory: File) {
-        runCatching {
-            FileInputStream(directory).use { input ->
-                input.fd.sync()
-            }
-        }
+        storage.commit(
+            text = gson.toJson(playlists),
+            rotateBackup = !preserveBackupOnNextWrite
+        )
+        preserveBackupOnNextWrite = false
     }
 
     private suspend fun <T> commitPlaylistMutation(block: () -> T): T {
@@ -288,9 +342,12 @@ class LocalPlaylistRepository private constructor(
         if (normalized == _playlists.value) {
             return
         }
+        persistToDisk(normalized)
         _playlists.value = normalized
         _playlistCount.value = normalized.size
-        saveToDisk(normalized, triggerSync)
+        if (triggerSync && autoSyncEnabled) {
+            triggerAutoSync()
+        }
     }
 
     private fun triggerAutoSync() {
@@ -2122,13 +2179,15 @@ class LocalPlaylistRepository private constructor(
             context: Context,
             file: File,
             normalizePlaylists: (List<LocalPlaylist>) -> List<LocalPlaylist> = { it },
-            autoSyncEnabled: Boolean = false
+            autoSyncEnabled: Boolean = false,
+            storage: LocalPlaylistStorage = LocalPlaylistFileStorage(file, context.filesDir)
         ): LocalPlaylistRepository {
             return LocalPlaylistRepository(
                 context = context,
                 file = file,
                 normalizePlaylists = normalizePlaylists,
-                autoSyncEnabled = autoSyncEnabled
+                autoSyncEnabled = autoSyncEnabled,
+                storage = storage
             )
         }
     }

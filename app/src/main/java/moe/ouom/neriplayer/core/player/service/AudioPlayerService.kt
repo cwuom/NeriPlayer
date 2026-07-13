@@ -546,8 +546,8 @@ class AudioPlayerService : Service() {
             return
         }
 
-        UsbExclusiveWakeLock.acquire(this, "service_keepalive")
         UsbExclusiveSessionController.refresh(this)
+        UsbExclusiveSessionController.maintainWakeLock(this, "service_keepalive")
         updatePlaybackState(force = true)
         updateNotification()
 

@@ -2646,15 +2646,17 @@ Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nati
     }
     const neri::usb::PcmPipelineSnapshot before = holder->pcmPipeline.snapshot();
     holder->playbackEnabled.store(false);
+    const bool stopped = stopStreamingInternal(holder.get());
     LOGI(
-        "nativePausePlayerPcm ok: handle=%lld running=%d level=%zu/%zu queued=%lld",
+        "nativePausePlayerPcm %s: handle=%lld running=%d level=%zu/%zu queued=%lld",
+        stopped ? "ok" : "failed",
         static_cast<long long>(handleValue),
         holder->running.load() ? 1 : 0,
         before.levelBytes,
         before.capacityBytes,
         static_cast<long long>(holder->pcmPipeline.queuedFrames())
     );
-    return JNI_TRUE;
+    return stopped ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C"

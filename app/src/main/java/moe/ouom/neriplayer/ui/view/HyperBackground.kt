@@ -60,6 +60,9 @@ private const val DynamicBackgroundFallbackColor = 0xFF808080.toInt()
 private const val StrongHueConflictDegrees = 105f
 private const val PaletteCoverDecodeSizePx = 320
 private const val DynamicBackgroundPaletteTransitionDurationMs = 520L
+private const val DynamicBackgroundSteadyFrameIntervalNs = 1_000_000_000L / 45L
+private const val DynamicBackgroundBoostFrameIntervalNs = 1_000_000_000L / 60L
+private const val DynamicBackgroundBoostDurationNs = 900_000_000L
 
 private enum class DynamicBackgroundColorRole {
     Base,
@@ -149,6 +152,7 @@ fun HyperBackground(
     var activeShaderPalette by remember(painter, currentIsDark) {
         mutableStateOf<DynamicBackgroundShaderPalette?>(null)
     }
+    var boostedAnimationUntilNs by remember { mutableStateOf(0L) }
 
     AndroidView(
         modifier = modifier,
@@ -177,8 +181,10 @@ fun HyperBackground(
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
+    val latestBoostedAnimationUntilNs by rememberUpdatedState(boostedAnimationUntilNs)
 
     LaunchedEffect(coverUrl, refreshKey, offlineMode, currentIsDark) {
+        boostedAnimationUntilNs = System.nanoTime() + DynamicBackgroundBoostDurationNs
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || coverUrl.isNullOrBlank()) {
             return@LaunchedEffect
         }
@@ -214,12 +220,14 @@ fun HyperBackground(
         }
     }
 
-    LaunchedEffect(painter, shaderInitialized, targetShaderPalette) {
+    LaunchedEffect(painter, hostView, shaderInitialized, targetShaderPalette) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return@LaunchedEffect
         val target = targetShaderPalette ?: return@LaunchedEffect
+        val view = hostView ?: return@LaunchedEffect
         if (painter == null || !shaderInitialized) return@LaunchedEffect
         val applied = animateDynamicBackgroundPalette(
             painter = painter,
+            view = view,
             from = activeShaderPalette,
             to = target
         )
@@ -235,6 +243,7 @@ fun HyperBackground(
             try {
                 painter.showRuntimeShader(context, v, null, currentIsDark)
                 v.setRenderEffect(painter.renderEffect)
+                v.postInvalidateOnAnimation()
                 shaderInitialized = true
             } catch (_: Throwable) { return@LaunchedEffect }
         }
@@ -243,24 +252,44 @@ fun HyperBackground(
             lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
                 var currentLevel = 0f
                 var currentBeat = 0f
+                var pendingBeatPeak = 0f
                 var startNs = 0L
+                var nextRenderNs = Long.MIN_VALUE
                 var smoothLevel = 0f
                 var smoothBeat = 0f
                 val levelJob = launch {
                     PlayerManager.audioLevelFlow.collect { currentLevel = it }
                 }
                 val beatJob = launch {
-                    PlayerManager.beatImpulseFlow.collect { currentBeat = it }
+                    PlayerManager.beatImpulseFlow.collect { beat ->
+                        val boundedBeat = beat.coerceIn(0f, 1f)
+                        currentBeat = boundedBeat
+                        pendingBeatPeak = maxOf(pendingBeatPeak, boundedBeat)
+                    }
                 }
                 try {
                     while (isActive) {
                         withFrameNanos { t ->
+                            val frameIntervalNs = if (t < latestBoostedAnimationUntilNs) {
+                                DynamicBackgroundBoostFrameIntervalNs
+                            } else {
+                                DynamicBackgroundSteadyFrameIntervalNs
+                            }
+                            if (nextRenderNs != Long.MIN_VALUE && t < nextRenderNs) {
+                                return@withFrameNanos
+                            }
+                            nextRenderNs = nextDynamicBackgroundRenderNs(
+                                frameNs = t,
+                                currentNextNs = nextRenderNs,
+                                intervalNs = frameIntervalNs
+                            )
                             if (startNs == 0L) startNs = t
                             val seconds = ((t - startNs) / 1_000_000_000.0).toFloat()
                             painter.setAnimTime(seconds % 62.831852f)
 
                             val targetLevel = currentLevel.coerceIn(0f, 1f)
-                            val targetBeat = (currentBeat * 0.94f).coerceIn(0f, 1f)
+                            val targetBeat = (maxOf(currentBeat, pendingBeatPeak) * 0.94f).coerceIn(0f, 1f)
+                            pendingBeatPeak = 0f
                             val levelRate = if (targetLevel > smoothLevel) 0.12f else 0.045f
                             val beatRate = if (targetBeat > smoothBeat) 0.46f else 0.12f
                             smoothLevel += (targetLevel - smoothLevel) * levelRate
@@ -271,6 +300,7 @@ fun HyperBackground(
                             if (w > 0 && h > 0) painter.setResolution(w.toFloat(), h.toFloat())
                             painter.updateMaterials()
                             v.setRenderEffect(painter.renderEffect)
+                            v.postInvalidateOnAnimation()
                         }
                     }
                 } finally {
@@ -306,6 +336,7 @@ private fun buildDynamicBackgroundShaderPalette(
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
 private suspend fun animateDynamicBackgroundPalette(
     painter: BgEffectPainter,
+    view: View,
     from: DynamicBackgroundShaderPalette?,
     to: DynamicBackgroundShaderPalette
 ): DynamicBackgroundShaderPalette {
@@ -313,11 +344,14 @@ private suspend fun animateDynamicBackgroundPalette(
         painter.setColors(to.colors)
         painter.setLightOffset(to.lightOffset)
         painter.setSaturateOffset(to.saturateOffset)
+        view.postInvalidateOnAnimation()
         return to
     }
 
     val startColors = from.colors.copyOf()
+    val interpolatedColors = FloatArray(startColors.size)
     var startNanos = 0L
+    var lastUpdateNanos = Long.MIN_VALUE
     var finished = false
     while (!finished) {
         withFrameNanos { frameNanos ->
@@ -326,17 +360,44 @@ private suspend fun animateDynamicBackgroundPalette(
             }
             val rawFraction = ((frameNanos - startNanos).toDouble() /
                 (DynamicBackgroundPaletteTransitionDurationMs * 1_000_000.0)).toFloat()
+            if (
+                rawFraction < 1f &&
+                lastUpdateNanos != Long.MIN_VALUE &&
+                frameNanos - lastUpdateNanos < DynamicBackgroundBoostFrameIntervalNs
+            ) {
+                return@withFrameNanos
+            }
+            lastUpdateNanos = frameNanos
             val fraction = smoothStep01(rawFraction.coerceIn(0f, 1f))
-            painter.setColors(lerpFloatArray(startColors, to.colors, fraction))
+            lerpFloatArrayInto(startColors, to.colors, fraction, interpolatedColors)
+            painter.setColors(interpolatedColors)
             painter.setLightOffset(lerpFloat(from.lightOffset, to.lightOffset, fraction))
             painter.setSaturateOffset(lerpFloat(from.saturateOffset, to.saturateOffset, fraction))
+            view.postInvalidateOnAnimation()
             finished = rawFraction >= 1f
         }
     }
     painter.setColors(to.colors)
     painter.setLightOffset(to.lightOffset)
     painter.setSaturateOffset(to.saturateOffset)
+    view.postInvalidateOnAnimation()
     return to
+}
+
+private fun nextDynamicBackgroundRenderNs(
+    frameNs: Long,
+    currentNextNs: Long,
+    intervalNs: Long
+): Long {
+    if (currentNextNs == Long.MIN_VALUE || frameNs - currentNextNs > intervalNs * 2L) {
+        return frameNs + intervalNs
+    }
+
+    var nextNs = currentNextNs
+    while (nextNs <= frameNs) {
+        nextNs += intervalNs
+    }
+    return nextNs
 }
 
 private fun buildDynamicBackgroundPalette(
@@ -539,12 +600,16 @@ private fun lerpFloat(start: Float, stop: Float, fraction: Float): Float {
     return start + (stop - start) * fraction.coerceIn(0f, 1f)
 }
 
-private fun lerpFloatArray(start: FloatArray, stop: FloatArray, fraction: Float): FloatArray {
-    val result = FloatArray(start.size)
+private fun lerpFloatArrayInto(
+    start: FloatArray,
+    stop: FloatArray,
+    fraction: Float,
+    result: FloatArray
+) {
+    require(start.size == stop.size && start.size == result.size)
     for (index in start.indices) {
         result[index] = lerpFloat(start[index], stop[index], fraction)
     }
-    return result
 }
 
 private fun smoothStep01(value: Float): Float {

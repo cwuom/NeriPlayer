@@ -675,7 +675,6 @@ object UsbExclusiveSessionController {
                 }
                 activeConnection = connection
                 UsbExclusiveNativeBridge.setPlayerFocusMuted(handle, focusSuppressed.get())
-                UsbExclusiveWakeLock.acquire(appContext, "player_pcm_opened")
                 lastPlayerPcmNativeOpenAtMs = SystemClock.elapsedRealtime()
                 playerPcmOpenBlockedUntilMs = 0L
                 playerPcmOpenBlockReason = ""
@@ -978,6 +977,7 @@ object UsbExclusiveSessionController {
                 )
                 return false
             }
+            UsbExclusiveWakeLock.acquire(PlayerManager.application, "player_pcm_start")
             val started = UsbExclusiveNativeBridge.playPlayerPcm(handle)
             val report = UsbExclusiveNativeBridge.runtimeReport(handle)
             rememberPlayerPcmRuntimeReport(handle, report)
@@ -991,6 +991,7 @@ object UsbExclusiveSessionController {
             if (started) {
                 NPLogger.d(TAG, "playPlayerPcm(): started handle=$handle report=$report")
             } else {
+                UsbExclusiveWakeLock.release("player_pcm_start_failed")
                 NPLogger.w(TAG, "playPlayerPcm(): failed handle=$handle report=$report")
             }
             return started
@@ -1014,6 +1015,7 @@ object UsbExclusiveSessionController {
                 queuedAudioFrames = UsbExclusiveNativeBridge.queuedPlayerFrames(handle)
             ).withRuntimeReport(report)
             if (paused) {
+                UsbExclusiveWakeLock.release("player_pcm_paused")
                 NPLogger.d(TAG, "pausePlayerPcm(): paused handle=$handle report=$report")
             } else {
                 NPLogger.w(TAG, "pausePlayerPcm(): failed handle=$handle report=$report")
@@ -1065,6 +1067,21 @@ object UsbExclusiveSessionController {
         val current = _state.value
         if (current.handle != handle || current.source != "player_pcm") return 0L
         return UsbExclusiveNativeBridge.queuedPlayerFrames(handle)
+    }
+
+    internal fun maintainWakeLock(context: Context, reason: String) {
+        val current = _state.value
+        if (
+            shouldHoldUsbExclusiveWakeLock(
+                streaming = current.streaming,
+                transitioning = current.transitioning || transitionInFlight.get(),
+                nativeCloseInFlightCount = nativeCloseInFlight.get()
+            )
+        ) {
+            UsbExclusiveWakeLock.acquire(context, reason)
+        } else {
+            UsbExclusiveWakeLock.release("$reason:idle")
+        }
     }
 
     fun closePlayerPcm(handle: Long) {

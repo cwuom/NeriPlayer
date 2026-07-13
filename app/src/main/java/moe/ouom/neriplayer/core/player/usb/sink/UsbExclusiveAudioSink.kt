@@ -1236,11 +1236,20 @@ internal class UsbExclusiveAudioSink(
         if (!usingNative || !playing || !nativeHasQueuedPcm) return true
         if (nativeTransportStarted) return true
         val queuedFrames = UsbExclusiveSessionController.queuedPlayerFrames(nativeHandle)
-        val outputSampleRate = UsbExclusiveSessionController.state.value.outputSampleRate
+        val nativeState = UsbExclusiveSessionController.state.value
+        val outputSampleRate = nativeState.outputSampleRate
             .takeIf { it > 0 }
             ?: sampleRate
         val requiredPrerollFrames = outputSampleRate * NATIVE_START_PREROLL_MS / 1_000L
-        if (!allowShortPreroll && queuedFrames < requiredPrerollFrames) {
+        if (
+            !shouldStartUsbExclusiveNativeTransport(
+                hasQueuedPcm = nativeHasQueuedPcm,
+                queuedFrames = queuedFrames,
+                requiredPrerollFrames = requiredPrerollFrames,
+                allowShortPreroll = allowShortPreroll,
+                resumingPausedTransport = nativeState.paused
+            )
+        ) {
             return true
         }
         val focusGranted = StartupAudioFocusController.acquireUsbExclusiveTransportFocus(

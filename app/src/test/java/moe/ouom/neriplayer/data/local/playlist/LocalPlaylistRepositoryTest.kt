@@ -13,12 +13,15 @@ import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
 import java.io.File
+import java.io.IOException
 
 class LocalPlaylistRepositoryTest {
 
@@ -241,6 +244,95 @@ class LocalPlaylistRepositoryTest {
         assertEquals(listOf("new", "second", "first"), playlist.songs.map { it.name })
     }
 
+    @Test
+    fun `corrupt primary is quarantined without being replaced by empty state`() {
+        val storageFile = File(tempFolder.root, "corrupt_local_playlists.json")
+        val corruptJson = "{not-valid-json"
+        storageFile.writeText(corruptJson)
+
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = storageFile,
+            normalizePlaylists = { it },
+            autoSyncEnabled = false
+        )
+
+        val quarantines = tempFolder.root.listFiles().orEmpty()
+            .filter { it.name.startsWith("${storageFile.name}.corrupt-") }
+        assertTrue(repository.playlists.value.isEmpty())
+        assertFalse(storageFile.exists())
+        assertEquals(1, quarantines.size)
+        assertEquals(corruptJson, quarantines.single().readText())
+    }
+
+    @Test
+    fun `valid backup restores corrupt primary before publishing playlists`() {
+        val storageFile = File(tempFolder.root, "recover_local_playlists.json")
+        val backupFile = File(tempFolder.root, "${storageFile.name}.bak")
+        val corruptJson = "[broken"
+        val backupJson = playlistJson(id = 71L, name = "备份歌单")
+        storageFile.writeText(corruptJson)
+        backupFile.writeText(backupJson)
+
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = storageFile,
+            normalizePlaylists = { it },
+            autoSyncEnabled = false
+        )
+
+        assertEquals("备份歌单", repository.playlists.value.single().name)
+        assertEquals(backupJson, storageFile.readText())
+        assertEquals(backupJson, backupFile.readText())
+        assertTrue(
+            tempFolder.root.listFiles().orEmpty().any {
+                it.name.startsWith("${storageFile.name}.corrupt-") &&
+                    it.readText() == corruptJson
+            }
+        )
+    }
+
+    @Test
+    fun `write failure propagates without publishing uncommitted playlists`() = runTest {
+        val initialJson = playlistJson(id = 81L, name = "已落盘")
+        val storage = FailingCommitStorage(initialJson)
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "write_failure.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false,
+            storage = storage
+        )
+
+        val failure = runCatching {
+            repository.updatePlaylists(listOf(LocalPlaylist(id = 82L, name = "未落盘")))
+        }.exceptionOrNull()
+
+        assertTrue(failure is IOException)
+        assertEquals(listOf("已落盘"), repository.playlists.value.map(LocalPlaylist::name))
+        assertEquals(1, repository.playlistCount.value)
+        assertEquals(initialJson, storage.primary)
+    }
+
+    @Test
+    fun `successful replacement keeps previous primary as stable backup`() = runTest {
+        val storageFile = File(tempFolder.root, "backup_rotation.json")
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = storageFile,
+            normalizePlaylists = { it },
+            autoSyncEnabled = false
+        )
+
+        repository.updatePlaylists(listOf(LocalPlaylist(id = 91L, name = "first")))
+        repository.updatePlaylists(listOf(LocalPlaylist(id = 92L, name = "second")))
+
+        val backupText = File(tempFolder.root, "${storageFile.name}.bak").readText()
+        assertTrue(backupText.contains("first"))
+        assertFalse(backupText.contains("second"))
+        assertTrue(storageFile.readText().contains("second"))
+    }
+
     private fun mockContext(): Context {
         val context = mock(Context::class.java)
         `when`(context.filesDir).thenReturn(tempFolder.root)
@@ -336,5 +428,34 @@ class LocalPlaylistRepositoryTest {
             audioId = "99",
             sourceStableKey = source.stableKey()
         )
+    }
+
+    private fun playlistJson(id: Long, name: String): String {
+        return """
+            [
+              {
+                "id": $id,
+                "name": "$name",
+                "songs": [],
+                "modifiedAt": 1000,
+                "customCoverUrl": null,
+                "songOrderVersion": $DISPLAY_ORDER_SONG_ORDER_VERSION
+              }
+            ]
+        """.trimIndent()
+    }
+
+    private class FailingCommitStorage(
+        var primary: String?
+    ) : LocalPlaylistStorage {
+        override fun readPrimary(): String? = primary
+
+        override fun readBackup(): String? = null
+
+        override fun commit(text: String, rotateBackup: Boolean) {
+            throw IOException("simulated write failure")
+        }
+
+        override fun quarantinePrimary(): File? = null
     }
 }
