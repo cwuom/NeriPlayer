@@ -1389,6 +1389,10 @@ class AudioPlayerService : Service() {
                 // 魅族状态栏歌词依赖这两个私有通知标记
                 flags = flags.or(FLAG_ALWAYS_SHOW_TICKER)
                 flags = flags.or(FLAG_ONLY_UPDATE_TICKER)
+                // ticker_icon: 状态栏歌词前的小图标
+                extras.putInt("ticker_icon", R.drawable.ic_notification_small)
+                // ticker_icon_switch: false 表示不显示图标，仅显示文字
+                extras.putBoolean("ticker_icon_switch", false)
             }
         }
 
