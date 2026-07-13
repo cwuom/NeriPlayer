@@ -43,6 +43,7 @@ object UsbExclusiveSessionController {
     private const val EMERGENCY_CLOSE_WAIT_MS = 1_500L
     private const val NO_ACTIVE_USB_DEVICE_ID = -1
     private val transitionInFlight = AtomicBoolean(false)
+    private val playerTransportCommandGate = UsbExclusiveTransportCommandGate()
     private val nativeCloseInFlight = AtomicInteger(0)
     private val ioGate = UsbExclusiveIoGate()
     private val focusSuppressed = AtomicBoolean(false)
@@ -160,8 +161,13 @@ object UsbExclusiveSessionController {
     }
 
     fun refresh(context: Context) {
-        if (transitionInFlight.get()) {
-            markNativeTransitionInFlight("native_transition_in_flight")
+        if (transitionInFlight.get() || playerTransportCommandGate.isHeld()) {
+            val reason = if (playerTransportCommandGate.isHeld()) {
+                "player_transport_command_in_flight"
+            } else {
+                "native_transition_in_flight"
+            }
+            markNativeTransitionInFlight(reason)
             return
         }
         if (!sessionLock.tryLock()) {
@@ -198,6 +204,17 @@ object UsbExclusiveSessionController {
             }
             _state.value = current.copy(
                 available = UsbExclusiveNativeBridge.ensureLoaded(),
+                streaming = resolveUsbExclusiveStreamingState(
+                    hasNativeHandle = current.handle != 0L,
+                    runtimeRunning = runtimeReport.booleanField("running"),
+                    currentStreaming = current.streaming
+                ),
+                paused = resolveUsbExclusivePausedState(
+                    hasActivePlayerSession = current.source == "player_pcm" &&
+                        current.handle != 0L,
+                    runtimePaused = runtimeReport.booleanField("paused"),
+                    currentPaused = current.paused
+                ),
                 transitioning = false,
                 lastError = lastError,
                 completedAudioFrames = if (current.handle != 0L) {
@@ -217,11 +234,20 @@ object UsbExclusiveSessionController {
     }
 
     fun startGeneratedTone(context: Context): Boolean {
+        if (playerTransportCommandGate.isHeld()) {
+            markNativeTransitionInFlight("player_transport_command_in_flight")
+            return false
+        }
         if (!transitionInFlight.compareAndSet(false, true)) {
             _state.value = _state.value.copy(
                 lastError = "transition_in_flight",
                 runtimeReport = "transition_in_flight"
             )
+            return false
+        }
+        if (playerTransportCommandGate.isHeld()) {
+            transitionInFlight.set(false)
+            markNativeTransitionInFlight("player_transport_command_in_flight")
             return false
         }
         _state.value = _state.value.copy(transitioning = true)
@@ -405,6 +431,10 @@ object UsbExclusiveSessionController {
             inputEncoding
         )
         NPLogger.d(TAG, "openPlayerPcm(): request input=$inputFormat")
+        if (playerTransportCommandGate.isHeld()) {
+            markNativeTransitionInFlight("player_transport_command_in_flight")
+            return 0L
+        }
         if (!transitionInFlight.compareAndSet(false, true)) {
             NPLogger.w(TAG, "openPlayerPcm(): native transition is in progress input=$inputFormat")
             _state.value = _state.value.copy(
@@ -412,6 +442,11 @@ object UsbExclusiveSessionController {
                 runtimeReport = "transition_in_flight",
                 lastError = "transition_in_flight"
             )
+            return 0L
+        }
+        if (playerTransportCommandGate.isHeld()) {
+            transitionInFlight.set(false)
+            markNativeTransitionInFlight("player_transport_command_in_flight")
             return 0L
         }
         _state.value = _state.value.copy(transitioning = true)
@@ -961,91 +996,229 @@ object UsbExclusiveSessionController {
         latestPlayerPcmRuntime.set(PlayerPcmRuntimeCache())
     }
 
+    private fun tryBeginPlayerTransportCommand(command: String, handle: Long): Boolean {
+        if (!playerTransportCommandGate.tryAcquire()) {
+            NPLogger.w(TAG, "$command(): transport command already in flight handle=$handle")
+            return false
+        }
+        if (!transitionInFlight.get()) return true
+        playerTransportCommandGate.release()
+        NPLogger.w(TAG, "$command(): native transition already in flight handle=$handle")
+        return false
+    }
+
+    private fun finishPlayerTransportCommand(reason: String, maintainWakeLock: Boolean) {
+        playerTransportCommandGate.release()
+        if (maintainWakeLock) {
+            maintainWakeLock(PlayerManager.application, reason)
+        }
+    }
+
     fun playPlayerPcm(handle: Long): Boolean {
-        sessionLock.withLock {
-            val current = _state.value
-            if (
-                current.handle != handle ||
-                current.source != "player_pcm" ||
-                !current.opened ||
-                !ioGate.isOpen()
-            ) {
-                NPLogger.w(
-                    TAG,
-                    "playPlayerPcm(): ignored stale handle=$handle currentHandle=${current.handle} " +
-                        "source=${current.source} opened=${current.opened}"
+        if (!tryBeginPlayerTransportCommand("playPlayerPcm", handle)) return false
+        var wakeLockAcquired = false
+        try {
+            val commandState = sessionLock.withLock {
+                val current = _state.value
+                if (
+                    current.handle != handle ||
+                    current.source != "player_pcm" ||
+                    !current.opened ||
+                    !ioGate.isOpen()
+                ) {
+                    NPLogger.w(
+                        TAG,
+                        "playPlayerPcm(): ignored stale handle=$handle " +
+                            "currentHandle=${current.handle} source=${current.source} " +
+                            "opened=${current.opened}"
+                    )
+                    return@withLock null
+                }
+                _state.value = current.copy(
+                    transitioning = true,
+                    runtimeReport = "player_pcm_start_in_flight"
                 )
-                return false
-            }
+                current
+            } ?: return false
+
             UsbExclusiveWakeLock.acquire(PlayerManager.application, "player_pcm_start")
-            val started = UsbExclusiveNativeBridge.playPlayerPcm(handle)
-            val report = UsbExclusiveNativeBridge.runtimeReport(handle)
-            rememberPlayerPcmRuntimeReport(handle, report)
-            _state.value = current.copy(
-                streaming = started,
-                paused = false,
-                lastError = if (started) null else report,
-                completedAudioFrames = UsbExclusiveNativeBridge.completedAudioFrames(handle),
-                queuedAudioFrames = UsbExclusiveNativeBridge.queuedPlayerFrames(handle)
-            ).withRuntimeReport(report)
-            if (started) {
+            wakeLockAcquired = true
+            val started = runCatching { UsbExclusiveNativeBridge.playPlayerPcm(handle) }
+                .getOrDefault(false)
+            val report = runCatching { UsbExclusiveNativeBridge.runtimeReport(handle) }
+                .getOrDefault("native_play_runtime_unavailable")
+            val completedFrames = runCatching {
+                UsbExclusiveNativeBridge.completedAudioFrames(handle)
+            }.getOrDefault(commandState.completedAudioFrames)
+            val queuedFrames = runCatching {
+                UsbExclusiveNativeBridge.queuedPlayerFrames(handle)
+            }.getOrDefault(commandState.queuedAudioFrames)
+            val applied = sessionLock.withLock {
+                val current = _state.value
+                val matchesActiveSession = current.matchesPlayerSession(handle)
+                if (matchesActiveSession) {
+                    rememberPlayerPcmRuntimeReport(handle, report)
+                    _state.value = current.copy(
+                        streaming = started,
+                        paused = false,
+                        transitioning = false,
+                        lastError = if (started) null else report,
+                        completedAudioFrames = completedFrames,
+                        queuedAudioFrames = queuedFrames
+                    ).withRuntimeReport(report)
+                }
+                matchesActiveSession
+            }
+            if (started && applied) {
                 NPLogger.d(TAG, "playPlayerPcm(): started handle=$handle report=$report")
             } else {
-                UsbExclusiveWakeLock.release("player_pcm_start_failed")
-                NPLogger.w(TAG, "playPlayerPcm(): failed handle=$handle report=$report")
+                NPLogger.w(
+                    TAG,
+                    "playPlayerPcm(): failed handle=$handle applied=$applied report=$report"
+                )
             }
-            return started
+            return started && applied
+        } finally {
+            finishPlayerTransportCommand(
+                reason = "player_pcm_start_complete",
+                maintainWakeLock = wakeLockAcquired
+            )
         }
     }
 
     fun pausePlayerPcm(handle: Long): Boolean {
-        sessionLock.withLock {
-            val current = _state.value
-            if (current.handle != handle || current.source != "player_pcm" || !current.opened) {
-                return false
+        if (!tryBeginPlayerTransportCommand("pausePlayerPcm", handle)) return false
+        var wakeLockAcquired = false
+        try {
+            val commandState = sessionLock.withLock {
+                val current = _state.value
+                if (!current.matchesPlayerSession(handle)) return@withLock null
+                _state.value = current.copy(
+                    transitioning = true,
+                    runtimeReport = "player_pcm_pause_in_flight"
+                )
+                current
+            } ?: return false
+
+            UsbExclusiveWakeLock.acquire(PlayerManager.application, "player_pcm_pause")
+            wakeLockAcquired = true
+            val paused = runCatching { UsbExclusiveNativeBridge.pausePlayerPcm(handle) }
+                .getOrDefault(false)
+            val report = runCatching { UsbExclusiveNativeBridge.runtimeReport(handle) }
+                .getOrDefault("native_pause_runtime_unavailable")
+            val completedFrames = runCatching {
+                UsbExclusiveNativeBridge.completedAudioFrames(handle)
+            }.getOrDefault(commandState.completedAudioFrames)
+            val queuedFrames = runCatching {
+                UsbExclusiveNativeBridge.queuedPlayerFrames(handle)
+            }.getOrDefault(commandState.queuedAudioFrames)
+            val applied = sessionLock.withLock {
+                val current = _state.value
+                val matchesActiveSession = current.matchesPlayerSession(handle)
+                if (matchesActiveSession) {
+                    rememberPlayerPcmRuntimeReport(handle, report)
+                    _state.value = current.copy(
+                        streaming = if (paused) {
+                            false
+                        } else {
+                            report.booleanField("running") ?: current.streaming
+                        },
+                        paused = paused,
+                        transitioning = false,
+                        lastError = if (paused) null else report,
+                        completedAudioFrames = completedFrames,
+                        queuedAudioFrames = queuedFrames
+                    ).withRuntimeReport(report)
+                }
+                matchesActiveSession
             }
-            val paused = UsbExclusiveNativeBridge.pausePlayerPcm(handle)
-            val report = UsbExclusiveNativeBridge.runtimeReport(handle)
-            rememberPlayerPcmRuntimeReport(handle, report)
-            _state.value = current.copy(
-                streaming = report.booleanField("running") ?: current.streaming,
-                paused = paused,
-                lastError = if (paused) null else report,
-                completedAudioFrames = UsbExclusiveNativeBridge.completedAudioFrames(handle),
-                queuedAudioFrames = UsbExclusiveNativeBridge.queuedPlayerFrames(handle)
-            ).withRuntimeReport(report)
-            if (paused) {
-                UsbExclusiveWakeLock.release("player_pcm_paused")
+            if (paused && applied) {
                 NPLogger.d(TAG, "pausePlayerPcm(): paused handle=$handle report=$report")
             } else {
-                NPLogger.w(TAG, "pausePlayerPcm(): failed handle=$handle report=$report")
+                NPLogger.w(
+                    TAG,
+                    "pausePlayerPcm(): failed handle=$handle applied=$applied report=$report"
+                )
             }
-            return paused
+            return paused && applied
+        } finally {
+            finishPlayerTransportCommand(
+                reason = "player_pcm_pause_complete",
+                maintainWakeLock = wakeLockAcquired
+            )
         }
     }
 
     fun flushPlayerPcm(handle: Long): Boolean {
-        sessionLock.withLock {
-            val current = _state.value
-            if (current.handle != handle || current.source != "player_pcm" || !current.opened) {
-                return false
+        if (!tryBeginPlayerTransportCommand("flushPlayerPcm", handle)) return false
+        var wakeLockAcquired = false
+        try {
+            val commandState = sessionLock.withLock {
+                val current = _state.value
+                if (!current.matchesPlayerSession(handle)) return@withLock null
+                _state.value = current.copy(
+                    transitioning = true,
+                    runtimeReport = "player_pcm_flush_in_flight"
+                )
+                current
+            } ?: return false
+
+            UsbExclusiveWakeLock.acquire(PlayerManager.application, "player_pcm_flush")
+            wakeLockAcquired = true
+            val flushed = runCatching { UsbExclusiveNativeBridge.flushPlayerPcm(handle) }
+                .getOrDefault(false)
+            val report = runCatching { UsbExclusiveNativeBridge.runtimeReport(handle) }
+                .getOrDefault("native_flush_runtime_unavailable")
+            val completedFrames = if (flushed) {
+                0L
+            } else {
+                runCatching { UsbExclusiveNativeBridge.completedAudioFrames(handle) }
+                    .getOrDefault(commandState.completedAudioFrames)
             }
-            val flushed = UsbExclusiveNativeBridge.flushPlayerPcm(handle)
-            val report = UsbExclusiveNativeBridge.runtimeReport(handle)
-            rememberPlayerPcmRuntimeReport(handle, report)
-            _state.value = current.copy(
-                streaming = report.booleanField("running") ?: current.streaming,
-                paused = false,
-                lastError = if (flushed) null else report,
-                completedAudioFrames = 0L,
-                queuedAudioFrames = 0L
-            ).withRuntimeReport(report)
-            if (flushed) {
+            val queuedFrames = if (flushed) {
+                0L
+            } else {
+                runCatching { UsbExclusiveNativeBridge.queuedPlayerFrames(handle) }
+                    .getOrDefault(commandState.queuedAudioFrames)
+            }
+            val applied = sessionLock.withLock {
+                val current = _state.value
+                val matchesActiveSession = current.matchesPlayerSession(handle)
+                if (matchesActiveSession) {
+                    rememberPlayerPcmRuntimeReport(handle, report)
+                    _state.value = current.copy(
+                        streaming = report.booleanField("running") ?: if (flushed) {
+                            false
+                        } else {
+                            commandState.streaming
+                        },
+                        paused = resolveUsbExclusivePausedState(
+                            hasActivePlayerSession = true,
+                            runtimePaused = report.booleanField("paused"),
+                            currentPaused = if (flushed) false else commandState.paused
+                        ),
+                        transitioning = false,
+                        lastError = if (flushed) null else report,
+                        completedAudioFrames = completedFrames,
+                        queuedAudioFrames = queuedFrames
+                    ).withRuntimeReport(report)
+                }
+                matchesActiveSession
+            }
+            if (flushed && applied) {
                 NPLogger.d(TAG, "flushPlayerPcm(): flushed handle=$handle report=$report")
             } else {
-                NPLogger.w(TAG, "flushPlayerPcm(): failed handle=$handle report=$report")
+                NPLogger.w(
+                    TAG,
+                    "flushPlayerPcm(): failed handle=$handle applied=$applied report=$report"
+                )
             }
-            return flushed
+            return flushed && applied
+        } finally {
+            finishPlayerTransportCommand(
+                reason = "player_pcm_flush_complete",
+                maintainWakeLock = wakeLockAcquired
+            )
         }
     }
 
@@ -1075,6 +1248,7 @@ object UsbExclusiveSessionController {
             shouldHoldUsbExclusiveWakeLock(
                 streaming = current.streaming,
                 transitioning = current.transitioning || transitionInFlight.get(),
+                transportCommandInFlight = playerTransportCommandGate.isHeld(),
                 nativeCloseInFlightCount = nativeCloseInFlight.get()
             )
         ) {
@@ -1530,6 +1704,10 @@ object UsbExclusiveSessionController {
             outputPeak = metrics.outputPeak ?: outputPeak,
             lastOutputPeak = metrics.lastOutputPeak ?: lastOutputPeak
         )
+    }
+
+    private fun UsbExclusiveNativeState.matchesPlayerSession(expectedHandle: Long): Boolean {
+        return handle == expectedHandle && source == "player_pcm" && opened
     }
 
     private fun selectedDeviceKey(context: Context): String {

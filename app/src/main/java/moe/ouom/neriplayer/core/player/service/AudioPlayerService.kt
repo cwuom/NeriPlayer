@@ -93,8 +93,9 @@ import moe.ouom.neriplayer.core.player.timer.SleepTimerMode
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
-import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveWakeLock
+import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
+import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.displayArtist
@@ -582,12 +583,31 @@ class AudioPlayerService : Service() {
     ) {
         val pathState = UsbExclusiveAudioPathTracker.state.value
         val nativeState = UsbExclusiveSessionController.state.value
-        val shouldCheckStall = PlayerManager.usbExclusivePlaybackEnabled &&
+        val nativePlaybackExpected = PlayerManager.usbExclusivePlaybackEnabled &&
             PlayerManager.isTransportActiveWithoutInitialization() &&
             pathState.effectivePath == UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB &&
             pathState.sinkPlaying &&
-            nativeState.source == "player_pcm" &&
-            nativeState.streaming
+            nativeState.source == "player_pcm"
+        val transportStoppedUnexpectedly = nativePlaybackExpected &&
+            nativeState.opened &&
+            !nativeState.streaming &&
+            !nativeState.paused &&
+            !nativeState.transitioning &&
+            nativeState.runtimeReport.usbRuntimeMetrics().transportFailed == true
+        if (transportStoppedUnexpectedly) {
+            usbExclusiveKeepAliveStallTicks = 0
+            NPLogger.w(
+                "NERI-APS",
+                "USB exclusive keepalive found stopped failed transport; scheduling recovery. " +
+                    diagnosticMessage
+            )
+            PlayerManager.recoverUsbExclusivePlaybackIfUnhealthy(
+                reason = "service_keepalive_transport_stopped",
+                forceRecovery = true
+            )
+            return
+        }
+        val shouldCheckStall = nativePlaybackExpected && nativeState.streaming
         if (!shouldCheckStall) {
             lastUsbExclusiveNativeHandle = nativeHandle
             lastUsbExclusiveCompletedFrames = completedFrames
