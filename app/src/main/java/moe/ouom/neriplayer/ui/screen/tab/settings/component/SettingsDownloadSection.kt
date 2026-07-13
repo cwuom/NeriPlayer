@@ -58,7 +58,7 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.player.AudioDownloadManager
+import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.MAX_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.core.player.download.normalizeDownloadParallelism
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema

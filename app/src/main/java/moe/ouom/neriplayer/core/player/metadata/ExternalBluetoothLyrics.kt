@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.player.metadata
 
 import moe.ouom.neriplayer.core.player.audio.isBluetoothOutputType
-import moe.ouom.neriplayer.ui.component.LyricEntry
-import moe.ouom.neriplayer.ui.component.matchTranslationsToLineIndices
+import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
+import moe.ouom.neriplayer.ui.component.lyrics.matchTranslationsToLineIndices
 
 internal data class ExternalBluetoothMetadataText(
     val title: String,

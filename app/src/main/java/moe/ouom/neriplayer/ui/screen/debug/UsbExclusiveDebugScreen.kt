@@ -46,7 +46,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.debug.UsbAudioOutputDebugInfo
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnostics
 import moe.ouom.neriplayer.core.player.debug.UsbHostDeviceDebugInfo
-import moe.ouom.neriplayer.core.player.usb.UsbExclusiveSessionController
+import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.core.logging.NPLogger
 

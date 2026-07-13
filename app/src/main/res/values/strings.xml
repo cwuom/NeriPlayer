@@ -1491,6 +1491,7 @@
     <string name="listen_together_member_list_title">已加入成员</string>
     <string name="listen_together_error_member_control_disabled">房主已关闭听众操作权限</string>
     <string name="listen_together_error_controller_offline">房主当前离线，请等待重连后再试</string>
+    <string name="listen_together_error_controller_offline_link">房主已离线，无法获取播放链接</string>
     <string name="listen_together_error_local_playback_blocked">处于一起听时不可切换到本地音乐播放</string>
     <string name="listen_together_error_unauthorized">房间凭证已失效，请重新加入一起听</string>
     <string name="listen_together_error_room_not_found">房间不存在或已失效，无法继续加入</string>
@@ -1551,6 +1552,12 @@
     <string name="settings_listen_together_server_input_placeholder">示例：https://example.com，留空使用内置默认服务器</string>
     <string name="settings_listen_together_server_input_invalid">服务器地址格式无效，请输入完整的 http:// 或 https:// 地址</string>
     <string name="listen_together_invite_server_invalid">邀请中的服务器地址无效，无法加入该房间</string>
+    <string name="listen_together_error_room_id_length">房间 ID 需要为 %1$d 位</string>
+    <string name="listen_together_error_room_id_chars">房间 ID 仅支持大写字母和数字</string>
+    <string name="listen_together_error_user_uuid_required">用户 UUID 不能为空</string>
+    <string name="listen_together_error_user_uuid_invalid">用户 UUID 格式无效</string>
+    <string name="listen_together_error_nickname_length">当前昵称长度需要为 %1$d-%2$d 位</string>
+    <string name="listen_together_error_nickname_chars">当前昵称仅支持汉字、英文字母和数字</string>
     <string name="settings_listen_together_server_test">测试可用性</string>
     <string name="settings_listen_together_server_saved">一起听服务器设置已保存</string>
     <string name="settings_listen_together_server_reset_done">已恢复使用内置默认服务器</string>

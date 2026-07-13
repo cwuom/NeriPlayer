@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.metadata
 
 import android.media.AudioDeviceInfo
-import moe.ouom.neriplayer.ui.component.LyricEntry
+import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

@@ -58,7 +58,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.auth.NeteaseQrLoginActivity
 import moe.ouom.neriplayer.activity.auth.NeteaseWebLoginActivity
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
+import moe.ouom.neriplayer.ui.component.sheet.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.InlineMessage
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.listentogether
 
+import moe.ouom.neriplayer.listentogether.validation.sanitizeListenTogetherNicknameOrNull
+import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherNickname
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull

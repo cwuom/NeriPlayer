@@ -43,8 +43,8 @@ import kotlinx.coroutines.isActive
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnostics
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnosticsSnapshot
-import moe.ouom.neriplayer.core.player.usb.UsbExclusiveNativeState
-import moe.ouom.neriplayer.core.player.usb.UsbExclusiveSessionController
+import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
+import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.data.settings.UsbExclusiveBitDepthMode
 import moe.ouom.neriplayer.data.settings.UsbExclusiveBufferProfile
 import moe.ouom.neriplayer.data.settings.DEFAULT_USB_EXCLUSIVE_DEVICE_KEY

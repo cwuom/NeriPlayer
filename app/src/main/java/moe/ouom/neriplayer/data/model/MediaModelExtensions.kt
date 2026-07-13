@@ -25,7 +25,7 @@ package moe.ouom.neriplayer.data.model
 
 import android.content.Context
 import android.os.Looper
-import moe.ouom.neriplayer.core.player.AudioDownloadManager
+import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary

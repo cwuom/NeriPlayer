@@ -139,8 +139,6 @@ import dev.chrisbanes.haze.hazeChild
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -153,15 +151,15 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.effects.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.recoverUsbExclusivePlaybackOnForeground
-import moe.ouom.neriplayer.core.player.StartupAudioFocusController
-import moe.ouom.neriplayer.core.player.updateUsbExclusiveForegroundState
-import moe.ouom.neriplayer.core.player.preloadRestoredStateSnapshot
+import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackOnForeground
+import moe.ouom.neriplayer.core.player.lifecycle.updateUsbExclusiveForegroundState
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
-import moe.ouom.neriplayer.core.player.service.shouldSkipLocalPlaybackSyncServiceStart
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
-import moe.ouom.neriplayer.core.player.policy.shouldSyncPlaybackServiceForLocalPlaybackCommand
+import moe.ouom.neriplayer.core.startup.player.PlayerStartupBootstrapper
+import moe.ouom.neriplayer.core.startup.player.PlayerStartupAudioFocusRefresher
+import moe.ouom.neriplayer.core.startup.player.PlayerStartupHistoryRecorder
+import moe.ouom.neriplayer.core.startup.player.PlayerStartupServiceSyncCoordinator
+import moe.ouom.neriplayer.core.startup.theme.StartupThemeResolver
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
@@ -172,15 +170,14 @@ import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.ThemeMode
 import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
-import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotCached
 import moe.ouom.neriplayer.data.storage.clearExtraStorageCaches
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.navigation.Destinations
-import moe.ouom.neriplayer.ui.component.NeriBottomBar
-import moe.ouom.neriplayer.ui.component.NeriMiniPlayer
-import moe.ouom.neriplayer.ui.component.ThemeRevealOverlay
-import moe.ouom.neriplayer.ui.component.blockUnderlyingTouches
+import moe.ouom.neriplayer.ui.component.navigation.NeriBottomBar
+import moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayer
+import moe.ouom.neriplayer.ui.component.common.ThemeRevealOverlay
+import moe.ouom.neriplayer.ui.component.common.blockUnderlyingTouches
 import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
 import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
 import moe.ouom.neriplayer.ui.screen.NowPlayingScreen
@@ -747,11 +744,10 @@ fun NeriApp(
 ) {
     val context = LocalContext.current
     var appContentReady by rememberSaveable { mutableStateOf(false) }
-    val bootstrapIsDark = when {
-        initialThemeSnapshot.forceDark -> true
-        initialThemeSnapshot.followSystemDark -> isActualSystemDarkTheme(context)
-        else -> false
-    }
+    val bootstrapIsDark = StartupThemeResolver.resolveSnapshotUseDark(
+        snapshot = initialThemeSnapshot,
+        systemDark = isActualSystemDarkTheme(context)
+    )
 
     LaunchedEffect(Unit) {
         // 先交一个极轻的背景首帧，下一帧再挂整棵导航和状态订阅树
@@ -905,6 +901,9 @@ private fun NeriAppContent(
     var lifecycleResumed by remember(lifecycleOwner) {
         mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
     }
+    val startupAudioFocusRefresher = remember(context) {
+        PlayerStartupAudioFocusRefresher(context)
+    }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -967,171 +966,83 @@ private fun NeriAppContent(
         }
     }
 
+    val serviceSyncCoordinator = remember(context) {
+        PlayerStartupServiceSyncCoordinator(
+            awaitUiFrame = { withFrameNanos { } },
+            isServiceReadyForPassiveLocalPlaybackSync = AudioPlayerService::isReadyForPassiveLocalPlaybackSync,
+            hasItems = PlayerManager::hasItems,
+            hasLocalCurrentSong = {
+                PlayerManager.currentSongFlow.value?.let { song ->
+                    LocalSongSupport.isLocalSong(song, context)
+                } == true
+            },
+            isUsbExclusivePlaybackActiveForForegroundService =
+                PlayerManager::isUsbExclusivePlaybackActiveForForegroundService,
+            shouldRunPlaybackServiceInForeground = PlayerManager::shouldRunPlaybackServiceInForeground,
+            isServiceInstanceActiveForDiagnostics = AudioPlayerService::isInstanceActiveForDiagnostics,
+            isServiceForegroundActiveForDiagnostics = AudioPlayerService::isForegroundActiveForDiagnostics,
+            startService = { source, forceForeground ->
+                AudioPlayerService.startSyncService(
+                    context,
+                    source,
+                    forceForeground = forceForeground
+                )
+            },
+            playbackCommandFlow = PlayerManager.playbackCommandFlow
+        )
+    }
     val scheduleAudioServiceStart: (String, Boolean) -> Unit = { source, forceForeground ->
         scope.launch {
-            // 让 currentSong/mini player 先过一帧，避免和服务启动抢主线程
-            withFrameNanos { }
-            // 本地切歌时先让播放器和首帧稳定下来，再补系统媒体会话同步
-            if (source.startsWith("local_playback_command_")) {
-                delay(450L)
-            }
-            if (
-                shouldSkipLocalPlaybackSyncServiceStart(
-                    source = source,
-                    serviceReady = AudioPlayerService.isReadyForPassiveLocalPlaybackSync(),
-                    hasItems = PlayerManager.hasItems(),
-                    hasLocalCurrentSong = PlayerManager.currentSongFlow.value?.let {
-                        LocalSongSupport.isLocalSong(it, context)
-                    } == true,
-                    usbExclusivePlaybackActive = PlayerManager
-                        .isUsbExclusivePlaybackActiveForForegroundService()
-                )
-            ) {
-                NPLogger.d(
-                    "NERI-App",
-                    "Skipping audio service sync because active playback service is already tracking " +
-                        "source=$source serviceInstance=" +
-                        AudioPlayerService.isInstanceActiveForDiagnostics() +
-                        " serviceForeground=" +
-                        AudioPlayerService.isForegroundActiveForDiagnostics()
-                )
-                return@launch
-            }
-            NPLogger.d("NERI-App", "Starting audio service: source=$source")
-            AudioPlayerService.startSyncService(
-                context,
-                source,
+            serviceSyncCoordinator.startServiceAfterUiFrame(
+                source = source,
                 forceForeground = forceForeground
             )
         }
     }
 
     fun updateStartupAudioFocus(reason: String) {
-        if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return
-        if (!PlayerManager.isPlayerInitialized()) return
-        if (
-            reason == "lifecycle_resume" &&
-            PlayerManager.isUsbExclusiveNativePlaybackStable()
-        ) {
-            NPLogger.d(
-                "NERI-App",
-                "Skipping startup audio focus refresh during stable USB native playback"
-            )
-            return
-        }
-        val transportActive = runCatching { PlayerManager.isTransportActive() }
-            .getOrDefault(false)
-        val usbExclusiveNativeActive = PlayerManager.shouldUseUsbExclusiveFocusGuard()
-        StartupAudioFocusController.updateForForeground(
-            context = context,
-            enabled = preemptAudioFocus || usbExclusiveNativeActive,
+        startupAudioFocusRefresher.refreshForeground(
+            lifecycleResumed = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED),
+            reason = reason,
+            preemptAudioFocus = preemptAudioFocus,
             allowMixedPlayback = allowMixedPlayback,
-            usbExclusivePlayback = usbExclusivePlayback,
-            usbExclusiveNativeActive = usbExclusiveNativeActive,
-            transportActive = transportActive,
-            reason = reason
+            usbExclusivePlayback = usbExclusivePlayback
         )
     }
 
     LaunchedEffect(application) {
-        val exactStartupPlaybackPreferences = withContext(Dispatchers.IO) {
-            readPlaybackPreferenceSnapshot(application)
-        }
-        val startupRestoreSnapshot = preloadRestoredStateSnapshot(
+        PlayerStartupBootstrapper(
             app = application,
-            keepLastPlaybackProgressEnabled =
-                exactStartupPlaybackPreferences.keepLastPlaybackProgress,
-            keepPlaybackModeStateEnabled =
-                exactStartupPlaybackPreferences.keepPlaybackModeState
-        )
-        withFrameNanos { }
-        PlayerManager.initializePreloaded(
-            app = application,
-            startupPlaybackPreferences = exactStartupPlaybackPreferences,
-            restoredStateSnapshot = startupRestoreSnapshot
-        )
-        NPLogger.d("NERI-App", "PlayerManager.initialize called")
-        NPLogger.d(
-            "NERI-App",
-            "Player bootstrap state hasItems=${PlayerManager.hasItems()} transportActive=${PlayerManager.isTransportActive()} isPlaying=${PlayerManager.isPlayingFlow.value}"
-        )
-        val shouldBootstrapPlaybackService =
-            PlayerManager.hasItems() && PlayerManager.shouldBootstrapPlaybackServiceOnAppLaunch()
-        val shouldBootstrapPreemptAudioFocusSession =
-            !shouldBootstrapPlaybackService &&
-                exactStartupPlaybackPreferences.preemptAudioFocus &&
-                !exactStartupPlaybackPreferences.allowMixedPlayback &&
-                PlayerManager.hasItems()
-        StartupAudioFocusController.updateForForeground(
             context = context,
-            enabled = exactStartupPlaybackPreferences.preemptAudioFocus ||
-                PlayerManager.shouldUseUsbExclusiveFocusGuard(),
-            allowMixedPlayback = exactStartupPlaybackPreferences.allowMixedPlayback,
-            usbExclusivePlayback = exactStartupPlaybackPreferences.usbExclusivePlayback,
-            usbExclusiveNativeActive = PlayerManager.shouldUseUsbExclusiveFocusGuard(),
-            transportActive = PlayerManager.isTransportActive() || shouldBootstrapPlaybackService,
-            reason = "app_bootstrap"
-        )
-        if (shouldBootstrapPlaybackService) {
-            NPLogger.d("NERI-App", "Starting audio service from app bootstrap")
-            scheduleAudioServiceStart("app_bootstrap", true)
-        } else if (shouldBootstrapPreemptAudioFocusSession) {
-            NPLogger.d("NERI-App", "Starting audio service for preempt audio focus session")
-            scheduleAudioServiceStart("preempt_audio_focus_bootstrap", false)
-        } else {
-            NPLogger.d(
-                "NERI-App",
-                "Skip audio service bootstrap: hasItems=${PlayerManager.hasItems()} currentSong=${PlayerManager.currentSongFlow.value != null}"
-            )
+            awaitUiFrameBeforePlayerInit = {
+                withFrameNanos { }
+            }
+        ).bootstrap().serviceStart?.let { serviceStart ->
+            scheduleAudioServiceStart(serviceStart.source, serviceStart.forceForeground)
         }
 
         launch {
-            PlayerManager.playbackCommandFlow.collect { command ->
-                if (command.source != PlaybackCommandSource.LOCAL) {
-                    return@collect
-                }
-                if (!shouldSyncPlaybackServiceForLocalPlaybackCommand(command.type)) {
-                    return@collect
-                }
-                if (!PlayerManager.hasItems()) {
-                    return@collect
-                }
-                // 恢复旧队列后点继续播放，也要像切新歌一样补一次系统媒体会话同步
-                scheduleAudioServiceStart(
-                    "local_playback_command_${command.type.lowercase()}",
-                    PlayerManager.shouldRunPlaybackServiceInForeground()
-                )
-            }
+            serviceSyncCoordinator.collectLocalPlaybackCommands()
         }
 
         launch {
-            // 跳过初始值，订阅之后的变更，每次切曲写入最近播放
-            var lastRecordedSongKey: String? = null
-            PlayerManager.currentSongFlow
-                .drop(1)
-                .filterNotNull()
-                .collect { song ->
-                    val songKey = song.stableKey()
-                    if (songKey == lastRecordedSongKey) {
-                        return@collect
-                    }
-                    lastRecordedSongKey = songKey
-                    // 首次切歌时先让播放稳定下来，避免历史记录和同步调度挤占首帧
-                    delay(700L)
-                    if (PlayerManager.currentSongFlow.value?.stableKey() != songKey) {
-                        return@collect
-                    }
-                    AppContainer.playHistoryRepo.record(song)
-                }
-            }
+            PlayerStartupHistoryRecorder(
+                currentSongFlow = PlayerManager.currentSongFlow,
+                recordSong = AppContainer.playHistoryRepo::record
+            ).run()
+        }
 
     }
 
     LaunchedEffect(preemptAudioFocus, allowMixedPlayback, usbExclusivePlayback) {
         if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
             updateStartupAudioFocus("settings_changed")
-        } else if ((!preemptAudioFocus && !usbExclusivePlayback) || allowMixedPlayback) {
-            StartupAudioFocusController.release("settings_changed_inactive")
+        } else {
+            startupAudioFocusRefresher.releaseForInactiveSettingsChange(
+                preemptAudioFocus = preemptAudioFocus,
+                usbExclusivePlayback = usbExclusivePlayback,
+                allowMixedPlayback = allowMixedPlayback
+            )
         }
     }
 
@@ -1206,7 +1117,10 @@ private fun NeriAppContent(
         )
     }
 
-    val isDark = themeMode.resolveUseDark(systemDark)
+    val isDark = StartupThemeResolver.resolveModeUseDark(
+        mode = themeMode,
+        systemDark = systemDark
+    )
     val hazeState = remember { HazeState() }
     val preferredQuality by repo.audioQualityFlow.collectAsStateWithLifecycle(initialValue = "exhigh")
     val youtubePreferredQuality by repo.youtubeAudioQualityFlow.collectAsStateWithLifecycle(initialValue = "very_high")
@@ -1349,12 +1263,12 @@ private fun NeriAppContent(
                     if (keepUsbExclusiveFocus) {
                         updateStartupAudioFocus("lifecycle_${event.name.lowercase()}_keep_usb")
                     } else {
-                        StartupAudioFocusController.release("lifecycle_${event.name.lowercase()}")
+                        startupAudioFocusRefresher.release("lifecycle_${event.name.lowercase()}")
                     }
                 }
                 Lifecycle.Event.ON_DESTROY -> {
                     clearThemeRevealState()
-                    StartupAudioFocusController.release("lifecycle_${event.name.lowercase()}")
+                    startupAudioFocusRefresher.release("lifecycle_${event.name.lowercase()}")
                 }
                 else -> Unit
             }
@@ -1591,7 +1505,7 @@ private fun NeriAppContent(
                 val usbPlaybackPreparing by PlayerManager.usbExclusivePlaybackPreparingFlow
                     .collectAsStateWithLifecycle()
                 val reservedMiniPlayerHeightDp = if (isMiniPlayerVisible) {
-                    moe.ouom.neriplayer.ui.component.NeriMiniPlayerDefaults.Height
+                    moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayerDefaults.Height
                 } else {
                     0.dp
                 }

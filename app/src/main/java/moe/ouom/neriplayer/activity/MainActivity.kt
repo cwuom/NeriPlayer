@@ -24,13 +24,11 @@ package moe.ouom.neriplayer.activity
  */
 
 
-import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.content.res.Configuration
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
@@ -112,25 +110,33 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.NeriPlayerApplication
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.activity.sync.GitHubSyncWarningRepository
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.service.canUseDirectPlaybackServiceStart
+import moe.ouom.neriplayer.core.startup.StartupStageFlow
+import moe.ouom.neriplayer.core.startup.StartupStage
+import moe.ouom.neriplayer.core.startup.crash.StartupCrashReportManager
+import moe.ouom.neriplayer.core.startup.download.StartupDownloadRecoveryCoordinator
+import moe.ouom.neriplayer.core.startup.logging.StartupLogInitializer
+import moe.ouom.neriplayer.core.startup.permission.StartupNotificationPermission
+import moe.ouom.neriplayer.core.startup.safemode.SafeModeRecoveryCoordinator
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.settings.SettingsRepository
-import moe.ouom.neriplayer.data.settings.ThemeMode
-import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
-import moe.ouom.neriplayer.data.settings.readThemePreferenceSnapshotSync
-import moe.ouom.neriplayer.data.sync.webdav.WebDavStorage
-import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
-import moe.ouom.neriplayer.listentogether.ListenTogetherInvite
-import moe.ouom.neriplayer.listentogether.normalizeListenTogetherRoomId
-import moe.ouom.neriplayer.listentogether.parseListenTogetherInvite
-import moe.ouom.neriplayer.listentogether.resolveListenTogetherInviteJoinBaseUrl
+import moe.ouom.neriplayer.core.startup.sync.StartupSyncScheduler
+import moe.ouom.neriplayer.core.startup.sync.StartupSyncWarningCoordinator
+import moe.ouom.neriplayer.core.startup.sync.StartupSyncWarningRepository
+import moe.ouom.neriplayer.core.startup.theme.StartupNightModeSyncPlanner
+import moe.ouom.neriplayer.core.startup.theme.StartupResourceNightMode
+import moe.ouom.neriplayer.core.startup.theme.StartupThemeResolver
+import moe.ouom.neriplayer.core.startup.theme.StartupThemeSnapshotProvider
+import moe.ouom.neriplayer.listentogether.invite.ListenTogetherInvite
+import moe.ouom.neriplayer.listentogether.validation.normalizeListenTogetherRoomId
+import moe.ouom.neriplayer.listentogether.invite.parseListenTogetherInvite
+import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherInviteJoinBaseUrl
 import moe.ouom.neriplayer.ui.MobileDataDownloadInterruptionDialog
 import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.ui.onboarding.StartupOnboardingScreen
@@ -145,8 +151,6 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.platform.NightModeHelper
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
 import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
-
-private enum class AppStage { Loading, Disclaimer, Onboarding, Main }
 
 private data class PendingAudioServiceStart(
     val requestToken: Long,
@@ -194,12 +198,8 @@ private fun GitHubSyncWarningDialog(
 }
 
 class MainActivity : ComponentActivity() {
-    companion object {
-        private const val STARTUP_SYNC_SCHEDULE_DELAY_MS = 20_000L
-        private const val STARTUP_SYNC_STAGGER_DELAY_MS = 10_000L
-    }
-
     private val settingsRepository by lazy { SettingsRepository(applicationContext) }
+    private val startupCrashReportManager by lazy { StartupCrashReportManager(applicationContext) }
     private var externalAudioImportJob: Job? = null
     private var externalAudioMetadataHydrationJob: Job? = null
     private var externalAudioRequestToken = 0L
@@ -211,8 +211,10 @@ class MainActivity : ComponentActivity() {
     private var hasWindowFocusForClipboardInspection = false
     private val listenTogetherStatusMessage = MutableStateFlow<String?>(null)
     private val listenTogetherStatusFlow = listenTogetherStatusMessage.asStateFlow()
-    private val gitHubSyncWarningRepository by lazy {
-        GitHubSyncWarningRepository(applicationContext)
+    private val startupSyncWarningCoordinator by lazy {
+        StartupSyncWarningCoordinator(
+            StartupSyncWarningRepository(applicationContext)
+        )
     }
     private var safeModeActive = false
 
@@ -222,11 +224,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         safeModeActive = SafeModeManager.shouldEnterSafeMode(this)
-        val startupThemeSnapshot = if (safeModeActive) {
-            ThemePreferenceSnapshot()
-        } else {
-            readThemePreferenceSnapshotSync(this)
-        }
+        val startupThemeSnapshot = StartupThemeSnapshotProvider.read(
+            context = this,
+            safeModeActive = safeModeActive
+        )
         NightModeHelper.applyNightMode(
             followSystemDark = startupThemeSnapshot.followSystemDark,
             forceDark = startupThemeSnapshot.forceDark
@@ -236,9 +237,9 @@ class MainActivity : ComponentActivity() {
         lockPortraitIfPhone()
         WindowCompat.setDecorFitsSystemWindows(window, false)
         applyWindowBackground(
-            startupThemeSnapshot.resolveUseDark(
-                systemDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-                    Configuration.UI_MODE_NIGHT_YES
+            StartupThemeResolver.resolveSnapshotUseDark(
+                snapshot = startupThemeSnapshot,
+                systemDark = StartupResourceNightMode.isDark(resources.configuration.uiMode)
             )
         )
 
@@ -246,7 +247,10 @@ class MainActivity : ComponentActivity() {
             setContent {
                 val systemDark = rememberActualSystemDarkTheme()
                 val useDark = remember(systemDark) {
-                    startupThemeSnapshot.resolveUseDark(systemDark = systemDark)
+                    StartupThemeResolver.resolveSnapshotUseDark(
+                        snapshot = startupThemeSnapshot,
+                        systemDark = systemDark
+                    )
                 }
                 NeriTheme(useDark = useDark, useDynamic = false) {
                     SideEffect {
@@ -268,10 +272,10 @@ class MainActivity : ComponentActivity() {
                 initialValue = false
             )
             LaunchedEffect(devModeEnabled, alwaysRecordLogsEnabled) {
-                // 日志初始化只在配置变更时更新，避免每次根组合重组都触发
-                NPLogger.init(
+                StartupLogInitializer.sync(
                     context = this@MainActivity,
-                    enableFileLogging = devModeEnabled || alwaysRecordLogsEnabled
+                    devModeEnabled = devModeEnabled,
+                    alwaysRecordLogsEnabled = alwaysRecordLogsEnabled
                 )
             }
 
@@ -284,27 +288,26 @@ class MainActivity : ComponentActivity() {
             val followSystemDark by settingsRepository.followSystemDarkFlow.collectAsStateWithLifecycle(
                 initialValue = startupThemeSnapshot.followSystemDark
             )
-            val disclaimerAcceptedNullable by settingsRepository.disclaimerAcceptedFlow.collectAsStateWithLifecycle(
-                initialValue = null
-            )
-            val startupOnboardingCompletedNullable by settingsRepository.startupOnboardingCompletedFlow
-                .collectAsStateWithLifecycle(initialValue = null)
-
-            val themeMode = remember(forceDark, followSystemDark) {
-                ThemeMode.fromPreferenceFlags(
-                    forceDark = forceDark,
-                    followSystemDark = followSystemDark
+            val startupStageFlow = remember(settingsRepository) {
+                StartupStageFlow.from(
+                    disclaimerAccepted = settingsRepository.disclaimerAcceptedFlow,
+                    startupOnboardingCompleted = settingsRepository.startupOnboardingCompletedFlow
                 )
             }
+
             val systemDark = rememberActualSystemDarkTheme()
-            val useDark = remember(themeMode, systemDark) {
-                themeMode.resolveUseDark(systemDark)
+            val currentResourceDark = StartupResourceNightMode.isDark(resources.configuration.uiMode)
+            val nightModeSyncPlan = remember(forceDark, followSystemDark, systemDark, currentResourceDark) {
+                StartupNightModeSyncPlanner.plan(
+                    forceDark = forceDark,
+                    followSystemDark = followSystemDark,
+                    systemDark = systemDark,
+                    currentResourceDark = currentResourceDark
+                )
             }
-            LaunchedEffect(followSystemDark, forceDark, useDark) {
-                val currentResourceDark =
-                    (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-                        Configuration.UI_MODE_NIGHT_YES
-                if (currentResourceDark != useDark) {
+            val useDark = nightModeSyncPlan.useDark
+            LaunchedEffect(followSystemDark, forceDark, nightModeSyncPlan) {
+                if (nightModeSyncPlan.shouldApplyNightMode) {
                     NightModeHelper.applyNightMode(
                         followSystemDark = followSystemDark,
                         forceDark = forceDark
@@ -312,12 +315,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (StartupNotificationPermission.shouldRequest()) {
                 val launcher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission()
                 ) {  }
                 LaunchedEffect(Unit) {
-                    launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    launcher.launch(StartupNotificationPermission.permission)
                 }
             }
 
@@ -336,8 +339,7 @@ class MainActivity : ComponentActivity() {
                             uri ?: return@rememberLauncherForActivityResult
                             startupScope.launch(Dispatchers.IO) {
                                 runCatching {
-                                    CrashReportStore.exportCrashReport(
-                                        context = this@MainActivity,
+                                    startupCrashReportManager.exportReport(
                                         reportFile = report.file,
                                         destination = uri
                                     )
@@ -361,9 +363,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                         LaunchedEffect(Unit) {
-                            pendingStartupCrashReport = withContext(Dispatchers.IO) {
-                                CrashReportStore.readPendingCrashReport(this@MainActivity)
-                            }
+                            pendingStartupCrashReport = startupCrashReportManager.readPendingReport()
                         }
                         LaunchedEffect(Unit) {
                             handleIncomingIntent(intent)
@@ -379,59 +379,36 @@ class MainActivity : ComponentActivity() {
                 var playedEntrance by rememberSaveable { mutableStateOf(false) }
                 LaunchedEffect(Unit) { playedEntrance = true }
 
-                val stage = when (disclaimerAcceptedNullable) {
-                    null -> AppStage.Loading
-                    true -> when (startupOnboardingCompletedNullable) {
-                        null -> AppStage.Loading
-                        true -> AppStage.Main
-                        false -> AppStage.Onboarding
-                    }
-                    false -> AppStage.Disclaimer
-                }
+                val stage by startupStageFlow.collectAsStateWithLifecycle(initialValue = StartupStage.Loading)
                 val pendingMobileDataDownloadInterruptionRequest by
                     GlobalDownloadManager.mobileDataDownloadInterruptionRequest.collectAsStateWithLifecycle()
                 val rootLifecycleOwner = LocalLifecycleOwner.current
                 var hasShownTokenWarning by rememberSaveable { mutableStateOf(false) }
                 var showTokenWarningDialog by rememberSaveable { mutableStateOf(false) }
                 LaunchedEffect(stage, rootLifecycleOwner.lifecycle) {
-                    if (stage != AppStage.Main) {
+                    if (stage != StartupStage.Main) {
                         return@LaunchedEffect
                     }
-                    while (!rootLifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-                        delay(100L)
-                    }
-                    listOf(300L, 1_200L, 2_500L).forEachIndexed { index, delayMs ->
-                        delay(delayMs)
-                        GlobalDownloadManager.requestPendingDownloadRecoveryDecisionIfNeeded(
-                            context = this@MainActivity,
-                            reason = if (index == 0) {
-                                "activity_main_ready"
-                            } else {
-                                "activity_main_ready_retry_$index"
+                    StartupDownloadRecoveryCoordinator(
+                        context = this@MainActivity,
+                        awaitResumed = {
+                            while (!rootLifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                                delay(100L)
                             }
-                        )
-                    }
+                        }
+                    ).requestWhenMainReady()
                 }
                 LaunchedEffect(stage, rootLifecycleOwner.lifecycle) {
-                    if (stage != AppStage.Main) {
+                    if (stage != StartupStage.Main) {
                         return@LaunchedEffect
                     }
                     rootLifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                        val warningState = gitHubSyncWarningRepository.loadState()
-                        val shouldWarn = (warningState.hasRepoInfo || warningState.hasSyncHistory) &&
-                            !warningState.isConfigured &&
-                            !hasShownTokenWarning &&
-                            !warningState.isDismissed
+                        val warningResult = startupSyncWarningCoordinator.check(hasShownTokenWarning)
+                        hasShownTokenWarning = warningResult.hasShownWarning
 
-                        if (shouldWarn) {
+                        if (warningResult.showWarning) {
                             NPLogger.d("MainActivity", "显示 GitHub 配置警告")
                             showTokenWarningDialog = true
-                            hasShownTokenWarning = true
-                        } else if (warningState.isConfigured) {
-                            hasShownTokenWarning = false
-                            if (warningState.isDismissed) {
-                                gitHubSyncWarningRepository.setDismissed(false)
-                            }
                         }
                     }
                 }
@@ -456,7 +433,7 @@ class MainActivity : ComponentActivity() {
                     label = "AppStageTransition"
                 ) { current ->
                     when (current) {
-                        AppStage.Loading -> {
+                        StartupStage.Loading -> {
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -464,16 +441,16 @@ class MainActivity : ComponentActivity() {
                                     .navigationBarsPadding()
                             )
                         }
-                        AppStage.Disclaimer -> {
+                        StartupStage.Disclaimer -> {
                             val scope = rememberCoroutineScope()
                             DisclaimerScreen(
                                 onAgree = { scope.launch { settingsRepository.setDisclaimerAccepted(true) } }
                             )
                         }
-                        AppStage.Onboarding -> {
+                        StartupStage.Onboarding -> {
                             StartupOnboardingScreen()
                         }
-                        AppStage.Main -> {
+                        StartupStage.Main -> {
                             // 弹窗状态管理和事件监听
                             var showDialog by remember { mutableStateOf(false) }
                             var dialogMessage by remember { mutableStateOf("") }
@@ -496,7 +473,7 @@ class MainActivity : ComponentActivity() {
                                 joiningInvite -> getString(R.string.listen_together_status_joining)
                                 !listenTogetherStatus.isNullOrBlank() -> listenTogetherStatus
                                 isListenTogetherRoomActive &&
-                                    listenTogetherSessionState.connectionState == moe.ouom.neriplayer.listentogether.ListenTogetherConnectionState.CONNECTING ->
+                                    listenTogetherSessionState.connectionState == moe.ouom.neriplayer.listentogether.protocol.ListenTogetherConnectionState.CONNECTING ->
                                     getString(R.string.listen_together_status_syncing)
                                 isListenTogetherRoomActive -> getString(R.string.listen_together_status_active)
                                 else -> null
@@ -538,7 +515,7 @@ class MainActivity : ComponentActivity() {
                                 updateListenTogetherStatus(
                                     when {
                                         listenTogetherSessionState.roomId.isNullOrBlank() -> null
-                                        listenTogetherSessionState.connectionState == moe.ouom.neriplayer.listentogether.ListenTogetherConnectionState.CONNECTING ->
+                                        listenTogetherSessionState.connectionState == moe.ouom.neriplayer.listentogether.protocol.ListenTogetherConnectionState.CONNECTING ->
                                             getString(R.string.listen_together_status_syncing)
                                         else -> getString(R.string.listen_together_status_active)
                                     }
@@ -743,7 +720,7 @@ class MainActivity : ComponentActivity() {
                         onDismissReminder = {
                             showTokenWarningDialog = false
                             startupScope.launch {
-                                gitHubSyncWarningRepository.setDismissed(true)
+                                startupSyncWarningCoordinator.dismissReminder()
                             }
                         }
                     )
@@ -754,7 +731,7 @@ class MainActivity : ComponentActivity() {
                         report = report,
                         onCopy = {
                             startupScope.launch(Dispatchers.IO) {
-                                val fullContent = CrashReportStore.readFullCrashReport(report.file)
+                                val fullContent = startupCrashReportManager.readFullReport(report.file)
                                     ?: report.previewContent
                                 withContext(Dispatchers.Main) {
                                     if (fullContent.isNotBlank()) {
@@ -780,7 +757,7 @@ class MainActivity : ComponentActivity() {
                             exportCrashReportLauncher.launch(report.file.name)
                         },
                         onClose = {
-                            CrashReportStore.clearPendingCrashReport(this@MainActivity)
+                            startupCrashReportManager.clearPendingReport()
                             pendingStartupCrashReport = null
                         }
                     )
@@ -804,8 +781,14 @@ class MainActivity : ComponentActivity() {
 
     private fun restoreFromSafeMode() {
         runCatching {
-            (application as? NeriPlayerApplication)?.initializeNormalComponents()
-            SafeModeManager.restoreNormalStartup(this)
+            SafeModeRecoveryCoordinator(
+                initializeNormalComponents = {
+                    (application as? NeriPlayerApplication)?.initializeNormalComponents()
+                },
+                restoreNormalStartup = {
+                    SafeModeManager.restoreNormalStartup(this)
+                }
+            ).restore()
             val restartIntent = Intent(this, MainActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             }
@@ -999,34 +982,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun scheduleStartupSyncIfNeeded() {
-        lifecycleScope.launch(Dispatchers.IO) {
-            delay(STARTUP_SYNC_SCHEDULE_DELAY_MS)
-            if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
-                return@launch
-            }
-            val storage = moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
-            val shouldScheduleGitHubSync = storage.isConfigured() && storage.isAutoSyncEnabled()
-            if (shouldScheduleGitHubSync) {
-                moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker.scheduleDelayedSync(
-                    this@MainActivity,
-                    markMutation = false
-                )
-            }
-
-            val webDavStorage = WebDavStorage(this@MainActivity)
-            if (!webDavStorage.isConfigured() || !webDavStorage.isAutoSyncEnabled()) {
-                return@launch
-            }
-            if (shouldScheduleGitHubSync) {
-                delay(STARTUP_SYNC_STAGGER_DELAY_MS)
-                if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
-                    return@launch
+        lifecycleScope.launch {
+            StartupSyncScheduler(
+                context = this@MainActivity,
+                ioDispatcher = Dispatchers.IO,
+                isStarted = {
+                    lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
                 }
-            }
-            WebDavSyncWorker.scheduleDelayedSync(
-                this@MainActivity,
-                markMutation = false
-            )
+            ).scheduleIfNeeded()
         }
     }
 
@@ -1077,10 +1040,10 @@ class MainActivity : ComponentActivity() {
                 getString(R.string.listen_together_error_controller_offline)
             "member control disabled" in lowered ->
                 getString(R.string.listen_together_error_member_control_disabled)
-            "一起听连接不可用" in normalized ||
+            normalized == getString(R.string.listen_together_error_reconnecting) ||
                 ("listen together" in lowered && "reconnect" in lowered) ->
                 getString(R.string.listen_together_error_reconnecting)
-            "一起听连接已失效" in normalized ||
+            normalized == getString(R.string.listen_together_error_rejoining) ||
                 ("rejoin" in lowered && "room" in lowered) ->
                 getString(R.string.listen_together_error_rejoining)
             else -> normalized

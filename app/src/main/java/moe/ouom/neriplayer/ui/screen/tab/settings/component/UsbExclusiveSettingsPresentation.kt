@@ -16,8 +16,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnosticsSnapshot
-import moe.ouom.neriplayer.core.player.usb.UsbExclusiveAudioPathState
-import moe.ouom.neriplayer.core.player.usb.UsbExclusiveNativeState
+import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
+import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
 
 @Composable
 internal fun resolveUsbStatus(

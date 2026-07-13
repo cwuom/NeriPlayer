@@ -1,0 +1,999 @@
+package moe.ouom.neriplayer.ui.component.lyrics
+
+/*
+ * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+ * Copyright (C) 2025-2025 NeriPlayer developers
+ * https://github.com/cwuom/NeriPlayer
+ *
+ * This software is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this software.
+ * If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: moe.ouom.neriplayer.ui.component/SyncedLyricsView
+ * Created: 2025/8/13
+ */
+
+import android.annotation.SuppressLint
+import android.os.Build
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlin.math.abs
+import kotlin.math.floor
+import kotlin.math.roundToLong
+import moe.ouom.neriplayer.core.player.metadata.normalizeLegacyLrcTimestamps
+
+private const val LYRIC_TIME_SMOOTHING_DURATION_MS = 96
+private const val LYRIC_TIME_SMOOTHING_MAX_DELTA_MS = 180L
+
+@Stable
+data class LyricVisualSpec(
+    val pageTiltDeg: Float = 9f,
+    val activeScale: Float = 1.1f,
+    val nearScale: Float = 0.9f,
+    val farScale: Float = 0.88f,
+
+    val farScaleMin: Float = 0.8f,
+    val farScaleFalloffPerStep: Float = 0.02f,
+
+    val inactiveBlurNear: Dp = 2.dp,
+    val inactiveBlurFar: Dp = 3.dp,
+    val flipDurationMs: Int = 260
+)
+
+/** 单词/字的时间戳 */
+data class WordTiming(
+    val startTimeMs: Long,
+    val endTimeMs: Long,
+    val charCount: Int = 0
+)
+
+/** 一行歌词 */
+data class LyricEntry(
+    val text: String,
+    val startTimeMs: Long,
+    val endTimeMs: Long,
+    val words: List<WordTiming>? = null
+)
+
+private val NeteaseYrcLineRegex = Regex("""\[\d+,\s*\d+]\(\d+,""")
+
+fun isNeteaseYrc(content: String): Boolean = content.contains(NeteaseYrcLineRegex)
+
+fun parseNeteaseLyricsAuto(content: String): List<LyricEntry> {
+    return if (isNeteaseYrc(content)) {
+        parseNeteaseYrc(content)
+    } else {
+        parseNeteaseLrc(content)
+    }
+}
+
+/**
+ * 根据当前时间计算该行的高亮进度（0f..1f），基于字符数进行精确计算
+ */
+fun calculateLineProgress(line: LyricEntry, currentTimeMs: Long): Float {
+    val start = line.startTimeMs
+    val end = line.endTimeMs
+
+    if (currentTimeMs <= start) return 0f
+    if (currentTimeMs >= end) return 1f
+
+    val words = line.words
+    val totalChars = line.text.length
+    if (words.isNullOrEmpty() || totalChars == 0) {
+        val lineDur = (end - start).coerceAtLeast(1)
+        return ((currentTimeMs - start).toFloat() / lineDur).coerceIn(0f, 1f)
+    }
+
+    var completedChars = 0
+    for (word in words) {
+        val ws = word.startTimeMs
+        val we = word.endTimeMs
+
+        if (currentTimeMs < ws) {
+            return completedChars.toFloat() / totalChars
+        }
+
+        if (currentTimeMs < we) {
+            val wordDur = (we - ws).coerceAtLeast(1)
+            val timeInWord = currentTimeMs - ws
+            val partialProgress = timeInWord.toFloat() / wordDur
+            val partialChars = partialProgress * word.charCount
+            return ((completedChars + partialChars) / totalChars).coerceIn(0f, 1f)
+        }
+
+        completedChars += word.charCount
+    }
+
+    return 1f
+}
+/** 找到当前时间所在的行索引 */
+fun findCurrentLineIndex(lines: List<LyricEntry>, currentTimeMs: Long): Int {
+    if (lines.isEmpty()) return -1
+    var low = 0
+    var high = lines.lastIndex
+    var result = 0
+    while (low <= high) {
+        val mid = (low + high) ushr 1
+        if (lines[mid].startTimeMs <= currentTimeMs) {
+            result = mid
+            low = mid + 1
+        } else {
+            high = mid - 1
+        }
+    }
+    return result
+}
+
+internal fun shouldSnapLyricTimeSmoothing(
+    displayedTimeMs: Long,
+    targetTimeMs: Long,
+    maxAnimatedDeltaMs: Long = LYRIC_TIME_SMOOTHING_MAX_DELTA_MS
+): Boolean {
+    val delta = targetTimeMs - displayedTimeMs
+    return delta < 0L || delta > maxAnimatedDeltaMs
+}
+
+@Composable
+private fun animateFloatWhenEnabled(
+    targetValue: Float,
+    enabled: Boolean,
+    animationDurationMs: Int? = null,
+    label: String
+): State<Float> {
+    val animationSpec = if (animationDurationMs != null) {
+        tween<Float>(durationMillis = animationDurationMs)
+    } else {
+        spring(
+            stiffness = Spring.StiffnessLow,
+            dampingRatio = 0.85f
+        )
+    }
+    val animated = animateFloatAsState(
+        targetValue = targetValue,
+        animationSpec = animationSpec,
+        label = label
+    )
+    val immediate = rememberUpdatedState(targetValue)
+    return if (enabled) animated else immediate
+}
+
+@Composable
+private fun rememberSmoothedLyricTimeMs(
+    targetTimeMs: Long
+): Long {
+    val smoothedTime = remember { Animatable(targetTimeMs.toFloat()) }
+
+    LaunchedEffect(targetTimeMs) {
+        val displayedTimeMs = smoothedTime.value.roundToLong()
+        if (shouldSnapLyricTimeSmoothing(displayedTimeMs, targetTimeMs)) {
+            smoothedTime.snapTo(targetTimeMs.toFloat())
+        } else {
+            smoothedTime.animateTo(
+                targetValue = targetTimeMs.toFloat(),
+                animationSpec = tween(
+                    durationMillis = LYRIC_TIME_SMOOTHING_DURATION_MS,
+                    easing = LinearEasing
+                )
+            )
+        }
+    }
+
+    return smoothedTime.value.roundToLong()
+}
+
+/** 上下渐隐 */
+fun Modifier.verticalEdgeFade(fadeHeight: Dp): Modifier = this
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+        val edge = (fadeHeight.toPx() / size.height).coerceIn(0f, 0.5f)
+        val brush = Brush.verticalGradient(
+            colorStops = arrayOf(
+                0.0f       to Color.Transparent,
+                edge       to Color.Black,
+                (1f - edge) to Color.Black,
+                1.0f       to Color.Transparent
+            )
+        )
+        drawRect(brush = brush, size = size, blendMode = BlendMode.DstIn)
+    }
+
+@OptIn(ExperimentalFoundationApi::class)
+@SuppressLint("UnusedBoxWithConstraintsScope")
+@Composable
+fun SyncedLyricsView(
+    lyrics: List<LyricEntry>,
+    currentTimeMs: Long,
+    modifier: Modifier = Modifier,
+    textColor: Color = if (isSystemInDarkTheme()) Color.White else Color.Black,
+    inactiveAlphaNear: Float = 0.4f,
+    inactiveAlphaFar: Float = 0.35f,
+    blurInactiveAlphaNear: Float = 0.72f,
+    blurInactiveAlphaFar: Float = 0.40f,
+    fontSize: TextUnit = 18.sp,
+    centerPadding: Dp = 16.dp,
+    visualSpec: LyricVisualSpec = LyricVisualSpec(),
+    lyricOffsetMs: Long = 0L,
+    lyricBlurEnabled: Boolean = true,
+    lyricBlurAmount: Float = 10f,
+    onLyricClick: ((LyricEntry) -> Unit)? = null,
+    onLyricLongClick: ((LyricEntry) -> Unit)? = null,
+    translatedLyrics: List<LyricEntry>? = null,
+    translationFontSize: TextUnit = 14.sp,
+    isPlaying: Boolean = false,
+    playbackSpeed: Float = 1f,
+    interpolatePlaybackPosition: Boolean = false,
+    visualEffectsEnabled: Boolean = true,
+    smoothActiveLineProgress: Boolean = true
+) {
+    val listState = rememberLazyListState()
+    var manualClearHoldIndex by remember(lyrics) { mutableStateOf<Int?>(null) }
+    var isAutoScrolling by remember { mutableStateOf(false) }
+    var lastUserInteracting by remember { mutableStateOf(false) }
+    val lineSelectionTimeMs = (currentTimeMs + lyricOffsetMs).coerceAtLeast(0L)
+
+    val currentIndex = remember(lyrics, lineSelectionTimeMs) {
+        findCurrentLineIndex(lyrics, lineSelectionTimeMs)
+    }
+    val translationMatchesByIndex = remember(lyrics, translatedLyrics) {
+        translatedLyrics
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { matchTranslationsToLineIndices(lyrics, it) }
+            .orEmpty()
+    }
+
+    LaunchedEffect(currentIndex, lyrics.size) {
+        if (currentIndex in lyrics.indices && !listState.isScrollInProgress) {
+            isAutoScrolling = true
+            try {
+                listState.animateScrollToItem(currentIndex)
+            } finally {
+                // 确保自动滚动被取消或完成后及时复位，避免后续手动滚动无法进入清晰态
+                isAutoScrolling = false
+            }
+        }
+    }
+
+    val isUserInteracting by remember {
+        derivedStateOf { listState.isScrollInProgress && !isAutoScrolling }
+    }
+
+    LaunchedEffect(isUserInteracting, currentIndex) {
+        if (isUserInteracting && !lastUserInteracting && currentIndex >= 0) {
+            manualClearHoldIndex = currentIndex
+        } else if (!isUserInteracting && lastUserInteracting && currentIndex >= 0) {
+            manualClearHoldIndex = currentIndex
+        }
+        lastUserInteracting = isUserInteracting
+    }
+
+    LaunchedEffect(currentIndex, isUserInteracting) {
+        if (!isUserInteracting && manualClearHoldIndex != null && currentIndex != manualClearHoldIndex) {
+            manualClearHoldIndex = null
+        }
+    }
+
+    val shouldUseClearText = isUserInteracting ||
+        (manualClearHoldIndex != null && manualClearHoldIndex == currentIndex)
+    val handleLyricClick: ((LyricEntry) -> Unit)? = onLyricClick?.let { callback ->
+        { line ->
+            manualClearHoldIndex = null
+            callback(line)
+        }
+    }
+    val handleLyricLongClick: ((LyricEntry) -> Unit)? = onLyricLongClick?.let { callback ->
+        { line ->
+            manualClearHoldIndex = null
+            callback(line)
+        }
+    }
+
+    BoxWithConstraints(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        val centerPad = maxHeight / 2.5f
+        val maxTextWidth = (maxWidth - 48.dp).coerceAtLeast(0.dp)
+        val density = LocalDensity.current
+
+        LazyColumn(
+            state = listState,
+            contentPadding = PaddingValues(top = centerPad, bottom = centerPad),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalEdgeFade(fadeHeight = 72.dp)
+        ) {
+            itemsIndexed(
+                items = lyrics,
+                key = { index, line -> lyricListItemKey(index, line) }
+            ) { index, line ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = centerPadding / 2, horizontal = 24.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .combinedClickable(
+                            enabled = handleLyricClick != null || handleLyricLongClick != null,
+                            onClick = { handleLyricClick?.invoke(line) },
+                            onLongClick = { handleLyricLongClick?.invoke(line) }
+                        )
+                        .animateItem()
+                        .widthIn(max = maxTextWidth)
+                        .then(
+                            if (visualEffectsEnabled) {
+                                Modifier.animateContentSize(
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioLowBouncy,
+                                        stiffness = Spring.StiffnessLow
+                                    )
+                                )
+                            } else {
+                                Modifier
+                            }
+                        ),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    val distance = abs(index - currentIndex)
+                    val isActive = index == currentIndex
+
+                    if (shouldUseClearText) {
+                        // 滚动时：显示简单文本
+                        Text(
+                            text = line.text,
+                            style = TextStyle(
+                                color = textColor,
+                                fontSize = fontSize,
+                                fontWeight = FontWeight.Medium,
+                                textAlign = TextAlign.Center
+                            ),
+                            maxLines = Int.MAX_VALUE,
+                            softWrap = true
+                        )
+                    } else {
+                        // 播放时：显示带动画的复杂文本
+                        val targetScale =
+                            if (!visualEffectsEnabled) 1f
+                            else if (isActive) visualSpec.activeScale
+                            else scaleForDistance(distance, visualSpec)
+                        val scale by animateFloatWhenEnabled(
+                            targetValue = targetScale,
+                            enabled = visualEffectsEnabled,
+                            label = "lyric_scale"
+                        )
+
+                        val tilt =
+                            if (!visualEffectsEnabled || isActive) {
+                                0f
+                            } else if (index < currentIndex) {
+                                visualSpec.pageTiltDeg
+                            } else {
+                                -visualSpec.pageTiltDeg
+                            }
+                        val rotationX by animateFloatWhenEnabled(
+                            targetValue = tilt,
+                            enabled = visualEffectsEnabled,
+                            animationDurationMs = visualSpec.flipDurationMs,
+                            label = "lyric_flip"
+                        )
+
+                        val blurRadiusPx = if (isActive || !lyricBlurEnabled || !visualEffectsEnabled) 0f else {
+                            blurForDistance(distance, lyricBlurAmount)
+                        }
+
+                        val blurEffect = remember(blurRadiusPx) {
+                            if (blurRadiusPx > 0.1f && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                BlurEffect(blurRadiusPx, blurRadiusPx, TileMode.Clamp)
+                            } else {
+                                null
+                            }
+                        }
+                        val shadowEffect = remember(blurRadiusPx, textColor) {
+                            if (blurRadiusPx > 0.1f && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                                Shadow(
+                                    color = textColor.copy(alpha = 0.28f),
+                                    offset = Offset.Zero,
+                                    blurRadius = blurRadiusPx
+                                )
+                            } else {
+                                null
+                            }
+                        }
+
+                        if (isActive) {
+                            SyncedLyricsActiveLine(
+                                line = line,
+                                currentTimeMs = currentTimeMs,
+                                activeColor = textColor,
+                                inactiveColor = textColor.copy(alpha = 0.5f),
+                                fontSize = fontSize,
+                                fadeWidth = 12.dp,
+                                lyricOffsetMs = lyricOffsetMs,
+                                isPlaying = isPlaying,
+                                playbackSpeed = playbackSpeed,
+                                interpolatePlaybackPosition = interpolatePlaybackPosition,
+                                animateProgress = smoothActiveLineProgress && !interpolatePlaybackPosition
+                            )
+                        } else {
+                            var colorStyle = textColor.copy(
+                                alpha = alphaForDistance(
+                                    distance,
+                                    inactiveAlphaNear,
+                                    inactiveAlphaFar
+                                )
+                            )
+                            if (lyricBlurEnabled) {
+                                colorStyle = textColor.copy(
+                                    alpha = alphaForDistance(
+                                        distance,
+                                        blurInactiveAlphaNear,
+                                        blurInactiveAlphaFar
+                                    )
+                                )
+                            }
+                            Text(
+                                text = line.text,
+                                modifier = Modifier.graphicsLayer {
+                                    transformOrigin =
+                                        TransformOrigin(0.5f, if (index < currentIndex) 1f else 0f)
+                                    cameraDistance = 16f * density.density
+                                    this.rotationX = rotationX
+                                    scaleX = scale
+                                    scaleY = scale
+                                    renderEffect = blurEffect
+                                },
+                                style = TextStyle(
+                                    color = colorStyle,
+                                    fontSize = fontSize,
+                                    fontWeight = FontWeight.Medium,
+                                    textAlign = TextAlign.Center,
+                                    shadow = shadowEffect
+                                ),
+                                maxLines = Int.MAX_VALUE,
+                                softWrap = true
+                            )
+                        }
+                    }
+
+                    val transText = translationMatchesByIndex[index]?.text
+                    val shouldShowTranslation = (shouldUseClearText || isActive) && !transText.isNullOrBlank()
+
+                    Crossfade(
+                        targetState = shouldShowTranslation,
+                        animationSpec = tween(250),
+                        label = "translation_crossfade"
+                    ) { show ->
+                        if (show && transText != null) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Spacer(Modifier.height(4.dp)) // 间距可以按需调整
+                                Text(
+                                    text = transText,
+                                    style = TextStyle(
+                                        color = textColor.copy(alpha = 0.85f),
+                                        fontSize = translationFontSize,
+                                        fontWeight = FontWeight.Normal,
+                                        textAlign = TextAlign.Center
+                                    ),
+                                    maxLines = Int.MAX_VALUE,
+                                    softWrap = true
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal fun lyricListItemKey(index: Int, line: LyricEntry): String {
+    return "$index:${line.startTimeMs}:${line.endTimeMs}:${line.text}"
+}
+
+
+/**
+ * 解析网易云 yrc（逐字/逐词）
+ * 示例：[12580,3470](12580,250,0)难(12830,300,0)以...
+ * 会把每段文字的长度写入 WordTiming.charCount，用于多行逐字揭示
+ */
+fun parseNeteaseYrc(yrc: String): List<LyricEntry> {
+//    NPLogger.d("parseYrc-N", yrc)
+    val out = mutableListOf<LyricEntry>()
+    val headerRegex = Regex("""\[(\d+),\s*(\d+)]""")
+    val segRegex = Regex("""\((\d+),\s*(\d+),\s*[-\d]+\)([^()\n\r]+)""")
+
+    yrc.lineSequence().forEach { raw ->
+        val line = raw.trim()
+        if (line.isEmpty()) return@forEach
+        if (!line.startsWith("[")) return@forEach
+
+        val header = headerRegex.find(line) ?: return@forEach
+        val start = header.groupValues[1].toLong()
+        val dur = header.groupValues[2].toLong()
+        val end = start + dur
+
+        val segs = segRegex.findAll(line).toList()
+        if (segs.isEmpty()) {
+            val text = line.substringAfter("]").trim()
+            out.add(LyricEntry(text = text, startTimeMs = start, endTimeMs = end, words = null))
+        } else {
+            val words = mutableListOf<WordTiming>()
+            val sb = StringBuilder()
+            for (m in segs) {
+                val ws = m.groupValues[1].toLong()
+                val wd = m.groupValues[2].toLong()
+                val we = ws + wd
+                val t = m.groupValues[3]
+                sb.append(t)
+                words.add(WordTiming(ws, we, charCount = t.length))
+            }
+            out.add(
+                LyricEntry(
+                    text = sb.toString(),
+                    startTimeMs = start,
+                    endTimeMs = end,
+                    words = words
+                )
+            )
+        }
+    }
+    return out.sortedBy { it.startTimeMs }
+}
+
+/** 小数字符偏移的多行 reveal */
+@Composable
+internal fun Modifier.multilineGradientReveal(
+    layout: TextLayoutResult?,
+    revealOffsetChars: Float?,
+    textLength: Int,
+    fadeWidth: Dp,
+    line: LyricEntry? = null,
+    interpolatedPositionState: InterpolatedPlaybackPositionState? = null,
+    lyricOffsetMs: Long = 0L
+): Modifier = this
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithContent {
+        if (layout == null || textLength == 0) {
+            drawContent()
+            return@drawWithContent
+        }
+        val effectiveRevealOffsetChars = revealOffsetChars ?: run {
+            val currentLine = line
+            val positionState = interpolatedPositionState
+            if (currentLine == null || positionState == null) {
+                drawContent()
+                return@drawWithContent
+            }
+            val drawTimeMs = (positionState.renderedPositionMs + lyricOffsetMs).coerceAtLeast(0L)
+            currentLine.text.length * calculateLineProgress(currentLine, drawTimeMs).coerceIn(0f, 1f)
+        }
+
+        // 进度达100%，直接显示全部高亮，跳过裁剪
+        if (effectiveRevealOffsetChars >= textLength) {
+            drawContent()
+            return@drawWithContent
+        }
+
+        val safeChars = effectiveRevealOffsetChars.coerceIn(0f, textLength.toFloat())
+        val totalLines = layout.lineCount
+
+        // 遍历所有行，分三种情况处理，已完成行、当前行、未开始行
+        for (lineIndex in 0 until totalLines) {
+            val lineStartIdx = layout.getLineStart(lineIndex) // 该行第一个字符的索引
+            val lineEndIdx = layout.getLineEnd(lineIndex, true) // 该行最后一个字符的索引（含换行符）
+
+            // 进度超过该行最后一个字符，直接绘制全高亮
+            if (safeChars >= lineEndIdx) {
+                clipRect(
+                    left = layout.getLineLeft(lineIndex),
+                    top = layout.getLineTop(lineIndex),
+                    right = layout.getLineRight(lineIndex),
+                    bottom = layout.getLineBottom(lineIndex)
+                ) {
+                    this@drawWithContent.drawContent()
+                }
+            }
+            // 进度落在该行内，执行渐变裁剪
+            else if (safeChars >= lineStartIdx) {
+                val currentIdxInLine = (safeChars - lineStartIdx).coerceAtLeast(0f)
+                val currentCharIdx = lineStartIdx + floor(currentIdxInLine).toInt()
+                val frac = (currentIdxInLine - floor(currentIdxInLine)).coerceIn(0f, 1f)
+
+                // 计算当前字符和下一个字符的X坐标
+                // 使用 getBoundingBox 获取更准确的字符边界，避免字体渲染偏移
+                val x0 = try {
+                    layout.getBoundingBox(currentCharIdx).left
+                } catch (e: Exception) {
+                    layout.getHorizontalPosition(currentCharIdx, usePrimaryDirection = true)
+                }
+                val nextCharIdx = if (currentCharIdx >= lineEndIdx - 1) {
+                    lineEndIdx // 该行最后一个字符，下一个字符指向行尾
+                } else {
+                    currentCharIdx + 1
+                }
+                val x1 = if (currentCharIdx >= lineEndIdx - 1) {
+                    layout.getLineRight(lineIndex) // 该行最后一个字符，X1取行右边界
+                } else {
+                    try {
+                        layout.getBoundingBox(nextCharIdx).left
+                    } catch (e: Exception) {
+                        layout.getHorizontalPosition(nextCharIdx, usePrimaryDirection = true)
+                    }
+                }
+
+                // 确保X坐标在当前行范围内
+                val lineLeft = layout.getLineLeft(lineIndex)
+                val lineRight = layout.getLineRight(lineIndex)
+                val x = (x0 + (x1 - x0) * frac).coerceIn(lineLeft, lineRight)
+
+                // 计算渐变范围
+                val fadePx = fadeWidth.toPx()
+                if (fadePx <= 0.5f) {
+                    clipRect(
+                        left = lineLeft,
+                        top = layout.getLineTop(lineIndex),
+                        right = x,
+                        bottom = layout.getLineBottom(lineIndex)
+                    ) {
+                        this@drawWithContent.drawContent()
+                    }
+                    continue
+                }
+                val start = (x - fadePx).coerceAtLeast(lineLeft)
+
+                // 裁剪并绘制当前行的渐变高亮
+                clipRect(
+                    left = lineLeft,
+                    top = layout.getLineTop(lineIndex),
+                    right = lineRight,
+                    bottom = layout.getLineBottom(lineIndex)
+                ) {
+                    this@drawWithContent.drawContent()
+
+                    // 绘制渐变遮罩
+                    val lineWidth = (lineRight - lineLeft).coerceAtLeast(1f)
+                    val s1 = ((start - lineLeft) / lineWidth).coerceIn(0f, 1f)
+                    val s2 = ((x - lineLeft) / lineWidth).coerceIn(0f, 1f)
+                    val leftStop = minOf(s1, s2)
+                    val rightStop = maxOf(s1, s2)
+                    val brush = Brush.horizontalGradient(
+                        colorStops = arrayOf(
+                            0f to Color.White,
+                            leftStop to Color.White,
+                            rightStop to Color.Transparent,
+                            1f to Color.Transparent
+                        ),
+                        startX = lineLeft,
+                        endX = lineRight
+                    )
+                    drawRect(
+                        brush = brush,
+                        topLeft = Offset(lineLeft, layout.getLineTop(lineIndex)),
+                        size = androidx.compose.ui.geometry.Size(
+                            lineRight - lineLeft,
+                            layout.getLineBottom(lineIndex) - layout.getLineTop(lineIndex)
+                        ),
+                        blendMode = BlendMode.DstIn
+                    )
+                }
+            }
+            // 进度未到该行，不绘制高亮
+            else {
+                continue
+            }
+        }
+    }
+
+
+/**
+ * 顶层当前行
+ */
+@Composable
+fun SyncedLyricsActiveLine(
+    line: LyricEntry,
+    currentTimeMs: Long,
+    activeColor: Color,
+    inactiveColor: Color,
+    fontSize: TextUnit,
+    fadeWidth: Dp = 12.dp,
+    lyricOffsetMs: Long = 0L,
+    isPlaying: Boolean = false,
+    playbackSpeed: Float = 1f,
+    interpolatePlaybackPosition: Boolean = false,
+    animateProgress: Boolean = true
+) {
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val isLayoutReady by remember { derivedStateOf { layout != null } }
+    val interpolatedPositionState = rememberInterpolatedPlaybackPositionState(
+        currentTimeMs = currentTimeMs,
+        isPlaying = isPlaying && interpolatePlaybackPosition,
+        playbackSpeed = playbackSpeed
+    )
+    val targetLyricTimeMs = (currentTimeMs + lyricOffsetMs).coerceAtLeast(0L)
+    val smoothedTargetLyricTimeMs = rememberSmoothedLyricTimeMs(targetLyricTimeMs)
+    val smoothedLyricTimeMs = if (animateProgress) {
+        smoothedTargetLyricTimeMs
+    } else {
+        targetLyricTimeMs
+    }
+
+    // 计算当前行进度
+    val progressTarget = remember(line, smoothedLyricTimeMs) {
+        calculateLineProgress(line, smoothedLyricTimeMs).coerceIn(0f, 1f)
+    }
+
+    val revealOffsetCharsAnimatable = remember(line.text) { Animatable(0f) }
+    LaunchedEffect(isLayoutReady, progressTarget, animateProgress) {
+        if (!isLayoutReady) return@LaunchedEffect
+        if (!animateProgress) return@LaunchedEffect
+        val targetChars = line.text.length * progressTarget
+        revealOffsetCharsAnimatable.snapTo(targetChars)
+    }
+    val revealOffsetChars = if (animateProgress) {
+        revealOffsetCharsAnimatable.value
+    } else if (interpolatePlaybackPosition) {
+        null
+    } else {
+        line.text.length * progressTarget
+    }
+
+    val textStyle = TextStyle(
+        fontSize = fontSize,
+        fontWeight = FontWeight.Medium,
+        textAlign = TextAlign.Center,
+        letterSpacing = 0.sp  // 禁用字符间距调整，确保测量和渲染一致
+    )
+
+    val effectiveFadeWidth = if (line.words.isNullOrEmpty()) fadeWidth else 0.dp
+
+    Box {
+        // 底版文本
+        Text(
+            text = line.text,
+            style = textStyle.copy(color = inactiveColor),
+            maxLines = Int.MAX_VALUE,
+            softWrap = true,
+            onTextLayout = { newLayout ->
+                // 仅在布局实际变化时更新，减少重绘
+                if (layout?.layoutInput != newLayout.layoutInput) {
+                    layout = newLayout
+                }
+            }
+        )
+
+        // 高亮文本 - 仅在布局准备好后渲染，避免旧数据导致的异常
+        if (isLayoutReady) {
+            Text(
+                text = line.text,
+                style = textStyle.copy(color = activeColor),
+                maxLines = Int.MAX_VALUE,
+                softWrap = true,
+                modifier = Modifier.multilineGradientReveal(
+                    layout = layout,
+                    revealOffsetChars = revealOffsetChars,
+                    textLength = line.text.length,
+                    fadeWidth = effectiveFadeWidth,
+                    line = line,
+                    interpolatedPositionState = if (interpolatePlaybackPosition) {
+                        interpolatedPositionState
+                    } else {
+                        null
+                    },
+                    lyricOffsetMs = lyricOffsetMs
+                )
+            )
+        }
+    }
+}
+
+internal data class HeadGlowTarget(
+    val x: Float,
+    val y: Float
+)
+
+internal fun resolveHeadGlowTarget(
+    currentLine: Int,
+    nextLine: Int,
+    currentLineRight: Float,
+    currentLineCenterY: Float,
+    nextCharLeft: Float,
+    nextLineCenterY: Float
+): HeadGlowTarget {
+    return if (nextLine != currentLine) {
+        // 换行时先留在当前行末，避免最后一个字提前跳到下一行
+        HeadGlowTarget(
+            x = currentLineRight,
+            y = currentLineCenterY
+        )
+    } else {
+        HeadGlowTarget(
+            x = nextCharLeft,
+            y = nextLineCenterY
+        )
+    }
+}
+
+/**
+ * 解析 LRC（逐句）
+ * 支持 [mm:ss.SSS] 或 [mm:ss]
+ * 没有逐字信息时，逐字揭示会按整句线性推进
+ */
+fun parseNeteaseLrc(lrc: String): List<LyricEntry> {
+//    NPLogger.d("parseLyc-N", lrc)
+    val normalizedLrc = normalizeLegacyLrcTimestamps(lrc)
+    val tag = Regex("""\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?]""")
+    val timeline = mutableListOf<Pair<Long, String>>()
+
+    normalizedLrc.lineSequence().forEach { raw ->
+        val line = raw.trim()
+        if (line.isEmpty()) return@forEach
+        if (line.startsWith("{") || line.startsWith("}")) return@forEach // 过滤 JSON 段
+
+        val m = tag.find(line) ?: return@forEach
+        val mm = m.groupValues[1].toInt()
+        val ss = m.groupValues[2].toInt()
+        val msStr = m.groupValues.getOrNull(3).orEmpty()
+        val ms = when (msStr.length) {
+            0 -> 0
+            2 -> msStr.toInt() * 10
+            else -> msStr.toInt()
+        }
+        val time = mm * 60_000L + ss * 1_000L + ms
+        val text = line.substring(m.range.last + 1).trim()
+        if (text.isNotEmpty()) {
+            timeline.add(time to text)
+        }
+    }
+
+    timeline.sortBy { it.first }
+    val out = mutableListOf<LyricEntry>()
+    for (i in timeline.indices) {
+        val (start, text) = timeline[i]
+        val end = if (i < timeline.lastIndex) timeline[i + 1].first else start + 5_000L
+        out.add(LyricEntry(text = text, startTimeMs = start, endTimeMs = end, words = null))
+    }
+    return out
+}
+
+@Composable
+fun DebugActiveLine(
+    line: LyricEntry,
+    currentTimeMs: Long,
+    activeColor: Color,
+    inactiveColor: Color,
+    fontSize: TextUnit
+) {
+    val progressTarget = remember(line, currentTimeMs) {
+        calculateLineProgress(line, currentTimeMs)
+    }
+
+    val revealCharIndex = (line.text.length * progressTarget).toInt()
+
+    val highlightedText = line.text.substring(0, revealCharIndex.coerceIn(0, line.text.length))
+    val remainingText = line.text.substring(revealCharIndex.coerceIn(0, line.text.length))
+
+    val textStyle = TextStyle(
+        fontSize = fontSize,
+        fontWeight = FontWeight.Bold,
+        textAlign = TextAlign.Center
+    )
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Row {
+            Text(
+                text = highlightedText,
+                style = textStyle,
+                color = activeColor,
+            )
+            Text(
+                text = remainingText,
+                style = textStyle,
+                color = inactiveColor,
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "Time: $currentTimeMs ms | Progress: ${(progressTarget * 100).toInt()}% | Chars: $revealCharIndex/${line.text.length}",
+            fontSize = 12.sp,
+            color = Color.Gray,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+private fun scaleForDistance(d: Int, spec: LyricVisualSpec): Float =
+    when {
+        d <= 0 -> spec.activeScale
+        d == 1 -> spec.nearScale
+        else -> (spec.farScale - (d - 2) * spec.farScaleFalloffPerStep)
+            .coerceIn(spec.farScaleMin, spec.farScale)
+    }
+
+private fun alphaForDistance(d: Int, near: Float, far: Float): Float =
+    when (d) {
+        1 -> near
+        2 -> far
+        else -> (far - 0.08f * (d - 2)).coerceIn(0.16f, far)
+    }
+
+private fun blurForDistance(d: Int, maxBlur: Float): Float =
+    when (d) {
+        1 -> maxBlur * 1.0f
+        2 -> maxBlur * 1.5f
+        3 -> maxBlur * 2.0f
+        4 -> maxBlur * 2.5f
+        else -> maxBlur * 4.0f
+    }

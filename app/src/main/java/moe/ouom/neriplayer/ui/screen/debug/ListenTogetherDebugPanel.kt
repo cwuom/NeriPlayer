@@ -74,19 +74,21 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
-import moe.ouom.neriplayer.listentogether.ListenTogetherConnectionState
-import moe.ouom.neriplayer.listentogether.ListenTogetherMember
-import moe.ouom.neriplayer.listentogether.ListenTogetherRoomSettings
-import moe.ouom.neriplayer.listentogether.ListenTogetherRoomState
-import moe.ouom.neriplayer.listentogether.ListenTogetherRoomStatuses
 import moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager
-import moe.ouom.neriplayer.listentogether.ListenTogetherTrack
-import moe.ouom.neriplayer.listentogether.buildListenTogetherInviteUri
-import moe.ouom.neriplayer.listentogether.normalizeListenTogetherRoomId
-import moe.ouom.neriplayer.listentogether.resolveListenTogetherBaseUrl
-import moe.ouom.neriplayer.listentogether.validateListenTogetherNickname
-import moe.ouom.neriplayer.listentogether.validateListenTogetherRoomId
-import moe.ouom.neriplayer.listentogether.validateListenTogetherUserUuid
+import moe.ouom.neriplayer.listentogether.invite.buildListenTogetherInviteUri
+import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherBaseUrl
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherConnectionState
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherMember
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomSettings
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomStatuses
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSessionState
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
+import moe.ouom.neriplayer.listentogether.validation.ListenTogetherValidationError
+import moe.ouom.neriplayer.listentogether.validation.normalizeListenTogetherRoomId
+import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherNickname
+import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherRoomId
+import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherUserUuid
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import java.text.SimpleDateFormat
@@ -537,7 +539,7 @@ private fun DebugHeader(
 @Composable
 private fun QuickActionSection(
     activity: ComponentActivity?,
-    sessionState: moe.ouom.neriplayer.listentogether.ListenTogetherSessionState,
+    sessionState: ListenTogetherSessionState,
     effectiveBaseUrl: String,
     clipboard: Clipboard,
     clipboardScope: CoroutineScope,
@@ -625,7 +627,7 @@ private fun RoomActions(
     baseUrlInput: String,
     effectiveBaseUrl: String,
     roomSettings: ListenTogetherRoomSettings,
-    sessionState: moe.ouom.neriplayer.listentogether.ListenTogetherSessionState,
+    sessionState: ListenTogetherSessionState,
     preferences: ListenTogetherPreferences,
     sessionManager: ListenTogetherSessionManager,
     onRunningActionChange: (Int?) -> Unit
@@ -711,7 +713,7 @@ private fun ConnectedActions(
     effectiveBaseUrl: String,
     nickname: String,
     roomIdInput: String,
-    sessionState: moe.ouom.neriplayer.listentogether.ListenTogetherSessionState,
+    sessionState: ListenTogetherSessionState,
     sessionManager: ListenTogetherSessionManager,
     preferences: ListenTogetherPreferences,
     activity: ComponentActivity?,
@@ -825,7 +827,7 @@ private fun SettingToggleRow(
 
 @Composable
 private fun StatusSection(
-    sessionState: moe.ouom.neriplayer.listentogether.ListenTogetherSessionState,
+    sessionState: ListenTogetherSessionState,
     roomState: ListenTogetherRoomState?,
     role: String?,
     fallbackTrackName: String?,
@@ -1079,18 +1081,18 @@ private fun DebugChip(text: String) {
 }
 
 @Composable
-private fun ErrorText(message: String) {
+private fun ErrorText(error: ListenTogetherValidationError) {
     Text(
-        text = message,
+        text = stringResource(error.messageResId, *error.args.toTypedArray()),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.error
     )
 }
 
 @Composable
-private fun SimpleErrorText(message: String) {
+private fun SimpleErrorText(error: ListenTogetherValidationError) {
     Text(
-        text = message,
+        text = stringResource(error.messageResId, *error.args.toTypedArray()),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.error,
         modifier = Modifier.padding(horizontal = 20.dp)
@@ -1099,7 +1101,7 @@ private fun SimpleErrorText(message: String) {
 
 @Composable
 private fun SimpleStatusSection(
-    sessionState: moe.ouom.neriplayer.listentogether.ListenTogetherSessionState,
+    sessionState: ListenTogetherSessionState,
     roomState: ListenTogetherRoomState?,
     role: String?,
     fallbackTrackName: String?,

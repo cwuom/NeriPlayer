@@ -129,7 +129,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.player.AudioDownloadManager
+import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
@@ -139,8 +139,8 @@ import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
-import moe.ouom.neriplayer.ui.component.BatchDownloadManagerSheet
-import moe.ouom.neriplayer.ui.component.PlaylistExportSheet
+import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
+import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionDetailUiState
 import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionHeader

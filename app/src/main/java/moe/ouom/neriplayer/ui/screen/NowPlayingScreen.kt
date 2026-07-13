@@ -206,7 +206,7 @@ import moe.ouom.neriplayer.core.download.isDownloadTaskFinalizing
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.shouldHideRemoteDownloadAction
-import moe.ouom.neriplayer.core.player.AudioDownloadManager
+import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
@@ -233,31 +233,31 @@ import moe.ouom.neriplayer.data.settings.normalizeLyricFontScale
 import moe.ouom.neriplayer.data.settings.resolveLyricDefaultOffsetMs
 import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
-import moe.ouom.neriplayer.ui.component.AdvancedLyricsView
-import moe.ouom.neriplayer.ui.component.AppleMusicLyric
-import moe.ouom.neriplayer.ui.component.buildPhoneticLyricEntries
-import moe.ouom.neriplayer.ui.component.flattenWordTimedEntries
-import moe.ouom.neriplayer.ui.component.hasWordTimedEntries
-import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
-import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
-import moe.ouom.neriplayer.ui.component.LyricsEditorSeed
-import moe.ouom.neriplayer.ui.component.LyricEntry
-import moe.ouom.neriplayer.ui.component.LyricShareSheet
-import moe.ouom.neriplayer.ui.component.LyricVisualSpec
-import moe.ouom.neriplayer.ui.component.PlaybackSoundSheet
-import moe.ouom.neriplayer.ui.component.PlaybackSourceBadge
-import moe.ouom.neriplayer.ui.component.PlaybackSourceType
-import moe.ouom.neriplayer.ui.component.SleepTimerDialog
-import moe.ouom.neriplayer.ui.component.WaveformSlider
-import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
-import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
-import moe.ouom.neriplayer.ui.component.parseNeteaseLyricsAuto
-import moe.ouom.neriplayer.ui.component.rememberLyricSeekHapticFeedback
-import moe.ouom.neriplayer.ui.component.resolveLyricsEditorInitialText
-import moe.ouom.neriplayer.ui.component.resolveLyricsEditorSeed
-import moe.ouom.neriplayer.ui.component.resolvePreferredLyricContent
-import moe.ouom.neriplayer.ui.component.resolveStoredLyricText
-import moe.ouom.neriplayer.ui.component.toEditableLyricsText
+import moe.ouom.neriplayer.ui.component.lyrics.AdvancedLyricsView
+import moe.ouom.neriplayer.ui.component.lyrics.SyncedLyricsView
+import moe.ouom.neriplayer.ui.component.lyrics.buildPhoneticLyricEntries
+import moe.ouom.neriplayer.ui.component.lyrics.flattenWordTimedEntries
+import moe.ouom.neriplayer.ui.component.lyrics.hasWordTimedEntries
+import moe.ouom.neriplayer.ui.component.local.LocalSongDetailsDialog
+import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog
+import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSeed
+import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
+import moe.ouom.neriplayer.ui.component.lyrics.LyricShareSheet
+import moe.ouom.neriplayer.ui.component.lyrics.LyricVisualSpec
+import moe.ouom.neriplayer.ui.component.playback.PlaybackSoundSheet
+import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceBadge
+import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
+import moe.ouom.neriplayer.ui.component.playback.SleepTimerDialog
+import moe.ouom.neriplayer.ui.component.playback.WaveformSlider
+import moe.ouom.neriplayer.ui.component.sheet.bottomSheetDragBlocker
+import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
+import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.ui.component.lyrics.rememberLyricSeekHapticFeedback
+import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricsEditorInitialText
+import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricsEditorSeed
+import moe.ouom.neriplayer.ui.component.lyrics.resolvePreferredLyricContent
+import moe.ouom.neriplayer.ui.component.lyrics.resolveStoredLyricText
+import moe.ouom.neriplayer.ui.component.lyrics.toEditableLyricsText
 import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherRoomPanel
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
@@ -3789,7 +3789,7 @@ private fun NowPlayingLyricsPane(
 ) {
     val currentPosition by PlayerManager.playbackPositionFlow.collectAsStateWithLifecycle()
     val effectivePositionMs = previewPositionOverrideMs ?: currentPosition
-    AppleMusicLyric(
+    SyncedLyricsView(
         lyrics = lyrics,
         currentTimeMs = effectivePositionMs,
         modifier = modifier,

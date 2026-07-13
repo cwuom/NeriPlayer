@@ -136,10 +136,10 @@ import moe.ouom.neriplayer.data.settings.normalizeMobileDataYouTubeAudioQuality
 import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
 import moe.ouom.neriplayer.data.storage.StorageUsageSummary
-import moe.ouom.neriplayer.listentogether.configuredListenTogetherBaseUrlOrNull
-import moe.ouom.neriplayer.listentogether.isDefaultListenTogetherBaseUrl
-import moe.ouom.neriplayer.listentogether.resolveListenTogetherBaseUrl
-import moe.ouom.neriplayer.ui.component.LanguageSettingItem
+import moe.ouom.neriplayer.listentogether.invite.configuredListenTogetherBaseUrlOrNull
+import moe.ouom.neriplayer.listentogether.invite.isDefaultListenTogetherBaseUrl
+import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherBaseUrl
+import moe.ouom.neriplayer.ui.component.settings.LanguageSettingItem
 import moe.ouom.neriplayer.ui.screen.tab.settings.about.SettingsAboutContent
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsBiliAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsNeteaseAuthDialogs

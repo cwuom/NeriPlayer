@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.listentogether
 
 import kotlinx.coroutines.CompletableJob
 import kotlinx.coroutines.Job
+import moe.ouom.neriplayer.listentogether.lifecycle.cancelListenTogetherBackgroundJobs
 import org.junit.Assert.assertTrue
 import org.junit.Test
 

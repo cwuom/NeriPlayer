@@ -13,9 +13,9 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.player.StartupAudioFocusController
-import moe.ouom.neriplayer.core.player.UsbExclusiveSystemSoundGuard
-import moe.ouom.neriplayer.core.player.usb.UsbExclusiveSessionController
+import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
+import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
+import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
 import moe.ouom.neriplayer.util.platform.LanguageManager
 import moe.ouom.neriplayer.util.crash.CrashLogFiles
 import moe.ouom.neriplayer.util.crash.CrashReportStore

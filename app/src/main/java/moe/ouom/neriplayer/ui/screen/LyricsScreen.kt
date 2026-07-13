@@ -124,18 +124,18 @@ import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.ui.component.AdvancedLyricsView
-import moe.ouom.neriplayer.ui.component.AppleMusicLyric
-import moe.ouom.neriplayer.ui.component.buildPhoneticLyricEntries
-import moe.ouom.neriplayer.ui.component.flattenWordTimedEntries
-import moe.ouom.neriplayer.ui.component.LyricEntry
-import moe.ouom.neriplayer.ui.component.LyricShareSheet
-import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
-import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
-import moe.ouom.neriplayer.ui.component.LyricVisualSpec
-import moe.ouom.neriplayer.ui.component.WaveformSlider
-import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
-import moe.ouom.neriplayer.ui.component.rememberLyricSeekHapticFeedback
+import moe.ouom.neriplayer.ui.component.lyrics.AdvancedLyricsView
+import moe.ouom.neriplayer.ui.component.lyrics.SyncedLyricsView
+import moe.ouom.neriplayer.ui.component.lyrics.buildPhoneticLyricEntries
+import moe.ouom.neriplayer.ui.component.lyrics.flattenWordTimedEntries
+import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
+import moe.ouom.neriplayer.ui.component.lyrics.LyricShareSheet
+import moe.ouom.neriplayer.ui.component.local.LocalSongDetailsDialog
+import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog
+import moe.ouom.neriplayer.ui.component.lyrics.LyricVisualSpec
+import moe.ouom.neriplayer.ui.component.playback.WaveformSlider
+import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
+import moe.ouom.neriplayer.ui.component.lyrics.rememberLyricSeekHapticFeedback
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticFeedbackEffect
@@ -844,7 +844,7 @@ fun LyricsScreen(
 
             // 定时器对话框
             if (showSleepTimerDialog) {
-                moe.ouom.neriplayer.ui.component.SleepTimerDialog(
+                moe.ouom.neriplayer.ui.component.playback.SleepTimerDialog(
                     onDismiss = { showSleepTimerDialog = false }
                 )
             }
@@ -1121,7 +1121,7 @@ private fun LyricsContentPane(
         return
     }
 
-    AppleMusicLyric(
+    SyncedLyricsView(
         lyrics = plainLyrics,
         currentTimeMs = effectiveLyricTimeMs,
         modifier = Modifier.fillMaxSize(),

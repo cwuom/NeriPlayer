@@ -3,9 +3,9 @@ package moe.ouom.neriplayer.core.player.service
 import android.media.AudioManager
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.lifecycle.Lifecycle
-import moe.ouom.neriplayer.core.player.policy.shouldBootstrapPlaybackServiceOnAppLaunch
-import moe.ouom.neriplayer.core.player.shouldPauseUsbExclusiveForFocusChange
-import moe.ouom.neriplayer.core.player.shouldSuppressUsbExclusiveForFocusChange
+import moe.ouom.neriplayer.core.player.audio.focus.shouldPauseUsbExclusiveForFocusChange
+import moe.ouom.neriplayer.core.player.audio.focus.shouldSuppressUsbExclusiveForFocusChange
+import moe.ouom.neriplayer.core.player.policy.command.shouldBootstrapPlaybackServiceOnAppLaunch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

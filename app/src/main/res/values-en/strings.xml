@@ -1491,6 +1491,7 @@
     <string name="listen_together_member_list_title">Members</string>
     <string name="listen_together_error_member_control_disabled">The controller disabled member playback control.</string>
     <string name="listen_together_error_controller_offline">The controller is offline. Try again after reconnection.</string>
+    <string name="listen_together_error_controller_offline_link">The controller is offline, so the playable link cannot be fetched.</string>
     <string name="listen_together_error_local_playback_blocked">Local playback is disabled while Listen Together is active.</string>
     <string name="listen_together_error_unauthorized">Room credentials expired. Please join Listen Together again.</string>
     <string name="listen_together_error_room_not_found">The room no longer exists or is unavailable.</string>
@@ -1551,6 +1552,12 @@
     <string name="settings_listen_together_server_input_placeholder">Leave empty to use the built-in default server</string>
     <string name="settings_listen_together_server_input_invalid">Invalid server address. Enter a full http:// or https:// address.</string>
     <string name="listen_together_invite_server_invalid">The invite contains an invalid server address, so this room cannot be joined.</string>
+    <string name="listen_together_error_room_id_length">Room ID must be %1$d characters.</string>
+    <string name="listen_together_error_room_id_chars">Room ID only supports uppercase letters and digits.</string>
+    <string name="listen_together_error_user_uuid_required">User UUID is required.</string>
+    <string name="listen_together_error_user_uuid_invalid">User UUID format is invalid.</string>
+    <string name="listen_together_error_nickname_length">Nickname length must be %1$d-%2$d characters.</string>
+    <string name="listen_together_error_nickname_chars">Nickname only supports Chinese characters, letters, and digits.</string>
     <string name="settings_listen_together_server_test">Test Availability</string>
     <string name="settings_listen_together_server_saved">Listen Together server setting saved.</string>
     <string name="settings_listen_together_server_reset_done">Reverted to the built-in default server.</string>

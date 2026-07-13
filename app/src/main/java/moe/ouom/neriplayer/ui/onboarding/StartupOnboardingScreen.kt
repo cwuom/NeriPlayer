@@ -109,7 +109,7 @@ import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
 import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import moe.ouom.neriplayer.ui.BlurTransformation
-import moe.ouom.neriplayer.ui.component.ThemeRevealOverlay
+import moe.ouom.neriplayer.ui.component.common.ThemeRevealOverlay
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsBiliAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsNeteaseAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsYouTubeAuthDialogs

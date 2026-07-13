@@ -31,7 +31,7 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.TeeAudioProcessor
-import moe.ouom.neriplayer.core.player.UsbExclusiveAudioSink
+import moe.ouom.neriplayer.core.player.usb.sink.UsbExclusiveAudioSink
 import moe.ouom.neriplayer.core.player.effects.AudioReactive
 
 /**

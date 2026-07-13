@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.metadata
 
-import moe.ouom.neriplayer.ui.component.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.util.network.isTransientHttp2StreamReset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
