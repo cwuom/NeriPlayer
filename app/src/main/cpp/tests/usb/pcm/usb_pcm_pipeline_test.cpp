@@ -107,6 +107,66 @@ void verifiesResumeAfterSilentOutputRampsFromZero() {
     assert(snapshot.appliedGain < 0.01f);
 }
 
+void verifiesTransportStartRampRearmsWithoutDroppingQueuedAudio() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    assert(pipeline.configure(configFor(48000, 48000), &error));
+    pipeline.setTargetGain(1.0f);
+
+    constexpr size_t rampFrames = 48000U * 80U / 1000U;
+    constexpr size_t retainedFrames = 2U;
+    std::vector<uint8_t> input((rampFrames + retainedFrames) * 4U, 0);
+    const int16_t fullScale = std::numeric_limits<int16_t>::max();
+    for (size_t offset = 0; offset < input.size(); offset += sizeof(fullScale)) {
+        std::memcpy(input.data() + offset, &fullScale, sizeof(fullScale));
+    }
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+
+    const size_t queuedBeforeStart = pipeline.queuedFrames();
+    pipeline.armTransportStartRamp();
+    assert(pipeline.queuedFrames() == queuedBeforeStart);
+
+    std::vector<uint8_t> firstOutput(8U, 0);
+    assert(pipeline.fill(firstOutput.data(), firstOutput.size(), true) == firstOutput.size());
+    pipeline.applyTransportStartRamp(firstOutput.data(), firstOutput.size());
+    const int16_t firstSample = readInt16Sample(firstOutput, 0);
+    const int16_t secondSample = readInt16Sample(firstOutput, 4);
+    assert(firstSample == 0);
+    assert(secondSample > firstSample);
+
+    std::vector<uint8_t> remainingRampOutput((rampFrames - 2U) * 4U, 0);
+    assert(pipeline.fill(
+        remainingRampOutput.data(),
+        remainingRampOutput.size(),
+        true
+    ) == remainingRampOutput.size());
+    pipeline.applyTransportStartRamp(
+        remainingRampOutput.data(),
+        remainingRampOutput.size()
+    );
+    const int16_t finalRampSample = readInt16Sample(
+        remainingRampOutput,
+        remainingRampOutput.size() - 4U
+    );
+    assert(finalRampSample > 32000);
+
+    const size_t queuedBeforeRestart = pipeline.queuedFrames();
+    assert(queuedBeforeRestart == retainedFrames);
+    pipeline.armTransportStartRamp();
+    assert(pipeline.queuedFrames() == queuedBeforeRestart);
+
+    std::vector<uint8_t> restartedOutput(8U, 0);
+    for (size_t offset = 0; offset < restartedOutput.size(); offset += sizeof(fullScale)) {
+        std::memcpy(restartedOutput.data() + offset, &fullScale, sizeof(fullScale));
+    }
+    pipeline.applyTransportStartRamp(restartedOutput.data(), restartedOutput.size());
+    assert(pipeline.queuedFrames() == queuedBeforeRestart);
+    const int16_t restartedFirstSample = readInt16Sample(restartedOutput, 0);
+    const int16_t restartedSecondSample = readInt16Sample(restartedOutput, 4);
+    assert(restartedFirstSample == 0);
+    assert(restartedSecondSample > restartedFirstSample);
+}
+
 void verifiesUnsupportedEncodingIsRejected() {
     neri::usb::PcmPipeline pipeline;
     std::string error;
@@ -253,6 +313,7 @@ int main() {
     verifiesStreamingResampleKeepsLongTermFrameCount();
     verifiesPausePreservesQueuedAudio();
     verifiesResumeAfterSilentOutputRampsFromZero();
+    verifiesTransportStartRampRearmsWithoutDroppingQueuedAudio();
     verifiesUnsupportedEncodingIsRejected();
     verifiesRuntimeRingResizePreservesQueuedAudio();
     verifiesHighResolutionRingUsesBoundedAllocation();

@@ -158,6 +158,8 @@ bool PcmPipeline::configure(const PcmPipelineConfig& config, std::string* error)
     appliedGain_.store(target);
     gainRampTarget_ = target;
     gainRampFramesRemaining_ = 0;
+    transportStartRampFramesTotal_ = 0;
+    transportStartRampFramesRemaining_.store(0);
     return true;
 }
 
@@ -622,6 +624,51 @@ void PcmPipeline::addDroppedFrames(int64_t frames) {
 
 void PcmPipeline::setTargetGain(float gain) {
     targetGain_.store(std::clamp(gain, 0.0f, 1.0f));
+}
+
+void PcmPipeline::armTransportStartRamp() {
+    std::lock_guard<std::mutex> guard(lock_);
+    transportStartRampFramesTotal_ = std::max(
+        1,
+        outputFormat_.sampleRate * kGainRampDurationMs / 1000
+    );
+    transportStartRampFramesRemaining_.store(transportStartRampFramesTotal_);
+}
+
+void PcmPipeline::applyTransportStartRamp(uint8_t* output, size_t bytes) {
+    if (output == nullptr || transportStartRampFramesRemaining_.load() <= 0) {
+        return;
+    }
+    std::lock_guard<std::mutex> guard(lock_);
+    int remainingFrames = transportStartRampFramesRemaining_.load();
+    if (outputFormat_.frameBytes <= 0 || remainingFrames <= 0) {
+        return;
+    }
+    const int frames = static_cast<int>(bytes / static_cast<size_t>(outputFormat_.frameBytes));
+    for (int frame = 0; frame < frames && remainingFrames > 0; ++frame) {
+        const int completedFrames = transportStartRampFramesTotal_ -
+            remainingFrames;
+        const float gain = transportStartRampFramesTotal_ > 1
+            ? static_cast<float>(completedFrames) /
+                static_cast<float>(transportStartRampFramesTotal_ - 1)
+            : 0.0f;
+        uint8_t* outputFrame = output + static_cast<size_t>(frame) * outputFormat_.frameBytes;
+        for (int channel = 0; channel < outputFormat_.channelCount; ++channel) {
+            uint8_t* sample = outputFrame + channel * outputFormat_.subslotBytes;
+            writeIntegerPcmSample(
+                sample,
+                outputFormat_.subslotBytes,
+                outputFormat_.bitsPerSample,
+                readIntegerPcmSample(
+                    sample,
+                    outputFormat_.subslotBytes,
+                    outputFormat_.bitsPerSample
+                ) * gain
+            );
+        }
+        --remainingFrames;
+    }
+    transportStartRampFramesRemaining_.store(remainingFrames);
 }
 
 size_t PcmPipeline::queuedFrames() const {

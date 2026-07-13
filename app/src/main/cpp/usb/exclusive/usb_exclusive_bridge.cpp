@@ -20,6 +20,7 @@
 #include <unordered_map>
 
 #include "libusb/libusb.h"
+#include "usb/exclusive/usb_player_startup_preroll.h"
 #include "usb/iso/usb_iso_packet_scheduler.h"
 #include "usb/iso/usb_iso_transfer_health.h"
 #include "usb/pcm/usb_pcm_pipeline.h"
@@ -42,6 +43,7 @@ constexpr int kGeneratedToneFrequencyHz = 440;
 constexpr int kDefaultPacketsPerTransfer = 16;
 constexpr int kDefaultTransferCount = 12;
 constexpr int kDefaultPcmRingDurationMs = 250;
+constexpr int kPlayerStartupPrerollMs = 150;
 constexpr int kMinimumPcmRingDurationMs = 100;
 constexpr int kMaximumPcmRingDurationMs = 3000;
 constexpr int kCancelDrainWarningMs = 1200;
@@ -127,6 +129,7 @@ struct UsbExclusiveHandle {
     std::atomic<StreamSource> streamSource { StreamSource::Tone };
     neri::usb::IsoPacketScheduler packetScheduler;
     neri::usb::PcmPipeline pcmPipeline;
+    neri::usb::PlayerStartupPreroll playerStartupPreroll;
     int pcmRingDurationMs = kDefaultPcmRingDurationMs;
     std::atomic<int64_t> stagedPlayerFrames { 0 };
     std::atomic<int64_t> completedAudioFrames { 0 };
@@ -1073,6 +1076,10 @@ bool startStreamingInternal(
         handle->transportFailed.store(false);
         handle->inFlightTransfers.store(0);
     }
+    if (source == StreamSource::PlayerPcm) {
+        handle->playerStartupPreroll.arm(handle->sampleRate, kPlayerStartupPrerollMs);
+        handle->pcmPipeline.armTransportStartRamp();
+    }
     if (!allocateTransfers(handle)) {
         LOGE("allocateTransfers failed before stream start: error=%s", getErrorCopy(handle).c_str());
         freeTransfers(handle);
@@ -1281,14 +1288,28 @@ bool refillTransfer(
     }
 
     if (handle->streamSource.load() == StreamSource::PlayerPcm) {
+        const size_t transferSize = static_cast<size_t>(transferBytes);
+        if (handle->playerStartupPreroll.fillSilenceIfNeeded(
+                buffer.data(),
+                transferSize,
+                handle->frameBytes
+            )) {
+            if (userData != nullptr) {
+                userData->queuedPlayerFrames = 0;
+            }
+            return true;
+        }
         const bool renderPlayerPcm = handle->playbackEnabled.load() &&
             handle->deviceOnline.load() &&
             !handle->focusMuted.load();
         const size_t playerBytes = handle->pcmPipeline.fill(
             buffer.data(),
-            static_cast<size_t>(transferBytes),
+            transferSize,
             renderPlayerPcm
         );
+        if (playerBytes > 0) {
+            handle->pcmPipeline.applyTransportStartRamp(buffer.data(), playerBytes);
+        }
         if (userData != nullptr) {
             const int64_t queuedFrames = static_cast<int64_t>(
                 playerBytes / static_cast<size_t>(std::max(1, handle->frameBytes))
@@ -2966,6 +2987,8 @@ Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nati
             " fifoMs=" + std::to_string(fifoMs) +
             " queuedFrames=" + std::to_string(queuedFrames) +
             " stagedFrames=" + std::to_string(stagedPlayerFrames) +
+            " startupPrerollFrames=" +
+                std::to_string(holder->playerStartupPreroll.framesRemaining()) +
             " completedAudioFrames=" + std::to_string(holder->completedAudioFrames.load()) +
             " playerInputBytes=" + std::to_string(pcm.inputBytes) +
             " playerOutputBytes=" + std::to_string(pcm.outputBytes) +

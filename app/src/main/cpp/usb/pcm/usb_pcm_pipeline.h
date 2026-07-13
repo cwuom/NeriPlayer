@@ -73,6 +73,8 @@ public:
     void resetCounters();
     void addDroppedFrames(int64_t frames);
     void setTargetGain(float gain);
+    void armTransportStartRamp();
+    void applyTransportStartRamp(uint8_t* output, size_t bytes);
 
     [[nodiscard]] size_t queuedFrames() const;
     [[nodiscard]] PcmPipelineSnapshot snapshot() const;
@@ -119,6 +121,8 @@ private:
     std::atomic<float> appliedGain_ { 1.0f };
     float gainRampTarget_ = 1.0f;
     int gainRampFramesRemaining_ = 0;
+    int transportStartRampFramesTotal_ = 0;
+    std::atomic<int> transportStartRampFramesRemaining_ { 0 };
 };
 
 } // namespace neri::usb
