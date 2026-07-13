@@ -1017,6 +1017,8 @@ internal fun PlayerManager.pauseImpl(
         playbackRequestToken += 1
         playJob?.cancel()
         playJob = null
+        pendingMediaLoadActive = false
+        pendingMediaLoadPositionMs = action.persistPositionMs
         _playWhenReadyFlow.value = action.resumePlaybackAfterLoad
         _isPlayingFlow.value = false
         if (lyriconEnabled) {

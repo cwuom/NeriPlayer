@@ -69,7 +69,6 @@ internal fun resolveListenTogetherPlayerSyncPlan(
         shouldIssuePlay = context.desiredPlaying &&
             !context.localPlaying &&
             (!shouldReloadPlaylist || shouldResumeAfterReload) &&
-            !context.localPlaybackAlreadyStarting &&
             !context.awaitingAuthoritativeStream,
         shouldIssuePause = shouldIssuePause,
         shouldForcePauseAfterRemoteLoad = !context.desiredPlaying && shouldReloadPlaylist,

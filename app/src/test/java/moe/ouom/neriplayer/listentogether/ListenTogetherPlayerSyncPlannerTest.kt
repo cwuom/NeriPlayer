@@ -191,11 +191,58 @@ class ListenTogetherPlayerSyncPlannerTest {
     }
 
     @Test
-    fun `authoritative stream reload is skipped after listener already has a direct stream`() {
-        assertFalse(
+    fun `playing room reissues play when local start is stuck`() {
+        val plan = resolveListenTogetherPlayerSyncPlan(
+            ListenTogetherPlayerSyncContext(
+                playbackContextChanged = false,
+                targetIndexChanged = false,
+                desiredPlaying = true,
+                localPlaying = false,
+                localPlaybackAlreadyStarting = true,
+                awaitingAuthoritativeStream = false,
+                expectedPositionMs = 6_000L,
+                localPositionMs = 6_000L,
+                ignoreUnexpectedZeroPositionRollback = false,
+                causeType = "WATCHDOG",
+                trackSwitchForceSyncMs = 500L,
+                heartbeatDriftForceSyncMs = 5_000L,
+                playingDriftForceSyncMs = 2_500L,
+                pausedDriftForceSyncMs = 800L
+            )
+        )
+
+        assertTrue(plan.shouldIssuePlay)
+    }
+
+    @Test
+    fun `playing room still waits for controller stream before reissuing play`() {
+        val plan = resolveListenTogetherPlayerSyncPlan(
+            ListenTogetherPlayerSyncContext(
+                playbackContextChanged = false,
+                targetIndexChanged = false,
+                desiredPlaying = true,
+                localPlaying = false,
+                localPlaybackAlreadyStarting = true,
+                awaitingAuthoritativeStream = true,
+                expectedPositionMs = 6_000L,
+                localPositionMs = 6_000L,
+                ignoreUnexpectedZeroPositionRollback = false,
+                causeType = "WATCHDOG",
+                trackSwitchForceSyncMs = 500L,
+                heartbeatDriftForceSyncMs = 5_000L,
+                playingDriftForceSyncMs = 2_500L,
+                pausedDriftForceSyncMs = 800L
+            )
+        )
+
+        assertFalse(plan.shouldIssuePlay)
+    }
+
+    @Test
+    fun `authoritative stream reload follows actual resolved stream instead of track field`() {
+        assertTrue(
             shouldReloadListenTogetherAuthoritativeStream(
                 remoteStreamUrl = "https://upos-sz-mirrorcos.bilivideo.com/audio.m4s?deadline=200",
-                localTrackStreamUrl = "https://upos-sz-mirrorcos.bilivideo.com/audio.m4s?deadline=100",
                 localResolvedStreamUrl = "https://upos-sz-mirrorcos.bilivideo.com/audio.m4s?deadline=100"
             )
         )
@@ -206,7 +253,6 @@ class ListenTogetherPlayerSyncPlannerTest {
         assertTrue(
             shouldReloadListenTogetherAuthoritativeStream(
                 remoteStreamUrl = "https://upos-sz-mirrorcos.bilivideo.com/audio.m4s?deadline=200",
-                localTrackStreamUrl = null,
                 localResolvedStreamUrl = null
             )
         )
@@ -219,7 +265,6 @@ class ListenTogetherPlayerSyncPlannerTest {
         assertFalse(
             shouldReloadListenTogetherAuthoritativeStream(
                 remoteStreamUrl = url,
-                localTrackStreamUrl = null,
                 localResolvedStreamUrl = url
             )
         )

@@ -15,11 +15,9 @@ internal fun normalizedDirectStreamUrl(value: String?): String? {
 
 internal fun shouldReloadListenTogetherAuthoritativeStream(
     remoteStreamUrl: String?,
-    localTrackStreamUrl: String?,
     localResolvedStreamUrl: String?
 ): Boolean {
     val remote = normalizedDirectStreamUrl(remoteStreamUrl) ?: return false
-    if (normalizedDirectStreamUrl(localTrackStreamUrl) != null) return false
     return remote != normalizedDirectStreamUrl(localResolvedStreamUrl)
 }
 

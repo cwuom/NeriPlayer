@@ -237,7 +237,6 @@ internal class ListenTogetherPlayerStateApplier(
         if (currentSong?.sameTrackAs(targetSong) != true) return false
         return shouldReloadListenTogetherAuthoritativeStream(
             remoteStreamUrl = targetSong.streamUrl,
-            localTrackStreamUrl = currentSong.streamUrl,
             localResolvedStreamUrl = PlayerManager.currentMediaUrlFlow.value
         )
     }
