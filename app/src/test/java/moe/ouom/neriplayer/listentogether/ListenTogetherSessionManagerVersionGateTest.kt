@@ -24,6 +24,7 @@ import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
@@ -144,6 +145,47 @@ class ListenTogetherSessionManagerVersionGateTest {
         assertEquals("netease:fresh", finalState.track?.stableKey)
         assertEquals("playing", finalState.playback.state)
         assertEquals(3_500L, manager.sessionState.value.expectedPositionMs)
+    }
+
+    @Test
+    fun `late http state cannot resurrect a room after leave`() = runBlocking {
+        val httpEntered = CountDownLatch(1)
+        val releaseHttp = CountDownLatch(1)
+        val api = ListenTogetherApi(
+            clientForDelayedState(
+                staleState = roomState(
+                    version = 3L,
+                    track = track("netease:late", "late-song"),
+                    playbackState = "playing",
+                    basePositionMs = 4_000L
+                ),
+                httpEntered = httpEntered,
+                releaseHttp = releaseHttp
+            )
+        )
+        val manager = ListenTogetherSessionManager(
+            api = api,
+            webSocketClient = ListenTogetherWebSocketClient(OkHttpClient())
+        )
+        manager.joinRoom(
+            baseUrl = BASE_URL,
+            roomId = ROOM_ID,
+            userUuid = USER_UUID,
+            nickname = "Tester"
+        )
+
+        val refreshJob = async(Dispatchers.IO) {
+            manager.refreshRoomState(BASE_URL, ROOM_ID)
+        }
+        assertTrue(httpEntered.await(2, TimeUnit.SECONDS))
+        manager.leaveRoom()
+        releaseHttp.countDown()
+        withTimeout(2_000L) {
+            refreshJob.await()
+        }
+
+        assertNull(manager.roomState.value)
+        assertNull(manager.sessionState.value.roomId)
     }
 
     private fun clientForState(

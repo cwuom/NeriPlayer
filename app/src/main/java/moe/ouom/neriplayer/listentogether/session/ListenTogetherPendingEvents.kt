@@ -14,3 +14,12 @@ internal data class PendingMemberControlRequest(
     val lastSentAtElapsedMs: Long,
     val attempts: Int
 )
+
+internal fun PendingMemberControlRequest.retriedAt(
+    nowElapsedMs: Long
+): PendingMemberControlRequest {
+    return copy(
+        lastSentAtElapsedMs = nowElapsedMs,
+        attempts = attempts + 1
+    )
+}
