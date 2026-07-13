@@ -16,7 +16,7 @@ import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import java.util.LinkedHashMap
 
 @OptIn(ExperimentalCoroutinesApi::class)

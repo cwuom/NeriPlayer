@@ -25,7 +25,7 @@ package moe.ouom.neriplayer.core.player.source
 
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 internal fun BiliVideoItem.toSongItem(): SongItem {
     return SongItem(

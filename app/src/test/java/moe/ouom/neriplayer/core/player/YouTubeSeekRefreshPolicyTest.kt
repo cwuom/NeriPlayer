@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player
 
 import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeSeekRefreshPolicy
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

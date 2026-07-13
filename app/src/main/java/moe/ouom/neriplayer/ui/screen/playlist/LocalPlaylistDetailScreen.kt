@@ -186,7 +186,7 @@ import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailUiState
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalMetadataProcessingState
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
 import moe.ouom.neriplayer.ui.haptic.HapticFloatingActionButton
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton

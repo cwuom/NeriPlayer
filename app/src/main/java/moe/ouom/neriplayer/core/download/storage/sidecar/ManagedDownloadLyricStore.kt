@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.candidateManagedDownloadBaseNames
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadStorageLookup
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 internal object ManagedDownloadLyricStore {
     fun lyricFileName(baseName: String, translated: Boolean): String {

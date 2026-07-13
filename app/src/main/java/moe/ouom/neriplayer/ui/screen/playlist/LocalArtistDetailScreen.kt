@@ -95,7 +95,7 @@ import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.download.SongDownloadSubtitle
 import moe.ouom.neriplayer.ui.util.rememberLocalArtistDisplayCoverUrl
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.util.format.formatTotalDuration
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest

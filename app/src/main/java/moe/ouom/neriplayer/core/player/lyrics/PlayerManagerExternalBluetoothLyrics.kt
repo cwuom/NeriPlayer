@@ -7,7 +7,7 @@ import moe.ouom.neriplayer.core.player.metadata.findFloatingTranslatedLyricLine
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.resolveLyricDefaultOffsetMs
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal fun PlayerManager.syncExternalBluetoothLyrics(song: SongItem?) {

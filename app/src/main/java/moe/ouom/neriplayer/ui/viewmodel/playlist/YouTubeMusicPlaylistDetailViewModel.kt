@@ -38,6 +38,7 @@ import moe.ouom.neriplayer.data.platform.youtube.CachedYouTubeMusicPlaylistTrack
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeMusicPlaylistCacheRepository
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist

@@ -4,8 +4,8 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
+import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals

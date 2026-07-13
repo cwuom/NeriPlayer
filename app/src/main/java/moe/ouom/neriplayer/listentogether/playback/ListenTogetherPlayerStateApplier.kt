@@ -9,7 +9,7 @@ import moe.ouom.neriplayer.listentogether.playback.sync.ListenTogetherPlayerSync
 import moe.ouom.neriplayer.listentogether.playback.sync.resolveListenTogetherPlayerSyncPlan
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import moe.ouom.neriplayer.listentogether.session.normalized
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 internal data class ListenTogetherPlayerStateApplierConfig(
     val tag: String,

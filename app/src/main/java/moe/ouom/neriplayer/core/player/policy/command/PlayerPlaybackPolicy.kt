@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.core.player.model.PlaybackSoundConfig
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 
 enum class PlaybackCommandSource {

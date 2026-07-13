@@ -39,7 +39,7 @@ import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
 import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.ui.component.lyrics.resolveStoredLyricText
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.network.isTransientHttp2StreamReset
 import org.json.JSONObject

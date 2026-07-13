@@ -849,9 +849,9 @@ class GitHubSyncManager private constructor(context: Context) {
     }
 
     private fun mergeLocalOnlySongs(
-        syncedSongs: List<moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem>,
-        localOnlySongs: List<moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem>
-    ): MutableList<moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem> {
+        syncedSongs: List<moe.ouom.neriplayer.data.model.SongItem>,
+        localOnlySongs: List<moe.ouom.neriplayer.data.model.SongItem>
+    ): MutableList<moe.ouom.neriplayer.data.model.SongItem> {
         val merged = syncedSongs.toMutableList()
         val knownIdentities = merged.map { it.identity() }.toMutableSet()
         localOnlySongs.forEach { song ->

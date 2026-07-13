@@ -45,6 +45,7 @@ import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseLikeSyncResult
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongIdentity
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.core.logging.NPLogger

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.viewmodel.artist
 
+import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Test

@@ -36,13 +36,13 @@ import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.api.search.SearchManager
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
+import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistsFromSongDetail
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.R

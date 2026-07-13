@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 /**
  * 回归测试: #121 (SD 卡 JSON 元数据写入失败) 和 #126 (本地存在同名歌曲时重复下载)

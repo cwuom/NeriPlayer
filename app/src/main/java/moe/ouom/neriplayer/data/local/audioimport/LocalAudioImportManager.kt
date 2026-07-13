@@ -49,7 +49,7 @@ import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.normalizeLocalAlbumIdentity
 import moe.ouom.neriplayer.data.local.media.preferredLocalMediaReference
 import moe.ouom.neriplayer.data.model.identity
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
 import java.security.MessageDigest

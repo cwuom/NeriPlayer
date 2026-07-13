@@ -7,7 +7,7 @@ import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 internal fun shouldRunInitialDownloadScan(
     catalogReady: Boolean,

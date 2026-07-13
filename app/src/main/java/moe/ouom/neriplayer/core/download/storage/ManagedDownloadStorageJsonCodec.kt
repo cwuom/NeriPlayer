@@ -3,8 +3,8 @@ package moe.ouom.neriplayer.core.download.storage
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
+import moe.ouom.neriplayer.data.model.SongItem
 import org.json.JSONArray
 import org.json.JSONObject
 

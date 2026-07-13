@@ -6,7 +6,7 @@ import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.deriveCodecLabel
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.local.media.localMediaUri
 
 internal fun buildLocalPlaybackAudioInfo(song: SongItem, context: Context): PlaybackAudioInfo? {

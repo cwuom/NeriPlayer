@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.download.naming
 
 import java.text.Normalizer
 import java.io.File
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 internal const val DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE = "%source% - %artist% - %title%"
 internal const val LEGACY_DOWNLOAD_FILE_NAME_TEMPLATE = "%artist% - %title%"

@@ -4,7 +4,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.candidateManagedDownloadBaseNames
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 

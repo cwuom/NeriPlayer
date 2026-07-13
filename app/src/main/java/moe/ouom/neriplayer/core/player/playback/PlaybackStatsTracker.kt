@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.player.playback
 
 import android.os.SystemClock
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 internal const val PLAYBACK_STATS_PERIODIC_FLUSH_MS = 15_000L
 private const val PLAYBACK_STATS_MIN_LISTEN_MS_FOR_PLAY_COUNT = 30_000L

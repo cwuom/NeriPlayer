@@ -26,7 +26,7 @@ package moe.ouom.neriplayer.data.local.media
 import android.content.Context
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 internal fun normalizeLocalAlbumIdentity(
     album: String?,

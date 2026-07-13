@@ -8,7 +8,7 @@ import moe.ouom.neriplayer.core.download.storage.PENDING_DOWNLOAD_QUEUE_FILE_NAM
 import moe.ouom.neriplayer.core.download.storage.queue.ManagedDownloadQueueStore
 import moe.ouom.neriplayer.core.download.storage.working.ManagedDownloadWorkingStore
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import java.io.File
 
 internal object ManagedDownloadRecoveryFiles {

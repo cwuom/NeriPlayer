@@ -37,7 +37,7 @@ import moe.ouom.neriplayer.data.local.playlist.model.LEGACY_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 /**
  * 同步数据结构

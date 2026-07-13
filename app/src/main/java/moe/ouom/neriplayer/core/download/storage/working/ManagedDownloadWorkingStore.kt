@@ -9,7 +9,7 @@ import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_MAX_AGE_MS
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_RESUME_METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
 

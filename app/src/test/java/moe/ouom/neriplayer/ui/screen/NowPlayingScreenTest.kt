@@ -8,7 +8,7 @@ import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 class NowPlayingScreenTest {
 

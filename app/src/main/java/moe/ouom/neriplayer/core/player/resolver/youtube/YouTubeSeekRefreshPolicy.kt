@@ -27,7 +27,7 @@ import java.net.URI
 import java.net.URLDecoder
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 internal object YouTubeSeekRefreshPolicy {
     fun shouldRefreshUrlBeforeSeek(song: SongItem?, currentUrl: String?): Boolean {

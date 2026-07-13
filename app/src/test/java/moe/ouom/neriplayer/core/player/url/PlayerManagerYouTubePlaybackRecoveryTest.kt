@@ -4,7 +4,7 @@ package moe.ouom.neriplayer.core.player.url
 
 import androidx.media3.common.PlaybackException
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue

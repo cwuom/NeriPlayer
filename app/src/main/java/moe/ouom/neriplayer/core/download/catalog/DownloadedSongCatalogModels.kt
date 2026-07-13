@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.download.catalog
 
 import moe.ouom.neriplayer.core.download.DownloadedSong
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import org.json.JSONArray
 import org.json.JSONObject
 

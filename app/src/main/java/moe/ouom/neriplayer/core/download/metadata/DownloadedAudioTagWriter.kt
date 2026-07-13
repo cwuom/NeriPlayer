@@ -13,7 +13,7 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.io.readBytesLimited
 import org.json.JSONObject

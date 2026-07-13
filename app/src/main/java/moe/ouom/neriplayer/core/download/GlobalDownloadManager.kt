@@ -62,7 +62,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.autoSettingFlow
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.traffic.currentTrafficNetworkType
 

@@ -7,7 +7,7 @@ import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

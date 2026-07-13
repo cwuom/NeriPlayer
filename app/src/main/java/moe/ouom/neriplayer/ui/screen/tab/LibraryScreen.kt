@@ -125,7 +125,7 @@ import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
-import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
+import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind

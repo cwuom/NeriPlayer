@@ -6,7 +6,7 @@ import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherChannels
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 fun ListenTogetherTrack.toSongItem(): SongItem {
     val trustedStreamUrl = trustedListenTogetherStreamUrl(channelId, streamUrl)

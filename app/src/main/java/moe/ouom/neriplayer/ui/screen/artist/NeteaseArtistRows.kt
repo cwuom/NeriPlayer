@@ -36,7 +36,7 @@ import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest

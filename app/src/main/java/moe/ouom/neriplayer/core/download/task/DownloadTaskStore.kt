@@ -22,7 +22,7 @@ import moe.ouom.neriplayer.core.download.shouldApplyTaskMutation
 import moe.ouom.neriplayer.core.download.stabilizeDownloadTaskSummary
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 internal class DownloadTaskStore(
     scope: CoroutineScope,

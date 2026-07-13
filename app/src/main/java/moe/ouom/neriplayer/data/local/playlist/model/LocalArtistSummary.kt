@@ -7,7 +7,7 @@ import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.identity
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import java.util.Locale
 
 data class LocalArtistSummary(

@@ -30,7 +30,6 @@ import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
 fun SongItem.displayCoverUrl(): String? = customCoverUrl ?: coverUrl
 

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.viewmodel.artist
 
+import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import org.json.JSONArray
 import org.json.JSONObject
 

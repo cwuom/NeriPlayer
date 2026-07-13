@@ -40,7 +40,7 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistSummaries
 import moe.ouom.neriplayer.util.platform.LanguageManager
 import moe.ouom.neriplayer.core.logging.NPLogger

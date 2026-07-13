@@ -208,9 +208,9 @@ import moe.ouom.neriplayer.ui.theme.rememberActualSystemDarkTheme
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.view.HyperBackground
 import moe.ouom.neriplayer.ui.viewmodel.debug.LogViewerScreen
-import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
+import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary

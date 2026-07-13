@@ -6,7 +6,7 @@ import moe.ouom.neriplayer.listentogether.mapping.withStreamUrl
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomSettings
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
 import moe.ouom.neriplayer.listentogether.session.normalized
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 internal fun List<SongItem>.toShareableQueueSnapshot(
     currentIndex: Int,

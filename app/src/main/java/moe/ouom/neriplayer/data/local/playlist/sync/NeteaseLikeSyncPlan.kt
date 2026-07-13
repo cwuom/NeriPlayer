@@ -23,7 +23,7 @@ package moe.ouom.neriplayer.data.local.playlist.sync
  * Updated: 2026/3/23
  */
 
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 data class NeteaseLikeSyncPlan(
     val totalSongs: Int,

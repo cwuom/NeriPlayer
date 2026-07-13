@@ -9,7 +9,7 @@ import moe.ouom.neriplayer.core.player.policy.refresh.RefreshResolverSideEffects
 import moe.ouom.neriplayer.core.player.url.buildBiliPlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.url.inferBiliQualityKey
 import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import kotlin.math.absoluteValue
 

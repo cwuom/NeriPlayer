@@ -121,7 +121,7 @@ import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeSectionState
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary

@@ -12,7 +12,7 @@ import moe.ouom.neriplayer.ui.component.lyrics.flattenWordTimedEntries as newFla
 import moe.ouom.neriplayer.ui.component.lyrics.hasWordTimedEntries as newHasWordTimedEntries
 import moe.ouom.neriplayer.ui.component.lyrics.toEditableLyricsText as newToEditableLyricsText
 import moe.ouom.neriplayer.ui.component.lyrics.verticalEdgeFade as newVerticalEdgeFade
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 typealias LyricVisualSpec = moe.ouom.neriplayer.ui.component.lyrics.LyricVisualSpec
 typealias WordTiming = moe.ouom.neriplayer.ui.component.lyrics.WordTiming

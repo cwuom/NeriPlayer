@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.component.lyrics
 
 import moe.ouom.neriplayer.core.player.metadata.normalizeLegacyLrcTimestamps
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 fun List<LyricEntry>.flattenWordTimedEntries(): List<LyricEntry> {
     if (none { !it.words.isNullOrEmpty() }) {

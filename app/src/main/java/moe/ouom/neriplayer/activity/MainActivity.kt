@@ -931,7 +931,7 @@ class MainActivity : ComponentActivity() {
 
     private fun scheduleExternalAudioMetadataHydration(
         requestToken: Long,
-        quickSong: moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+        quickSong: moe.ouom.neriplayer.data.model.SongItem
     ) {
         externalAudioMetadataHydrationJob?.cancel()
         externalAudioMetadataHydrationJob = lifecycleScope.launch {

@@ -22,7 +22,7 @@ import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.url.resolveShareableListenTogetherStreamUrl
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.listentogether.compat.buildTrackFinishedLegacyFallbackEvent
 import moe.ouom.neriplayer.listentogether.compat.isListenTogetherMemberControlTargetCurrent

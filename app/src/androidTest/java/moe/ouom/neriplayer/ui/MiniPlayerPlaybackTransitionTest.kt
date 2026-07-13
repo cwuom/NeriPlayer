@@ -17,7 +17,7 @@ import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.testutil.grantRuntimePermissions
 import moe.ouom.neriplayer.testutil.playbackRuntimePermissions
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.After
 import org.junit.Assume.assumeTrue
 import org.junit.Before

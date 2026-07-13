@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterNotNull
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 internal class PlayerStartupHistoryRecorder(
     private val currentSongFlow: StateFlow<SongItem?>,

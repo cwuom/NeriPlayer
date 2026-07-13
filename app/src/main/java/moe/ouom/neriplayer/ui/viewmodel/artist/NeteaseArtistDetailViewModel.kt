@@ -16,9 +16,10 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_NETEASE_ARTIST
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONArray

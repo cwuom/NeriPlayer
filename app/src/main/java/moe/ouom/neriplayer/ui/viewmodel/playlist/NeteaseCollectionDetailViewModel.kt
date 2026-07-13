@@ -24,7 +24,6 @@ package moe.ouom.neriplayer.ui.viewmodel.playlist
  */
 
 import android.app.Application
-import android.os.Parcelable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -35,15 +34,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.platform.netease.CachedNeteaseArtist
 import moe.ouom.neriplayer.data.platform.netease.CachedNeteasePlaylistDetail
 import moe.ouom.neriplayer.data.platform.netease.CachedNeteasePlaylistHeader
 import moe.ouom.neriplayer.data.platform.netease.CachedNeteasePlaylistTrack
-import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
+import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistSummaries
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
@@ -67,57 +65,6 @@ private fun normalizeNeteaseCollectionCoverUrl(url: String?): String? {
     val normalized = url?.trim()?.takeIf { it.isNotEmpty() } ?: return null
     return normalized.replaceFirst(Regex("^http://"), "https://")
 }
-
-data class NeteaseCollectionHeader(
-    val id: Long,
-    val isAlbum: Boolean,//以兼容形式
-    val name: String,
-    val coverUrl: String,
-    val playCount: Long,
-    val trackCount: Int
-)
-
-@Parcelize
-data class SongItem(
-    val id: Long,
-    val name: String,
-    val artist: String,
-    val album: String,
-    val albumId: Long,
-    val durationMs: Long,
-    val coverUrl: String?,
-    val mediaUri: String? = null,
-    val matchedLyric: String? = null,
-    val matchedTranslatedLyric: String? = null,
-    val matchedLyricSource: MusicPlatform? = null,
-    val matchedSongId: String? = null,
-    val userLyricOffsetMs: Long = 0L,
-    val customCoverUrl: String? = null,
-    val customName: String? = null,
-    val customArtist: String? = null,
-    val originalName: String? = null,
-    val originalArtist: String? = null,
-    val originalCoverUrl: String? = null,
-    val originalLyric: String? = null,
-    val originalTranslatedLyric: String? = null,
-    val localFileName: String? = null,
-    val localFilePath: String? = null,
-    val channelId: String? = null,
-    val audioId: String? = null,
-    val subAudioId: String? = null,
-    val playlistContextId: String? = null,
-    val sourceStableKey: String? = null,
-    val streamUrl: String? = null,
-    val neteaseArtists: List<NeteaseArtistSummary>? = emptyList(),
-    val addedAt: Long = 0L
-) : Parcelable
-
-data class NeteaseCollectionDetailUiState(
-    val loading: Boolean = true,
-    val error: String? = null,
-    val header: NeteaseCollectionHeader? = null,
-    val tracks: List<SongItem> = emptyList()
-)
 
 class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewModel(application) {
     private val client = AppContainer.neteaseClient

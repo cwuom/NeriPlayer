@@ -7,7 +7,7 @@ import moe.ouom.neriplayer.listentogether.mapping.resolvedSubAudioId
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 internal fun ListenTogetherRoomState.currentStableKey(): String? {
     return track?.stableKey ?: queue.getOrNull(currentIndex)?.stableKey

@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.download
 
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 data class DownloadTask(
     val song: SongItem,

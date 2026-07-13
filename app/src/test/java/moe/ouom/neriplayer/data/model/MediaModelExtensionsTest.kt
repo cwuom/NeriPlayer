@@ -2,7 +2,6 @@ package moe.ouom.neriplayer.data.model
 
 import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

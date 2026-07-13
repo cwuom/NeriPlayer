@@ -137,7 +137,7 @@ import moe.ouom.neriplayer.ui.component.playback.WaveformSlider
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.component.lyrics.rememberLyricSeekHapticFeedback
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticFeedbackEffect
 import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton

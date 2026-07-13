@@ -36,6 +36,7 @@ import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.platform.bili.BiliFavoriteFolderContentCache
 import moe.ouom.neriplayer.data.platform.bili.CachedBiliFavoriteVideo
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind

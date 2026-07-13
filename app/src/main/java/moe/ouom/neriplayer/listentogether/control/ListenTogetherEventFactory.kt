@@ -16,7 +16,7 @@ import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSocketEnvelope
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import java.util.UUID
 
 internal fun nextListenTogetherEventId(): String {

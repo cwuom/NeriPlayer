@@ -46,7 +46,7 @@ import moe.ouom.neriplayer.core.player.watchdog.resetPlaybackProgressAdvanceBase
 import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackStartupWatchdog
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
 

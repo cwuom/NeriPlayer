@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.core.download.policy
 import java.io.File
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 internal data class PendingDownloadRecoveryCandidate(
     val song: SongItem,

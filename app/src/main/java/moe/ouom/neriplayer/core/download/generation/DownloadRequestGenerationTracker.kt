@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.core.download.generation
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 internal class DownloadRequestGenerationTracker {
     private val requestGeneration = AtomicLong(0L)

@@ -31,7 +31,6 @@ import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.data.sync.github.SyncSong
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import java.util.Locale
 
 @Parcelize

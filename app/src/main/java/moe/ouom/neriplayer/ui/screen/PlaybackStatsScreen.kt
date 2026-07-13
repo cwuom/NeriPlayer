@@ -43,7 +43,7 @@ import moe.ouom.neriplayer.data.stats.TrackStat
 import moe.ouom.neriplayer.data.stats.aggregatePlaybackStatBucketsForPeriod
 import moe.ouom.neriplayer.data.stats.aggregatePlaybackStatsCompatForPeriod
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 

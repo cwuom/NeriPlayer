@@ -11,7 +11,7 @@ import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test

@@ -58,7 +58,7 @@ import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.github.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
 import java.io.File

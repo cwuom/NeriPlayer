@@ -45,7 +45,7 @@ import moe.ouom.neriplayer.core.download.policy.shouldUseImmediateDownloadedPlay
 import moe.ouom.neriplayer.core.download.policy.shouldUseIndexedSidecarLookup as shouldUseIndexedSidecarLookupDelegate
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 internal typealias DownloadedSongCatalogIndex = moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogIndex
 internal typealias DownloadedSongCatalogStore = moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogStore

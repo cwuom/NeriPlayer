@@ -24,7 +24,7 @@ package moe.ouom.neriplayer.core.api.bili
  */
 
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 private val biliPartPrefixRegex = Regex("^\\d+\\.\\s*")
 private val biliPartSeparatorRegex = Regex("\\s[-\\u2013\\u2014]\\s")

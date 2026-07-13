@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.viewmodel.artist
+package moe.ouom.neriplayer.data.model
 
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize

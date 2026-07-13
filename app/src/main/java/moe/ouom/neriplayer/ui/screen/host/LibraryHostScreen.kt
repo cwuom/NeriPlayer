@@ -62,12 +62,12 @@ import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.LibraryTab
 import moe.ouom.neriplayer.ui.screen.tab.LibraryScreen
-import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
+import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.displayCoverUrl

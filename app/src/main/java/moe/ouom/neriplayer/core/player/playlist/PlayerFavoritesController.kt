@@ -28,7 +28,7 @@ import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VE
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.sameIdentityAs
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 internal object PlayerFavoritesController {
 

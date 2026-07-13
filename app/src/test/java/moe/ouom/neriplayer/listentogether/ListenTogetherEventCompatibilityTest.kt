@@ -480,8 +480,8 @@ class ListenTogetherEventCompatibilityTest {
     private fun songItem(
         channelId: String,
         audioId: String
-    ): moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem {
-        return moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem(
+    ): moe.ouom.neriplayer.data.model.SongItem {
+        return moe.ouom.neriplayer.data.model.SongItem(
             id = audioId.toLong(),
             name = "Song $audioId",
             artist = "Artist",

@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.listentogether.mapping
 
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherChannels
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 fun SongItem.toListenTogetherTrackOrNull(includeLocal: Boolean = false): ListenTogetherTrack? {
     val channel = resolvedChannelId() ?: return null

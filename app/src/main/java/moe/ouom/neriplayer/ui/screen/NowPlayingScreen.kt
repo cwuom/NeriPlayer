@@ -260,8 +260,8 @@ import moe.ouom.neriplayer.ui.component.lyrics.resolveStoredLyricText
 import moe.ouom.neriplayer.ui.component.lyrics.toEditableLyricsText
 import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherRoomPanel
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
-import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.haptic.HapticFeedbackEffect
 import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton

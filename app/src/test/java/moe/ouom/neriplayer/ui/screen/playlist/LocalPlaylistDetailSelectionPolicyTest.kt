@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.ui.screen.playlist
 
 import androidx.compose.runtime.mutableStateListOf
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

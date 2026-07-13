@@ -52,7 +52,7 @@ import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.ExploreScreen
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 
 // 探索页选中项
 private sealed class ExploreSelectedItem {

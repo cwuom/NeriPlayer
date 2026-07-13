@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.viewmodel.playlist
 
 import com.google.gson.Gson
+import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue

@@ -118,7 +118,7 @@ import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.YouTubeMusicPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId

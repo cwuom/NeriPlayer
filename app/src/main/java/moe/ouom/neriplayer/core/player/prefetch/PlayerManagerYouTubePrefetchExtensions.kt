@@ -19,7 +19,7 @@ import moe.ouom.neriplayer.core.player.url.checkExoPlayerCache
 import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedResource
 import moe.ouom.neriplayer.core.player.policy.command.resolveYouTubeWarmupTargets
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 private const val YOUTUBE_WARMUP_BUFFER_BYTES = 64 * 1024
