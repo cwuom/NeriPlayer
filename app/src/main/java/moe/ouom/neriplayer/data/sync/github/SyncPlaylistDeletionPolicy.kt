@@ -103,7 +103,7 @@ internal object SyncPlaylistDeletionPolicy {
         val removedTokens = snapshots
             .flatMap { it.removedMembershipTokens.orEmpty() }
             .normalizedSyncCausalTokens()
-        return if (removedTokens == mirror.removedMembershipTokens.orEmpty()) {
+        return if (removedTokens == mirror.removedMembershipTokens) {
             mirror
         } else {
             mirror.copy(removedMembershipTokens = removedTokens)

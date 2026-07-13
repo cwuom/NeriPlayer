@@ -96,7 +96,6 @@ class SyncPlaylistDeletionPolicyTest {
         )
 
         val merged = SyncPlaylistDeletionPolicy.applyDeletions(7L, listOf(song), listOf(deletion))
-
         assertTrue(merged.isEmpty())
     }
 
@@ -263,8 +262,12 @@ class SyncPlaylistDeletionPolicyTest {
         )
 
         val merged = SyncPlaylistDeletionPolicy.applyDeletions(7L, listOf(song), listOf(deletion))
+        val normalizedDeletion = SyncPlaylistDeletionPolicy
+            .mergeDeletions(listOf(deletion), emptyList())
+            .single()
 
         assertTrue(merged.isEmpty())
+        assertEquals(emptyList<SyncCausalToken>(), normalizedDeletion.removedMembershipTokens)
     }
 
     private fun syncSong(

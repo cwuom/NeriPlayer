@@ -43,7 +43,6 @@ import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.data.sync.SyncCoordinator
-import moe.ouom.neriplayer.data.sync.model.normalizedSyncCausalTokens
 import moe.ouom.neriplayer.util.platform.LanguageManager
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.IOException
@@ -315,7 +314,9 @@ class GitHubSyncManager private constructor(context: Context) {
             }
         val syncPlaylistSongDeletions = storage.getPlaylistSongDeletions()
             .map {
-                it.copy(mediaUri = LocalSongSupport.sanitizeMediaUriForSync(it.mediaUri))
+                it.copyWithNormalizedMembershipTokens(
+                    mediaUri = LocalSongSupport.sanitizeMediaUriForSync(it.mediaUri)
+                )
             }
 
         val playbackCounterSnapshot = playbackStatsRepo.syncCounterSnapshot()
@@ -951,10 +952,8 @@ class GitHubSyncManager private constructor(context: Context) {
         if (LocalSongSupport.isLocalSong(deletion.album, deletion.mediaUri, 0L, appContext)) {
             return null
         }
-        return deletion.copy(
-            mediaUri = LocalSongSupport.sanitizeMediaUriForSync(deletion.mediaUri),
-            removedMembershipTokens =
-                deletion.removedMembershipTokens.orEmpty().normalizedSyncCausalTokens()
+        return deletion.copyWithNormalizedMembershipTokens(
+            mediaUri = LocalSongSupport.sanitizeMediaUriForSync(deletion.mediaUri)
         )
     }
 
@@ -963,9 +962,8 @@ class GitHubSyncManager private constructor(context: Context) {
         if (LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, localizedContext)) {
             return null
         }
-        return song.copy(
-            mediaUri = LocalSongSupport.sanitizeMediaUriForSync(song.mediaUri),
-            syncMembershipTokens = song.syncMembershipTokens.normalizedSyncCausalTokens()
+        return song.copyWithNormalizedMembershipTokens(
+            mediaUri = LocalSongSupport.sanitizeMediaUriForSync(song.mediaUri)
         )
     }
 

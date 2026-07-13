@@ -141,7 +141,9 @@ private fun List<SyncSong>.migrateLegacySongsToDisplayOrder(
         maxOfOrNull { it.addedAt } ?: 0L
     )
     return asReversed().mapIndexed { index, song ->
-        song.copy(addedAt = (newestAddedAt - index).coerceAtLeast(1L))
+        song.copyWithNormalizedMembershipTokens(
+            addedAt = (newestAddedAt - index).coerceAtLeast(1L)
+        )
     }
 }
 
@@ -270,6 +272,17 @@ data class SyncSong(
     }
 }
 
+internal fun SyncSong.copyWithNormalizedMembershipTokens(
+    mediaUri: String? = this.mediaUri,
+    addedAt: Long = this.addedAt
+): SyncSong {
+    return copy(
+        mediaUri = mediaUri,
+        addedAt = addedAt,
+        syncMembershipTokens = syncMembershipTokens.normalizedSyncCausalTokens()
+    )
+}
+
 /**
  * 最近播放记录
  */
@@ -315,6 +328,15 @@ data class SyncPlaylistSongDeletion(
     )
 
     fun stableKey(): String = "$playlistId|${identity().stableKey()}"
+}
+
+internal fun SyncPlaylistSongDeletion.copyWithNormalizedMembershipTokens(
+    mediaUri: String? = this.mediaUri
+): SyncPlaylistSongDeletion {
+    return copy(
+        mediaUri = mediaUri,
+        removedMembershipTokens = removedMembershipTokens.normalizedSyncCausalTokens()
+    )
 }
 
 /**

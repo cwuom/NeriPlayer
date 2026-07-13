@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import moe.ouom.neriplayer.data.sync.model.normalizedSyncCausalTokens
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SyncDataSerializerCompatTest {
@@ -182,14 +183,51 @@ class SyncDataSerializerCompatTest {
         )
 
         val syncSong = SyncSong.fromSongItem(legacySong)
+        val copiedSyncSong = legacySyncSong.copyWithNormalizedMembershipTokens(addedAt = 20L)
+        val copiedDeletion = legacyDeletion.copyWithNormalizedMembershipTokens(
+            mediaUri = "https://cdn.example/song.mp3"
+        )
 
         assertEquals(emptyList<SyncCausalToken>(), syncSong.syncMembershipTokens)
         assertEquals(emptyList<SyncCausalToken>(), syncSong.toSongItem().syncMembershipTokens)
         assertEquals(emptyList<SyncCausalToken>(), legacySyncSong.toSongItem().syncMembershipTokens)
+        assertEquals(20L, copiedSyncSong.addedAt)
+        assertEquals(emptyList<SyncCausalToken>(), copiedSyncSong.syncMembershipTokens)
+        assertEquals("https://cdn.example/song.mp3", copiedDeletion.mediaUri)
+        assertEquals(emptyList<SyncCausalToken>(), copiedDeletion.removedMembershipTokens)
         assertEquals(
             emptyList<SyncCausalToken>(),
             legacyDeletion.removedMembershipTokens.normalizedSyncCausalTokens()
         )
+    }
+
+    @Test
+    fun `legacy gson playlist normalizes missing membership tokens before order migration`() {
+        val legacyPlaylist = Gson().fromJson(
+            """
+                {
+                  "id": 7,
+                  "name": "legacy",
+                  "songs": [
+                    {
+                      "id": 123,
+                      "name": "song",
+                      "artist": "artist",
+                      "album": "album",
+                      "addedAt": 10
+                    }
+                  ],
+                  "createdAt": 1,
+                  "modifiedAt": 20
+                }
+            """.trimIndent(),
+            SyncPlaylist::class.java
+        )
+
+        val normalized = legacyPlaylist.normalizedForDisplayOrder(now = 30L)
+
+        assertEquals(emptyList<SyncCausalToken>(), normalized.songs.single().syncMembershipTokens)
+        assertTrue(normalized.songs.single().addedAt > 0L)
     }
 
     @Serializable
