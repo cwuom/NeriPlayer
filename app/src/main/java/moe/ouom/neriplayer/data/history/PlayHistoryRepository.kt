@@ -180,11 +180,20 @@ class PlayHistoryRepository private constructor(private val app: Context) {
         }
     }
 
-    private fun triggerSyncIfNeeded(urgency: PlayHistorySyncUrgency = PlayHistorySyncUrgency.IMMEDIATE) {
+    private fun markSyncMutation() {
         runCatching {
             storage.markSyncMutation()
         }.onFailure { error ->
             NPLogger.e("PlayHistoryRepo", "Failed to mark sync mutation", error)
+        }
+    }
+
+    private fun triggerSyncIfNeeded(
+        urgency: PlayHistorySyncUrgency = PlayHistorySyncUrgency.IMMEDIATE,
+        markMutation: Boolean = true
+    ) {
+        if (markMutation) {
+            markSyncMutation()
         }
         try {
             val mode = storage.getPlayHistoryUpdateMode()
@@ -259,6 +268,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
                     .distinctBy { it.identityKey() }
                     .take(1000)
 
+                markSyncMutation()
                 NPLogger.d("PlayHistoryRepo", "Updated history size: ${updated.size}, latest: ${updated.firstOrNull()?.name}")
                 _history.value = updated
                 persistToDisk(updated)
@@ -266,7 +276,10 @@ class PlayHistoryRepository private constructor(private val app: Context) {
                 if (!LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, app)) {
                     storage.removeRecentPlayDeletion(song.identityKey())
                 }
-                triggerSyncIfNeeded(PlayHistorySyncUrgency.SETTLED)
+                triggerSyncIfNeeded(
+                    urgency = PlayHistorySyncUrgency.SETTLED,
+                    markMutation = false
+                )
             }
         }
     }
@@ -312,13 +325,14 @@ class PlayHistoryRepository private constructor(private val app: Context) {
                 val deletions = current
                     .filterNot { LocalSongSupport.isLocalSong(it.album, it.mediaUri, it.albumId, app) }
                     .map { it.toRecentPlayDeletion(deletedAt, deviceId) }
+                markSyncMutation()
                 if (deletions.isNotEmpty()) {
                     storage.addRecentPlayDeletions(deletions)
                 }
 
                 _history.value = emptyList()
                 persistToDisk(emptyList())
-                triggerSyncIfNeeded()
+                triggerSyncIfNeeded(markMutation = false)
             }
         }
     }
@@ -342,6 +356,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
                 val deletions = removedEntries
                     .filterNot { LocalSongSupport.isLocalSong(it.album, it.mediaUri, it.albumId, app) }
                     .map { it.toRecentPlayDeletion(deletedAt, deviceId) }
+                markSyncMutation()
                 if (deletions.isNotEmpty()) {
                     storage.addRecentPlayDeletions(deletions)
                 }
@@ -349,7 +364,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
                 val updated = current.filterNot { it.identityKey() in removalKeys }
                 _history.value = updated
                 persistToDisk(updated)
-                triggerSyncIfNeeded()
+                triggerSyncIfNeeded(markMutation = false)
             }
         }
     }
@@ -364,6 +379,24 @@ class PlayHistoryRepository private constructor(private val app: Context) {
             NPLogger.d("PlayHistoryRepo", "updateHistory() setting history to ${clipped.size} entries, latest: ${clipped.firstOrNull()?.name}")
             _history.value = clipped
             persistToDisk(clipped)
+        }
+    }
+
+    suspend fun updateHistoryIfUnchanged(
+        entries: List<PlayedEntry>,
+        expectedMutationVersion: Long
+    ): Boolean {
+        return historyMutex.withLock {
+            if (storage.getSyncMutationVersion() != expectedMutationVersion) {
+                return@withLock false
+            }
+            val clipped = entries
+                .sortedByDescending { it.playedAt }
+                .distinctBy { it.identityKey() }
+                .take(1000)
+            _history.value = clipped
+            persistToDisk(clipped)
+            true
         }
     }
 

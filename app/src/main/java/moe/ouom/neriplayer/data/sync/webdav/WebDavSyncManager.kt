@@ -206,26 +206,30 @@ class WebDavSyncManager private constructor(context: Context) {
             }
 
             val uploadResolution = uploadResolutionResult.getOrThrow()
-            val localMutatedDuringSync = storage.getSyncMutationVersion() != startMutationVersion
+            var localMutatedDuringSync = storage.getSyncMutationVersion() != startMutationVersion
 
             if (!localMutatedDuringSync) {
-                applyMergedDataToLocal(
+                val applied = applyMergedDataToLocal(
                     mergedData = uploadResolution.merged.mergedData,
-                    remoteHasChanged = isFirstSync || uploadResolution.remoteChangedDuringSync
+                    remoteHasChanged = isFirstSync || uploadResolution.remoteChangedDuringSync,
+                    expectedMutationVersion = startMutationVersion
                 )
+                localMutatedDuringSync = !applied ||
+                    storage.getSyncMutationVersion() != startMutationVersion
             } else {
                 NPLogger.w(TAG, "Skip applying merged sync data because local state changed during sync")
             }
 
             uploadResolution.remoteVersion.lastKnownFingerprint
                 ?.let(webDavStorage::saveLastRemoteFingerprint)
-            webDavStorage.saveLastSyncTime(System.currentTimeMillis())
             if (localMutatedDuringSync) {
                 WebDavSyncWorker.scheduleDelayedSync(
                     appContext,
                     triggerByUserAction = false,
                     markMutation = false
                 )
+            } else {
+                webDavStorage.saveLastSyncTime(System.currentTimeMillis())
             }
             val syncResult = when {
                 !uploadResolution.uploadPerformed &&
@@ -770,7 +774,11 @@ class WebDavSyncManager private constructor(context: Context) {
         return SyncPlaybackStatsMergePolicy.mergeBuckets(local, remote, playbackStatsClearedAt)
     }
 
-    private suspend fun applyMergedDataToLocal(mergedData: SyncData, remoteHasChanged: Boolean) {
+    private suspend fun applyMergedDataToLocal(
+        mergedData: SyncData,
+        remoteHasChanged: Boolean,
+        expectedMutationVersion: Long
+    ): Boolean {
         val localizedContext = LanguageManager.applyLanguage(appContext)
         val sanitizedMergedData = sanitizeSyncData(mergedData)
         val currentPlaylists = playlistRepo.playlists.value.associateBy { playlist ->
@@ -802,13 +810,33 @@ class WebDavSyncManager private constructor(context: Context) {
                     songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                 )
             }
-        playlistRepo.updatePlaylists(mergedLocalPlaylists)
-
-        favoriteRepo.replaceFavoritesFromSync(
-            sanitizedMergedData.favoritePlaylists.map { it.toFavoritePlaylist() }
+        val playlistsApplied = playlistRepo.applySyncedPlaylistsIfUnchanged(
+            playlists = mergedLocalPlaylists,
+            expectedMutationVersion = expectedMutationVersion
         )
-        storage.setRecentPlayDeletions(sanitizedMergedData.recentPlayDeletions)
-        storage.setPlaylistSongDeletions(sanitizedMergedData.playlistSongDeletions)
+        if (!playlistsApplied) {
+            NPLogger.w(TAG, "Skip applying merged sync data because local playlist epoch changed")
+            return false
+        }
+
+        val deletionStateApplied = storage.setDeletionStateIfMutationVersion(
+            expectedMutationVersion = expectedMutationVersion,
+            recentPlayDeletions = sanitizedMergedData.recentPlayDeletions,
+            playlistSongDeletions = sanitizedMergedData.playlistSongDeletions
+        )
+        if (!deletionStateApplied) {
+            NPLogger.w(TAG, "Skip applying merged sync data because local deletion epoch changed")
+            return false
+        }
+
+        val favoritesApplied = favoriteRepo.replaceFavoritesFromSyncIfUnchanged(
+            favorites = sanitizedMergedData.favoritePlaylists.map { it.toFavoritePlaylist() },
+            expectedMutationVersion = expectedMutationVersion
+        )
+        if (!favoritesApplied) {
+            NPLogger.w(TAG, "Skip applying merged sync data because local favorites epoch changed")
+            return false
+        }
 
         val localPlayHistoryEmpty = playHistoryRepo.historyFlow.value.isEmpty()
         val shouldApplyRemoteHistory = remoteHasChanged ||
@@ -846,7 +874,14 @@ class WebDavSyncManager private constructor(context: Context) {
                 LocalSongSupport.isLocalSong(it.album, it.mediaUri, it.albumId, localizedContext)
             }
             val playHistory = mergeLocalOnlyHistory(syncedHistory, localOnlyHistory)
-            playHistoryRepo.updateHistory(playHistory)
+            val historyApplied = playHistoryRepo.updateHistoryIfUnchanged(
+                entries = playHistory,
+                expectedMutationVersion = expectedMutationVersion
+            )
+            if (!historyApplied) {
+                NPLogger.w(TAG, "Skip applying merged sync data because local history epoch changed")
+                return false
+            }
         }
 
         playbackStatsRepo.applyMergedStats(
@@ -854,6 +889,7 @@ class WebDavSyncManager private constructor(context: Context) {
             playbackStatsClearedAt = sanitizedMergedData.playbackStatsClearedAt,
             syncDailyStats = sanitizedMergedData.playbackStatBuckets
         )
+        return true
     }
 
     private fun mergeLocalOnlySongs(

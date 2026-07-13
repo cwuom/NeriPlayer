@@ -120,6 +120,230 @@ class SyncPlaylistSongMergePolicyTest {
     }
 
     @Test
+    fun `channel audio duplicate unions membership tokens`() {
+        val localToken = token("local", 1L)
+        val remoteToken = token("remote", 1L)
+        val localSong = syncSong(
+            id = 1L,
+            name = "Song",
+            album = "Old Album",
+            channelId = "netease",
+            audioId = "1",
+            membershipTokens = listOf(localToken)
+        )
+        val remoteSong = localSong.copy(
+            album = "New Album",
+            syncMembershipTokens = listOf(remoteToken)
+        )
+
+        val result = SyncPlaylistSongMergePolicy.deduplicateSongs(listOf(localSong, remoteSong))
+
+        assertEquals(
+            listOf(localSong.copy(syncMembershipTokens = listOf(localToken, remoteToken))),
+            result
+        )
+    }
+
+    @Test
+    fun `non exact membership merge resolves payload deterministically`() {
+        val localSong = syncSong(
+            id = 1L,
+            name = "Song",
+            album = "Old Album",
+            channelId = "netease",
+            audioId = "1",
+            membershipTokens = listOf(token("local", 1L))
+        )
+        val remoteSong = localSong.copy(
+            album = "New Album",
+            syncMembershipTokens = listOf(token("remote", 1L))
+        )
+
+        val localFirst = SyncPlaylistSongMergePolicy.mergeSongs(
+            localSongs = listOf(localSong),
+            remoteSongs = listOf(remoteSong),
+            localModifiedAt = 200L,
+            remoteModifiedAt = 200L,
+            localChangedAfterSync = true,
+            remoteChangedAfterSync = true,
+            lastSyncTime = 100L,
+            isFavorites = false
+        )
+        val remoteFirst = SyncPlaylistSongMergePolicy.mergeSongs(
+            localSongs = listOf(remoteSong),
+            remoteSongs = listOf(localSong),
+            localModifiedAt = 200L,
+            remoteModifiedAt = 200L,
+            localChangedAfterSync = true,
+            remoteChangedAfterSync = true,
+            lastSyncTime = 100L,
+            isFavorites = false
+        )
+
+        assertEquals(localFirst.songs, remoteFirst.songs)
+    }
+
+    @Test
+    fun `remote primary unions token from non exact local duplicate`() {
+        val localToken = token("local", 1L)
+        val remoteToken = token("remote", 1L)
+        val localSong = syncSong(
+            id = 1L,
+            name = "Local",
+            album = "Old Album",
+            channelId = "netease",
+            audioId = "1",
+            membershipTokens = listOf(localToken)
+        )
+        val remoteSong = localSong.copy(
+            name = "Remote",
+            album = "New Album",
+            syncMembershipTokens = listOf(remoteToken)
+        )
+
+        val result = SyncPlaylistSongMergePolicy.mergeSongs(
+            localSongs = listOf(localSong),
+            remoteSongs = listOf(remoteSong),
+            localModifiedAt = 100L,
+            remoteModifiedAt = 200L,
+            localChangedAfterSync = false,
+            remoteChangedAfterSync = true,
+            lastSyncTime = 150L,
+            isFavorites = false
+        )
+
+        assertEquals(
+            listOf(remoteSong.copy(syncMembershipTokens = listOf(localToken, remoteToken))),
+            result.songs
+        )
+    }
+
+    @Test
+    fun `fallback duplicate unions membership tokens`() {
+        val first = syncSong(
+            id = 1L,
+            name = "Song",
+            album = "Legacy A",
+            mediaUri = "https://legacy-a.invalid/audio",
+            membershipTokens = listOf(token("a", 1L))
+        )
+        val duplicate = first.copy(
+            album = "Legacy B",
+            mediaUri = "https://legacy-b.invalid/audio",
+            syncMembershipTokens = listOf(token("b", 1L))
+        )
+
+        val result = SyncPlaylistSongMergePolicy.deduplicateSongs(listOf(first, duplicate))
+
+        assertEquals(
+            listOf(
+                first.copy(
+                    syncMembershipTokens = listOf(token("a", 1L), token("b", 1L))
+                )
+            ),
+            result
+        )
+    }
+
+    @Test
+    fun `shared membership token collapses identity drift`() {
+        val membership = token("device", 1L)
+        val legacy = syncSong(
+            id = 1L,
+            name = "Legacy",
+            album = "Legacy Album",
+            membershipTokens = listOf(membership)
+        )
+        val hydrated = syncSong(
+            id = 9L,
+            name = "Hydrated",
+            album = "New Album",
+            channelId = "netease",
+            audioId = "9",
+            membershipTokens = listOf(membership)
+        )
+
+        val result = SyncPlaylistSongMergePolicy.deduplicateSongs(listOf(legacy, hydrated))
+
+        assertEquals(listOf(legacy), result)
+    }
+
+    @Test
+    fun `bridge aliases merge the complete membership component`() {
+        val tokenA = token("a", 1L)
+        val tokenB = token("b", 1L)
+        val first = syncSong(
+            id = 1L,
+            name = "First",
+            album = "First Album",
+            mediaUri = "https://first.invalid/audio",
+            membershipTokens = listOf(tokenA)
+        )
+        val second = syncSong(
+            id = 2L,
+            name = "Second",
+            album = "Second Album",
+            mediaUri = "https://second.invalid/audio",
+            membershipTokens = listOf(tokenB)
+        )
+        val bridge = first.copy(syncMembershipTokens = listOf(tokenB))
+        val permutations = listOf(
+            listOf(first, second, bridge),
+            listOf(second, bridge, first),
+            listOf(bridge, first, second)
+        )
+
+        permutations.forEach { songs ->
+            val result = SyncPlaylistSongMergePolicy.deduplicateSongs(songs)
+
+            assertEquals(1, result.size)
+            assertEquals(listOf(tokenA, tokenB), result.single().syncMembershipTokens)
+        }
+    }
+
+    @Test
+    fun `unknown fallback bridge merges every matching source component`() {
+        val netease = syncSong(
+            id = 1L,
+            name = "Song",
+            album = "netease album",
+            mediaUri = "https://netease.invalid/audio",
+            membershipTokens = listOf(token("netease", 1L))
+        )
+        val bilibili = syncSong(
+            id = 1L,
+            name = "Song",
+            album = "bilibili album",
+            mediaUri = "https://bilibili.invalid/audio",
+            membershipTokens = listOf(token("bilibili", 1L))
+        )
+        val unknown = syncSong(
+            id = 1L,
+            name = "Song",
+            album = "legacy album",
+            mediaUri = "https://legacy.invalid/audio",
+            membershipTokens = listOf(token("legacy", 1L))
+        )
+
+        listOf(
+            listOf(netease, bilibili, unknown),
+            listOf(bilibili, netease, unknown)
+        ).forEach { songs ->
+            val result = SyncPlaylistSongMergePolicy.deduplicateSongs(songs)
+
+            assertEquals(1, result.size)
+            assertEquals(
+                listOf(
+                    token("bilibili", 1L),
+                    token("legacy", 1L),
+                    token("netease", 1L)
+                ),
+                result.single().syncMembershipTokens
+            )
+        }
+    }
+
+    @Test
     fun `duplicate songs in same snapshot are collapsed`() {
         val first = syncSong(id = 1L, name = "Song")
         val duplicate = syncSong(id = 1L, name = "Song")
@@ -188,7 +412,7 @@ class SyncPlaylistSongMergePolicyTest {
     }
 
     @Test
-    fun `two changed endpoints union exact membership tokens with local metadata`() {
+    fun `two changed endpoints resolve exact duplicate payload deterministically`() {
         val local = syncSong(
             id = 1L,
             name = "Local metadata",
@@ -213,7 +437,7 @@ class SyncPlaylistSongMergePolicyTest {
 
         assertEquals(
             listOf(
-                local.copy(
+                remote.copy(
                     syncMembershipTokens = listOf(
                         token("local", 1L),
                         token("remote", 1L)
@@ -351,6 +575,7 @@ class SyncPlaylistSongMergePolicyTest {
         artist: String = "Artist",
         channelId: String? = null,
         audioId: String? = null,
+        mediaUri: String? = null,
         membershipTokens: List<SyncCausalToken> = emptyList()
     ): SyncSong {
         return SyncSong(
@@ -360,6 +585,7 @@ class SyncPlaylistSongMergePolicyTest {
             album = album,
             channelId = channelId,
             audioId = audioId,
+            mediaUri = mediaUri,
             syncMembershipTokens = membershipTokens
         )
     }

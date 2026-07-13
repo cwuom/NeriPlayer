@@ -297,24 +297,28 @@ class SecureTokenStorage(private val context: Context) {
     }
 
     fun getRecentPlayDeletions(): List<SyncRecentPlayDeletion> {
-        val raw = encryptedPrefs.getString(KEY_RECENT_PLAY_DELETIONS, null).orEmpty()
-        if (raw.isBlank()) {
-            return emptyList()
+        return synchronized(syncMutationLock) {
+            val raw = encryptedPrefs.getString(KEY_RECENT_PLAY_DELETIONS, null).orEmpty()
+            if (raw.isBlank()) {
+                return@synchronized emptyList()
+            }
+            val parsed = runCatching {
+                val type = object : TypeToken<List<SyncRecentPlayDeletion>>() {}.type
+                gson.fromJson<List<SyncRecentPlayDeletion>>(raw, type).orEmpty()
+            }.getOrElse { emptyList() }
+            normalizeRecentPlayDeletions(parsed)
         }
-        val parsed = runCatching {
-            val type = object : TypeToken<List<SyncRecentPlayDeletion>>() {}.type
-            gson.fromJson<List<SyncRecentPlayDeletion>>(raw, type).orEmpty()
-        }.getOrElse { emptyList() }
-        return normalizeRecentPlayDeletions(parsed)
     }
 
     fun setRecentPlayDeletions(deletions: List<SyncRecentPlayDeletion>) {
-        val normalized = normalizeRecentPlayDeletions(deletions)
-        encryptedPrefs.edit {
-            if (normalized.isEmpty()) {
-                remove(KEY_RECENT_PLAY_DELETIONS)
-            } else {
-                putString(KEY_RECENT_PLAY_DELETIONS, gson.toJson(normalized))
+        synchronized(syncMutationLock) {
+            val normalized = normalizeRecentPlayDeletions(deletions)
+            encryptedPrefs.edit {
+                if (normalized.isEmpty()) {
+                    remove(KEY_RECENT_PLAY_DELETIONS)
+                } else {
+                    putString(KEY_RECENT_PLAY_DELETIONS, gson.toJson(normalized))
+                }
             }
         }
     }
@@ -323,34 +327,42 @@ class SecureTokenStorage(private val context: Context) {
         if (deletions.isEmpty()) {
             return
         }
-        setRecentPlayDeletions(getRecentPlayDeletions() + deletions)
+        synchronized(syncMutationLock) {
+            setRecentPlayDeletions(getRecentPlayDeletions() + deletions)
+        }
     }
 
     fun removeRecentPlayDeletion(identity: SongIdentity) {
-        val remaining = getRecentPlayDeletions()
-            .filterNot { it.identity() == identity }
-        setRecentPlayDeletions(remaining)
+        synchronized(syncMutationLock) {
+            val remaining = getRecentPlayDeletions()
+                .filterNot { it.identity() == identity }
+            setRecentPlayDeletions(remaining)
+        }
     }
 
     fun getPlaylistSongDeletions(): List<SyncPlaylistSongDeletion> {
-        val raw = encryptedPrefs.getString(KEY_PLAYLIST_SONG_DELETIONS, null).orEmpty()
-        if (raw.isBlank()) {
-            return emptyList()
+        return synchronized(syncMutationLock) {
+            val raw = encryptedPrefs.getString(KEY_PLAYLIST_SONG_DELETIONS, null).orEmpty()
+            if (raw.isBlank()) {
+                return@synchronized emptyList()
+            }
+            val parsed = runCatching {
+                val type = object : TypeToken<List<SyncPlaylistSongDeletion>>() {}.type
+                gson.fromJson<List<SyncPlaylistSongDeletion>>(raw, type).orEmpty()
+            }.getOrElse { emptyList() }
+            normalizePlaylistSongDeletions(parsed)
         }
-        val parsed = runCatching {
-            val type = object : TypeToken<List<SyncPlaylistSongDeletion>>() {}.type
-            gson.fromJson<List<SyncPlaylistSongDeletion>>(raw, type).orEmpty()
-        }.getOrElse { emptyList() }
-        return normalizePlaylistSongDeletions(parsed)
     }
 
     fun setPlaylistSongDeletions(deletions: List<SyncPlaylistSongDeletion>) {
-        val normalized = normalizePlaylistSongDeletions(deletions)
-        encryptedPrefs.edit {
-            if (normalized.isEmpty()) {
-                remove(KEY_PLAYLIST_SONG_DELETIONS)
-            } else {
-                putString(KEY_PLAYLIST_SONG_DELETIONS, gson.toJson(normalized))
+        synchronized(syncMutationLock) {
+            val normalized = normalizePlaylistSongDeletions(deletions)
+            encryptedPrefs.edit {
+                if (normalized.isEmpty()) {
+                    remove(KEY_PLAYLIST_SONG_DELETIONS)
+                } else {
+                    putString(KEY_PLAYLIST_SONG_DELETIONS, gson.toJson(normalized))
+                }
             }
         }
     }
@@ -359,7 +371,9 @@ class SecureTokenStorage(private val context: Context) {
         if (deletions.isEmpty()) {
             return
         }
-        setPlaylistSongDeletions(getPlaylistSongDeletions() + deletions)
+        synchronized(syncMutationLock) {
+            setPlaylistSongDeletions(getPlaylistSongDeletions() + deletions)
+        }
     }
 
     fun removePlaylistSongDeletions(
@@ -369,18 +383,49 @@ class SecureTokenStorage(private val context: Context) {
         if (identities.isEmpty()) {
             return
         }
-        val remaining = SyncPlaylistDeletionPolicy.clearLegacyDeletionsForReaddedSongs(
-            deletions = getPlaylistSongDeletions(),
-            playlistId = playlistId,
-            identities = identities
-        )
-        setPlaylistSongDeletions(remaining)
+        synchronized(syncMutationLock) {
+            val remaining = SyncPlaylistDeletionPolicy.clearLegacyDeletionsForReaddedSongs(
+                deletions = getPlaylistSongDeletions(),
+                playlistId = playlistId,
+                identities = identities
+            )
+            setPlaylistSongDeletions(remaining)
+        }
     }
 
     fun removePlaylistSongDeletionsForPlaylist(playlistId: Long) {
-        val remaining = getPlaylistSongDeletions()
-            .filterNot { it.playlistId == playlistId }
-        setPlaylistSongDeletions(remaining)
+        synchronized(syncMutationLock) {
+            val remaining = getPlaylistSongDeletions()
+                .filterNot { it.playlistId == playlistId }
+            setPlaylistSongDeletions(remaining)
+        }
+    }
+
+    fun setDeletionStateIfMutationVersion(
+        expectedMutationVersion: Long,
+        recentPlayDeletions: List<SyncRecentPlayDeletion>,
+        playlistSongDeletions: List<SyncPlaylistSongDeletion>
+    ): Boolean {
+        val normalizedRecent = normalizeRecentPlayDeletions(recentPlayDeletions)
+        val normalizedPlaylist = normalizePlaylistSongDeletions(playlistSongDeletions)
+        return synchronized(syncMutationLock) {
+            if (encryptedPrefs.getLong(KEY_SYNC_MUTATION_VERSION, 0L) != expectedMutationVersion) {
+                return@synchronized false
+            }
+            val editor = encryptedPrefs.edit()
+            if (normalizedRecent.isEmpty()) {
+                editor.remove(KEY_RECENT_PLAY_DELETIONS)
+            } else {
+                editor.putString(KEY_RECENT_PLAY_DELETIONS, gson.toJson(normalizedRecent))
+            }
+            if (normalizedPlaylist.isEmpty()) {
+                editor.remove(KEY_PLAYLIST_SONG_DELETIONS)
+            } else {
+                editor.putString(KEY_PLAYLIST_SONG_DELETIONS, gson.toJson(normalizedPlaylist))
+            }
+            check(editor.commit()) { "Failed to persist guarded sync deletion state" }
+            true
+        }
     }
 
     /** 设置Token警告已忽略 */

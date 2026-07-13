@@ -177,7 +177,7 @@ private fun SyncSong.normalizedRemoteIdentity(): SongIdentity? {
         rawChannelId = channelId,
         album = album,
         mediaUri = mediaUri,
-        inferNeteaseForBlankRemote = false
+        inferNeteaseForBlankRemote = true
     )
     val audio = audioId?.trim()?.takeIf { it.isNotBlank() } ?: id.takeIf { it != 0L }?.toString()
     if (channel == null || audio == null) return null

@@ -147,6 +147,133 @@ class SyncPlaylistDeletionPolicyTest {
     }
 
     @Test
+    fun `observed deletion removes token after identity drift`() {
+        val membership = token("device", 1L)
+        val song = syncSong(
+            id = 99L,
+            addedAt = 100L,
+            album = "New Album",
+            mediaUri = "https://new.invalid/audio",
+            membershipTokens = listOf(membership)
+        )
+        val deletion = deletion(
+            playlistId = 7L,
+            songId = 11L,
+            deletedAt = 200L,
+            album = "Old Album",
+            mediaUri = "https://old.invalid/audio",
+            removedTokens = listOf(membership)
+        )
+
+        val merged = SyncPlaylistDeletionPolicy.applyDeletions(7L, listOf(song), listOf(deletion))
+
+        assertTrue(merged.isEmpty())
+    }
+
+    @Test
+    fun `all causal deletions apply regardless of identity alias`() {
+        val firstToken = token("device", 1L)
+        val secondToken = token("other", 1L)
+        val song = syncSong(
+            id = 99L,
+            addedAt = 100L,
+            membershipTokens = listOf(firstToken, secondToken)
+        )
+        val deletions = listOf(
+            deletion(
+                playlistId = 7L,
+                songId = 11L,
+                deletedAt = 200L,
+                removedTokens = listOf(firstToken)
+            ),
+            deletion(
+                playlistId = 7L,
+                songId = 12L,
+                deletedAt = 300L,
+                removedTokens = listOf(secondToken)
+            )
+        )
+
+        val merged = SyncPlaylistDeletionPolicy.applyDeletions(7L, listOf(song), deletions)
+
+        assertTrue(merged.isEmpty())
+    }
+
+    @Test
+    fun `causal deletion application is independent of deletion order`() {
+        val firstToken = token("device", 1L)
+        val secondToken = token("other", 1L)
+        val survivingToken = token("survivor", 1L)
+        val song = syncSong(
+            id = 99L,
+            addedAt = 100L,
+            membershipTokens = listOf(firstToken, secondToken, survivingToken)
+        )
+        val deletions = listOf(
+            deletion(
+                playlistId = 7L,
+                songId = 11L,
+                deletedAt = 200L,
+                removedTokens = listOf(firstToken)
+            ),
+            deletion(
+                playlistId = 7L,
+                songId = 12L,
+                deletedAt = 300L,
+                removedTokens = listOf(secondToken)
+            )
+        )
+
+        val firstOrder = SyncPlaylistDeletionPolicy.applyDeletions(7L, listOf(song), deletions)
+        val reverseOrder = SyncPlaylistDeletionPolicy.applyDeletions(
+            7L,
+            listOf(song),
+            deletions.reversed()
+        )
+
+        assertEquals(firstOrder, reverseOrder)
+        assertEquals(
+            listOf(song.copy(syncMembershipTokens = listOf(survivingToken))),
+            firstOrder
+        )
+    }
+
+    @Test
+    fun `legacy snapshot does not delete causal readd`() {
+        val oldToken = token("device", 1L)
+        val causalDeletion = deletion(
+            playlistId = 7L,
+            songId = 11L,
+            deletedAt = 100L,
+            deviceId = "causal",
+            removedTokens = listOf(oldToken)
+        )
+        val legacyDeletion = deletion(
+            playlistId = 7L,
+            songId = 11L,
+            deletedAt = 300L,
+            deviceId = "legacy"
+        )
+
+        val mergedDeletions = SyncPlaylistDeletionPolicy.mergeDeletions(
+            local = listOf(causalDeletion),
+            remote = listOf(legacyDeletion)
+        )
+        val mergedSongs = SyncPlaylistDeletionPolicy.applyDeletions(
+            playlistId = 7L,
+            songs = listOf(syncSong(
+                id = 11L,
+                addedAt = 200L,
+                membershipTokens = listOf(token("device", 2L))
+            )),
+            deletions = mergedDeletions
+        )
+
+        assertEquals(listOf(legacyDeletion, causalDeletion), mergedDeletions)
+        assertEquals(1, mergedSongs.size)
+    }
+
+    @Test
     fun `deletion only affects matching playlist`() {
         val song = syncSong(id = 11L, addedAt = 100L)
         val deletions = listOf(deletion(playlistId = 8L, songId = 11L, deletedAt = 200L))
@@ -244,6 +371,30 @@ class SyncPlaylistDeletionPolicyTest {
             playlistId = 7L,
             songs = listOf(syncSong(id = 11L, addedAt = 0L)),
             deletions = listOf(deletion(playlistId = 7L, songId = 11L, deletedAt = 200L))
+        )
+
+        assertTrue(merged.isEmpty())
+    }
+
+    @Test
+    fun `legacy raw identity deletion survives netease identity normalization`() {
+        val song = syncSong(
+            id = 11L,
+            addedAt = 100L,
+            album = "Legacy Album"
+        )
+        val legacyDeletion = deletion(
+            playlistId = 7L,
+            songId = 11L,
+            deletedAt = 200L,
+            album = "Legacy Album",
+            deviceId = "legacy"
+        )
+
+        val merged = SyncPlaylistDeletionPolicy.applyDeletions(
+            playlistId = 7L,
+            songs = listOf(song),
+            deletions = listOf(legacyDeletion)
         )
 
         assertTrue(merged.isEmpty())

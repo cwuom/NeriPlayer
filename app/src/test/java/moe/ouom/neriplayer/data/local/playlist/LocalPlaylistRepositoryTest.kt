@@ -531,6 +531,188 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
+    fun `metadata update preserves membership token and display order`() = runTest {
+        val playlistId = 146L
+        val membershipToken = SyncCausalToken(deviceId = "existing", counter = 9L)
+        val original = remoteNeteaseSong(id = 147L).copy(
+            addedAt = 500L,
+            syncMembershipTokens = listOf(membershipToken)
+        )
+        val syncStore = RecordingSyncMutationStore()
+        var autoSyncTriggerCount = 0
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "metadata_membership.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = true,
+            syncMutationStore = syncStore,
+            autoSyncTrigger = { autoSyncTriggerCount++ }
+        )
+        repository.updatePlaylists(
+            listOf(LocalPlaylist(id = playlistId, name = "metadata", songs = mutableListOf(original)))
+        )
+
+        repository.updateSongMetadata(
+            originalSong = original,
+            newSongInfo = original.copy(
+                name = "Hydrated",
+                addedAt = 100L,
+                syncMembershipTokens = emptyList()
+            )
+        )
+
+        val updated = repository.playlists.value.single().songs.single()
+        assertEquals("Hydrated", updated.name)
+        assertEquals(500L, updated.addedAt)
+        assertEquals(listOf(membershipToken), updated.syncMembershipTokens)
+        assertEquals(1L, syncStore.mutationVersion)
+        assertEquals(0, autoSyncTriggerCount)
+    }
+
+    @Test
+    fun `same playlist state still commits restored playlist mutation`() = runTest {
+        val playlist = LocalPlaylist(id = 148L, name = "restored")
+        val syncStore = RecordingSyncMutationStore()
+        var autoSyncTriggerCount = 0
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "same_state_restore.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = true,
+            syncMutationStore = syncStore,
+            autoSyncTrigger = { autoSyncTriggerCount++ }
+        )
+        repository.updatePlaylists(listOf(playlist))
+
+        repository.updatePlaylists(
+            playlists = listOf(playlist),
+            triggerSync = true,
+            restoredPlaylistIds = setOf(playlist.id)
+        )
+
+        assertEquals(listOf(playlist.id), syncStore.applied.single().restoredPlaylistIds)
+        assertEquals(1L, syncStore.mutationVersion)
+        assertEquals(1, autoSyncTriggerCount)
+    }
+
+    @Test
+    fun `sync apply is rejected after local mutation epoch changes`() = runTest {
+        val initial = LocalPlaylist(id = 149L, name = "initial")
+        val syncStore = RecordingSyncMutationStore()
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "guarded_sync_apply.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false,
+            syncMutationStore = syncStore
+        )
+        repository.updatePlaylists(listOf(initial))
+        val expectedMutationVersion = syncStore.mutationVersion
+        repository.updatePlaylists(
+            playlists = listOf(initial.copy(name = "local")),
+            triggerSync = true
+        )
+
+        val applied = repository.applySyncedPlaylistsIfUnchanged(
+            playlists = listOf(initial.copy(name = "remote")),
+            expectedMutationVersion = expectedMutationVersion
+        )
+
+        assertFalse(applied)
+        assertEquals("local", repository.playlists.value.single().name)
+    }
+
+    @Test
+    fun `sync apply succeeds without advancing local mutation epoch`() = runTest {
+        val initial = LocalPlaylist(id = 150L, name = "initial")
+        val syncStore = RecordingSyncMutationStore()
+        var autoSyncTriggerCount = 0
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "successful_guarded_sync_apply.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = true,
+            syncMutationStore = syncStore,
+            autoSyncTrigger = { autoSyncTriggerCount++ }
+        )
+        repository.updatePlaylists(listOf(initial))
+
+        val applied = repository.applySyncedPlaylistsIfUnchanged(
+            playlists = listOf(initial.copy(name = "remote")),
+            expectedMutationVersion = syncStore.mutationVersion
+        )
+
+        assertTrue(applied)
+        assertEquals("remote", repository.playlists.value.single().name)
+        assertEquals(0L, syncStore.mutationVersion)
+        assertEquals(0, autoSyncTriggerCount)
+    }
+
+    @Test
+    fun `same state restore mutation replays after apply failure`() = runTest {
+        val playlist = LocalPlaylist(id = 151L, name = "restored")
+        val storage = RecordingStorage(primary = null)
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "same_state_restore_replay.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false,
+            storage = storage,
+            syncMutationStore = RecordingSyncMutationStore(failApply = true)
+        )
+        repository.updatePlaylists(listOf(playlist))
+
+        repository.updatePlaylists(
+            playlists = listOf(playlist),
+            triggerSync = true,
+            restoredPlaylistIds = setOf(playlist.id)
+        )
+        assertTrue(storage.pendingSyncMutation != null)
+
+        val recoveredStore = RecordingSyncMutationStore()
+        var autoSyncTriggerCount = 0
+        LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "same_state_restore_replay.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = true,
+            storage = storage,
+            syncMutationStore = recoveredStore,
+            autoSyncTrigger = { autoSyncTriggerCount++ }
+        )
+
+        assertEquals(listOf(playlist.id), recoveredStore.applied.single().restoredPlaylistIds)
+        assertTrue(storage.pendingSyncMutation == null)
+        assertEquals(1, autoSyncTriggerCount)
+    }
+
+    @Test
+    fun `export allocates one membership token per inserted song`() = runTest {
+        val sourceId = 152L
+        val targetId = 153L
+        val song = remoteNeteaseSong(id = 154L)
+        val syncStore = RecordingSyncMutationStore()
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "export_token_count.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false,
+            syncMutationStore = syncStore
+        )
+        repository.updatePlaylists(
+            listOf(
+                LocalPlaylist(id = sourceId, name = "source", songs = mutableListOf(song)),
+                LocalPlaylist(id = targetId, name = "target")
+            )
+        )
+
+        repository.exportSongsToPlaylistByIdentity(sourceId, targetId, listOf(song))
+
+        assertEquals(1, syncStore.allocatedTokenCount)
+        assertEquals(1, repository.playlists.value.single { it.id == targetId }.songs.size)
+    }
+
+    @Test
     fun `restored playlist id is committed before external sync is scheduled`() = runTest {
         val syncStore = RecordingSyncMutationStore()
         var autoSyncTriggerCount = 0
@@ -861,18 +1043,30 @@ class LocalPlaylistRepositoryTest {
         private val failApply: Boolean = false
     ) : LocalPlaylistSyncMutationStore {
         val applied = mutableListOf<LocalPlaylistSyncMutation>()
+        var allocatedTokenCount = 0
+            private set
+        var mutationVersion = 0L
+            private set
         private var nextCounter = 1L
 
         override fun getOrCreateDeviceId(): String = "test-device"
 
         override fun nextSyncCausalTokens(count: Int): List<SyncCausalToken> {
             require(count >= 0)
+            allocatedTokenCount += count
             return List(count) {
                 SyncCausalToken(
                     deviceId = getOrCreateDeviceId(),
                     counter = nextCounter++
                 )
             }
+        }
+
+        override fun getSyncMutationVersion(): Long = mutationVersion
+
+        override fun markSyncMutation(): Long {
+            mutationVersion += 1L
+            return mutationVersion
         }
 
         override fun apply(mutation: LocalPlaylistSyncMutation) {

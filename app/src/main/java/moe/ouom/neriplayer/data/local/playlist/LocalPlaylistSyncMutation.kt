@@ -59,6 +59,10 @@ internal interface LocalPlaylistSyncMutationStore {
 
     fun nextSyncCausalTokens(count: Int): List<SyncCausalToken>
 
+    fun getSyncMutationVersion(): Long
+
+    fun markSyncMutation(): Long
+
     fun apply(mutation: LocalPlaylistSyncMutation)
 }
 
@@ -70,6 +74,10 @@ internal class SecureLocalPlaylistSyncMutationStore(
     override fun nextSyncCausalTokens(count: Int): List<SyncCausalToken> {
         return storage.nextSyncCausalTokens(count)
     }
+
+    override fun getSyncMutationVersion(): Long = storage.getSyncMutationVersion()
+
+    override fun markSyncMutation(): Long = storage.markSyncMutation()
 
     override fun apply(mutation: LocalPlaylistSyncMutation) {
         if (mutation.addedSongDeletions.isNotEmpty()) {
@@ -86,6 +94,7 @@ internal class SecureLocalPlaylistSyncMutationStore(
 
 internal class InMemoryLocalPlaylistSyncMutationStore : LocalPlaylistSyncMutationStore {
     private val nextCounter = AtomicLong(1L)
+    private val mutationVersion = AtomicLong(0L)
 
     override fun getOrCreateDeviceId(): String = "in-memory-sync-device"
 
@@ -98,6 +107,10 @@ internal class InMemoryLocalPlaylistSyncMutationStore : LocalPlaylistSyncMutatio
             )
         }
     }
+
+    override fun getSyncMutationVersion(): Long = mutationVersion.get()
+
+    override fun markSyncMutation(): Long = mutationVersion.incrementAndGet()
 
     override fun apply(mutation: LocalPlaylistSyncMutation) = Unit
 }

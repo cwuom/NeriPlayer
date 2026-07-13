@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.data.sync.github
 
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.identity
+import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import moe.ouom.neriplayer.data.sync.model.normalizedSyncCausalTokens
 
 internal object SyncPlaylistSongMergePolicy {
@@ -69,7 +70,7 @@ internal object SyncPlaylistSongMergePolicy {
 
         val uniqueLocalSongs = deduplicateSongs(localSongs)
         val uniqueRemoteSongs = deduplicateSongs(remoteSongs)
-        val mergedSongs = mergeSongsPreservingLocal(uniqueLocalSongs, uniqueRemoteSongs)
+        val mergedSongs = mergeSongsWithDeterministicPayload(uniqueLocalSongs, uniqueRemoteSongs)
         return Result(
             songs = mergedSongs,
             isUpdated = !sameSongList(mergedSongs, uniqueLocalSongs) ||
@@ -85,13 +86,13 @@ internal object SyncPlaylistSongMergePolicy {
             .toList()
     }
 
-    private fun mergeSongsPreservingLocal(
+    private fun mergeSongsWithDeterministicPayload(
         localSongs: List<SyncSong>,
         remoteSongs: List<SyncSong>
     ): List<SyncSong> {
         if (remoteSongs.isEmpty()) return localSongs
 
-        return SongMergeAccumulator()
+        return SongMergeAccumulator(resolvePayloadDeterministically = true)
             .apply {
                 localSongs.forEach(::addIfAbsent)
                 remoteSongs.forEach(::addIfAbsent)
@@ -105,7 +106,7 @@ internal object SyncPlaylistSongMergePolicy {
     ): List<SyncSong> {
         val accumulator = SongMergeAccumulator()
         primarySongs.forEach(accumulator::addIfAbsent)
-        secondarySongs.forEach(accumulator::mergeExactMembershipTokens)
+        secondarySongs.forEach(accumulator::mergeMatchingMembershipTokens)
         return accumulator.toList()
     }
 
@@ -175,74 +176,132 @@ internal object SyncPlaylistSongMergePolicy {
     )
 
     private class SongMergeIndex {
-        private val identityKeys = mutableSetOf<SongIdentity>()
-        private val channelAudioKeys = mutableSetOf<String>()
+        private val membershipTokenIndices = mutableMapOf<SyncCausalToken, Int>()
+        private val identityIndices = mutableMapOf<SongIdentity, Int>()
+        private val channelAudioIndices = mutableMapOf<String, Int>()
         private val fallbackSourcesByKey = mutableMapOf<FallbackKey, SourceBucket>()
 
-        fun addIfAbsent(song: SyncSong): Boolean {
+        fun findMatchingIndices(song: SyncSong): Set<Int> {
             val candidate = song.toMergeCandidate()
-            if (contains(candidate)) return false
+            return buildSet {
+                song.syncMembershipTokens.orEmpty().forEach { token ->
+                    membershipTokenIndices[token]?.let(::add)
+                }
+                identityIndices[candidate.identity]?.let(::add)
 
-            add(candidate)
-            return true
+                val channelAudioKey = candidate.channelAudioKey
+                if (channelAudioKey != null) {
+                    channelAudioIndices[channelAudioKey]?.let(::add)
+                }
+
+                candidate.fallbackKey?.let { fallbackKey ->
+                    fallbackSourcesByKey[fallbackKey]
+                        ?.findAll(candidate.sourceHint)
+                        ?.let(::addAll)
+                }
+            }
         }
 
-        private fun contains(candidate: SongMergeCandidate): Boolean {
-            if (candidate.identity in identityKeys) return true
-
-            val channelAudioKey = candidate.channelAudioKey
-            if (channelAudioKey != null && channelAudioKey in channelAudioKeys) return true
-
-            val fallbackKey = candidate.fallbackKey ?: return false
-            return fallbackSourcesByKey[fallbackKey]?.matches(candidate.sourceHint) == true
-        }
-
-        private fun add(candidate: SongMergeCandidate) {
-            identityKeys += candidate.identity
-            candidate.channelAudioKey?.let { channelAudioKeys += it }
+        fun register(song: SyncSong, index: Int) {
+            val candidate = song.toMergeCandidate()
+            song.syncMembershipTokens.orEmpty().forEach { token ->
+                membershipTokenIndices.putIfAbsent(token, index)
+            }
+            identityIndices.putIfAbsent(candidate.identity, index)
+            candidate.channelAudioKey?.let { channelAudioKey ->
+                channelAudioIndices.putIfAbsent(channelAudioKey, index)
+            }
 
             val fallbackKey = candidate.fallbackKey ?: return
             fallbackSourcesByKey
                 .getOrPut(fallbackKey) { SourceBucket() }
-                .add(candidate.sourceHint)
+                .add(candidate.sourceHint, index)
         }
     }
 
-    private class SongMergeAccumulator {
-        private val mergeIndex = SongMergeIndex()
-        private val exactIndices = mutableMapOf<SongIdentity, Int>()
-        private val songs = mutableListOf<SyncSong>()
+    private class SongMergeAccumulator(
+        private val resolvePayloadDeterministically: Boolean = false
+    ) {
+        private var mergeIndex = SongMergeIndex()
+        private val entries = mutableListOf<SongMergeEntry>()
 
         fun addIfAbsent(song: SyncSong) {
             val normalizedSong = normalizeMembershipTokens(song)
-            val identity = normalizedSong.identity()
-            val exactIndex = exactIndices[identity]
-            if (exactIndex != null) {
-                mergeMembershipTokensAt(exactIndex, normalizedSong)
+            val matchingIndices = mergeIndex.findMatchingIndices(normalizedSong)
+            if (matchingIndices.isNotEmpty()) {
+                mergeMembershipComponents(matchingIndices, normalizedSong)
                 return
             }
-            if (!mergeIndex.addIfAbsent(normalizedSong)) return
 
-            exactIndices[identity] = songs.size
-            songs += normalizedSong
-        }
-
-        fun mergeExactMembershipTokens(song: SyncSong) {
-            val exactIndex = exactIndices[song.identity()] ?: return
-            mergeMembershipTokensAt(exactIndex, song)
-        }
-
-        fun toList(): List<SyncSong> = songs
-
-        private fun mergeMembershipTokensAt(index: Int, other: SyncSong) {
-            val current = songs[index]
-            val mergedTokens = (
-                current.syncMembershipTokens.orEmpty() +
-                    other.syncMembershipTokens.orEmpty()
+            mergeIndex.register(normalizedSong, entries.size)
+            entries += SongMergeEntry(
+                song = normalizedSong,
+                aliases = mutableListOf(normalizedSong)
             )
+        }
+
+        fun mergeMatchingMembershipTokens(song: SyncSong) {
+            val normalizedSong = normalizeMembershipTokens(song)
+            val matchingIndices = mergeIndex.findMatchingIndices(normalizedSong)
+            if (matchingIndices.isEmpty()) return
+            mergeMembershipComponents(matchingIndices, normalizedSong)
+        }
+
+        fun toList(): List<SyncSong> = entries.map(SongMergeEntry::song)
+
+        private fun mergeMembershipComponents(
+            matchingIndices: Set<Int>,
+            other: SyncSong
+        ) {
+            val primaryIndex = matchingIndices.min()
+            val primaryEntry = entries[primaryIndex]
+            val mergedTokens = matchingIndices
+                .asSequence()
+                .flatMap { index -> entries[index].song.syncMembershipTokens.orEmpty().asSequence() }
+                .plus(other.syncMembershipTokens.orEmpty().asSequence())
+                .toList()
                 .normalizedSyncCausalTokens()
-            if (mergedTokens != current.syncMembershipTokens.orEmpty()) {
-                songs[index] = current.copy(syncMembershipTokens = mergedTokens)
+            val resolvedPayload = if (resolvePayloadDeterministically) {
+                matchingIndices
+                    .asSequence()
+                    .map { index -> entries[index].song }
+                    .plus(other)
+                    .maxBy(::canonicalPayloadKey)
+            } else {
+                primaryEntry.song
+            }
+            primaryEntry.song = resolvedPayload.copy(syncMembershipTokens = mergedTokens)
+            matchingIndices
+                .asSequence()
+                .filter { index -> index != primaryIndex }
+                .forEach { index ->
+                    entries[index].aliases.forEach { alias ->
+                        if (alias !in primaryEntry.aliases) {
+                            primaryEntry.aliases += alias
+                        }
+                    }
+                }
+            if (other !in primaryEntry.aliases) {
+                primaryEntry.aliases += other
+            }
+            if (matchingIndices.size == 1) {
+                mergeIndex.register(primaryEntry.song, primaryIndex)
+                mergeIndex.register(other, primaryIndex)
+                return
+            }
+            matchingIndices
+                .asSequence()
+                .filter { index -> index != primaryIndex }
+                .sortedDescending()
+                .forEach(entries::removeAt)
+            rebuildMergeIndex()
+        }
+
+        private fun rebuildMergeIndex() {
+            mergeIndex = SongMergeIndex()
+            entries.forEachIndexed { index, entry ->
+                mergeIndex.register(entry.song, index)
+                entry.aliases.forEach { alias -> mergeIndex.register(alias, index) }
             }
         }
 
@@ -254,21 +313,36 @@ internal object SyncPlaylistSongMergePolicy {
                 song.copy(syncMembershipTokens = normalizedTokens)
             }
         }
+
+        private data class SongMergeEntry(
+            var song: SyncSong,
+            val aliases: MutableList<SyncSong>
+        )
     }
 
     private class SourceBucket {
-        private var hasUnknownSource = false
-        private val sources = mutableSetOf<String>()
+        private var unknownSourceIndex: Int? = null
+        private val sourceIndices = mutableMapOf<String, Int>()
 
-        fun matches(source: String?): Boolean {
-            return source == null || hasUnknownSource || source in sources
+        fun findAll(source: String?): Set<Int> {
+            return buildSet {
+                if (source == null) {
+                    unknownSourceIndex?.let(::add)
+                    addAll(sourceIndices.values)
+                } else {
+                    unknownSourceIndex?.let(::add)
+                    sourceIndices[source]?.let(::add)
+                }
+            }
         }
 
-        fun add(source: String?) {
+        fun add(source: String?, index: Int) {
             if (source == null) {
-                hasUnknownSource = true
+                if (unknownSourceIndex == null) {
+                    unknownSourceIndex = index
+                }
             } else {
-                sources += source
+                sourceIndices.putIfAbsent(source, index)
             }
         }
     }
@@ -296,5 +370,36 @@ internal object SyncPlaylistSongMergePolicy {
 
     private fun String.normalizedText(): String {
         return trim().lowercase()
+    }
+
+    private fun canonicalPayloadKey(song: SyncSong): String {
+        return listOf(
+            song.id.toString(),
+            song.name,
+            song.artist,
+            song.album,
+            song.albumId.toString(),
+            song.durationMs.toString(),
+            song.coverUrl.orEmpty(),
+            song.mediaUri.orEmpty(),
+            song.addedAt.toString(),
+            song.matchedLyric.orEmpty(),
+            song.matchedTranslatedLyric.orEmpty(),
+            song.matchedLyricSource.orEmpty(),
+            song.matchedSongId.orEmpty(),
+            song.userLyricOffsetMs.toString(),
+            song.customCoverUrl.orEmpty(),
+            song.customName.orEmpty(),
+            song.customArtist.orEmpty(),
+            song.originalName.orEmpty(),
+            song.originalArtist.orEmpty(),
+            song.originalCoverUrl.orEmpty(),
+            song.originalLyric.orEmpty(),
+            song.originalTranslatedLyric.orEmpty(),
+            song.channelId.orEmpty(),
+            song.audioId.orEmpty(),
+            song.subAudioId.orEmpty(),
+            song.playlistContextId.orEmpty()
+        ).joinToString(separator = "") { value -> "${value.length}:$value" }
     }
 }

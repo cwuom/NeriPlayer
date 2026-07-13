@@ -64,6 +64,7 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
     private val gson = Gson()
     private val file = File(context.filesDir, "favorite_playlists.json")
     private val mutex = Mutex()
+    private val syncStorage by lazy { SecureTokenStorage(context) }
 
     private val _snapshots = MutableStateFlow<List<FavoritePlaylist>>(emptyList())
     private val _favorites = MutableStateFlow<List<FavoritePlaylist>>(emptyList())
@@ -104,6 +105,9 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
     }
 
     private fun publish(favorites: List<FavoritePlaylist>, triggerSync: Boolean = true) {
+        if (triggerSync) {
+            syncStorage.markSyncMutation()
+        }
         val normalized = favorites
             .groupBy { "${it.id}_${it.source}" }
             .map { (_, snapshots) ->
@@ -132,8 +136,6 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
 
     private fun triggerAutoSync() {
         try {
-            val storage = SecureTokenStorage(context)
-            storage.markSyncMutation()
             GitHubSyncWorker.scheduleDelayedSync(context, triggerByUserAction = false)
             WebDavSyncWorker.scheduleDelayedSync(context, triggerByUserAction = false)
         } catch (e: Exception) {
@@ -300,6 +302,21 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
         withContext(Dispatchers.IO) {
             mutex.withLock {
                 publish(favorites, triggerSync = false)
+            }
+        }
+    }
+
+    suspend fun replaceFavoritesFromSyncIfUnchanged(
+        favorites: List<FavoritePlaylist>,
+        expectedMutationVersion: Long
+    ): Boolean {
+        return withContext(Dispatchers.IO) {
+            mutex.withLock {
+                if (syncStorage.getSyncMutationVersion() != expectedMutationVersion) {
+                    return@withLock false
+                }
+                publish(favorites, triggerSync = false)
+                true
             }
         }
     }

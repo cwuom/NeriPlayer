@@ -392,22 +392,44 @@ class LocalPlaylistRepository private constructor(
     private fun publishLocked(
         playlists: List<LocalPlaylist>,
         triggerSync: Boolean = true,
-        syncMutation: LocalPlaylistSyncMutation = LocalPlaylistSyncMutation()
+        syncMutation: LocalPlaylistSyncMutation = LocalPlaylistSyncMutation(),
+        markLocalMutation: Boolean = triggerSync
     ) {
         val normalized = normalizePlaylistOrder(playlists)
-        if (normalized == _playlists.value) {
+        val stateChanged = normalized != _playlists.value
+        if (!stateChanged && syncMutation.isEmpty) {
+            if (markLocalMutation) {
+                syncMutationStore.markSyncMutation()
+            }
+            if (triggerSync && autoSyncEnabled) {
+                scheduleAutoSync()
+            }
             return
         }
-        val serialized = gson.toJson(normalized)
+
+        // 先推进本地 epoch，避免同步回写在文件已更新但版本未变化的窗口覆盖本地修改
+        if (markLocalMutation) {
+            syncMutationStore.markSyncMutation()
+        }
+        val currentPrimaryText = storage.readPrimary()
+        val serialized = if (stateChanged || currentPrimaryText == null) {
+            gson.toJson(normalized)
+        } else {
+            currentPrimaryText
+        }
         val pendingOutbox = preparePendingSyncMutationUpdate(
-            currentPrimaryText = storage.readPrimary(),
+            currentPrimaryText = currentPrimaryText,
             nextPrimaryDigest = primaryDigest(serialized),
             syncMutation = syncMutation
         )
         writePendingSyncMutation(pendingOutbox)
-        persistToDisk(normalized, serialized)
-        _playlists.value = normalized
-        _playlistCount.value = normalized.size
+        if (stateChanged || currentPrimaryText == null) {
+            persistToDisk(normalized, serialized)
+        }
+        if (stateChanged) {
+            _playlists.value = normalized
+            _playlistCount.value = normalized.size
+        }
         if (pendingOutbox != null) {
             val settled = runCatching {
                 settlePendingSyncMutation(pendingOutbox, triggerSync)
@@ -421,7 +443,7 @@ class LocalPlaylistRepository private constructor(
             }.isSuccess
             if (!settled) return
         } else if (triggerSync && autoSyncEnabled) {
-            triggerAutoSync()
+            scheduleAutoSync()
         }
     }
 
@@ -514,7 +536,7 @@ class LocalPlaylistRepository private constructor(
                     syncMutationStore.apply(mutation)
                 }
             }
-            if ((triggerSync || hasSyncMutation) && autoSyncEnabled && !triggerAutoSync()) {
+            if ((triggerSync || hasSyncMutation) && autoSyncEnabled && !scheduleAutoSync()) {
                 throw IOException("Failed to schedule playlist sync mutation")
             }
             storage.clearPendingSyncMutation()
@@ -532,13 +554,12 @@ class LocalPlaylistRepository private constructor(
             .joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
     }
 
-    private fun triggerAutoSync(): Boolean {
+    private fun scheduleAutoSync(): Boolean {
         return try {
             val autoSyncTrigger = providedAutoSyncTrigger
             if (autoSyncTrigger != null) {
                 autoSyncTrigger()
             } else {
-                syncStorage.markSyncMutation()
                 if (!syncStorage.isAutoSyncEnabled()) {
                     NPLogger.d("LocalPlaylistRepo", "Auto sync disabled, skip")
                 }
@@ -1340,8 +1361,7 @@ class LocalPlaylistRepository private constructor(
                 val source = _playlists.value.firstOrNull { it.id == sourcePlaylistId }
                     ?: return@commitPlaylistMutation
                 val inSourceOrder = source.songs.filter { it.identity() in wanted }
-                val stampedSongs = stampSongsForPlaylistInsert(inSourceOrder, now)
-                addStampedSongsToPlaylistLocked(targetPlaylistId, stampedSongs, now)
+                addStampedSongsToPlaylistLocked(targetPlaylistId, inSourceOrder, now)
             }
         }
     }
@@ -1353,8 +1373,7 @@ class LocalPlaylistRepository private constructor(
                 val source = _playlists.value.firstOrNull { it.id == sourcePlaylistId }
                     ?: return@commitPlaylistMutation
                 val inSourceOrder = source.songs.filter { it.id in songIds }
-                val stampedSongs = stampSongsForPlaylistInsert(inSourceOrder, now)
-                addStampedSongsToPlaylistLocked(targetPlaylistId, stampedSongs, now)
+                addStampedSongsToPlaylistLocked(targetPlaylistId, inSourceOrder, now)
             }
         }
     }
@@ -1389,7 +1408,11 @@ class LocalPlaylistRepository private constructor(
                     return@commitPlaylistMutation
                 }
                 // 播放期自动补 metadata 只需要把本地视图写稳，不该顺手唤醒整条云同步链
-                publishLocked(updated, triggerSync = false)
+                publishLocked(
+                    playlists = updated,
+                    triggerSync = false,
+                    markLocalMutation = true
+                )
             }
         }
     }
@@ -1431,7 +1454,11 @@ class LocalPlaylistRepository private constructor(
             }
 
             if (changed) {
-                publishLocked(updated, triggerSync = false)
+                publishLocked(
+                    playlists = updated,
+                    triggerSync = false,
+                    markLocalMutation = true
+                )
             }
         }
     }
@@ -1473,12 +1500,13 @@ class LocalPlaylistRepository private constructor(
         newSongInfo: SongItem
     ): SongItem {
         return newSongInfo.copy(
-            addedAt = newSongInfo.addedAt.takeIf { it > 0L } ?: currentSong.addedAt,
+            addedAt = currentSong.addedAt,
             coverUrl = newSongInfo.coverUrl.takeIf { !it.isNullOrBlank() }
                 ?: currentSong.coverUrl,
             originalCoverUrl = newSongInfo.originalCoverUrl.takeIf { !it.isNullOrBlank() }
                 ?: currentSong.originalCoverUrl
-                ?: currentSong.coverUrl
+                ?: currentSong.coverUrl,
+            syncMembershipTokens = currentSong.syncMembershipTokens.normalizedSyncCausalTokens()
         )
     }
 
@@ -1526,7 +1554,11 @@ class LocalPlaylistRepository private constructor(
                     }
                 }
                 if (changed) {
-                    publishLocked(updated, triggerSync = false)
+                    publishLocked(
+                        playlists = updated,
+                        triggerSync = false,
+                        markLocalMutation = true
+                    )
                 }
             }
         }
@@ -1553,12 +1585,7 @@ class LocalPlaylistRepository private constructor(
     ) {
         withContext(Dispatchers.IO) {
             commitPlaylistMutation {
-                val previousPlaylists = _playlists.value
-                val preservedLocalFiles = LocalFilesPlaylist.firstOrNull(_playlists.value, context)
-                val merged = playlists
-                    .filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
-                    .toMutableList()
-                preservedLocalFiles?.let(merged::add)
+                val merged = mergeExternalPlaylists(playlists)
                 publishLocked(
                     playlists = merged,
                     triggerSync = triggerSync,
@@ -1566,11 +1593,35 @@ class LocalPlaylistRepository private constructor(
                         restoredPlaylistIds = restoredPlaylistIds.sorted()
                     )
                 )
-                if (triggerSync && _playlists.value == previousPlaylists) {
-                    check(triggerAutoSync()) { "Failed to schedule external playlist sync" }
-                }
             }
         }
+    }
+
+    internal suspend fun applySyncedPlaylistsIfUnchanged(
+        playlists: List<LocalPlaylist>,
+        expectedMutationVersion: Long
+    ): Boolean {
+        return withContext(Dispatchers.IO) {
+            commitPlaylistMutation {
+                if (syncMutationStore.getSyncMutationVersion() != expectedMutationVersion) {
+                    return@commitPlaylistMutation false
+                }
+                publishLocked(
+                    playlists = mergeExternalPlaylists(playlists),
+                    triggerSync = false,
+                    markLocalMutation = false
+                )
+                true
+            }
+        }
+    }
+
+    private fun mergeExternalPlaylists(playlists: List<LocalPlaylist>): MutableList<LocalPlaylist> {
+        val preservedLocalFiles = LocalFilesPlaylist.firstOrNull(_playlists.value, context)
+        return playlists
+            .filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
+            .toMutableList()
+            .apply { preservedLocalFiles?.let(::add) }
     }
 
     suspend fun reorderPlaylists(newOrder: List<Long>) {
