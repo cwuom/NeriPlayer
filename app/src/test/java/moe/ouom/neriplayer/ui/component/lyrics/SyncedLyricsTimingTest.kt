@@ -158,6 +158,20 @@ class SyncedLyricsViewTimingTest {
     }
 
     @Test
+    fun `cover lyric translation matcher accepts moderate timestamp drift`() {
+        val lyrics = listOf(
+            LyricEntry(text = "The road gets cold", startTimeMs = 2_000L, endTimeMs = 2_600L)
+        )
+        val translations = listOf(
+            LyricEntry(text = "长路渐冷", startTimeMs = 800L, endTimeMs = 1_400L)
+        )
+
+        val matchedTranslations = matchTranslationsToLineIndices(lyrics, translations)
+
+        assertEquals("长路渐冷", matchedTranslations[0]?.text)
+    }
+
+    @Test
     fun `resolveHeadGlowTarget keeps glow on current line when next char wraps`() {
         val target = resolveHeadGlowTarget(
             currentLine = 0,

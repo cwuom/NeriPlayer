@@ -5,7 +5,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 private const val TranslationAlignmentToleranceMs = 450L
-private const val TranslationClosestMatchToleranceMs = 1000L
+private const val TranslationClosestMatchToleranceMs = 2_000L
 
 internal fun matchTranslationsToLineIndices(
     lines: List<LyricEntry>,
