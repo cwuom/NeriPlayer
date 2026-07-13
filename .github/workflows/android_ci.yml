@@ -145,11 +145,11 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
 
-      - name: Build unsigned Release APK
-        run: ./gradlew :app:assembleRelease -PallowUnsignedRelease=true --warning-mode all --stacktrace
+      - name: Build Debug APK
+        run: ./gradlew :app:assembleDebug --warning-mode all --stacktrace
 
-      - name: Upload Release APK
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: neri-apk
-          path: app/build/outputs/apk/release/**/*.apk
+          path: app/build/outputs/apk/debug/**/*.apk
