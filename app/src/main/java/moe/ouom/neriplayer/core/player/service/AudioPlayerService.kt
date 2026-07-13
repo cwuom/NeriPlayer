@@ -525,9 +525,16 @@ class AudioPlayerService : Service() {
     )
 
     private fun shouldKeepServiceSticky(): Boolean {
-        return playerRuntimeReady &&
-            hasPlaybackSurfaceContent() &&
-            (PlayerManager.shouldRunPlaybackServiceInForeground() || isListenTogetherSessionActive())
+        if (!playerRuntimeReady) return false
+        val playbackSurfaceAvailable = hasPlaybackSurfaceContent()
+        if (!playbackSurfaceAvailable) return false
+        return shouldKeepPlaybackServiceSticky(
+            playerRuntimeReady = true,
+            hasPlaybackSurfaceContent = true,
+            hasResumableQueue = PlayerManager.hasItems(),
+            foregroundPlaybackRequired = PlayerManager.shouldRunPlaybackServiceInForeground(),
+            listenTogetherSessionActive = isListenTogetherSessionActive(),
+        )
     }
 
     private fun buildStateSummary(): String {
@@ -563,12 +570,19 @@ class AudioPlayerService : Service() {
         NPLogger.d("NERI-APS", "Deferring player action until runtime is ready: source=$source")
     }
 
-    private fun refreshFavoriteSongKeys() {
-        favoriteSongKeys = PlayerManager.playlistsFlow.value
+    private fun refreshFavoriteSongKeys(): Boolean {
+        val previousFavoriteSongKeys = favoriteSongKeys
+        val updatedFavoriteSongKeys = PlayerManager.playlistsFlow.value
             .firstOrNull { FavoritesPlaylist.isSystemPlaylist(it, this) }
             ?.songs
             ?.mapTo(mutableSetOf()) { it.stableKey() }
             .orEmpty()
+        favoriteSongKeys = updatedFavoriteSongKeys
+        return hasCurrentSongFavoriteStateChanged(
+            currentSongKey = playbackSurfaceSong()?.stableKey(),
+            previousFavoriteSongKeys = previousFavoriteSongKeys,
+            updatedFavoriteSongKeys = updatedFavoriteSongKeys,
+        )
     }
 
     private fun refreshIdleShutdown(reason: String) {
@@ -977,10 +991,9 @@ class AudioPlayerService : Service() {
         }
         serviceScope.launch {
             PlayerManager.playlistsFlow.collectSafely("playlistsFlow") {
-                refreshFavoriteSongKeys()
-                lastNotificationSnapshot = null
+                if (!refreshFavoriteSongKeys()) return@collectSafely
                 updatePlaybackState(force = true)
-                updateNotification(force = true)
+                updateNotification()
             }
         }
         serviceScope.launch {
@@ -1171,7 +1184,15 @@ class AudioPlayerService : Service() {
                 "NERI-APS",
                 "Deferring start command until player runtime is ready: action=$action startId=$startId"
             )
-            return if (action == null) START_NOT_STICKY else START_REDELIVER_INTENT
+            return if (
+                shouldUseStickyStartModeWhilePlayerRuntimeInitializes(
+                    hasExplicitAction = action != null
+                )
+            ) {
+                START_STICKY
+            } else {
+                START_REDELIVER_INTENT
+            }
         }
         if (action == null && !hasPlaybackSurfaceContent()) {
             allowServiceRestart = false
