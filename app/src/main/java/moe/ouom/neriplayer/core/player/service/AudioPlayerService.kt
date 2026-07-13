@@ -80,7 +80,6 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.PlayerManager.externalBluetoothLyricLineFlow
-import moe.ouom.neriplayer.core.player.PlayerManager.statusBarLyricsEnable
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackIfUnhealthy
 import moe.ouom.neriplayer.core.player.persistence.preloadRestoredStateSnapshot
@@ -149,7 +148,7 @@ private data class PlaybackNotificationSnapshot(
     val requiresInteractiveFavoriteConfirmation: Boolean,
     val largeIconReady: Boolean,
     val coverSource: String?,
-    val statusBarLyricLine: String?,
+    val statusBarLyricState: StatusBarLyricNotificationState,
 )
 
 private data class PlaybackMetadataSnapshot(
@@ -495,6 +494,10 @@ class AudioPlayerService : Service() {
     private var isForegroundStarted = false
     private var lastNotificationSnapshot: PlaybackNotificationSnapshot? = null
     private var lastMetadataSnapshot: PlaybackMetadataSnapshot? = null
+    private var statusBarLyricState = resolveStatusBarLyricNotificationState(
+        enabled = false,
+        line = null,
+    )
     private var usbExclusiveKeepAliveJob: Job? = null
     private var usbExclusiveKeepAliveTick: Long = 0L
     private var lastUsbExclusiveKeepAliveAtMs: Long = 0L
@@ -1064,8 +1067,12 @@ class AudioPlayerService : Service() {
         }
 
         serviceScope.launch {
-            externalBluetoothLyricLineFlow.collectSafely("statusBarLyricLineFlow") {
-                if (statusBarLyricsEnable) {
+            statusBarLyricNotificationStateFlow(
+                enabledFlow = AppContainer.settingsRepo.statusBarLyricsEnabledFlow,
+                lineFlow = externalBluetoothLyricLineFlow,
+            ).collectSafely("statusBarLyricNotificationStateFlow") { state ->
+                if (statusBarLyricState != state) {
+                    statusBarLyricState = state
                     updateNotification()
                 }
             }
@@ -1355,11 +1362,8 @@ class AudioPlayerService : Service() {
         builder.addAction(R.drawable.round_skip_next_24, getString(R.string.player_next), nextIntent)
 
         builder.setContentTitle(song?.displayName() ?: "NeriPlayer")
-        val statusBarLyricLine = externalBluetoothLyricLineFlow.value
-            ?.takeIf { it.isNotBlank() && it != "null" }
-        if (statusBarLyricsEnable && statusBarLyricLine != null) {
-            builder.setTicker(statusBarLyricLine)
-        }
+        val currentStatusBarLyricState = statusBarLyricState
+        currentStatusBarLyricState.line?.let(builder::setTicker)
 
         val timerState = PlayerManager.sleepTimerManager.timerState.value
         val contentText = if (timerState.isActive) {
@@ -1383,7 +1387,7 @@ class AudioPlayerService : Service() {
         currentNotificationLargeIcon?.let { builder.setLargeIcon(it) }
 
         return builder.build().apply {
-            if (statusBarLyricsEnable) {
+            if (currentStatusBarLyricState.hasTicker) {
                 val FLAG_ALWAYS_SHOW_TICKER = 0x01000000
                 val FLAG_ONLY_UPDATE_TICKER = 0x02000000
                 // 魅族状态栏歌词依赖这两个私有通知标记
@@ -1391,7 +1395,7 @@ class AudioPlayerService : Service() {
                 flags = flags.or(FLAG_ONLY_UPDATE_TICKER)
                 // ticker_icon: 状态栏歌词前的小图标
                 extras.putInt("ticker_icon", R.drawable.ic_notification_small)
-                // ticker_icon_switch: false 表示不显示图标，仅显示文字
+                // false 表示沿用缓存图标，图标资源变化时才需要切换
                 extras.putBoolean("ticker_icon_switch", false)
             }
         }
@@ -1486,12 +1490,7 @@ class AudioPlayerService : Service() {
         } else {
             song?.displayArtist() ?: ""
         }
-        val currentStatusBarLyricLine = if (statusBarLyricsEnable) {
-            PlayerManager.externalBluetoothLyricLineFlow.value
-                ?.takeIf { it.isNotBlank() && it != "null" }
-        } else {
-            null
-        }
+        val currentStatusBarLyricState = statusBarLyricState
         return PlaybackNotificationSnapshot(
             songKey = song?.stableKey(),
             title = song?.displayName() ?: "NeriPlayer",
@@ -1502,7 +1501,7 @@ class AudioPlayerService : Service() {
             requiresInteractiveFavoriteConfirmation = requiresInteractiveFavoriteConfirmation(song),
             largeIconReady = currentNotificationLargeIcon != null,
             coverSource = currentCoverSource,
-            statusBarLyricLine = currentStatusBarLyricLine,
+            statusBarLyricState = currentStatusBarLyricState,
         )
     }
 
