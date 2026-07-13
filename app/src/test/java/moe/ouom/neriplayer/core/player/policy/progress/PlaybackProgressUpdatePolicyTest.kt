@@ -83,7 +83,7 @@ class PlaybackProgressUpdatePolicyTest {
                 interactiveNowPlayingVisible = true
             )
         )
-        assertEquals(100L, PLAYBACK_PROGRESS_INTERACTIVE_UPDATE_INTERVAL_MS)
+        assertEquals(250L, PLAYBACK_PROGRESS_INTERACTIVE_UPDATE_INTERVAL_MS)
         assertEquals(
             PLAYBACK_PROGRESS_BACKGROUND_UPDATE_INTERVAL_MS,
             resolvePlaybackProgressUpdateIntervalMs(
@@ -91,5 +91,7 @@ class PlaybackProgressUpdatePolicyTest {
                 interactiveNowPlayingVisible = false
             )
         )
+        assertEquals(1_500L, PLAYBACK_PROGRESS_BACKGROUND_UPDATE_INTERVAL_MS)
+        assertEquals(1_000L, PLAYBACK_PROGRESS_STATS_UPDATE_INTERVAL_MS)
     }
 }

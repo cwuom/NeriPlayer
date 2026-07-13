@@ -42,6 +42,7 @@ import moe.ouom.neriplayer.core.di.AppContainer.settingsRepo
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
+import moe.ouom.neriplayer.core.player.effects.AudioReactive
 import moe.ouom.neriplayer.core.player.engine.ReactiveRenderersFactory
 import moe.ouom.neriplayer.core.player.engine.datasource.ConditionalHttpDataSourceFactory
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
@@ -64,6 +65,7 @@ import moe.ouom.neriplayer.core.player.model.AudioDevice
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
+import moe.ouom.neriplayer.core.player.policy.offload.requiresPcmAudioProcessing
 import moe.ouom.neriplayer.core.player.policy.usb.evaluateUsbExclusiveKeepAliveProgress
 import moe.ouom.neriplayer.core.player.policy.pending.shouldAcceptPlayerCallback
 import moe.ouom.neriplayer.core.player.policy.pending.shouldExposePlayerCallbackState
@@ -255,16 +257,27 @@ internal fun PlayerManager.initializeImpl(
         _playWhenReadyFlow.value = player.playWhenReady
         _playerPlaybackStateFlow.value = player.playbackState
 
-        val audioOffload = TrackSelectionParameters.AudioOffloadPreferences.Builder()
-            .setAudioOffloadMode(
-                TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
-            )
-            .build()
+        AudioReactive.onEnabledChanged = { enabled ->
+            mainScope.launch {
+                updateAudioOffloadPreferences("audio_reactive_$enabled")
+            }
+        }
+        updateAudioOffloadPreferences("player_initialize")
+        player.addAudioOffloadListener(object : ExoPlayer.AudioOffloadListener {
+            override fun onOffloadedPlayback(isOffloadedPlayback: Boolean) {
+                NPLogger.i(
+                    "NERI-PlayerManager",
+                    "audio offload playback changed: active=$isOffloadedPlayback"
+                )
+            }
 
-        player.trackSelectionParameters = player.trackSelectionParameters
-            .buildUpon()
-            .setAudioOffloadPreferences(audioOffload)
-            .build()
+            override fun onSleepingForOffloadChanged(isSleepingForOffload: Boolean) {
+                NPLogger.d(
+                    "NERI-PlayerManager",
+                    "audio offload scheduling sleep changed: sleeping=$isSleepingForOffload"
+                )
+            }
+        })
 
         player.repeatMode = Player.REPEAT_MODE_OFF
 
@@ -1003,6 +1016,38 @@ internal fun PlayerManager.ensureInitializedImpl() {
     if (initialized || !isApplicationInitialized() || initializationInProgress) return
     NPLogger.d("NERI-PlayerManager", "ensureInitialized(): lazy initialize with existing application")
     initialize(application)
+}
+
+internal fun PlayerManager.updateAudioOffloadPreferences(reason: String) {
+    if (!isPlayerInitialized()) return
+    val requiresPcmProcessing = requiresPcmAudioProcessing(
+        usbExclusivePlaybackEnabled = usbExclusivePlaybackEnabled,
+        playbackSpeed = playbackSoundConfig.speed,
+        playbackPitch = playbackSoundConfig.pitch,
+        equalizerEnabled = playbackSoundConfig.equalizerEnabled,
+        loudnessGainMb = playbackSoundConfig.loudnessGainMb,
+        audioReactiveActive = AudioReactive.enabled,
+        listenTogetherPlaybackRate = listenTogetherSyncPlaybackRate,
+    )
+    if (lastRequiresPcmAudioProcessing == requiresPcmProcessing) return
+    lastRequiresPcmAudioProcessing = requiresPcmProcessing
+
+    val offloadMode = if (requiresPcmProcessing) {
+        TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
+    } else {
+        TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
+    }
+    val audioOffload = TrackSelectionParameters.AudioOffloadPreferences.Builder()
+        .setAudioOffloadMode(offloadMode)
+        .build()
+    player.trackSelectionParameters = player.trackSelectionParameters
+        .buildUpon()
+        .setAudioOffloadPreferences(audioOffload)
+        .build()
+    NPLogger.i(
+        "NERI-PlayerManager",
+        "audio offload preference updated: enabled=${!requiresPcmProcessing} reason=$reason"
+    )
 }
 
 private fun PlayerManager.setupAudioDeviceCallback() {
@@ -2550,6 +2595,7 @@ private fun PlayerManager.applyUsbExclusivePlaybackPolicy(
     allowReconfigureWhilePlaying: Boolean = false
 ) {
     if (!isPlayerInitialized()) return
+    updateAudioOffloadPreferences("usb_exclusive_policy")
     val audioManager: AudioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     if (usbExclusivePlaybackEnabled) {
         if (reconfigureAudioSink) {
@@ -2931,7 +2977,7 @@ internal fun PlayerManager.releaseImpl() {
         cancelPendingPauseRequest(resetVolumeToFull = true)
         bluetoothDisconnectPauseJob?.cancel()
         bluetoothDisconnectPauseJob = null
-        flushPlaybackStatsBlocking("release", stopTracking = true)
+        flushPlaybackStatsAsync("release", stopTracking = true)
         playbackSoundPersistJob?.cancel()
         playbackSoundPersistJob = null
         usbAudioSinkReconfigureJob?.cancel()
@@ -2987,7 +3033,18 @@ internal fun PlayerManager.releaseImpl() {
         conditionalHttpFactory = null
 
         mainScope.cancel()
-        ioScope.cancel()
+        val releaseIoScope = ioScope
+        val pendingStatsJob = synchronized(playbackStatsPersistLock) {
+            playbackStatsPersistJob
+        }
+        if (pendingStatsJob == null) {
+            releaseIoScope.cancel()
+        } else {
+            releaseIoScope.launch {
+                pendingStatsJob.join()
+                releaseIoScope.cancel()
+            }
+        }
 
         _isPlayingFlow.value = false
         _currentMediaUrl.value = null
@@ -3008,10 +3065,12 @@ internal fun PlayerManager.releaseImpl() {
         NPLogger.d("NERI-PlayerManager", "release(): completed")
     } finally {
         initialized = false
+        AudioReactive.onEnabledChanged = null
+        lastRequiresPcmAudioProcessing = null
         runCatching { conditionalHttpFactory?.close() }
             .onFailure { NPLogger.w("NERI-PlayerManager", "release(): final conditional factory close failed", it) }
         conditionalHttpFactory = null
-        UsbExclusiveSessionController.emergencyShutdown("player_release_finally")
+        UsbExclusiveSessionController.forceStopAllSessions("player_release_finally")
         UsbExclusiveSystemSoundGuard.forceRelease(application, "player_release_finally")
         StartupAudioFocusController.forceRelease("player_release_finally")
     }

@@ -28,9 +28,12 @@ package moe.ouom.neriplayer.core.player
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.AudioDeviceCallback
 import android.net.Uri
 import android.os.Looper
+import android.os.Process
 import android.os.SystemClock
 import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
@@ -71,6 +74,7 @@ import moe.ouom.neriplayer.core.player.lifecycle.ensureInitializedImpl
 import moe.ouom.neriplayer.core.player.lifecycle.handleAudioBecomingNoisyImpl
 import moe.ouom.neriplayer.core.player.lifecycle.initializeImpl
 import moe.ouom.neriplayer.core.player.lifecycle.releaseImpl
+import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
 import moe.ouom.neriplayer.core.player.lyrics.syncExternalBluetoothLyrics
 import moe.ouom.neriplayer.core.player.model.AudioDevice
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
@@ -94,6 +98,8 @@ import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommand
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshInFlightController
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshRequestSemantics
+import moe.ouom.neriplayer.core.player.policy.storage.RestorableLocalMediaState
+import moe.ouom.neriplayer.core.player.policy.storage.resolveRestorableLocalMediaState
 import moe.ouom.neriplayer.core.player.prefetch.prefetchYouTubePlayableUrlWindowImpl
 import moe.ouom.neriplayer.core.player.prefetch.prefetchYouTubeQueueWindowImpl
 import moe.ouom.neriplayer.core.player.policy.refresh.YouTubePlaybackRecoveryStrategy
@@ -257,6 +263,7 @@ object PlayerManager {
     internal var audioRouteMuteRestoreVolume: Float? = null
     internal var playbackSoundPersistJob: Job? = null
     internal var playbackSoundApplyJob: Job? = null
+    internal var lastRequiresPcmAudioProcessing: Boolean? = null
     internal var usbAudioSinkReconfigureJob: Job? = null
     internal var usbExclusiveSystemAudioReleaseJob: Job? = null
     internal var usbExclusiveSystemAudioResumeJob: Job? = null
@@ -1176,21 +1183,55 @@ object PlayerManager {
         }
     }
 
-    internal fun isRestorableLocalMediaUri(mediaUri: String?, context: Context = application): Boolean {
-        val uriString = mediaUri?.takeIf { it.isNotBlank() } ?: return false
+    internal fun restorableLocalMediaState(
+        mediaUri: String?,
+        context: Context = application,
+    ): RestorableLocalMediaState {
+        val uriString = mediaUri?.takeIf { it.isNotBlank() }
+            ?: return RestorableLocalMediaState.REVOKED
         if (uriString.startsWith("/")) {
-            return canOpenLocalFile(File(uriString))
+            return resolveRestorableLocalMediaState(
+                scheme = null,
+                localFileReadable = canOpenLocalFile(File(uriString)),
+            )
         }
 
-        val uri = runCatching { uriString.toUri() }.getOrNull() ?: return false
+        val uri = runCatching { uriString.toUri() }.getOrNull()
+            ?: return RestorableLocalMediaState.REVOKED
         return when (uri.scheme?.lowercase()) {
-            null, "" -> canOpenLocalFile(File(uriString))
-            "file" -> uri.path?.let(::File)?.let(::canOpenLocalFile) == true
-            "content", "android.resource" -> runCatching {
-                context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
-            }.getOrDefault(false)
-            else -> false
+            null, "" -> resolveRestorableLocalMediaState(
+                scheme = uri.scheme,
+                localFileReadable = canOpenLocalFile(File(uriString)),
+            )
+            "file" -> resolveRestorableLocalMediaState(
+                scheme = uri.scheme,
+                localFileReadable = uri.path?.let(::File)?.let(::canOpenLocalFile) == true,
+            )
+            "content" -> {
+                val hasPersistedReadPermission = context.contentResolver.persistedUriPermissions.any {
+                    it.isReadPermission && it.uri == uri
+                }
+                val hasCurrentReadPermission = context.checkUriPermission(
+                    uri,
+                    Process.myPid(),
+                    Process.myUid(),
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                ) == PackageManager.PERMISSION_GRANTED
+                resolveRestorableLocalMediaState(
+                    scheme = uri.scheme,
+                    hasPersistedReadPermission = hasPersistedReadPermission,
+                    hasCurrentReadPermission = hasCurrentReadPermission,
+                )
+            }
+            else -> resolveRestorableLocalMediaState(scheme = uri.scheme)
         }
+    }
+
+    internal fun isRestorableLocalMediaUri(
+        mediaUri: String?,
+        context: Context = application,
+    ): Boolean {
+        return restorableLocalMediaState(mediaUri, context) != RestorableLocalMediaState.REVOKED
     }
 
     internal fun isRestorableLocalSong(song: SongItem, context: Context = application): Boolean {
@@ -1419,6 +1460,7 @@ object PlayerManager {
             val latestConfig = pendingPlaybackSoundConfig ?: return@launch
             pendingPlaybackSoundConfig = null
             _playbackSoundState.value = playbackEffectsController.updateConfig(latestConfig)
+            updateAudioOffloadPreferences("playback_sound_config")
         }
     }
 

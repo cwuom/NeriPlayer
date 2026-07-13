@@ -187,7 +187,7 @@ private fun loadRestoredStateSnapshot(
                         it.startsWith("content://") ||
                         it.startsWith("android.resource://") ||
                         it.startsWith("/")
-                !isPersistedLocalMediaUrl || PlayerManager.isReadableLocalMediaUri(it, app)
+                !isPersistedLocalMediaUrl || PlayerManager.isRestorableLocalMediaUri(it, app)
             }
         }
         val repeatMode = if (keepPlaybackModeStateEnabled) {

@@ -83,6 +83,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager.externalBluetoothLyricLineF
 import moe.ouom.neriplayer.core.player.PlayerManager.statusBarLyricsEnable
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackIfUnhealthy
+import moe.ouom.neriplayer.core.player.persistence.preloadRestoredStateSnapshot
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothMetadataText
 import moe.ouom.neriplayer.core.player.metadata.shouldUseExternalBluetoothLyrics
@@ -101,7 +102,6 @@ import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherPlaybackState
@@ -109,6 +109,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
 import moe.ouom.neriplayer.data.traffic.isOfflineModeNow
+import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 
 private suspend inline fun <T> kotlinx.coroutines.flow.Flow<T>.collectSafely(
@@ -159,10 +160,16 @@ private data class PlaybackMetadataSnapshot(
     val largeIconReady: Boolean,
 )
 
+private data class PendingStartCommand(
+    val intent: Intent?,
+    val flags: Int,
+    val startId: Int,
+)
+
 internal const val MEDIA_SESSION_STOP_SOURCE = "media_session_stop"
 internal const val PLAY_SONGS_AND_OPEN_NOW_PLAYING_SOURCE = "play_songs_and_open_now_playing"
-private const val PLAYBACK_STATE_PROGRESS_BUCKET_MS = 250L
-private const val MEDIA_ARTWORK_SIZE_PX = 1024
+private const val PLAYBACK_STATE_PROGRESS_BUCKET_MS = 2_000L
+private const val MEDIA_ARTWORK_SIZE_PX = 512
 private const val NOTIFICATION_ARTWORK_SIZE_PX = 256
 private const val MEDIA_ARTWORK_MAX_RETRY_ATTEMPTS = 2
 private const val MEDIA_ARTWORK_RETRY_COOLDOWN_MS = 3_000L
@@ -170,6 +177,7 @@ private const val SERVICE_FLOW_COLLECTOR_RESTART_DELAY_MS = 1_000L
 private const val USB_EXCLUSIVE_KEEPALIVE_INTERVAL_MS = 15_000L
 private const val USB_EXCLUSIVE_KEEPALIVE_STALL_WARN_MS = 25_000L
 private const val USB_EXCLUSIVE_KEEPALIVE_STALL_RECOVERY_TICKS = 1
+private const val PLAYBACK_SERVICE_IDLE_SHUTDOWN_DELAY_MS = 10 * 60 * 1_000L
 
 internal fun isLocalPlaybackCommandSyncSource(
     source: String,
@@ -494,17 +502,109 @@ class AudioPlayerService : Service() {
     private var lastUsbExclusiveZeroFillBytes: Long = -1L
     private var lastUsbExclusiveOutputPeak: Float = Float.NaN
     private var usbExclusiveKeepAliveStallTicks: Int = 0
+    private var playerInitializationJob: Job? = null
+    private var playerRuntimeReady = false
+    private val pendingStartCommands = ArrayDeque<PendingStartCommand>()
+    private val pendingPlayerActions = ArrayDeque<() -> Unit>()
+    private var latestStartId = 0
+    private var keepPlayerRuntimeAfterServiceStop = false
+    private var favoriteSongKeys: Set<String> = emptySet()
+    private val idleShutdownCoordinator = PlaybackServiceIdleShutdownCoordinator(
+        scope = serviceScope,
+        delayMs = PLAYBACK_SERVICE_IDLE_SHUTDOWN_DELAY_MS,
+        isEligible = ::isEligibleForIdleShutdown,
+        currentStartId = { latestStartId },
+        onShutdown = ::stopIdlePlaybackService,
+    )
 
     private fun shouldKeepServiceSticky(): Boolean {
-        return hasPlaybackSurfaceContent() &&
+        return playerRuntimeReady &&
+            hasPlaybackSurfaceContent() &&
             (PlayerManager.shouldRunPlaybackServiceInForeground() || isListenTogetherSessionActive())
     }
 
     private fun buildStateSummary(): String {
         return "hasItems=${PlayerManager.hasItems()} currentSong=${PlayerManager.currentSongFlow.value != null} " +
-            "isPlaying=${PlayerManager.isPlayingFlow.value} transportActive=${PlayerManager.isTransportActive()} " +
+            "isPlaying=${PlayerManager.isPlayingFlow.value} " +
+            "transportActive=${PlayerManager.isTransportActiveWithoutInitialization()} " +
             "listenTogetherActive=${isListenTogetherSessionActive()} foreground=$isForegroundStarted " +
-            "allowRestart=$allowServiceRestart"
+            "runtimeReady=$playerRuntimeReady allowRestart=$allowServiceRestart"
+    }
+
+    private fun drainPendingStartCommands() {
+        if (pendingStartCommands.isEmpty()) return
+        val commands = pendingStartCommands.toList()
+        pendingStartCommands.clear()
+        commands.forEach { command ->
+            onStartCommand(command.intent, command.flags, command.startId)
+        }
+    }
+
+    private fun drainPendingPlayerActions() {
+        if (pendingPlayerActions.isEmpty()) return
+        val actions = pendingPlayerActions.toList()
+        pendingPlayerActions.clear()
+        actions.forEach { it() }
+    }
+
+    private fun runWhenPlayerRuntimeReady(source: String, action: () -> Unit) {
+        if (playerRuntimeReady) {
+            action()
+            return
+        }
+        pendingPlayerActions.addLast(action)
+        NPLogger.d("NERI-APS", "Deferring player action until runtime is ready: source=$source")
+    }
+
+    private fun refreshFavoriteSongKeys() {
+        favoriteSongKeys = PlayerManager.playlistsFlow.value
+            .firstOrNull { FavoritesPlaylist.isSystemPlaylist(it, this) }
+            ?.songs
+            ?.mapTo(mutableSetOf()) { it.stableKey() }
+            .orEmpty()
+    }
+
+    private fun refreshIdleShutdown(reason: String) {
+        NPLogger.d("NERI-APS", "Refresh idle shutdown: reason=$reason")
+        idleShutdownCoordinator.refresh()
+    }
+
+    private fun stopIdlePlaybackService(scheduledStartId: Int) {
+        NPLogger.i("NERI-APS", "Stopping idle playback service startId=$scheduledStartId")
+        PlayerManager.scheduleStatePersist(
+            positionMs = PlayerManager.playbackPositionFlow.value,
+            shouldResumePlayback = false,
+            debounceMs = 0L,
+        )
+        flushPlaybackStatsSafely("service_idle_shutdown", "idle shutdown")
+        allowServiceRestart = false
+        keepPlayerRuntimeAfterServiceStop = true
+        stopForegroundIfStarted("idle_timeout")
+        if (scheduledStartId > 0) {
+            stopSelfResult(scheduledStartId)
+        } else {
+            stopSelf()
+        }
+    }
+
+    private fun isEligibleForIdleShutdown(): Boolean {
+        val playerInitialized = PlayerManager.initialized
+        val nativeState = UsbExclusiveSessionController.state.value
+        val usbSessionActiveOrTransitioning = nativeState.opened ||
+            nativeState.streaming ||
+            nativeState.transitioning ||
+            UsbExclusiveSessionController.nativeCloseInFlightCount() > 0
+        return shouldSchedulePlaybackServiceIdleShutdown(
+            playerInitialized = playerInitialized,
+            hasPlaybackSurfaceContent = hasPlaybackSurfaceContent(),
+            transportActive = playerInitialized &&
+                PlayerManager.isTransportActiveWithoutInitialization(),
+            transportBuffering = playerInitialized && PlayerManager.isTransportBuffering(),
+            listenTogetherSessionActive = isListenTogetherSessionActive(),
+            usbSessionActiveOrTransitioning = usbSessionActiveOrTransitioning,
+            sleepTimerActive = playerInitialized &&
+                PlayerManager.sleepTimerManager.timerState.value.isActive,
+        )
     }
 
     private fun isUsbExclusivePlaybackActiveForServiceKeepAlive(): Boolean {
@@ -672,24 +772,51 @@ class AudioPlayerService : Service() {
     }
 
     private val mediaSessionCallback = object : MediaSessionCompat.Callback() {
-        override fun onPlay() { PlayerManager.play(); updateAll() }
-        override fun onPause() { handleExternalPauseCommand("media_session_pause") }
-        override fun onSkipToNext() { PlayerManager.next(); updateAll() }
-        override fun onSkipToPrevious() { PlayerManager.previous(); updateAll() }
+        override fun onPlay() {
+            runWhenPlayerRuntimeReady("media_session_play") {
+                keepPlayerRuntimeAfterServiceStop = false
+                PlayerManager.play()
+                updateAll()
+                refreshIdleShutdown("media_session_play")
+            }
+        }
+        override fun onPause() {
+            runWhenPlayerRuntimeReady("media_session_pause") {
+                handleExternalPauseCommand("media_session_pause")
+            }
+        }
+        override fun onSkipToNext() {
+            runWhenPlayerRuntimeReady("media_session_next") {
+                PlayerManager.next()
+                updateAll()
+            }
+        }
+        override fun onSkipToPrevious() {
+            runWhenPlayerRuntimeReady("media_session_previous") {
+                PlayerManager.previous()
+                updateAll()
+            }
+        }
         override fun onStop() {
-            handleExternalPauseCommand(MEDIA_SESSION_STOP_SOURCE, stopService = true)
+            runWhenPlayerRuntimeReady("media_session_stop") {
+                handleExternalPauseCommand(MEDIA_SESSION_STOP_SOURCE, stopService = true)
+            }
         }
         override fun onSeekTo(pos: Long) {
-            PlayerManager.seekTo(pos)
-            updatePlaybackState(force = true)
-            updateNotification()
+            runWhenPlayerRuntimeReady("media_session_seek") {
+                PlayerManager.seekTo(pos)
+                updatePlaybackState(force = true)
+                updateNotification()
+            }
         }
         override fun onCustomAction(action: String?, extras: Bundle?) {
             if (action == ACTION_TOGGLE_FAV) {
-                if (canToggleFavoriteFromExternalSurface(PlayerManager.currentSongFlow.value)) {
-                    PlayerManager.toggleCurrentFavorite()
+                runWhenPlayerRuntimeReady("media_session_favorite") {
+                    if (canToggleFavoriteFromExternalSurface(PlayerManager.currentSongFlow.value)) {
+                        PlayerManager.toggleCurrentFavorite()
+                    }
+                    updateAll()
                 }
-                updateAll()
             }
         }
     }
@@ -707,6 +834,7 @@ class AudioPlayerService : Service() {
         }
         PlayerManager.pause()
         updateAll()
+        refreshIdleShutdown("external_pause:$source")
         val shouldStopService = shouldStopServiceForExternalPauseCommand(source, stopService)
         if (stopService && !shouldStopService) {
             NPLogger.w("NERI-APS", "Treating external stop as pause-only: source=$source")
@@ -747,13 +875,61 @@ class AudioPlayerService : Service() {
             return
         }
 
-        // 服务必须尽快进入前台，不能在这里阻塞前台通知启动
-        PlayerManager.initialize(application as Application)
+        initializePlayerRuntime()
+    }
+
+    private fun initializePlayerRuntime() {
+        if (PlayerManager.initialized) {
+            finishPlayerRuntimeSetup()
+            return
+        }
+        playerInitializationJob?.cancel()
+        playerInitializationJob = serviceScope.launch {
+            awaitConcurrentPlayerInitialization()
+            if (PlayerManager.initialized) {
+                finishPlayerRuntimeSetup()
+                return@launch
+            }
+            val app = application as Application
+            val playbackPreferences = withContext(Dispatchers.IO) {
+                readPlaybackPreferenceSnapshot(app)
+            }
+            val restoredStateSnapshot = preloadRestoredStateSnapshot(
+                app = app,
+                keepLastPlaybackProgressEnabled = playbackPreferences.keepLastPlaybackProgress,
+                keepPlaybackModeStateEnabled = playbackPreferences.keepPlaybackModeState,
+            )
+            PlayerManager.initializePreloaded(
+                app = app,
+                startupPlaybackPreferences = playbackPreferences,
+                restoredStateSnapshot = restoredStateSnapshot,
+            )
+            awaitConcurrentPlayerInitialization()
+            if (!PlayerManager.initialized) {
+                NPLogger.e("NERI-APS", "Player runtime initialization failed")
+                handleForegroundPromotionFailure("player_initialize")
+                return@launch
+            }
+            finishPlayerRuntimeSetup()
+        }
+    }
+
+    private suspend fun awaitConcurrentPlayerInitialization() {
+        repeat(400) {
+            if (!PlayerManager.initializationInProgress) return
+            delay(25L)
+        }
+    }
+
+    private fun finishPlayerRuntimeSetup() {
+        if (playerRuntimeReady) return
+        playerRuntimeReady = true
+        refreshFavoriteSongKeys()
 
         serviceScope.launch {
             PlayerManager.currentSongFlow.collectSafely("currentSongFlow") {
                 if (it == null && !hasPlaybackSurfaceContent()) {
-                    if (!hasReceivedStartCommand) {
+                    if (!hasReceivedStartCommand || pendingStartCommands.isNotEmpty()) {
                         return@collectSafely
                     }
                     NPLogger.w("NERI-APS", "currentSongFlow requested self-stop because playback surface is empty")
@@ -765,17 +941,28 @@ class AudioPlayerService : Service() {
                 updatePlaybackState(force = true)
                 updateNotification()
                 updateUsbExclusiveServiceKeepAlive("current_song")
+                refreshIdleShutdown("current_song")
             }
         }
         val listenTogetherSessionManager = AppContainer.listenTogetherSessionManager
         serviceScope.launch {
             listenTogetherSessionManager.sessionState.collectSafely("listenTogetherSessionState") {
                 handleListenTogetherServiceStateChanged("session")
+                refreshIdleShutdown("listen_together_session")
             }
         }
         serviceScope.launch {
             listenTogetherSessionManager.roomState.collectSafely("listenTogetherRoomState") {
                 handleListenTogetherServiceStateChanged("room")
+                refreshIdleShutdown("listen_together_room")
+            }
+        }
+        serviceScope.launch {
+            PlayerManager.playlistsFlow.collectSafely("playlistsFlow") {
+                refreshFavoriteSongKeys()
+                lastNotificationSnapshot = null
+                updatePlaybackState(force = true)
+                updateNotification(force = true)
             }
         }
         serviceScope.launch {
@@ -801,6 +988,7 @@ class AudioPlayerService : Service() {
                 updatePlaybackState()
                 updateNotification()
                 updateUsbExclusiveServiceKeepAlive("is_playing")
+                refreshIdleShutdown("is_playing")
             }
         }
         serviceScope.launch {
@@ -814,6 +1002,7 @@ class AudioPlayerService : Service() {
                 updatePlaybackState()
                 updateNotification()
                 updateUsbExclusiveServiceKeepAlive("play_when_ready")
+                refreshIdleShutdown("play_when_ready")
             }
         }
         serviceScope.launch {
@@ -821,16 +1010,19 @@ class AudioPlayerService : Service() {
                 updatePlaybackState(force = true)
                 updateNotification()
                 updateUsbExclusiveServiceKeepAlive("player_state")
+                refreshIdleShutdown("player_state")
             }
         }
         serviceScope.launch {
             UsbExclusiveSessionController.state.collectSafely("usbExclusiveSessionState") {
                 updateUsbExclusiveServiceKeepAlive("usb_native_state")
+                refreshIdleShutdown("usb_native_state")
             }
         }
         serviceScope.launch {
             UsbExclusiveAudioPathTracker.state.collectSafely("usbExclusiveAudioPathState") {
                 updateUsbExclusiveServiceKeepAlive("usb_path_state")
+                refreshIdleShutdown("usb_path_state")
             }
         }
         serviceScope.launch {
@@ -852,6 +1044,7 @@ class AudioPlayerService : Service() {
         serviceScope.launch {
             PlayerManager.sleepTimerManager.timerState.collectSafely("sleepTimerState") {
                 updateNotification()
+                refreshIdleShutdown("sleep_timer")
             }
         }
 
@@ -916,6 +1109,9 @@ class AudioPlayerService : Service() {
         updatePlaybackState(force = true)
         updateNotification()
         updateUsbExclusiveServiceKeepAlive("service_create")
+        refreshIdleShutdown("player_runtime_ready")
+        drainPendingStartCommands()
+        drainPendingPlayerActions()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -926,7 +1122,9 @@ class AudioPlayerService : Service() {
             "onStartCommand action=$action source=$startSource flags=$flags startId=$startId ${buildStateSummary()}"
         )
         allowServiceRestart = true
+        keepPlayerRuntimeAfterServiceStop = false
         hasReceivedStartCommand = true
+        latestStartId = startId
 
         if (!isForegroundStarted && action != ACTION_STOP) {
             if (!startForegroundImmediately(
@@ -938,6 +1136,20 @@ class AudioPlayerService : Service() {
                     startId = startId
                 )
             }
+        }
+        if (!playerRuntimeReady) {
+            pendingStartCommands.addLast(
+                PendingStartCommand(
+                    intent = intent?.let { Intent(it) },
+                    flags = flags,
+                    startId = startId,
+                )
+            )
+            NPLogger.d(
+                "NERI-APS",
+                "Deferring start command until player runtime is ready: action=$action startId=$startId"
+            )
+            return if (action == null) START_NOT_STICKY else START_REDELIVER_INTENT
         }
         if (action == null && !hasPlaybackSurfaceContent()) {
             allowServiceRestart = false
@@ -1065,6 +1277,7 @@ class AudioPlayerService : Service() {
             "onStartCommand complete action=$action source=$startSource startMode=$startMode ${buildStateSummary()}"
         )
         updateUsbExclusiveServiceKeepAlive("on_start_command:$action:$startSource")
+        refreshIdleShutdown("on_start_command:$action:$startSource")
         return startMode
     }
 
@@ -1185,15 +1398,16 @@ class AudioPlayerService : Service() {
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .setStyle(
+                androidx.media.app.NotificationCompat.MediaStyle()
+                    .setMediaSession(mediaSession.sessionToken)
+            )
             .build()
     }
 
     private fun isFavoriteSong(song: SongItem?): Boolean {
         if (song == null) return false
-        val favorites = PlayerManager.playlistsFlow.value
-            .firstOrNull { FavoritesPlaylist.isSystemPlaylist(it, this) }
-            ?: return false
-        return favorites.songs.any { it.sameIdentityAs(song) }
+        return song.stableKey() in favoriteSongKeys
     }
 
     private fun requiresInteractiveFavoriteConfirmation(song: SongItem?): Boolean {
@@ -1279,10 +1493,11 @@ class AudioPlayerService : Service() {
         )
 
         if (songKey != currentCoverSongKey || coverSource != currentCoverSource) {
+            val songChanged = songKey != currentCoverSongKey
             val sourceChanged = coverSource != currentCoverSource
             currentCoverSongKey = songKey
             currentCoverSource = coverSource
-            if (sourceChanged) {
+            if (songChanged || sourceChanged) {
                 currentMediaArtwork = null
                 currentNotificationLargeIcon = null
                 artworkLoadInFlightSource = null
@@ -1339,14 +1554,9 @@ class AudioPlayerService : Service() {
             )
             .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
             .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, currentMediaArtwork)
-            .putBitmap(MediaMetadataCompat.METADATA_KEY_ART, currentMediaArtwork)
-            .putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, currentMediaArtwork)
 
         resolveRemoteMetadataArtworkUri(currentCoverSource)?.let { artworkUri ->
-            metadataBuilder
-                .putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, artworkUri)
-                .putString(MediaMetadataCompat.METADATA_KEY_ART_URI, artworkUri)
-                .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON_URI, artworkUri)
+            metadataBuilder.putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, artworkUri)
         }
 
         // Do not set local URIs to METADATA_KEY_ALBUM_ART_URI, as it may prompt the System UI
@@ -1636,6 +1846,11 @@ class AudioPlayerService : Service() {
         try {
             isServiceForegroundActive = false
             isServiceInstanceActive = false
+            idleShutdownCoordinator.cancel()
+            playerInitializationJob?.cancel()
+            playerInitializationJob = null
+            pendingStartCommands.clear()
+            pendingPlayerActions.clear()
             flushPlaybackStatsSafely("service_destroy", "destroy")
             if (this::becomingNoisyReceiver.isInitialized) {
                 runCatching { unregisterReceiver(becomingNoisyReceiver) }
@@ -1652,7 +1867,9 @@ class AudioPlayerService : Service() {
                     mediaSession.release()
                 }.onFailure { NPLogger.w("NERI-APS", "media session release failed", it) }
             }
-            if (preservePlaybackForRestart) {
+            if (keepPlayerRuntimeAfterServiceStop) {
+                NPLogger.i("NERI-APS", "Keeping paused player runtime after idle service shutdown")
+            } else if (preservePlaybackForRestart) {
                 runCatching {
                     PlayerManager.suspendPlaybackForServiceRestart("service_destroy")
                 }.onFailure { error ->
@@ -1667,6 +1884,10 @@ class AudioPlayerService : Service() {
                     .onFailure { NPLogger.w("NERI-APS", "player release failed during destroy", it) }
             }
         } finally {
+            playerRuntimeReady = false
+            favoriteSongKeys = emptySet()
+            currentMediaArtwork = null
+            currentNotificationLargeIcon = null
             shutdownUsbRuntime("service_destroy")
             super.onDestroy()
         }
@@ -1742,7 +1963,7 @@ class AudioPlayerService : Service() {
     }
 
     private fun shutdownUsbRuntime(reason: String) {
-        UsbExclusiveSessionController.emergencyShutdown(reason)
+        UsbExclusiveSessionController.forceStopAllSessions(reason)
         UsbExclusiveSystemSoundGuard.forceRelease(this, reason)
         StartupAudioFocusController.forceRelease(reason)
     }
@@ -1801,7 +2022,11 @@ class AudioPlayerService : Service() {
     }
 
     private fun stopSelfIfPlaybackSurfaceEmpty(reason: String) {
-        if (!hasReceivedStartCommand || hasPlaybackSurfaceContent()) {
+        if (
+            !hasReceivedStartCommand ||
+            pendingStartCommands.isNotEmpty() ||
+            hasPlaybackSurfaceContent()
+        ) {
             return
         }
         allowServiceRestart = false

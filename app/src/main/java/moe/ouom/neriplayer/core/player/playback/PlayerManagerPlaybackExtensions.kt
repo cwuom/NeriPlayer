@@ -39,6 +39,7 @@ import moe.ouom.neriplayer.core.player.policy.failure.resolvePlaybackFailureAdva
 import moe.ouom.neriplayer.core.player.policy.command.resolveManagedPlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.command.resolveManualResumePlaybackDecision
 import moe.ouom.neriplayer.core.player.policy.progress.resolvePlaybackProgressUpdateIntervalMs
+import moe.ouom.neriplayer.core.player.policy.progress.PLAYBACK_PROGRESS_STATS_UPDATE_INTERVAL_MS
 import moe.ouom.neriplayer.core.player.policy.pending.shouldApplyResolvedMedia
 import moe.ouom.neriplayer.core.player.policy.pending.shouldApplyResolvedMediaSideEffects
 import moe.ouom.neriplayer.core.player.policy.command.shouldPausePlaybackWhenToggling
@@ -1519,6 +1520,7 @@ internal fun PlayerManager.startProgressUpdates() {
         "startProgressUpdates: currentSong=${_currentSongFlow.value?.name}, playbackState=${playbackStateName(player.playbackState)}"
     )
     progressJob = mainScope.launch {
+        var lastStatsUpdateAtMs = 0L
         while (isActive) {
             val updateIntervalMs = resolvePlaybackProgressUpdateIntervalMs(
                 playbackProgressAdvanceReported = playbackProgressAdvanceReported,
@@ -1562,12 +1564,19 @@ internal fun PlayerManager.startProgressUpdates() {
             }
             updateExternalBluetoothLyricLine(positionMs)
             maybePersistPlaybackProgress(positionMs)
-            val progressStatsSnapshot = consumePlaybackStatsProgress(positionMs)
-            if (progressStatsSnapshot != null) {
-                markTrackEndHandledForStatsFallback()
+            val nowElapsedRealtimeMs = SystemClock.elapsedRealtime()
+            if (
+                lastStatsUpdateAtMs == 0L ||
+                nowElapsedRealtimeMs - lastStatsUpdateAtMs >= PLAYBACK_PROGRESS_STATS_UPDATE_INTERVAL_MS
+            ) {
+                lastStatsUpdateAtMs = nowElapsedRealtimeMs
+                val progressStatsSnapshot = consumePlaybackStatsProgress(positionMs)
+                if (progressStatsSnapshot != null) {
+                    markTrackEndHandledForStatsFallback()
+                }
+                persistPlaybackStatsSnapshotAsync(progressStatsSnapshot)
+                maybePersistPlaybackStatsProgress()
             }
-            persistPlaybackStatsSnapshotAsync(progressStatsSnapshot)
-            maybePersistPlaybackStatsProgress()
             delay(updateIntervalMs)
         }
     }
@@ -1597,22 +1606,18 @@ private fun PlayerManager.maybePersistPlaybackProgress(positionMs: Long) {
     scheduleStatePersist(positionMs = positionMs, shouldResumePlayback = true)
 }
 
-private suspend fun PlayerManager.consumePlaybackStatsProgress(positionMs: Long): PlaybackStatsSnapshot? {
-    return withContext(Dispatchers.Default) {
-        synchronized(playbackStatsTracker) {
-            playbackStatsTracker.onPlaybackProgress(positionMs)
-        }
+private fun PlayerManager.consumePlaybackStatsProgress(positionMs: Long): PlaybackStatsSnapshot? {
+    return synchronized(playbackStatsTracker) {
+        playbackStatsTracker.onPlaybackProgress(positionMs)
     }
 }
 
-private suspend fun PlayerManager.maybePersistPlaybackStatsProgress() {
-    val snapshot = withContext(Dispatchers.Default) {
-        synchronized(playbackStatsTracker) {
-            if (playbackStatsTracker.shouldFlushPeriodically()) {
-                playbackStatsTracker.flushPeriodic()
-            } else {
-                null
-            }
+private fun PlayerManager.maybePersistPlaybackStatsProgress() {
+    val snapshot = synchronized(playbackStatsTracker) {
+        if (playbackStatsTracker.shouldFlushPeriodically()) {
+            playbackStatsTracker.flushPeriodic()
+        } else {
+            null
         }
     }
     persistPlaybackStatsSnapshotAsync(snapshot)
