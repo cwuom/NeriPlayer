@@ -47,6 +47,9 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.isActive
 import kotlin.math.ceil
 import kotlin.math.sin
@@ -54,7 +57,6 @@ import kotlin.math.sin
 private const val WAVE_AMPLITUDE = 6f   // 波浪的振幅
 private const val WAVE_FREQUENCY = 0.08f // 波浪的频率
 private const val WAVE_ANIMATION_DURATION_NS = 2_000_000_000L
-private const val WAVE_PHASE_FRAME_INTERVAL_NS = 1_000_000_000L / 45L
 private const val WAVE_SAMPLE_SPACING_PX = 6f
 private const val MIN_WAVE_SEGMENTS = 48
 private const val MAX_WAVE_SEGMENTS = 180
@@ -98,27 +100,22 @@ fun WaveformSlider(
     )
 
     var phase by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(enabled, isPlaying, isDragging) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner, enabled, isPlaying, isDragging) {
         if (!enabled || !isPlaying || isDragging) return@LaunchedEffect
-        val anchorPhase = phase
-        var anchorFrameNs = 0L
-        var nextFrameNs = Long.MIN_VALUE
-        while (isActive) {
-            val frameNs = withFrameNanos { it }
-            if (anchorFrameNs == 0L) {
-                anchorFrameNs = frameNs
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            val anchorPhase = phase
+            var anchorFrameNs = 0L
+            while (isActive) {
+                val frameNs = withFrameNanos { it }
+                if (anchorFrameNs == 0L) {
+                    anchorFrameNs = frameNs
+                }
+                phase = resolveWavePhase(
+                    anchorPhase = anchorPhase,
+                    elapsedNs = frameNs - anchorFrameNs
+                )
             }
-            if (nextFrameNs != Long.MIN_VALUE && frameNs < nextFrameNs) {
-                continue
-            }
-            nextFrameNs = nextWavePhaseFrameNs(
-                frameNs = frameNs,
-                currentNextNs = nextFrameNs
-            )
-            phase = resolveWavePhase(
-                anchorPhase = anchorPhase,
-                elapsedNs = frameNs - anchorFrameNs
-            )
         }
     }
 
@@ -169,9 +166,7 @@ fun WaveformSlider(
         val centerY = size.height / 2
         val progressPx = value * size.width
         val currentPhase = phase
-        val segmentCount = ceil(size.width / WAVE_SAMPLE_SPACING_PX)
-            .toInt()
-            .coerceIn(MIN_WAVE_SEGMENTS, MAX_WAVE_SEGMENTS)
+        val segmentCount = resolveWaveSegmentCount(size.width)
         val segmentWidth = size.width / segmentCount
 
         wavePath.rewind()
@@ -208,25 +203,16 @@ fun WaveformSlider(
 
 private val TWO_PI = 2f * Math.PI.toFloat()
 
-private fun resolveWavePhase(anchorPhase: Float, elapsedNs: Long): Float {
+internal fun resolveWaveSegmentCount(widthPx: Float): Int {
+    return ceil(widthPx.coerceAtLeast(0f) / WAVE_SAMPLE_SPACING_PX)
+        .toInt()
+        .coerceIn(MIN_WAVE_SEGMENTS, MAX_WAVE_SEGMENTS)
+}
+
+internal fun resolveWavePhase(anchorPhase: Float, elapsedNs: Long): Float {
     val elapsedInCycle = elapsedNs.floorMod(WAVE_ANIMATION_DURATION_NS)
     val cycleFraction = elapsedInCycle.toFloat() / WAVE_ANIMATION_DURATION_NS.toFloat()
     return (anchorPhase + TWO_PI * cycleFraction) % TWO_PI
-}
-
-private fun nextWavePhaseFrameNs(frameNs: Long, currentNextNs: Long): Long {
-    if (
-        currentNextNs == Long.MIN_VALUE ||
-        frameNs - currentNextNs > WAVE_PHASE_FRAME_INTERVAL_NS * 2L
-    ) {
-        return frameNs + WAVE_PHASE_FRAME_INTERVAL_NS
-    }
-
-    var nextNs = currentNextNs
-    while (nextNs <= frameNs) {
-        nextNs += WAVE_PHASE_FRAME_INTERVAL_NS
-    }
-    return nextNs
 }
 
 private fun Long.floorMod(other: Long): Long {
