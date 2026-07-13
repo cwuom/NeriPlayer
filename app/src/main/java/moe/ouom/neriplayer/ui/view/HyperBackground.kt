@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -155,7 +156,7 @@ fun HyperBackground(
     var activeShaderPalette by remember(painter, currentIsDark) {
         mutableStateOf<DynamicBackgroundShaderPalette?>(null)
     }
-    var boostedAnimationUntilNs by remember { mutableStateOf(0L) }
+    var boostedAnimationUntilNs by remember { mutableLongStateOf(0L) }
 
     AndroidView(
         modifier = modifier,
