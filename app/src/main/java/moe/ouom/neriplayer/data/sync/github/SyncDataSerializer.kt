@@ -271,7 +271,7 @@ object SyncDataSerializer {
 
     @Serializable
     private data class LegacySyncSong(
-        @ProtoNumber(1) val id: Long,
+        @ProtoNumber(1) val id: Long = 0L,
         @ProtoNumber(2) val name: String = "",
         @ProtoNumber(3) val artist: String = "",
         @ProtoNumber(4) val album: String = "",

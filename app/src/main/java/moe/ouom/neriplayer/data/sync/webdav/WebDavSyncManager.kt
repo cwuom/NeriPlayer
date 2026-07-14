@@ -55,6 +55,7 @@ import moe.ouom.neriplayer.data.sync.github.SyncRecentPlay
 import moe.ouom.neriplayer.data.sync.github.SyncRecentPlayDeletion
 import moe.ouom.neriplayer.data.sync.github.SyncResult
 import moe.ouom.neriplayer.data.sync.github.SyncSong
+import moe.ouom.neriplayer.data.sync.github.hasResolvableSyncIdentity
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatsMergePolicy
@@ -979,6 +980,9 @@ class WebDavSyncManager private constructor(context: Context) {
     private fun sanitizeRecentPlayDeletion(
         deletion: SyncRecentPlayDeletion
     ): SyncRecentPlayDeletion? {
+        if (!deletion.hasResolvableSyncIdentity() || deletion.deletedAt <= 0L) {
+            return null
+        }
         if (LocalSongSupport.isLocalSong(deletion.album, deletion.mediaUri, 0L, appContext)) {
             return null
         }
@@ -988,7 +992,12 @@ class WebDavSyncManager private constructor(context: Context) {
     private fun sanitizePlaylistSongDeletion(
         deletion: SyncPlaylistSongDeletion
     ): SyncPlaylistSongDeletion? {
-        if (deletion.playlistId == LocalFilesPlaylist.SYSTEM_ID) {
+        if (
+            deletion.playlistId == 0L ||
+            deletion.playlistId == LocalFilesPlaylist.SYSTEM_ID ||
+            !deletion.hasResolvableSyncIdentity() ||
+            deletion.deletedAt <= 0L
+        ) {
             return null
         }
         if (LocalSongSupport.isLocalSong(deletion.album, deletion.mediaUri, 0L, appContext)) {
@@ -1001,6 +1010,9 @@ class WebDavSyncManager private constructor(context: Context) {
 
     private fun sanitizeSyncSong(song: SyncSong): SyncSong? {
         val localizedContext = LanguageManager.applyLanguage(appContext)
+        if (!song.hasResolvableSyncIdentity()) {
+            return null
+        }
         if (LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, localizedContext)) {
             return null
         }

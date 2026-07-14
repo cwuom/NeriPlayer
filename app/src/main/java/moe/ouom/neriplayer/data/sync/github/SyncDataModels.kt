@@ -162,7 +162,7 @@ private fun List<SyncSong>.sortedByAddedAtForDisplay(): List<SyncSong> {
  */
 @Serializable
 data class SyncSong(
-    @ProtoNumber(1) val id: Long,
+    @ProtoNumber(1) val id: Long = 0L,
     @ProtoNumber(2) val name: String = "",
     @ProtoNumber(3) val artist: String = "",
     @ProtoNumber(4) val album: String = "",
@@ -283,24 +283,30 @@ internal fun SyncSong.copyWithNormalizedMembershipTokens(
     )
 }
 
+internal fun SyncSong.hasResolvableSyncIdentity(): Boolean {
+    return id != 0L ||
+        audioId?.isNotBlank() == true ||
+        mediaUri?.isNotBlank() == true
+}
+
 /**
  * 最近播放记录
  */
 @Serializable
 data class SyncRecentPlay(
-    @ProtoNumber(1) val songId: Long,
-    @ProtoNumber(2) val song: SyncSong,
-    @ProtoNumber(3) val playedAt: Long,
-    @ProtoNumber(4) val deviceId: String
+    @ProtoNumber(1) val songId: Long = 0L,
+    @ProtoNumber(2) val song: SyncSong = SyncSong(),
+    @ProtoNumber(3) val playedAt: Long = 0L,
+    @ProtoNumber(4) val deviceId: String = ""
 )
 
 @Serializable
 data class SyncRecentPlayDeletion(
-    @ProtoNumber(1) val songId: Long,
-    @ProtoNumber(2) val album: String,
+    @ProtoNumber(1) val songId: Long = 0L,
+    @ProtoNumber(2) val album: String = "",
     @ProtoNumber(3) val mediaUri: String? = null,
-    @ProtoNumber(4) val deletedAt: Long,
-    @ProtoNumber(5) val deviceId: String
+    @ProtoNumber(4) val deletedAt: Long = 0L,
+    @ProtoNumber(5) val deviceId: String = ""
 ) {
     fun identity(): SongIdentity = SongIdentity(
         id = songId,
@@ -311,14 +317,18 @@ data class SyncRecentPlayDeletion(
     fun stableKey(): String = identity().stableKey()
 }
 
+internal fun SyncRecentPlayDeletion.hasResolvableSyncIdentity(): Boolean {
+    return songId != 0L || mediaUri?.isNotBlank() == true
+}
+
 @Serializable
 data class SyncPlaylistSongDeletion(
-    @ProtoNumber(1) val playlistId: Long,
-    @ProtoNumber(2) val songId: Long,
-    @ProtoNumber(3) val album: String,
+    @ProtoNumber(1) val playlistId: Long = 0L,
+    @ProtoNumber(2) val songId: Long = 0L,
+    @ProtoNumber(3) val album: String = "",
     @ProtoNumber(4) val mediaUri: String? = null,
-    @ProtoNumber(5) val deletedAt: Long,
-    @ProtoNumber(6) val deviceId: String,
+    @ProtoNumber(5) val deletedAt: Long = 0L,
+    @ProtoNumber(6) val deviceId: String = "",
     @ProtoNumber(7) val removedMembershipTokens: List<SyncCausalToken> = emptyList()
 ) {
     fun identity(): SongIdentity = SongIdentity(
@@ -328,6 +338,10 @@ data class SyncPlaylistSongDeletion(
     )
 
     fun stableKey(): String = "$playlistId|${identity().stableKey()}"
+}
+
+internal fun SyncPlaylistSongDeletion.hasResolvableSyncIdentity(): Boolean {
+    return songId != 0L || mediaUri?.isNotBlank() == true
 }
 
 internal fun SyncPlaylistSongDeletion.copyWithNormalizedMembershipTokens(
@@ -500,7 +514,7 @@ enum class ConflictResolution {
 
 @Serializable
 data class SyncPlaybackCounterShard(
-    @ProtoNumber(1) val deviceId: String,
+    @ProtoNumber(1) val deviceId: String = "",
     @ProtoNumber(2) val epochStartedAt: Long = 0L,
     @ProtoNumber(3) val totalListenMs: Long = 0L,
     @ProtoNumber(4) val playCount: Int = 0,
@@ -510,14 +524,14 @@ data class SyncPlaybackCounterShard(
 
 @Serializable
 data class SyncTrackStat(
-    @ProtoNumber(1) val identityKey: String,
-    @ProtoNumber(2) val name: String,
-    @ProtoNumber(3) val artist: String,
-    @ProtoNumber(4) val album: String,
-    @ProtoNumber(5) val totalListenMs: Long,
-    @ProtoNumber(6) val playCount: Int,
-    @ProtoNumber(7) val lastPlayedAt: Long,
-    @ProtoNumber(8) val firstPlayedAt: Long,
+    @ProtoNumber(1) val identityKey: String = "",
+    @ProtoNumber(2) val name: String = "",
+    @ProtoNumber(3) val artist: String = "",
+    @ProtoNumber(4) val album: String = "",
+    @ProtoNumber(5) val totalListenMs: Long = 0L,
+    @ProtoNumber(6) val playCount: Int = 0,
+    @ProtoNumber(7) val lastPlayedAt: Long = 0L,
+    @ProtoNumber(8) val firstPlayedAt: Long = 0L,
     @ProtoNumber(9) val coverUrl: String? = null,
     @ProtoNumber(10) val durationMs: Long = 0L,
     @ProtoNumber(11) val mediaUri: String? = null,
@@ -530,15 +544,15 @@ data class SyncTrackStat(
 
 @Serializable
 data class SyncPlaybackStatBucket(
-    @ProtoNumber(1) val dayStartAt: Long,
-    @ProtoNumber(2) val identityKey: String,
-    @ProtoNumber(3) val name: String,
-    @ProtoNumber(4) val artist: String,
-    @ProtoNumber(5) val album: String,
-    @ProtoNumber(6) val totalListenMs: Long,
-    @ProtoNumber(7) val playCount: Int,
-    @ProtoNumber(8) val lastPlayedAt: Long,
-    @ProtoNumber(9) val firstPlayedAt: Long,
+    @ProtoNumber(1) val dayStartAt: Long = 0L,
+    @ProtoNumber(2) val identityKey: String = "",
+    @ProtoNumber(3) val name: String = "",
+    @ProtoNumber(4) val artist: String = "",
+    @ProtoNumber(5) val album: String = "",
+    @ProtoNumber(6) val totalListenMs: Long = 0L,
+    @ProtoNumber(7) val playCount: Int = 0,
+    @ProtoNumber(8) val lastPlayedAt: Long = 0L,
+    @ProtoNumber(9) val firstPlayedAt: Long = 0L,
     @ProtoNumber(10) val coverUrl: String? = null,
     @ProtoNumber(11) val durationMs: Long = 0L,
     @ProtoNumber(12) val mediaUri: String? = null,

@@ -973,6 +973,9 @@ class GitHubSyncManager private constructor(context: Context) {
     private fun sanitizeRecentPlayDeletion(
         deletion: SyncRecentPlayDeletion
     ): SyncRecentPlayDeletion? {
+        if (!deletion.hasResolvableSyncIdentity() || deletion.deletedAt <= 0L) {
+            return null
+        }
         if (LocalSongSupport.isLocalSong(deletion.album, deletion.mediaUri, 0L, appContext)) {
             return null
         }
@@ -982,7 +985,12 @@ class GitHubSyncManager private constructor(context: Context) {
     private fun sanitizePlaylistSongDeletion(
         deletion: SyncPlaylistSongDeletion
     ): SyncPlaylistSongDeletion? {
-        if (deletion.playlistId == LocalFilesPlaylist.SYSTEM_ID) {
+        if (
+            deletion.playlistId == 0L ||
+            deletion.playlistId == LocalFilesPlaylist.SYSTEM_ID ||
+            !deletion.hasResolvableSyncIdentity() ||
+            deletion.deletedAt <= 0L
+        ) {
             return null
         }
         if (LocalSongSupport.isLocalSong(deletion.album, deletion.mediaUri, 0L, appContext)) {
@@ -995,6 +1003,9 @@ class GitHubSyncManager private constructor(context: Context) {
 
     private fun sanitizeSyncSong(song: SyncSong): SyncSong? {
         val localizedContext = LanguageManager.applyLanguage(appContext)
+        if (!song.hasResolvableSyncIdentity()) {
+            return null
+        }
         if (LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, localizedContext)) {
             return null
         }
