@@ -134,7 +134,9 @@ extra Gradle property.
 
    If `KEYSTORE_FILE` is relative, it is resolved against the `app/` module
    directory. The current Release build does **not** fall back to the debug
-   signing config. If no usable keystore is available, the build fails directly.
+   signing config. Local Android Studio / IntelliJ builds automatically allow
+   unsigned Release packaging so IDE `Build APK` / `assemble` flows keep
+   working. CLI and CI builds still require a usable keystore by default.
    GitHub PR builds automatically produce an unsigned Release for packaging
    validation. Other CI/PR environments can pass `-PallowUnsignedRelease=true`.
 

@@ -13,8 +13,14 @@ plugins {
 }
 
 val isGithubPullRequest = providers.environmentVariable("GITHUB_EVENT_NAME").orNull == "pull_request"
+val isIdeBuild = listOf("android.injected.invoked.from.ide", "idea.active").any { propertyName ->
+    (project.findProperty(propertyName) as String?)?.toBoolean() == true ||
+        providers.systemProperty(propertyName).orNull?.toBoolean() == true
+}
 val allowUnsignedRelease =
-    (project.findProperty("allowUnsignedRelease") as String?)?.toBoolean() == true || isGithubPullRequest
+    (project.findProperty("allowUnsignedRelease") as String?)?.toBoolean() == true ||
+        isGithubPullRequest ||
+        isIdeBuild
 val releaseKeystorePath = project.findProperty("KEYSTORE_FILE") as String? ?: "neri.jks"
 val releaseKeystoreFile = project.file(releaseKeystorePath)
 val releaseStorePassword = project.findProperty("KEYSTORE_PASSWORD") as String?

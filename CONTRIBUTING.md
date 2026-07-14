@@ -120,8 +120,10 @@
 
    如果 `KEYSTORE_FILE` 使用相对路径，会按 `app/` 模块目录解析。
    当前 Release 构建**不会**回退到 debug signing config；
-   未提供可用 keystore 时会直接失败。GitHub PR 会自动构建未签名 Release
-   做打包校验，其他 CI/PR 环境可以显式传入 `-PallowUnsignedRelease=true`。
+   Android Studio / IntelliJ 本地构建会自动允许未签名 Release 通过打包校验，
+   便于 IDE 里的 `Build APK` / `assemble` 使用。命令行和 CI 仍然默认要求
+   可用 keystore；GitHub PR 会自动构建未签名 Release 做打包校验，其他
+   CI/PR 环境可以显式传入 `-PallowUnsignedRelease=true`。
 
 2. 构建默认 Release：
    ```bash
