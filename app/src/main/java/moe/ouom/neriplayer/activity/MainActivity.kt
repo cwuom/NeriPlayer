@@ -1216,10 +1216,8 @@ private fun StartupCrashReportDialog(
                     )
                 }
                 Text(
-                    text = if (report.previewContent.isBlank()) {
+                    text = report.previewContent.ifBlank {
                         stringResource(R.string.log_cannot_read)
-                    } else {
-                        report.previewContent
                     },
                     style = MaterialTheme.typography.bodySmall
                 )
