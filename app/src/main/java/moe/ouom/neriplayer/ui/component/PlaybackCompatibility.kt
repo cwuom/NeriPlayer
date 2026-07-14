@@ -22,7 +22,8 @@ fun NeriMiniPlayer(
     onExpand: () -> Unit,
     hazeState: HazeState,
     enableHaze: Boolean = true,
-    offlineMode: Boolean = false
+    offlineMode: Boolean = false,
+    isPlaybackWaiting: Boolean = false
 ) {
     moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayer(
         title = title,
@@ -37,7 +38,8 @@ fun NeriMiniPlayer(
         onExpand = onExpand,
         hazeState = hazeState,
         enableHaze = enableHaze,
-        offlineMode = offlineMode
+        offlineMode = offlineMode,
+        isPlaybackWaiting = isPlaybackWaiting
     )
 }
 
@@ -93,7 +95,8 @@ fun WaveformSlider(
     onValueChangeStarted: (Float) -> Unit = {},
     onValueChangeCanceled: () -> Unit = {},
     enabled: Boolean = true,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isPlaybackWaiting: Boolean = false
 ) {
     moe.ouom.neriplayer.ui.component.playback.WaveformSlider(
         value = value,
@@ -103,7 +106,7 @@ fun WaveformSlider(
         onValueChangeStarted = onValueChangeStarted,
         onValueChangeCanceled = onValueChangeCanceled,
         enabled = enabled,
-        modifier = modifier
+        modifier = modifier,
+        isPlaybackWaiting = isPlaybackWaiting
     )
 }
-

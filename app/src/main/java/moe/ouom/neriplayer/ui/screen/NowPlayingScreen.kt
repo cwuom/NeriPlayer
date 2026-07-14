@@ -109,7 +109,6 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.MusicNote
-import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Repeat
@@ -245,10 +244,12 @@ import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.LyricShareSheet
 import moe.ouom.neriplayer.ui.component.lyrics.LyricVisualSpec
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSoundSheet
+import moe.ouom.neriplayer.ui.component.playback.PlaybackControlIndicator
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceBadge
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
 import moe.ouom.neriplayer.ui.component.playback.SleepTimerDialog
 import moe.ouom.neriplayer.ui.component.playback.WaveformSlider
+import moe.ouom.neriplayer.ui.component.playback.resolvePlaybackWaiting
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
@@ -417,6 +418,11 @@ fun NowPlayingScreen(
     val isPlaying by PlayerManager.isPlayingFlow.collectAsStateWithLifecycle()
     val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsStateWithLifecycle()
     val usbPlaybackPreparing by PlayerManager.usbExclusivePlaybackPreparingFlow.collectAsStateWithLifecycle()
+    val isPlaybackWaiting = resolvePlaybackWaiting(
+        playbackRequested = isPlaybackControlPlaying,
+        isPlaying = isPlaying,
+        usbPlaybackPreparing = usbPlaybackPreparing
+    )
     val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsStateWithLifecycle()
     val repeatMode by PlayerManager.repeatModeFlow.collectAsStateWithLifecycle()
     val durationMs by PlayerManager.playbackDurationFlow.collectAsStateWithLifecycle()
@@ -1280,6 +1286,7 @@ fun NowPlayingScreen(
                         lyrics = plainLyrics,
                         lyricOffsetMs = totalOffset,
                         isPlaying = isPlaying,
+                        isPlaybackWaiting = isPlaybackWaiting,
                         progressInfoSegments = progressInfoSegments,
                         seekEnabled = playbackProgressSeekEnabled,
                         useWideLandscapeLayout = useWideLandscapeLayout,
@@ -1332,16 +1339,13 @@ fun NowPlayingScreen(
                                 )
                                 .size(primaryControlButtonSize)
                         ) {
-                            AnimatedContent(
-                                targetState = isPlaybackControlPlaying,
-                                label = "play_pause_icon",
-                                transitionSpec = { (scaleIn() + fadeIn()) togetherWith (scaleOut() + fadeOut()) }
-                            ) { currentlyPlaying ->
-                                Icon(
-                                    imageVector = if (currentlyPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                                    contentDescription = if (currentlyPlaying) stringResource(R.string.player_pause) else stringResource(R.string.player_play)
-                                )
-                            }
+                            PlaybackControlIndicator(
+                                isPlaying = isPlaybackControlPlaying,
+                                isPlaybackWaiting = isPlaybackWaiting,
+                                playContentDescription = stringResource(R.string.player_play),
+                                pauseContentDescription = stringResource(R.string.player_pause),
+                                waitingContentDescription = stringResource(R.string.player_waiting)
+                            )
                         }
                         HapticIconButton(onClick = { PlayerManager.next() },
                             modifier = Modifier
@@ -3666,6 +3670,7 @@ private fun NowPlayingProgressSection(
     lyrics: List<LyricEntry>,
     lyricOffsetMs: Long,
     isPlaying: Boolean,
+    isPlaybackWaiting: Boolean,
     progressInfoSegments: List<NowPlayingProgressInfoSegment>,
     seekEnabled: Boolean,
     useWideLandscapeLayout: Boolean,
@@ -3775,7 +3780,8 @@ private fun NowPlayingProgressSection(
                     lyricSeekHaptic.onSeekEnd()
                 },
                 isPlaying = isPlaying,
-                enabled = seekEnabled
+                enabled = seekEnabled,
+                isPlaybackWaiting = isPlaybackWaiting
             )
 
             Text(

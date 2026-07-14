@@ -69,7 +69,6 @@ import androidx.compose.material.icons.filled.SpeakerGroup
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.LibraryMusic
-import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
@@ -133,7 +132,9 @@ import moe.ouom.neriplayer.ui.component.lyrics.LyricShareSheet
 import moe.ouom.neriplayer.ui.component.local.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.component.lyrics.LyricVisualSpec
+import moe.ouom.neriplayer.ui.component.playback.PlaybackControlIndicator
 import moe.ouom.neriplayer.ui.component.playback.WaveformSlider
+import moe.ouom.neriplayer.ui.component.playback.resolvePlaybackWaiting
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.component.lyrics.rememberLyricSeekHapticFeedback
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
@@ -179,6 +180,12 @@ fun LyricsScreen(
     val queue by PlayerManager.currentQueueFlow.collectAsState()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsState()
+    val usbPlaybackPreparing by PlayerManager.usbExclusivePlaybackPreparingFlow.collectAsState()
+    val isPlaybackWaiting = resolvePlaybackWaiting(
+        playbackRequested = isPlaybackControlPlaying,
+        isPlaying = isPlaying,
+        usbPlaybackPreparing = usbPlaybackPreparing
+    )
     val lyricsPlaybackSoundState by PlayerManager.playbackSoundStateFlow.collectAsState()
     val plainLyrics = remember(lyrics) { lyrics.flattenWordTimedEntries() }
     val plainTranslatedLyrics = remember(translatedLyrics) {
@@ -600,6 +607,7 @@ fun LyricsScreen(
                     lyrics = plainLyrics,
                     lyricOffsetMs = lyricOffsetMs,
                     isPlaying = isPlaying,
+                    isPlaybackWaiting = isPlaybackWaiting,
                     onSeekTo = onSeekTo,
                     seekEnabled = progressSeekEnabled,
                     onPreviewPositionChange = { previewPositionOverrideMs = it },
@@ -638,6 +646,7 @@ fun LyricsScreen(
 
                 HapticFilledIconButton(
                     onClick = { PlayerManager.togglePlayPause() },
+                    enabled = !usbPlaybackPreparing,
                     modifier = Modifier
                         .then(
                             if (sharedTransitionScope != null && animatedContentScope != null) {
@@ -651,16 +660,13 @@ fun LyricsScreen(
                         )
                         .size(primaryControlSize)
                 ) {
-                    AnimatedContent(
-                        targetState = isPlaybackControlPlaying,
-                        label = "play_pause_icon",
-                        transitionSpec = { (scaleIn() + fadeIn()) togetherWith (scaleOut() + fadeOut()) }
-                    ) { currentlyPlaying ->
-                        Icon(
-                            imageVector = if (currentlyPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                            contentDescription = if (currentlyPlaying) stringResource(R.string.lyrics_pause) else stringResource(R.string.lyrics_play)
-                        )
-                    }
+                    PlaybackControlIndicator(
+                        isPlaying = isPlaybackControlPlaying,
+                        isPlaybackWaiting = isPlaybackWaiting,
+                        playContentDescription = stringResource(R.string.lyrics_play),
+                        pauseContentDescription = stringResource(R.string.lyrics_pause),
+                        waitingContentDescription = stringResource(R.string.player_waiting)
+                    )
                 }
 
                 HapticIconButton(onClick = { PlayerManager.next() },
@@ -1157,6 +1163,7 @@ private fun LyricsProgressSection(
     lyrics: List<LyricEntry>,
     lyricOffsetMs: Long,
     isPlaying: Boolean,
+    isPlaybackWaiting: Boolean,
     onSeekTo: (Long) -> Unit,
     seekEnabled: Boolean,
     onPreviewPositionChange: (Long?) -> Unit,
@@ -1262,7 +1269,8 @@ private fun LyricsProgressSection(
                 lyricSeekHaptic.onSeekEnd()
             },
             isPlaying = isPlaying,
-            enabled = seekEnabled
+            enabled = seekEnabled,
+            isPlaybackWaiting = isPlaybackWaiting
         )
 
         Text(

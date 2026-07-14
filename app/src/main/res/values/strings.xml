@@ -108,6 +108,7 @@
     <!-- Player Controls -->
     <string name="player_play">播放</string>
     <string name="player_pause">暂停</string>
+    <string name="player_waiting">正在等待播放</string>
     <string name="player_previous">上一首</string>
     <string name="player_next">下一首</string>
     <string name="player_shuffle">随机</string>
