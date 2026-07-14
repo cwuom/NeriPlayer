@@ -41,6 +41,36 @@ class YouTubeAuthSyncTest {
     }
 
     @Test
+    fun mergeYouTubeAuthBundle_snapshotModeDropsStaleBaseCookies() {
+        val base = YouTubeAuthBundle(
+            cookies = linkedMapOf(
+                "SAPISID" to "old-sapisid",
+                "LOGIN_INFO" to "stale-login-token"
+            ),
+            xGoogAuthUser = "2",
+            savedAt = 100L
+        )
+
+        val merged = mergeYouTubeAuthBundle(
+            base = base,
+            observedCookies = mapOf(
+                "__Secure-1PAPISID" to "fresh-papisid",
+                "SID" to "fresh-sid"
+            ),
+            observedCookiesAreSnapshot = true,
+            savedAt = 200L
+        )
+
+        assertEquals(setOf("__Secure-1PAPISID", "SID"), merged.cookies.keys)
+        assertEquals("fresh-papisid", merged.cookies["__Secure-1PAPISID"])
+        assertEquals("fresh-sid", merged.cookies["SID"])
+        assertFalse(merged.cookies.containsKey("SAPISID"))
+        assertFalse(merged.cookies.containsKey("LOGIN_INFO"))
+        assertEquals("2", merged.xGoogAuthUser)
+        assertEquals(200L, merged.savedAt)
+    }
+
+    @Test
     fun hasMeaningfulYouTubeAuthChange_ignoresSavedAtOnly() {
         val previous = YouTubeAuthBundle(
             cookies = mapOf("SAPISID" to "cookie"),

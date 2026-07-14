@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.data.auth.youtube
 fun mergeYouTubeAuthBundle(
     base: YouTubeAuthBundle,
     observedCookies: Map<String, String>,
+    observedCookiesAreSnapshot: Boolean = false,
     authorization: String = "",
     xGoogAuthUser: String = "",
     origin: String = "",
@@ -11,11 +12,13 @@ fun mergeYouTubeAuthBundle(
 ): YouTubeAuthBundle {
     val normalizedBase = base.normalized(savedAt = base.savedAt)
     val mergedCookies = linkedMapOf<String, String>().apply {
-        putAll(
-            normalizedBase.cookies.ifEmpty {
-                parseCookieHeader(normalizedBase.cookieHeader)
-            }
-        )
+        if (!observedCookiesAreSnapshot) {
+            putAll(
+                normalizedBase.cookies.ifEmpty {
+                    parseCookieHeader(normalizedBase.cookieHeader)
+                }
+            )
+        }
         observedCookies.forEach { (key, value) ->
             if (key.isNotBlank() && value.isNotBlank()) {
                 put(key, value)

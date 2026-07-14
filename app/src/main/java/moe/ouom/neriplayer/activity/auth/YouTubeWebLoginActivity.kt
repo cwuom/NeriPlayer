@@ -392,6 +392,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
         return mergeYouTubeAuthBundle(
             base = persistedAuthBaseline,
             observedCookies = collectYouTubeWebCookies(CookieManager.getInstance()),
+            observedCookiesAreSnapshot = true,
             authorization = snapshot?.authorization.orEmpty(),
             xGoogAuthUser = snapshot?.xGoogAuthUser.orEmpty()
                 .ifBlank { observedPageSessionState.sessionIndex },

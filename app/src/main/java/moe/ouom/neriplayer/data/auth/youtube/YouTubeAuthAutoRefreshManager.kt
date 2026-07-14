@@ -101,10 +101,10 @@ internal fun shouldAcceptYouTubeRefreshResult(
     if (hasLiveSessionSignal) {
         return true
     }
-    if (pageReady && hasYtcfg) {
-        return false
+    if (authChanged || recoveredActiveSession) {
+        return true
     }
-    return authChanged || recoveredActiveSession
+    return !pageReady || !hasYtcfg
 }
 
 internal fun resolveObservedYouTubeAuthUser(
@@ -539,6 +539,7 @@ class YouTubeAuthAutoRefreshManager(
         return mergeYouTubeAuthBundle(
             base = base,
             observedCookies = observedCookies,
+            observedCookiesAreSnapshot = true,
             authorization = headers?.authorization.orEmpty(),
             // 隐藏刷新页不一定会主动发 youtubei 请求，这里回退到页面公开的 SESSION_INDEX
             xGoogAuthUser = resolveObservedYouTubeAuthUser(

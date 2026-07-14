@@ -17,6 +17,19 @@ class YouTubeAuthAutoRefreshManagerTest {
                 pageReady = true,
                 hasYtcfg = true,
                 hasLiveSessionSignal = false,
+                authChanged = false,
+                recoveredActiveSession = false
+            )
+        )
+    }
+
+    @Test
+    fun shouldAcceptYouTubeRefreshResult_acceptsRecoveredAuthOnSettledPage() {
+        assertTrue(
+            shouldAcceptYouTubeRefreshResult(
+                pageReady = true,
+                hasYtcfg = true,
+                hasLiveSessionSignal = false,
                 authChanged = true,
                 recoveredActiveSession = true
             )
