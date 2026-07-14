@@ -158,6 +158,12 @@ internal fun PlayerManager.restorePlaybackAfterTransientAudioRouteLoss(reason: S
 }
 
 internal fun PlayerManager.pauseForAudioRouteLoss(reason: String) {
+    _playWhenReadyFlow.value = false
+    _isPlayingFlow.value = false
+    if (lyriconEnabled) {
+        LyriconManager.setPlaybackState(false)
+    }
+    syncPlaybackControlPlayingState()
     pauseImpl(
         forcePersist = false,
         commandSource = PlaybackCommandSource.LOCAL,

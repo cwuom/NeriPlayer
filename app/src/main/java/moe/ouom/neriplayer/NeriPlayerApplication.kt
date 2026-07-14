@@ -29,6 +29,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
+import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
 import moe.ouom.neriplayer.core.startup.app.AppImageLoaderInitializer
 import moe.ouom.neriplayer.core.startup.app.AppProcessClassifier
@@ -48,6 +49,8 @@ class NeriPlayerApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // 冷启动首个播放点击可能早于 Compose 的 SideEffect，先把 Application 绑给播放器
+        PlayerManager.bindApplication(this)
         val runningInMainProcess = AppProcessClassifier.isMainProcess(
             currentProcessName = getProcessName(),
             configuredMainProcessName = applicationInfo.processName,
