@@ -68,7 +68,9 @@ char g_package_name[kMaxMetaLength] = {};
 char g_device_info[kMaxInfoLength] = {};
 char g_supported_abis[kMaxInfoLength] = {};
 char g_android_version[kMaxMetaLength] = {};
+char g_kernel_info[kMaxInfoLength] = {};
 jint g_sdk_int = 0;
+long g_page_size = 0;
 
 void CopyString(const char* source, char* target, size_t capacity) {
     if (target == nullptr || capacity == 0) {
@@ -83,6 +85,102 @@ void CopyString(const char* source, char* target, size_t capacity) {
         }
     }
     target[index] = '\0';
+}
+
+size_t StringLength(const char* text) noexcept {
+    if (text == nullptr) {
+        return 0;
+    }
+
+    size_t length = 0;
+    while (text[length] != '\0') {
+        ++length;
+    }
+    return length;
+}
+
+bool AppendCharacter(char* buffer, size_t capacity, size_t* length, char value) noexcept {
+    if (buffer == nullptr || length == nullptr || *length + 1 >= capacity) {
+        return false;
+    }
+
+    buffer[*length] = value;
+    ++(*length);
+    buffer[*length] = '\0';
+    return true;
+}
+
+bool AppendText(char* buffer, size_t capacity, size_t* length, const char* text) noexcept {
+    if (buffer == nullptr || length == nullptr || text == nullptr || capacity == 0) {
+        return false;
+    }
+
+    for (size_t index = 0; text[index] != '\0'; ++index) {
+        if (!AppendCharacter(buffer, capacity, length, text[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+size_t EncodeUnsignedDecimal(uint64_t value, char* output, size_t capacity) noexcept {
+    if (output == nullptr || capacity == 0) {
+        return 0;
+    }
+
+    char reversed[32] = {};
+    size_t digit_count = 0;
+    do {
+        reversed[digit_count++] = static_cast<char>('0' + (value % 10));
+        value /= 10;
+    } while (value != 0 && digit_count < sizeof(reversed));
+
+    if (digit_count > capacity) {
+        return 0;
+    }
+    for (size_t index = 0; index < digit_count; ++index) {
+        output[index] = reversed[digit_count - index - 1];
+    }
+    return digit_count;
+}
+
+uint64_t UnsignedMagnitude(int64_t value) noexcept {
+    if (value >= 0) {
+        return static_cast<uint64_t>(value);
+    }
+    return static_cast<uint64_t>(-(value + 1)) + 1;
+}
+
+bool AppendUnsignedDecimal(
+    char* buffer,
+    size_t capacity,
+    size_t* length,
+    uint64_t value
+) noexcept {
+    char digits[32] = {};
+    const size_t digit_count = EncodeUnsignedDecimal(value, digits, sizeof(digits));
+    if (digit_count == 0 || buffer == nullptr || length == nullptr) {
+        return false;
+    }
+
+    for (size_t index = 0; index < digit_count; ++index) {
+        if (!AppendCharacter(buffer, capacity, length, digits[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool AppendSignedDecimal(
+    char* buffer,
+    size_t capacity,
+    size_t* length,
+    int64_t value
+) noexcept {
+    if (value < 0 && !AppendCharacter(buffer, capacity, length, '-')) {
+        return false;
+    }
+    return AppendUnsignedDecimal(buffer, capacity, length, UnsignedMagnitude(value));
 }
 
 void WriteAll(int fd, const void* data, size_t length) {
@@ -100,6 +198,9 @@ void WriteAll(int fd, const void* data, size_t length) {
             }
             return;
         }
+        if (current == 0) {
+            return;
+        }
         written += static_cast<size_t>(current);
     }
 }
@@ -108,7 +209,89 @@ void WriteText(int fd, const char* text) {
     if (text == nullptr) {
         return;
     }
-    WriteAll(fd, text, strlen(text));
+    WriteAll(fd, text, StringLength(text));
+}
+
+void WriteUnsignedDecimal(int fd, uint64_t value, size_t minimum_width = 0) noexcept {
+    char digits[32] = {};
+    const size_t digit_count = EncodeUnsignedDecimal(value, digits, sizeof(digits));
+    if (digit_count == 0 || minimum_width > sizeof(digits)) {
+        return;
+    }
+
+    char output[32] = {};
+    const size_t padding = minimum_width > digit_count ? minimum_width - digit_count : 0;
+    for (size_t index = 0; index < padding; ++index) {
+        output[index] = '0';
+    }
+    for (size_t index = 0; index < digit_count; ++index) {
+        output[padding + index] = digits[index];
+    }
+    WriteAll(fd, output, padding + digit_count);
+}
+
+void WriteSignedDecimal(int fd, int64_t value) noexcept {
+    if (value < 0) {
+        WriteText(fd, "-");
+    }
+    WriteUnsignedDecimal(fd, UnsignedMagnitude(value));
+}
+
+void WriteHexadecimal(int fd, uint64_t value, size_t minimum_width) noexcept {
+    constexpr char kHexDigits[] = "0123456789abcdef";
+    char reversed[16] = {};
+    size_t digit_count = 0;
+    do {
+        reversed[digit_count++] = kHexDigits[value & 0x0fU];
+        value >>= 4U;
+    } while (value != 0 && digit_count < sizeof(reversed));
+
+    if (minimum_width > sizeof(reversed)) {
+        return;
+    }
+
+    char output[16] = {};
+    const size_t padding = minimum_width > digit_count ? minimum_width - digit_count : 0;
+    for (size_t index = 0; index < padding; ++index) {
+        output[index] = '0';
+    }
+    for (size_t index = 0; index < digit_count; ++index) {
+        output[padding + index] = reversed[digit_count - index - 1];
+    }
+    WriteAll(fd, output, padding + digit_count);
+}
+
+void WritePointer(int fd, const void* pointer) noexcept {
+    WriteText(fd, "0x");
+    WriteHexadecimal(
+        fd,
+        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(pointer)),
+        sizeof(uintptr_t) * 2
+    );
+}
+
+void WriteKeyText(int fd, const char* key, const char* value) noexcept {
+    WriteText(fd, key);
+    WriteText(fd, value == nullptr || value[0] == '\0' ? "unknown" : value);
+    WriteText(fd, "\n");
+}
+
+void WriteKeySignedDecimal(int fd, const char* key, int64_t value) noexcept {
+    WriteText(fd, key);
+    WriteSignedDecimal(fd, value);
+    WriteText(fd, "\n");
+}
+
+[[maybe_unused]] void WriteKeyHexadecimal(
+    int fd,
+    const char* key,
+    uint64_t value,
+    size_t minimum_width
+) noexcept {
+    WriteText(fd, key);
+    WriteText(fd, "0x");
+    WriteHexadecimal(fd, value, minimum_width);
+    WriteText(fd, "\n");
 }
 
 void WriteFormat(int fd, const char* format, ...) {
@@ -177,21 +360,56 @@ const char* SignalDescription(int signal_number) {
     }
 }
 
-void BuildPath(char* buffer, size_t capacity, const char* file_name) {
-    if (buffer == nullptr || capacity == 0) {
-        return;
+bool BuildPath(char* buffer, size_t capacity, const char* file_name) noexcept {
+    if (buffer == nullptr || capacity == 0 || file_name == nullptr) {
+        return false;
     }
 
-    const bool has_trailing_slash =
-        g_crash_directory[0] != '\0' &&
-        g_crash_directory[strlen(g_crash_directory) - 1] == '/';
-    snprintf(
-        buffer,
-        capacity,
-        has_trailing_slash ? "%s%s" : "%s/%s",
-        g_crash_directory,
-        file_name
-    );
+    buffer[0] = '\0';
+    size_t length = 0;
+    if (!AppendText(buffer, capacity, &length, g_crash_directory)) {
+        return false;
+    }
+    if (length == 0) {
+        return false;
+    }
+    if (buffer[length - 1] != '/' && !AppendCharacter(buffer, capacity, &length, '/')) {
+        return false;
+    }
+    return AppendText(buffer, capacity, &length, file_name);
+}
+
+bool BuildCrashFileName(
+    char* buffer,
+    size_t capacity,
+    const char* prefix,
+    const timespec& current_time,
+    pid_t tid
+) noexcept {
+    if (buffer == nullptr || capacity == 0 || prefix == nullptr) {
+        return false;
+    }
+
+    buffer[0] = '\0';
+    size_t length = 0;
+    return AppendText(buffer, capacity, &length, prefix) &&
+        AppendCharacter(buffer, capacity, &length, '_') &&
+        AppendSignedDecimal(
+            buffer,
+            capacity,
+            &length,
+            static_cast<int64_t>(current_time.tv_sec)
+        ) &&
+        AppendCharacter(buffer, capacity, &length, '_') &&
+        AppendSignedDecimal(
+            buffer,
+            capacity,
+            &length,
+            static_cast<int64_t>(current_time.tv_nsec)
+        ) &&
+        AppendCharacter(buffer, capacity, &length, '_') &&
+        AppendSignedDecimal(buffer, capacity, &length, static_cast<int64_t>(tid)) &&
+        AppendText(buffer, capacity, &length, ".txt");
 }
 
 void ReadSmallFile(const char* path, char* buffer, size_t capacity) {
@@ -232,19 +450,15 @@ int OpenCrashFile(const char* prefix, pid_t tid, char* out_file_name, size_t out
     clock_gettime(CLOCK_REALTIME, &current_time);
 
     char file_name[160] = {};
-    snprintf(
-        file_name,
-        sizeof(file_name),
-        "%s_%lld_%lld_%d.txt",
-        prefix,
-        static_cast<long long>(current_time.tv_sec),
-        static_cast<long long>(current_time.tv_nsec),
-        static_cast<int>(tid)
-    );
+    if (!BuildCrashFileName(file_name, sizeof(file_name), prefix, current_time, tid)) {
+        return -1;
+    }
     CopyString(file_name, out_file_name, out_capacity);
 
     char path[kMaxPathLength] = {};
-    BuildPath(path, sizeof(path), file_name);
+    if (!BuildPath(path, sizeof(path), file_name)) {
+        return -1;
+    }
     return open(path, O_CREAT | O_WRONLY | O_TRUNC | O_CLOEXEC, 0644);
 }
 
@@ -254,13 +468,17 @@ void WritePendingFlag(const char* origin, const char* file_name) {
     }
 
     char path[kMaxPathLength] = {};
-    BuildPath(path, sizeof(path), kPendingStartupCrashFlag);
+    if (!BuildPath(path, sizeof(path), kPendingStartupCrashFlag)) {
+        return;
+    }
     const int fd = open(path, O_CREAT | O_WRONLY | O_TRUNC | O_CLOEXEC, 0644);
     if (fd < 0) {
         return;
     }
 
-    WriteFormat(fd, "%s\n%s", origin, file_name);
+    WriteText(fd, origin);
+    WriteText(fd, "\n");
+    WriteText(fd, file_name);
     fsync(fd);
     close(fd);
 }
@@ -274,11 +492,16 @@ void FinalizeCrashFile(int fd, const char* file_name) {
 }
 
 void DumpFileSection(int out_fd, const char* title, const char* path) {
-    WriteFormat(out_fd, "\n=== %s ===\n", title);
+    WriteText(out_fd, "\n=== ");
+    WriteText(out_fd, title);
+    WriteText(out_fd, " ===\n");
 
     const int in_fd = open(path, O_RDONLY | O_CLOEXEC);
     if (in_fd < 0) {
-        WriteFormat(out_fd, "  <unavailable errno=%d>\n", errno);
+        const int error_number = errno;
+        WriteText(out_fd, "  <unavailable errno=");
+        WriteSignedDecimal(out_fd, static_cast<int64_t>(error_number));
+        WriteText(out_fd, ">\n");
         return;
     }
 
@@ -329,7 +552,11 @@ void DumpBacktrace(int fd, bool symbolize_frames) {
 
     for (size_t index = 0; index < frame_count; ++index) {
         if (!symbolize_frames) {
-            WriteFormat(fd, "#%02zu pc %p  <symbolication deferred>\n", index, frames[index]);
+            WriteText(fd, "#");
+            WriteUnsignedDecimal(fd, static_cast<uint64_t>(index), 2);
+            WriteText(fd, " pc ");
+            WritePointer(fd, frames[index]);
+            WriteText(fd, "  <symbolication deferred>\n");
             continue;
         }
         Dl_info info {};
@@ -363,50 +590,75 @@ void DumpRegisters(int fd, void* context) {
 #if defined(__aarch64__)
     auto* ucontext = reinterpret_cast<ucontext_t*>(context);
     for (int index = 0; index < 31; ++index) {
-        WriteFormat(
+        WriteText(fd, "  x");
+        WriteUnsignedDecimal(fd, static_cast<uint64_t>(index));
+        WriteText(fd, ": 0x");
+        WriteHexadecimal(
             fd,
-            "  x%d: 0x%016llx\n",
-            index,
-            static_cast<unsigned long long>(ucontext->uc_mcontext.regs[index])
+            static_cast<uint64_t>(ucontext->uc_mcontext.regs[index]),
+            16
         );
+        WriteText(fd, "\n");
     }
-    WriteFormat(
+    WriteKeyHexadecimal(
         fd,
-        "  sp: 0x%016llx\n  pc: 0x%016llx\n  pstate: 0x%016llx\n",
-        static_cast<unsigned long long>(ucontext->uc_mcontext.sp),
-        static_cast<unsigned long long>(ucontext->uc_mcontext.pc),
-        static_cast<unsigned long long>(ucontext->uc_mcontext.pstate)
+        "  sp: ",
+        static_cast<uint64_t>(ucontext->uc_mcontext.sp),
+        16
+    );
+    WriteKeyHexadecimal(
+        fd,
+        "  pc: ",
+        static_cast<uint64_t>(ucontext->uc_mcontext.pc),
+        16
+    );
+    WriteKeyHexadecimal(
+        fd,
+        "  pstate: ",
+        static_cast<uint64_t>(ucontext->uc_mcontext.pstate),
+        16
     );
 #elif defined(__arm__)
     auto* ucontext = reinterpret_cast<ucontext_t*>(context);
-    WriteFormat(
-        fd,
-        "  r0: 0x%08lx\n  r1: 0x%08lx\n  r2: 0x%08lx\n  r3: 0x%08lx\n"
-        "  r4: 0x%08lx\n  r5: 0x%08lx\n  r6: 0x%08lx\n  r7: 0x%08lx\n"
-        "  r8: 0x%08lx\n  r9: 0x%08lx\n  r10: 0x%08lx\n"
-        "  fp: 0x%08lx\n  ip: 0x%08lx\n  sp: 0x%08lx\n"
-        "  lr: 0x%08lx\n  pc: 0x%08lx\n  cpsr: 0x%08lx\n",
-        static_cast<unsigned long>(ucontext->uc_mcontext.arm_r0),
-        static_cast<unsigned long>(ucontext->uc_mcontext.arm_r1),
-        static_cast<unsigned long>(ucontext->uc_mcontext.arm_r2),
-        static_cast<unsigned long>(ucontext->uc_mcontext.arm_r3),
-        static_cast<unsigned long>(ucontext->uc_mcontext.arm_r4),
-        static_cast<unsigned long>(ucontext->uc_mcontext.arm_r5),
-        static_cast<unsigned long>(ucontext->uc_mcontext.arm_r6),
-        static_cast<unsigned long>(ucontext->uc_mcontext.arm_r7),
-        static_cast<unsigned long>(ucontext->uc_mcontext.arm_r8),
-        static_cast<unsigned long>(ucontext->uc_mcontext.arm_r9),
-        static_cast<unsigned long>(ucontext->uc_mcontext.arm_r10),
-        static_cast<unsigned long>(ucontext->uc_mcontext.arm_fp),
-        static_cast<unsigned long>(ucontext->uc_mcontext.arm_ip),
-        static_cast<unsigned long>(ucontext->uc_mcontext.arm_sp),
-        static_cast<unsigned long>(ucontext->uc_mcontext.arm_lr),
-        static_cast<unsigned long>(ucontext->uc_mcontext.arm_pc),
-        static_cast<unsigned long>(ucontext->uc_mcontext.arm_cpsr)
-    );
+    WriteKeyHexadecimal(fd, "  r0: ", ucontext->uc_mcontext.arm_r0, 8);
+    WriteKeyHexadecimal(fd, "  r1: ", ucontext->uc_mcontext.arm_r1, 8);
+    WriteKeyHexadecimal(fd, "  r2: ", ucontext->uc_mcontext.arm_r2, 8);
+    WriteKeyHexadecimal(fd, "  r3: ", ucontext->uc_mcontext.arm_r3, 8);
+    WriteKeyHexadecimal(fd, "  r4: ", ucontext->uc_mcontext.arm_r4, 8);
+    WriteKeyHexadecimal(fd, "  r5: ", ucontext->uc_mcontext.arm_r5, 8);
+    WriteKeyHexadecimal(fd, "  r6: ", ucontext->uc_mcontext.arm_r6, 8);
+    WriteKeyHexadecimal(fd, "  r7: ", ucontext->uc_mcontext.arm_r7, 8);
+    WriteKeyHexadecimal(fd, "  r8: ", ucontext->uc_mcontext.arm_r8, 8);
+    WriteKeyHexadecimal(fd, "  r9: ", ucontext->uc_mcontext.arm_r9, 8);
+    WriteKeyHexadecimal(fd, "  r10: ", ucontext->uc_mcontext.arm_r10, 8);
+    WriteKeyHexadecimal(fd, "  fp: ", ucontext->uc_mcontext.arm_fp, 8);
+    WriteKeyHexadecimal(fd, "  ip: ", ucontext->uc_mcontext.arm_ip, 8);
+    WriteKeyHexadecimal(fd, "  sp: ", ucontext->uc_mcontext.arm_sp, 8);
+    WriteKeyHexadecimal(fd, "  lr: ", ucontext->uc_mcontext.arm_lr, 8);
+    WriteKeyHexadecimal(fd, "  pc: ", ucontext->uc_mcontext.arm_pc, 8);
+    WriteKeyHexadecimal(fd, "  cpsr: ", ucontext->uc_mcontext.arm_cpsr, 8);
 #else
     WriteText(fd, "  unsupported architecture\n");
 #endif
+}
+
+void CacheRuntimeMetadata() {
+    g_page_size = sysconf(_SC_PAGESIZE);
+    g_kernel_info[0] = '\0';
+
+    struct utsname system_info {};
+    if (uname(&system_info) != 0) {
+        return;
+    }
+
+    size_t length = 0;
+    if (!AppendText(g_kernel_info, sizeof(g_kernel_info), &length, system_info.sysname) ||
+        !AppendCharacter(g_kernel_info, sizeof(g_kernel_info), &length, ' ') ||
+        !AppendText(g_kernel_info, sizeof(g_kernel_info), &length, system_info.release) ||
+        !AppendCharacter(g_kernel_info, sizeof(g_kernel_info), &length, ' ') ||
+        !AppendText(g_kernel_info, sizeof(g_kernel_info), &length, system_info.machine)) {
+        g_kernel_info[0] = '\0';
+    }
 }
 
 void WriteCommonMetadata(int fd, pid_t tid) {
@@ -414,50 +666,57 @@ void WriteCommonMetadata(int fd, pid_t tid) {
     char thread_name[128] = {};
     char thread_name_path[128] = {};
     timespec current_time {};
-    struct utsname system_info {};
 
     ReadSmallFile("/proc/self/cmdline", process_name, sizeof(process_name));
-    snprintf(thread_name_path, sizeof(thread_name_path), "/proc/self/task/%d/comm", static_cast<int>(tid));
-    ReadSmallFile(thread_name_path, thread_name, sizeof(thread_name));
+    size_t thread_path_length = 0;
+    if (AppendText(
+            thread_name_path,
+            sizeof(thread_name_path),
+            &thread_path_length,
+            "/proc/self/task/"
+        ) &&
+        AppendSignedDecimal(
+            thread_name_path,
+            sizeof(thread_name_path),
+            &thread_path_length,
+            static_cast<int64_t>(tid)
+        ) &&
+        AppendText(
+            thread_name_path,
+            sizeof(thread_name_path),
+            &thread_path_length,
+            "/comm"
+        )) {
+        ReadSmallFile(thread_name_path, thread_name, sizeof(thread_name));
+    }
     clock_gettime(CLOCK_REALTIME, &current_time);
 
     WriteText(fd, "\n=== Metadata ===\n");
-    WriteFormat(fd, "Process: %s\n", process_name[0] == '\0' ? "unknown" : process_name);
-    WriteFormat(fd, "Thread: %s\n", thread_name[0] == '\0' ? "unknown" : thread_name);
-    WriteFormat(fd, "PID: %d\n", static_cast<int>(getpid()));
-    WriteFormat(fd, "TID: %d\n", static_cast<int>(tid));
-    WriteFormat(
-        fd,
-        "Unix Time: %lld.%09lld\n",
-        static_cast<long long>(current_time.tv_sec),
-        static_cast<long long>(current_time.tv_nsec)
-    );
-    WriteFormat(fd, "Package: %s\n", g_package_name[0] == '\0' ? "unknown" : g_package_name);
-    WriteFormat(fd, "App Version: %s\n", g_app_version[0] == '\0' ? "unknown" : g_app_version);
-    WriteFormat(fd, "Build Type: %s\n", g_build_type[0] == '\0' ? "unknown" : g_build_type);
-    WriteFormat(fd, "Build UUID: %s\n", g_build_uuid[0] == '\0' ? "unknown" : g_build_uuid);
-    WriteFormat(
-        fd,
-        "Android Version: %s\n",
-        g_android_version[0] == '\0' ? "unknown" : g_android_version
-    );
-    WriteFormat(fd, "SDK Int: %d\n", static_cast<int>(g_sdk_int));
-    WriteFormat(fd, "Device: %s\n", g_device_info[0] == '\0' ? "unknown" : g_device_info);
-    WriteFormat(
-        fd,
-        "Supported ABIs: %s\n",
-        g_supported_abis[0] == '\0' ? "unknown" : g_supported_abis
-    );
-    WriteFormat(fd, "Page Size: %ld bytes\n", sysconf(_SC_PAGESIZE));
-    if (uname(&system_info) == 0) {
-        WriteFormat(
-            fd,
-            "Kernel: %s %s %s\n",
-            system_info.sysname,
-            system_info.release,
-            system_info.machine
-        );
+    WriteKeyText(fd, "Process: ", process_name);
+    WriteKeyText(fd, "Thread: ", thread_name);
+    WriteKeySignedDecimal(fd, "PID: ", static_cast<int64_t>(getpid()));
+    WriteKeySignedDecimal(fd, "TID: ", static_cast<int64_t>(tid));
+    WriteText(fd, "Unix Time: ");
+    WriteSignedDecimal(fd, static_cast<int64_t>(current_time.tv_sec));
+    WriteText(fd, ".");
+    WriteUnsignedDecimal(fd, static_cast<uint64_t>(current_time.tv_nsec), 9);
+    WriteText(fd, "\n");
+    WriteKeyText(fd, "Package: ", g_package_name);
+    WriteKeyText(fd, "App Version: ", g_app_version);
+    WriteKeyText(fd, "Build Type: ", g_build_type);
+    WriteKeyText(fd, "Build UUID: ", g_build_uuid);
+    WriteKeyText(fd, "Android Version: ", g_android_version);
+    WriteKeySignedDecimal(fd, "SDK Int: ", static_cast<int64_t>(g_sdk_int));
+    WriteKeyText(fd, "Device: ", g_device_info);
+    WriteKeyText(fd, "Supported ABIs: ", g_supported_abis);
+    if (g_page_size > 0) {
+        WriteText(fd, "Page Size: ");
+        WriteSignedDecimal(fd, static_cast<int64_t>(g_page_size));
+        WriteText(fd, " bytes\n");
+    } else {
+        WriteText(fd, "Page Size: unknown\n");
     }
+    WriteKeyText(fd, "Kernel: ", g_kernel_info);
 }
 
 void WriteSignalCrashLog(int signal_number, const siginfo_t* info, void* context) {
@@ -471,12 +730,18 @@ void WriteSignalCrashLog(int signal_number, const siginfo_t* info, void* context
     WriteText(fd, "=== Native Crash Report ===\n");
     WriteText(fd, "Category: Native Signal\n");
     WriteText(fd, "\n=== Signal ===\n");
-    WriteFormat(fd, "Signal: %s (%d)\n", SignalName(signal_number), signal_number);
-    WriteFormat(fd, "Description: %s\n", SignalDescription(signal_number));
+    WriteText(fd, "Signal: ");
+    WriteText(fd, SignalName(signal_number));
+    WriteText(fd, " (");
+    WriteSignedDecimal(fd, static_cast<int64_t>(signal_number));
+    WriteText(fd, ")\n");
+    WriteKeyText(fd, "Description: ", SignalDescription(signal_number));
     if (info != nullptr) {
-        WriteFormat(fd, "Code: %d\n", info->si_code);
-        WriteFormat(fd, "Errno: %d\n", info->si_errno);
-        WriteFormat(fd, "Fault Addr: %p\n", info->si_addr);
+        WriteKeySignedDecimal(fd, "Code: ", static_cast<int64_t>(info->si_code));
+        WriteKeySignedDecimal(fd, "Errno: ", static_cast<int64_t>(info->si_errno));
+        WriteText(fd, "Fault Addr: ");
+        WritePointer(fd, info->si_addr);
+        WriteText(fd, "\n");
     }
 
     WriteCommonMetadata(fd, tid);
@@ -695,6 +960,7 @@ static jboolean NativeCrashHandlerNativeInstall(
     CacheJavaString(env, supported_abis, g_supported_abis, sizeof(g_supported_abis));
     CacheJavaString(env, android_version, g_android_version, sizeof(g_android_version));
     g_sdk_int = sdk_int;
+    CacheRuntimeMetadata();
 
     if (g_crash_directory[0] == '\0') {
         __android_log_print(ANDROID_LOG_ERROR, kLogTag, "empty crash directory");
@@ -767,43 +1033,6 @@ Java_moe_ouom_neriplayer_util_crash_NativeCrashHandler_nativeInstall(
 
 extern "C" JNIEXPORT void JNICALL
 Java_moe_ouom_neriplayer_util_crash_NativeCrashHandler_nativeTriggerTestCrash(
-    JNIEnv*,
-    jclass,
-    jint crash_type
-) {
-    NativeCrashHandlerTriggerTestCrash(crash_type);
-}
-
-extern "C" JNIEXPORT jboolean JNICALL
-Java_moe_ouom_neriplayer_util_NativeCrashHandler_nativeInstall(
-    JNIEnv* env,
-    jclass,
-    jstring crash_directory,
-    jstring app_version,
-    jstring build_type,
-    jstring build_uuid,
-    jstring package_name,
-    jstring device_info,
-    jstring supported_abis,
-    jint sdk_int,
-    jstring android_version
-) {
-    return NativeCrashHandlerNativeInstall(
-        env,
-        crash_directory,
-        app_version,
-        build_type,
-        build_uuid,
-        package_name,
-        device_info,
-        supported_abis,
-        sdk_int,
-        android_version
-    );
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_moe_ouom_neriplayer_util_NativeCrashHandler_nativeTriggerTestCrash(
     JNIEnv*,
     jclass,
     jint crash_type
