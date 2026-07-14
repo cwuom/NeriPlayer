@@ -344,6 +344,25 @@ internal class UsbExclusiveAudioSink(
                 )
                 return false
             }
+            if (
+                requestedWriteSize == 0 &&
+                playing &&
+                !nativeTransportStarted &&
+                nativeHasQueuedPcm &&
+                metrics.isQueueFull
+            ) {
+                val startHandled = startNativeTransportIfReady(allowShortPreroll = true)
+                if (!startHandled) {
+                    requestSystemFailover("native_start_failed_at_full_preroll")
+                } else if (nativeTransportStarted) {
+                    clearNativeBackpressureState()
+                    NPLogger.i(
+                        "NERI-UsbExclusive",
+                        "started native transport from full preroll fallback"
+                    )
+                }
+                return false
+            }
             val plannedHealthyBackpressure = requestedWriteSize == 0 &&
                 metrics.hasPcmQueue &&
                 metrics.hasHealthyTransport
@@ -1247,11 +1266,24 @@ internal class UsbExclusiveAudioSink(
             .takeIf { it > 0 }
             ?: sampleRate
         val requiredPrerollFrames = outputSampleRate * NATIVE_START_PREROLL_MS / 1_000L
+        val outputFrameBytes = nativeState.runtimeReport.usbRuntimeMetrics().outputFrameBytes
+        val reportedCapacityFrames = if (outputFrameBytes != null && outputFrameBytes > 0) {
+            nativeState.pcmCapacityBytes / outputFrameBytes
+        } else {
+            0L
+        }
+        val pcmCapacityFrames = reportedCapacityFrames.takeIf { it > 0L }
+            ?: (outputSampleRate * nativeState.bufferDurationMs.coerceAtLeast(0) / 1_000L)
+        val effectivePrerollFrames = effectiveUsbExclusivePrerollFrames(
+            requiredPrerollFrames = requiredPrerollFrames,
+            pcmCapacityFrames = pcmCapacityFrames
+        )
         if (
             !shouldStartUsbExclusiveNativeTransport(
                 hasQueuedPcm = nativeHasQueuedPcm,
                 queuedFrames = queuedFrames,
                 requiredPrerollFrames = requiredPrerollFrames,
+                pcmCapacityFrames = pcmCapacityFrames,
                 allowShortPreroll = allowShortPreroll,
                 resumingPausedTransport = nativeState.paused
             )
@@ -1278,6 +1310,8 @@ internal class UsbExclusiveAudioSink(
                 "NERI-UsbExclusive",
                 "native transport start failed: handle=$nativeHandle " +
                     "queuedFrames=$queuedFrames requiredPrerollFrames=$requiredPrerollFrames " +
+                    "effectivePrerollFrames=$effectivePrerollFrames " +
+                    "pcmCapacityFrames=$pcmCapacityFrames " +
                     "runtime=${UsbExclusiveSessionController.state.value.runtimeReport}"
             )
             return false
@@ -1293,7 +1327,9 @@ internal class UsbExclusiveAudioSink(
         NPLogger.d(
             "NERI-UsbExclusive",
             "native transport started: handle=$nativeHandle queuedFrames=" +
-                UsbExclusiveSessionController.queuedPlayerFrames(nativeHandle)
+                UsbExclusiveSessionController.queuedPlayerFrames(nativeHandle) +
+                " effectivePrerollFrames=$effectivePrerollFrames " +
+                "pcmCapacityFrames=$pcmCapacityFrames"
         )
         return true
     }
