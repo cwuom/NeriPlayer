@@ -2962,7 +2962,7 @@ private fun SettingsLoginExpandedContent(
         ListItem(
             leadingContent = {
                 Icon(
-                    imageVector = Icons.Outlined.MusicNote,
+                    painter = painterResource(id = R.drawable.ic_kugou),
                     contentDescription = stringResource(R.string.platform_kugou),
                     modifier = Modifier.size(24.dp),
                     tint = MaterialTheme.colorScheme.onSurface

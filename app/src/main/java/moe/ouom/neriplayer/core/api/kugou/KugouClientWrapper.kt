@@ -32,8 +32,8 @@ import android.os.Environment
 import android.os.StatFs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.auth.kugou.KugouCookieRepository
-import moe.ouom.neriplayer.util.NPLogger
 import top.ghhccghk.multiplatform.kugouapi.KuGouClient
 import top.ghhccghk.multiplatform.kugouapi.KuGouConfig
 import top.ghhccghk.multiplatform.kugouapi.core.KuGouResponse

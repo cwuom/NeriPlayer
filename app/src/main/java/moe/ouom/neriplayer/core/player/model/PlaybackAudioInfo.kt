@@ -6,7 +6,8 @@ enum class PlaybackAudioSource {
     LOCAL,
     NETEASE,
     BILIBILI,
-    YOUTUBE_MUSIC
+    YOUTUBE_MUSIC,
+    KUGOU
 }
 
 data class PlaybackQualityOption(

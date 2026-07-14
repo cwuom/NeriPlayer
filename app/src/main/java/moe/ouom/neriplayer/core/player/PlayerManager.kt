@@ -292,6 +292,7 @@ object PlayerManager {
     internal var lastUsbExclusiveAudioSinkReconfigureAtMs = 0L
     internal var pendingPlaybackSoundConfig: PlaybackSoundConfig? = null
     internal var neteaseQualityRefreshJob: Job? = null
+    internal var kugouQualityRefreshJob: Job? = null
     internal var youtubeQualityRefreshJob: Job? = null
     internal var biliQualityRefreshJob: Job? = null
     internal var playbackStatsPersistJob: Job? = null
@@ -1348,6 +1349,7 @@ object PlayerManager {
                 PlaybackAudioSource.NETEASE -> settingsRepo.setAudioQuality(normalizedKey)
                 PlaybackAudioSource.BILIBILI -> settingsRepo.setBiliAudioQuality(normalizedKey)
                 PlaybackAudioSource.YOUTUBE_MUSIC -> settingsRepo.setYouTubeAudioQuality(normalizedKey)
+                PlaybackAudioSource.KUGOU -> Unit
                 PlaybackAudioSource.LOCAL -> Unit
             }
         }
@@ -1512,6 +1514,7 @@ object PlayerManager {
             PlaybackAudioSource.NETEASE -> ::neteaseQualityRefreshJob
             PlaybackAudioSource.YOUTUBE_MUSIC -> ::youtubeQualityRefreshJob
             PlaybackAudioSource.BILIBILI -> ::biliQualityRefreshJob
+            PlaybackAudioSource.KUGOU -> return
             PlaybackAudioSource.LOCAL -> return
         }
         targetJob.get()?.cancel()

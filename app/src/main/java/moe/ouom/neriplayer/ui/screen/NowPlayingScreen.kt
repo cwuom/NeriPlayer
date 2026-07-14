@@ -326,6 +326,7 @@ internal fun resolveNowPlayingPlaybackSourceType(
         PlaybackAudioSource.NETEASE -> return PlaybackSourceType.NETEASE
         PlaybackAudioSource.BILIBILI -> return PlaybackSourceType.BILIBILI
         PlaybackAudioSource.YOUTUBE_MUSIC -> return PlaybackSourceType.YOUTUBE_MUSIC
+        PlaybackAudioSource.KUGOU -> return PlaybackSourceType.KUGOU
         PlaybackAudioSource.LOCAL,
         null -> Unit
     }
@@ -334,9 +335,11 @@ internal fun resolveNowPlayingPlaybackSourceType(
 
     val isFromNeteaseUrl = currentMediaUrl?.contains("music.126.net", ignoreCase = true) == true
     val isFromBiliUrl = currentMediaUrl?.contains("bilivideo.", ignoreCase = true) == true
+    val isFromKugou = currentMediaUrl?.contains("kugou.com", ignoreCase = true) == true
     return when {
         isFromBiliTag || (!isFromNeteaseTag && isFromBiliUrl) -> PlaybackSourceType.BILIBILI
         isFromNeteaseTag || (!isFromBiliTag && isFromNeteaseUrl) -> PlaybackSourceType.NETEASE
+        isFromKugou -> PlaybackSourceType.KUGOU
         else -> null
     }
 }

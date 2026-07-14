@@ -47,6 +47,7 @@ enum class PlaybackSourceType {
     NETEASE,
     BILIBILI,
     YOUTUBE_MUSIC,
+    KUGOU,
     LOCAL
 }
 
@@ -103,6 +104,20 @@ fun PlaybackSourceBadge(
                 )
                 Text(
                     text = stringResource(R.string.nowplaying_youtube_music),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            PlaybackSourceType.KUGOU ->{
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_kugou),
+                    contentDescription = stringResource(R.string.platform_kugou),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = stringResource(R.string.platform_kugou),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurface
                 )

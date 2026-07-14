@@ -33,9 +33,9 @@ import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthHealth
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
-import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 
 private const val TAG = "KugouCookieRepo"
