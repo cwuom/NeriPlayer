@@ -130,6 +130,14 @@ android {
             // Compose instrumentation 依赖 kotlinx.coroutines 的 ServiceLoader，
             // androidTest APK 需要合并同名 service 文件，避免只保留单个实现
             merges += "META-INF/services/*"
+            excludes += setOf(
+                "META-INF/*.version",
+                "META-INF/**/LICENSE*",
+                "META-INF/**/NOTICE*",
+                "google/protobuf/*.proto",
+                "org/mozilla/javascript/resources/Messages_*.properties",
+                "DebugProbesKt.bin"
+            )
         }
     }
 

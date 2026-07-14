@@ -1,119 +1,82 @@
-# 保留注解
--keepattributes *Annotation*
+# 运行时注解和泛型签名要保留，不然 Gson 和内联 serializer 很容易踩坑
+-keepattributes Signature,*Annotation*,InnerClasses,EnclosingMethod,SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
 
-# 保留 Parcelable 的实现者
--keep class * implements android.os.Parcelable {
-  public static final android.os.Parcelable$Creator *;
+# 只保留 Parcelable 约定需要的 CREATOR
+-keepclassmembers class * implements android.os.Parcelable {
+    public static final android.os.Parcelable$Creator *;
 }
 
-# Compose 需要保留其运行时的一些关键部分
--keep class androidx.compose.runtime.** { *; }
--keep class androidx.compose.runtime.internal.** { *; }
--keep class androidx.compose.runtime.saveable.** { *; }
+# Compose 编译器生成的调用链会依赖这些方法签名
 -keepclassmembers class * {
     @androidx.compose.runtime.Composable <methods>;
 }
--keepclassmembers class **.R$* {
-    public static <fields>;
-}
 
-# Compose 手势检测相关
--keep class androidx.compose.foundation.gestures.** { *; }
--keep class androidx.compose.ui.input.pointer.** { *; }
--keep class androidx.compose.ui.input.pointer.PointerInputScope { *; }
--keep class androidx.compose.ui.input.pointer.PointerInputChange { *; }
--keepclassmembers class androidx.compose.ui.input.pointer.PointerInputScope {
-    *;
-}
-
-# OkHttp 内部使用了反射，需要保留一些类
--keep class okhttp3.** { *; }
--keep interface okhttp3.** { *; }
--dontwarn okhttp3.**
--dontwarn okio.**
-
-# Coil
--keep class coil.** { *; }
--keep class coil.decode.* { *; }
--keep class coil.fetch.* { *; }
--keep class coil.memory.* { *; }
--keep class coil.request.* { *; }
--keep class coil.target.* { *; }
--keep class coil.transition.* { *; }
--keep class coil.util.* { *; }
--dontwarn coil.util.CoilUtils
-
-# 防止混淆数据模型类
--keep class moe.ouom.neriplayer.data.** { *; }
--keep class moe.ouom.neriplayer.ui.viewmodel.** { *; }
-
-# Gson 内部使用反射来序列化和反序列化
--keepattributes Signature
--keepattributes *Annotation*
+# Gson 的泛型 token 和入口类保留，真正的模型边界再单独收窄
 -keep class com.google.gson.reflect.TypeToken { *; }
 -keep class com.google.gson.Gson { *; }
-
-# 对于泛型，需要保留字段名
--keepclassmembers,allowobfuscation class * {
-  @com.google.gson.annotations.SerializedName <fields>;
+-keepclassmembers class * {
+    @com.google.gson.annotations.SerializedName <fields>;
 }
-
-# Kotlinx Serialization
--keep class kotlinx.serialization.** { *; }
--keepclassmembers class ** {
-    @kotlinx.serialization.Serializable <methods>;
+-keepclassmembers,allowoptimization class moe.ouom.neriplayer.data.** {
+    <fields>;
+    <init>(...);
 }
-
-# Media3 需要一些规则来确保所有解码器和渲染器正常工作
--keep class androidx.media3.** { *; }
--keep interface androidx.media3.** { *; }
--dontwarn androidx.media3.**
-
-# Reorderable (拖拽排序)
--keep class org.burnoutcrew.reorderable.** { *; }
-
-# Accompanist (Compose 辅助库)
--keep class com.google.accompanist.** { *; }
-
--keep class moe.ouom.neriplayer.** { *; }
-
-# Lyricon provider uses service bindings/model reflection; keep it intact in release builds.
--keep class io.github.proify.lyricon.** { *; }
--dontwarn io.github.proify.lyricon.**
-
-# WorkManager - 保留Worker类
--keep class * extends androidx.work.Worker
--keep class * extends androidx.work.CoroutineWorker {
-    public <init>(...);
+-keepclassmembers,allowoptimization class moe.ouom.neriplayer.core.player.model.** {
+    <fields>;
+    <init>(...);
 }
--keep class androidx.work.** { *; }
-
-# Security Crypto - 保留加密相关类
--keep class androidx.security.crypto.** { *; }
--keep class com.google.crypto.tink.** { *; }
-
-# Tink 可选依赖 - 忽略未使用的 Google API Client 和 Joda Time
--dontwarn com.google.api.client.http.**
--dontwarn org.joda.time.**
-
-# GitHub 同步数据模型 - 确保Gson序列化正常
--keep class moe.ouom.neriplayer.data.github.** { *; }
--keepclassmembers class moe.ouom.neriplayer.data.github.** {
+-keepclassmembers,allowoptimization class moe.ouom.neriplayer.ui.viewmodel.tab.** {
     <fields>;
     <init>(...);
 }
 
-# jsoup 可选依赖 re2j（Android 上不可用）
--dontwarn com.google.re2j.**
+# kotlinx.serialization 主要靠生成代码，补一个 Companion serializer 兜底更稳
+-keepclassmembers class **$Companion {
+    kotlinx.serialization.KSerializer serializer(...);
+}
+-keepclassmembers class **$$serializer {
+    static <fields>;
+}
 
-# Mozilla Rhino JS 引擎 - java.beans / javax.script 在 Android 上不可用
+# WorkManager 会把 worker 类名落库，类名不能被改
+-keepnames class * extends androidx.work.ListenableWorker
+-keepclassmembers class * extends androidx.work.ListenableWorker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
+}
+
+# 当前 JNI 还是静态绑定，桥接类名和 native 方法名都得稳定
+-keepclasseswithmembernames,includedescriptorclasses class moe.ouom.neriplayer.** {
+    native <methods>;
+}
+
+# FFmpeg decoder 会从 native 回调打到这个私有扩容路径
+-keep,allowoptimization,allowobfuscation class androidx.media3.decoder.ffmpeg.FfmpegAudioDecoder {
+    private java.nio.ByteBuffer growOutputBuffer(
+        androidx.media3.decoder.SimpleDecoderOutputBuffer, int
+    );
+}
+
+# Lyricon 走 service 绑定和模型反射，这块先保守一点
+-keep class io.github.proify.lyricon.** { *; }
+-dontwarn io.github.proify.lyricon.**
+
+# SuperLyricApi 在系统服务兼容分支上比较脆，先别动它
+-keep class com.hchen.superlyricapi.** { *; }
+
+# 这些库有自己的 consumer rules，这里只压掉可选依赖告警
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-dontwarn coil.util.CoilUtils
+-dontwarn androidx.media3.**
+-dontwarn com.google.api.client.http.**
+-dontwarn org.joda.time.**
+-dontwarn com.google.re2j.**
 -dontwarn java.beans.**
 -dontwarn javax.script.**
 -dontwarn org.mozilla.javascript.**
-
-# 防止编译及运行错误
--keep class com.hchen.superlyricapi.** { *;}
 -dontwarn android.os.ServiceManager
 
-# 避免 kotlin.reflect 内部反射崩溃
--keepattributes *Annotation*
+# 给 R8 更多操作空间，让真正的 shrink 生效
+-allowaccessmodification
+-repackageclasses ''
