@@ -46,8 +46,10 @@ target_compile_definitions(
 target_compile_options(
     usb
     PRIVATE
-    -O2
     -w
+    -ffunction-sections
+    -fdata-sections
+    "$<$<NOT:$<CONFIG:Debug>>:-Oz>"
 )
 
 if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a" OR
@@ -107,4 +109,13 @@ target_compile_options(
     -Wall
     -Wextra
     -Werror
+    -ffunction-sections
+    -fdata-sections
+    "$<$<NOT:$<CONFIG:Debug>>:-Oz>"
+)
+
+target_link_options(
+    neri_native
+    PRIVATE
+    "$<$<NOT:$<CONFIG:Debug>>:-Wl,--gc-sections>"
 )
