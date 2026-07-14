@@ -46,9 +46,10 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.util.NPLogger
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.set
 
 class KugouQrLoginActivity : AppCompatActivity() {
     companion object {
@@ -133,12 +134,12 @@ class KugouQrLoginActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             try {
-                val response = kugouClient.auth.createQrKey()
+                val response = kugouClient.createQrKey()
                 if (response.status != 200) throw Exception("HTTP ${response.status}")
 
                 val data = response.body["data"]?.jsonObject ?: throw Exception("Invalid data")
                 val qrcode = data["qrcode"]?.jsonPrimitive?.content ?: throw Exception("Missing key")
-                val url = kugouClient.auth.createQrCodeUrl(qrcode)
+                val url = kugouClient.createQrCodeUrl(qrcode)
 
                 val bitmap = createQrBitmap(url)
                 qrImageView.setImageBitmap(bitmap)
@@ -161,15 +162,15 @@ class KugouQrLoginActivity : AppCompatActivity() {
             while (isActive) {
                 delay(POLL_INTERVAL_MS)
                 try {
-                    val response = kugouClient.auth.checkQrCode(key)
+                    val response = kugouClient.checkQrCode(key)
                     if (response.status != 200) continue
 
                     val data = response.body["data"]?.jsonObject ?: continue
                     val status = data["status"]?.jsonPrimitive?.intOrNull
 
                     when (status) {
-                        1 -> statusTextView.text = "扫码成功，请在 App 上确认"
-                        2 -> {
+                        1 -> statusTextView.text = "等待扫码"
+                        4 -> {
                             val token = data["token"]?.jsonPrimitive?.content ?: ""
                             val userid = data["userid"]?.jsonPrimitive?.content ?: ""
                             if (token.isNotEmpty() && userid.isNotEmpty()) {
@@ -177,7 +178,10 @@ class KugouQrLoginActivity : AppCompatActivity() {
                                 break
                             }
                         }
-                        4 -> {
+                        2 -> {
+                            statusTextView.text = "等待确认"
+                        }
+                        0 -> {
                             statusTextView.text = "二维码已过期"
                             retryButton.visibility = View.VISIBLE
                             break
@@ -201,10 +205,10 @@ class KugouQrLoginActivity : AppCompatActivity() {
     private fun createQrBitmap(content: String): Bitmap {
         val hints = mapOf(EncodeHintType.MARGIN to 1)
         val bitMatrix = QRCodeWriter().encode(content, BarcodeFormat.QR_CODE, QR_SIZE_PX, QR_SIZE_PX, hints)
-        val bitmap = Bitmap.createBitmap(QR_SIZE_PX, QR_SIZE_PX, Bitmap.Config.RGB_565)
+        val bitmap = createBitmap(QR_SIZE_PX, QR_SIZE_PX, Bitmap.Config.RGB_565)
         for (x in 0 until QR_SIZE_PX) {
             for (y in 0 until QR_SIZE_PX) {
-                bitmap.setPixel(x, y, if (bitMatrix[x, y]) Color.BLACK else Color.WHITE)
+                bitmap[x, y] = if (bitMatrix[x, y]) Color.BLACK else Color.WHITE
             }
         }
         return bitmap

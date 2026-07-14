@@ -209,7 +209,7 @@ internal const val PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS = 80L
 object PlayerManager {
     const val BILI_SOURCE_TAG = "Bilibili"
     const val NETEASE_SOURCE_TAG = "Netease"
-    const val KuGou_SOURCE_TAG = "KuGou"
+    const val KuGou_SOURCE_TAG = "Kugou"
 
     @Volatile
     internal var initialized = false
@@ -1144,7 +1144,9 @@ object PlayerManager {
     }
 
     internal fun isKugouTrack(song: SongItem): Boolean {
-        return song.channelId == "kugou" || song.matchedLyricSource == MusicPlatform.KUGOU
+        return song.channelId == "kugou" ||
+            song.album.startsWith(KuGou_SOURCE_TAG) ||
+            song.matchedLyricSource == MusicPlatform.KUGOU
     }
     internal fun shouldPersistEmbeddedLyrics(song: SongItem): Boolean {
         return song.matchedLyric != null ||

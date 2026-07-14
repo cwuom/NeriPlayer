@@ -29,6 +29,8 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -221,19 +223,41 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 val results = withContext(Dispatchers.IO) {
                     AppContainer.kugouSearchApi.search(keyword, page = 1)
                 }
+                
+                // 并发获取详细信息（主要是封面）
                 val songs = results.map { info ->
-                    SongItem(
-                        id = info.id.hashCode().toLong(),
-                        name = info.songName,
-                        artist = info.singer,
-                        album = info.albumName ?: "Kugou",
-                        albumId = info.id.hashCode().toLong(),
-                        durationMs = parseDurationToMs(info.duration),
-                        coverUrl = info.coverUrl,
-                        channelId = "kugou",
-                        audioId = info.id
-                    )
-                }
+                    async(Dispatchers.IO) {
+                        try {
+                            val details = AppContainer.kugouSearchApi.getSongInfo(info.id)
+                            SongItem(
+                                id = info.id.hashCode().toLong(),
+                                name = info.songName,
+                                artist = details.singer,
+                                album = details.album,
+                                albumId = info.id.hashCode().toLong(),
+                                matchedLyric = details.lyric,
+                                durationMs = parseDurationToMs(info.duration),
+                                coverUrl = info.coverUrl,
+                                channelId = "kugou",
+                                audioId = info.id
+                            )
+                        } catch (e: Exception) {
+                            // 降级：如果获取详情失败，保留基本信息
+                            SongItem(
+                                id = info.id.hashCode().toLong(),
+                                name = info.songName,
+                                artist = info.singer,
+                                album = info.albumName ?: "Kugou",
+                                albumId = info.id.hashCode().toLong(),
+                                durationMs = parseDurationToMs(info.duration),
+                                coverUrl = info.coverUrl,
+                                channelId = "kugou",
+                                audioId = info.id
+                            )
+                        }
+                    }
+                }.awaitAll()
+
                 NPLogger.d(
                     TAG,
                     "search Kugou success: request=$requestVersion, keyword=$keyword, count=${songs.size}"

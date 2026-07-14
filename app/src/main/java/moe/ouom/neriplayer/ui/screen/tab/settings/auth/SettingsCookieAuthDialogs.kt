@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.auth
  * Updated: 2026/3/23
  */
 
+import android.app.Activity
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -53,8 +54,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.activity.auth.BiliQrLoginActivity
-import moe.ouom.neriplayer.activity.auth.YouTubeWebLoginActivity
+import moe.ouom.neriplayer.activity.BiliQrLoginActivity
+import moe.ouom.neriplayer.activity.KugouQrLoginActivity
+import moe.ouom.neriplayer.activity.YouTubeWebLoginActivity
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.InlineMessage
@@ -64,6 +66,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSegmentedTa
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthViewModel
+import moe.ouom.neriplayer.ui.viewmodel.auth.KugouAuthViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthViewModel
 
 @Composable
@@ -342,6 +345,92 @@ private fun TwoTabCookieLoginSheet(
                 }
             }
         }
+    }
+}
+
+@Composable
+internal fun SettingsKugouAuthDialogs(
+    showSheet: Boolean,
+    initialTab: Int,
+    onDismissSheet: () -> Unit,
+    inlineMsg: String?,
+    onInlineMsgChange: (String?) -> Unit,
+    vm: KugouAuthViewModel,
+    showSavedCookieDialog: Boolean = false,
+    onDismissSavedCookieDialog: () -> Unit = {},
+    onOpenSheetAtTab: (Int) -> Unit = {},
+    onLogout: (() -> Unit)? = null,
+    onBrowserLogin: (() -> Unit)? = null
+) {
+    val context = LocalContext.current
+
+    val kugouLoginLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            vm.refreshAuthHealth()
+            onDismissSavedCookieDialog()
+        }
+    }
+
+    if (showSavedCookieDialog) {
+        SavedCookieActionDialog(
+            title = "已登录酷狗音乐",
+            message = "当前已登录酷狗音乐账号，是否重新登录或退出登录？",
+            onDismiss = onDismissSavedCookieDialog,
+            onContinueLogin = {
+                onDismissSavedCookieDialog()
+                onOpenSheetAtTab(0)
+            },
+            onLogout = {
+                onDismissSavedCookieDialog()
+                onLogout?.invoke()
+            }
+        )
+    }
+
+    if (showSheet) {
+        val launchBrowserLogin: () -> Unit = onBrowserLogin?.let { injectedBrowserLogin ->
+            {
+                onInlineMsgChange(null)
+                injectedBrowserLogin()
+            }
+        } ?: run {
+            val defaultBrowserLogin: () -> Unit = {
+                onInlineMsgChange(null)
+                val intent = Intent(context, KugouQrLoginActivity::class.java)
+                kugouLoginLauncher.launch(intent)
+
+            }
+            defaultBrowserLogin
+        }
+
+        TwoTabCookieLoginSheet(
+            title = "酷狗音乐",
+            initialTab = initialTab,
+            inlineMsg = inlineMsg,
+            onInlineMsgChange = onInlineMsgChange,
+            onDismiss = onDismissSheet,
+            browserTabLabel = stringResource(R.string.login_qr),
+            browserButtonLabel = "打开扫码登录",
+            browserHintContent = {
+                Text(
+                    "使用酷狗音乐 App 扫描二维码登录",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(12.dp))
+            },
+            cookieLabel = "粘贴 Cookie（key=value 格式，每行一对）",
+            onBrowserLogin = launchBrowserLogin,
+            onSaveCookie = { rawCookie ->
+                if (rawCookie.isBlank()) {
+                    onInlineMsgChange(context.getString(R.string.auth_cookie_empty))
+                } else {
+                    vm.importCookiesFromRaw(rawCookie)
+                }
+            }
+        )
     }
 }
 

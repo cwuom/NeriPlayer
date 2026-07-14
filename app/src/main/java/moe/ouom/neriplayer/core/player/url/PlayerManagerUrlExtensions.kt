@@ -1050,7 +1050,7 @@ private suspend fun PlayerManager.getKugouAudioUrl(
         try {
             val hash = song.audioId ?: return@withContext SongUrlResult.Failure
 
-            val response = AppContainer.kugouClient.song.getSongUrl(
+            val response = AppContainer.kugouClient.getSongUrl(
                 hash = hash,
                 quality = "128"
             )

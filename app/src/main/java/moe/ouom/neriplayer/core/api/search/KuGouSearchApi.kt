@@ -32,16 +32,15 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import moe.ouom.neriplayer.core.api.kugou.KugouClientWrapper
 import moe.ouom.neriplayer.core.player.PlayerManager
-import top.ghhccghk.multiplatform.kugouapi.KuGouClient
 import java.io.IOException
 
-class KuGouSearchApi(private val kugouClient: KuGouClient) : SearchApi {
+class KuGouSearchApi(private val client: KugouClientWrapper) : SearchApi {
 
     override suspend fun search(keyword: String, page: Int): List<SongSearchInfo> {
         return withContext(Dispatchers.IO) {
-            kugouClient.auth.registerDev()
-            val response = kugouClient.search.search(
+            val response = client.searchSongs(
                 keywords = keyword,
                 page = page,
             )
@@ -51,7 +50,7 @@ class KuGouSearchApi(private val kugouClient: KuGouClient) : SearchApi {
             }
 
             val data = response.body["data"]?.jsonObject ?: return@withContext emptyList()
-            Log.d("Kugou",data.toString())
+            Log.d("Kugou", data.toString())
             val info = data["lists"]?.jsonArray ?: return@withContext emptyList()
 
             info.mapNotNull { item ->
@@ -69,7 +68,7 @@ class KuGouSearchApi(private val kugouClient: KuGouClient) : SearchApi {
                     singer = singer,
                     duration = formatDuration(duration),
                     source = MusicPlatform.KUGOU,
-                    albumName = "${PlayerManager.KuGou_SOURCE_TAG}$albumName",
+                    albumName = albumName,
                     coverUrl = coverUrl
                 )
             }
@@ -79,7 +78,7 @@ class KuGouSearchApi(private val kugouClient: KuGouClient) : SearchApi {
     override suspend fun getSongInfo(id: String): SongDetails {
         return withContext(Dispatchers.IO) {
             coroutineScope {
-                val infoDeferred = async { kugouClient.song.getPrivilegeLite(id) }
+                val infoDeferred = async { client.getPrivilegeLite(id) }
                 val lyricDeferred = async { searchAndFetchLyric(id) }
 
                 val infoResponse = infoDeferred.await()
@@ -90,19 +89,16 @@ class KuGouSearchApi(private val kugouClient: KuGouClient) : SearchApi {
 
                 Log.d("Kugou", "getSongInfo $data")
 
-                val songName = data["name"]?.jsonPrimitive?.content?: "Unknown"
+                val songName = data["name"]?.jsonPrimitive?.content ?: "Unknown"
                 val singer = data["singername"]?.jsonPrimitive?.content ?: "Unknown"
-                val info  = data["info"]?.jsonObject
-
-
+                val info = data["info"]?.jsonObject
 
                 val album = data["albumname"]?.jsonPrimitive?.content ?: ""
                 val coverUrl = info?.get("image")?.jsonPrimitive?.content?.replace("/{size}/", "/")
 
                 val lyric = lyricDeferred.await()
 
-
-                Log.d("Kugou","Lyric ${lyric.toString()}")
+                Log.d("Kugou", "Lyric ${lyric.toString()}")
 
                 SongDetails(
                     id = id,
@@ -117,21 +113,20 @@ class KuGouSearchApi(private val kugouClient: KuGouClient) : SearchApi {
         }
     }
 
-    private suspend fun searchAndFetchLyric(hash: String): String? {
-        val searchResponse = kugouClient.search.searchLyric(hash = hash)
-        Log.d("Kugou","searchResponseLyric ${searchResponse.body}")
+    suspend fun searchAndFetchLyric(hash: String): String? {
+        val searchResponse = client.searchLyric(hash = hash)
+        Log.d("Kugou", "searchResponseLyric ${searchResponse.body}")
         if (searchResponse.status != 200) return null
 
         val candidates = searchResponse.body["candidates"]?.jsonArray
             ?: searchResponse.body["info"]?.jsonArray
             ?: return null
 
-
         val candidate = candidates.firstOrNull()?.jsonObject ?: return null
         val id = candidate["id"]?.jsonPrimitive?.content ?: return null
         val accessKey = candidate["accesskey"]?.jsonPrimitive?.content ?: return null
 
-        val lyricResponse = kugouClient.song.getLyric(id = id, accessKey = accessKey, decode = true, fmt = "lrc")
+        val lyricResponse = client.getLyric(id = id, accessKey = accessKey, decode = true, fmt = "lrc")
         if (lyricResponse.status != 200) return null
 
         return lyricResponse.body["decodeContent"]?.jsonPrimitive?.content

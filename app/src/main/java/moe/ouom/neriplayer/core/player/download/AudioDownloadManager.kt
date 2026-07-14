@@ -2465,7 +2465,7 @@ object AudioDownloadManager {
             }
             val isYouTubeMusic = isYouTubeMusicSong(song)
             val isBili = song.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
-            val isKugou = song.album.startsWith(PlayerManager.KuGou_SOURCE_TAG)
+            val isKugou = song.album.startsWith(PlayerManager.KuGou_SOURCE_TAG) || song.channelId == "kugou"
 
             when {
                 isYouTubeMusic -> {
@@ -2786,7 +2786,7 @@ object AudioDownloadManager {
     private suspend fun resolveKugou(song: SongItem): ResolvedDownloadSource? {
         return withContext(Dispatchers.IO) {
             val hash = song.audioId ?: return@withContext null
-            val response = AppContainer.kugouClient.song.getSongUrl(hash = hash, quality = "128")
+            val response = AppContainer.kugouClient.getSongUrl(hash = hash, quality = "128")
             Log.d("Kugou","resolveKugou $response")
             if (response.status != 200) return@withContext null
 

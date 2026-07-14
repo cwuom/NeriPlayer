@@ -35,6 +35,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.BiliClientAudioDataSource
 import moe.ouom.neriplayer.core.api.bili.BiliPlaybackRepository
+import moe.ouom.neriplayer.core.api.kugou.KugouClientWrapper
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi
 import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
@@ -77,6 +78,7 @@ import moe.ouom.neriplayer.util.network.DynamicProxySelector
 import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import top.ghhccghk.multiplatform.kugouapi.KuGouConfig
 import java.util.concurrent.TimeUnit
 import kotlin.LazyThreadSafetyMode
 
@@ -310,13 +312,11 @@ object AppContainer {
     val biliClient by lazy { BiliClient(biliCookieRepo, client = sharedOkHttpClient) }
 
     val kugouClient by lazy {
-        top.ghhccghk.multiplatform.kugouapi.KuGouClient(
-            config = top.ghhccghk.multiplatform.kugouapi.KuGouConfig()
-        ).also { client ->
-            kugouCookieRepo.getCookiesOnce().forEach { (k, v) ->
-                client.cookieJar[k] = v
-            }
-        }
+        KugouClientWrapper(
+            context = application,
+            cookieRepo = kugouCookieRepo,
+            config = KuGouConfig()
+        )
     }
 
     val youtubeMusicClient by lazy {
@@ -412,10 +412,8 @@ object AppContainer {
             .launchIn(scope)
 
         kugouCookieRepo.cookieFlow
-            .onEach { cookies ->
-                cookies.forEach { (k, v) ->
-                    kugouClient.cookieJar[k] = v
-                }
+            .onEach { _ ->
+                kugouClient.seedFromRepository()
             }
             .launchIn(scope)
     }

@@ -190,6 +190,7 @@ import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.auth.KugouAuthViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthViewModel
 import moe.ouom.neriplayer.activity.KugouQrLoginActivity
+import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsKugouAuthDialogs
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthViewModel
 import kotlin.math.absoluteValue
@@ -434,6 +435,7 @@ fun SettingsScreen(
     var showCookieDialog by remember { mutableStateOf(false) }
     var showNeteaseSavedCookieDialog by remember { mutableStateOf(false) }
     var showKugouSavedCookieDialog by remember { mutableStateOf(false) }
+    var showKugouSheet by remember { mutableStateOf(false) }
     var showBiliSheet by remember { mutableStateOf(false) }
     var showBiliCookieDialog by remember { mutableStateOf(false) }
     var showBiliSavedCookieDialog by remember { mutableStateOf(false) }
@@ -467,9 +469,11 @@ fun SettingsScreen(
     var cookieText by remember { mutableStateOf("") }
     var versionTapCount by remember { mutableIntStateOf(0) }
     var biliCookieText by remember { mutableStateOf("") }
+    var kuGouCookieText by remember { mutableStateOf("") }
     val biliVm: BiliAuthViewModel = viewModel()
     var biliSheetInitialTab by rememberSaveable { mutableIntStateOf(0) }
     var neteaseSheetInitialTab by rememberSaveable { mutableIntStateOf(0) }
+    var kugouSheetInitialTab by rememberSaveable { mutableIntStateOf(0) }
     var youtubeCookieText by remember { mutableStateOf("") }
     val youtubeVm: YouTubeAuthViewModel = viewModel()
     var youtubeSheetInitialTab by rememberSaveable { mutableIntStateOf(0) }
@@ -1151,8 +1155,9 @@ fun SettingsScreen(
                             },
                             onOpenKugouSheet = {
                                 inlineMsg = null
-                                val intent = Intent(context, KugouQrLoginActivity::class.java)
-                                kugouLoginLauncher.launch(intent)
+                                kugouSheetInitialTab = 0
+                                showKugouSheet = true
+
                             }
                         )
                     }
@@ -1726,6 +1731,26 @@ fun SettingsScreen(
         onShowDpiDialogChange = { showDpiDialog = it },
         uiDensityScale = uiDensityScale,
         onUiDensityScaleChange = onUiDensityScaleChange
+    )
+    SettingsKugouAuthDialogs(
+        showSheet = showKugouSheet,
+        initialTab = kugouSheetInitialTab,
+        onDismissSheet = { showKugouSheet = false },
+        inlineMsg = inlineMsg,
+        onInlineMsgChange = { inlineMsg = it },
+        vm = kugouVm,
+        showSavedCookieDialog = showKugouSavedCookieDialog,
+        onDismissSavedCookieDialog = { showKugouSavedCookieDialog = false },
+        onOpenSheetAtTab = { tab ->
+            inlineMsg = null
+            kugouSheetInitialTab = tab
+            showKugouSheet = true
+        },
+        onLogout = {
+            showKugouSavedCookieDialog = false
+            kugouVm.clearAuth()
+        },
+        onBrowserLogin = null
     )
 
     if (showListenTogetherResetUuidDialog) {
@@ -2939,12 +2964,12 @@ private fun SettingsLoginExpandedContent(
             leadingContent = {
                 Icon(
                     imageVector = Icons.Outlined.MusicNote,
-                    contentDescription = "酷狗音乐",
+                    contentDescription = stringResource(R.string.platform_kugou),
                     modifier = Modifier.size(24.dp),
                     tint = MaterialTheme.colorScheme.onSurface
                 )
             },
-            headlineContent = { Text("酷狗音乐") },
+            headlineContent = { Text(stringResource(R.string.platform_kugou)) },
             supportingContent = { Text(kugouStatusText) },
             modifier = Modifier.settingsItemClickable(
                 onClick = {
