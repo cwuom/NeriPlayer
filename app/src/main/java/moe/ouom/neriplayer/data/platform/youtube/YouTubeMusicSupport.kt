@@ -159,12 +159,45 @@ fun YouTubeAuthBundle.buildBootstrapAuthFingerprint(
     )
 }
 
+private val YOUTUBE_AUTH_CACHE_STABLE_COOKIE_KEYS: List<String> = listOf(
+    "SAPISID",
+    "APISID",
+    "__Secure-1PAPISID",
+    "__Secure-3PAPISID",
+    "SID",
+    "HSID",
+    "SSID",
+    "LSID",
+    "SIDCC",
+    "__Secure-1PSID",
+    "__Secure-3PSID",
+    "LOGIN_INFO"
+)
+
+private fun YouTubeAuthBundle.stableAuthCacheCookieHeader(): String {
+    val normalized = normalized(savedAt = savedAt)
+    val cookieMap = normalized.cookies.ifEmpty { parseCookieHeader(normalized.cookieHeader) }
+    if (cookieMap.isEmpty()) {
+        return normalized.cookieHeader.trim()
+    }
+    val stableCookies = linkedMapOf<String, String>()
+    YOUTUBE_AUTH_CACHE_STABLE_COOKIE_KEYS.forEach { key ->
+        cookieMap[key]
+            ?.takeIf(String::isNotBlank)
+            ?.let { value -> stableCookies[key] = value }
+    }
+    if (stableCookies.isEmpty()) {
+        return effectiveCookieHeader()
+    }
+    return stableCookies.entries.joinToString("; ") { (key, value) -> "$key=$value" }
+}
+
 fun YouTubeAuthBundle.buildAuthCacheFingerprint(
     userAgent: String,
     origin: String = this.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
 ): String {
     return buildString {
-        append(effectiveCookieHeader())
+        append(stableAuthCacheCookieHeader())
         append('|')
         append(resolveXGoogAuthUser())
         append('|')

@@ -42,6 +42,23 @@ class YouTubeWebPoTokenProviderTest {
     }
 
     @Test
+    fun buildYouTubeWebPoAuthFingerprint_ignoresVisitorCookieChurn() {
+        val base = YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value; VISITOR_INFO1_LIVE=visitor-a; YSC=ysc-a",
+            xGoogAuthUser = "7",
+            userAgent = YOUTUBE_DEFAULT_WEB_USER_AGENT
+        )
+        val changedNoise = base.copy(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value; VISITOR_INFO1_LIVE=visitor-b; YSC=ysc-b"
+        )
+
+        assertEquals(
+            buildYouTubeWebPoAuthFingerprint(base),
+            buildYouTubeWebPoAuthFingerprint(changedNoise)
+        )
+    }
+
+    @Test
     fun resolveWebPoBootstrapUrls_backgroundWarmupUsesMusicOnly() {
         assertEquals(
             listOf("https://music.youtube.com/"),

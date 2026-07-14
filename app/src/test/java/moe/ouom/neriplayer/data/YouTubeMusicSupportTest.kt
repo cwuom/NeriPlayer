@@ -111,6 +111,40 @@ class YouTubeMusicSupportTest {
     }
 
     @Test
+    fun buildBootstrapAuthFingerprint_ignoresVisitorCookieChurnWhenSessionCookiesStayStable() {
+        val base = YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value; VISITOR_INFO1_LIVE=visitor-a; YSC=ysc-a",
+            xGoogAuthUser = "0",
+            userAgent = YOUTUBE_DEFAULT_WEB_USER_AGENT
+        )
+        val changedNoise = base.copy(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value; VISITOR_INFO1_LIVE=visitor-b; YSC=ysc-b"
+        )
+
+        assertEquals(
+            base.buildBootstrapAuthFingerprint(),
+            changedNoise.buildBootstrapAuthFingerprint()
+        )
+    }
+
+    @Test
+    fun buildBootstrapAuthFingerprint_changesWhenStableSessionCookieChanges() {
+        val base = YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value; VISITOR_INFO1_LIVE=visitor-a",
+            xGoogAuthUser = "0",
+            userAgent = YOUTUBE_DEFAULT_WEB_USER_AGENT
+        )
+        val changedSession = base.copy(
+            cookieHeader = "SAPISID=new-sap-value; SID=sid-value; VISITOR_INFO1_LIVE=visitor-b"
+        )
+
+        assertNotEquals(
+            base.buildBootstrapAuthFingerprint(),
+            changedSession.buildBootstrapAuthFingerprint()
+        )
+    }
+
+    @Test
     fun buildYouTubeInnertubeRequestHeaders_doesNotAttachOriginHeaders() {
         val headers = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
