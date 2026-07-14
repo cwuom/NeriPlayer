@@ -122,7 +122,7 @@ float readIntegerPcmSample(
             raw |= ~validMask;
         }
     }
-    const double scale = static_cast<double>(uint64_t { 1 } << (validBits - 1));
+    const auto scale = static_cast<double>(uint64_t { 1 } << (validBits - 1));
     return std::clamp(
         static_cast<float>(static_cast<double>(static_cast<int32_t>(raw)) / scale),
         -1.0f,

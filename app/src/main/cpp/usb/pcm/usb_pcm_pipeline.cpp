@@ -460,7 +460,7 @@ size_t PcmPipeline::write(const uint8_t* input, size_t inputBytes, std::string* 
     resamplePosition_ = localPosition;
     previousInputFrame_ = std::move(localPrevious);
     hasPreviousInputFrame_ = true;
-    const size_t consumedBytes = static_cast<size_t>(inputFrames * inputFrameBytes);
+    const auto consumedBytes = static_cast<size_t>(inputFrames * inputFrameBytes);
     inputBytes_ += static_cast<int64_t>(consumedBytes);
     return written == output.size() ? consumedBytes : 0;
 }

@@ -2,8 +2,8 @@
 #include <android/log.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <errno.h>
-#include <string.h>
+#include <cerrno>
+#include <cstring>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -954,7 +954,7 @@ bool negotiateUac1SampleRate(
         static_cast<uint8_t>((sampleRate >> 8) & 0xFF),
         static_cast<uint8_t>((sampleRate >> 16) & 0xFF)
     };
-    const uint8_t outRequestType = static_cast<uint8_t>(
+    const auto outRequestType = static_cast<uint8_t>(
         LIBUSB_ENDPOINT_OUT | LIBUSB_REQUEST_TYPE_CLASS | LIBUSB_RECIPIENT_ENDPOINT
     );
     const int setResult = libusb_control_transfer(
@@ -1043,7 +1043,7 @@ void fillToneBuffer(UsbExclusiveHandle* handle, uint8_t* buffer, size_t bytes) {
         return;
     }
     const int frames = static_cast<int>(bytes) / handle->frameBytes;
-    const double sampleRate = static_cast<double>(handle->sampleRate);
+    const auto sampleRate = static_cast<double>(handle->sampleRate);
     const double phaseStep = 2.0 * M_PI * static_cast<double>(kGeneratedToneFrequencyHz) / sampleRate;
     const double amplitude = 0.30;
 
@@ -1414,7 +1414,7 @@ bool refillTransfer(
     }
 
     if (handle->streamSource.load() == StreamSource::PlayerPcm) {
-        const size_t transferSize = static_cast<size_t>(transferBytes);
+        const auto transferSize = static_cast<size_t>(transferBytes);
         if (handle->playerStartupPreroll.fillSilenceIfNeeded(
                 buffer.data(),
                 transferSize,
