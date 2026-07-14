@@ -1,6 +1,5 @@
 # 运行时注解和泛型签名要保留，不然 Gson 和内联 serializer 很容易踩坑
 -keepattributes Signature,*Annotation*,InnerClasses,EnclosingMethod,SourceFile,LineNumberTable
--renamesourcefileattribute SourceFile
 
 # 只保留 Parcelable 约定需要的 CREATOR
 -keepclassmembers class * implements android.os.Parcelable {
