@@ -10,6 +10,18 @@ private val YOUTUBE_AUTH_OBSERVER_IDENTITY_COOKIE_KEYS: List<String> = listOf(
     "__Secure-3PSID"
 )
 
+fun collectObservedYouTubeAuthCookies(
+    snapshotCookies: Map<String, String>,
+    requestCookieHeader: String = ""
+): LinkedHashMap<String, String> {
+    return linkedMapOf<String, String>().apply {
+        putAll(snapshotCookies.filterKeys { it.isNotBlank() })
+        putAll(
+            parseCookieHeader(requestCookieHeader).filterKeys { it.isNotBlank() }
+        )
+    }
+}
+
 fun mergeYouTubeAuthBundle(
     base: YouTubeAuthBundle,
     observedCookies: Map<String, String>,

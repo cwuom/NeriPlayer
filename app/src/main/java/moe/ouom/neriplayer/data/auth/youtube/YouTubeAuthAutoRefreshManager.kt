@@ -143,6 +143,7 @@ class YouTubeAuthAutoRefreshManager(
     }
 
     private data class CapturedRequestHeaders(
+        val cookieHeader: String = "",
         val authorization: String = "",
         val xGoogAuthUser: String = "",
         val origin: String = YOUTUBE_MUSIC_ORIGIN,
@@ -532,7 +533,10 @@ class YouTubeAuthAutoRefreshManager(
     ): YouTubeAuthBundle {
         CookieManager.getInstance().flush()
         val headers = capturedHeaders
-        val observedCookies = collectYouTubeWebCookies(CookieManager.getInstance())
+        val observedCookies = collectObservedYouTubeAuthCookies(
+            snapshotCookies = collectYouTubeWebCookies(CookieManager.getInstance()),
+            requestCookieHeader = headers?.cookieHeader.orEmpty()
+        )
         NPLogger.d(
             TAG,
             "refresh observed cookies keys=${observedCookies.keys.joinToString()}"
@@ -582,6 +586,7 @@ class YouTubeAuthAutoRefreshManager(
         }
 
         capturedHeaders = CapturedRequestHeaders(
+            cookieHeader = cookieHeader,
             authorization = authorization,
             xGoogAuthUser = xGoogAuthUser,
             origin = origin,

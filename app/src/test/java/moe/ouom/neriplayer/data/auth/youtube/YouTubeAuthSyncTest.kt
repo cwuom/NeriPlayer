@@ -9,6 +9,22 @@ import org.junit.Test
 class YouTubeAuthSyncTest {
 
     @Test
+    fun collectObservedYouTubeAuthCookies_overlaysRequestCookieHeader() {
+        val observed = collectObservedYouTubeAuthCookies(
+            snapshotCookies = linkedMapOf(
+                "__Secure-3PSID" to "snapshot-psid",
+                "VISITOR_INFO1_LIVE" to "snapshot-visitor"
+            ),
+            requestCookieHeader = "SID=request-sid; SAPISID=request-sapisid; VISITOR_INFO1_LIVE=request-visitor"
+        )
+
+        assertEquals("request-sid", observed["SID"])
+        assertEquals("request-sapisid", observed["SAPISID"])
+        assertEquals("snapshot-psid", observed["__Secure-3PSID"])
+        assertEquals("request-visitor", observed["VISITOR_INFO1_LIVE"])
+    }
+
+    @Test
     fun mergeYouTubeAuthBundle_prefersObservedCookiesAndPreservesStoredFields() {
         val base = YouTubeAuthBundle(
             cookies = linkedMapOf(
