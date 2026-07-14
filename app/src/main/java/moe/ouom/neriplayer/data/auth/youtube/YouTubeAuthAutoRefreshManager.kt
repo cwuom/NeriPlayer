@@ -101,10 +101,11 @@ internal fun shouldAcceptYouTubeRefreshResult(
     if (hasLiveSessionSignal) {
         return true
     }
-    if (authChanged || recoveredActiveSession) {
-        return true
+    if (!pageReady || !hasYtcfg) {
+        return authChanged || recoveredActiveSession
     }
-    return !pageReady || !hasYtcfg
+    // 页面和 ytcfg 都稳定了却还没确认登录，说明这份 cookie 快照大概率是游客态
+    return recoveredActiveSession
 }
 
 internal fun resolveObservedYouTubeAuthUser(
@@ -536,7 +537,7 @@ class YouTubeAuthAutoRefreshManager(
             TAG,
             "refresh observed cookies keys=${observedCookies.keys.joinToString()}"
         )
-        return mergeYouTubeAuthBundle(
+        val merged = mergeYouTubeAuthBundle(
             base = base,
             observedCookies = observedCookies,
             observedCookiesAreSnapshot = true,
@@ -549,6 +550,10 @@ class YouTubeAuthAutoRefreshManager(
             origin = headers?.origin.orEmpty().ifBlank { YOUTUBE_MUSIC_ORIGIN },
             userAgent = headers?.userAgent.orEmpty().ifBlank { webViewUserAgent },
             savedAt = System.currentTimeMillis()
+        )
+        return preserveMatchingYouTubeAuthCookies(
+            previous = base,
+            current = merged
         )
     }
 

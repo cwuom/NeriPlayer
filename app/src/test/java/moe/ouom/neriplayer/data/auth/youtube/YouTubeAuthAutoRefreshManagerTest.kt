@@ -37,6 +37,19 @@ class YouTubeAuthAutoRefreshManagerTest {
     }
 
     @Test
+    fun shouldAcceptYouTubeRefreshResult_rejectsSettledGuestPageWhenOnlyCookiesChanged() {
+        assertFalse(
+            shouldAcceptYouTubeRefreshResult(
+                pageReady = true,
+                hasYtcfg = true,
+                hasLiveSessionSignal = false,
+                authChanged = true,
+                recoveredActiveSession = false
+            )
+        )
+    }
+
+    @Test
     fun shouldAcceptYouTubeRefreshResult_acceptsLiveSessionSignal() {
         assertTrue(
             shouldAcceptYouTubeRefreshResult(

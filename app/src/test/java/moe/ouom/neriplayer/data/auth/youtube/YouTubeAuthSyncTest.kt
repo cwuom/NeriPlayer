@@ -150,6 +150,68 @@ class YouTubeAuthSyncTest {
     }
 
     @Test
+    fun preserveMatchingYouTubeAuthCookies_restoresMissingStrongCookiesForSameSession() {
+        val previous = YouTubeAuthBundle(
+            cookies = linkedMapOf(
+                "SID" to "same-sid",
+                "SAPISID" to "stable-sapisid",
+                "__Secure-1PAPISID" to "stable-papisid",
+                "HSID" to "stable-hsid",
+                "VISITOR_INFO1_LIVE" to "visitor-a"
+            ),
+            savedAt = 100L
+        )
+        val current = YouTubeAuthBundle(
+            cookies = linkedMapOf(
+                "SID" to "same-sid",
+                "__Secure-1PAPISID" to "stable-papisid",
+                "VISITOR_INFO1_LIVE" to "visitor-b"
+            ),
+            savedAt = 200L
+        )
+
+        val preserved = preserveMatchingYouTubeAuthCookies(
+            previous = previous,
+            current = current
+        )
+
+        assertEquals("same-sid", preserved.cookies["SID"])
+        assertEquals("stable-sapisid", preserved.cookies["SAPISID"])
+        assertEquals("stable-papisid", preserved.cookies["__Secure-1PAPISID"])
+        assertEquals("stable-hsid", preserved.cookies["HSID"])
+        assertEquals("visitor-b", preserved.cookies["VISITOR_INFO1_LIVE"])
+        assertEquals(200L, preserved.savedAt)
+    }
+
+    @Test
+    fun preserveMatchingYouTubeAuthCookies_doesNotRetainCookiesAcrossIdentityConflict() {
+        val previous = YouTubeAuthBundle(
+            cookies = linkedMapOf(
+                "SID" to "old-sid",
+                "SAPISID" to "stable-sapisid",
+                "__Secure-1PAPISID" to "stable-papisid"
+            ),
+            savedAt = 100L
+        )
+        val current = YouTubeAuthBundle(
+            cookies = linkedMapOf(
+                "SID" to "new-sid",
+                "__Secure-1PAPISID" to "fresh-papisid"
+            ),
+            savedAt = 200L
+        )
+
+        val preserved = preserveMatchingYouTubeAuthCookies(
+            previous = previous,
+            current = current
+        )
+
+        assertFalse(preserved.cookies.containsKey("SAPISID"))
+        assertEquals("new-sid", preserved.cookies["SID"])
+        assertEquals("fresh-papisid", preserved.cookies["__Secure-1PAPISID"])
+    }
+
+    @Test
     fun normalized_keepsStableWebContextCookiesIntroducedByBackgroundSync() {
         val normalized = YouTubeAuthBundle(
             cookies = linkedMapOf(

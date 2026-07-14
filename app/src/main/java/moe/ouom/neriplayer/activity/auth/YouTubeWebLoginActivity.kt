@@ -59,6 +59,7 @@ import moe.ouom.neriplayer.data.auth.youtube.clearYouTubeWebCookies
 import moe.ouom.neriplayer.data.auth.youtube.collectYouTubeWebCookies
 import moe.ouom.neriplayer.data.auth.youtube.hasMeaningfulYouTubeAuthChange
 import moe.ouom.neriplayer.data.auth.youtube.mergeYouTubeAuthBundle
+import moe.ouom.neriplayer.data.auth.youtube.preserveMatchingYouTubeAuthCookies
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeBootstrapSessionState
@@ -389,7 +390,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
         savedAt: Long = System.currentTimeMillis()
     ): YouTubeAuthBundle {
         val snapshot = capturedHeaders
-        return mergeYouTubeAuthBundle(
+        val merged = mergeYouTubeAuthBundle(
             base = persistedAuthBaseline,
             observedCookies = collectYouTubeWebCookies(CookieManager.getInstance()),
             observedCookiesAreSnapshot = true,
@@ -399,6 +400,10 @@ class YouTubeWebLoginActivity : ComponentActivity() {
             origin = snapshot?.origin.orEmpty().ifBlank { YOUTUBE_MUSIC_ORIGIN },
             userAgent = snapshot?.userAgent.orEmpty().ifBlank { webViewUserAgent },
             savedAt = savedAt
+        )
+        return preserveMatchingYouTubeAuthCookies(
+            previous = persistedAuthBaseline,
+            current = merged
         )
     }
 
