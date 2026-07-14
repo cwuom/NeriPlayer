@@ -1,5 +1,15 @@
 package moe.ouom.neriplayer.data.auth.youtube
 
+private val YOUTUBE_AUTH_OBSERVER_IDENTITY_COOKIE_KEYS: List<String> = listOf(
+    "SID",
+    "HSID",
+    "SSID",
+    "LSID",
+    "LOGIN_INFO",
+    "__Secure-1PSID",
+    "__Secure-3PSID"
+)
+
 fun mergeYouTubeAuthBundle(
     base: YouTubeAuthBundle,
     observedCookies: Map<String, String>,
@@ -44,6 +54,30 @@ fun hasMeaningfulYouTubeAuthChange(
     val normalizedPrevious = previous.normalized(savedAt = 0L).copy(savedAt = 0L)
     val normalizedCurrent = current.normalized(savedAt = 0L).copy(savedAt = 0L)
     return normalizedPrevious != normalizedCurrent
+}
+
+fun YouTubeAuthBundle.buildRefreshObserverFingerprint(): String {
+    val normalized = normalized(savedAt = 0L)
+    val cookies = normalized.cookies.ifEmpty { parseCookieHeader(normalized.cookieHeader) }
+    val trackedCookieKeys = YOUTUBE_AUTH_OBSERVER_IDENTITY_COOKIE_KEYS
+        .filter { key -> !cookies[key].isNullOrBlank() }
+        .ifEmpty {
+            YouTubeCookieSupport.importantLoginCookieKeys.filter { key ->
+                !cookies[key].isNullOrBlank()
+            }
+        }
+    return buildString {
+        trackedCookieKeys.forEach { key ->
+            append(key)
+            append('=')
+            append(cookies[key].orEmpty())
+            append(';')
+        }
+        append('|')
+        append(normalized.authorization.trim())
+        append('|')
+        append(normalized.xGoogAuthUser.trim())
+    }
 }
 
 fun mergeYouTubeAuthCookieUpdates(

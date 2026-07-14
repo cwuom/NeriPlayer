@@ -27,6 +27,7 @@ import android.app.Application
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -163,6 +164,26 @@ internal fun warmYouTubePlaybackIfAuthorized(
     if (bundle.hasEffectiveAuth() && !ForegroundWebLoginGuard.isActive) {
         warmBootstrapAsync()
     }
+}
+
+private data class YouTubeAuthWarmBootstrapKey(
+    val hasEffectiveAuth: Boolean,
+    val authorization: String,
+    val xGoogAuthUser: String,
+    val origin: String,
+    val userAgent: String,
+)
+
+private fun moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle.toWarmBootstrapKey():
+    YouTubeAuthWarmBootstrapKey {
+    val normalized = normalized()
+    return YouTubeAuthWarmBootstrapKey(
+        hasEffectiveAuth = normalized.hasEffectiveAuth(),
+        authorization = normalized.authorization,
+        xGoogAuthUser = normalized.xGoogAuthUser,
+        origin = normalized.origin,
+        userAgent = normalized.userAgent
+    )
 }
 
 /**
@@ -381,6 +402,7 @@ object AppContainer {
     private fun startYouTubeAuthObserver() {
         youtubeAuthRepo.authFlow
             .drop(1)
+            .distinctUntilChangedBy { bundle -> bundle.toWarmBootstrapKey() }
             .onEach { bundle ->
                 handleYouTubeAuthStateChanged(
                     bundle = bundle,

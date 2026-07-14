@@ -83,6 +83,46 @@ class YouTubeAuthSyncTest {
     }
 
     @Test
+    fun buildRefreshObserverFingerprint_ignoresNonIdentityCookieChurn() {
+        val base = YouTubeAuthBundle(
+            cookies = linkedMapOf(
+                "SID" to "sid-value",
+                "LOGIN_INFO" to "login-token",
+                "VISITOR_INFO1_LIVE" to "visitor-a"
+            ),
+            xGoogAuthUser = "3"
+        )
+        val changedNoise = base.copy(
+            cookies = linkedMapOf(
+                "SID" to "sid-value",
+                "LOGIN_INFO" to "login-token",
+                "VISITOR_INFO1_LIVE" to "visitor-b",
+                "YSC" to "ysc-token"
+            )
+        )
+
+        assertEquals(
+            base.buildRefreshObserverFingerprint(),
+            changedNoise.buildRefreshObserverFingerprint()
+        )
+    }
+
+    @Test
+    fun buildRefreshObserverFingerprint_fallsBackToImportantLoginCookieValues() {
+        val first = YouTubeAuthBundle(
+            cookies = linkedMapOf("SAPISID" to "sap-a")
+        )
+        val second = first.copy(
+            cookies = linkedMapOf("SAPISID" to "sap-b")
+        )
+
+        assertFalse(
+            first.buildRefreshObserverFingerprint() ==
+                second.buildRefreshObserverFingerprint()
+        )
+    }
+
+    @Test
     fun mergeYouTubeAuthCookieUpdates_updatesAndRemovesCookies() {
         val base = YouTubeAuthBundle(
             cookies = linkedMapOf(

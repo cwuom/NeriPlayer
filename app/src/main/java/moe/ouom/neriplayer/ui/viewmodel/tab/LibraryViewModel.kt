@@ -38,6 +38,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicLibraryPlaylist
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.auth.youtube.buildRefreshObserverFingerprint
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
@@ -78,6 +79,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         LibraryUiState(localPlaylists = localRepo.playlists.value)
     )
     val uiState: StateFlow<LibraryUiState> = _uiState
+    private var lastYouTubeAuthFingerprint: String? = null
 
     init {
         // 本地歌单
@@ -121,6 +123,11 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         // YouTube Music
         viewModelScope.launch {
             youtubeAuthRepo.authFlow.collect { bundle ->
+                val nextFingerprint = bundle.buildRefreshObserverFingerprint()
+                if (nextFingerprint == lastYouTubeAuthFingerprint) {
+                    return@collect
+                }
+                lastYouTubeAuthFingerprint = nextFingerprint
                 if (!bundle.hasYouTubeMusicCookieContext()) {
                     _uiState.value = _uiState.value.copy(
                         youtubeMusicPlaylists = emptyList(),
