@@ -4,6 +4,7 @@ import android.content.Context
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
+import java.io.IOException
 
 internal object ManagedDownloadTreeChildQuery {
     fun queryChildren(
@@ -17,20 +18,21 @@ internal object ManagedDownloadTreeChildQuery {
 
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(parentUri, documentId)
         return runCatching {
-            context.contentResolver.query(
+            val cursor = context.contentResolver.query(
                 childrenUri,
                 CHILD_PROJECTION,
                 null,
                 null,
                 null
-            )?.use { cursor ->
+            ) ?: throw IOException("DocumentsProvider returned null cursor for $childrenUri")
+            cursor.use { cursor ->
                 val idIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
                 val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
                 val mimeTypeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
                 val sizeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
                 val modifiedIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
                 if (idIndex < 0 || nameIndex < 0 || mimeTypeIndex < 0) {
-                    return@use emptyList()
+                    throw IllegalStateException("DocumentsProvider omitted required child columns")
                 }
                 buildList {
                     while (cursor.moveToNext()) {
@@ -57,7 +59,7 @@ internal object ManagedDownloadTreeChildQuery {
                         )
                     }
                 }
-            }.orEmpty()
+            }
         }.onFailure(onQueryFailure).getOrElse {
             listChildrenWithDocumentFile(parent)
         }

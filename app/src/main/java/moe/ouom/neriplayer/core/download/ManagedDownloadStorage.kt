@@ -80,7 +80,7 @@ internal object ManagedDownloadStorage {
     )
     private val snapshotCacheStore = ManagedDownloadSnapshotCacheStore(
         scope = snapshotScope,
-        cacheKeyProvider = settings::snapshotCacheKey
+        cacheKeyProvider = ::resolveSnapshotCacheKey
     )
     private val treeChildRegistry = ManagedDownloadTreeChildRegistry(
         writeCacheValidateIntervalMs = FILE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS,
@@ -2053,6 +2053,21 @@ internal object ManagedDownloadStorage {
 
     private fun normalizeDirectoryUri(uriString: String?): String? {
         return rootResolver.normalizeDirectoryUri(uriString)
+    }
+
+    private fun resolveSnapshotCacheKey(context: Context): String {
+        val appContext = context.applicationContext
+        val resolvedRoot = rootResolver.resolveRoot(appContext, settings.configuredDirectoryUri)
+            ?: createDefaultRoot(appContext)
+        return when (resolvedRoot) {
+            is RootHandle.TreeRoot -> {
+                val treeIdentity = ManagedDownloadDirectoryIdentity.directoryIdentity(
+                    resolvedRoot.tree.uri.toString()
+                ) ?: resolvedRoot.tree.uri.toString()
+                "tree:$treeIdentity"
+            }
+            is RootHandle.FileRoot -> "file:${resolvedRoot.dir.absolutePath}"
+        }
     }
 
     private fun resolveTreeRootBlocking(context: Context, directoryUriString: String?): RootHandle.TreeRoot? {

@@ -1185,12 +1185,15 @@ object LocalMediaSupport {
                 durationMs = null
             )
         }
+        val includeRelativePath = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
         val projection = buildList {
             add(OpenableColumns.DISPLAY_NAME)
             add(OpenableColumns.SIZE)
             add(MediaStore.MediaColumns.MIME_TYPE)
             add(MediaStore.MediaColumns.DATE_MODIFIED)
-            add(MediaStore.MediaColumns.RELATIVE_PATH)
+            if (includeRelativePath) {
+                add(MediaStore.MediaColumns.RELATIVE_PATH)
+            }
             add("_data")
             add(MediaStore.Audio.Media.TITLE)
             add(MediaStore.Audio.Media.ARTIST)
@@ -1210,7 +1213,11 @@ object LocalMediaSupport {
                     lastModifiedMs = cursor.getOptionalLong(MediaStore.MediaColumns.DATE_MODIFIED)?.times(1000),
                     filePath = resolveQueryFilePath(
                         rawPath = cursor.getOptionalString("_data"),
-                        relativePath = cursor.getOptionalString(MediaStore.MediaColumns.RELATIVE_PATH),
+                        relativePath = if (includeRelativePath) {
+                            cursor.getOptionalString(MediaStore.MediaColumns.RELATIVE_PATH)
+                        } else {
+                            null
+                        },
                         displayName = cursor.getOptionalString(OpenableColumns.DISPLAY_NAME)
                     ),
                     title = cursor.getOptionalString(MediaStore.Audio.Media.TITLE),

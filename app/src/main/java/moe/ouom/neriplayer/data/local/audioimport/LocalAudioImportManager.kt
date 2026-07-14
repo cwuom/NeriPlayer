@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.data.local.audioimport
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import android.os.SystemClock
 import android.provider.DocumentsContract
@@ -334,16 +335,19 @@ object LocalAudioImportManager {
         var slowItemCount = 0
 
         val audioUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-        val projection = arrayOf(
-            MediaStore.Audio.Media._ID,
-            MediaStore.Audio.Media.TITLE,
-            MediaStore.Audio.Media.ARTIST,
-            MediaStore.Audio.Media.ALBUM,
-            MediaStore.Audio.Media.DURATION,
-            MediaStore.MediaColumns.DISPLAY_NAME,
-            MediaStore.MediaColumns.RELATIVE_PATH,
-            "_data"
-        )
+        val includeRelativePath = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+        val projection = buildList {
+            add(MediaStore.Audio.Media._ID)
+            add(MediaStore.Audio.Media.TITLE)
+            add(MediaStore.Audio.Media.ARTIST)
+            add(MediaStore.Audio.Media.ALBUM)
+            add(MediaStore.Audio.Media.DURATION)
+            add(MediaStore.MediaColumns.DISPLAY_NAME)
+            if (includeRelativePath) {
+                add(MediaStore.MediaColumns.RELATIVE_PATH)
+            }
+            add("_data")
+        }.toTypedArray()
         val selection = "${MediaStore.Audio.Media.IS_MUSIC}!=0"
 
         runCatching {
@@ -361,7 +365,11 @@ object LocalAudioImportManager {
                 val idxAlbum = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
                 val idxDuration = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
                 val idxDisplayName = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                val idxRelativePath = cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
+                val idxRelativePath = if (includeRelativePath) {
+                    cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
+                } else {
+                    -1
+                }
                 val idxData = cursor.getColumnIndex("_data")
 
                 while (cursor.moveToNext()) {
