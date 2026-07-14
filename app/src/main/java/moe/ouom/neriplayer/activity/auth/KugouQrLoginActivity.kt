@@ -1,29 +1,5 @@
-package moe.ouom.neriplayer.activity
+package moe.ouom.neriplayer.activity.auth
 
-/*
- * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
- * Copyright (C) 2025-2025 NeriPlayer developers
- * https://github.com/cwuom/NeriPlayer
- *
- * This software is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
- *
- * This software is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this software.
- * If not, see <https://www.gnu.org/licenses/>.
- *
- * File: moe.ouom.neriplayer.activity/KugouQrLoginActivity
- * Created: 2025/07/05
- */
-
-import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Bundle
@@ -34,6 +10,9 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.get
+import androidx.core.graphics.set
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
 import com.google.zxing.BarcodeFormat
@@ -47,9 +26,7 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.util.NPLogger
-import androidx.core.graphics.createBitmap
-import androidx.core.graphics.set
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 class KugouQrLoginActivity : AppCompatActivity() {
     companion object {
@@ -198,7 +175,7 @@ class KugouQrLoginActivity : AppCompatActivity() {
         NPLogger.d(TAG, "Login success: token=$token, userid=$userid")
         val cookies = mapOf("token" to token, "userid" to userid)
         AppContainer.kugouCookieRepo.saveCookies(cookies)
-        setResult(Activity.RESULT_OK)
+        setResult(RESULT_OK)
         finish()
     }
 

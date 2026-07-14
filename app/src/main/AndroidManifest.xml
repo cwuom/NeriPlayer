@@ -111,7 +111,7 @@
             android:theme="@style/Theme.Material3.DayNight.NoActionBar"
             />
         <activity
-            android:name=".activity.KugouQrLoginActivity"
+            android:name=".activity.auth.KugouQrLoginActivity"
             android:exported="false"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar"
             />
