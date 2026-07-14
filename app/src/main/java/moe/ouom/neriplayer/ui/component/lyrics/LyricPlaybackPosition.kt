@@ -16,7 +16,8 @@ import kotlin.math.abs
 
 private const val InterpolatedPlaybackResyncThresholdMs = 220L
 private const val InterpolatedPlaybackBackwardToleranceMs = 24L
-private const val InterpolatedPlaybackFrameIntervalNanos = 33_000_000L
+internal const val InterpolatedPlaybackDefaultFrameIntervalNanos = 33_000_000L
+internal const val InterpolatedPlaybackLowPowerFrameIntervalNanos = 66_000_000L
 
 @Stable
 internal class InterpolatedPlaybackPositionState(initialPositionMs: Long) {
@@ -29,7 +30,8 @@ internal class InterpolatedPlaybackPositionState(initialPositionMs: Long) {
 internal fun rememberInterpolatedPlaybackPositionState(
     currentTimeMs: Long,
     isPlaying: Boolean,
-    playbackSpeed: Float
+    playbackSpeed: Float,
+    frameIntervalNanos: Long = InterpolatedPlaybackDefaultFrameIntervalNanos
 ): InterpolatedPlaybackPositionState {
     val state = remember { InterpolatedPlaybackPositionState(currentTimeMs) }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -44,7 +46,7 @@ internal fun rememberInterpolatedPlaybackPositionState(
         )
     }
 
-    LaunchedEffect(isPlaying, playbackSpeed, lifecycleOwner) {
+    LaunchedEffect(isPlaying, playbackSpeed, lifecycleOwner, frameIntervalNanos) {
         if (!isPlaying) {
             state.renderedPositionMs = currentTimeMs
             return@LaunchedEffect
@@ -54,9 +56,11 @@ internal fun rememberInterpolatedPlaybackPositionState(
             var lastRenderedFrameNanos = 0L
             while (isActive) {
                 val frameNanos = withFrameNanos { it }
-                if (
-                    lastRenderedFrameNanos != 0L &&
-                    frameNanos - lastRenderedFrameNanos < InterpolatedPlaybackFrameIntervalNanos
+                if (!shouldRenderInterpolatedPlaybackFrame(
+                        lastRenderedFrameNanos = lastRenderedFrameNanos,
+                        frameNanos = frameNanos,
+                        frameIntervalNanos = frameIntervalNanos
+                    )
                 ) {
                     continue
                 }
@@ -82,12 +86,14 @@ internal fun rememberInterpolatedPlaybackPositionState(
 internal fun rememberInterpolatedPlaybackPositionMs(
     currentTimeMs: Long,
     isPlaying: Boolean,
-    playbackSpeed: Float
+    playbackSpeed: Float,
+    frameIntervalNanos: Long = InterpolatedPlaybackDefaultFrameIntervalNanos
 ): Long {
     return rememberInterpolatedPlaybackPositionState(
         currentTimeMs = currentTimeMs,
         isPlaying = isPlaying,
-        playbackSpeed = playbackSpeed
+        playbackSpeed = playbackSpeed,
+        frameIntervalNanos = frameIntervalNanos
     ).renderedPositionMs
 }
 
@@ -95,12 +101,14 @@ internal fun rememberInterpolatedPlaybackPositionMs(
 internal fun rememberInterpolatedPlaybackPositionProvider(
     currentTimeMs: Long,
     isPlaying: Boolean,
-    playbackSpeed: Float
+    playbackSpeed: Float,
+    frameIntervalNanos: Long = InterpolatedPlaybackDefaultFrameIntervalNanos
 ): () -> Int {
     val state = rememberInterpolatedPlaybackPositionState(
         currentTimeMs = currentTimeMs,
         isPlaying = isPlaying,
-        playbackSpeed = playbackSpeed
+        playbackSpeed = playbackSpeed,
+        frameIntervalNanos = frameIntervalNanos
     )
     return remember(state) {
         {
@@ -134,6 +142,18 @@ internal fun shouldSnapInterpolatedPlaybackPosition(
         return true
     }
     return abs(externalPositionMs - renderedPositionMs) >= snapThresholdMs
+}
+
+internal fun shouldRenderInterpolatedPlaybackFrame(
+    lastRenderedFrameNanos: Long,
+    frameNanos: Long,
+    frameIntervalNanos: Long
+): Boolean {
+    if (lastRenderedFrameNanos == 0L) {
+        return true
+    }
+    val minimumIntervalNanos = frameIntervalNanos.coerceAtLeast(0L)
+    return frameNanos - lastRenderedFrameNanos >= minimumIntervalNanos
 }
 
 internal fun resolveInterpolatedPlaybackPosition(

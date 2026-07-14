@@ -49,6 +49,7 @@ fun AdvancedLyricsView(
     isPlaying: Boolean = false,
     animateViewportScroll: Boolean = false,
     playbackSpeed: Float = 1f,
+    lowPowerRendering: Boolean = false,
     offset: Dp = 48.dp,
     keepAliveZone: Dp = 108.dp,
     playedLyricViewportFraction: Float = 0.30f,
@@ -104,7 +105,12 @@ fun AdvancedLyricsView(
     val renderPositionProvider = rememberInterpolatedPlaybackPositionProvider(
         currentTimeMs = safeCurrentPosition,
         isPlaying = isPlaying,
-        playbackSpeed = playbackSpeed
+        playbackSpeed = playbackSpeed,
+        frameIntervalNanos = if (lowPowerRendering) {
+            InterpolatedPlaybackLowPowerFrameIntervalNanos
+        } else {
+            InterpolatedPlaybackDefaultFrameIntervalNanos
+        }
     )
 
     BoxWithConstraints(modifier = modifier) {
@@ -146,9 +152,10 @@ fun AdvancedLyricsView(
             offset = effectiveOffset,
             keepAliveZone = keepAliveZone,
             bottomContentInset = bottomContentInset,
-            blurDelta = blurDelta,
+            blurDelta = if (lowPowerRendering) blurDelta * 0.55f else blurDelta,
             topFadeLength = topFadeLength,
-            bottomFadeLength = bottomFadeLength
+            bottomFadeLength = bottomFadeLength,
+            useAdditiveBlend = !lowPowerRendering
         )
     }
 }

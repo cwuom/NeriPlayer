@@ -395,6 +395,49 @@ class AdvancedLyricsViewTest {
     }
 
     @Test
+    fun `shouldRenderInterpolatedPlaybackFrame respects default frame interval`() {
+        assertTrue(
+            shouldRenderInterpolatedPlaybackFrame(
+                lastRenderedFrameNanos = 0L,
+                frameNanos = 1_000_000_000L,
+                frameIntervalNanos = InterpolatedPlaybackDefaultFrameIntervalNanos
+            )
+        )
+        assertFalse(
+            shouldRenderInterpolatedPlaybackFrame(
+                lastRenderedFrameNanos = 1_000_000_000L,
+                frameNanos = 1_020_000_000L,
+                frameIntervalNanos = InterpolatedPlaybackDefaultFrameIntervalNanos
+            )
+        )
+        assertTrue(
+            shouldRenderInterpolatedPlaybackFrame(
+                lastRenderedFrameNanos = 1_000_000_000L,
+                frameNanos = 1_033_000_000L,
+                frameIntervalNanos = InterpolatedPlaybackDefaultFrameIntervalNanos
+            )
+        )
+    }
+
+    @Test
+    fun `shouldRenderInterpolatedPlaybackFrame respects low power interval`() {
+        assertFalse(
+            shouldRenderInterpolatedPlaybackFrame(
+                lastRenderedFrameNanos = 1_000_000_000L,
+                frameNanos = 1_033_000_000L,
+                frameIntervalNanos = InterpolatedPlaybackLowPowerFrameIntervalNanos
+            )
+        )
+        assertTrue(
+            shouldRenderInterpolatedPlaybackFrame(
+                lastRenderedFrameNanos = 1_000_000_000L,
+                frameNanos = 1_066_000_000L,
+                frameIntervalNanos = InterpolatedPlaybackLowPowerFrameIntervalNanos
+            )
+        )
+    }
+
+    @Test
     fun `resolvePlayedLyricViewportOffset supports roughly thirty percent played space`() {
         val offset = resolvePlayedLyricViewportOffset(
             viewportHeight = 1_000.dp,

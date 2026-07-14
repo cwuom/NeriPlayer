@@ -25,7 +25,9 @@ package moe.ouom.neriplayer.ui.screen
 
 import android.annotation.SuppressLint
 import android.content.ClipData
+import android.content.Context
 import android.content.res.Configuration
+import android.os.PowerManager
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -206,6 +208,9 @@ fun LyricsScreen(
     val playlistAddActionLabel = stringResource(R.string.playlist_add_to)
 
     val context = LocalContext.current
+    val lowPowerLyricsRendering = remember(context) {
+        context.isSystemPowerSaveMode()
+    }
     val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
     val currentCoverUrl = remember(currentSong, context, downloadPresenceVersion) {
         currentSong?.displayCoverUrl(context)
@@ -568,6 +573,7 @@ fun LyricsScreen(
                 rawTranslatedLyrics = rawTranslatedLyrics,
                 playbackSpeed = lyricsPlaybackSoundState.speed,
                 isPlaying = isPlaying,
+                lowPowerRendering = lowPowerLyricsRendering,
                 useTabletLayout = isTabletLandscape,
                 onLyricLongClick = { line -> lyricShareInitialLine = line },
                 onSeekTo = onSeekTo
@@ -1061,6 +1067,7 @@ private fun LyricsContentPane(
     rawTranslatedLyrics: String?,
     playbackSpeed: Float,
     isPlaying: Boolean,
+    lowPowerRendering: Boolean,
     useTabletLayout: Boolean = false,
     onLyricLongClick: (LyricEntry) -> Unit,
     onSeekTo: (Long) -> Unit
@@ -1115,6 +1122,7 @@ private fun LyricsContentPane(
             isPlaying = shouldAnimateFromPlayback,
             animateViewportScroll = isPreviewingSeek,
             playbackSpeed = playbackSpeed,
+            lowPowerRendering = lowPowerRendering,
             baseFontSizeSp = if (useTabletLayout) 22f else 20f,
             offset = if (useTabletLayout) 72.dp else 48.dp,
             keepAliveZone = if (useTabletLayout) 128.dp else 108.dp,
@@ -1153,8 +1161,13 @@ private fun LyricsContentPane(
         translationFontSize = scaledLyricFontSize(16f, lyricFontScale).sp,
         isPlaying = shouldAnimateFromPlayback,
         playbackSpeed = playbackSpeed,
-        interpolatePlaybackPosition = true
+        interpolatePlaybackPosition = !lowPowerRendering
     )
+}
+
+private fun Context.isSystemPowerSaveMode(): Boolean {
+    val powerManager = getSystemService(PowerManager::class.java) ?: return false
+    return powerManager.isPowerSaveMode
 }
 
 @Composable
