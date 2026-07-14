@@ -13,6 +13,7 @@ set(NERI_USB_EXCLUSIVE_DIR ${NERI_USB_DIR}/exclusive)
 set(NERI_USB_ISO_DIR ${NERI_USB_DIR}/iso)
 set(NERI_USB_PCM_DIR ${NERI_USB_DIR}/pcm)
 set(NERI_USB_UAC1_DIR ${NERI_USB_DIR}/uac1)
+set(NERI_USB_UAC2_DIR ${NERI_USB_DIR}/uac2)
 
 add_library(
     usb
@@ -65,6 +66,7 @@ add_library(
     ${NERI_USB_PCM_DIR}/usb_pcm_codec.cpp
     ${NERI_USB_PCM_DIR}/usb_pcm_pipeline.cpp
     ${NERI_USB_UAC1_DIR}/usb_uac1_format.cpp
+    ${NERI_USB_UAC2_DIR}/usb_uac2_format.cpp
 )
 
 set_target_properties(
@@ -95,6 +97,7 @@ target_include_directories(
     ${NERI_USB_ISO_DIR}
     ${NERI_USB_PCM_DIR}
     ${NERI_USB_UAC1_DIR}
+    ${NERI_USB_UAC2_DIR}
 )
 
 target_compile_definitions(
