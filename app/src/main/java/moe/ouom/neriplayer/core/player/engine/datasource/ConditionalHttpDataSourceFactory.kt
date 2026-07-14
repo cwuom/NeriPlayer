@@ -43,7 +43,6 @@ import moe.ouom.neriplayer.data.platform.bili.isBiliStreamUrl
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
 import moe.ouom.neriplayer.data.traffic.TrafficStatsRepository
-import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.resolver.youtube.ConditionalChunkedHttpDataSource
 import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeGoogleVideoRangeSupport
 
@@ -90,7 +89,6 @@ class ConditionalHttpDataSourceFactory(
         val dataSource = ConditionalChunkedHttpDataSource(
             upstreamFactory = baseFactory,
             transformDataSpec = { dataSpec ->
-                NPLogger.i("createDataSource", dataSpec.uri)
                 when {
                     shouldInjectBiliHeaders(dataSpec.uri) -> {
                         val headers = buildBiliHeaders(dataSpec.httpRequestHeaders)

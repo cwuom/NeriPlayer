@@ -71,6 +71,7 @@ import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeader
 import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeHost
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeInnertubeHost
+import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.network.DynamicProxySelector
 import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
@@ -261,7 +262,16 @@ object AppContainer {
                 resolvedHeaders.forEach { (name, value) ->
                     builder.header(name, value)
                 }
-                chain.proceed(builder.build())
+                val response = chain.proceed(builder.build())
+                val setCookieHeaders = response.headers.values("Set-Cookie")
+                if (setCookieHeaders.isNotEmpty()) {
+                    runCatching {
+                        youtubeAuthRepo.mergeCookieUpdates(setCookieHeaders)
+                    }.onFailure { error ->
+                        NPLogger.w("AppContainer", "Failed to merge YouTube Set-Cookie headers", error)
+                    }
+                }
+                response
             }
         configureSharedOkHttpClient(clientBuilder).build()
     }

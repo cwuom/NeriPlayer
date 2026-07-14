@@ -492,7 +492,14 @@ class NeteaseClient {
             "n" to n.toString(),
             "s" to s.toString()
         )
-        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+        return request(
+            url = url,
+            params = params,
+            mode = CryptoMode.WEAPI,
+            method = "POST",
+            usePersistedCookies = true,
+            retryHttp1OnStreamReset = true
+        )
     }
 
     @Throws(IOException::class)
