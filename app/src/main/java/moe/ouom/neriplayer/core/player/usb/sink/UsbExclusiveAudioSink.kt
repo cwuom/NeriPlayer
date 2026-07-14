@@ -48,6 +48,7 @@ import moe.ouom.neriplayer.core.player.usb.system.usbExclusiveEffectiveNativeVol
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveRuntimeMetrics
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
 import moe.ouom.neriplayer.core.player.usb.transport.valueAfter
+import moe.ouom.neriplayer.core.player.usb.transport.withLivePcmFreeBytes
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 @UnstableApi
@@ -944,8 +945,7 @@ internal class UsbExclusiveAudioSink(
         remaining: Int,
         directBuffer: Boolean
     ): Int {
-        val cachedMetrics = UsbExclusiveSessionController.runtimeReportForWritePlanning(nativeHandle)
-            .usbRuntimeMetrics()
+        val cachedMetrics = currentNativeWritePlanningMetrics()
         var size = planNativeWriteSize(remaining, cachedMetrics)
         if (size <= 0 && cachedMetrics.hasPcmQueue && cachedMetrics.hasHealthyTransport) {
             val nowMs = SystemClock.elapsedRealtime()
@@ -954,8 +954,7 @@ internal class UsbExclusiveAudioSink(
                 lastNativeBackpressureRefreshAtMs = nowMs
                 size = planNativeWriteSize(
                     remaining,
-                    UsbExclusiveSessionController.runtimeReportForWritePlanning(nativeHandle)
-                        .usbRuntimeMetrics()
+                    currentNativeWritePlanningMetrics()
                 )
             }
         }
@@ -963,6 +962,14 @@ internal class UsbExclusiveAudioSink(
             size = size.coerceAtMost(directScratch?.capacity() ?: 0)
         }
         return alignToInputFrame(size)
+    }
+
+    private fun currentNativeWritePlanningMetrics(): UsbExclusiveRuntimeMetrics {
+        val metrics = UsbExclusiveSessionController.runtimeReportForWritePlanning(nativeHandle)
+            .usbRuntimeMetrics()
+        val liveFreeBytes = UsbExclusiveSessionController.playerPcmFreeBytes(nativeHandle)
+            ?: return metrics
+        return metrics.withLivePcmFreeBytes(liveFreeBytes)
     }
 
     private fun planNativeWriteSize(

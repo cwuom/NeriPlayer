@@ -4090,6 +4090,21 @@ Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nati
 }
 
 extern "C"
+JNIEXPORT jlong JNICALL
+Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nativeGetPlayerPcmFreeBytes(
+    JNIEnv* env,
+    jclass /*clazz*/,
+    jlong handleValue
+) {
+    static_cast<void>(env);
+    const auto holder = acquireHandle(handleValue);
+    if (holder == nullptr || holder->closing.load()) {
+        return -1L;
+    }
+    return static_cast<jlong>(holder->pcmPipeline.snapshot().freeBytes);
+}
+
+extern "C"
 JNIEXPORT void JNICALL
 Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nativeStop(
     JNIEnv* env,

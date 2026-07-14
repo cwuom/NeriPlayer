@@ -86,6 +86,21 @@ internal fun String.usbRuntimeMetrics(): UsbExclusiveRuntimeMetrics {
     )
 }
 
+internal fun UsbExclusiveRuntimeMetrics.withLivePcmFreeBytes(
+    liveFreeBytes: Long
+): UsbExclusiveRuntimeMetrics {
+    val capacity = pcmCapacityBytes?.takeIf { it > 0L }
+    val normalizedFreeBytes = if (capacity != null) {
+        liveFreeBytes.coerceIn(0L, capacity)
+    } else {
+        liveFreeBytes.coerceAtLeast(0L)
+    }
+    return copy(
+        pcmLevelBytes = capacity?.let { it - normalizedFreeBytes } ?: pcmLevelBytes,
+        pcmFreeBytes = normalizedFreeBytes
+    )
+}
+
 internal fun String.valueAfter(key: String): String? {
     val regex = Regex("(?:^|\\s)${Regex.escape(key)}=([^\\s]+)")
     return regex.find(this)?.groupValues?.getOrNull(1)

@@ -250,6 +250,13 @@ internal object UsbExclusiveNativeBridge {
         }?.coerceAtLeast(0L) ?: 0L
     }
 
+    fun playerPcmFreeBytes(handle: Long): Long? {
+        if (handle == 0L || !ensureLoaded()) return null
+        return callNative("nativeGetPlayerPcmFreeBytes", context = { "handle=$handle" }) {
+            nativeGetPlayerPcmFreeBytes(handle)
+        }?.takeIf { it >= 0L }
+    }
+
     fun stop(handle: Long) {
         if (handle == 0L || !ensureLoaded()) return
         callNative(
@@ -355,6 +362,9 @@ internal object UsbExclusiveNativeBridge {
 
     @JvmStatic
     private external fun nativeGetQueuedPlayerFrames(handle: Long): Long
+
+    @JvmStatic
+    private external fun nativeGetPlayerPcmFreeBytes(handle: Long): Long
 
     @JvmStatic
     private external fun nativeStop(handle: Long)

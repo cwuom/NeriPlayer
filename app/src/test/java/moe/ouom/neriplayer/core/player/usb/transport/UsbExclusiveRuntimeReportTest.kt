@@ -65,4 +65,28 @@ class UsbExclusiveRuntimeReportTest {
         assertEquals(2, metrics.isoPacketErrorScore)
         assertTrue(metrics.hasHealthyTransport)
     }
+
+    @Test
+    fun `live free bytes replace stale queue level for write planning`() {
+        val metrics = UsbExclusiveRuntimeMetrics(
+            pcmLevelBytes = 149_504L,
+            pcmCapacityBytes = 192_000L,
+            pcmFreeBytes = 42_496L
+        ).withLivePcmFreeBytes(100_000L)
+
+        assertEquals(92_000L, metrics.pcmLevelBytes)
+        assertEquals(100_000L, metrics.pcmFreeBytes)
+    }
+
+    @Test
+    fun `live free bytes are clamped to reported capacity`() {
+        val metrics = UsbExclusiveRuntimeMetrics(
+            pcmLevelBytes = 0L,
+            pcmCapacityBytes = 192_000L,
+            pcmFreeBytes = 192_000L
+        ).withLivePcmFreeBytes(250_000L)
+
+        assertEquals(0L, metrics.pcmLevelBytes)
+        assertEquals(192_000L, metrics.pcmFreeBytes)
+    }
 }

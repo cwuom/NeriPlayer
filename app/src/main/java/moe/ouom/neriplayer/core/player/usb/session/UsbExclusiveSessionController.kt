@@ -1259,6 +1259,14 @@ object UsbExclusiveSessionController {
         return UsbExclusiveNativeBridge.queuedPlayerFrames(handle)
     }
 
+    fun playerPcmFreeBytes(handle: Long): Long? {
+        val current = _state.value
+        if (current.handle != handle || current.source != "player_pcm" || !current.opened) {
+            return null
+        }
+        return UsbExclusiveNativeBridge.playerPcmFreeBytes(handle)
+    }
+
     internal fun maintainWakeLock(context: Context, reason: String) {
         val current = _state.value
         if (
