@@ -338,6 +338,21 @@ internal object UsbExclusiveOutputFormatResolver {
         return current.subslotBytes == preferred.subslotBytes
     }
 
+    internal fun outputFormatFromDescription(
+        description: String,
+        bufferDurationMs: Int
+    ): ResolvedUsbOutputFormat? {
+        val output = parseOutputDescription(description) ?: return null
+        return ResolvedUsbOutputFormat(
+            sampleRate = output.sampleRate,
+            channelCount = output.channelCount,
+            bitDepth = output.bitDepth,
+            subslotBytes = output.subslotBytes,
+            bufferDurationMs = bufferDurationMs,
+            description = description
+        )
+    }
+
     private fun parseOutputDescription(description: String): OutputDescription? {
         val sampleRate = description.valueAfterDescriptionKey("rate")?.toIntOrNull()
             ?: return null

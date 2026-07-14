@@ -54,6 +54,11 @@ constexpr int kParkedErrorBackoffMaxMs = 5000;
 constexpr int kGeneratedToneFrequencyHz = 440;
 constexpr int kDefaultPacketsPerTransfer = 32;
 constexpr int kDefaultTransferCount = 16;
+constexpr int kMinimumTransferCount = 8;
+constexpr int kMaximumPacketsPerTransfer = 64;
+constexpr int kMaximumTransferCount = 32;
+constexpr int kHighSpeedTargetInFlightMs = 160;
+constexpr int kFullSpeedTargetInFlightMs = 320;
 constexpr int kDefaultPcmRingDurationMs = 250;
 constexpr int kPlayerStartupPrerollMs = 0;
 constexpr int kMinimumPcmRingDurationMs = 100;
@@ -65,6 +70,7 @@ constexpr int kQuarantineTotalTimeoutMs = 30000;
 constexpr size_t kMaximumParkedHandles = 8;
 constexpr size_t kMaximumHardRetainedHandles = 4;
 constexpr int kFirstTransferCompletionTimeoutMs = 1500;
+constexpr int kTransferCompletionStallTimeoutMs = 1500;
 constexpr int kInterfaceTransitionCooldownMs = 1500;
 constexpr int kUrgentAudioThreadPriority = -19;
 constexpr auto kLibusbEndpointOut =
@@ -175,6 +181,7 @@ struct UsbExclusiveHandle {
     std::atomic<bool> playerReplayFailed { false };
     double tonePhase = 0.0;
     std::atomic<int> completedTransfers { 0 };
+    std::atomic<int64_t> lastTransferCompletionAtMs { 0 };
     std::atomic<int> submitErrors { 0 };
     std::atomic<int> isoPacketErrors { 0 };
     std::atomic<int> isoPacketErrorTransfers { 0 };
@@ -1506,8 +1513,35 @@ int scaledPacketsPerTransfer(int intervalsPerSecond) {
     return std::clamp(
         kDefaultPacketsPerTransfer * intervalRatio,
         kDefaultPacketsPerTransfer,
-        256
+        kMaximumPacketsPerTransfer
     );
+}
+
+int scaledTransferCount(int intervalsPerSecond, int packetsPerTransfer) {
+    const int normalizedIntervals = std::max(1, intervalsPerSecond);
+    const bool highSpeedSchedule = normalizedIntervals > 1000;
+    const int targetInFlightMs = highSpeedSchedule
+        ? kHighSpeedTargetInFlightMs
+        : kFullSpeedTargetInFlightMs;
+    const int targetPacketsInFlight = std::max(
+        kDefaultPacketsPerTransfer,
+        normalizedIntervals * targetInFlightMs / 1000
+    );
+    const int normalizedPacketsPerTransfer = std::max(1, packetsPerTransfer);
+    const int requiredTransfers =
+        (targetPacketsInFlight + normalizedPacketsPerTransfer - 1) /
+        normalizedPacketsPerTransfer;
+    return std::clamp(
+        requiredTransfers,
+        kMinimumTransferCount,
+        kMaximumTransferCount
+    );
+}
+
+int64_t steadyClockMillis() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()
+    ).count();
 }
 
 int frameAlignedDown(int bytes, int frameBytes) {
@@ -2090,6 +2124,10 @@ bool reconfigureOpenedPlayerPcmOutput(
         handle->endpointInterval
     );
     handle->packetsPerTransfer = scaledPacketsPerTransfer(handle->intervalsPerSecond);
+    handle->transferCount = scaledTransferCount(
+        handle->intervalsPerSecond,
+        handle->packetsPerTransfer
+    );
     handle->bytesPerUsbFrame = computeMaxPacketBytes(
         handle->sampleRate,
         handle->intervalsPerSecond,
@@ -2219,6 +2257,7 @@ bool startStreamingInternal(
     handle->packetFramesMax.store(0);
     handle->lastTransferBytes.store(0);
     handle->shortWriteWarnings.store(0);
+    handle->lastTransferCompletionAtMs.store(steadyClockMillis());
     handle->packetScheduler.reset();
     {
         std::lock_guard<std::mutex> submitGuard(handle->transferSubmitLock);
@@ -2643,6 +2682,7 @@ void LIBUSB_CALL transferCallback(libusb_transfer* transfer) noexcept {
             handle->isoPacketErrorScore.store(
                 neri::usb::updateIsoPacketErrorScore(currentScore, 0)
             );
+            handle->lastTransferCompletionAtMs.store(steadyClockMillis());
             const int completedBefore = handle->completedTransfers.fetch_add(1);
             if (completedBefore == 0) {
                 LOGI(
@@ -2906,6 +2946,25 @@ void eventLoopThread(UsbExclusiveHandle* handle) noexcept {
                 setError(handle, "event_loop_first_completion_timeout");
                 LOGE(
                     "USB event loop timed out before first completion: inFlight=%d",
+                    handle->inFlightTransfers.load()
+                );
+                break;
+            }
+            const int64_t lastCompletionAtMs = handle->lastTransferCompletionAtMs.load();
+            if (
+                handle->completedTransfers.load() > 0 &&
+                handle->inFlightTransfers.load() > 0 &&
+                lastCompletionAtMs > 0 &&
+                steadyClockMillis() - lastCompletionAtMs >=
+                    kTransferCompletionStallTimeoutMs
+            ) {
+                handle->transportFailed.store(true);
+                handle->running.store(false);
+                handle->stopRequested.store(true);
+                setError(handle, "event_loop_completion_stalled");
+                LOGE(
+                    "USB event loop stalled after completions: completed=%d inFlight=%d",
+                    handle->completedTransfers.load(),
                     handle->inFlightTransfers.load()
                 );
                 break;
@@ -3868,6 +3927,10 @@ Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nati
             handle->endpointInterval
         );
         handle->packetsPerTransfer = scaledPacketsPerTransfer(handle->intervalsPerSecond);
+        handle->transferCount = scaledTransferCount(
+            handle->intervalsPerSecond,
+            handle->packetsPerTransfer
+        );
         handle->bytesPerUsbFrame = computeMaxPacketBytes(
             handle->sampleRate,
             handle->intervalsPerSecond,

@@ -18,6 +18,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnostics
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnosticsSnapshot
 import moe.ouom.neriplayer.core.player.usb.device.openPermittedUsbAudioDevice
+import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbAudioSinkReconfiguration
 import moe.ouom.neriplayer.core.player.usb.sink.ResolvedUsbOutputFormat
 import moe.ouom.neriplayer.core.player.usb.sink.UsbExclusiveOutputFormatResolver
 import moe.ouom.neriplayer.core.player.usb.sink.describeUsbInputFormat
@@ -1294,6 +1295,90 @@ object UsbExclusiveSessionController {
         }
     }
 
+    fun rearmPlayerPcmOutput(
+        handle: Long,
+        inputSampleRate: Int,
+        inputChannelCount: Int,
+        inputEncoding: Int
+    ): Boolean {
+        val commandState = sessionLock.withLock {
+            val current = _state.value
+            if (!current.matchesPlayerSession(handle) || current.transitioning) {
+                return false
+            }
+            val outputFormat = UsbExclusiveOutputFormatResolver.outputFormatFromDescription(
+                description = current.outputFormat,
+                bufferDurationMs = current.bufferDurationMs
+            ) ?: return false
+            if (current.runtimeReport.booleanField("running") == true) {
+                return false
+            }
+            current to outputFormat
+        }
+        val (currentState, outputFormat) = commandState
+        val reconfigured = UsbExclusiveNativeBridge.reconfigurePlayerPcmOutput(
+            handle = handle,
+            sampleRate = outputFormat.sampleRate,
+            channelCount = outputFormat.channelCount,
+            bitsPerSample = outputFormat.bitDepth,
+            subslotBytes = outputFormat.subslotBytes
+        )
+        val bufferConfigured = reconfigured && UsbExclusiveNativeBridge.configurePlayerBufferDuration(
+            handle,
+            outputFormat.bufferDurationMs
+        )
+        val prepared = bufferConfigured && UsbExclusiveNativeBridge.preparePlayerPcm(
+            handle = handle,
+            inputSampleRate = inputSampleRate,
+            inputChannelCount = inputChannelCount,
+            inputEncoding = inputEncodingForPrepare(
+                inputEncoding = inputEncoding,
+                outputFormat = outputFormat
+            )
+        )
+        UsbExclusiveNativeBridge.setPlayerFocusMuted(handle, focusSuppressed.get())
+        val report = UsbExclusiveNativeBridge.runtimeReport(handle)
+        val completedFrames = UsbExclusiveNativeBridge.completedAudioFrames(handle)
+        val queuedFrames = UsbExclusiveNativeBridge.queuedPlayerFrames(handle)
+        sessionLock.withLock {
+            val latest = _state.value
+            if (!latest.matchesPlayerSession(handle)) {
+                return false
+            }
+            rememberPlayerPcmRuntimeReport(handle, report)
+            _state.value = latest.copy(
+                streaming = false,
+                paused = false,
+                transitioning = false,
+                inputFormat = describeUsbInputFormat(
+                    inputSampleRate,
+                    inputChannelCount,
+                    inputEncoding
+                ),
+                outputFormat = outputFormat.description,
+                requestedOutputFormat = outputFormat.description,
+                outputSampleRate = outputFormat.sampleRate,
+                bufferDurationMs = outputFormat.bufferDurationMs,
+                lastError = if (prepared) null else report,
+                completedAudioFrames = completedFrames,
+                queuedAudioFrames = queuedFrames
+            ).withRuntimeReport(report)
+        }
+        if (!reconfigured || !bufferConfigured || !prepared) {
+            NPLogger.w(
+                TAG,
+                "rearmPlayerPcmOutput(): failed handle=$handle reconfigured=$reconfigured " +
+                    "bufferConfigured=$bufferConfigured prepared=$prepared report=$report"
+            )
+            return false
+        }
+        NPLogger.i(
+            TAG,
+            "rearmPlayerPcmOutput(): rearmed handle=$handle output=${outputFormat.description}"
+        )
+        return true
+    }
+
     fun flushPlayerPcm(handle: Long): Boolean {
         if (!tryBeginPlayerTransportCommand("flushPlayerPcm", handle)) return false
         var wakeLockAcquired = false
@@ -1659,6 +1744,7 @@ object UsbExclusiveSessionController {
         if (request == null) return
         nativeCloseInFlight.incrementAndGet()
         nativeCloseExecutor.execute {
+            var shouldRetryOpenAfterClose = false
             try {
                 NPLogger.d(
                     TAG,
@@ -1694,9 +1780,25 @@ object UsbExclusiveSessionController {
                     "native close done: handle=${request.handle} source=${request.source} " +
                         "reason=${request.reason}"
                 )
+                shouldRetryOpenAfterClose =
+                    request.source == "player_pcm" &&
+                        request.reason == "open_player_pcm_reconfigure" &&
+                        PlayerManager.usbExclusivePlaybackEnabled &&
+                        PlayerManager.isTransportActiveWithoutInitialization()
             } finally {
                 UsbExclusiveWakeLock.release(request.reason)
-                nativeCloseInFlight.decrementAndGet()
+                val remainingCloses = nativeCloseInFlight.decrementAndGet()
+                if (shouldRetryOpenAfterClose && remainingCloses == 0) {
+                    NPLogger.i(
+                        TAG,
+                        "native close completed, trigger immediate USB reopen retry"
+                    )
+                    PlayerManager.scheduleUsbAudioSinkReconfiguration(
+                        reason = "usb_exclusive_open_gate_retry_after_close",
+                        allowWhilePlaybackActive = true,
+                        bypassCooldown = true
+                    )
+                }
             }
         }
     }
