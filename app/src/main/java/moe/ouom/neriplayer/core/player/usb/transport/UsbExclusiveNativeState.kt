@@ -11,6 +11,7 @@ data class UsbExclusiveNativeState(
     val selectedDeviceName: String? = null,
     val inputFormat: String = "none",
     val outputFormat: String = "none",
+    val requestedOutputFormat: String = "none",
     val outputSampleRate: Int = 0,
     val bufferDurationMs: Int = 250,
     val completedAudioFrames: Long = 0L,

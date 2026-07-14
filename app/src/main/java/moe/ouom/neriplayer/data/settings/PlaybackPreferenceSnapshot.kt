@@ -74,6 +74,8 @@ private const val PLAYBACK_PITCH_KEY = "playback_pitch"
 private const val PLAYBACK_LOUDNESS_KEY = "playback_loudness_gain_mb"
 private const val PLAYBACK_VOLUME_BALANCE_KEY = "playback_volume_balance"
 private const val PLAYBACK_VOLUME_NORMALIZATION_KEY = "playback_volume_normalization_enabled"
+private const val PLAYBACK_HIGH_RESOLUTION_OUTPUT_KEY =
+    "playback_high_resolution_output_enabled"
 private const val PLAYBACK_EQUALIZER_ENABLED_KEY = "playback_equalizer_enabled"
 private const val PLAYBACK_EQUALIZER_PRESET_KEY = "playback_equalizer_preset"
 private const val PLAYBACK_EQUALIZER_LEVELS_KEY = "playback_equalizer_custom_band_levels"
@@ -115,6 +117,7 @@ data class PlaybackPreferenceSnapshot(
     val playbackLoudnessGainMb: Int = DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB,
     val playbackVolumeBalance: Float = DEFAULT_PLAYBACK_VOLUME_BALANCE,
     val playbackVolumeNormalizationEnabled: Boolean = false,
+    val playbackHighResolutionOutputEnabled: Boolean = false,
     val playbackEqualizerEnabled: Boolean = false,
     val playbackEqualizerPreset: String = PlaybackEqualizerPresetId.FLAT,
     val playbackEqualizerCustomBandLevels: List<Int> = emptyList(),
@@ -320,6 +323,10 @@ internal fun persistPlaybackPreferenceSnapshot(
                     normalizedSnapshot.playbackVolumeNormalizationEnabled
                 )
                 .putBoolean(
+                    PLAYBACK_HIGH_RESOLUTION_OUTPUT_KEY,
+                    normalizedSnapshot.playbackHighResolutionOutputEnabled
+                )
+                .putBoolean(
                     PLAYBACK_EQUALIZER_ENABLED_KEY,
                     normalizedSnapshot.playbackEqualizerEnabled
                 )
@@ -400,6 +407,8 @@ internal fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnaps
             this[SettingsKeys.PLAYBACK_VOLUME_BALANCE] ?: DEFAULT_PLAYBACK_VOLUME_BALANCE,
         playbackVolumeNormalizationEnabled =
             this[SettingsKeys.PLAYBACK_VOLUME_NORMALIZATION_ENABLED] ?: false,
+        playbackHighResolutionOutputEnabled =
+            this[SettingsKeys.PLAYBACK_HIGH_RESOLUTION_OUTPUT_ENABLED] ?: false,
         playbackEqualizerEnabled = this[SettingsKeys.PLAYBACK_EQUALIZER_ENABLED] ?: false,
         playbackEqualizerPreset =
             this[SettingsKeys.PLAYBACK_EQUALIZER_PRESET] ?: PlaybackEqualizerPresetId.FLAT,
@@ -532,6 +541,10 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
         ),
         playbackVolumeNormalizationEnabled = prefs.getBoolean(
             PLAYBACK_VOLUME_NORMALIZATION_KEY,
+            false
+        ),
+        playbackHighResolutionOutputEnabled = prefs.getBoolean(
+            PLAYBACK_HIGH_RESOLUTION_OUTPUT_KEY,
             false
         ),
         playbackEqualizerEnabled =

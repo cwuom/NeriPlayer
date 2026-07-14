@@ -837,6 +837,8 @@
     <string name="settings_playback_crossfade_out_duration">Current Track Fade-out Duration</string>
     <string name="settings_playback_volume_normalization">Loudness Normalization</string>
     <string name="settings_playback_volume_normalization_desc">Analyzes each track and smoothly compensates its loudness for more consistent volume between songs. Disabled during USB exclusive playback.</string>
+    <string name="settings_playback_high_resolution_output">32-bit High-resolution Output</string>
+    <string name="settings_playback_high_resolution_output_desc">Uses the Media3 32-bit float pipeline for standard system output when the source is high-resolution. USB exclusive output is unaffected. Loudness normalization, balance, audio visualization, and app-side speed processing are bypassed. Restart the app to apply.</string>
     <string name="settings_playback_volume_balance">Volume Balance</string>
     <string name="settings_playback_volume_balance_desc">Adjust the left and right channel volume ratio</string>
     <string name="settings_playback_volume_balance_center">Current: Center</string>

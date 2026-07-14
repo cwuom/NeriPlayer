@@ -837,6 +837,8 @@
     <string name="settings_playback_crossfade_out_duration">当前曲淡出时长</string>
     <string name="settings_playback_volume_normalization">响度均衡</string>
     <string name="settings_playback_volume_normalization_desc">实时分析歌曲响度并平滑补偿，让切歌时音量更一致；USB 独占播放时不生效</string>
+    <string name="settings_playback_high_resolution_output">32-bit 高解析输出</string>
+    <string name="settings_playback_high_resolution_output_desc">普通系统输出尽量使用 Media3 32-bit float 管线，仅高精度音源生效，USB 独占不受影响；会绕过响度均衡、声道平衡、音频可视化和应用内倍速，重启应用后生效</string>
     <string name="settings_playback_volume_balance">音量平衡</string>
     <string name="settings_playback_volume_balance_desc">调整左右声道音量比例</string>
     <string name="settings_playback_volume_balance_center">当前：居中</string>

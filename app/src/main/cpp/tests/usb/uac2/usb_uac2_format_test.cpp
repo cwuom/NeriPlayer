@@ -30,9 +30,12 @@ void verifiesUac2TypeI24BitPcmFormat() {
 
     const neri::usb::uac2::FormatTarget exactTarget { 2, 3, 24 };
     assert(neri::usb::uac2::matchesTarget(format, exactTarget, &error));
-    const neri::usb::uac2::FormatTarget wrongDepth { 2, 4, 32 };
-    assert(!neri::usb::uac2::matchesTarget(format, wrongDepth, &error));
+    const neri::usb::uac2::FormatTarget padded24Target { 2, 4, 24 };
+    assert(!neri::usb::uac2::matchesTarget(format, padded24Target, &error));
     assert(error == "subslot_mismatch_3");
+    const neri::usb::uac2::FormatTarget wrongDepth { 2, 3, 32 };
+    assert(!neri::usb::uac2::matchesTarget(format, wrongDepth, &error));
+    assert(error == "bit_depth_mismatch_24");
 }
 
 void verifiesUac2TypeI32BitPcmFormat() {
@@ -55,6 +58,24 @@ void verifiesUac2TypeI32BitPcmFormat() {
     assert(format.bitsPerSample == 32);
 
     const neri::usb::uac2::FormatTarget exactTarget { 2, 4, 32 };
+    assert(neri::usb::uac2::matchesTarget(format, exactTarget, &error));
+}
+
+void verifiesUac2TypeI24BitPaddedContainerFormat() {
+    constexpr uint8_t descriptors[] = {
+        16, 0x24, 0x01, 2, 0, 0x01, 0x01, 0x00,
+        0x00, 0x00, 2, 0x03, 0x00, 0x00, 0x00, 0,
+        6, 0x24, 0x02, 0x01, 4, 24
+    };
+    neri::usb::uac2::TypeIFormat format;
+    std::string error;
+    assert(neri::usb::uac2::parseTypeIFormat(
+        descriptors,
+        sizeof(descriptors),
+        &format,
+        &error
+    ));
+    const neri::usb::uac2::FormatTarget exactTarget { 2, 4, 24 };
     assert(neri::usb::uac2::matchesTarget(format, exactTarget, &error));
 }
 
@@ -195,6 +216,7 @@ void verifiesSampleRateRanges() {
 int main() {
     verifiesUac2TypeI24BitPcmFormat();
     verifiesUac2TypeI32BitPcmFormat();
+    verifiesUac2TypeI24BitPaddedContainerFormat();
     rejectsMalformedUac2StreamingDescriptors();
     verifiesEndpointAndClockControls();
     verifiesTerminalClockSourceMapping();

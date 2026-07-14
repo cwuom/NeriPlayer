@@ -42,6 +42,7 @@ import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.BluetoothAudio
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Headphones
+import androidx.compose.material.icons.outlined.HighQuality
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.SurroundSound
 import androidx.compose.material.icons.outlined.Sync
@@ -97,6 +98,8 @@ internal fun SettingsPlaybackSection(
     onPlaybackCrossfadeOutDurationMsChange: (Long) -> Unit,
     playbackVolumeNormalizationEnabled: Boolean,
     onPlaybackVolumeNormalizationEnabledChange: (Boolean) -> Unit,
+    playbackHighResolutionOutputEnabled: Boolean,
+    onPlaybackHighResolutionOutputEnabledChange: (Boolean) -> Unit,
     playbackVolumeBalance: Float,
     onPlaybackVolumeBalanceChange: (Float) -> Unit,
     keepLastPlaybackProgress: Boolean,
@@ -206,6 +209,29 @@ internal fun SettingsPlaybackSection(
                     )
                 }
             }
+
+            PlaybackSwitchItem(
+                setting = AutoSettingsMetadata.requireSetting(
+                    AutoSettingsKeys.PLAYBACK_HIGH_RESOLUTION_OUTPUT_ENABLED
+                ),
+                checked = playbackHighResolutionOutputEnabled,
+                icon = {
+                    Icon(
+                        imageVector = Icons.Outlined.HighQuality,
+                        contentDescription = stringResource(
+                            R.string.settings_playback_high_resolution_output
+                        ),
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                },
+                onToggle = {
+                    onPlaybackHighResolutionOutputEnabledChange(
+                        !playbackHighResolutionOutputEnabled
+                    )
+                },
+                onCheckedChange = onPlaybackHighResolutionOutputEnabledChange
+            )
 
             PlaybackSwitchItem(
                 setting = AutoSettingsMetadata.requireSetting(

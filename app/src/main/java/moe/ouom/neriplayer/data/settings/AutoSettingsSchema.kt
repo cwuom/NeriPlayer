@@ -1363,6 +1363,19 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
+            key = "playback_high_resolution_output_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = false,
+            order = 124,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val playbackHighResolutionOutputEnabled = autoSetting(
+            titleRes = R.string.settings_playback_high_resolution_output,
+            descriptionRes = R.string.settings_playback_high_resolution_output_desc
+        )
+
+        @AutoSetting(
             key = "playback_volume_balance",
             type = SettingValueType.Float,
             defaultFloat = DEFAULT_PLAYBACK_VOLUME_BALANCE,

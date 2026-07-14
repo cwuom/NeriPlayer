@@ -138,6 +138,16 @@ private suspend inline fun <T> kotlinx.coroutines.flow.Flow<T>.collectSafely(
     }
 }
 
+private data class UsbExclusiveNativeServiceSignal(
+    val opened: Boolean,
+    val streaming: Boolean,
+    val paused: Boolean,
+    val transitioning: Boolean,
+    val source: String,
+    val handle: Long,
+    val lastError: String?
+)
+
 private data class PlaybackNotificationSnapshot(
     val songKey: String?,
     val title: String,
@@ -1045,10 +1055,23 @@ class AudioPlayerService : Service() {
             }
         }
         serviceScope.launch {
-            UsbExclusiveSessionController.state.collectSafely("usbExclusiveSessionState") {
-                updateUsbExclusiveServiceKeepAlive("usb_native_state")
-                refreshIdleShutdown("usb_native_state")
-            }
+            UsbExclusiveSessionController.state
+                .map { state ->
+                    UsbExclusiveNativeServiceSignal(
+                        opened = state.opened,
+                        streaming = state.streaming,
+                        paused = state.paused,
+                        transitioning = state.transitioning,
+                        source = state.source,
+                        handle = state.handle,
+                        lastError = state.lastError
+                    )
+                }
+                .distinctUntilChanged()
+                .collectSafely("usbExclusiveSessionState") {
+                    updateUsbExclusiveServiceKeepAlive("usb_native_state")
+                    refreshIdleShutdown("usb_native_state")
+                }
         }
         serviceScope.launch {
             UsbExclusiveAudioPathTracker.state.collectSafely("usbExclusiveAudioPathState") {

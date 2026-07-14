@@ -70,6 +70,24 @@ void verifiesContinuousRatesAndEndpointControl() {
     assert(controls.samplingFrequencyControl);
 }
 
+void verifiesUac1Padded24BitContainerFormat() {
+    constexpr uint8_t descriptors[] = {
+        7, 0x24, 0x01, 1, 1, 0x01, 0x00,
+        11, 0x24, 0x02, 0x01, 2, 4, 24, 1,
+        0x80, 0xBB, 0x00
+    };
+    neri::usb::uac1::TypeIFormat format;
+    std::string error;
+    assert(neri::usb::uac1::parseTypeIFormat(
+        descriptors,
+        sizeof(descriptors),
+        &format,
+        &error
+    ));
+    const neri::usb::uac1::FormatTarget exactTarget { 48000, 2, 4, 24 };
+    assert(neri::usb::uac1::matchesTarget(format, exactTarget, &error));
+}
+
 void rejectsMalformedDescriptors() {
     constexpr uint8_t truncated[] = {
         7, 0x24, 0x01, 1, 1, 0x01, 0x00,
@@ -110,6 +128,7 @@ void rejectsFormatsThatNeedFeedbackScheduling() {
 int main() {
     verifiesDiscretePcmFormat();
     verifiesContinuousRatesAndEndpointControl();
+    verifiesUac1Padded24BitContainerFormat();
     rejectsMalformedDescriptors();
     rejectsFormatsThatNeedFeedbackScheduling();
     return 0;

@@ -195,9 +195,11 @@ internal fun PlayerManager.initializeImpl(
             LyriconManager.initialize(app)
         }
         playbackSoundConfig = initialPlaybackPreferences.toPlaybackSoundConfig()
+        playbackHighResolutionOutputEnabled =
+            initialPlaybackPreferences.playbackHighResolutionOutputEnabled
         NPLogger.d(
             "NERI-PlayerManager",
-            "initialize(): prefs quality=$preferredQuality, youtubeQuality=$youtubePreferredQuality, biliQuality=$biliPreferredQuality, mobileDataFollowDefault=$mobileDataFollowDefaultAudioQuality, mobileDataQuality=$mobileDataNeteaseAudioQuality/$mobileDataYouTubeAudioQuality/$mobileDataBiliAudioQuality, keepProgress=$keepLastPlaybackProgressEnabled, keepMode=$keepPlaybackModeStateEnabled, neteaseAutoSourceSwitch=$neteaseAutoSourceSwitchEnabled, fadeIn=$playbackFadeInEnabled/${playbackFadeInDurationMs}ms, crossfade=$playbackCrossfadeNextEnabled/${playbackCrossfadeInDurationMs}ms, stopOnBluetoothDisconnect=$stopOnBluetoothDisconnectEnabled, usbExclusivePlayback=$usbExclusivePlaybackEnabled, allowMixedPlayback=$allowMixedPlaybackEnabled"
+            "initialize(): prefs quality=$preferredQuality, youtubeQuality=$youtubePreferredQuality, biliQuality=$biliPreferredQuality, mobileDataFollowDefault=$mobileDataFollowDefaultAudioQuality, mobileDataQuality=$mobileDataNeteaseAudioQuality/$mobileDataYouTubeAudioQuality/$mobileDataBiliAudioQuality, keepProgress=$keepLastPlaybackProgressEnabled, keepMode=$keepPlaybackModeStateEnabled, neteaseAutoSourceSwitch=$neteaseAutoSourceSwitchEnabled, fadeIn=$playbackFadeInEnabled/${playbackFadeInDurationMs}ms, crossfade=$playbackCrossfadeNextEnabled/${playbackCrossfadeInDurationMs}ms, highResolutionOutput=$playbackHighResolutionOutputEnabled, stopOnBluetoothDisconnect=$stopOnBluetoothDisconnectEnabled, usbExclusivePlayback=$usbExclusivePlaybackEnabled, allowMixedPlayback=$allowMixedPlaybackEnabled"
         )
         val okHttpClient = AppContainer.sharedOkHttpClient
         val upstreamFactory: HttpDataSource.Factory = OkHttpDataSource.Factory(okHttpClient)
@@ -244,7 +246,11 @@ internal fun PlayerManager.initializeImpl(
             extractorsFactory
         )
 
+        // USB 独占优先保留解码器的原生整数 PCM，别在进入 native USB 前强行改成 float
+        val enableFloatOutput =
+            playbackHighResolutionOutputEnabled && !usbExclusivePlaybackEnabled
         val renderersFactory = ReactiveRenderersFactory(app)
+            .setEnableAudioFloatOutput(enableFloatOutput)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
 
         player = ExoPlayer.Builder(app, renderersFactory)
@@ -1048,6 +1054,7 @@ internal fun PlayerManager.updateAudioOffloadPreferences(reason: String) {
         loudnessGainMb = playbackSoundConfig.loudnessGainMb,
         volumeBalance = playbackSoundConfig.volumeBalance,
         volumeNormalizationEnabled = playbackSoundConfig.volumeNormalizationEnabled,
+        highResolutionOutputEnabled = playbackHighResolutionOutputEnabled,
         audioReactiveActive = AudioReactive.enabled,
         listenTogetherPlaybackRate = listenTogetherSyncPlaybackRate,
     )

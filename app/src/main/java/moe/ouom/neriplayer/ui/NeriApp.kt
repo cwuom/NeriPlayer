@@ -870,6 +870,10 @@ private fun NeriAppContent(
         .collectAsStateWithLifecycle(
             initialValue = startupPlaybackPreferences.playbackVolumeNormalizationEnabled
         )
+    val playbackHighResolutionOutputEnabled by repo.playbackHighResolutionOutputEnabledFlow
+        .collectAsStateWithLifecycle(
+            initialValue = startupPlaybackPreferences.playbackHighResolutionOutputEnabled
+        )
     val playbackVolumeBalance by repo.playbackVolumeBalanceFlow.collectAsStateWithLifecycle(
         initialValue = startupPlaybackPreferences.playbackVolumeBalance
     )
@@ -2184,6 +2188,13 @@ private fun NeriAppContent(
                                             playbackVolumeNormalizationEnabled,
                                         onPlaybackVolumeNormalizationEnabledChange = { enabled ->
                                             PlayerManager.setPlaybackVolumeNormalizationEnabled(enabled)
+                                        },
+                                        playbackHighResolutionOutputEnabled =
+                                            playbackHighResolutionOutputEnabled,
+                                        onPlaybackHighResolutionOutputEnabledChange = { enabled ->
+                                            PlayerManager.setPlaybackHighResolutionOutputEnabled(
+                                                enabled
+                                            )
                                         },
                                         playbackVolumeBalance = playbackVolumeBalance,
                                         onPlaybackVolumeBalanceChange = { balance ->

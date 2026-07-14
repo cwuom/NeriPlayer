@@ -9,6 +9,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.exoplayer.audio.AudioSink
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
+import org.junit.Assert.assertTrue
 import org.junit.After
 import org.junit.Test
 import org.mockito.Mockito.mock
@@ -55,10 +56,34 @@ class UsbExclusiveAudioSinkTest {
         verify(fallbackSink).play()
     }
 
+    @Test
+    fun `usb native path accepts float pcm for software conversion`() {
+        PlayerManager.usbExclusivePlaybackEnabled = true
+        val context = mock(Context::class.java)
+        `when`(context.applicationContext).thenReturn(context)
+        `when`(context.getSystemService(Context.AUDIO_SERVICE)).thenReturn(null)
+        val fallbackSink = mock(AudioSink::class.java)
+        `when`(fallbackSink.supportsFormat(rawFloatPcmFormat())).thenReturn(false)
+        val sink = UsbExclusiveAudioSink(
+            context = context,
+            fallbackSink = fallbackSink,
+            observeSystemVolume = false
+        )
+
+        assertTrue(sink.supportsFormat(rawFloatPcmFormat()))
+    }
+
     private fun rawPcmFormat(): Format = Format.Builder()
         .setSampleMimeType(MimeTypes.AUDIO_RAW)
         .setSampleRate(44_100)
         .setChannelCount(2)
         .setPcmEncoding(C.ENCODING_PCM_16BIT)
+        .build()
+
+    private fun rawFloatPcmFormat(): Format = Format.Builder()
+        .setSampleMimeType(MimeTypes.AUDIO_RAW)
+        .setSampleRate(96_000)
+        .setChannelCount(2)
+        .setPcmEncoding(C.ENCODING_PCM_FLOAT)
         .build()
 }

@@ -8,7 +8,12 @@ internal object UsbExclusivePcmWritePlanner {
     private const val DEFAULT_MAX_WRITE_CHUNK_BYTES = 12 * 1024
     private const val HARD_MAX_WRITE_CHUNK_BYTES = 16 * 1024
     private const val TRANSFERS_PER_WRITE = 4L
+    private const val RECOVERY_TRANSFERS_PER_WRITE = 10L
     private const val RUNNING_TARGET_QUEUE_MS = 120L
+    private const val RUNNING_TARGET_QUEUE_MAX_MS = 180L
+    private const val HIGH_BANDWIDTH_TARGET_QUEUE_MS = 80L
+    private const val HIGH_BANDWIDTH_TARGET_QUEUE_MAX_MS = 120L
+    private const val RUNNING_LOW_WATERMARK_QUEUE_MS = 40L
     private const val RUNNING_TARGET_TRANSFERS = 6L
 
     fun chooseWriteSize(
@@ -35,7 +40,15 @@ internal object UsbExclusivePcmWritePlanner {
             limit = min(limit, prerollBytes)
         }
 
-        limit = min(limit, writeChunkLimit(metrics, frameBytes))
+        limit = min(
+            limit,
+            writeChunkLimit(
+                metrics = metrics,
+                frameBytes = frameBytes,
+                inputSampleRate = inputSampleRate,
+                nativeTransportStarted = nativeTransportStarted
+            )
+        )
         limit = min(
             limit,
             availablePcmInputBytes(
@@ -60,17 +73,46 @@ internal object UsbExclusivePcmWritePlanner {
 
     private fun writeChunkLimit(
         metrics: UsbExclusiveRuntimeMetrics,
-        frameBytes: Int
+        frameBytes: Int,
+        inputSampleRate: Int,
+        nativeTransportStarted: Boolean
     ): Int {
         val transferBytes = metrics.transferBytes
             ?.takeIf { it > 0L }
             ?: metrics.lastTransferBytes?.takeIf { it > 0L }
+        val recoveryMode = nativeTransportStarted &&
+            runningQueueNeedsRecovery(
+                metrics = metrics,
+                inputSampleRate = inputSampleRate,
+                frameBytes = frameBytes
+            )
+        val transfersPerWrite = if (recoveryMode) {
+            RECOVERY_TRANSFERS_PER_WRITE
+        } else {
+            TRANSFERS_PER_WRITE
+        }
         val rawLimit = transferBytes
-            ?.times(TRANSFERS_PER_WRITE)
+            ?.times(transfersPerWrite)
             ?.coerceAtMost(HARD_MAX_WRITE_CHUNK_BYTES.toLong())
             ?.toInt()
             ?: DEFAULT_MAX_WRITE_CHUNK_BYTES
         return alignDown(rawLimit.coerceAtLeast(frameBytes), frameBytes)
+    }
+
+    private fun runningQueueNeedsRecovery(
+        metrics: UsbExclusiveRuntimeMetrics,
+        inputSampleRate: Int,
+        frameBytes: Int
+    ): Boolean {
+        val hadZeroFill = (metrics.playerZeroFillBytes ?: 0L) > 0L
+        if (!hadZeroFill) return false
+        val levelBytes = metrics.pcmLevelBytes ?: return false
+        val outputFrameBytes = metrics.outputFrameBytes ?: frameBytes
+        val outputSampleRate = metrics.sampleRate?.takeIf { it > 0 } ?: inputSampleRate
+        if (outputSampleRate <= 0 || outputFrameBytes <= 0) return false
+        val lowWatermarkBytes =
+            outputSampleRate.toLong() * outputFrameBytes * RUNNING_LOW_WATERMARK_QUEUE_MS / 1_000L
+        return levelBytes <= lowWatermarkBytes
     }
 
     private fun availablePcmInputBytes(
@@ -144,8 +186,27 @@ internal object UsbExclusivePcmWritePlanner {
         inputSampleRate: Int
     ): Long {
         val outputSampleRate = metrics.sampleRate?.takeIf { it > 0 } ?: inputSampleRate
+        val highBandwidthPcm = outputFrameBytes >= 6
+        val targetQueueMs = if (highBandwidthPcm) {
+            HIGH_BANDWIDTH_TARGET_QUEUE_MS
+        } else {
+            RUNNING_TARGET_QUEUE_MS
+        }
+        val targetQueueMaxMs = if (highBandwidthPcm) {
+            HIGH_BANDWIDTH_TARGET_QUEUE_MAX_MS
+        } else {
+            RUNNING_TARGET_QUEUE_MAX_MS
+        }
         val timedBytes = if (outputSampleRate > 0) {
-            outputSampleRate.toLong() * outputFrameBytes * RUNNING_TARGET_QUEUE_MS / 1_000L
+            outputSampleRate.toLong() * outputFrameBytes * targetQueueMs / 1_000L
+        } else {
+            0L
+        }
+        val stabilizedBytes = if (outputSampleRate > 0) {
+            val boundedCapacityBytes = capacity - capacity / 4L
+            val boundedSteadyBytes =
+                outputSampleRate.toLong() * outputFrameBytes * targetQueueMaxMs / 1_000L
+            min(boundedCapacityBytes, boundedSteadyBytes)
         } else {
             0L
         }
@@ -154,7 +215,10 @@ internal object UsbExclusivePcmWritePlanner {
             ?: metrics.lastTransferBytes?.takeIf { it > 0L }
             ?: 0L
         val transferFloor = transferBytes * RUNNING_TARGET_TRANSFERS
-        val target = max(max(timedBytes, transferFloor), outputFrameBytes.toLong())
+        val target = max(
+            max(max(timedBytes, stabilizedBytes), transferFloor),
+            outputFrameBytes.toLong()
+        )
         return target.coerceAtMost(capacity - capacity % outputFrameBytes)
     }
 

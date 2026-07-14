@@ -114,6 +114,10 @@ float readIntegerPcmSample(
     for (int index = 0; index < std::min(4, subslotBytes); ++index) {
         raw |= static_cast<uint32_t>(input[index]) << (index * 8);
     }
+    const int storageBits = std::min(32, subslotBytes * 8);
+    if (validBits < storageBits) {
+        raw >>= (storageBits - validBits);
+    }
     if (validBits < 32) {
         const uint32_t validMask = (UINT32_C(1) << validBits) - 1U;
         raw &= validMask;
@@ -150,12 +154,9 @@ void writeIntegerPcmSample(
         ? UINT64_C(0xFFFFFFFF)
         : (UINT64_C(1) << validBits) - 1U;
     uint64_t encoded = static_cast<uint64_t>(value) & validMask;
-    if (value < 0 && validBits < subslotBytes * 8) {
-        const int storageBits = std::min(32, subslotBytes * 8);
-        const uint64_t storageMask = storageBits == 32
-            ? UINT64_C(0xFFFFFFFF)
-            : (UINT64_C(1) << storageBits) - 1U;
-        encoded |= storageMask & ~validMask;
+    const int storageBits = std::min(32, subslotBytes * 8);
+    if (validBits < storageBits) {
+        encoded <<= (storageBits - validBits);
     }
     for (int index = 0; index < subslotBytes; ++index) {
         output[index] = static_cast<uint8_t>((encoded >> (index * 8)) & 0xFFU);

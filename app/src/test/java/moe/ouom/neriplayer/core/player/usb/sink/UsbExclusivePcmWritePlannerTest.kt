@@ -22,7 +22,7 @@ class UsbExclusivePcmWritePlannerTest {
     }
 
     @Test
-    fun `uses available pcm target headroom when it is smaller than transfer window`() {
+    fun `uses stabilized queue headroom when it is smaller than transfer window`() {
         val writeSize = UsbExclusivePcmWritePlanner.chooseWriteSize(
             remainingBytes = 65_536,
             inputSampleRate = 48_000,
@@ -33,7 +33,7 @@ class UsbExclusivePcmWritePlannerTest {
             metrics = metrics(pcmFreeBytes = 265_200L)
         )
 
-        assertEquals(240, writeSize)
+        assertEquals(11_760, writeSize)
     }
 
     @Test
@@ -67,7 +67,7 @@ class UsbExclusivePcmWritePlannerTest {
     }
 
     @Test
-    fun `waits at running queue target even when physical fifo still has free space`() {
+    fun `keeps accepting writes while running queue is below stabilized waterline`() {
         val writeSize = UsbExclusivePcmWritePlanner.chooseWriteSize(
             remainingBytes = 17_408,
             inputSampleRate = 96_000,
@@ -90,7 +90,62 @@ class UsbExclusivePcmWritePlannerTest {
             )
         )
 
+        assertEquals(3_072, writeSize)
+    }
+
+    @Test
+    fun `waits once running queue crosses stabilized waterline`() {
+        val writeSize = UsbExclusivePcmWritePlanner.chooseWriteSize(
+            remainingBytes = 17_408,
+            inputSampleRate = 96_000,
+            inputFrameBytes = 4,
+            nativeTransportStarted = true,
+            playing = true,
+            prerollMs = 300L,
+            metrics = UsbExclusiveRuntimeMetrics(
+                sampleRate = 96_000,
+                channelCount = 2,
+                subslotBytes = 2,
+                transferBytes = 768,
+                lastTransferBytes = 768,
+                pcmLevelBytes = 69_504,
+                pcmCapacityBytes = 576_000,
+                pcmFreeBytes = 506_496,
+                transportFailed = false,
+                running = true,
+                lastError = "none"
+            )
+        )
+
         assertEquals(0, writeSize)
+    }
+
+    @Test
+    fun `recovery mode allows larger refill chunks when queue is nearly drained`() {
+        val writeSize = UsbExclusivePcmWritePlanner.chooseWriteSize(
+            remainingBytes = 65_536,
+            inputSampleRate = 96_000,
+            inputFrameBytes = 8,
+            nativeTransportStarted = true,
+            playing = true,
+            prerollMs = 150L,
+            metrics = UsbExclusiveRuntimeMetrics(
+                sampleRate = 96_000,
+                channelCount = 2,
+                subslotBytes = 4,
+                transferBytes = 1_536,
+                lastTransferBytes = 1_536,
+                pcmLevelBytes = 3_072L,
+                pcmCapacityBytes = 192_000L,
+                pcmFreeBytes = 188_928L,
+                playerZeroFillBytes = 1_536L,
+                transportFailed = false,
+                running = true,
+                lastError = "none"
+            )
+        )
+
+        assertEquals(15_360, writeSize)
     }
 
     @Test

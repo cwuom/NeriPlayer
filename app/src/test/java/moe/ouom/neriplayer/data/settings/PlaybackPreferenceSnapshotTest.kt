@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.settings
 
+import androidx.datastore.preferences.core.preferencesOf
 import moe.ouom.neriplayer.core.player.model.MAX_PLAYBACK_LOUDNESS_GAIN_MB
 import moe.ouom.neriplayer.core.player.model.MAX_PLAYBACK_VOLUME_BALANCE
 import moe.ouom.neriplayer.core.player.model.MIN_PLAYBACK_PITCH
@@ -11,6 +12,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlaybackPreferenceSnapshotTest {
+
+    @Test
+    fun `preferences restore high resolution output setting`() {
+        val snapshot = preferencesOf(
+            SettingsKeys.PLAYBACK_HIGH_RESOLUTION_OUTPUT_ENABLED to true
+        ).toPlaybackPreferenceSnapshot()
+
+        assertTrue(snapshot.playbackHighResolutionOutputEnabled)
+    }
 
     @Test
     fun `sanitized normalizes playback runtime values`() {
@@ -71,6 +81,7 @@ class PlaybackPreferenceSnapshotTest {
         assertFalse(snapshot.allowMixedPlayback)
         assertFalse(snapshot.playbackFadeIn)
         assertFalse(snapshot.playbackVolumeNormalizationEnabled)
+        assertFalse(snapshot.playbackHighResolutionOutputEnabled)
         assertFalse(snapshot.lyriconEnabled)
         assertEquals(1024L * 1024 * 1024, snapshot.maxCacheSizeBytes)
     }

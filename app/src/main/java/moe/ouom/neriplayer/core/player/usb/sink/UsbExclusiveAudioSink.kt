@@ -67,7 +67,7 @@ internal class UsbExclusiveAudioSink(
         const val NATIVE_OPEN_GATE_RETRY_MAX_ATTEMPTS = 2
         const val FIRST_COMPLETION_STALL_RECOVERY_MIN_MS = 220L
         const val FIRST_COMPLETION_STALL_RECOVERY_MAX_ATTEMPTS = 1
-        const val NATIVE_START_PREROLL_MS = 300L
+        const val NATIVE_START_PREROLL_MS = 80L
         const val DIRECT_SCRATCH_CAPACITY_BYTES = 256 * 1024
         const val NATIVE_BACKPRESSURE_REFRESH_INTERVAL_MS = 250L
         const val NATIVE_BACKPRESSURE_LOG_INTERVAL_MS = 2_000L
@@ -87,6 +87,8 @@ internal class UsbExclusiveAudioSink(
     private var listener: AudioSink.Listener? = null
     private var nativeHandle: Long = 0L
     private var usingNative = false
+    private var softwareFloatInputFormat: PreparedUsbInputPcmFormat? = null
+    private var softwareFloatConversionLogged = false
     private var fallbackConfigured = false
     private var configuredFormat: Format? = null
     private var configuredBufferSize = 0
@@ -156,12 +158,12 @@ internal class UsbExclusiveAudioSink(
 
     override fun supportsFormat(format: Format): Boolean {
         return fallbackSink.supportsFormat(format) ||
-            (PlayerManager.usbExclusivePlaybackEnabled && isNativePcmFormat(format))
+            (PlayerManager.usbExclusivePlaybackEnabled && isUsbNativePcmFormat(format))
     }
 
     override fun getFormatSupport(format: Format): Int {
         val fallbackSupport = fallbackSink.getFormatSupport(format)
-        return if (PlayerManager.usbExclusivePlaybackEnabled && isNativePcmFormat(format)) {
+        return if (PlayerManager.usbExclusivePlaybackEnabled && isUsbNativePcmFormat(format)) {
             max(fallbackSupport, AudioSink.SINK_FORMAT_SUPPORTED_DIRECTLY)
         } else {
             fallbackSupport
@@ -402,13 +404,21 @@ internal class UsbExclusiveAudioSink(
             return false
         }
 
-        buffer.position(buffer.position() + written)
-        writtenFrames += written / max(1, frameBytes)
+        val consumed = written.coerceIn(0, remaining)
+        if (written > remaining) {
+            NPLogger.w(
+                "NERI-UsbExclusive",
+                "native PCM write over-reported bytes: written=$written remaining=$remaining " +
+                    "format=${configuredFormat?.let(::inputFormatDescription) ?: "none"}"
+            )
+        }
+        buffer.position(buffer.position() + consumed)
+        writtenFrames += consumed / max(1, frameBytes)
         inputEnded = false
-        original.limit(original.position() + written)
+        original.limit(original.position() + consumed)
         // usb native 在后级才乘系统音量，这里同步视觉采样增益
         AudioReactive.handlePcmBuffer(original, effectiveVolume = nativeVolume)
-        return written == remaining
+        return consumed == remaining
     }
 
     override fun playToEndOfStream() {
@@ -722,6 +732,7 @@ internal class UsbExclusiveAudioSink(
 
         nativeHandle = openedHandle
         usingNative = true
+        updateSoftwareFloatConversionState()
         failoverRequested = false
         nativeOpenGateRetryAttempts = 0
         resetPlaybackCounters(
@@ -868,7 +879,7 @@ internal class UsbExclusiveAudioSink(
         outputChannels: IntArray?
     ): String? {
         UsbExclusiveAudioPathTracker.forcedSystemFallbackReason()?.let { return it }
-        if (!isNativePcmFormat(inputFormat)) return "unsupported_input_format"
+        if (!isUsbNativePcmFormat(inputFormat)) return "unsupported_input_format"
         if (outputChannels != null) return "channel_mapping_requires_system_processor"
         if (!hasDefaultPlaybackParameters(playbackParameters)) {
             return "playback_parameters_require_system_processor"
@@ -908,6 +919,10 @@ internal class UsbExclusiveAudioSink(
             pcmFrameBytes(format.pcmEncoding, format.channelCount) > 0
     }
 
+    private fun isUsbNativePcmFormat(format: Format): Boolean {
+        return isNativePcmFormat(format)
+    }
+
     private fun inputFormatDescription(format: Format): String {
         return "mime=${format.sampleMimeType ?: "unknown"} sampleRate=${format.sampleRate} " +
             "channels=${format.channelCount} encoding=${format.pcmEncoding}"
@@ -915,6 +930,74 @@ internal class UsbExclusiveAudioSink(
 
     private fun writeNative(buffer: ByteBuffer, size: Int, nativeVolume: Float): Int {
         if (nativeHandle == 0L || size <= 0) return 0
+        if (shouldScaleFloatInputInSoftware()) {
+            val preparedInputFormat = softwareFloatInputFormat ?: return 0
+            val sourceFrameBytes = frameBytes.takeIf { it > 0 } ?: return 0
+            val targetFrameBytes = preparedInputFormat.bytesPerSample
+                .takeIf { it > 0 }
+                ?.let { channelCount * it }
+                ?: return 0
+            val sourceFrames = size / sourceFrameBytes
+            if (sourceFrames <= 0) return 0
+            val convertedSize = sourceFrames * targetFrameBytes
+            val scratch = directScratch?.takeIf { it.capacity() >= convertedSize } ?: return 0
+            val duplicate = buffer.duplicate()
+            duplicate.limit(duplicate.position() + size)
+            scratch.clear()
+            scratch.order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            duplicate.order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            var bufferPeak = 0f
+            var firstSample: Float? = null
+            repeat(sourceFrames) {
+                repeat(channelCount) {
+                    val scaled = (duplicate.float * nativeVolume).coerceIn(-1f, 1f)
+                    if (firstSample == null) {
+                        firstSample = scaled
+                    }
+                    bufferPeak = max(bufferPeak, abs(scaled))
+                    when (preparedInputFormat.encoding) {
+                        C.ENCODING_PCM_16BIT -> scratch.putShort(
+                            (scaled * Short.MAX_VALUE).toInt()
+                                .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                                .toShort()
+                        )
+                        C.ENCODING_PCM_24BIT -> {
+                            val value = (scaled * 8_388_607f).toInt()
+                            scratch.put((value and 0xFF).toByte())
+                            scratch.put(((value shr 8) and 0xFF).toByte())
+                            scratch.put(((value shr 16) and 0xFF).toByte())
+                        }
+                        C.ENCODING_PCM_32BIT -> scratch.putInt(
+                            (scaled * Int.MAX_VALUE.toFloat()).toInt()
+                        )
+                        else -> return 0
+                    }
+                }
+            }
+            scratch.flip()
+            if (!softwareFloatConversionLogged) {
+                softwareFloatConversionLogged = true
+                NPLogger.i(
+                    "NERI-UsbExclusive",
+                    "software float usb conversion armed: preparedEncoding=" +
+                        "${preparedInputFormat.encoding} preparedBytes=${preparedInputFormat.bytesPerSample} " +
+                        "output=${UsbExclusiveSessionController.state.value.outputFormat} " +
+                        "inputPeak=$bufferPeak firstSample=${firstSample ?: 0f} " +
+                        "nativeVolume=$nativeVolume"
+                )
+            }
+            publishNativeVolume(nativeVolume)
+            val writtenConverted = UsbExclusiveSessionController.writePlayerPcm(
+                handle = nativeHandle,
+                buffer = scratch,
+                offset = 0,
+                size = convertedSize,
+                volume = 1f
+            )
+            if (writtenConverted <= 0) return 0
+            val writtenFrames = writtenConverted / targetFrameBytes
+            return writtenFrames * sourceFrameBytes
+        }
         publishNativeVolume(nativeVolume)
         if (buffer.isDirect) {
             return UsbExclusiveSessionController.writePlayerPcm(
@@ -1082,13 +1165,35 @@ internal class UsbExclusiveAudioSink(
         )
     }
 
+    private fun shouldScaleFloatInputInSoftware(): Boolean {
+        return usingNative &&
+            pcmEncoding == C.ENCODING_PCM_FLOAT &&
+            softwareFloatInputFormat != null
+    }
+
     private fun applyEffectiveNativeVolume(): Float {
         val effectiveVolume = effectiveNativeVolume()
         publishNativeVolume(effectiveVolume)
         if (usingNative && nativeHandle != 0L) {
-            UsbExclusiveSessionController.setPlayerVolume(nativeHandle, effectiveVolume)
+            UsbExclusiveSessionController.setPlayerVolume(
+                nativeHandle,
+                if (shouldScaleFloatInputInSoftware()) 1f else effectiveVolume
+            )
         }
         return effectiveVolume
+    }
+
+    private fun updateSoftwareFloatConversionState() {
+        if (!usingNative || pcmEncoding != C.ENCODING_PCM_FLOAT) {
+            softwareFloatInputFormat = null
+            softwareFloatConversionLogged = false
+            return
+        }
+        softwareFloatInputFormat = UsbExclusiveOutputFormatResolver.preparedInputPcmFormat(
+            inputEncoding = pcmEncoding,
+            outputDescription = UsbExclusiveSessionController.state.value.outputFormat
+        )
+        softwareFloatConversionLogged = false
     }
 
     private fun publishNativeVolume(effectiveVolume: Float) {
@@ -1218,6 +1323,8 @@ internal class UsbExclusiveAudioSink(
             nativeHandle = 0L
         }
         usingNative = false
+        softwareFloatInputFormat = null
+        softwareFloatConversionLogged = false
         nativeTransportStarted = false
         nativeHasQueuedPcm = false
         nativeTransportStartedAtMs = 0L
@@ -1233,7 +1340,14 @@ internal class UsbExclusiveAudioSink(
         if (hadActiveNativePcm) {
             pauseNativeTransport()
         }
-        val flushed = UsbExclusiveSessionController.flushPlayerPcm(retainedHandle)
+        val runtimeMetrics = UsbExclusiveSessionController.state.value.runtimeReport.usbRuntimeMetrics()
+        val hasBufferedNativePcm = UsbExclusiveSessionController.queuedPlayerFrames(retainedHandle) > 0L ||
+            (runtimeMetrics.pcmLevelBytes ?: 0L) > 0L
+        val flushed = if (hasBufferedNativePcm) {
+            UsbExclusiveSessionController.flushPlayerPcm(retainedHandle)
+        } else {
+            true
+        }
         if (!flushed || !shouldRetainNativeSessionForReset(retainedHandle)) {
             NPLogger.w(
                 "NERI-UsbExclusive",
@@ -1243,12 +1357,14 @@ internal class UsbExclusiveAudioSink(
             return false
         }
         usingNative = true
+        updateSoftwareFloatConversionState()
         nativeTransportStarted = false
         nativeHasQueuedPcm = false
         nativeTransportStartedAtMs = 0L
         NPLogger.d(
             "NERI-UsbExclusive",
-            "retained native USB session across sink reset: handle=$retainedHandle"
+            "retained native USB session across sink reset: handle=$retainedHandle " +
+                "flushed=$hasBufferedNativePcm"
         )
         return true
     }

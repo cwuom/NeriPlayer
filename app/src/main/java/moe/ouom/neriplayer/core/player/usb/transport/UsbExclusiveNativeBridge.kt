@@ -155,6 +155,31 @@ internal object UsbExclusiveNativeBridge {
         }
     }
 
+    fun reconfigurePlayerPcmOutput(
+        handle: Long,
+        sampleRate: Int,
+        channelCount: Int,
+        bitsPerSample: Int,
+        subslotBytes: Int
+    ): Boolean {
+        if (handle == 0L || !ensureLoaded()) return false
+        return callNativeBoolean(
+            operation = "nativeReconfigurePlayerPcmOutput",
+            context = {
+                "handle=$handle sampleRate=$sampleRate channelCount=$channelCount " +
+                    "bitsPerSample=$bitsPerSample subslotBytes=$subslotBytes"
+            }
+        ) {
+            nativeReconfigurePlayerPcmOutput(
+                handle = handle,
+                sampleRate = sampleRate,
+                channelCount = channelCount,
+                bitsPerSample = bitsPerSample,
+                subslotBytes = subslotBytes
+            )
+        }
+    }
+
     fun writePlayerPcm(
         handle: Long,
         buffer: ByteBuffer,
@@ -325,6 +350,15 @@ internal object UsbExclusiveNativeBridge {
         inputSampleRate: Int,
         inputChannelCount: Int,
         inputEncoding: Int
+    ): Boolean
+
+    @JvmStatic
+    private external fun nativeReconfigurePlayerPcmOutput(
+        handle: Long,
+        sampleRate: Int,
+        channelCount: Int,
+        bitsPerSample: Int,
+        subslotBytes: Int
     ): Boolean
 
     @JvmStatic

@@ -59,6 +59,10 @@ class AutoSettingsGeneratedTest {
             "playback_volume_normalization_enabled" in booleanKeyNames
         )
         assertTrue(
+            "high resolution output should be exportable",
+            "playback_high_resolution_output_enabled" in booleanKeyNames
+        )
+        assertTrue(
             "theme string should be exportable",
             "theme_color_palette_v2" in stringKeyNames
         )
@@ -160,6 +164,13 @@ class AutoSettingsGeneratedTest {
         assertEquals(SettingUiType.Custom, playbackFade?.ui)
         assertEquals(SettingAccessMode.KeyOnly, playbackFade?.access)
         assertEquals(R.string.settings_playback_fade_in, playbackFade?.titleRes)
+
+        val highResolutionOutput =
+            AutoSettingsMetadata.setting("playback_high_resolution_output_enabled")
+        assertEquals(SettingValueType.Boolean, highResolutionOutput?.valueType)
+        assertEquals(SettingUiType.Custom, highResolutionOutput?.ui)
+        assertEquals(SettingAccessMode.KeyOnly, highResolutionOutput?.access)
+        assertEquals(AutoSettingsSections.playback, highResolutionOutput?.section)
 
         val audioQuality = AutoSettingsMetadata.setting("audio_quality")
         assertEquals(SettingValueType.String, audioQuality?.valueType)

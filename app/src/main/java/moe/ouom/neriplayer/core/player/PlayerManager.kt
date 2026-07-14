@@ -74,6 +74,7 @@ import moe.ouom.neriplayer.core.player.lifecycle.ensureInitializedImpl
 import moe.ouom.neriplayer.core.player.lifecycle.handleAudioBecomingNoisyImpl
 import moe.ouom.neriplayer.core.player.lifecycle.initializeImpl
 import moe.ouom.neriplayer.core.player.lifecycle.releaseImpl
+import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbAudioSinkReconfiguration
 import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
 import moe.ouom.neriplayer.core.player.lyrics.syncExternalBluetoothLyrics
 import moe.ouom.neriplayer.core.player.model.AudioDevice
@@ -320,6 +321,7 @@ object PlayerManager {
     internal var playbackCrossfadeOutDurationMs = DEFAULT_FADE_DURATION_MS
     @Volatile
     internal var playbackSoundConfig = PlaybackSoundConfig()
+    internal var playbackHighResolutionOutputEnabled = false
     internal var lyriconEnabled = false
     internal var statusBarLyricsEnable = false
     internal var externalBluetoothLyricsEnabled = false
@@ -1390,6 +1392,25 @@ object PlayerManager {
             playbackSoundConfig.copy(volumeNormalizationEnabled = enabled),
             persist = persist
         )
+    }
+
+    fun setPlaybackHighResolutionOutputEnabled(enabled: Boolean, persist: Boolean = true) {
+        ensureInitialized()
+        if (playbackHighResolutionOutputEnabled == enabled) return
+        playbackHighResolutionOutputEnabled = enabled
+        updateAudioOffloadPreferences("playback_high_resolution_output")
+        if (persist) {
+            ioScope.launch {
+                settingsRepo.setPlaybackHighResolutionOutputEnabled(enabled)
+            }
+        }
+        if (usbExclusivePlaybackEnabled) {
+            scheduleUsbAudioSinkReconfiguration(
+                reason = "playback_high_resolution_output_changed",
+                allowWhilePlaybackActive = true,
+                bypassCooldown = true
+            )
+        }
     }
 
     fun setPlaybackEqualizerEnabled(enabled: Boolean, persist: Boolean = true) {

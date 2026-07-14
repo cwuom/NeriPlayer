@@ -79,6 +79,7 @@ data class UsbExclusiveDiagnosticsSnapshot(
     val sinkPlaying: Boolean,
     val nativePaused: Boolean,
     val inputFormat: String,
+    val requestedOutputFormat: String,
     val requestedPlaybackParameters: String,
     val requestedVolume: Float
 ) {
@@ -116,6 +117,7 @@ data class UsbExclusiveDiagnosticsSnapshot(
         appendLine("fallbackReason=${fallbackReason ?: "none"}")
         appendLine("sinkPlaying=$sinkPlaying nativePaused=$nativePaused")
         appendLine("inputFormat=$inputFormat")
+        appendLine("requestedOutputFormat=$requestedOutputFormat")
         appendLine("playbackParameters=$requestedPlaybackParameters volume=$requestedVolume")
         appendLine("settings: usbExclusive=$usbExclusivePlaybackEnabled, allowMixed=$allowMixedPlaybackEnabled")
         appendLine("usbDeviceSelection=$selectedDeviceKey")
@@ -333,6 +335,7 @@ object UsbExclusiveDiagnostics {
             sinkPlaying = pathState.sinkPlaying,
             nativePaused = pathState.nativePaused,
             inputFormat = pathState.inputFormat,
+            requestedOutputFormat = nativeState.requestedOutputFormat,
             requestedPlaybackParameters = pathState.requestedPlaybackParameters,
             requestedVolume = pathState.requestedVolume
         )
