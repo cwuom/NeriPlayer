@@ -167,8 +167,9 @@ Current positioning:
 - **Sound controls are tied to the active audio session**:
   `PlaybackEffectsController` applies speed, pitch, Android `Equalizer`, and
   `LoudnessEnhancer` to the current Media3 audio session. Presets, manual bands,
-  loudness gain, fade/crossfade, pause on Bluetooth disconnect, USB exclusive
-  playback, and audio-focus behavior are all available. Native USB exclusive
+  loudness gain, per-track real-time normalization, fade/crossfade, pause on
+  Bluetooth disconnect, USB exclusive playback, and audio-focus behavior are
+  all available. Native USB exclusive
   playback currently targets **UAC1.0** audio devices, so system sounds and other
   apps cannot share the USB transport on that path. Device selection, sample-rate/bit-depth/
   buffer policies, background-playback guidance, startup watchdogs, foreground/
@@ -302,7 +303,8 @@ For release build and signing details, see
   streams; repeated failures skip or stop playback to avoid getting stuck.
 - 🎚️ **Playback sound controls**:
   Now Playing includes speed, pitch, loudness enhancer, Android system equalizer
-  presets, and manual EQ bands.
+  presets, and manual EQ bands. Playback settings also provide per-track
+  real-time loudness normalization, which is bypassed during USB exclusive playback.
 - 🎛️ **Fine-grained playback behavior**:
   keep last playback progress, restore playback mode, fade-in/fade-out,
   crossfade-next, pause on Bluetooth disconnect, USB exclusive playback,

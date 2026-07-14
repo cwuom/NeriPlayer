@@ -405,6 +405,11 @@ class SettingsRepository(private val context: Context) {
             )
         }
 
+    val playbackVolumeNormalizationEnabledFlow: Flow<Boolean> =
+        dataStoreSettingFlow {
+            it[SettingsKeys.PLAYBACK_VOLUME_NORMALIZATION_ENABLED] ?: false
+        }
+
     val keepLastPlaybackProgressFlow: Flow<Boolean> =
         dataStoreSettingFlow { it[SettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS] ?: true }
 
@@ -988,6 +993,15 @@ class SettingsRepository(private val context: Context) {
         }
         updatePlaybackPreferenceSnapshot(context) {
             it.copy(playbackVolumeBalance = normalized)
+        }
+    }
+
+    suspend fun setPlaybackVolumeNormalizationEnabled(enabled: Boolean) {
+        context.dataStore.edit {
+            it[SettingsKeys.PLAYBACK_VOLUME_NORMALIZATION_ENABLED] = enabled
+        }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(playbackVolumeNormalizationEnabled = enabled)
         }
     }
 

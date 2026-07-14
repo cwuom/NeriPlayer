@@ -44,6 +44,7 @@ class PlaybackPreferenceSnapshotTest {
             playbackPitch = 0.95f,
             playbackLoudnessGainMb = 500,
             playbackVolumeBalance = -0.35f,
+            playbackVolumeNormalizationEnabled = true,
             playbackEqualizerEnabled = true,
             playbackEqualizerPreset = PlaybackEqualizerPresetId.POP,
             playbackEqualizerCustomBandLevels = listOf(100, -50, 25)
@@ -55,6 +56,7 @@ class PlaybackPreferenceSnapshotTest {
         assertEquals(0.95f, config.pitch, 0.0001f)
         assertEquals(500, config.loudnessGainMb)
         assertEquals(-0.35f, config.volumeBalance, 0.0001f)
+        assertTrue(config.volumeNormalizationEnabled)
         assertTrue(config.equalizerEnabled)
         assertEquals(PlaybackEqualizerPresetId.POP, config.presetId)
         assertEquals(listOf(100, -50, 25), config.customBandLevelsMb)
@@ -68,6 +70,7 @@ class PlaybackPreferenceSnapshotTest {
         assertTrue(snapshot.keepPlaybackModeState)
         assertFalse(snapshot.allowMixedPlayback)
         assertFalse(snapshot.playbackFadeIn)
+        assertFalse(snapshot.playbackVolumeNormalizationEnabled)
         assertFalse(snapshot.lyriconEnabled)
         assertEquals(1024L * 1024 * 1024, snapshot.maxCacheSizeBytes)
     }

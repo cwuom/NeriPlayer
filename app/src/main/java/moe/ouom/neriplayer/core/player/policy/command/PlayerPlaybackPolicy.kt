@@ -357,6 +357,7 @@ internal fun resolvePlaybackSoundConfigForEngine(
             pitch = 1f,
             loudnessGainMb = 0,
             volumeBalance = 0f,
+            volumeNormalizationEnabled = false,
             equalizerEnabled = false
         )
     }

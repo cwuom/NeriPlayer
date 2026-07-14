@@ -55,6 +55,10 @@ class AutoSettingsGeneratedTest {
             "max_cache_size_bytes" in longKeyNames
         )
         assertTrue(
+            "volume normalization should be exportable",
+            "playback_volume_normalization_enabled" in booleanKeyNames
+        )
+        assertTrue(
             "theme string should be exportable",
             "theme_color_palette_v2" in stringKeyNames
         )

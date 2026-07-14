@@ -11,6 +11,7 @@ internal fun requiresPcmAudioProcessing(
     equalizerEnabled: Boolean,
     loudnessGainMb: Int,
     volumeBalance: Float,
+    volumeNormalizationEnabled: Boolean,
     audioReactiveActive: Boolean,
     listenTogetherPlaybackRate: Float,
 ): Boolean {
@@ -20,6 +21,7 @@ internal fun requiresPcmAudioProcessing(
         equalizerEnabled ||
         loudnessGainMb != 0 ||
         abs(volumeBalance) > PLAYBACK_PARAMETER_EPSILON ||
+        volumeNormalizationEnabled ||
         audioReactiveActive ||
         abs(listenTogetherPlaybackRate - 1f) > PLAYBACK_PARAMETER_EPSILON
 }

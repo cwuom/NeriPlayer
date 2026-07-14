@@ -46,10 +46,11 @@ class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(conte
         enableFloatOutput: Boolean,
         enableAudioTrackPlaybackParams: Boolean
     ): AudioSink {
+        val volumeNormalization = VolumeNormalizationAudioProcessor()
         val balance = StereoBalanceAudioProcessor()
         val tee = TeeAudioProcessor(AudioReactive.teeSink)
         val fallbackSink = DefaultAudioSink.Builder(context)
-            .setAudioProcessors(arrayOf<AudioProcessor>(balance, tee))
+            .setAudioProcessors(arrayOf<AudioProcessor>(volumeNormalization, balance, tee))
             .setEnableFloatOutput(false)
             // 优先使用 Media3 的音频处理链，避免部分设备在极低倍速下
             // 走平台 AudioTrack PlaybackParams 时出现明显电音/颗粒化失真

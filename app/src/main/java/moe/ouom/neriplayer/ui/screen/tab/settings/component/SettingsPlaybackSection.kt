@@ -38,6 +38,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.BluetoothAudio
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Headphones
@@ -94,6 +95,8 @@ internal fun SettingsPlaybackSection(
     onPlaybackCrossfadeInDurationMsChange: (Long) -> Unit,
     playbackCrossfadeOutDurationMs: Long,
     onPlaybackCrossfadeOutDurationMsChange: (Long) -> Unit,
+    playbackVolumeNormalizationEnabled: Boolean,
+    onPlaybackVolumeNormalizationEnabledChange: (Boolean) -> Unit,
     playbackVolumeBalance: Float,
     onPlaybackVolumeBalanceChange: (Float) -> Unit,
     keepLastPlaybackProgress: Boolean,
@@ -203,6 +206,29 @@ internal fun SettingsPlaybackSection(
                     )
                 }
             }
+
+            PlaybackSwitchItem(
+                setting = AutoSettingsMetadata.requireSetting(
+                    AutoSettingsKeys.PLAYBACK_VOLUME_NORMALIZATION_ENABLED
+                ),
+                checked = playbackVolumeNormalizationEnabled,
+                icon = {
+                    Icon(
+                        imageVector = Icons.Outlined.BarChart,
+                        contentDescription = stringResource(
+                            R.string.settings_playback_volume_normalization
+                        ),
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                },
+                onToggle = {
+                    onPlaybackVolumeNormalizationEnabledChange(
+                        !playbackVolumeNormalizationEnabled
+                    )
+                },
+                onCheckedChange = onPlaybackVolumeNormalizationEnabledChange
+            )
 
             VolumeBalanceSliderListItem(
                 balance = playbackVolumeBalance,

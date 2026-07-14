@@ -156,6 +156,8 @@ fun SettingsHostScreen(
     onPlaybackCrossfadeInDurationMsChange: (Long) -> Unit,
     playbackCrossfadeOutDurationMs: Long,
     onPlaybackCrossfadeOutDurationMsChange: (Long) -> Unit,
+    playbackVolumeNormalizationEnabled: Boolean,
+    onPlaybackVolumeNormalizationEnabledChange: (Boolean) -> Unit,
     playbackVolumeBalance: Float,
     onPlaybackVolumeBalanceChange: (Float) -> Unit,
     keepLastPlaybackProgress: Boolean,
@@ -323,6 +325,9 @@ fun SettingsHostScreen(
                             onPlaybackCrossfadeInDurationMsChange = onPlaybackCrossfadeInDurationMsChange,
                             playbackCrossfadeOutDurationMs = playbackCrossfadeOutDurationMs,
                             onPlaybackCrossfadeOutDurationMsChange = onPlaybackCrossfadeOutDurationMsChange,
+                            playbackVolumeNormalizationEnabled = playbackVolumeNormalizationEnabled,
+                            onPlaybackVolumeNormalizationEnabledChange =
+                                onPlaybackVolumeNormalizationEnabledChange,
                             playbackVolumeBalance = playbackVolumeBalance,
                             onPlaybackVolumeBalanceChange = onPlaybackVolumeBalanceChange,
                             keepLastPlaybackProgress = keepLastPlaybackProgress,

@@ -81,6 +81,7 @@ import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_PITCH
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_SPEED
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_VOLUME_BALANCE
+import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_VOLUME_NORMALIZATION_ENABLED
 import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
@@ -1383,6 +1384,14 @@ object PlayerManager {
         )
     }
 
+    fun setPlaybackVolumeNormalizationEnabled(enabled: Boolean, persist: Boolean = true) {
+        ensureInitialized()
+        applyPlaybackSoundConfig(
+            playbackSoundConfig.copy(volumeNormalizationEnabled = enabled),
+            persist = persist
+        )
+    }
+
     fun setPlaybackEqualizerEnabled(enabled: Boolean, persist: Boolean = true) {
         ensureInitialized()
         applyPlaybackSoundConfig(
@@ -1430,6 +1439,7 @@ object PlayerManager {
                 pitch = DEFAULT_PLAYBACK_PITCH,
                 loudnessGainMb = DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB,
                 volumeBalance = DEFAULT_PLAYBACK_VOLUME_BALANCE,
+                volumeNormalizationEnabled = DEFAULT_PLAYBACK_VOLUME_NORMALIZATION_ENABLED,
                 equalizerEnabled = false,
                 presetId = PlaybackEqualizerPresetId.FLAT,
                 customBandLevelsMb = emptyList()
@@ -1506,6 +1516,7 @@ object PlayerManager {
             settingsRepo.setPlaybackPitch(config.pitch)
             settingsRepo.setPlaybackLoudnessGainMb(config.loudnessGainMb)
             settingsRepo.setPlaybackVolumeBalance(config.volumeBalance)
+            settingsRepo.setPlaybackVolumeNormalizationEnabled(config.volumeNormalizationEnabled)
             settingsRepo.setPlaybackEqualizerEnabled(config.equalizerEnabled)
             settingsRepo.setPlaybackEqualizerPreset(config.presetId)
             settingsRepo.setPlaybackEqualizerCustomBandLevels(config.customBandLevelsMb)

@@ -1350,6 +1350,19 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
+            key = "playback_volume_normalization_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = false,
+            order = 123,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val playbackVolumeNormalizationEnabled = autoSetting(
+            titleRes = R.string.settings_playback_volume_normalization,
+            descriptionRes = R.string.settings_playback_volume_normalization_desc
+        )
+
+        @AutoSetting(
             key = "playback_volume_balance",
             type = SettingValueType.Float,
             defaultFloat = DEFAULT_PLAYBACK_VOLUME_BALANCE,

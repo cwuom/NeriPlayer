@@ -34,6 +34,11 @@ class UsbExclusiveCompatibilityPolicyTest {
     }
 
     @Test
+    fun `volume normalization requires system audio processor`() {
+        assertTrue(PlaybackSoundConfig(volumeNormalizationEnabled = true).requiresSystemAudioProcessor())
+    }
+
+    @Test
     fun `imperceptible playback parameter noise keeps native path eligible`() {
         assertFalse(PlaybackSoundConfig(speed = 1.00005f).requiresSystemAudioProcessor())
         assertFalse(PlaybackSoundConfig(pitch = 0.99995f).requiresSystemAudioProcessor())

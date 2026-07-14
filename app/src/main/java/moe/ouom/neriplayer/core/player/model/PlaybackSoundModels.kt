@@ -8,6 +8,7 @@ const val DEFAULT_PLAYBACK_SPEED = 1.0f
 const val DEFAULT_PLAYBACK_PITCH = 1.0f
 const val DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB = 0
 const val DEFAULT_PLAYBACK_VOLUME_BALANCE = 0.0f
+const val DEFAULT_PLAYBACK_VOLUME_NORMALIZATION_ENABLED = false
 const val MIN_PLAYBACK_SPEED = 0.1f
 const val MAX_PLAYBACK_SPEED = 4.0f
 const val MIN_PLAYBACK_PITCH = 0.25f
@@ -53,6 +54,7 @@ data class PlaybackSoundConfig(
     val pitch: Float = DEFAULT_PLAYBACK_PITCH,
     val loudnessGainMb: Int = DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB,
     val volumeBalance: Float = DEFAULT_PLAYBACK_VOLUME_BALANCE,
+    val volumeNormalizationEnabled: Boolean = DEFAULT_PLAYBACK_VOLUME_NORMALIZATION_ENABLED,
     val equalizerEnabled: Boolean = false,
     val presetId: String = PlaybackEqualizerPresetId.FLAT,
     val customBandLevelsMb: List<Int> = emptyList()
@@ -72,6 +74,7 @@ data class PlaybackSoundState(
     val pitch: Float = DEFAULT_PLAYBACK_PITCH,
     val loudnessGainMb: Int = DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB,
     val volumeBalance: Float = DEFAULT_PLAYBACK_VOLUME_BALANCE,
+    val volumeNormalizationEnabled: Boolean = DEFAULT_PLAYBACK_VOLUME_NORMALIZATION_ENABLED,
     val equalizerEnabled: Boolean = false,
     val presetId: String = PlaybackEqualizerPresetId.FLAT,
     val bands: List<PlaybackEqualizerBand> = defaultPlaybackEqualizerBands(),

@@ -866,6 +866,10 @@ private fun NeriAppContent(
     val playbackFadeOutDurationMs by repo.playbackFadeOutDurationMsFlow.collectAsStateWithLifecycle(initialValue = 500L)
     val playbackCrossfadeInDurationMs by repo.playbackCrossfadeInDurationMsFlow.collectAsStateWithLifecycle(initialValue = 500L)
     val playbackCrossfadeOutDurationMs by repo.playbackCrossfadeOutDurationMsFlow.collectAsStateWithLifecycle(initialValue = 500L)
+    val playbackVolumeNormalizationEnabled by repo.playbackVolumeNormalizationEnabledFlow
+        .collectAsStateWithLifecycle(
+            initialValue = startupPlaybackPreferences.playbackVolumeNormalizationEnabled
+        )
     val playbackVolumeBalance by repo.playbackVolumeBalanceFlow.collectAsStateWithLifecycle(
         initialValue = startupPlaybackPreferences.playbackVolumeBalance
     )
@@ -2175,6 +2179,11 @@ private fun NeriAppContent(
                                         playbackCrossfadeOutDurationMs = playbackCrossfadeOutDurationMs,
                                         onPlaybackCrossfadeOutDurationMsChange = { duration ->
                                             scope.launch { repo.setPlaybackCrossfadeOutDurationMs(duration) }
+                                        },
+                                        playbackVolumeNormalizationEnabled =
+                                            playbackVolumeNormalizationEnabled,
+                                        onPlaybackVolumeNormalizationEnabledChange = { enabled ->
+                                            PlayerManager.setPlaybackVolumeNormalizationEnabled(enabled)
                                         },
                                         playbackVolumeBalance = playbackVolumeBalance,
                                         onPlaybackVolumeBalanceChange = { balance ->

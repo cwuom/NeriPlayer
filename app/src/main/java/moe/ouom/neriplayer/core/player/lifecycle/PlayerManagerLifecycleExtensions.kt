@@ -43,6 +43,7 @@ import moe.ouom.neriplayer.core.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.effects.AudioReactive
+import moe.ouom.neriplayer.core.player.engine.PlaybackVolumeNormalizationState
 import moe.ouom.neriplayer.core.player.engine.ReactiveRenderersFactory
 import moe.ouom.neriplayer.core.player.engine.datasource.ConditionalHttpDataSourceFactory
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
@@ -536,6 +537,7 @@ internal fun PlayerManager.initializeImpl(
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                PlaybackVolumeNormalizationState.resetForNewTrack()
                 _playbackPositionMs.value = player.currentPosition.coerceAtLeast(0L)
                 maybeBackfillCurrentSongDurationFromPlayer()
                 if (player.playWhenReady || player.isPlaying) {
@@ -774,6 +776,13 @@ internal fun PlayerManager.initializeImpl(
             settingsRepo.playbackVolumeBalanceFlow.collect { balance ->
                 applyPlaybackSoundConfigIfChanged(
                     playbackSoundConfig.copy(volumeBalance = balance)
+                )
+            }
+        }
+        ioScope.launch {
+            settingsRepo.playbackVolumeNormalizationEnabledFlow.collect { enabled ->
+                applyPlaybackSoundConfigIfChanged(
+                    playbackSoundConfig.copy(volumeNormalizationEnabled = enabled)
                 )
             }
         }
@@ -1038,6 +1047,7 @@ internal fun PlayerManager.updateAudioOffloadPreferences(reason: String) {
         equalizerEnabled = playbackSoundConfig.equalizerEnabled,
         loudnessGainMb = playbackSoundConfig.loudnessGainMb,
         volumeBalance = playbackSoundConfig.volumeBalance,
+        volumeNormalizationEnabled = playbackSoundConfig.volumeNormalizationEnabled,
         audioReactiveActive = AudioReactive.enabled,
         listenTogetherPlaybackRate = listenTogetherSyncPlaybackRate,
     )

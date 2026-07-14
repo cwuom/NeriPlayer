@@ -835,6 +835,8 @@
     <string name="settings_playback_crossfade_next_desc">切换到下一首时使用淡入淡出过渡</string>
     <string name="settings_playback_crossfade_in_duration">下一首淡入时长</string>
     <string name="settings_playback_crossfade_out_duration">当前曲淡出时长</string>
+    <string name="settings_playback_volume_normalization">响度均衡</string>
+    <string name="settings_playback_volume_normalization_desc">实时分析歌曲响度并平滑补偿，让切歌时音量更一致；USB 独占播放时不生效</string>
     <string name="settings_playback_volume_balance">音量平衡</string>
     <string name="settings_playback_volume_balance_desc">调整左右声道音量比例</string>
     <string name="settings_playback_volume_balance_center">当前：居中</string>

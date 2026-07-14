@@ -18,6 +18,7 @@ import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.core.player.model.resolvePlaybackEqualizerBandLevelsMb
 import moe.ouom.neriplayer.core.player.engine.PlaybackVolumeBalanceState
+import moe.ouom.neriplayer.core.player.engine.PlaybackVolumeNormalizationState
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 /**
@@ -75,6 +76,7 @@ class PlaybackEffectsController {
             applyLoudnessEnhancer()
         }
         PlaybackVolumeBalanceState.update(config.volumeBalance)
+        PlaybackVolumeNormalizationState.updateEnabled(config.volumeNormalizationEnabled)
         return buildState()
     }
 
@@ -100,6 +102,7 @@ class PlaybackEffectsController {
         releaseEqualizer()
         releaseLoudnessEnhancer()
         PlaybackVolumeBalanceState.update(0f)
+        PlaybackVolumeNormalizationState.updateEnabled(false)
         player = null
         currentAudioSessionId = null
         return buildState()
@@ -328,6 +331,7 @@ class PlaybackEffectsController {
             pitch = config.pitch,
             loudnessGainMb = config.loudnessGainMb,
             volumeBalance = config.volumeBalance,
+            volumeNormalizationEnabled = config.volumeNormalizationEnabled,
             equalizerEnabled = config.equalizerEnabled,
             presetId = config.presetId,
             bands = bands,
