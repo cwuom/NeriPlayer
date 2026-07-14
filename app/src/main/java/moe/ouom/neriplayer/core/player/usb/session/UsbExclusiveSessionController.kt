@@ -100,6 +100,23 @@ object UsbExclusiveSessionController {
 
     fun nativeCloseInFlightCount(): Int = nativeCloseInFlight.get()
 
+    internal fun hasHealthyPlayerPcmSession(): Boolean {
+        val current = _state.value
+        if (
+            current.handle == 0L ||
+            current.source != "player_pcm" ||
+            !current.opened ||
+            current.transitioning ||
+            !ioGate.isOpen()
+        ) {
+            return false
+        }
+        val runtimeReport = current.runtimeReport
+        return runtimeReport.booleanField("deviceOnline") != false &&
+            runtimeReport.booleanField("transportFailed") != true &&
+            current.lastError.isNullOrBlank()
+    }
+
     fun handleUsbDeviceDetached(device: UsbDevice?): Boolean {
         if (!matchesActiveDevice(device)) return false
         val reason = "usb_device_detached"

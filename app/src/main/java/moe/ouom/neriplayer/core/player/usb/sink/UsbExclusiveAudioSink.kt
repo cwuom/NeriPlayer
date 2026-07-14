@@ -344,7 +344,10 @@ internal class UsbExclusiveAudioSink(
                 )
                 return false
             }
-            if (metrics.isBenignBackpressure) {
+            val plannedHealthyBackpressure = requestedWriteSize == 0 &&
+                metrics.hasPcmQueue &&
+                metrics.hasHealthyTransport
+            if (metrics.isBenignBackpressure || plannedHealthyBackpressure) {
                 recordBenignNativeBackpressure(
                     nowMs = nowMs,
                     pendingBytes = remaining,
@@ -999,13 +1002,16 @@ internal class UsbExclusiveAudioSink(
             lastNativeBackpressureLogAtMs = nowMs
             NPLogger.i(
                 "NERI-UsbExclusive",
-                "native PCM queue full, applying backpressure: pending=$pendingBytes " +
+                "native PCM queue applying backpressure: pending=$pendingBytes " +
                     "requested=$attemptedBytes " +
                     "heldMs=$heldMs playing=$playing transportStarted=$nativeTransportStarted " +
                     "hasQueued=$nativeHasQueuedPcm runtime=$runtimeReport"
             )
         }
-        parkForNativeBackpressure(runtimeReport)
+        parkForNativeBackpressure(
+            runtimeReport = runtimeReport,
+            forceYield = attemptedBytes == 0
+        )
     }
 
     private fun clearNativeBackpressureState() {
@@ -1013,11 +1019,11 @@ internal class UsbExclusiveAudioSink(
         lastNativeBackpressureRefreshAtMs = 0L
     }
 
-    private fun parkForNativeBackpressure(runtimeReport: String) {
+    private fun parkForNativeBackpressure(runtimeReport: String, forceYield: Boolean) {
         if (Thread.currentThread() === Looper.getMainLooper().thread) return
         val metrics = runtimeReport.usbRuntimeMetrics()
         val freeBytes = metrics.pcmFreeBytes ?: return
-        if (freeBytes > 0L || sampleRate <= 0 || frameBytes <= 0) return
+        if ((freeBytes > 0L && !forceYield) || sampleRate <= 0 || frameBytes <= 0) return
         val backpressureUs = metrics.pcmBackpressureCurrentMs
             ?.coerceAtLeast(0L)
             ?.times(1_000L)

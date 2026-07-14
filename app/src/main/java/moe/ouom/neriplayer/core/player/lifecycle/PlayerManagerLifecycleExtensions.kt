@@ -72,6 +72,7 @@ import moe.ouom.neriplayer.core.player.policy.pending.shouldExposePlayerCallback
 import moe.ouom.neriplayer.core.player.policy.usb.shouldSkipUsbExclusiveRouteRebuildForManualPlayback
 import moe.ouom.neriplayer.core.player.policy.usb.isTransientUsbExclusiveOpenGate
 import moe.ouom.neriplayer.core.player.policy.usb.shouldApplyActiveUsbBufferResize
+import moe.ouom.neriplayer.core.player.policy.usb.shouldSkipRedundantUsbExclusiveReconfiguration
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
 import moe.ouom.neriplayer.core.player.policy.command.shouldClearResumePlaybackRequestOnPlayWhenReadyPause
 import moe.ouom.neriplayer.core.player.playback.advanceAfterPlaybackFailure
@@ -2724,6 +2725,25 @@ internal fun PlayerManager.scheduleUsbAudioSinkReconfiguration(
                 NPLogger.d(
                     "NERI-UsbExclusive",
                     "skip stale USB reconfiguration after delay: reason=$reason generation=$scheduledGeneration current=$usbExclusiveRouteGeneration"
+                )
+                return@reconfigure
+            }
+            if (
+                shouldSkipRedundantUsbExclusiveReconfiguration(
+                    reason = reason,
+                    usbExclusiveEnabled = usbExclusivePlaybackEnabled,
+                    hasHealthyPlayerPcmSession =
+                        UsbExclusiveSessionController.hasHealthyPlayerPcmSession()
+                )
+            ) {
+                pendingUsbExclusivePreferenceReconfigure = false
+                usbExclusiveToggleTransitionActive = false
+                usbExclusiveToggleTransitionReason = ""
+                markUsbExclusivePlaybackPreparing(false, "native_route_already_ready:$reason")
+                NPLogger.i(
+                    "NERI-UsbExclusive",
+                    "skip redundant USB reconfiguration because native player session is ready: " +
+                        "reason=$reason generation=$scheduledGeneration"
                 )
                 return@reconfigure
             }

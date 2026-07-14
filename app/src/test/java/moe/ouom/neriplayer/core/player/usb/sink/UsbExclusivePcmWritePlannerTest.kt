@@ -67,6 +67,33 @@ class UsbExclusivePcmWritePlannerTest {
     }
 
     @Test
+    fun `waits at running queue target even when physical fifo still has free space`() {
+        val writeSize = UsbExclusivePcmWritePlanner.chooseWriteSize(
+            remainingBytes = 17_408,
+            inputSampleRate = 96_000,
+            inputFrameBytes = 4,
+            nativeTransportStarted = true,
+            playing = true,
+            prerollMs = 300L,
+            metrics = UsbExclusiveRuntimeMetrics(
+                sampleRate = 96_000,
+                channelCount = 2,
+                subslotBytes = 2,
+                transferBytes = 768,
+                lastTransferBytes = 768,
+                pcmLevelBytes = 48_128,
+                pcmCapacityBytes = 576_000,
+                pcmFreeBytes = 527_872,
+                transportFailed = false,
+                running = true,
+                lastError = "none"
+            )
+        )
+
+        assertEquals(0, writeSize)
+    }
+
+    @Test
     fun `does not probe when full queue has transport error`() {
         val writeSize = UsbExclusivePcmWritePlanner.chooseWriteSize(
             remainingBytes = 65_536,
