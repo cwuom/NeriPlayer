@@ -14,6 +14,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
@@ -21,6 +26,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
+
+private const val PLAYBACK_WAITING_VISUAL_DELAY_MS = 1_000L
 
 private enum class PlaybackControlVisualState {
     PLAY,
@@ -40,14 +48,15 @@ internal fun PlaybackControlIndicator(
     progressIndicatorSize: Dp = 24.dp,
     progressStrokeWidth: Dp = 2.5.dp
 ) {
+    val delayedPlaybackWaiting = rememberDelayedPlaybackWaiting(isPlaybackWaiting)
     val visualState = when {
-        isPlaybackWaiting -> PlaybackControlVisualState.WAITING
+        delayedPlaybackWaiting -> PlaybackControlVisualState.WAITING
         isPlaying -> PlaybackControlVisualState.PAUSE
         else -> PlaybackControlVisualState.PLAY
     }
     val resolvedContentDescription = resolvePlaybackControlContentDescription(
         isPlaying = isPlaying,
-        isPlaybackWaiting = isPlaybackWaiting,
+        isPlaybackWaiting = delayedPlaybackWaiting,
         playContentDescription = playContentDescription,
         pauseContentDescription = pauseContentDescription,
         waitingContentDescription = waitingContentDescription
@@ -86,6 +95,28 @@ internal fun PlaybackControlIndicator(
             )
         }
     }
+}
+
+@Composable
+internal fun rememberDelayedPlaybackWaiting(
+    isPlaybackWaiting: Boolean,
+    delayMillis: Long = PLAYBACK_WAITING_VISUAL_DELAY_MS
+): Boolean {
+    var showWaiting by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isPlaybackWaiting, delayMillis) {
+        if (!isPlaybackWaiting) {
+            showWaiting = false
+            return@LaunchedEffect
+        }
+
+        // 短缓冲先别闪等待圈，超过 1 秒再显示会更稳
+        showWaiting = false
+        delay(delayMillis)
+        showWaiting = true
+    }
+
+    return showWaiting
 }
 
 internal fun resolvePlaybackControlContentDescription(

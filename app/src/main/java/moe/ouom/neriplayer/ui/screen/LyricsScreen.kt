@@ -133,6 +133,7 @@ import moe.ouom.neriplayer.ui.component.local.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.component.lyrics.LyricVisualSpec
 import moe.ouom.neriplayer.ui.component.playback.PlaybackControlIndicator
+import moe.ouom.neriplayer.ui.component.playback.rememberDelayedPlaybackWaiting
 import moe.ouom.neriplayer.ui.component.playback.WaveformSlider
 import moe.ouom.neriplayer.ui.component.playback.resolvePlaybackWaiting
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
@@ -1169,6 +1170,7 @@ private fun LyricsProgressSection(
     onPreviewPositionChange: (Long?) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val delayedPlaybackWaiting = rememberDelayedPlaybackWaiting(isPlaybackWaiting)
     val context = LocalContext.current
     val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
     val latestOnPreviewPositionChange by rememberUpdatedState(onPreviewPositionChange)
@@ -1270,7 +1272,7 @@ private fun LyricsProgressSection(
             },
             isPlaying = isPlaying,
             enabled = seekEnabled,
-            isPlaybackWaiting = isPlaybackWaiting
+            isPlaybackWaiting = delayedPlaybackWaiting
         )
 
         Text(

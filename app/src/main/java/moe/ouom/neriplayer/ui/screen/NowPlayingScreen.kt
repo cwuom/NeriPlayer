@@ -247,6 +247,7 @@ import moe.ouom.neriplayer.ui.component.playback.PlaybackSoundSheet
 import moe.ouom.neriplayer.ui.component.playback.PlaybackControlIndicator
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceBadge
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
+import moe.ouom.neriplayer.ui.component.playback.rememberDelayedPlaybackWaiting
 import moe.ouom.neriplayer.ui.component.playback.SleepTimerDialog
 import moe.ouom.neriplayer.ui.component.playback.WaveformSlider
 import moe.ouom.neriplayer.ui.component.playback.resolvePlaybackWaiting
@@ -3677,6 +3678,7 @@ private fun NowPlayingProgressSection(
     onPreviewPositionChange: (Long?) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val delayedPlaybackWaiting = rememberDelayedPlaybackWaiting(isPlaybackWaiting)
     val context = LocalContext.current
     val currentPosition by PlayerManager.playbackPositionFlow.collectAsStateWithLifecycle()
     val latestOnPreviewPositionChange by rememberUpdatedState(onPreviewPositionChange)
@@ -3781,7 +3783,7 @@ private fun NowPlayingProgressSection(
                 },
                 isPlaying = isPlaying,
                 enabled = seekEnabled,
-                isPlaybackWaiting = isPlaybackWaiting
+                isPlaybackWaiting = delayedPlaybackWaiting
             )
 
             Text(
