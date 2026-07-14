@@ -20,6 +20,9 @@
     <string name="nowplaying_equalizer_manual_bands">Manual Bands</string>
     <string name="nowplaying_audio_effects_reset">Reset Effects &amp; Speed</string>
     <string name="nowplaying_audio_effects_hint">Speed and pitch are independent, and the equalizer follows the current playback session.</string>
+    <string name="nowplaying_value_input_label">Enter value</string>
+    <string name="nowplaying_value_input_invalid">Enter a valid value</string>
+    <string name="nowplaying_value_input_range">Range: %1$s - %2$s</string>
     <string name="nowplaying_equalizer_wait_for_session">Start playback to apply the equalizer to the active audio session.</string>
     <string name="nowplaying_equalizer_unsupported">This device may not support the system equalizer.</string>
     <string name="nowplaying_loudness_unsupported">This device may not support loudness enhancement.</string>

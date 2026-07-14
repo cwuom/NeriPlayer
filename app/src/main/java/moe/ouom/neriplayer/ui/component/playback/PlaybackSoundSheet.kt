@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.component.playback
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -14,12 +15,17 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -27,12 +33,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.model.MAX_PLAYBACK_LOUDNESS_GAIN_MB
@@ -59,8 +69,7 @@ import kotlin.math.roundToInt
 private val SPEED_QUICK_PRESETS = listOf(0.1f, 0.5f, 0.75f, 0.85f, 1.0f, 1.25f, 1.5f, 2.0f, 3.0f)
 private val PITCH_QUICK_PRESETS = listOf(0.5f, 0.75f, 0.85f, 1.0f, 1.25f, 1.5f)
 private val LOUDNESS_QUICK_PRESETS = listOf(0, 300, 600, 900, 1_200, 1_500)
-private const val SPEED_SLIDER_STEPS = 77
-private const val PITCH_SLIDER_STEPS = 34
+private const val PLAYBACK_RATIO_SLIDER_STEPS = 0
 private const val LOUDNESS_SLIDER_STEP_MB = 50
 private const val EQUALIZER_SLIDER_STEP_MB = 50
 
@@ -112,7 +121,7 @@ fun PlaybackSoundSheet(
             quickPresets = SPEED_QUICK_PRESETS,
             currentValue = state.speed,
             range = MIN_PLAYBACK_SPEED..MAX_PLAYBACK_SPEED,
-            steps = SPEED_SLIDER_STEPS,
+            steps = PLAYBACK_RATIO_SLIDER_STEPS,
             normalize = ::normalizePlaybackSpeed,
             onValueChange = onSpeedChange
         )
@@ -123,7 +132,7 @@ fun PlaybackSoundSheet(
             quickPresets = PITCH_QUICK_PRESETS,
             currentValue = state.pitch,
             range = MIN_PLAYBACK_PITCH..MAX_PLAYBACK_PITCH,
-            steps = PITCH_SLIDER_STEPS,
+            steps = PLAYBACK_RATIO_SLIDER_STEPS,
             normalize = ::normalizePlaybackPitch,
             onValueChange = onPitchChange
         )
@@ -139,6 +148,28 @@ fun PlaybackSoundSheet(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                var loudnessSliderValue by remember(state.loudnessGainMb) {
+                    mutableIntStateOf(state.loudnessGainMb)
+                }
+                var showLoudnessInputDialog by remember { mutableStateOf(false) }
+                if (showLoudnessInputDialog) {
+                    PlaybackDecimalValueInputDialog(
+                        title = androidx.compose.ui.res.stringResource(R.string.nowplaying_loudness_enhancer),
+                        initialText = formatInputDecimal(loudnessSliderValue / 100f, fractionDigits = 1),
+                        rangeStartText = formatPlaybackGainLabel(MIN_PLAYBACK_LOUDNESS_GAIN_MB),
+                        rangeEndText = formatPlaybackGainLabel(MAX_PLAYBACK_LOUDNESS_GAIN_MB),
+                        parseValue = ::parseDbInput,
+                        isValueInRange = { value ->
+                            val gainMb = (value * 100f).roundToInt()
+                            gainMb in MIN_PLAYBACK_LOUDNESS_GAIN_MB..MAX_PLAYBACK_LOUDNESS_GAIN_MB
+                        },
+                        onValueCommit = { value ->
+                            loudnessSliderValue = normalizePlaybackLoudnessGainMb((value * 100f).roundToInt())
+                            onLoudnessGainChange(loudnessSliderValue, true)
+                        },
+                        onDismiss = { showLoudnessInputDialog = false }
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -166,11 +197,13 @@ fun PlaybackSoundSheet(
                     }
                     Text(
                         text = formatPlaybackGainLabel(state.loudnessGainMb),
-                        style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace)
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { showLoudnessInputDialog = true }
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.primary
                     )
-                }
-                var loudnessSliderValue by remember(state.loudnessGainMb) {
-                    mutableIntStateOf(state.loudnessGainMb)
                 }
                 Slider(
                     value = loudnessSliderValue.toFloat(),
@@ -357,6 +390,22 @@ private fun PlaybackControlCard(
     var sliderValue by remember(currentValue) {
         mutableFloatStateOf(currentValue)
     }
+    var showInputDialog by remember { mutableStateOf(false) }
+    if (showInputDialog) {
+        PlaybackDecimalValueInputDialog(
+            title = title,
+            initialText = formatInputDecimal(sliderValue, fractionDigits = 2),
+            rangeStartText = formatMultiplier(range.start),
+            rangeEndText = formatMultiplier(range.endInclusive),
+            parseValue = ::parseMultiplierInput,
+            isValueInRange = { it in range },
+            onValueCommit = { value ->
+                sliderValue = normalize(value)
+                onValueChange(sliderValue, true)
+            },
+            onDismiss = { showInputDialog = false }
+        )
+    }
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
@@ -379,7 +428,12 @@ private fun PlaybackControlCard(
                 )
                 Text(
                     text = valueLabel,
-                    style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace)
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { showInputDialog = true }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.primary
                 )
             }
             Slider(
@@ -395,7 +449,7 @@ private fun PlaybackControlCard(
                 steps = steps
             )
             FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 quickPresets.forEach { preset ->
@@ -406,7 +460,12 @@ private fun PlaybackControlCard(
                             sliderValue = normalizedPreset
                             onValueChange(sliderValue, true)
                         },
-                        label = { Text(formatMultiplier(preset)) }
+                        label = {
+                            Text(
+                                text = formatMultiplier(preset),
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
                     )
                 }
             }
@@ -414,9 +473,113 @@ private fun PlaybackControlCard(
     }
 }
 
+@Composable
+private fun PlaybackDecimalValueInputDialog(
+    title: String,
+    initialText: String,
+    rangeStartText: String,
+    rangeEndText: String,
+    parseValue: (String) -> Float?,
+    isValueInRange: (Float) -> Boolean,
+    onValueCommit: (Float) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var inputText by remember(title, initialText) {
+        mutableStateOf(initialText)
+    }
+    val parsedValue = parseValue(inputText)
+    val errorText = when {
+        inputText.isBlank() -> null
+        parsedValue == null -> stringResource(R.string.nowplaying_value_input_invalid)
+        !isValueInRange(parsedValue) -> stringResource(
+            R.string.nowplaying_value_input_range,
+            rangeStartText,
+            rangeEndText
+        )
+        else -> null
+    }
+    val canCommit = parsedValue != null && isValueInRange(parsedValue)
+    val commitValue = {
+        val value = parsedValue
+        if (value != null && isValueInRange(value)) {
+            onValueCommit(value)
+            onDismiss()
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = inputText,
+                    onValueChange = { inputText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.nowplaying_value_input_label)) },
+                    singleLine = true,
+                    isError = errorText != null,
+                    supportingText = {
+                        Text(
+                            text = errorText ?: stringResource(
+                                R.string.nowplaying_value_input_range,
+                                rangeStartText,
+                                rangeEndText
+                            )
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Decimal,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(onDone = {
+                        if (canCommit) commitValue()
+                    })
+                )
+            }
+        },
+        confirmButton = {
+            HapticTextButton(
+                onClick = commitValue,
+                enabled = canCommit
+            ) {
+                Text(stringResource(R.string.action_confirm))
+            }
+        },
+        dismissButton = {
+            HapticTextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        }
+    )
+}
+
 private fun buildDiscreteSliderSteps(range: IntRange, stepSize: Int): Int {
     val rawSteps = ((range.last - range.first) / stepSize) - 1
     return rawSteps.coerceAtLeast(0)
+}
+
+private fun parseMultiplierInput(raw: String): Float? {
+    return raw.trim()
+        .removeSuffix("x")
+        .removeSuffix("X")
+        .removeSuffix("×")
+        .trim()
+        .toFloatOrNull()
+}
+
+private fun parseDbInput(raw: String): Float? {
+    return raw.trim()
+        .removePrefix("+")
+        .removeSuffix("dB")
+        .removeSuffix("db")
+        .removeSuffix("DB")
+        .trim()
+        .toFloatOrNull()
+}
+
+private fun formatInputDecimal(value: Float, fractionDigits: Int): String {
+    return String.format(Locale.US, "%.${fractionDigits}f", value)
 }
 
 private fun formatMultiplier(value: Float): String {

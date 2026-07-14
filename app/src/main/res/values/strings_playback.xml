@@ -20,6 +20,9 @@
     <string name="nowplaying_equalizer_manual_bands">手动频段</string>
     <string name="nowplaying_audio_effects_reset">重置音效与倍速</string>
     <string name="nowplaying_audio_effects_hint">速度与音调可分开调节，均衡器会绑定当前播放会话</string>
+    <string name="nowplaying_value_input_label">输入数值</string>
+    <string name="nowplaying_value_input_invalid">请输入有效数值</string>
+    <string name="nowplaying_value_input_range">范围：%1$s - %2$s</string>
     <string name="nowplaying_equalizer_wait_for_session">开始播放后会应用到当前音频会话</string>
     <string name="nowplaying_equalizer_unsupported">当前设备可能不支持系统均衡器</string>
     <string name="nowplaying_loudness_unsupported">当前设备可能不支持响度增强</string>

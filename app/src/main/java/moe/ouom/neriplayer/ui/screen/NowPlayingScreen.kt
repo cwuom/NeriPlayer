@@ -869,13 +869,15 @@ fun NowPlayingScreen(
         currentPlaybackAudioInfo,
         showProgressQualitySwitch,
         showProgressAudioCodec,
-        showProgressAudioSpec
+        showProgressAudioSpec,
+        playbackSoundState.speed
     ) {
         buildNowPlayingProgressInfoSegments(
             audioInfo = currentPlaybackAudioInfo,
             showQualitySwitch = showProgressQualitySwitch,
             showAudioCodec = showProgressAudioCodec,
-            showAudioSpec = showProgressAudioSpec
+            showAudioSpec = showProgressAudioSpec,
+            playbackSpeed = playbackSoundState.speed
         )
     }
 
@@ -2648,7 +2650,8 @@ private fun buildNowPlayingProgressInfoSegments(
     audioInfo: PlaybackAudioInfo?,
     showQualitySwitch: Boolean,
     showAudioCodec: Boolean,
-    showAudioSpec: Boolean
+    showAudioSpec: Boolean,
+    playbackSpeed: Float
 ): List<NowPlayingProgressInfoSegment> {
     if (audioInfo == null) return emptyList()
     val segments = mutableListOf<NowPlayingProgressInfoSegment>()
@@ -2659,6 +2662,9 @@ private fun buildNowPlayingProgressInfoSegments(
             highlighted = true
         )
     }
+    if (shouldShowPlaybackSpeedBadge(playbackSpeed)) {
+        segments += NowPlayingProgressInfoSegment(label = formatNowPlayingPlaybackSpeed(playbackSpeed))
+    }
     val codecLabel = audioInfo.codecLabel
     if (showAudioCodec && !codecLabel.isNullOrBlank()) {
         segments += NowPlayingProgressInfoSegment(label = codecLabel)
@@ -2668,6 +2674,14 @@ private fun buildNowPlayingProgressInfoSegments(
         segments += NowPlayingProgressInfoSegment(label = specLabel)
     }
     return segments
+}
+
+private fun shouldShowPlaybackSpeedBadge(playbackSpeed: Float): Boolean {
+    return (playbackSpeed * 100).roundToInt() != 100
+}
+
+private fun formatNowPlayingPlaybackSpeed(playbackSpeed: Float): String {
+    return String.format(Locale.US, "%.2fx", playbackSpeed)
 }
 
 @Composable
