@@ -190,7 +190,7 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
         fallback: YouTubeMusicPlaylist,
         loading: Boolean = false
     ) {
-        _uiState.value = withContext(Dispatchers.Default) {
+        val cachedState = withContext(Dispatchers.Default) {
             val cachedPlaylist = cached.toPlaylist(fallback)
             val cachedTracks = cached.tracks
                 .map { it.toSongItem(cachedPlaylist) }
@@ -200,6 +200,14 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
                 playlist = cachedPlaylist,
                 tracks = cachedTracks,
                 allTracksLoaded = true
+            )
+        }
+        _uiState.value = cachedState
+        if (cachedState.tracks.isNotEmpty()) {
+            PlayerManager.prefetchYouTubeQueueWindow(
+                playlist = cachedState.tracks,
+                startIndex = 0,
+                source = "yt_playlist_detail_cached"
             )
         }
     }
@@ -241,7 +249,7 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
                 source = prefetchSource
             )
         } else {
-            PlayerManager.prefetchYouTubePlayableUrlWindow(
+            PlayerManager.prefetchYouTubeQueueWindow(
                 playlist = resolvedTracks,
                 startIndex = 0,
                 source = prefetchSource

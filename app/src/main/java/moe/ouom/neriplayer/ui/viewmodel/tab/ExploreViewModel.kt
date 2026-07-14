@@ -439,11 +439,6 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     ).map { it.toSongItem(app) }
                 }
                 if (!isSearchRequestCurrent(requestVersion, SearchSource.YOUTUBE_MUSIC)) return@launch
-                PlayerManager.prefetchYouTubeQueueWindow(
-                    playlist = songs,
-                    startIndex = 0,
-                    source = "yt_search_result_load"
-                )
                 NPLogger.d(
                     TAG,
                     "search YouTube Music success: request=$requestVersion, keyword=$keyword, count=${songs.size}"

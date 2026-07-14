@@ -155,10 +155,21 @@ fun YouTubeAuthBundle.buildBootstrapAuthFingerprint(
 ): String {
     return buildAuthCacheFingerprint(
         userAgent = resolveBootstrapUserAgent(),
-        origin = origin
+        origin = normalizeBootstrapFingerprintOrigin(origin)
     )
 }
 
+private fun normalizeBootstrapFingerprintOrigin(origin: String): String {
+    val normalizedOrigin = origin.trim().removeSuffix("/").ifBlank { YOUTUBE_MUSIC_ORIGIN }
+    val normalizedHost = runCatching { URI(normalizedOrigin).host }.getOrNull()
+    return if (isYouTubePageHost(normalizedHost)) {
+        YOUTUBE_MUSIC_ORIGIN
+    } else {
+        normalizedOrigin
+    }
+}
+
+// LOGIN_INFO 和 SIDCC 经常会抖，放进 fingerprint 会把可复用的播放缓存也清掉
 private val YOUTUBE_AUTH_CACHE_STABLE_COOKIE_KEYS: List<String> = listOf(
     "SAPISID",
     "APISID",
@@ -168,10 +179,8 @@ private val YOUTUBE_AUTH_CACHE_STABLE_COOKIE_KEYS: List<String> = listOf(
     "HSID",
     "SSID",
     "LSID",
-    "SIDCC",
     "__Secure-1PSID",
-    "__Secure-3PSID",
-    "LOGIN_INFO"
+    "__Secure-3PSID"
 )
 
 private fun YouTubeAuthBundle.stableAuthCacheCookieHeader(): String {

@@ -101,6 +101,8 @@ import moe.ouom.neriplayer.core.player.policy.refresh.RefreshRequestSemantics
 import moe.ouom.neriplayer.core.player.policy.storage.RestorableLocalMediaState
 import moe.ouom.neriplayer.core.player.policy.storage.resolveRestorableLocalMediaState
 import moe.ouom.neriplayer.core.player.prefetch.GenericUrlPrefetchCache
+import moe.ouom.neriplayer.core.player.prefetch.PlaybackDemandArbiter
+import moe.ouom.neriplayer.core.player.prefetch.clearPlaybackDemandCacheKey
 import moe.ouom.neriplayer.core.player.prefetch.prefetchYouTubePlayableUrlWindowImpl
 import moe.ouom.neriplayer.core.player.prefetch.prefetchYouTubeQueueWindowImpl
 import moe.ouom.neriplayer.core.player.policy.refresh.YouTubePlaybackRecoveryStrategy
@@ -388,6 +390,7 @@ object PlayerManager {
     internal var lastUrlRefreshKey: String? = null
     internal var lastUrlRefreshAtMs: Long = 0L
     internal var currentMediaUrlResolvedAtMs: Long = 0L
+    internal var currentPlaybackDemandCacheKey: String? = null
     internal var restoredResumePositionMs: Long = 0L
     internal var restoredShouldResumePlayback = false
     internal var lastStatePersistAtMs: Long = 0L
@@ -411,6 +414,7 @@ object PlayerManager {
 
     internal val _currentSongFlow = MutableStateFlow<SongItem?>(null)
     val currentSongFlow: StateFlow<SongItem?> = _currentSongFlow
+    internal val playbackDemandArbiter = PlaybackDemandArbiter()
 
     internal val _currentQueueFlow = MutableStateFlow<List<SongItem>>(emptyList())
     val currentQueueFlow: StateFlow<List<SongItem>> = _currentQueueFlow
@@ -1028,6 +1032,7 @@ object PlayerManager {
             "stopCurrentPlaybackForListenTogetherAwaitingStream(): currentSong=${_currentSongFlow.value?.name}, mediaUrl=${_currentMediaUrl.value}, targetStableKey=${currentListenTogetherTargetStableKey()}, stack=[${debugStackHint()}]"
         )
         cancelPendingPauseRequest(resetVolumeToFull = true)
+        clearPlaybackDemandCacheKey(reason = "listen_together_awaiting_stream")
         cancelPlaybackStartupWatchdog(reason = "listen_together_awaiting_stream")
         clearActivePlaybackCandidates()
         stopProgressUpdates()

@@ -44,8 +44,10 @@ import moe.ouom.neriplayer.core.player.policy.pending.shouldApplyResolvedMedia
 import moe.ouom.neriplayer.core.player.policy.pending.shouldApplyResolvedMediaSideEffects
 import moe.ouom.neriplayer.core.player.policy.command.shouldPausePlaybackWhenToggling
 import moe.ouom.neriplayer.core.player.policy.progress.shouldRunPlaybackProgressUpdates
+import moe.ouom.neriplayer.core.player.prefetch.cancelYouTubePrefetchForPlaybackDemand
 import moe.ouom.neriplayer.core.player.prefetch.cancelGenericUrlPrefetchUnlessReusableForSong
-import moe.ouom.neriplayer.core.player.prefetch.cancelYouTubePrefetchUnlessReusableForSong
+import moe.ouom.neriplayer.core.player.prefetch.clearPlaybackDemandCacheKey
+import moe.ouom.neriplayer.core.player.prefetch.replacePlaybackDemandCacheKey
 import moe.ouom.neriplayer.core.player.prefetch.kickoffYouTubePlaybackIntentWarmup
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.watchdog.cancelPlaybackStartupWatchdog
@@ -537,6 +539,10 @@ internal fun PlayerManager.playAtIndex(
         "NERI-PlayerManager",
         "playAtIndex: index=$index, song=${song.name}, resumePositionMs=$resumePositionMs, transitionFade=$useTrackTransitionFade, source=$commandSource, forceStartupProtectionFade=$forceStartupProtectionFade, nextToken=${playbackRequestToken + 1}, stack=[${debugStackHint()}]"
     )
+    replacePlaybackDemandCacheKey(
+        cacheKey = if (isYouTubeMusicTrack(song)) computeCacheKey(song) else null,
+        reason = "play_at_index_request"
+    )
     kickoffYouTubePlaybackIntentWarmup(song, source = "play_at_index")
     cancelPendingPauseRequest()
     setCurrentSongForPlayback(song, syncLyricon = false)
@@ -563,7 +569,7 @@ internal fun PlayerManager.playAtIndex(
     }
 
     playJob?.cancel()
-    cancelYouTubePrefetchUnlessReusableForSong(song, reason = "play_at_index")
+    cancelYouTubePrefetchForPlaybackDemand(song, reason = "play_at_index")
     cancelGenericUrlPrefetchUnlessReusableForSong(song, reason = "play_at_index")
     playbackRequestToken += 1
     val requestToken = playbackRequestToken
@@ -620,6 +626,10 @@ internal fun PlayerManager.playAtIndex(
                     }
                     maybeUpdateSongDuration(song, result.durationMs ?: 0L)
                     val cacheKey = result.cacheKeyOverride ?: computeCacheKey(song)
+                    replacePlaybackDemandCacheKey(
+                        cacheKey = if (isYouTubeMusicTrack(song)) cacheKey else null,
+                        reason = "play_at_index_resolved"
+                    )
                     configureActivePlaybackCandidates(result, resumePositionMs, commandSource)
                     val selectedCandidate = currentPlaybackCandidate()
                     val selectedUrl = selectedCandidate?.url ?: result.url
@@ -693,6 +703,7 @@ internal fun PlayerManager.playAtIndex(
                 )
             }
             is SongUrlResult.RequiresLogin -> {
+                clearPlaybackDemandCacheKey(reason = "play_at_index_requires_login")
                 NPLogger.w(
                     "NERI-PlayerManager",
                     "Requires login to play: id=${song.id}, source=${song.album}"
@@ -707,6 +718,7 @@ internal fun PlayerManager.playAtIndex(
                 }
             }
             is SongUrlResult.Failure -> {
+                clearPlaybackDemandCacheKey(reason = "play_at_index_failure")
                 NPLogger.e(
                     "NERI-PlayerManager",
                     "获取播放地址失败，跳过当前歌曲: id=${song.id}, source=${song.album}"
@@ -1631,6 +1643,7 @@ internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolea
         "stopPlaybackPreservingQueue(): clearMediaUrl=$clearMediaUrl, queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, currentSong=${_currentSongFlow.value?.name}, mediaUrlPresent=${!_currentMediaUrl.value.isNullOrBlank()}, stack=[${debugStackHint()}]"
     )
     cancelPendingPauseRequest(resetVolumeToFull = true)
+    clearPlaybackDemandCacheKey(reason = "stop_playback_preserving_queue")
     playbackRequestToken += 1
     playJob?.cancel()
     playJob = null

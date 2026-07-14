@@ -124,6 +124,48 @@ class PlayerManagerYouTubeWarmupTargetTest {
         )
     }
 
+    @Test
+    fun `resolveYouTubeImmediatePlaybackWarmupTargets keeps only current youtube id`() {
+        val targets = resolveYouTubeImmediatePlaybackWarmupTargets(
+            playlist = listOf(
+                testSong(
+                    id = 1L,
+                    mediaUri = "https://music.youtube.com/watch?v=currentVideo"
+                ),
+                testSong(
+                    id = 2L,
+                    mediaUri = "https://music.youtube.com/watch?v=nextVideo"
+                )
+            ),
+            currentSongIndex = 0,
+            preferredQuality = "high"
+        )
+
+        assertTrue(targets.hasWork)
+        assertEquals("currentVideo", targets.currentVideoId)
+        assertEquals(null, targets.nextVideoId)
+        assertEquals(listOf("currentVideo"), targets.prefetchVideoIds)
+    }
+
+    @Test
+    fun `resolveYouTubeImmediatePlaybackWarmupTargets ignores non youtube current item`() {
+        val targets = resolveYouTubeImmediatePlaybackWarmupTargets(
+            playlist = listOf(
+                testSong(id = 1L, mediaUri = "file:///sdcard/Music/local.mp3"),
+                testSong(
+                    id = 2L,
+                    mediaUri = "https://music.youtube.com/watch?v=nextVideo"
+                )
+            ),
+            currentSongIndex = 0,
+            preferredQuality = "high"
+        )
+
+        assertFalse(targets.hasWork)
+        assertEquals(null, targets.currentVideoId)
+        assertTrue(targets.prefetchVideoIds.isEmpty())
+    }
+
     private fun testSong(id: Long, mediaUri: String): SongItem {
         return SongItem(
             id = id,

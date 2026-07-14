@@ -312,6 +312,33 @@ internal fun resolveYouTubeWarmupTargets(
     )
 }
 
+internal fun resolveYouTubeImmediatePlaybackWarmupTargets(
+    playlist: List<SongItem>,
+    currentSongIndex: Int,
+    preferredQuality: String
+): YouTubeWarmupTargets {
+    if (playlist.isEmpty()) {
+        return YouTubeWarmupTargets(
+            currentVideoId = null,
+            nextVideoId = null,
+            prefetchVideoIds = emptyList(),
+            preferredQuality = preferredQuality
+        )
+    }
+    val normalizedIndex = currentSongIndex.coerceIn(0, playlist.lastIndex)
+    val currentVideoId = extractYouTubeMusicVideoId(playlist[normalizedIndex].mediaUri)
+    val prefetchVideoIds = currentVideoId
+        ?.takeIf { it.isNotBlank() }
+        ?.let(::listOf)
+        .orEmpty()
+    return YouTubeWarmupTargets(
+        currentVideoId = prefetchVideoIds.firstOrNull(),
+        nextVideoId = null,
+        prefetchVideoIds = prefetchVideoIds,
+        preferredQuality = preferredQuality
+    )
+}
+
 internal fun resolvePlaybackSoundConfigForEngine(
     baseConfig: PlaybackSoundConfig,
     listenTogetherSyncPlaybackRate: Float,

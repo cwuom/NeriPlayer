@@ -17,6 +17,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.quality.effectiveYouTubeQuality
 import moe.ouom.neriplayer.core.player.url.checkExoPlayerCache
 import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedResource
+import moe.ouom.neriplayer.core.player.policy.command.resolveYouTubeImmediatePlaybackWarmupTargets
 import moe.ouom.neriplayer.core.player.policy.command.resolveYouTubeWarmupTargets
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.model.SongItem
@@ -36,6 +37,33 @@ private data class YouTubePrefetchSpec(
     val windowSize: Int,
     val source: String
 )
+
+internal fun PlayerManager.replacePlaybackDemandCacheKey(
+    cacheKey: String?,
+    reason: String
+) {
+    val previousKey = currentPlaybackDemandCacheKey
+    if (previousKey == cacheKey) {
+        return
+    }
+    previousKey?.let(playbackDemandArbiter::clearPlaybackDemand)
+    currentPlaybackDemandCacheKey = cacheKey
+    cacheKey?.takeIf { it.isNotBlank() }?.let(playbackDemandArbiter::markPlaybackDemand)
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "replace playback demand cache key: reason=$reason, previousKey=$previousKey, currentKey=$cacheKey"
+    )
+}
+
+internal fun PlayerManager.clearPlaybackDemandCacheKey(reason: String) {
+    val previousKey = currentPlaybackDemandCacheKey ?: return
+    playbackDemandArbiter.clearPlaybackDemand(previousKey)
+    currentPlaybackDemandCacheKey = null
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "clear playback demand cache key: reason=$reason, previousKey=$previousKey"
+    )
+}
 
 internal fun PlayerManager.prefetchYouTubeQueueWindowImpl(
     playlist: List<SongItem>,
@@ -98,7 +126,7 @@ internal fun PlayerManager.prefetchYouTubePlayableUrlWindowImpl(
     if (!canRunYouTubePrefetch(source)) {
         return
     }
-    val targets = resolveYouTubeWarmupTargets(
+    val targets = resolveYouTubeImmediatePlaybackWarmupTargets(
         playlist = playlist,
         currentSongIndex = startIndex,
         preferredQuality = effectiveYouTubeQuality()
@@ -174,6 +202,27 @@ internal fun PlayerManager.cancelYouTubePrefetchUnlessReusableForSong(
     currentYouTubePrefetchVideoIds = emptySet()
 }
 
+internal fun PlayerManager.cancelYouTubePrefetchForPlaybackDemand(
+    song: SongItem,
+    reason: String
+) {
+    val activePrefetchJob = currentYouTubePrefetchJob ?: return
+    val targetVideoId = if (isYouTubeMusicTrack(song)) {
+        song.audioId
+            ?.takeIf(String::isNotBlank)
+            ?: extractYouTubeMusicVideoId(song.mediaUri)
+    } else {
+        null
+    }
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "cancel YouTube prefetch for playback demand: reason=$reason, targetVideoId=$targetVideoId, ids=${currentYouTubePrefetchVideoIds.joinToString()}"
+    )
+    activePrefetchJob.cancel()
+    currentYouTubePrefetchJob = null
+    currentYouTubePrefetchVideoIds = emptySet()
+}
+
 private fun PlayerManager.canRunYouTubePrefetch(source: String): Boolean {
     if (isApplicationInitialized()) {
         return true
@@ -203,6 +252,13 @@ private fun PlayerManager.kickoffYouTubePlayableAudioPrefetches(
 
 private suspend fun PlayerManager.prefetchYouTubePlayableAudio(spec: YouTubePrefetchSpec) {
     val cacheKey = computeYouTubeCacheKey(spec.videoId, spec.preferredQuality)
+    if (playbackDemandArbiter.shouldYieldPrefetch(cacheKey)) {
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "skip YouTube media prefetch because playback demand is active: videoId=${spec.videoId}, cacheKey=$cacheKey, source=${spec.source}"
+        )
+        return
+    }
     if (checkExoPlayerCache(cacheKey)) {
         return
     }
@@ -227,6 +283,13 @@ private suspend fun PlayerManager.prefetchYouTubePlayableAudio(spec: YouTubePref
             cacheKey = cacheKey,
             expectedContentLength = playableAudio.contentLength
         )
+        if (playbackDemandArbiter.shouldYieldPrefetch(cacheKey)) {
+            NPLogger.d(
+                "NERI-PlayerManager",
+                "skip YouTube media prefetch after resolve because playback demand is active: videoId=${spec.videoId}, cacheKey=$cacheKey, source=${spec.source}"
+            )
+            return
+        }
         if (checkExoPlayerCache(cacheKey)) {
             return
         }
@@ -303,6 +366,9 @@ private suspend fun PlayerManager.prefetchIntoPlayerCache(
     }
     val upstreamFactory = conditionalHttpFactory ?: return@withContext 0L
     val requestedBytes = targetBytes.coerceAtLeast(YOUTUBE_WARMUP_MIN_PREFETCH_BYTES)
+    if (playbackDemandArbiter.shouldYieldPrefetch(cacheKey)) {
+        return@withContext 0L
+    }
     val cacheDataSource = CacheDataSource.Factory()
         .setCache(cache)
         .setUpstreamDataSourceFactory(upstreamFactory)
@@ -326,6 +392,9 @@ private suspend fun PlayerManager.prefetchIntoPlayerCache(
     try {
         cacheDataSource.open(dataSpec)
         while (totalRead < requestedBytes) {
+            if (playbackDemandArbiter.shouldYieldPrefetch(cacheKey)) {
+                break
+            }
             val bytesToRead = minOf(
                 buffer.size.toLong(),
                 requestedBytes - totalRead
