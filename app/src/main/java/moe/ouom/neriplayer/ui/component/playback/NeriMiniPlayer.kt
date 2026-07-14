@@ -24,13 +24,7 @@ package moe.ouom.neriplayer.ui.component.playback
  */
 
 import android.os.Build
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.background
@@ -45,8 +39,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Pause
-import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -103,7 +95,8 @@ fun NeriMiniPlayer(
     onExpand: () -> Unit,
     hazeState: HazeState,
     enableHaze: Boolean = true,
-    offlineMode: Boolean = false
+    offlineMode: Boolean = false,
+    isPlaybackWaiting: Boolean = false
 ) {
     val shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
     val supportsBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -117,7 +110,6 @@ fun NeriMiniPlayer(
     val reboundPeakPx = with(density) { 52.dp.toPx() }
     var dragDistancePx by remember { mutableFloatStateOf(0f) }
     var swipeJob by remember { mutableStateOf<Job?>(null) }
-
     fun resistedOffset(distancePx: Float): Float {
         if (distancePx == 0f) return 0f
         return sign(distancePx) * reboundPeakPx * (1f - exp(-abs(distancePx) / reboundPeakPx))
@@ -279,29 +271,16 @@ fun NeriMiniPlayer(
                 onClick = { onPlayPause() },
                 enabled = playPauseEnabled
             ) {
-                AnimatedContent(
-                    targetState = isPlaying,
-                    label = "mini_play_pause_icon",
-                    transitionSpec = {
-                        (scaleIn(
-                            animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
-                            initialScale = 0.7f
-                        ) + fadeIn(
-                            animationSpec = tween(durationMillis = 150)
-                        )) togetherWith (scaleOut(
-                            animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
-                            targetScale = 0.7f
-                        ) + fadeOut(
-                            animationSpec = tween(durationMillis = 100)
-                        ))
-                    }
-                ) { currentlyPlaying ->
-                    Icon(
-                        imageVector = if (currentlyPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                        contentDescription = if (currentlyPlaying) stringResource(R.string.lyrics_pause) else stringResource(R.string.lyrics_play),
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                }
+                PlaybackControlIndicator(
+                    isPlaying = isPlaying,
+                    isPlaybackWaiting = isPlaybackWaiting,
+                    playContentDescription = stringResource(R.string.lyrics_play),
+                    pauseContentDescription = stringResource(R.string.lyrics_pause),
+                    waitingContentDescription = stringResource(R.string.player_waiting),
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    progressIndicatorSize = 22.dp,
+                    progressStrokeWidth = 2.dp
+                )
             }
         }
     }
