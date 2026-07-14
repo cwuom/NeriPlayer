@@ -36,12 +36,12 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.auth.common.parseRawCookieText
 import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthHealth
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
 import moe.ouom.neriplayer.data.auth.youtube.evaluateYouTubeAuthHealth
+import moe.ouom.neriplayer.data.auth.youtube.parseYouTubeAuthBundleFromRaw
 
 data class YouTubeAuthUiState(
     val health: YouTubeAuthHealth = evaluateYouTubeAuthHealth(YouTubeAuthBundle()),
@@ -117,19 +117,16 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
-        val parsed = parseRawCookieText(raw)
-        if (parsed.isEmpty()) {
+        val parsedBundle = parseYouTubeAuthBundleFromRaw(
+            raw = raw,
+            savedAt = System.currentTimeMillis()
+        )
+        if (parsedBundle == null) {
             emitSnack(getApplication<Application>().getString(R.string.auth_cookie_invalid))
             return
         }
 
-        importAuthBundle(
-            YouTubeAuthBundle(
-                cookieHeader = parsed.entries.joinToString("; ") { (key, value) -> "$key=$value" },
-                cookies = parsed,
-                savedAt = System.currentTimeMillis()
-            )
-        )
+        importAuthBundle(parsedBundle)
     }
 
     private fun importAuthBundle(bundle: YouTubeAuthBundle) {
@@ -154,7 +151,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
             )
             _events.send(
                 YouTubeAuthEvent.ShowCookies(
-                    normalized.cookies.ifEmpty { parseRawCookieText(normalized.cookieHeader) }
+                    normalized.cookies
                 )
             )
             _events.send(

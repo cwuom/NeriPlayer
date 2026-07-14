@@ -38,4 +38,21 @@ class RawCookieTextParserTest {
         assertFalse(parsed.containsKey("EMPTY"))
         assertFalse(parsed.containsKey(""))
     }
+
+    @Test
+    fun `parseRawHeaderText parses browser headers case insensitively`() {
+        val parsed = parseRawHeaderText(
+            """
+            :method: POST
+            Cookie: SID=sid-value; SAPISID=sap-value
+            X-Goog-AuthUser: 2
+            Authorization: SAPISIDHASH signature
+            """.trimIndent()
+        )
+
+        assertEquals("SID=sid-value; SAPISID=sap-value", parsed["cookie"])
+        assertEquals("2", parsed["x-goog-authuser"])
+        assertEquals("SAPISIDHASH signature", parsed["authorization"])
+        assertFalse(parsed.containsKey(":method"))
+    }
 }

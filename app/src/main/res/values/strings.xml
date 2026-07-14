@@ -776,7 +776,7 @@
     <string name="settings_youtube_saved_cookie_message">检测到本地已保存 YouTube 鉴权信息。你可以退出登录清空旧信息，或继续登录以刷新鉴权。</string>
     <string name="settings_youtube_login_browser_warning">Google 可能提示“此浏览器可能不安全”或直接拦截登录；若失败，请切换到上方的“Cookie 导入”标签。</string>
     <string name="login_paste_bili_cookie_hint">粘贴 Cookie（例如：SESSDATA=…; bili_jct=…）</string>
-    <string name="login_paste_youtube_cookie_hint">粘贴 Cookie（例如：SAPISID=…; __Secure-1PSID=…）</string>
+    <string name="login_paste_youtube_cookie_hint">粘贴 Cookie 或浏览器请求头（需包含 Cookie）</string>
     <string name="settings_cookie_input_hint">请输入 Cookie</string>
 
     <!-- Settings / General -->

@@ -776,7 +776,7 @@
     <string name="settings_youtube_saved_cookie_message">Local YouTube auth information is already saved. You can sign out to clear it, or continue signing in to refresh auth.</string>
     <string name="settings_youtube_login_browser_warning">Google may show \"This browser may not be secure\" or block sign-in entirely. If that happens, switch to the \"Cookie Import\" tab above.</string>
     <string name="login_paste_bili_cookie_hint">Paste Cookie (e.g.: SESSDATA=…; bili_jct=…)</string>
-    <string name="login_paste_youtube_cookie_hint">Paste Cookie (e.g.: SAPISID=…; __Secure-1PSID=…)</string>
+    <string name="login_paste_youtube_cookie_hint">Paste Cookie or browser request headers (must include Cookie)</string>
     <string name="settings_cookie_input_hint">Please enter Cookie</string>
 
     <!-- Settings / General -->
