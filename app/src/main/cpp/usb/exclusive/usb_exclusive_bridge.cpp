@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <string.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <vector>
@@ -39,7 +40,14 @@ constexpr int kUsbSubclassAudioControl = 0x01;
 constexpr int kUsbDescriptorTypeClassSpecificInterface = 0x24;
 constexpr int kUsbAudioControlHeaderSubtype = 0x01;
 constexpr int kUsbTransferTypeIsochronous = 0x01;
-constexpr int kPermissionPollIntervalMs = 2;
+constexpr int kEventLoopWaitTimeoutMs = 100;
+constexpr int kDrainEventWaitTimeoutMs = 100;
+constexpr int kParkedEventWaitTimeoutMs = 5000;
+constexpr int kEventLoopErrorBackoffBaseMs = 4;
+constexpr int kEventLoopErrorBackoffMaxMs = 200;
+constexpr int kEventLoopConsecutiveErrorLimit = 64;
+constexpr int kParkedErrorBackoffBaseMs = 100;
+constexpr int kParkedErrorBackoffMaxMs = 5000;
 constexpr int kGeneratedToneFrequencyHz = 440;
 constexpr int kDefaultPacketsPerTransfer = 16;
 constexpr int kDefaultTransferCount = 12;
@@ -51,6 +59,8 @@ constexpr int kCancelDrainWarningMs = 1200;
 constexpr int kCancelDrainDeadlineMs = 3000;
 constexpr int kQuarantineDrainLogIntervalMs = 10000;
 constexpr int kQuarantineTotalTimeoutMs = 30000;
+constexpr size_t kMaximumParkedHandles = 8;
+constexpr size_t kMaximumHardRetainedHandles = 4;
 constexpr int kFirstTransferCompletionTimeoutMs = 1500;
 constexpr int kInterfaceTransitionCooldownMs = 1500;
 constexpr int kUrgentAudioThreadPriority = -19;
@@ -156,16 +166,58 @@ struct UsbExclusiveHandle {
     std::string lastError;
 };
 
+struct ParkedHandleSlot {
+    std::shared_ptr<UsbExclusiveHandle> handle;
+    std::chrono::steady_clock::time_point parkedAt {};
+    int quarantineIndex = 0;
+    bool pumpActive = false;
+};
+
 std::mutex g_handleRegistryLock;
 std::unordered_map<jlong, std::shared_ptr<UsbExclusiveHandle>> g_handleRegistry;
 std::atomic<jlong> g_nextHandleToken { 1 };
+std::atomic<int> g_nextQuarantineIndex { 1 };
 std::atomic<int> g_quarantinedDrainHandles { 0 };
+std::mutex g_parkedHandlesLock;
+std::array<ParkedHandleSlot, kMaximumParkedHandles> g_parkedHandles;
+std::array<std::shared_ptr<UsbExclusiveHandle>, kMaximumHardRetainedHandles>
+    g_hardRetainedHandles;
 
 bool allocateTransfers(UsbExclusiveHandle* handle);
 void freeTransfers(UsbExclusiveHandle* handle);
 void eventLoopThread(UsbExclusiveHandle* handle) noexcept;
 bool stopStreamingInternal(UsbExclusiveHandle* handle);
 bool closeHandleInternal(const std::shared_ptr<UsbExclusiveHandle>& handle);
+
+int exponentialBackoffMs(int consecutiveErrors) {
+    const int shift = std::min(std::max(0, consecutiveErrors - 1), 6);
+    return std::min(
+        kEventLoopErrorBackoffMaxMs,
+        kEventLoopErrorBackoffBaseMs << shift
+    );
+}
+
+int parkedExponentialBackoffMs(int consecutiveErrors) {
+    const int shift = std::min(std::max(0, consecutiveErrors - 1), 6);
+    return std::min(
+        kParkedErrorBackoffMaxMs,
+        kParkedErrorBackoffBaseMs << shift
+    );
+}
+
+timeval timeoutFromMilliseconds(int timeoutMs) {
+    const int boundedTimeoutMs = std::max(0, timeoutMs);
+    timeval timeout {};
+    timeout.tv_sec = boundedTimeoutMs / 1000;
+    timeout.tv_usec = (boundedTimeoutMs % 1000) * 1000;
+    return timeout;
+}
+
+bool shouldLogRepeatedError(int consecutiveErrors) {
+    return consecutiveErrors <= 3 ||
+        (consecutiveErrors & (consecutiveErrors - 1)) == 0 ||
+        consecutiveErrors == kEventLoopConsecutiveErrorLimit;
+}
 
 void interruptUsbEventHandler(UsbExclusiveHandle* handle) {
     if (handle != nullptr && handle->ctx != nullptr) {
@@ -1700,21 +1752,53 @@ void eventLoopThread(UsbExclusiveHandle* handle) noexcept {
     try {
         configureUsbEventThreadPriority();
         const auto startedAt = std::chrono::steady_clock::now();
+        int consecutiveErrors = 0;
         LOGI("USB event loop entered");
         while (handle->deviceOnline.load() && !handle->stopRequested.load()) {
-            timeval timeout {};
-            timeout.tv_sec = 0;
-            timeout.tv_usec = kPermissionPollIntervalMs * 1000;
+            timeval timeout = timeoutFromMilliseconds(kEventLoopWaitTimeoutMs);
             const int rc = libusb_handle_events_timeout_completed(handle->ctx, &timeout, nullptr);
             if (rc != LIBUSB_SUCCESS && rc != LIBUSB_ERROR_INTERRUPTED) {
+                const int totalErrors = handle->submitErrors.fetch_add(1) + 1;
                 if (rc == LIBUSB_ERROR_NO_DEVICE) {
                     requestNoDeviceStop(handle);
+                    handle->running.store(false);
+                    handle->transportFailed.store(true);
+                    setError(handle, "event_loop_failed:LIBUSB_ERROR_NO_DEVICE");
+                    LOGE(
+                        "USB event loop lost device: totalErrors=%d inFlight=%d",
+                        totalErrors,
+                        handle->inFlightTransfers.load()
+                    );
+                    break;
                 }
-                handle->submitErrors.fetch_add(1);
-                handle->transportFailed.store(true);
-                setError(handle, std::string("event_loop_failed:") + libusbErrName(rc));
-                LOGE("libusb_handle_events_timeout_completed failed: %s", libusbErrName(rc));
-                std::this_thread::sleep_for(std::chrono::milliseconds(4));
+                consecutiveErrors += 1;
+                const int backoffMs = exponentialBackoffMs(consecutiveErrors);
+                if (shouldLogRepeatedError(consecutiveErrors)) {
+                    LOGW(
+                        "USB event loop transient error: error=%s consecutive=%d/%d "
+                        "totalErrors=%d backoffMs=%d",
+                        libusbErrName(rc),
+                        consecutiveErrors,
+                        kEventLoopConsecutiveErrorLimit,
+                        totalErrors,
+                        backoffMs
+                    );
+                }
+                if (consecutiveErrors >= kEventLoopConsecutiveErrorLimit) {
+                    handle->running.store(false);
+                    handle->transportFailed.store(true);
+                    handle->stopRequested.store(true);
+                    setError(handle, std::string("event_loop_failed:") + libusbErrName(rc));
+                    LOGE(
+                        "USB event loop error limit reached: error=%s consecutive=%d",
+                        libusbErrName(rc),
+                        consecutiveErrors
+                    );
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(backoffMs));
+            } else {
+                consecutiveErrors = 0;
             }
             if (
                 handle->completedTransfers.load() == 0 &&
@@ -1798,10 +1882,18 @@ bool drainCancelledTransfers(
     const auto warningDeadline = std::chrono::steady_clock::now() +
         std::chrono::milliseconds(kCancelDrainWarningMs);
     bool warnedAboutSlowDrain = false;
+    int consecutiveErrors = 0;
     while (handle->inFlightTransfers.load() > 0) {
-        timeval timeout {};
-        timeout.tv_sec = 0;
-        timeout.tv_usec = kPermissionPollIntervalMs * 1000;
+        const auto beforeWait = std::chrono::steady_clock::now();
+        const auto remainingMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            hardDeadline - beforeWait
+        ).count();
+        const int waitTimeoutMs = static_cast<int>(std::clamp<int64_t>(
+            remainingMs,
+            0,
+            kDrainEventWaitTimeoutMs
+        ));
+        timeval timeout = timeoutFromMilliseconds(waitTimeoutMs);
         const int rc = handle->ctx != nullptr
             ? libusb_handle_events_timeout_completed(handle->ctx, &timeout, nullptr)
             : LIBUSB_ERROR_INVALID_PARAM;
@@ -1809,8 +1901,28 @@ bool drainCancelledTransfers(
             if (rc == LIBUSB_ERROR_NO_DEVICE) {
                 requestNoDeviceStop(handle);
             }
-            LOGW("libusb_handle_events while draining cancel failed: %s", libusbErrName(rc));
-            std::this_thread::sleep_for(std::chrono::milliseconds(kPermissionPollIntervalMs));
+            consecutiveErrors += 1;
+            const int backoffMs = exponentialBackoffMs(consecutiveErrors);
+            if (shouldLogRepeatedError(consecutiveErrors)) {
+                LOGW(
+                    "USB cancel drain event error: error=%s consecutive=%d backoffMs=%d "
+                    "inFlight=%d",
+                    libusbErrName(rc),
+                    consecutiveErrors,
+                    backoffMs,
+                    handle->inFlightTransfers.load()
+                );
+            }
+            const auto remainingAfterWaitMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                hardDeadline - std::chrono::steady_clock::now()
+            ).count();
+            if (remainingAfterWaitMs > 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(
+                    std::min<int64_t>(backoffMs, remainingAfterWaitMs)
+                ));
+            }
+        } else {
+            consecutiveErrors = 0;
         }
 
         const auto now = std::chrono::steady_clock::now();
@@ -2016,83 +2128,353 @@ void finishClosedUsbResources(UsbExclusiveHandle* handle) {
     LOGI("closeHandleInternal done");
 }
 
+size_t parkedHandleCountLocked() {
+    return static_cast<size_t>(std::count_if(
+        g_parkedHandles.begin(),
+        g_parkedHandles.end(),
+        [](const ParkedHandleSlot& slot) {
+            return slot.handle != nullptr;
+        }
+    ));
+}
+
+int parkHandleForRecovery(
+    const std::shared_ptr<UsbExclusiveHandle>& handle,
+    int quarantineIndex,
+    const char* reason
+) noexcept {
+    if (handle == nullptr) {
+        return -1;
+    }
+    try {
+        std::lock_guard<std::mutex> guard(g_parkedHandlesLock);
+        for (size_t slotIndex = 0; slotIndex < g_parkedHandles.size(); ++slotIndex) {
+            ParkedHandleSlot& slot = g_parkedHandles[slotIndex];
+            if (slot.handle != nullptr) {
+                continue;
+            }
+            slot.handle = handle;
+            slot.parkedAt = std::chrono::steady_clock::now();
+            slot.quarantineIndex = quarantineIndex;
+            slot.pumpActive = true;
+            LOGE(
+                "parked USB handle: index=%d slot=%zu reason=%s parkedCount=%zu "
+                "inFlight=%d",
+                quarantineIndex,
+                slotIndex,
+                reason != nullptr ? reason : "unknown",
+                parkedHandleCountLocked(),
+                handle->inFlightTransfers.load()
+            );
+            return static_cast<int>(slotIndex);
+        }
+        LOGE(
+            "USB parked handle registry full: capacity=%zu index=%d inFlight=%d",
+            g_parkedHandles.size(),
+            quarantineIndex,
+            handle->inFlightTransfers.load()
+        );
+    } catch (const std::exception& error) {
+        LOGE("failed to park USB handle: index=%d error=%s", quarantineIndex, error.what());
+    } catch (...) {
+        LOGE("failed to park USB handle: index=%d error=unknown", quarantineIndex);
+    }
+    return -1;
+}
+
+void hardRetainHandle(
+    const std::shared_ptr<UsbExclusiveHandle>& handle,
+    int quarantineIndex,
+    const char* reason
+) noexcept {
+    if (handle == nullptr) {
+        return;
+    }
+    try {
+        std::lock_guard<std::mutex> guard(g_parkedHandlesLock);
+        for (size_t slotIndex = 0; slotIndex < g_hardRetainedHandles.size(); ++slotIndex) {
+            if (g_hardRetainedHandles[slotIndex] != nullptr) {
+                continue;
+            }
+            g_hardRetainedHandles[slotIndex] = handle;
+            LOGE(
+                "hard-retained USB handle: index=%d slot=%zu reason=%s inFlight=%d",
+                quarantineIndex,
+                slotIndex,
+                reason != nullptr ? reason : "unknown",
+                handle->inFlightTransfers.load()
+            );
+            return;
+        }
+    } catch (...) {
+    }
+
+    auto* leakedHandle = new (std::nothrow) std::shared_ptr<UsbExclusiveHandle>(handle);
+    static_cast<void>(leakedHandle);
+    LOGE(
+        "hard-retained USB handle outside fixed registry: index=%d reason=%s "
+        "retained=%d inFlight=%d",
+        quarantineIndex,
+        reason != nullptr ? reason : "unknown",
+        leakedHandle != nullptr ? 1 : 0,
+        handle->inFlightTransfers.load()
+    );
+}
+
+bool setParkedPumpActive(
+    size_t slotIndex,
+    const UsbExclusiveHandle* expectedHandle,
+    bool active
+) noexcept {
+    try {
+        std::lock_guard<std::mutex> guard(g_parkedHandlesLock);
+        if (slotIndex >= g_parkedHandles.size()) {
+            return false;
+        }
+        ParkedHandleSlot& slot = g_parkedHandles[slotIndex];
+        if (slot.handle.get() != expectedHandle) {
+            return false;
+        }
+        slot.pumpActive = active;
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+void releaseParkedHandle(
+    size_t slotIndex,
+    const UsbExclusiveHandle* expectedHandle,
+    const char* source
+) noexcept {
+    try {
+        size_t parkedCount = 0;
+        int quarantineIndex = 0;
+        {
+            std::lock_guard<std::mutex> guard(g_parkedHandlesLock);
+            if (slotIndex >= g_parkedHandles.size()) {
+                return;
+            }
+            ParkedHandleSlot& slot = g_parkedHandles[slotIndex];
+            if (slot.handle.get() != expectedHandle) {
+                return;
+            }
+            quarantineIndex = slot.quarantineIndex;
+            slot.handle.reset();
+            slot.parkedAt = {};
+            slot.quarantineIndex = 0;
+            slot.pumpActive = false;
+            parkedCount = parkedHandleCountLocked();
+        }
+        const int activeQuarantines = g_quarantinedDrainHandles.fetch_sub(1) - 1;
+        LOGI(
+            "reclaimed parked USB handle: index=%d slot=%zu source=%s parkedCount=%zu "
+            "activeQuarantines=%d",
+            quarantineIndex,
+            slotIndex,
+            source != nullptr ? source : "unknown",
+            parkedCount,
+            activeQuarantines
+        );
+    } catch (const std::exception& error) {
+        LOGE("failed to release parked USB handle slot=%zu error=%s", slotIndex, error.what());
+    } catch (...) {
+        LOGE("failed to release parked USB handle slot=%zu error=unknown", slotIndex);
+    }
+}
+
+void finishParkedHandle(
+    const std::shared_ptr<UsbExclusiveHandle>& handle,
+    size_t slotIndex,
+    const char* source
+) noexcept {
+    if (handle == nullptr || handle->inFlightTransfers.load() != 0) {
+        if (handle != nullptr) {
+            setParkedPumpActive(slotIndex, handle.get(), false);
+        }
+        return;
+    }
+    try {
+        freeTransfers(handle.get());
+        {
+            std::lock_guard<std::mutex> transitionGuard(g_usbInterfaceTransitionLock);
+            finishClosedUsbResources(handle.get());
+            markInterfaceTransitionLocked();
+        }
+        releaseParkedHandle(slotIndex, handle.get(), source);
+    } catch (const std::exception& error) {
+        setParkedPumpActive(slotIndex, handle.get(), false);
+        LOGE("failed to finalize parked USB handle slot=%zu error=%s", slotIndex, error.what());
+    } catch (...) {
+        setParkedPumpActive(slotIndex, handle.get(), false);
+        LOGE("failed to finalize parked USB handle slot=%zu error=unknown", slotIndex);
+    }
+}
+
+void pumpParkedHandleUntilReclaimed(
+    const std::shared_ptr<UsbExclusiveHandle>& handle,
+    size_t slotIndex,
+    int quarantineIndex
+) noexcept {
+    const auto lowFrequencyAt = std::chrono::steady_clock::now() +
+        std::chrono::milliseconds(kQuarantineTotalTimeoutMs);
+    auto nextStatusLogAt = std::chrono::steady_clock::now() +
+        std::chrono::milliseconds(kQuarantineDrainLogIntervalMs);
+    bool lowFrequencyAnnounced = false;
+    int consecutiveErrors = 0;
+
+    while (handle->inFlightTransfers.load() > 0) {
+        const auto now = std::chrono::steady_clock::now();
+        const bool lowFrequency = now >= lowFrequencyAt;
+        const int waitTimeoutMs = lowFrequency
+            ? kParkedEventWaitTimeoutMs
+            : kDrainEventWaitTimeoutMs;
+        timeval timeout = timeoutFromMilliseconds(waitTimeoutMs);
+        const int rc = handle->ctx != nullptr
+            ? libusb_handle_events_timeout_completed(handle->ctx, &timeout, nullptr)
+            : LIBUSB_ERROR_INVALID_PARAM;
+        if (rc != LIBUSB_SUCCESS && rc != LIBUSB_ERROR_INTERRUPTED) {
+            if (rc == LIBUSB_ERROR_NO_DEVICE) {
+                requestNoDeviceStop(handle.get());
+            }
+            consecutiveErrors += 1;
+            const int backoffMs = parkedExponentialBackoffMs(consecutiveErrors);
+            if (shouldLogRepeatedError(consecutiveErrors)) {
+                LOGW(
+                    "parked USB event pump error: index=%d error=%s consecutive=%d "
+                    "backoffMs=%d inFlight=%d",
+                    quarantineIndex,
+                    libusbErrName(rc),
+                    consecutiveErrors,
+                    backoffMs,
+                    handle->inFlightTransfers.load()
+                );
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(backoffMs));
+        } else {
+            consecutiveErrors = 0;
+        }
+
+        const auto afterPump = std::chrono::steady_clock::now();
+        if (!lowFrequencyAnnounced && afterPump >= lowFrequencyAt) {
+            lowFrequencyAnnounced = true;
+            handle->transportFailed.store(true);
+            try {
+                setError(handle.get(), "quarantine_drain_timeout");
+            } catch (...) {
+            }
+            LOGE(
+                "USB quarantine switched to low-frequency recovery: index=%d slot=%zu "
+                "inFlight=%d",
+                quarantineIndex,
+                slotIndex,
+                handle->inFlightTransfers.load()
+            );
+        }
+        if (afterPump >= nextStatusLogAt && handle->inFlightTransfers.load() > 0) {
+            LOGW(
+                "USB quarantine still pumping: index=%d slot=%zu lowFrequency=%d "
+                "inFlight=%d",
+                quarantineIndex,
+                slotIndex,
+                lowFrequencyAnnounced ? 1 : 0,
+                handle->inFlightTransfers.load()
+            );
+            nextStatusLogAt = afterPump +
+                std::chrono::milliseconds(kQuarantineDrainLogIntervalMs);
+        }
+    }
+
+    finishParkedHandle(handle, slotIndex, "quarantine_thread");
+}
+
+void serviceParkedHandlesOnce() noexcept {
+    for (size_t slotIndex = 0; slotIndex < g_parkedHandles.size(); ++slotIndex) {
+        std::shared_ptr<UsbExclusiveHandle> handle;
+        int quarantineIndex = 0;
+        try {
+            std::lock_guard<std::mutex> guard(g_parkedHandlesLock);
+            ParkedHandleSlot& slot = g_parkedHandles[slotIndex];
+            if (slot.handle == nullptr || slot.pumpActive) {
+                continue;
+            }
+            slot.pumpActive = true;
+            handle = slot.handle;
+            quarantineIndex = slot.quarantineIndex;
+        } catch (...) {
+            continue;
+        }
+
+        timeval timeout = timeoutFromMilliseconds(0);
+        const int rc = handle->ctx != nullptr && handle->inFlightTransfers.load() > 0
+            ? libusb_handle_events_timeout_completed(handle->ctx, &timeout, nullptr)
+            : LIBUSB_SUCCESS;
+        if (rc == LIBUSB_ERROR_NO_DEVICE) {
+            requestNoDeviceStop(handle.get());
+        } else if (rc != LIBUSB_SUCCESS && rc != LIBUSB_ERROR_INTERRUPTED) {
+            LOGW(
+                "nativeOpen parked handle service failed: index=%d slot=%zu error=%s "
+                "inFlight=%d",
+                quarantineIndex,
+                slotIndex,
+                libusbErrName(rc),
+                handle->inFlightTransfers.load()
+            );
+        }
+        if (handle->inFlightTransfers.load() == 0) {
+            finishParkedHandle(handle, slotIndex, "native_open");
+        } else {
+            setParkedPumpActive(slotIndex, handle.get(), false);
+        }
+    }
+}
+
 void quarantineCloseHandle(const std::shared_ptr<UsbExclusiveHandle>& handle) noexcept {
     if (handle == nullptr) {
         return;
     }
 
-    const int quarantineIndex = g_quarantinedDrainHandles.fetch_add(1) + 1;
+    const int quarantineIndex = g_nextQuarantineIndex.fetch_add(1);
+    g_quarantinedDrainHandles.fetch_add(1);
+    const int parkedSlot = parkHandleForRecovery(
+        handle,
+        quarantineIndex,
+        "cancel_drain_timeout"
+    );
+    if (parkedSlot < 0) {
+        hardRetainHandle(handle, quarantineIndex, "parked_registry_full");
+        g_quarantinedDrainHandles.fetch_sub(1);
+        return;
+    }
     try {
-        std::thread([handle, quarantineIndex]() {
+        std::thread([handle, quarantineIndex, parkedSlot]() {
             LOGW(
-                "USB close quarantined for cancel drain: index=%d inFlight=%d",
+                "USB close quarantined for cancel drain: index=%d slot=%d inFlight=%d",
                 quarantineIndex,
+                parkedSlot,
                 handle->inFlightTransfers.load()
             );
-            const auto totalDeadline = std::chrono::steady_clock::now() +
-                std::chrono::milliseconds(kQuarantineTotalTimeoutMs);
-            while (handle->inFlightTransfers.load() > 0) {
-                if (std::chrono::steady_clock::now() >= totalDeadline) {
-                    handle->transportFailed.store(true);
-                    handle->deviceOnline.store(false);
-                    handle->playbackEnabled.store(false);
-                    handle->stopRequested.store(true);
-                    try {
-                        setError(handle.get(), "quarantine_drain_timeout");
-                    } catch (...) {
-                    }
-                    LOGE(
-                        "USB close quarantine hard timeout: index=%d inFlight=%d, parking handle",
-                        quarantineIndex,
-                        handle->inFlightTransfers.load()
-                    );
-                    // keep active transfers alive because libusb may still own their callbacks
-                    auto* parkedHandle = new (std::nothrow) std::shared_ptr<UsbExclusiveHandle>(handle);
-                    static_cast<void>(parkedHandle);
-                    {
-                        std::lock_guard<std::mutex> transitionGuard(g_usbInterfaceTransitionLock);
-                        markInterfaceTransitionLocked();
-                    }
-                    g_quarantinedDrainHandles.fetch_sub(1);
-                    return;
-                }
-                interruptUsbEventHandler(handle.get());
-                const auto hardDeadline = std::chrono::steady_clock::now() +
-                    std::chrono::milliseconds(kQuarantineDrainLogIntervalMs);
-                if (!drainCancelledTransfers(handle.get(), hardDeadline)) {
-                    LOGW(
-                        "USB close quarantine still waiting: index=%d inFlight=%d",
-                        quarantineIndex,
-                        handle->inFlightTransfers.load()
-                    );
-                }
-            }
-            freeTransfers(handle.get());
-            {
-                std::lock_guard<std::mutex> transitionGuard(g_usbInterfaceTransitionLock);
-                finishClosedUsbResources(handle.get());
-                markInterfaceTransitionLocked();
-            }
-            g_quarantinedDrainHandles.fetch_sub(1);
-            LOGI("USB close quarantine drained: index=%d", quarantineIndex);
+            pumpParkedHandleUntilReclaimed(
+                handle,
+                static_cast<size_t>(parkedSlot),
+                quarantineIndex
+            );
         }).detach();
     } catch (const std::system_error& error) {
-        // keep the handle alive because active transfers can still callback
-        auto* leakedHandle = new (std::nothrow) std::shared_ptr<UsbExclusiveHandle>(handle);
-        static_cast<void>(leakedHandle);
-        g_quarantinedDrainHandles.fetch_sub(1);
+        setParkedPumpActive(static_cast<size_t>(parkedSlot), handle.get(), false);
         LOGE(
-            "USB close quarantine thread failed: %s activeQuarantines=%d",
+            "USB close quarantine thread failed, registry will retain handle: %s "
+            "slot=%d activeQuarantines=%d",
             error.what(),
+            parkedSlot,
             g_quarantinedDrainHandles.load()
         );
     } catch (...) {
-        // keep the handle alive because active transfers can still callback
-        auto* leakedHandle = new (std::nothrow) std::shared_ptr<UsbExclusiveHandle>(handle);
-        static_cast<void>(leakedHandle);
-        g_quarantinedDrainHandles.fetch_sub(1);
+        setParkedPumpActive(static_cast<size_t>(parkedSlot), handle.get(), false);
         LOGE(
-            "USB close quarantine thread failed: unknown activeQuarantines=%d",
+            "USB close quarantine thread failed, registry will retain handle: unknown "
+            "slot=%d activeQuarantines=%d",
+            parkedSlot,
             g_quarantinedDrainHandles.load()
         );
     }
@@ -2142,6 +2524,7 @@ Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nati
     jint subslotBytes
 ) {
     static_cast<void>(env);
+    serviceParkedHandlesOnce();
     LOGI(
         "nativeOpen request: fd=%d sampleRate=%d channels=%d bits=%d subslot=%d",
         fd,
