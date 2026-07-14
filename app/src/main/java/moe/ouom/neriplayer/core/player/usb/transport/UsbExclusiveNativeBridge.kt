@@ -2,16 +2,72 @@ package moe.ouom.neriplayer.core.player.usb.transport
 
 import android.hardware.usb.UsbDeviceConnection
 import java.nio.ByteBuffer
+import java.util.concurrent.atomic.AtomicReference
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal object UsbExclusiveNativeBridge {
     private const val TAG = "NERI-UsbExclusiveNative"
+    private const val BRIDGE_FAILURE_FALLBACK_REPORT =
+        "running=false transportFailed=true lastError=jni_bridge_failure"
 
     @Volatile
     private var libraryReady = false
 
     @Volatile
     private var loadAttempted = false
+
+    private val globalFailureReport = AtomicReference<String?>(null)
+
+    private inline fun <T : Any> callNative(
+        operation: String,
+        context: () -> String? = { null },
+        block: () -> T
+    ): T? {
+        return try {
+            block()
+        } catch (error: Exception) {
+            logNativeFailure(operation, context(), error)
+            null
+        } catch (error: LinkageError) {
+            logNativeFailure(operation, context(), error)
+            null
+        }
+    }
+
+    private inline fun callNativeBoolean(
+        operation: String,
+        context: () -> String,
+        block: () -> Boolean
+    ): Boolean {
+        val succeeded = callNative(operation, context = context, block = block) ?: return false
+        if (!succeeded) {
+            NPLogger.e(TAG, "$operation returned false (${context()})")
+        }
+        return succeeded
+    }
+
+    private inline fun callNativeInt(
+        operation: String,
+        context: () -> String,
+        block: () -> Int
+    ): Int {
+        return callNative(operation, context = context, block = block) ?: 0
+    }
+
+    private fun logNativeFailure(operation: String, context: String?, error: Throwable) {
+        val contextSuffix = context?.let { " ($it)" }.orEmpty()
+        NPLogger.e(TAG, "$operation threw$contextSuffix", error)
+    }
+
+    private fun recordGlobalFailure(operation: String, context: String?, error: Throwable) {
+        val failureKind = if (error is LinkageError) "linkage" else "exception"
+        val report =
+            "running=false transportFailed=true " +
+                "lastError=jni_bridge_${failureKind}_$operation"
+        if (!globalFailureReport.compareAndSet(null, report)) return
+
+        logNativeFailure(operation, context, error)
+    }
 
     fun ensureLoaded(): Boolean {
         if (libraryReady) return true
@@ -20,12 +76,15 @@ internal object UsbExclusiveNativeBridge {
             if (libraryReady) return true
             if (loadAttempted) return false
             loadAttempted = true
-            return runCatching {
+            return try {
                 System.loadLibrary("_neri")
                 libraryReady = true
                 true
-            }.getOrElse { error ->
-                NPLogger.e(TAG, "Failed to load native USB exclusive bridge", error)
+            } catch (error: Exception) {
+                recordGlobalFailure("loadLibrary", null, error)
+                false
+            } catch (error: LinkageError) {
+                recordGlobalFailure("loadLibrary", null, error)
                 false
             }
         }
@@ -39,18 +98,38 @@ internal object UsbExclusiveNativeBridge {
         subslotBytes: Int = 2
     ): Long {
         if (!ensureLoaded()) return 0L
-        return nativeOpen(
-            fd = connection.fileDescriptor,
-            sampleRate = sampleRate,
-            channelCount = channelCount,
-            bitsPerSample = bitsPerSample,
-            subslotBytes = subslotBytes
-        )
+        val fd = connection.fileDescriptor
+        val handle = callNative(
+            operation = "nativeOpen",
+            context = {
+                "fd=$fd sampleRate=$sampleRate channelCount=$channelCount " +
+                    "bitsPerSample=$bitsPerSample subslotBytes=$subslotBytes"
+            }
+        ) {
+            nativeOpen(
+                fd = fd,
+                sampleRate = sampleRate,
+                channelCount = channelCount,
+                bitsPerSample = bitsPerSample,
+                subslotBytes = subslotBytes
+            )
+        } ?: return 0L
+        if (handle == 0L) {
+            NPLogger.e(
+                TAG,
+                "nativeOpen returned 0 " +
+                    "(fd=$fd sampleRate=$sampleRate channelCount=$channelCount " +
+                    "bitsPerSample=$bitsPerSample subslotBytes=$subslotBytes)"
+            )
+        }
+        return handle
     }
 
     fun startGeneratedTone(handle: Long): Boolean {
         if (handle == 0L || !ensureLoaded()) return false
-        return nativeStartGeneratedTone(handle)
+        return callNativeBoolean("nativeStartGeneratedTone", { "handle=$handle" }) {
+            nativeStartGeneratedTone(handle)
+        }
     }
 
     fun preparePlayerPcm(
@@ -60,12 +139,20 @@ internal object UsbExclusiveNativeBridge {
         inputEncoding: Int
     ): Boolean {
         if (handle == 0L || !ensureLoaded()) return false
-        return nativePreparePlayerPcm(
-            handle = handle,
-            inputSampleRate = inputSampleRate,
-            inputChannelCount = inputChannelCount,
-            inputEncoding = inputEncoding
-        )
+        return callNativeBoolean(
+            operation = "nativePreparePlayerPcm",
+            context = {
+                "handle=$handle inputSampleRate=$inputSampleRate " +
+                    "inputChannelCount=$inputChannelCount inputEncoding=$inputEncoding"
+            }
+        ) {
+            nativePreparePlayerPcm(
+                handle = handle,
+                inputSampleRate = inputSampleRate,
+                inputChannelCount = inputChannelCount,
+                inputEncoding = inputEncoding
+            )
+        }
     }
 
     fun writePlayerPcm(
@@ -76,83 +163,141 @@ internal object UsbExclusiveNativeBridge {
         volume: Float
     ): Int {
         if (handle == 0L || size <= 0 || !buffer.isDirect || !ensureLoaded()) return 0
-        return nativeWritePlayerPcm(
-            handle = handle,
-            buffer = buffer,
-            offset = offset,
-            size = size,
-            volume = volume
-        )
+        return callNativeInt(
+            operation = "nativeWritePlayerPcm",
+            context = { "handle=$handle offset=$offset size=$size" }
+        ) {
+            nativeWritePlayerPcm(
+                handle = handle,
+                buffer = buffer,
+                offset = offset,
+                size = size,
+                volume = volume
+            )
+        }
     }
 
     fun startPlayerPcm(handle: Long): Boolean {
         if (handle == 0L || !ensureLoaded()) return false
-        return nativeStartPlayerPcm(handle)
+        return callNativeBoolean("nativeStartPlayerPcm", { "handle=$handle" }) {
+            nativeStartPlayerPcm(handle)
+        }
     }
 
     fun playPlayerPcm(handle: Long): Boolean {
         if (handle == 0L || !ensureLoaded()) return false
-        return nativePlayPlayerPcm(handle)
+        return callNativeBoolean("nativePlayPlayerPcm", { "handle=$handle" }) {
+            nativePlayPlayerPcm(handle)
+        }
     }
 
     fun pausePlayerPcm(handle: Long): Boolean {
         if (handle == 0L || !ensureLoaded()) return false
-        return nativePausePlayerPcm(handle)
+        return callNativeBoolean("nativePausePlayerPcm", { "handle=$handle" }) {
+            nativePausePlayerPcm(handle)
+        }
     }
 
     fun flushPlayerPcm(handle: Long): Boolean {
         if (handle == 0L || !ensureLoaded()) return false
-        return nativeFlushPlayerPcm(handle)
+        return callNativeBoolean("nativeFlushPlayerPcm", { "handle=$handle" }) {
+            nativeFlushPlayerPcm(handle)
+        }
     }
 
     fun setPlayerVolume(handle: Long, volume: Float): Boolean {
         if (handle == 0L || !ensureLoaded()) return false
-        return nativeSetPlayerVolume(handle, volume.coerceIn(0f, 1f))
+        val normalizedVolume = volume.coerceIn(0f, 1f)
+        return callNativeBoolean(
+            operation = "nativeSetPlayerVolume",
+            context = { "handle=$handle volume=$normalizedVolume" }
+        ) {
+            nativeSetPlayerVolume(handle, normalizedVolume)
+        }
     }
 
     fun setPlayerFocusMuted(handle: Long, muted: Boolean): Boolean {
         if (handle == 0L || !ensureLoaded()) return false
-        return nativeSetPlayerFocusMuted(handle, muted)
+        return callNativeBoolean(
+            operation = "nativeSetPlayerFocusMuted",
+            context = { "handle=$handle muted=$muted" }
+        ) {
+            nativeSetPlayerFocusMuted(handle, muted)
+        }
     }
 
     fun configurePlayerBufferDuration(handle: Long, durationMs: Int): Boolean {
         if (handle == 0L || !ensureLoaded()) return false
-        return nativeConfigurePlayerBufferDuration(handle, durationMs)
+        return callNativeBoolean(
+            operation = "nativeConfigurePlayerBufferDuration",
+            context = { "handle=$handle durationMs=$durationMs" }
+        ) {
+            nativeConfigurePlayerBufferDuration(handle, durationMs)
+        }
     }
 
     fun completedAudioFrames(handle: Long): Long {
         if (handle == 0L || !ensureLoaded()) return 0L
-        return nativeGetCompletedAudioFrames(handle).coerceAtLeast(0L)
+        return callNative("nativeGetCompletedAudioFrames", context = { "handle=$handle" }) {
+            nativeGetCompletedAudioFrames(handle)
+        }?.coerceAtLeast(0L) ?: 0L
     }
 
     fun queuedPlayerFrames(handle: Long): Long {
         if (handle == 0L || !ensureLoaded()) return 0L
-        return nativeGetQueuedPlayerFrames(handle).coerceAtLeast(0L)
+        return callNative("nativeGetQueuedPlayerFrames", context = { "handle=$handle" }) {
+            nativeGetQueuedPlayerFrames(handle)
+        }?.coerceAtLeast(0L) ?: 0L
     }
 
     fun stop(handle: Long) {
         if (handle == 0L || !ensureLoaded()) return
-        nativeStop(handle)
+        callNative(
+            operation = "nativeStop",
+            context = { "handle=$handle" }
+        ) {
+            nativeStop(handle)
+        }
     }
 
     fun markDeviceDetached(handle: Long) {
         if (handle == 0L || !ensureLoaded()) return
-        nativeMarkDeviceDetached(handle)
+        callNative(
+            operation = "nativeMarkDeviceDetached",
+            context = { "handle=$handle" }
+        ) {
+            nativeMarkDeviceDetached(handle)
+        }
     }
 
     fun close(handle: Long) {
         if (handle == 0L || !ensureLoaded()) return
-        nativeClose(handle)
+        callNative(
+            operation = "nativeClose",
+            context = { "handle=$handle" }
+        ) {
+            nativeClose(handle)
+        }
     }
 
     fun runtimeReport(handle: Long): String {
-        if (!ensureLoaded()) return "native_unavailable"
-        return nativeRuntimeReport(handle)
+        globalFailureReport.get()?.let { return it }
+        if (!ensureLoaded()) {
+            return globalFailureReport.get() ?: "native_unavailable"
+        }
+        return callNative("nativeRuntimeReport", context = { "handle=$handle" }) {
+            nativeRuntimeReport(handle)
+        } ?: BRIDGE_FAILURE_FALLBACK_REPORT
     }
 
     fun lastOpenError(): String {
-        if (!ensureLoaded()) return "native_unavailable"
-        return nativeLastOpenError()
+        globalFailureReport.get()?.let { return it }
+        if (!ensureLoaded()) {
+            return globalFailureReport.get() ?: "native_unavailable"
+        }
+        return callNative("nativeLastOpenError") {
+            nativeLastOpenError()
+        } ?: BRIDGE_FAILURE_FALLBACK_REPORT
     }
 
     @JvmStatic
