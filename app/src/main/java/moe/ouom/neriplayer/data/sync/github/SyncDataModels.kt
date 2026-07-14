@@ -170,7 +170,7 @@ data class SyncSong(
     @ProtoNumber(6) val durationMs: Long = 0L,
     @ProtoNumber(7) val coverUrl: String? = null,
     @ProtoNumber(8) val mediaUri: String? = null,
-    @ProtoNumber(9) val addedAt: Long = System.currentTimeMillis(),
+    @ProtoNumber(9) val addedAt: Long = 0L,
     @ProtoNumber(10) val matchedLyric: String? = null,
     @ProtoNumber(11) val matchedTranslatedLyric: String? = null,
     @ProtoNumber(12) val matchedLyricSource: String? = null,
