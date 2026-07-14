@@ -301,7 +301,7 @@ object PlayerManager {
     internal lateinit var playbackStateFile: File
 
     internal var preferredQuality: String = "exhigh"
-    internal var youtubePreferredQuality: String = "very_high"
+    internal var youtubePreferredQuality: String = "high"
     internal var biliPreferredQuality: String = "high"
     internal var mobileDataFollowDefaultAudioQuality = true
     internal var mobileDataNeteaseAudioQuality: String = "standard"

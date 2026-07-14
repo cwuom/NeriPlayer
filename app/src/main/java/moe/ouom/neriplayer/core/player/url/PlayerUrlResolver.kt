@@ -172,7 +172,7 @@ internal fun buildYouTubeOfflineCacheAudioInfo(
     val qualityKey = preferredQualityKey
         .trim()
         .lowercase()
-        .ifBlank { "very_high" }
+        .ifBlank { "high" }
     return PlaybackAudioInfo(
         source = PlaybackAudioSource.YOUTUBE_MUSIC,
         qualityKey = qualityKey,

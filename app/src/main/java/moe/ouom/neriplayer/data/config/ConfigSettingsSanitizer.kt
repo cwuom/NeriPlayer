@@ -379,7 +379,7 @@ private val PLAYBACK_FADE_DURATION_RANGE_MS = 0L..3000L
 private val CACHE_SIZE_RANGE_BYTES = 0L..(10L * 1024L * 1024L * 1024L)
 
 private const val DEFAULT_NETEASE_AUDIO_QUALITY = "exhigh"
-private const val DEFAULT_YOUTUBE_AUDIO_QUALITY = "very_high"
+private const val DEFAULT_YOUTUBE_AUDIO_QUALITY = "high"
 private const val DEFAULT_BILI_AUDIO_QUALITY = "high"
 private const val DEFAULT_START_DESTINATION_ROUTE = "home"
 private const val MAX_THEME_PALETTE_COLORS = 64

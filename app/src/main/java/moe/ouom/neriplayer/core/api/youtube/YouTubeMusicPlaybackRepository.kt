@@ -1005,7 +1005,7 @@ class YouTubeMusicPlaybackRepository(
         preferM4a: Boolean = false
     ) {
         syncAuthBoundCachesIfNeeded(authProvider().normalized())
-        val preferredQualityKey = preferredQualityOverride.ifBlank { "very_high" }
+        val preferredQualityKey = preferredQualityOverride.ifBlank { "high" }
         val cacheKey = if (preferM4a) "${preferredQualityKey}_m4a" else preferredQualityKey
         if (
             getCachedPlayableAudio(
@@ -3051,7 +3051,7 @@ class YouTubeMusicPlaybackRepository(
         return preferredQualityOverride
             ?.takeIf { it.isNotBlank() }
             ?: settings?.youtubeAudioQualityFlow?.first()?.takeIf { it.isNotBlank() }
-            ?: "very_high"
+            ?: "high"
     }
 
     internal fun selectPreferredPlayableAudio(

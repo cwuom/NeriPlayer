@@ -91,7 +91,7 @@ private var playbackPreferenceSnapshotWarmScheduled = false
 
 data class PlaybackPreferenceSnapshot(
     val audioQuality: String = "exhigh",
-    val youtubeAudioQuality: String = "very_high",
+    val youtubeAudioQuality: String = "high",
     val biliAudioQuality: String = "high",
     val mobileDataFollowDefaultAudioQuality: Boolean = true,
     val mobileDataNeteaseAudioQuality: String = DEFAULT_MOBILE_DATA_NETEASE_AUDIO_QUALITY,
@@ -138,7 +138,7 @@ data class PlaybackPreferenceSnapshot(
     fun sanitized(): PlaybackPreferenceSnapshot {
         return copy(
             audioQuality = audioQuality.trim().ifBlank { "exhigh" },
-            youtubeAudioQuality = youtubeAudioQuality.trim().ifBlank { "very_high" },
+            youtubeAudioQuality = youtubeAudioQuality.trim().ifBlank { "high" },
             biliAudioQuality = biliAudioQuality.trim().ifBlank { "high" },
             mobileDataNeteaseAudioQuality =
                 normalizeMobileDataNeteaseAudioQuality(mobileDataNeteaseAudioQuality),
@@ -349,7 +349,7 @@ internal fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnaps
     val legacyMobileDataQuality = this[SettingsKeys.MOBILE_DATA_DOWNGRADE_QUALITY]
     return PlaybackPreferenceSnapshot(
         audioQuality = this[SettingsKeys.AUDIO_QUALITY] ?: "exhigh",
-        youtubeAudioQuality = this[SettingsKeys.YOUTUBE_AUDIO_QUALITY] ?: "very_high",
+        youtubeAudioQuality = this[SettingsKeys.YOUTUBE_AUDIO_QUALITY] ?: "high",
         biliAudioQuality = this[SettingsKeys.BILI_AUDIO_QUALITY] ?: "high",
         mobileDataFollowDefaultAudioQuality =
             this[SettingsKeys.MOBILE_DATA_FOLLOW_DEFAULT_AUDIO_QUALITY]
@@ -451,7 +451,7 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
     return PlaybackPreferenceSnapshot(
         audioQuality = prefs.getString(PLAYBACK_AUDIO_QUALITY_KEY, "exhigh") ?: "exhigh",
         youtubeAudioQuality =
-            prefs.getString(PLAYBACK_YOUTUBE_AUDIO_QUALITY_KEY, "very_high") ?: "very_high",
+            prefs.getString(PLAYBACK_YOUTUBE_AUDIO_QUALITY_KEY, "high") ?: "high",
         biliAudioQuality = prefs.getString(PLAYBACK_BILI_AUDIO_QUALITY_KEY, "high") ?: "high",
         mobileDataFollowDefaultAudioQuality = if (
             prefs.contains(PLAYBACK_MOBILE_DATA_FOLLOW_DEFAULT_AUDIO_QUALITY_KEY)

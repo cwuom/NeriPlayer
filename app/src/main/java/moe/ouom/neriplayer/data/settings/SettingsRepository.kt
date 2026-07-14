@@ -107,7 +107,7 @@ class SettingsRepository(private val context: Context) {
         dataStoreSettingFlow { it[SettingsKeys.AUDIO_QUALITY] ?: "exhigh" }
 
     val youtubeAudioQualityFlow: Flow<String> =
-        dataStoreSettingFlow { it[SettingsKeys.YOUTUBE_AUDIO_QUALITY] ?: "very_high" }
+        dataStoreSettingFlow { it[SettingsKeys.YOUTUBE_AUDIO_QUALITY] ?: "high" }
 
     val biliAudioQualityFlow: Flow<String> =
         dataStoreSettingFlow { it[SettingsKeys.BILI_AUDIO_QUALITY] ?: "high" }
