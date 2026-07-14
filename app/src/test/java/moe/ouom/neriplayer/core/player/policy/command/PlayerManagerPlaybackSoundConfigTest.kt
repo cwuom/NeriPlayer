@@ -14,6 +14,7 @@ class PlayerManagerPlaybackSoundConfigTest {
             speed = 1.25f,
             pitch = 1.1f,
             loudnessGainMb = 600,
+            volumeBalance = -0.4f,
             equalizerEnabled = true,
             presetId = PlaybackEqualizerPresetId.CUSTOM,
             customBandLevelsMb = listOf(-200, 100, 300)
@@ -27,6 +28,7 @@ class PlayerManagerPlaybackSoundConfigTest {
         assertEquals(normalizePlaybackSpeed(1.25f * 1.03f), effectiveConfig.speed, 0.0001f)
         assertEquals(baseConfig.pitch, effectiveConfig.pitch, 0.0001f)
         assertEquals(baseConfig.loudnessGainMb, effectiveConfig.loudnessGainMb)
+        assertEquals(baseConfig.volumeBalance, effectiveConfig.volumeBalance, 0.0001f)
         assertEquals(baseConfig.equalizerEnabled, effectiveConfig.equalizerEnabled)
         assertEquals(baseConfig.presetId, effectiveConfig.presetId)
         assertEquals(baseConfig.customBandLevelsMb, effectiveConfig.customBandLevelsMb)
@@ -49,6 +51,7 @@ class PlayerManagerPlaybackSoundConfigTest {
                 speed = 1.25f,
                 pitch = 0.9f,
                 loudnessGainMb = 600,
+                volumeBalance = 0.4f,
                 equalizerEnabled = true,
                 presetId = PlaybackEqualizerPresetId.CUSTOM,
                 customBandLevelsMb = listOf(100, -100)
@@ -60,6 +63,7 @@ class PlayerManagerPlaybackSoundConfigTest {
         assertEquals(1.0f, effectiveConfig.speed, 0.0001f)
         assertEquals(1.0f, effectiveConfig.pitch, 0.0001f)
         assertEquals(0, effectiveConfig.loudnessGainMb)
+        assertEquals(0f, effectiveConfig.volumeBalance, 0.0001f)
         assertEquals(false, effectiveConfig.equalizerEnabled)
         assertEquals(PlaybackEqualizerPresetId.CUSTOM, effectiveConfig.presetId)
         assertEquals(listOf(100, -100), effectiveConfig.customBandLevelsMb)

@@ -835,6 +835,11 @@
     <string name="settings_playback_crossfade_next_desc">切换到下一首时使用淡入淡出过渡</string>
     <string name="settings_playback_crossfade_in_duration">下一首淡入时长</string>
     <string name="settings_playback_crossfade_out_duration">当前曲淡出时长</string>
+    <string name="settings_playback_volume_balance">音量平衡</string>
+    <string name="settings_playback_volume_balance_desc">调整左右声道音量比例</string>
+    <string name="settings_playback_volume_balance_center">当前：居中</string>
+    <string name="settings_playback_volume_balance_left">当前：偏左 %d%%</string>
+    <string name="settings_playback_volume_balance_right">当前：偏右 %d%%</string>
     <string name="settings_playback_source">播放源</string>
     <string name="settings_playback_source_desc">配置自动换源与音源兜底策略</string>
     <string name="settings_keep_last_playback_progress">保留上次播放进度</string>

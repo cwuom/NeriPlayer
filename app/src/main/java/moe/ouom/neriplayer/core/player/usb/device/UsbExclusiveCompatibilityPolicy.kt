@@ -10,6 +10,7 @@ fun PlaybackSoundConfig.requiresSystemAudioProcessor(
 ): Boolean {
     return equalizerEnabled ||
         loudnessGainMb > 0 ||
+        abs(volumeBalance) > PARAMETER_EPSILON ||
         abs(speed - 1f) > PARAMETER_EPSILON ||
         abs(pitch - 1f) > PARAMETER_EPSILON ||
         abs(listenTogetherSyncRate - 1f) > PARAMETER_EPSILON

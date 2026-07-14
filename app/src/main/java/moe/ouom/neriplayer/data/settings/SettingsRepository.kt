@@ -38,12 +38,14 @@ import moe.ouom.neriplayer.core.download.normalizeDownloadFileNameTemplate
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_PITCH
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_SPEED
+import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_VOLUME_BALANCE
 import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
 import moe.ouom.neriplayer.core.player.model.decodePlaybackEqualizerBandLevels
 import moe.ouom.neriplayer.core.player.model.encodePlaybackEqualizerBandLevels
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
+import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingSpec
 import java.util.Locale
@@ -393,6 +395,13 @@ class SettingsRepository(private val context: Context) {
         dataStoreSettingFlow {
             normalizePlaybackLoudnessGainMb(
                 it[SettingsKeys.PLAYBACK_LOUDNESS_GAIN_MB] ?: DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
+            )
+        }
+
+    val playbackVolumeBalanceFlow: Flow<Float> =
+        dataStoreSettingFlow {
+            normalizePlaybackVolumeBalance(
+                it[SettingsKeys.PLAYBACK_VOLUME_BALANCE] ?: DEFAULT_PLAYBACK_VOLUME_BALANCE
             )
         }
 
@@ -969,6 +978,16 @@ class SettingsRepository(private val context: Context) {
         }
         updatePlaybackPreferenceSnapshot(context) {
             it.copy(playbackLoudnessGainMb = normalized)
+        }
+    }
+
+    suspend fun setPlaybackVolumeBalance(balance: Float) {
+        val normalized = normalizePlaybackVolumeBalance(balance)
+        context.dataStore.edit {
+            it[SettingsKeys.PLAYBACK_VOLUME_BALANCE] = normalized
+        }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(playbackVolumeBalance = normalized)
         }
     }
 

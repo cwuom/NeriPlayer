@@ -866,6 +866,9 @@ private fun NeriAppContent(
     val playbackFadeOutDurationMs by repo.playbackFadeOutDurationMsFlow.collectAsStateWithLifecycle(initialValue = 500L)
     val playbackCrossfadeInDurationMs by repo.playbackCrossfadeInDurationMsFlow.collectAsStateWithLifecycle(initialValue = 500L)
     val playbackCrossfadeOutDurationMs by repo.playbackCrossfadeOutDurationMsFlow.collectAsStateWithLifecycle(initialValue = 500L)
+    val playbackVolumeBalance by repo.playbackVolumeBalanceFlow.collectAsStateWithLifecycle(
+        initialValue = startupPlaybackPreferences.playbackVolumeBalance
+    )
     val keepLastPlaybackProgress by repo.keepLastPlaybackProgressFlow.collectAsStateWithLifecycle(initialValue = true)
     val keepPlaybackModeState by repo.keepPlaybackModeStateFlow.collectAsStateWithLifecycle(initialValue = true)
     val neteaseAutoSourceSwitch by repo.neteaseAutoSourceSwitchFlow.collectAsStateWithLifecycle(
@@ -2172,6 +2175,10 @@ private fun NeriAppContent(
                                         playbackCrossfadeOutDurationMs = playbackCrossfadeOutDurationMs,
                                         onPlaybackCrossfadeOutDurationMsChange = { duration ->
                                             scope.launch { repo.setPlaybackCrossfadeOutDurationMs(duration) }
+                                        },
+                                        playbackVolumeBalance = playbackVolumeBalance,
+                                        onPlaybackVolumeBalanceChange = { balance ->
+                                            PlayerManager.setPlaybackVolumeBalance(balance)
                                         },
                                         keepLastPlaybackProgress = keepLastPlaybackProgress,
                                         onKeepLastPlaybackProgressChange = { enabled ->

@@ -15,7 +15,9 @@ import moe.ouom.neriplayer.core.player.model.defaultPlaybackEqualizerBands
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
+import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.core.player.model.resolvePlaybackEqualizerBandLevelsMb
+import moe.ouom.neriplayer.core.player.engine.PlaybackVolumeBalanceState
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 /**
@@ -53,7 +55,8 @@ class PlaybackEffectsController {
         config = newConfig.copy(
             speed = normalizePlaybackSpeed(newConfig.speed),
             pitch = normalizePlaybackPitch(newConfig.pitch),
-            loudnessGainMb = normalizePlaybackLoudnessGainMb(newConfig.loudnessGainMb)
+            loudnessGainMb = normalizePlaybackLoudnessGainMb(newConfig.loudnessGainMb),
+            volumeBalance = normalizePlaybackVolumeBalance(newConfig.volumeBalance)
         )
         if (
             previousConfig.speed != config.speed ||
@@ -71,6 +74,7 @@ class PlaybackEffectsController {
         if (previousConfig.loudnessGainMb != config.loudnessGainMb) {
             applyLoudnessEnhancer()
         }
+        PlaybackVolumeBalanceState.update(config.volumeBalance)
         return buildState()
     }
 
@@ -95,6 +99,7 @@ class PlaybackEffectsController {
     fun release(): PlaybackSoundState {
         releaseEqualizer()
         releaseLoudnessEnhancer()
+        PlaybackVolumeBalanceState.update(0f)
         player = null
         currentAudioSessionId = null
         return buildState()
@@ -322,6 +327,7 @@ class PlaybackEffectsController {
             speed = config.speed,
             pitch = config.pitch,
             loudnessGainMb = config.loudnessGainMb,
+            volumeBalance = config.volumeBalance,
             equalizerEnabled = config.equalizerEnabled,
             presetId = config.presetId,
             bands = bands,

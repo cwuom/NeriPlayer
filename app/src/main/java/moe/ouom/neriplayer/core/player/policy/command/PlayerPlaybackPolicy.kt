@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.core.player.model.PlaybackSoundConfig
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
+import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 
@@ -345,15 +346,17 @@ internal fun resolvePlaybackSoundConfigForEngine(
     usbExclusivePlaybackEnabled: Boolean = false
 ): PlaybackSoundConfig {
     val normalizedBaseConfig = baseConfig.copy(
-        speed = normalizePlaybackSpeed(baseConfig.speed),
-        pitch = normalizePlaybackPitch(baseConfig.pitch),
-        loudnessGainMb = normalizePlaybackLoudnessGainMb(baseConfig.loudnessGainMb)
-    )
+            speed = normalizePlaybackSpeed(baseConfig.speed),
+            pitch = normalizePlaybackPitch(baseConfig.pitch),
+            loudnessGainMb = normalizePlaybackLoudnessGainMb(baseConfig.loudnessGainMb),
+            volumeBalance = normalizePlaybackVolumeBalance(baseConfig.volumeBalance)
+        )
     if (usbExclusivePlaybackEnabled) {
         return normalizedBaseConfig.copy(
             speed = 1f,
             pitch = 1f,
             loudnessGainMb = 0,
+            volumeBalance = 0f,
             equalizerEnabled = false
         )
     }

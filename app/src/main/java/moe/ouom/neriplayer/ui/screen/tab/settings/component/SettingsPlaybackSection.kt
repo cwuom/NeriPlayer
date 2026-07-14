@@ -42,6 +42,7 @@ import androidx.compose.material.icons.outlined.BluetoothAudio
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.SurroundSound
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Usb
@@ -62,8 +63,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlin.math.absoluteValue
+import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.player.model.MAX_PLAYBACK_VOLUME_BALANCE
+import moe.ouom.neriplayer.core.player.model.MIN_PLAYBACK_VOLUME_BALANCE
+import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingInfo
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
@@ -89,6 +94,8 @@ internal fun SettingsPlaybackSection(
     onPlaybackCrossfadeInDurationMsChange: (Long) -> Unit,
     playbackCrossfadeOutDurationMs: Long,
     onPlaybackCrossfadeOutDurationMsChange: (Long) -> Unit,
+    playbackVolumeBalance: Float,
+    onPlaybackVolumeBalanceChange: (Float) -> Unit,
     keepLastPlaybackProgress: Boolean,
     onKeepLastPlaybackProgressChange: (Boolean) -> Unit,
     keepPlaybackModeState: Boolean,
@@ -196,6 +203,11 @@ internal fun SettingsPlaybackSection(
                     )
                 }
             }
+
+            VolumeBalanceSliderListItem(
+                balance = playbackVolumeBalance,
+                onBalanceChange = onPlaybackVolumeBalanceChange
+            )
 
             PlaybackSwitchItem(
                 setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS),
@@ -323,6 +335,66 @@ private fun UsbExclusiveSettingsEntry(
         },
         onClick = onClick
     )
+}
+
+@Composable
+private fun VolumeBalanceSliderListItem(
+    balance: Float,
+    onBalanceChange: (Float) -> Unit
+) {
+    val normalizedBalance = normalizePlaybackVolumeBalance(balance)
+    var pendingBalance by remember { mutableFloatStateOf(normalizedBalance) }
+
+    LaunchedEffect(normalizedBalance) {
+        if ((pendingBalance - normalizedBalance).absoluteValue > 0.01f) {
+            pendingBalance = normalizedBalance
+        }
+    }
+
+    ListItem(
+        headlineContent = { Text(stringResource(R.string.settings_playback_volume_balance)) },
+        supportingContent = {
+            Column(Modifier.fillMaxWidth()) {
+                Text(
+                    text = volumeBalanceLabel(pendingBalance),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                MiuixSettingsSlider(
+                    value = pendingBalance,
+                    onValueChange = { pendingBalance = it },
+                    onValueChangeFinished = {
+                        onBalanceChange(normalizePlaybackVolumeBalance(pendingBalance))
+                    },
+                    valueRange = MIN_PLAYBACK_VOLUME_BALANCE..MAX_PLAYBACK_VOLUME_BALANCE,
+                    steps = 39
+                )
+            }
+        },
+        leadingContent = {
+            Icon(
+                imageVector = Icons.Outlined.SurroundSound,
+                contentDescription = stringResource(R.string.settings_playback_volume_balance),
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
+
+@Composable
+private fun volumeBalanceLabel(balance: Float): String {
+    val normalizedBalance = normalizePlaybackVolumeBalance(balance)
+    val percent = (normalizedBalance.absoluteValue * 100f).roundToInt()
+    return when {
+        percent == 0 -> stringResource(R.string.settings_playback_volume_balance_center)
+        normalizedBalance < 0f -> stringResource(
+            R.string.settings_playback_volume_balance_left,
+            percent
+        )
+        else -> stringResource(R.string.settings_playback_volume_balance_right, percent)
+    }
 }
 
 @Composable

@@ -33,6 +33,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_PITCH
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_SPEED
+import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_VOLUME_BALANCE
 import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
 import moe.ouom.neriplayer.core.player.model.PlaybackSoundConfig
 import moe.ouom.neriplayer.core.player.model.decodePlaybackEqualizerBandLevels
@@ -40,6 +41,7 @@ import moe.ouom.neriplayer.core.player.model.encodePlaybackEqualizerBandLevels
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
+import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
 import androidx.core.content.edit
 
 private const val PLAYBACK_SNAPSHOT_PREFS = "playback_snapshot_cache"
@@ -70,6 +72,7 @@ private const val PLAYBACK_CROSSFADE_OUT_DURATION_KEY = "playback_crossfade_out_
 private const val PLAYBACK_SPEED_KEY = "playback_speed"
 private const val PLAYBACK_PITCH_KEY = "playback_pitch"
 private const val PLAYBACK_LOUDNESS_KEY = "playback_loudness_gain_mb"
+private const val PLAYBACK_VOLUME_BALANCE_KEY = "playback_volume_balance"
 private const val PLAYBACK_EQUALIZER_ENABLED_KEY = "playback_equalizer_enabled"
 private const val PLAYBACK_EQUALIZER_PRESET_KEY = "playback_equalizer_preset"
 private const val PLAYBACK_EQUALIZER_LEVELS_KEY = "playback_equalizer_custom_band_levels"
@@ -109,6 +112,7 @@ data class PlaybackPreferenceSnapshot(
     val playbackSpeed: Float = DEFAULT_PLAYBACK_SPEED,
     val playbackPitch: Float = DEFAULT_PLAYBACK_PITCH,
     val playbackLoudnessGainMb: Int = DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB,
+    val playbackVolumeBalance: Float = DEFAULT_PLAYBACK_VOLUME_BALANCE,
     val playbackEqualizerEnabled: Boolean = false,
     val playbackEqualizerPreset: String = PlaybackEqualizerPresetId.FLAT,
     val playbackEqualizerCustomBandLevels: List<Int> = emptyList(),
@@ -153,6 +157,7 @@ data class PlaybackPreferenceSnapshot(
             playbackSpeed = normalizePlaybackSpeed(playbackSpeed),
             playbackPitch = normalizePlaybackPitch(playbackPitch),
             playbackLoudnessGainMb = normalizePlaybackLoudnessGainMb(playbackLoudnessGainMb),
+            playbackVolumeBalance = normalizePlaybackVolumeBalance(playbackVolumeBalance),
             playbackEqualizerPreset = playbackEqualizerPreset.trim()
                 .ifBlank { PlaybackEqualizerPresetId.FLAT },
             usbExclusiveSampleRateMode = UsbExclusiveSampleRateMode
@@ -186,6 +191,7 @@ data class PlaybackPreferenceSnapshot(
             speed = normalizedSnapshot.playbackSpeed,
             pitch = normalizedSnapshot.playbackPitch,
             loudnessGainMb = normalizedSnapshot.playbackLoudnessGainMb,
+            volumeBalance = normalizedSnapshot.playbackVolumeBalance,
             equalizerEnabled = normalizedSnapshot.playbackEqualizerEnabled,
             presetId = normalizedSnapshot.playbackEqualizerPreset,
             customBandLevelsMb = normalizedSnapshot.playbackEqualizerCustomBandLevels
@@ -305,6 +311,7 @@ internal fun persistPlaybackPreferenceSnapshot(
                 .putFloat(PLAYBACK_SPEED_KEY, normalizedSnapshot.playbackSpeed)
                 .putFloat(PLAYBACK_PITCH_KEY, normalizedSnapshot.playbackPitch)
                 .putInt(PLAYBACK_LOUDNESS_KEY, normalizedSnapshot.playbackLoudnessGainMb)
+                .putFloat(PLAYBACK_VOLUME_BALANCE_KEY, normalizedSnapshot.playbackVolumeBalance)
                 .putBoolean(
                     PLAYBACK_EQUALIZER_ENABLED_KEY,
                     normalizedSnapshot.playbackEqualizerEnabled
@@ -382,6 +389,8 @@ internal fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnaps
         playbackPitch = this[SettingsKeys.PLAYBACK_PITCH] ?: DEFAULT_PLAYBACK_PITCH,
         playbackLoudnessGainMb =
             this[SettingsKeys.PLAYBACK_LOUDNESS_GAIN_MB] ?: DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB,
+        playbackVolumeBalance =
+            this[SettingsKeys.PLAYBACK_VOLUME_BALANCE] ?: DEFAULT_PLAYBACK_VOLUME_BALANCE,
         playbackEqualizerEnabled = this[SettingsKeys.PLAYBACK_EQUALIZER_ENABLED] ?: false,
         playbackEqualizerPreset =
             this[SettingsKeys.PLAYBACK_EQUALIZER_PRESET] ?: PlaybackEqualizerPresetId.FLAT,
@@ -507,6 +516,10 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
         playbackLoudnessGainMb = prefs.getInt(
             PLAYBACK_LOUDNESS_KEY,
             DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
+        ),
+        playbackVolumeBalance = prefs.getFloat(
+            PLAYBACK_VOLUME_BALANCE_KEY,
+            DEFAULT_PLAYBACK_VOLUME_BALANCE
         ),
         playbackEqualizerEnabled =
             prefs.getBoolean(PLAYBACK_EQUALIZER_ENABLED_KEY, false),

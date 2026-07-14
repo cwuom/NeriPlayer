@@ -80,6 +80,7 @@ import moe.ouom.neriplayer.core.player.model.AudioDevice
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_PITCH
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_SPEED
+import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_VOLUME_BALANCE
 import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
@@ -93,6 +94,7 @@ import moe.ouom.neriplayer.core.player.metadata.NeteaseLyricsCacheEntry
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
+import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDebugLogger
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommand
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
@@ -1371,6 +1373,16 @@ object PlayerManager {
         )
     }
 
+    fun setPlaybackVolumeBalance(balance: Float, persist: Boolean = true) {
+        ensureInitialized()
+        applyPlaybackSoundConfig(
+            playbackSoundConfig.copy(
+                volumeBalance = normalizePlaybackVolumeBalance(balance)
+            ),
+            persist = persist
+        )
+    }
+
     fun setPlaybackEqualizerEnabled(enabled: Boolean, persist: Boolean = true) {
         ensureInitialized()
         applyPlaybackSoundConfig(
@@ -1417,6 +1429,7 @@ object PlayerManager {
                 speed = DEFAULT_PLAYBACK_SPEED,
                 pitch = DEFAULT_PLAYBACK_PITCH,
                 loudnessGainMb = DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB,
+                volumeBalance = DEFAULT_PLAYBACK_VOLUME_BALANCE,
                 equalizerEnabled = false,
                 presetId = PlaybackEqualizerPresetId.FLAT,
                 customBandLevelsMb = emptyList()
@@ -1433,7 +1446,8 @@ object PlayerManager {
         playbackSoundConfig = newConfig.copy(
             speed = normalizePlaybackSpeed(newConfig.speed),
             pitch = normalizePlaybackPitch(newConfig.pitch),
-            loudnessGainMb = normalizePlaybackLoudnessGainMb(newConfig.loudnessGainMb)
+            loudnessGainMb = normalizePlaybackLoudnessGainMb(newConfig.loudnessGainMb),
+            volumeBalance = normalizePlaybackVolumeBalance(newConfig.volumeBalance)
         )
         schedulePlaybackSoundConfigApply(
             previousConfig = previousConfig,
@@ -1477,7 +1491,8 @@ object PlayerManager {
         val normalizedConfig = newConfig.copy(
             speed = normalizePlaybackSpeed(newConfig.speed),
             pitch = normalizePlaybackPitch(newConfig.pitch),
-            loudnessGainMb = normalizePlaybackLoudnessGainMb(newConfig.loudnessGainMb)
+            loudnessGainMb = normalizePlaybackLoudnessGainMb(newConfig.loudnessGainMb),
+            volumeBalance = normalizePlaybackVolumeBalance(newConfig.volumeBalance)
         )
         if (normalizedConfig == playbackSoundConfig) return
         applyPlaybackSoundConfig(normalizedConfig, persist = false)
@@ -1490,6 +1505,7 @@ object PlayerManager {
             settingsRepo.setPlaybackSpeed(config.speed)
             settingsRepo.setPlaybackPitch(config.pitch)
             settingsRepo.setPlaybackLoudnessGainMb(config.loudnessGainMb)
+            settingsRepo.setPlaybackVolumeBalance(config.volumeBalance)
             settingsRepo.setPlaybackEqualizerEnabled(config.equalizerEnabled)
             settingsRepo.setPlaybackEqualizerPreset(config.presetId)
             settingsRepo.setPlaybackEqualizerCustomBandLevels(config.customBandLevelsMb)

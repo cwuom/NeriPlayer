@@ -835,6 +835,11 @@
     <string name="settings_playback_crossfade_next_desc">Fade between tracks when moving to the next song</string>
     <string name="settings_playback_crossfade_in_duration">Next Track Fade-in Duration</string>
     <string name="settings_playback_crossfade_out_duration">Current Track Fade-out Duration</string>
+    <string name="settings_playback_volume_balance">Volume Balance</string>
+    <string name="settings_playback_volume_balance_desc">Adjust the left and right channel volume ratio</string>
+    <string name="settings_playback_volume_balance_center">Current: Center</string>
+    <string name="settings_playback_volume_balance_left">Current: Left %d%%</string>
+    <string name="settings_playback_volume_balance_right">Current: Right %d%%</string>
     <string name="settings_playback_source">Playback Source</string>
     <string name="settings_playback_source_desc">Configure automatic source switching and fallback sources</string>
     <string name="settings_keep_last_playback_progress">Keep Last Playback Progress</string>

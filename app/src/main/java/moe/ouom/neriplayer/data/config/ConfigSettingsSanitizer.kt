@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.core.player.model.encodePlaybackEqualizerBandLevels
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
+import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.data.settings.PlaybackServiceIdleShutdownPreference
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
@@ -106,6 +107,7 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
                 SettingsKeys.LYRIC_BLUR_AMOUNT.name -> value.coerceIn(LYRIC_BLUR_AMOUNT_RANGE)
                 SettingsKeys.PLAYBACK_SPEED.name -> normalizePlaybackSpeed(value)
                 SettingsKeys.PLAYBACK_PITCH.name -> normalizePlaybackPitch(value)
+                SettingsKeys.PLAYBACK_VOLUME_BALANCE.name -> normalizePlaybackVolumeBalance(value)
                 else -> value
             }
             if (normalized != value) {

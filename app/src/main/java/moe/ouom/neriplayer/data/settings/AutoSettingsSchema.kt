@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.core.player.download.DEFAULT_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_PITCH
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_SPEED
+import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_VOLUME_BALANCE
 import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
 import moe.ouom.neriplayer.ksp.annotations.AutoSetting
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingIcon
@@ -1346,6 +1347,19 @@ object AutoSettingsSchema {
         )
         val playbackLoudnessGainMb = autoSetting(
             titleRes = R.string.settings_playback
+        )
+
+        @AutoSetting(
+            key = "playback_volume_balance",
+            type = SettingValueType.Float,
+            defaultFloat = DEFAULT_PLAYBACK_VOLUME_BALANCE,
+            order = 125,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val playbackVolumeBalance = autoSetting(
+            titleRes = R.string.settings_playback_volume_balance,
+            descriptionRes = R.string.settings_playback_volume_balance_desc
         )
 
         @AutoSetting(

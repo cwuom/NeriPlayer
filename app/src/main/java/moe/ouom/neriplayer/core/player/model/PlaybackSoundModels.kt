@@ -7,12 +7,15 @@ import kotlin.math.roundToInt
 const val DEFAULT_PLAYBACK_SPEED = 1.0f
 const val DEFAULT_PLAYBACK_PITCH = 1.0f
 const val DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB = 0
+const val DEFAULT_PLAYBACK_VOLUME_BALANCE = 0.0f
 const val MIN_PLAYBACK_SPEED = 0.1f
 const val MAX_PLAYBACK_SPEED = 4.0f
 const val MIN_PLAYBACK_PITCH = 0.25f
 const val MAX_PLAYBACK_PITCH = 2.0f
 const val MIN_PLAYBACK_LOUDNESS_GAIN_MB = 0
 const val MAX_PLAYBACK_LOUDNESS_GAIN_MB = 1_500
+const val MIN_PLAYBACK_VOLUME_BALANCE = -1.0f
+const val MAX_PLAYBACK_VOLUME_BALANCE = 1.0f
 val DEFAULT_EQUALIZER_BAND_LEVEL_RANGE_MB = -1500..1500
 
 object PlaybackEqualizerPresetId {
@@ -49,6 +52,7 @@ data class PlaybackSoundConfig(
     val speed: Float = DEFAULT_PLAYBACK_SPEED,
     val pitch: Float = DEFAULT_PLAYBACK_PITCH,
     val loudnessGainMb: Int = DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB,
+    val volumeBalance: Float = DEFAULT_PLAYBACK_VOLUME_BALANCE,
     val equalizerEnabled: Boolean = false,
     val presetId: String = PlaybackEqualizerPresetId.FLAT,
     val customBandLevelsMb: List<Int> = emptyList()
@@ -67,6 +71,7 @@ data class PlaybackSoundState(
     val speed: Float = DEFAULT_PLAYBACK_SPEED,
     val pitch: Float = DEFAULT_PLAYBACK_PITCH,
     val loudnessGainMb: Int = DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB,
+    val volumeBalance: Float = DEFAULT_PLAYBACK_VOLUME_BALANCE,
     val equalizerEnabled: Boolean = false,
     val presetId: String = PlaybackEqualizerPresetId.FLAT,
     val bands: List<PlaybackEqualizerBand> = defaultPlaybackEqualizerBands(),
@@ -181,6 +186,12 @@ fun normalizePlaybackLoudnessGainMb(value: Int): Int {
         minimumValue = MIN_PLAYBACK_LOUDNESS_GAIN_MB,
         maximumValue = MAX_PLAYBACK_LOUDNESS_GAIN_MB
     )
+}
+
+fun normalizePlaybackVolumeBalance(value: Float): Float {
+    if (!value.isFinite()) return DEFAULT_PLAYBACK_VOLUME_BALANCE
+    return ((value * 100f).roundToInt() / 100f)
+        .coerceIn(MIN_PLAYBACK_VOLUME_BALANCE, MAX_PLAYBACK_VOLUME_BALANCE)
 }
 
 fun findPlaybackEqualizerPreset(id: String): PlaybackEqualizerPreset? {

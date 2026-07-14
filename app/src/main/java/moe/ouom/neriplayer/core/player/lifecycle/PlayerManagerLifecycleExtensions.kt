@@ -770,6 +770,13 @@ internal fun PlayerManager.initializeImpl(
             }
         }
         ioScope.launch {
+            settingsRepo.playbackVolumeBalanceFlow.collect { balance ->
+                applyPlaybackSoundConfigIfChanged(
+                    playbackSoundConfig.copy(volumeBalance = balance)
+                )
+            }
+        }
+        ioScope.launch {
             settingsRepo.playbackEqualizerEnabledFlow.collect { enabled ->
                 applyPlaybackSoundConfigIfChanged(
                     playbackSoundConfig.copy(equalizerEnabled = enabled)
@@ -1029,6 +1036,7 @@ internal fun PlayerManager.updateAudioOffloadPreferences(reason: String) {
         playbackPitch = playbackSoundConfig.pitch,
         equalizerEnabled = playbackSoundConfig.equalizerEnabled,
         loudnessGainMb = playbackSoundConfig.loudnessGainMb,
+        volumeBalance = playbackSoundConfig.volumeBalance,
         audioReactiveActive = AudioReactive.enabled,
         listenTogetherPlaybackRate = listenTogetherSyncPlaybackRate,
     )
