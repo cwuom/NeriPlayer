@@ -152,7 +152,9 @@ class ListenTogetherSessionManager(
     @Volatile
     private var controllerLinkResolveJob: Job? = null
     @Volatile
-    private var pingSentAtMs: Long = 0L
+    private var pingSentAtWallMs: Long = 0L
+    @Volatile
+    private var pingSentAtElapsedMs: Long = 0L
     @Volatile
     private var estimatedServerClockOffsetMs: Long = 0L
 
@@ -189,6 +191,7 @@ class ListenTogetherSessionManager(
             pausedDriftForceSyncMs = PAUSED_DRIFT_FORCE_SYNC_MS,
             softSyncMinDriftMs = SOFT_SYNC_MIN_DRIFT_MS,
             softSyncFastDriftMs = SOFT_SYNC_FAST_DRIFT_MS,
+            trackSwitchGracePeriodMs = TRACK_SWITCH_GRACE_PERIOD_MS,
             zeroPositionRollbackGuardMs = UNEXPECTED_ZERO_POSITION_ROLLBACK_GUARD_MS
         ),
         roomStateProvider = { _roomState.value },
@@ -278,7 +281,15 @@ class ListenTogetherSessionManager(
     suspend fun refreshRoomState(baseUrl: String, roomId: String): ListenTogetherStateResponse {
         val validatedRoomId = requireValidListenTogetherRoomId(roomId)
         NPLogger.d(TAG, "refreshRoomState(): baseUrl=$baseUrl, roomId=$validatedRoomId")
+        val sentAtElapsedMs = SystemClock.elapsedRealtime()
+        val sentAtWallMs = System.currentTimeMillis()
         val response = api.getRoomState(baseUrl, validatedRoomId)
+        updateServerClockOffsetFromRoundTrip(
+            serverNowMs = response.serverNowMs,
+            sentAtWallMs = sentAtWallMs,
+            sentAtElapsedMs = sentAtElapsedMs,
+            reason = "http_state"
+        )
         response.state?.let {
             val accepted = acceptRoomState(
                 state = it,
@@ -357,6 +368,12 @@ class ListenTogetherSessionManager(
                         TAG,
                         "websocket.onMessage(): type=${message.type}, roomId=${message.roomId ?: message.state?.roomId}, version=${message.version ?: message.state?.version}, causedBy=${message.causedBy?.type}:${message.causedBy?.eventId}, ok=${message.ok}, message=${message.message}, resultError=${message.result?.error}"
                     )
+                    if (message.type != "pong" && message.type != "np_pong") {
+                        updateServerClockOffsetFromServerMessage(
+                            serverNowMs = message.nowMs ?: message.result?.applied?.nowMs,
+                            reason = message.type
+                        )
+                    }
                     when (message.type) {
                         "welcome",
                         "room_state_updated" -> handleSocketRoomState(message)
@@ -414,6 +431,13 @@ class ListenTogetherSessionManager(
                                 val resolvedError = error
                                     ?: message.message
                                     ?: "control event rejected"
+                                if (isUnsupportedClockSyncPingError(resolvedError)) {
+                                    NPLogger.d(TAG, "websocket.controlResult(): np_ping unsupported, fallback to legacy ping")
+                                    pingSentAtElapsedMs = SystemClock.elapsedRealtime()
+                                    pingSentAtWallMs = System.currentTimeMillis()
+                                    webSocketClient.sendLegacyPing()
+                                    return
+                                }
                                 if (trySendTrackFinishedLegacyFallback(resolvedError)) {
                                     return
                                 }
@@ -442,21 +466,14 @@ class ListenTogetherSessionManager(
                             )
                         }
 
-                        "pong" -> {
+                        "pong",
+                        "np_pong" -> {
                             _sessionState.value = _sessionState.value.copy(lastError = null)
                             val serverNowMs = message.nowMs
-                            val sentAt = pingSentAtMs
-                            if (serverNowMs != null && serverNowMs > 0L && sentAt > 0L) {
-                                val pongReceivedAt = System.currentTimeMillis()
-                                val rtt = (pongReceivedAt - sentAt).coerceAtLeast(0L)
-                                val newOffset = serverNowMs - (sentAt + rtt / 2)
-                                // EWMA α=0.3 平滑时钟偏差估计
-                                val prev = estimatedServerClockOffsetMs
-                                estimatedServerClockOffsetMs = when (prev) {
-                                    0L -> newOffset
-                                    else -> (prev * 7 + newOffset * 3) / 10
-                                }
-                            }
+                            updateServerClockOffsetFromPong(
+                                serverNowMs = serverNowMs,
+                                echoedSentAtElapsedMs = message.t
+                            )
                         }
                     }
                 }
@@ -524,7 +541,8 @@ class ListenTogetherSessionManager(
         pendingMemberControlRequest = null
         lastListenerStateRefreshAtElapsedMs = 0L
         lastWebSocketMessageAtElapsedMs = 0L
-        pingSentAtMs = 0L
+        pingSentAtWallMs = 0L
+        pingSentAtElapsedMs = 0L
         estimatedServerClockOffsetMs = 0L
         resetListenerRecoveryState()
         PlayerManager.resetListenTogetherSyncPlaybackRate()
@@ -577,8 +595,77 @@ class ListenTogetherSessionManager(
     }
 
     fun sendPing(): Boolean {
-        pingSentAtMs = System.currentTimeMillis()
-        return webSocketClient.sendPing()
+        val sentAtElapsedMs = SystemClock.elapsedRealtime()
+        pingSentAtElapsedMs = sentAtElapsedMs
+        pingSentAtWallMs = System.currentTimeMillis()
+        return webSocketClient.sendPing(sentAtElapsedMs)
+    }
+
+    private fun updateServerClockOffsetFromPong(
+        serverNowMs: Long?,
+        echoedSentAtElapsedMs: Long?
+    ) {
+        val nowElapsedMs = SystemClock.elapsedRealtime()
+        val nowWallMs = System.currentTimeMillis()
+        val echoedElapsedMs = echoedSentAtElapsedMs?.takeIf { it > 0L }
+        val sentAtElapsedMs = echoedElapsedMs ?: pingSentAtElapsedMs
+        val sentAtWallMs = when {
+            echoedElapsedMs != null -> nowWallMs - (nowElapsedMs - echoedElapsedMs)
+            else -> pingSentAtWallMs
+        }
+        updateServerClockOffsetFromRoundTrip(
+            serverNowMs = serverNowMs,
+            sentAtWallMs = sentAtWallMs,
+            sentAtElapsedMs = sentAtElapsedMs,
+            nowWallMs = nowWallMs,
+            nowElapsedMs = nowElapsedMs,
+            reason = "pong"
+        )
+    }
+
+    private fun updateServerClockOffsetFromServerMessage(
+        serverNowMs: Long?,
+        reason: String
+    ) {
+        updateServerClockOffsetFromRoundTrip(
+            serverNowMs = serverNowMs,
+            sentAtWallMs = 0L,
+            sentAtElapsedMs = 0L,
+            reason = reason
+        )
+    }
+
+    private fun updateServerClockOffsetFromRoundTrip(
+        serverNowMs: Long?,
+        sentAtWallMs: Long,
+        sentAtElapsedMs: Long,
+        nowWallMs: Long = System.currentTimeMillis(),
+        nowElapsedMs: Long = SystemClock.elapsedRealtime(),
+        reason: String
+    ) {
+        if (serverNowMs == null || serverNowMs <= 0L) return
+        val hasRoundTrip = sentAtWallMs > 0L && sentAtElapsedMs > 0L
+        val rtt = if (hasRoundTrip) nowElapsedMs - sentAtElapsedMs else 0L
+        if (rtt < 0L) return
+        if (rtt > CLOCK_SYNC_MAX_RTT_MS) {
+            NPLogger.w(TAG, "updateServerClockOffsetFromRoundTrip(): ignore stale sample, reason=$reason, rtt=$rtt")
+            return
+        }
+        val clientReferenceWallMs = if (hasRoundTrip) {
+            sentAtWallMs + rtt / 2
+        } else {
+            nowWallMs
+        }
+        val newOffset = serverNowMs - clientReferenceWallMs
+        val prev = estimatedServerClockOffsetMs
+        estimatedServerClockOffsetMs = when (prev) {
+            0L -> newOffset
+            else -> (prev * 7 + newOffset * 3) / 10
+        }
+        NPLogger.d(
+            TAG,
+            "updateServerClockOffsetFromRoundTrip(): reason=$reason, offset=$estimatedServerClockOffsetMs, sample=$newOffset, rtt=$rtt"
+        )
     }
 
     suspend fun sendControlEvent(event: ListenTogetherEvent): ListenTogetherControlResponse {
@@ -1069,6 +1156,7 @@ class ListenTogetherSessionManager(
         }
     }
 
+    // 旧自建 Worker 可能仍依赖这条中转路径，当前内置 Worker 已直接仲裁听众请求
     private fun handleMemberControlRequested(message: ListenTogetherSocketEnvelope) {
         val snapshot = _sessionState.value
         if (!isCurrentUserController(snapshot)) return
@@ -1697,6 +1785,10 @@ class ListenTogetherSessionManager(
         return sent
     }
 
+    private fun isUnsupportedClockSyncPingError(errorMessage: String): Boolean {
+        return errorMessage.contains("unsupported event type: np_ping", ignoreCase = true)
+    }
+
     private fun trySendTrackFinishedLegacyFallback(errorMessage: String): Boolean {
         if (!isUnsupportedTrackFinishedEventError(errorMessage)) return false
         val pending = pendingTrackFinishedLegacyFallback ?: return false
@@ -2287,6 +2379,7 @@ class ListenTogetherSessionManager(
         private const val HEARTBEAT_DRIFT_FORCE_SYNC_MS = 5_000L
         private const val PAUSED_DRIFT_FORCE_SYNC_MS = 800L
         private const val TRACK_SWITCH_FORCE_SYNC_MS = 500L
+        private const val TRACK_SWITCH_GRACE_PERIOD_MS = 800L
         private const val CONTROLLER_GRACE_PERIOD_MS = 10 * 60 * 1000L
         private const val HEARTBEAT_STATE_RECHECK_INTERVAL_MS = 10_000L
         private const val LINK_REQUEST_THROTTLE_MS = 4_000L
@@ -2303,6 +2396,7 @@ class ListenTogetherSessionManager(
         private const val TRACK_FINISHED_LEGACY_FALLBACK_TTL_MS = 15_000L
         private const val SOFT_SYNC_MIN_DRIFT_MS = 600L
         private const val SOFT_SYNC_FAST_DRIFT_MS = 1_500L
+        private const val CLOCK_SYNC_MAX_RTT_MS = 30_000L
         private const val UNEXPECTED_ZERO_POSITION_ROLLBACK_GUARD_MS = 2_000L
     }
 }

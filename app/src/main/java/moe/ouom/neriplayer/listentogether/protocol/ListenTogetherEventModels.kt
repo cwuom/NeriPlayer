@@ -18,6 +18,7 @@ data class ListenTogetherAppliedEvent(
     val version: Long? = null,
     val state: ListenTogetherRoomState? = null,
     val expectedPositionMs: Long? = null,
+    val nowMs: Long? = null,
     val causedBy: ListenTogetherCause? = null
 )
 

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.listentogether.playback.sync
 
+import moe.ouom.neriplayer.listentogether.control.passivePositionUpdateTypes
 import kotlin.math.abs
 
 internal data class ListenTogetherPlayerSyncContext(
@@ -12,6 +13,7 @@ internal data class ListenTogetherPlayerSyncContext(
     val expectedPositionMs: Long,
     val localPositionMs: Long,
     val ignoreUnexpectedZeroPositionRollback: Boolean,
+    val trackSwitchGracePeriodActive: Boolean = false,
     val causeType: String?,
     val trackSwitchForceSyncMs: Long,
     val heartbeatDriftForceSyncMs: Long,
@@ -36,7 +38,12 @@ internal fun resolveListenTogetherPlayerSyncPlan(
     context: ListenTogetherPlayerSyncContext
 ): ListenTogetherPlayerSyncPlan {
     val shouldReloadPlaylist = context.playbackContextChanged || context.targetIndexChanged
+    val shouldDeferPassiveTrackSwitchSync =
+        context.trackSwitchGracePeriodActive &&
+            context.causeType in passivePositionUpdateTypes
     val effectiveExpectedPositionMs = if (context.ignoreUnexpectedZeroPositionRollback) {
+        context.localPositionMs
+    } else if (shouldDeferPassiveTrackSwitchSync) {
         context.localPositionMs
     } else {
         context.expectedPositionMs
@@ -45,6 +52,8 @@ internal fun resolveListenTogetherPlayerSyncPlan(
     val driftMs = abs(signedDriftMs)
     val isHeartbeatUpdate = context.causeType == "HEARTBEAT"
     val shouldSeek = when {
+        shouldDeferPassiveTrackSwitchSync -> false
+
         shouldReloadPlaylist -> {
             effectiveExpectedPositionMs > 0L || driftMs > context.trackSwitchForceSyncMs
         }

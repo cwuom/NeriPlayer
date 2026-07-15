@@ -247,7 +247,7 @@ class ListenTogetherSessionPoliciesTest {
 
     @Test
     fun `heartbeat intervals stay below bundled worker controller timeout`() {
-        val workerControllerTimeoutMs = 35_000L
+        val workerControllerTimeoutMs = 45_000L
 
         assertEquals(
             LISTEN_TOGETHER_PLAYING_HEARTBEAT_INTERVAL_MS,

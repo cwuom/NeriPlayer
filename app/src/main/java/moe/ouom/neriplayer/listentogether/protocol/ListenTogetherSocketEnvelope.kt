@@ -14,6 +14,7 @@ data class ListenTogetherSocketEnvelope(
     val state: ListenTogetherRoomState? = null,
     val expectedPositionMs: Long? = null,
     val nowMs: Long? = null,
+    val t: Long? = null,
     val ok: Boolean? = null,
     val result: ListenTogetherControlResponse? = null,
     val message: String? = null,

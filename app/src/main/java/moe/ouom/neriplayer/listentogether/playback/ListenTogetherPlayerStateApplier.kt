@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.listentogether.playback
 
+import android.os.SystemClock
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
@@ -19,6 +20,7 @@ internal data class ListenTogetherPlayerStateApplierConfig(
     val pausedDriftForceSyncMs: Long,
     val softSyncMinDriftMs: Long,
     val softSyncFastDriftMs: Long,
+    val trackSwitchGracePeriodMs: Long,
     val zeroPositionRollbackGuardMs: Long
 )
 
@@ -28,6 +30,8 @@ internal class ListenTogetherPlayerStateApplier(
     private val isControllerProvider: () -> Boolean,
     private val serverClockOffsetProvider: () -> Long
 ) {
+    private var lastTrackSwitchAtElapsedMs: Long = 0L
+
     fun apply(
         state: ListenTogetherRoomState,
         causeType: String?,
@@ -72,8 +76,10 @@ internal class ListenTogetherPlayerStateApplier(
                 needsAuthoritativeStreamReload ||
                 forcePlaybackStallReload
         val targetIndexChanged = localCurrentIndex != targetIndex
+        val trackSwitchGracePeriodActive = isTrackSwitchGracePeriodActive()
 
         if (playbackContextChanged || targetIndexChanged) {
+            lastTrackSwitchAtElapsedMs = SystemClock.elapsedRealtime()
             PlayerManager.resetListenTogetherSyncPlaybackRate()
             PlayerManager.playPlaylist(queue, targetIndex, commandSource = PlaybackCommandSource.REMOTE_SYNC)
         }
@@ -113,6 +119,7 @@ internal class ListenTogetherPlayerStateApplier(
                 expectedPositionMs = resolvedExpectedPositionMs,
                 localPositionMs = localPositionMs,
                 ignoreUnexpectedZeroPositionRollback = ignoreUnexpectedZeroPositionRollback,
+                trackSwitchGracePeriodActive = trackSwitchGracePeriodActive,
                 causeType = causeType,
                 trackSwitchForceSyncMs = config.trackSwitchForceSyncMs,
                 heartbeatDriftForceSyncMs = config.heartbeatDriftForceSyncMs,
@@ -122,9 +129,15 @@ internal class ListenTogetherPlayerStateApplier(
         )
         NPLogger.d(
             config.tag,
-            "applyRoomStateToPlayer(): causeType=$causeType, desiredPlaying=$desiredPlaying, localPlaying=$localPlaying, localPlaybackAlreadyStarting=$localPlaybackAlreadyStarting, awaitingAuthoritativeStream=$awaitingAuthoritativeStream, localCurrentIndex=$localCurrentIndex, targetIndex=$targetIndex, playbackContextChanged=$playbackContextChanged, targetIndexChanged=$targetIndexChanged, shouldReloadPlaylist=${syncPlan.shouldReloadPlaylist}, effectiveExpectedPositionMs=${syncPlan.effectiveExpectedPositionMs}, driftMs=${syncPlan.driftMs}, signedDriftMs=${syncPlan.signedDriftMs}, shouldSeek=${syncPlan.shouldSeek}, shouldIssuePlay=${syncPlan.shouldIssuePlay}, shouldIssuePause=${syncPlan.shouldIssuePause}, needsAuthoritativeStreamReload=$needsAuthoritativeStreamReload, forcePlaybackStallReload=$forcePlaybackStallReload, ignoreUnexpectedZeroPositionRollback=$ignoreUnexpectedZeroPositionRollback, shouldForcePauseAfterRemoteLoad=${syncPlan.shouldForcePauseAfterRemoteLoad}"
+            "applyRoomStateToPlayer(): causeType=$causeType, desiredPlaying=$desiredPlaying, localPlaying=$localPlaying, localPlaybackAlreadyStarting=$localPlaybackAlreadyStarting, awaitingAuthoritativeStream=$awaitingAuthoritativeStream, localCurrentIndex=$localCurrentIndex, targetIndex=$targetIndex, playbackContextChanged=$playbackContextChanged, targetIndexChanged=$targetIndexChanged, trackSwitchGracePeriodActive=$trackSwitchGracePeriodActive, shouldReloadPlaylist=${syncPlan.shouldReloadPlaylist}, effectiveExpectedPositionMs=${syncPlan.effectiveExpectedPositionMs}, driftMs=${syncPlan.driftMs}, signedDriftMs=${syncPlan.signedDriftMs}, shouldSeek=${syncPlan.shouldSeek}, shouldIssuePlay=${syncPlan.shouldIssuePlay}, shouldIssuePause=${syncPlan.shouldIssuePause}, needsAuthoritativeStreamReload=$needsAuthoritativeStreamReload, forcePlaybackStallReload=$forcePlaybackStallReload, ignoreUnexpectedZeroPositionRollback=$ignoreUnexpectedZeroPositionRollback, shouldForcePauseAfterRemoteLoad=${syncPlan.shouldForcePauseAfterRemoteLoad}"
         )
         applySyncPlan(syncPlan)
+    }
+
+    private fun isTrackSwitchGracePeriodActive(): Boolean {
+        val switchedAt = lastTrackSwitchAtElapsedMs
+        if (switchedAt <= 0L) return false
+        return SystemClock.elapsedRealtime() - switchedAt < config.trackSwitchGracePeriodMs
     }
 
     private fun ListenTogetherRoomState.toSongQueue(): List<SongItem> {

@@ -141,6 +141,58 @@ class ListenTogetherPlayerSyncPlannerTest {
     }
 
     @Test
+    fun `passive update during track switch grace does not hard seek`() {
+        val plan = resolveListenTogetherPlayerSyncPlan(
+            ListenTogetherPlayerSyncContext(
+                playbackContextChanged = false,
+                targetIndexChanged = false,
+                desiredPlaying = true,
+                localPlaying = true,
+                localPlaybackAlreadyStarting = false,
+                awaitingAuthoritativeStream = false,
+                expectedPositionMs = 10_000L,
+                localPositionMs = 0L,
+                ignoreUnexpectedZeroPositionRollback = false,
+                trackSwitchGracePeriodActive = true,
+                causeType = "HEARTBEAT",
+                trackSwitchForceSyncMs = 500L,
+                heartbeatDriftForceSyncMs = 5_000L,
+                playingDriftForceSyncMs = 2_500L,
+                pausedDriftForceSyncMs = 800L
+            )
+        )
+
+        assertFalse(plan.shouldSeek)
+        assertEquals(0L, plan.effectiveExpectedPositionMs)
+    }
+
+    @Test
+    fun `active track switch still seeks during grace`() {
+        val plan = resolveListenTogetherPlayerSyncPlan(
+            ListenTogetherPlayerSyncContext(
+                playbackContextChanged = true,
+                targetIndexChanged = false,
+                desiredPlaying = true,
+                localPlaying = true,
+                localPlaybackAlreadyStarting = false,
+                awaitingAuthoritativeStream = false,
+                expectedPositionMs = 1_200L,
+                localPositionMs = 0L,
+                ignoreUnexpectedZeroPositionRollback = false,
+                trackSwitchGracePeriodActive = true,
+                causeType = "SET_TRACK",
+                trackSwitchForceSyncMs = 500L,
+                heartbeatDriftForceSyncMs = 5_000L,
+                playingDriftForceSyncMs = 2_500L,
+                pausedDriftForceSyncMs = 800L
+            )
+        )
+
+        assertTrue(plan.shouldReloadPlaylist)
+        assertTrue(plan.shouldSeek)
+    }
+
+    @Test
     fun `playlist reload waiting for link does not issue play again`() {
         val plan = resolveListenTogetherPlayerSyncPlan(
             ListenTogetherPlayerSyncContext(

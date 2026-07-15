@@ -47,6 +47,7 @@ data class ListenTogetherStateResponse(
     val ok: Boolean,
     val state: ListenTogetherRoomState? = null,
     val expectedPositionMs: Long? = null,
+    val serverNowMs: Long? = null,
     val autoPauseOnJoin: Boolean = false,
     val error: String? = null
 )

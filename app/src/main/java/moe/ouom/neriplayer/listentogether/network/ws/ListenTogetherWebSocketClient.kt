@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.listentogether.network.ws
 
+import android.os.SystemClock
 import kotlinx.serialization.json.Json
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSocketEnvelope
@@ -83,7 +84,12 @@ class ListenTogetherWebSocketClient(
     }
 
     @Synchronized
-    fun sendPing(): Boolean {
+    fun sendPing(sentAtElapsedMs: Long = SystemClock.elapsedRealtime()): Boolean {
+        return webSocket?.send("""{"type":"np_ping","t":$sentAtElapsedMs}""") == true
+    }
+
+    @Synchronized
+    fun sendLegacyPing(): Boolean {
         return webSocket?.send("""{"type":"ping"}""") == true
     }
 
