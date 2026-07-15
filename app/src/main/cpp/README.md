@@ -37,6 +37,42 @@ third-party parts still follow their original licenses.
 如果某个文件同时包含 NeriPlayer 自有代码和第三方代码，第三方代码仍按其
 原许可证处理。
 
+## External Contributions / 外部贡献
+
+Native contributions from other developers can only be covered by this
+alternative license if the contributor explicitly agrees to license that
+contribution under both:
+
+其他开发者贡献的 native 源码，只有在贡献者明确同意时，才会被纳入本
+替代授权。贡献者需要同意其贡献同时按以下两种方式授权：
+
+- GPL-3.0, as provided in the repository root `LICENSE` file
+- 根目录 `LICENSE` 中的 GPL-3.0 协议
+- The NeriPlayer Native Attribution License described in this README
+- 本 README 中描述的 NeriPlayer Native Attribution License / 署名授权
+
+By submitting a pull request or patch that modifies the NeriPlayer-owned
+native source areas listed above, the contributor is expected to grant this
+dual license for their contribution. If a contributor does not agree, they
+must clearly say so before the contribution is merged.
+
+当贡献者提交修改上述 NeriPlayer 自有 native 源码区域的 pull request 或
+patch 时，默认应明确接受这种双授权。如果贡献者不同意，必须在合并前清楚说明。
+
+If a native contribution is accepted without this dual-license grant, that
+specific contribution is not covered by the attribution-based closed-source
+exception unless the contributor later grants permission.
+
+如果某段 native 贡献没有获得这种双授权许可，除非贡献者之后补充授权，
+否则该具体贡献不适用“署名即可闭源使用”的例外。
+
+Third-party source imports must keep their original license notices and are
+not covered by this alternative license unless the copyright holder grants
+that permission.
+
+引入第三方源码时，必须保留其原始许可证和版权声明；除非版权持有人明确授权，
+否则第三方源码不适用本替代授权。
+
 ## Attribution License / 署名授权
 
 For the NeriPlayer-owned native source code listed above, the copyright
