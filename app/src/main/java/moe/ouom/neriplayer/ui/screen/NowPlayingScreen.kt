@@ -317,6 +317,7 @@ internal fun resolveNowPlayingPlaybackSourceType(
     isYouTubeMusicSong: Boolean,
     isFromNeteaseTag: Boolean,
     isFromBiliTag: Boolean,
+    isFromKugouTag: Boolean,
     currentMediaUrl: String?,
     playbackAudioSource: PlaybackAudioSource?
 ): PlaybackSourceType? {
@@ -335,11 +336,11 @@ internal fun resolveNowPlayingPlaybackSourceType(
 
     val isFromNeteaseUrl = currentMediaUrl?.contains("music.126.net", ignoreCase = true) == true
     val isFromBiliUrl = currentMediaUrl?.contains("bilivideo.", ignoreCase = true) == true
-    val isFromKugou = currentMediaUrl?.contains("kugou.com", ignoreCase = true) == true
+    val isFromKugouUrl = currentMediaUrl?.contains("kugou.com", ignoreCase = true) == true
     return when {
         isFromBiliTag || (!isFromNeteaseTag && isFromBiliUrl) -> PlaybackSourceType.BILIBILI
         isFromNeteaseTag || (!isFromBiliTag && isFromNeteaseUrl) -> PlaybackSourceType.NETEASE
-        isFromKugou -> PlaybackSourceType.KUGOU
+        isFromKugouTag || (!isFromNeteaseTag && !isFromNeteaseTag && isFromKugouUrl) ->  PlaybackSourceType.KUGOU
         else -> null
     }
 }
@@ -476,11 +477,14 @@ fun NowPlayingScreen(
         currentSong?.album?.startsWith(PlayerManager.NETEASE_SOURCE_TAG) == true
     val isFromBiliTag =
         currentSong?.album?.startsWith(PlayerManager.BILI_SOURCE_TAG) == true
+    val isFromKugouTag =
+        currentSong?.album?.startsWith(PlayerManager.KuGou_SOURCE_TAG) == true
     val rawPlaybackSourceType = resolveNowPlayingPlaybackSourceType(
         isLocalSong = currentSong?.isLocalSong() == true,
         isYouTubeMusicSong = currentSong?.let { isYouTubeMusicSong(it) } == true,
         isFromNeteaseTag = isFromNeteaseTag,
         isFromBiliTag = isFromBiliTag,
+        isFromKugouTag = isFromKugouTag,
         currentMediaUrl = currentMediaUrl,
         playbackAudioSource = currentPlaybackAudioInfo?.source
     )

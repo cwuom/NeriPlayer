@@ -1128,6 +1128,8 @@ private fun NeriAppContent(
     val preferredQuality by repo.audioQualityFlow.collectAsStateWithLifecycle(initialValue = "exhigh")
     val youtubePreferredQuality by repo.youtubeAudioQualityFlow.collectAsStateWithLifecycle(initialValue = "high")
     val biliPreferredQuality by repo.biliAudioQualityFlow.collectAsStateWithLifecycle(initialValue = "high")
+    val kugouPreferredQuality by repo.kugouAudioQualityFlow.collectAsStateWithLifecycle(initialValue = "128")
+
     val mobileDataFollowDefaultAudioQuality by repo.mobileDataFollowDefaultAudioQualityFlow.collectAsStateWithLifecycle(
         initialValue = startupPlaybackPreferences.mobileDataFollowDefaultAudioQuality
     )
@@ -1140,6 +1142,10 @@ private fun NeriAppContent(
     val mobileDataBiliAudioQuality by repo.mobileDataBiliAudioQualityFlow.collectAsStateWithLifecycle(
         initialValue = startupPlaybackPreferences.mobileDataBiliAudioQuality
     )
+    val mobileDataKugouAudioQuality by repo.mobileDataKugouAudioQualityFlow.collectAsStateWithLifecycle(
+        initialValue = startupPlaybackPreferences.mobileDataKugouAudioQuality
+    )
+
     val currentThemeBackgroundArgb = MaterialTheme.colorScheme.background.toArgb()
     val themeRevealActive =
         themeRevealOriginWindow != null &&
@@ -1963,6 +1969,8 @@ private fun NeriAppContent(
                                         },
                                         biliPreferredQuality = biliPreferredQuality,
                                         onBiliQualityChange = { scope.launch { repo.setBiliAudioQuality(it) } },
+                                        kugouPreferredQuality = kugouPreferredQuality,
+                                        onKuGouQualityChange = { scope.launch { repo.setKuGouAudioQuality(it) } },
                                         mobileDataFollowDefaultAudioQuality =
                                             mobileDataFollowDefaultAudioQuality,
                                         onMobileDataFollowDefaultAudioQualityChange = { enabled ->
@@ -1988,6 +1996,12 @@ private fun NeriAppContent(
                                         onMobileDataBiliAudioQualityChange = { quality ->
                                             scope.launch {
                                                 repo.setMobileDataBiliAudioQuality(quality)
+                                            }
+                                        },
+                                        mobileDataKugouAudioQuality = mobileDataKugouAudioQuality,
+                                        onMobileDataKugouAudioQualityChange = { quality ->
+                                            scope.launch {
+                                                repo.setMobileDataKugouAudioQuality(quality)
                                             }
                                         },
                                         seedColorHex = themeSeedColor,

@@ -2019,4 +2019,11 @@
     <!-- About -->
     <string name="about_app_footer">NeriPlayer • GPLv3 • 由你可爱地驱动</string>
     <string name="platform_kugou">酷狗音乐</string>
+    <string name="settings_mobile_data_kugou_audio_quality">酷狗流量音质</string>
+    <string name="quality_kugou_default">酷狗默认音质</string>
+    <string name="settings_audio_quality_viper_atmos">蝰蛇全景声</string>
+    <string name="settings_audio_quality_viper_clear">蝰蛇超清音质</string>
+    <string name="settings_audio_quality_viper_tape">蝰蛇母带</string>
+    <string name="settings_audio_quality_super">DSD 格式音频</string>
+    <string name="settings_kugou_audio_quality">酷狗音质</string>
 </resources>

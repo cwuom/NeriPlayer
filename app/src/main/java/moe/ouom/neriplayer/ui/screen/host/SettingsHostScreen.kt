@@ -45,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.ThemeMode
 import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
@@ -74,6 +75,8 @@ fun SettingsHostScreen(
     onYouTubeQualityChange: (String) -> Unit,
     biliPreferredQuality: String,
     onBiliQualityChange: (String) -> Unit,
+    kugouPreferredQuality: String,
+    onKuGouQualityChange: (String) -> Unit,
     mobileDataFollowDefaultAudioQuality: Boolean,
     onMobileDataFollowDefaultAudioQualityChange: (Boolean) -> Unit,
     mobileDataNeteaseAudioQuality: String,
@@ -82,6 +85,8 @@ fun SettingsHostScreen(
     onMobileDataYouTubeAudioQualityChange: (String) -> Unit,
     mobileDataBiliAudioQuality: String,
     onMobileDataBiliAudioQualityChange: (String) -> Unit,
+    mobileDataKugouAudioQuality: String,
+    onMobileDataKugouAudioQualityChange: (String) -> Unit,
     seedColorHex: String,
     onSeedColorChange: (String) -> Unit,
     themeColorPalette: List<String>,
@@ -234,6 +239,8 @@ fun SettingsHostScreen(
                             onYouTubeQualityChange = onYouTubeQualityChange,
                             biliPreferredQuality = biliPreferredQuality,
                             onBiliQualityChange = onBiliQualityChange,
+                            kugouPreferredQuality = kugouPreferredQuality,
+                            onKuGouQualityChange = onKuGouQualityChange,
                             mobileDataFollowDefaultAudioQuality =
                                 mobileDataFollowDefaultAudioQuality,
                             onMobileDataFollowDefaultAudioQualityChange =
@@ -247,6 +254,8 @@ fun SettingsHostScreen(
                             mobileDataBiliAudioQuality = mobileDataBiliAudioQuality,
                             onMobileDataBiliAudioQualityChange =
                                 onMobileDataBiliAudioQualityChange,
+                            mobileDataKugouAudioQuality = mobileDataKugouAudioQuality,
+                            onMobileDataKugouAudioQualityChange = onMobileDataKugouAudioQualityChange,
                             seedColorHex = seedColorHex,
                             onSeedColorChange = onSeedColorChange,
                             themeColorPalette = themeColorPalette,
