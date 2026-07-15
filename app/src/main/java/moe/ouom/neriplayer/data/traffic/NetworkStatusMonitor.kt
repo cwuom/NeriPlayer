@@ -2,7 +2,6 @@ package moe.ouom.neriplayer.data.traffic
 
 import android.content.Context
 import android.net.ConnectivityManager
-import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Build
 
@@ -28,31 +27,60 @@ fun Context.isTrafficRiskNetworkNow(): Boolean {
 }
 
 private fun ConnectivityManager.hasLikelyInternetAccess(): Boolean = runCatching {
-    activeNetwork?.let { network ->
-        if (hasInternetTransport(network)) {
-            return@runCatching true
-        }
-    }
-    anyKnownNetworkHasInternetTransport()
+    val network = activeNetwork ?: return@runCatching false
+    val capabilities = getNetworkCapabilities(network) ?: return@runCatching false
+    hasLikelyNetworkTransport(
+        activeHasDirectTransport = capabilities.hasDirectNetworkTransport(),
+        activeHasVpnTransport = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN),
+        anyKnownHasDirectTransport = { anyKnownNetworkHasDirectTransport() }
+    )
 }.getOrDefault(false)
 
 @Suppress("DEPRECATION")
-private fun ConnectivityManager.anyKnownNetworkHasInternetTransport(): Boolean {
-    // 有些系统会短暂不给 activeNetwork，这里保守兜底避免误进脱机模式
-    return allNetworks.any { network -> hasInternetTransport(network) }
+private fun ConnectivityManager.anyKnownNetworkHasDirectTransport(): Boolean {
+    return allNetworks.any { network ->
+        getNetworkCapabilities(network)?.hasDirectNetworkTransport() == true
+    }
 }
 
-private fun ConnectivityManager.hasInternetTransport(network: Network): Boolean {
-    val capabilities = getNetworkCapabilities(network) ?: return false
-    return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-        capabilities.hasOnlineTransport()
+private fun NetworkCapabilities.hasDirectNetworkTransport(): Boolean {
+    return isDirectNetworkTransport(
+        hasWifiTransport = hasTransport(NetworkCapabilities.TRANSPORT_WIFI),
+        hasCellularTransport = hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR),
+        hasEthernetTransport = hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET),
+        hasBluetoothTransport = hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH),
+        hasUsbTransport = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            hasTransport(NetworkCapabilities.TRANSPORT_USB),
+        hasSatelliteTransport = Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM &&
+            hasTransport(NetworkCapabilities.TRANSPORT_SATELLITE)
+    )
 }
 
-private fun NetworkCapabilities.hasOnlineTransport(): Boolean {
-    return hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
-        hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
-        hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
-        hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+internal fun hasLikelyNetworkTransport(
+    activeHasDirectTransport: Boolean,
+    activeHasVpnTransport: Boolean,
+    anyKnownHasDirectTransport: () -> Boolean
+): Boolean {
+    if (activeHasDirectTransport) return true
+    if (!activeHasVpnTransport) return false
+
+    return anyKnownHasDirectTransport()
+}
+
+internal fun isDirectNetworkTransport(
+    hasWifiTransport: Boolean,
+    hasCellularTransport: Boolean,
+    hasEthernetTransport: Boolean,
+    hasBluetoothTransport: Boolean,
+    hasUsbTransport: Boolean,
+    hasSatelliteTransport: Boolean
+): Boolean {
+    return hasWifiTransport ||
+        hasCellularTransport ||
+        hasEthernetTransport ||
+        hasBluetoothTransport ||
+        hasUsbTransport ||
+        hasSatelliteTransport
 }
 
 private fun ConnectivityManager.currentTrafficNetworkType(): TrafficNetworkType = runCatching {

@@ -111,6 +111,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.playlist.usage.UsageEntry
@@ -153,10 +154,11 @@ fun HomeScreen(
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
+    val appContext = remember(context) { context.applicationContext }
     val vm: HomeViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
-                val app = context.applicationContext as Application
+                val app = appContext as Application
                 HomeViewModel(app)
             }
         }
@@ -165,8 +167,18 @@ fun HomeScreen(
     val usage by AppContainer.playlistUsageRepo.frequentPlaylistsFlow.collectAsStateWithLifecycle(
         initialValue = emptyList()
     )
-    val localPlaylistRepo = remember(context) { LocalPlaylistRepository.getInstance(context) }
-    val localPlaylists by localPlaylistRepo.playlists.collectAsStateWithLifecycle()
+    var localPlaylists by remember { mutableStateOf<List<LocalPlaylist>>(emptyList()) }
+    var localPlaylistsReady by remember { mutableStateOf(false) }
+    LaunchedEffect(appContext) {
+        localPlaylistsReady = false
+        val localPlaylistRepo = withContext(Dispatchers.IO) {
+            LocalPlaylistRepository.getInstance(appContext)
+        }
+        localPlaylistRepo.playlists.collect { playlists ->
+            localPlaylists = playlists
+            localPlaylistsReady = true
+        }
+    }
     val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
     val favorites by favoriteRepo.favorites.collectAsStateWithLifecycle()
     val favoriteKeys = remember(favorites) {
@@ -179,8 +191,8 @@ fun HomeScreen(
                 it.source == PlaylistUsageRepository.SOURCE_LOCAL_ARTIST
         }
     }
-    LaunchedEffect(hasLocalUsage, localPlaylists) {
-        if (hasLocalUsage) {
+    LaunchedEffect(hasLocalUsage, localPlaylistsReady, localPlaylists) {
+        if (hasLocalUsage && localPlaylistsReady) {
             withContext(Dispatchers.Default) {
                 AppContainer.playlistUsageRepo.syncLocalEntries(localPlaylists)
                 AppContainer.playlistUsageRepo.syncLocalArtistEntries(localPlaylists)

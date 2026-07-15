@@ -13,6 +13,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import moe.ouom.neriplayer.data.traffic.hasLikelyInternetAccess
 
+private const val NETWORK_STATE_SETTLE_RECHECK_MS = 300L
+
 @Composable
 fun rememberOfflineModeState(): State<Boolean> {
     val context = LocalContext.current
@@ -45,20 +47,32 @@ fun rememberOfflineModeState(): State<Boolean> {
                 }
             }
 
+            fun updateOfflineStateAfterSettled() {
+                updateOfflineState()
+                mainHandler.postDelayed(
+                    {
+                        if (!disposed) {
+                            updateOfflineState()
+                        }
+                    },
+                    NETWORK_STATE_SETTLE_RECHECK_MS
+                )
+            }
+
             val callback = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
-                    updateOfflineState()
+                    updateOfflineStateAfterSettled()
                 }
 
                 override fun onLost(network: Network) {
-                    updateOfflineState()
+                    updateOfflineStateAfterSettled()
                 }
 
                 override fun onCapabilitiesChanged(
                     network: Network,
                     networkCapabilities: NetworkCapabilities
                 ) {
-                    updateOfflineState()
+                    updateOfflineStateAfterSettled()
                 }
             }
 

@@ -120,6 +120,28 @@ class SystemPlaylistIdentityTest {
         assertEquals(firstCopy, merged.songs.single())
     }
 
+    @Test
+    fun `local files merge skips metadata fallback duplicates`() {
+        val firstLocalSong = localFileSong(
+            id = 1L,
+            mediaUri = "content://media/external/audio/media/1"
+        )
+        val secondLocalSong = localFileSong(
+            id = 2L,
+            mediaUri = "content://media/external/audio/media/2"
+        )
+        val legacyLocalFiles = LocalPlaylist(
+            id = -12L,
+            name = "本地文件",
+            songs = mutableListOf(firstLocalSong, secondLocalSong)
+        )
+
+        val merged = LocalFilesPlaylist.merge(listOf(legacyLocalFiles), inertContext)
+
+        assertEquals(1, merged.songs.size)
+        assertEquals(firstLocalSong, merged.songs.single())
+    }
+
     private fun remoteNeteaseSong(): SongItem {
         return SongItem(
             id = 42L,
@@ -148,6 +170,22 @@ class SystemPlaylistIdentityTest {
             channelId = "local",
             audioId = "99",
             sourceStableKey = source.stableKey()
+        )
+    }
+
+    private fun localFileSong(id: Long, mediaUri: String): SongItem {
+        return SongItem(
+            id = id,
+            name = "晴天",
+            artist = "周杰伦",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 269_000L,
+            coverUrl = null,
+            mediaUri = mediaUri,
+            localFileName = "周杰伦 - 晴天.mp3",
+            channelId = "local",
+            audioId = id.toString()
         )
     }
 

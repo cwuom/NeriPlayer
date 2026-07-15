@@ -24,21 +24,30 @@ package moe.ouom.neriplayer.data.local.playlist.system
  */
 
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.model.SongIdentity
+import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal fun List<SongItem>.distinctSystemSongs(): List<SongItem> {
-    val distinct = mutableListOf<SongItem>()
-    forEach { song ->
-        val duplicated = distinct.any { existing ->
-            existing.sameIdentityAs(song) ||
-                LocalSongSupport.hasSameLocalSource(
-                    first = existing,
-                    second = song,
-                    includeMetadataFallback = true
-                )
+    if (size < 2) return this
+
+    val distinct = ArrayList<SongItem>(size)
+    val seenIdentities = HashSet<SongIdentity>(size)
+    val seenLocalKeys = HashSet<String>()
+    for (song in this) {
+        val identity = song.identity()
+        if (identity in seenIdentities) {
+            continue
         }
-        if (!duplicated) distinct += song
+        val localKeys = LocalSongSupport.localDuplicateKeys(
+            song = song,
+            includeMetadataFallback = true
+        )
+        if (localKeys.none(seenLocalKeys::contains)) {
+            distinct += song
+            seenIdentities += identity
+            seenLocalKeys += localKeys
+        }
     }
     return distinct
 }
