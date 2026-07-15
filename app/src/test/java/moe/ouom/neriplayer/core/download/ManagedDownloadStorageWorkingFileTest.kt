@@ -246,6 +246,36 @@ class ManagedDownloadStorageWorkingFileTest {
     }
 
     @Test
+    fun `resume metadata preserves remote fingerprint when song payload is refreshed`() {
+        val workingFile = tempFolder.newFile(
+            ManagedDownloadStorage.buildWorkingFileName(
+                songKey = "song-fingerprint",
+                fileName = "Artist - Song.m4a"
+            )
+        )
+        val song = queuedSong(id = 601L, name = "Song")
+        val fingerprint = ManagedDownloadStorage.WorkingResumeFingerprint(
+            sourceUrl = "https://example.com/audio.m4a",
+            etag = "\"etag-601\"",
+            lastModified = "Wed, 15 Jul 2026 12:00:00 GMT",
+            expectedContentLength = 65_536L
+        )
+
+        ManagedDownloadStorage.saveWorkingResumeMetadata(workingFile, song)
+        ManagedDownloadStorage.updateWorkingResumeFingerprint(workingFile, fingerprint)
+        ManagedDownloadStorage.saveWorkingResumeMetadata(workingFile, song.copy(customName = "Custom Song"))
+
+        assertEquals(fingerprint, ManagedDownloadStorage.readWorkingResumeFingerprint(workingFile))
+        assertEquals(
+            song.copy(customName = "Custom Song"),
+            ManagedDownloadStorage.parseWorkingResumeMetadataSong(
+                ManagedDownloadStorage.buildWorkingResumeMetadataFile(workingFile)
+                    .readText(Charsets.UTF_8)
+            )
+        )
+    }
+
+    @Test
     fun `pending resumable download scan only returns valid paired metadata entries`() {
         val stagingDir = tempFolder.newFolder("download_staging")
         val workingFile = File(

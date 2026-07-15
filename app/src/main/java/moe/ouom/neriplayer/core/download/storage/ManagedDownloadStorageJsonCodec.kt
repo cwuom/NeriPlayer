@@ -36,12 +36,40 @@ internal object ManagedDownloadStorageJsonCodec {
         return root.toDownloadedAudioMetadata()
     }
 
-    fun workingResumeMetadataToJson(song: SongItem): JSONObject {
-        return song.toWorkingResumeMetadataJson()
+    fun workingResumeMetadataToJson(
+        song: SongItem,
+        fingerprint: ManagedDownloadStorage.WorkingResumeFingerprint? = null
+    ): JSONObject {
+        return song.toWorkingResumeMetadataJson().apply {
+            fingerprint?.toJson()?.let { fingerprintJson ->
+                put("resumeFingerprint", fingerprintJson)
+            }
+        }
     }
 
     fun workingResumeMetadataSongFromJson(rawJson: String): SongItem? {
         return JSONObject(rawJson).toWorkingResumeMetadataSong()
+    }
+
+    fun workingResumeFingerprintFromJson(rawJson: String): ManagedDownloadStorage.WorkingResumeFingerprint? {
+        return JSONObject(rawJson)
+            .optJSONObject("resumeFingerprint")
+            ?.toWorkingResumeFingerprint()
+    }
+
+    fun mergeWorkingResumeFingerprint(
+        rawJson: String?,
+        fingerprint: ManagedDownloadStorage.WorkingResumeFingerprint?
+    ): JSONObject {
+        val root = rawJson
+            ?.takeIf(String::isNotBlank)
+            ?.let { runCatching { JSONObject(it) }.getOrNull() }
+            ?: JSONObject()
+        root.remove("resumeFingerprint")
+        fingerprint?.toJson()?.let { fingerprintJson ->
+            root.put("resumeFingerprint", fingerprintJson)
+        }
+        return root
     }
 
     fun serializePendingDownloadQueuePayload(
@@ -215,6 +243,41 @@ internal object ManagedDownloadStorageJsonCodec {
                     }
                 }
             )
+        }
+    }
+
+    private fun ManagedDownloadStorage.WorkingResumeFingerprint.toJson(): JSONObject? {
+        val normalizedExpectedLength = expectedContentLength?.takeIf { it > 0L }
+        if (
+            sourceUrl.isNullOrBlank() &&
+            etag.isNullOrBlank() &&
+            lastModified.isNullOrBlank() &&
+            normalizedExpectedLength == null
+        ) {
+            return null
+        }
+        return JSONObject().apply {
+            put("sourceUrl", sourceUrl)
+            put("etag", etag)
+            put("lastModified", lastModified)
+            put("expectedContentLength", normalizedExpectedLength)
+        }
+    }
+
+    private fun JSONObject.toWorkingResumeFingerprint(): ManagedDownloadStorage.WorkingResumeFingerprint? {
+        val expectedLength = optLong("expectedContentLength")
+            .takeIf { has("expectedContentLength") && it > 0L }
+        val fingerprint = ManagedDownloadStorage.WorkingResumeFingerprint(
+            sourceUrl = optString("sourceUrl").takeIf(String::isNotBlank),
+            etag = optString("etag").takeIf(String::isNotBlank),
+            lastModified = optString("lastModified").takeIf(String::isNotBlank),
+            expectedContentLength = expectedLength
+        )
+        return fingerprint.takeIf {
+            !it.sourceUrl.isNullOrBlank() ||
+                !it.etag.isNullOrBlank() ||
+                !it.lastModified.isNullOrBlank() ||
+                it.expectedContentLength != null
         }
     }
 

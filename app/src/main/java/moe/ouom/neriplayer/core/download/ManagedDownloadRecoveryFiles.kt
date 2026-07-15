@@ -23,7 +23,7 @@ internal object ManagedDownloadRecoveryFiles {
     }
 
     fun createWorkingFile(context: Context, songKey: String, fileName: String): File {
-        return ManagedDownloadWorkingStore.createWorkingFile(context.cacheDir, songKey, fileName)
+        return ManagedDownloadWorkingStore.createWorkingFile(context.filesDir, songKey, fileName)
     }
 
     fun buildWorkingHlsCheckpointFile(workingFile: File): File {
@@ -57,6 +57,17 @@ internal object ManagedDownloadRecoveryFiles {
 
     fun saveWorkingResumeMetadata(workingFile: File, song: SongItem) {
         ManagedDownloadWorkingStore.saveWorkingResumeMetadata(workingFile, song)
+    }
+
+    fun readWorkingResumeFingerprint(workingFile: File): ManagedDownloadStorage.WorkingResumeFingerprint? {
+        return ManagedDownloadWorkingStore.readWorkingResumeFingerprint(workingFile)
+    }
+
+    fun updateWorkingResumeFingerprint(
+        workingFile: File,
+        fingerprint: ManagedDownloadStorage.WorkingResumeFingerprint
+    ) {
+        ManagedDownloadWorkingStore.updateWorkingResumeFingerprint(workingFile, fingerprint)
     }
 
     fun deleteWorkingResumeMetadata(workingFile: File?) {
@@ -215,7 +226,46 @@ internal object ManagedDownloadRecoveryFiles {
     }
 
     private fun stagingDir(context: Context): File {
-        return File(context.cacheDir, DOWNLOAD_STAGING_DIR_NAME)
+        val dir = File(context.filesDir, DOWNLOAD_STAGING_DIR_NAME)
+        migrateLegacyStagingDir(context, dir)
+        return dir
+    }
+
+    private fun migrateLegacyStagingDir(context: Context, targetDir: File) {
+        val legacyDir = File(context.cacheDir, DOWNLOAD_STAGING_DIR_NAME)
+        if (!legacyDir.isDirectory || legacyDir.absolutePath == targetDir.absolutePath) {
+            return
+        }
+        val legacyEntries = legacyDir.listFiles().orEmpty()
+        if (legacyEntries.isEmpty()) {
+            return
+        }
+        if (!targetDir.exists() && !targetDir.mkdirs()) {
+            NPLogger.w(TAG, "创建下载暂存目录失败，跳过旧断点迁移: ${targetDir.absolutePath}")
+            return
+        }
+
+        var movedCount = 0
+        var skippedCount = 0
+        var failedCount = 0
+        legacyEntries.forEach { entry ->
+            val target = File(targetDir, entry.name)
+            if (target.exists()) {
+                skippedCount++
+                return@forEach
+            }
+            if (entry.renameTo(target)) {
+                movedCount++
+            } else {
+                failedCount++
+            }
+        }
+        if (movedCount > 0 || skippedCount > 0 || failedCount > 0) {
+            NPLogger.d(
+                TAG,
+                "迁移下载暂存目录完成: moved=$movedCount, skipped=$skippedCount, failed=$failedCount"
+            )
+        }
     }
 
     private fun pendingDownloadQueueFile(context: Context): File {

@@ -268,6 +268,17 @@ internal object ManagedDownloadStorage {
         val workingFile: File
     )
 
+    internal data class WorkingResumeFingerprint(
+        val sourceUrl: String? = null,
+        val etag: String? = null,
+        val lastModified: String? = null,
+        val expectedContentLength: Long? = null
+    ) {
+        val validator: String?
+            get() = etag?.takeIf(String::isNotBlank)
+                ?: lastModified?.takeIf(String::isNotBlank)
+    }
+
     internal data class PendingDownloadQueueEntry(
         val stableKey: String,
         val song: SongItem,
@@ -680,6 +691,17 @@ internal object ManagedDownloadStorage {
         song: SongItem
     ) {
         ManagedDownloadRecoveryFiles.saveWorkingResumeMetadata(workingFile, song)
+    }
+
+    internal fun readWorkingResumeFingerprint(workingFile: File): WorkingResumeFingerprint? {
+        return ManagedDownloadRecoveryFiles.readWorkingResumeFingerprint(workingFile)
+    }
+
+    internal fun updateWorkingResumeFingerprint(
+        workingFile: File,
+        fingerprint: WorkingResumeFingerprint
+    ) {
+        ManagedDownloadRecoveryFiles.updateWorkingResumeFingerprint(workingFile, fingerprint)
     }
 
     internal fun deleteWorkingResumeMetadata(workingFile: File?) {

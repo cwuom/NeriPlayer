@@ -104,7 +104,7 @@ suspend fun analyzeStorageUsage(context: Context): StorageUsageSummary = withCon
 
     val mediaCacheDir = File(cacheDir, DIR_MEDIA_CACHE)
     val imageCacheDir = File(cacheDir, DIR_IMAGE_CACHE)
-    val downloadStagingDir = File(cacheDir, DIR_DOWNLOAD_STAGING)
+    val downloadStagingDirs = downloadStagingDirs(filesDir, cacheDir)
     val sharedMediaDir = File(cacheDir, DIR_SHARED_MEDIA_EXPORTS)
     val platformCacheDirs = platformCacheDirs(filesDir)
     val localCoverDir = File(filesDir, DIR_LOCAL_AUDIO_COVERS)
@@ -121,10 +121,14 @@ suspend fun analyzeStorageUsage(context: Context): StorageUsageSummary = withCon
     val cacheKnownRoots = listOf(
         mediaCacheDir,
         imageCacheDir,
-        downloadStagingDir,
         sharedMediaDir
-    )
-    val filesKnownRoots = platformCacheDirs + localCoverDir + backgroundDir + downloadMetadataFiles + playlistDataFiles
+    ) + downloadStagingDirs
+    val filesKnownRoots = platformCacheDirs +
+        downloadStagingDirs +
+        localCoverDir +
+        backgroundDir +
+        downloadMetadataFiles +
+        playlistDataFiles
 
     StorageUsageSummary(
         sections = listOf(
@@ -145,11 +149,11 @@ suspend fun analyzeStorageUsage(context: Context): StorageUsageSummary = withCon
                         file = imageCacheDir,
                         cacheKind = StorageCacheKind.Image
                     ),
-                    usageItem(
+                    aggregateUsageItem(
                         context = appContext,
                         titleRes = R.string.storage_type_download_staging,
                         descriptionRes = R.string.storage_desc_download_staging,
-                        file = downloadStagingDir,
+                        files = downloadStagingDirs,
                         cacheKind = StorageCacheKind.DownloadStaging
                     ),
                     usageItem(
@@ -265,7 +269,7 @@ suspend fun clearExtraStorageCaches(
 ): ExtraCacheClearResult = withContext(Dispatchers.IO) {
     val appContext = context.applicationContext
     val targets = buildList {
-        if (options.downloadStaging) add(File(appContext.cacheDir, DIR_DOWNLOAD_STAGING))
+        if (options.downloadStaging) addAll(downloadStagingDirs(appContext.filesDir, appContext.cacheDir))
         if (options.sharedMedia) add(File(appContext.cacheDir, DIR_SHARED_MEDIA_EXPORTS))
         if (options.platformList) addAll(platformCacheDirs(appContext.filesDir))
     }
@@ -383,6 +387,13 @@ private fun platformCacheDirs(filesDir: File): List<File> {
         File(filesDir, DIR_NETEASE_PLAYLIST_CACHE),
         File(filesDir, DIR_YOUTUBE_PLAYLIST_CACHE)
     )
+}
+
+private fun downloadStagingDirs(filesDir: File, cacheDir: File): List<File> {
+    return listOf(
+        File(filesDir, DIR_DOWNLOAD_STAGING),
+        File(cacheDir, DIR_DOWNLOAD_STAGING)
+    ).distinctBy { file -> file.absolutePath }
 }
 
 private fun downloadMetadataFiles(filesDir: File): List<File> {

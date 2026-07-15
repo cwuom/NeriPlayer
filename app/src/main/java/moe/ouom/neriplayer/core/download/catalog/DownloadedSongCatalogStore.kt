@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download.catalog
 import android.content.Context
 import java.io.File
 import moe.ouom.neriplayer.core.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.storage.ManagedDownloadAtomicFile
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal class DownloadedSongCatalogStore(
@@ -29,15 +30,17 @@ internal class DownloadedSongCatalogStore(
 
     fun persist(context: Context, songs: List<DownloadedSong>) {
         runCatching {
-            cacheFile(context).writeText(
-                serializeDownloadedSongsCatalog(
-                    cacheKey = snapshotCacheKeyProvider(context),
-                    songs = songs
-                ),
-                Charsets.UTF_8
+            val content = serializeDownloadedSongsCatalog(
+                cacheKey = snapshotCacheKeyProvider(context),
+                songs = songs
+            )
+            assert(content.isNotBlank()) { "下载目录缓存序列化为空，songs=${songs.size}" }
+            ManagedDownloadAtomicFile.writeTextAtomically(
+                target = cacheFile(context),
+                content = content
             )
         }.onFailure {
-            NPLogger.w(loggerTag, "写入下载歌曲目录缓存失败: ${it.message}")
+            NPLogger.e(loggerTag, "写入下载歌曲目录缓存失败", it)
         }
     }
 

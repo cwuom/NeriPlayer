@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.queue
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.ManagedDownloadAtomicFile
 import moe.ouom.neriplayer.core.download.storage.CANCELLED_DOWNLOAD_KEYS_FILE_NAME
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.download.storage.PENDING_DOWNLOAD_QUEUE_FILE_NAME
@@ -8,18 +9,12 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
-import java.util.concurrent.atomic.AtomicLong
 
 internal object ManagedDownloadQueueStore {
     private const val TAG = "ManagedDownloadStorage"
     private val pendingDownloadQueueLock = Any()
     private val cancelledDownloadKeysLock = Any()
-    private val atomicFileWriteIdGenerator = AtomicLong(0L)
 
     fun upsertPendingDownloadQueueInFile(
         queueFile: File,
@@ -183,7 +178,7 @@ internal object ManagedDownloadQueueStore {
         }
 
         runCatching {
-            writeTextAtomically(
+            ManagedDownloadAtomicFile.writeTextAtomically(
                 target = queueFile,
                 content = ManagedDownloadStorageJsonCodec.serializePendingDownloadQueuePayload(entries, updatedAtMs)
             )
@@ -229,7 +224,7 @@ internal object ManagedDownloadQueueStore {
         }
 
         runCatching {
-            writeTextAtomically(
+            ManagedDownloadAtomicFile.writeTextAtomically(
                 target = keysFile,
                 content = ManagedDownloadStorageJsonCodec.serializeCancelledDownloadKeysPayload(songKeys, updatedAtMs)
             )
@@ -248,43 +243,4 @@ internal object ManagedDownloadQueueStore {
         }
     }
 
-    private fun writeTextAtomically(target: File, content: String) {
-        val parent = target.parentFile
-        parent?.mkdirs()
-        val tempFile = File(
-            parent ?: File("."),
-            "${target.name}.tmp.${atomicFileWriteIdGenerator.incrementAndGet()}.${System.nanoTime()}"
-        )
-        try {
-            FileOutputStream(tempFile).use { output ->
-                output.write(content.toByteArray(Charsets.UTF_8))
-                output.fd.sync()
-            }
-            moveFileAtomically(tempFile, target)
-        } catch (error: Exception) {
-            runCatching {
-                if (tempFile.exists()) {
-                    tempFile.delete()
-                }
-            }
-            throw error
-        }
-    }
-
-    private fun moveFileAtomically(source: File, target: File) {
-        try {
-            Files.move(
-                source.toPath(),
-                target.toPath(),
-                StandardCopyOption.REPLACE_EXISTING,
-                StandardCopyOption.ATOMIC_MOVE
-            )
-        } catch (_: AtomicMoveNotSupportedException) {
-            Files.move(
-                source.toPath(),
-                target.toPath(),
-                StandardCopyOption.REPLACE_EXISTING
-            )
-        }
-    }
 }

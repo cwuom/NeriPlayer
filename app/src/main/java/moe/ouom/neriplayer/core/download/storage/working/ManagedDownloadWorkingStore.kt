@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.core.download.storage.ManagedDownloadAtomicFile
 import java.io.File
 
 internal object ManagedDownloadWorkingStore {
@@ -113,13 +114,42 @@ internal object ManagedDownloadWorkingStore {
     ) {
         val metadataFile = buildWorkingResumeMetadataFile(workingFile)
         runCatching {
+            val existingFingerprint = readWorkingResumeFingerprintFile(metadataFile)
             metadataFile.parentFile?.mkdirs()
-            metadataFile.writeText(
-                ManagedDownloadStorageJsonCodec.workingResumeMetadataToJson(song).toString(),
-                Charsets.UTF_8
+            val metadataJson = ManagedDownloadStorageJsonCodec.workingResumeMetadataToJson(
+                song = song,
+                fingerprint = existingFingerprint
             )
+            val content = metadataJson.toString()
+            assert(content.isNotBlank()) { "续传元数据序列化为空: ${workingFile.name}" }
+            ManagedDownloadAtomicFile.writeTextAtomically(metadataFile, content)
         }.onFailure { error ->
-            NPLogger.w(TAG, "写入下载恢复元数据失败: ${metadataFile.name}, ${error.message}")
+            NPLogger.e(TAG, "写入下载恢复元数据失败: ${metadataFile.name}", error)
+        }
+    }
+
+    fun readWorkingResumeFingerprint(
+        workingFile: File
+    ): ManagedDownloadStorage.WorkingResumeFingerprint? {
+        return readWorkingResumeFingerprintFile(buildWorkingResumeMetadataFile(workingFile))
+    }
+
+    fun updateWorkingResumeFingerprint(
+        workingFile: File,
+        fingerprint: ManagedDownloadStorage.WorkingResumeFingerprint
+    ) {
+        val metadataFile = buildWorkingResumeMetadataFile(workingFile)
+        runCatching {
+            metadataFile.parentFile?.mkdirs()
+            val metadataJson = ManagedDownloadStorageJsonCodec.mergeWorkingResumeFingerprint(
+                rawJson = metadataFile.takeIf(File::isFile)?.readText(Charsets.UTF_8),
+                fingerprint = fingerprint
+            )
+            val content = metadataJson.toString()
+            assert(content.isNotBlank()) { "续传指纹序列化为空: ${workingFile.name}" }
+            ManagedDownloadAtomicFile.writeTextAtomically(metadataFile, content)
+        }.onFailure { error ->
+            NPLogger.e(TAG, "写入下载恢复指纹失败: ${metadataFile.name}", error)
         }
     }
 
@@ -292,6 +322,19 @@ internal object ManagedDownloadWorkingStore {
         return runCatching {
             ManagedDownloadStorage.parseWorkingResumeMetadataSong(metadataFile.readText(Charsets.UTF_8)) != null
         }.getOrDefault(false)
+    }
+
+    private fun readWorkingResumeFingerprintFile(
+        metadataFile: File
+    ): ManagedDownloadStorage.WorkingResumeFingerprint? {
+        if (!metadataFile.isFile) {
+            return null
+        }
+        return runCatching {
+            ManagedDownloadStorageJsonCodec.workingResumeFingerprintFromJson(
+                metadataFile.readText(Charsets.UTF_8)
+            )
+        }.getOrNull()
     }
 
     private fun matchingWorkingArtifactSongKey(

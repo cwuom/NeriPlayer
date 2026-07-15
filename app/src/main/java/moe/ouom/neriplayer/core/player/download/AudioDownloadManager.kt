@@ -57,6 +57,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.clearSongCancelled
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.ManagedDownloadAtomicFile
 import moe.ouom.neriplayer.core.download.policy.shouldUseIndexedSidecarLookup
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.resolver.youtube.ChunkRequestIOException
@@ -448,6 +449,29 @@ object AudioDownloadManager {
             ?.let { "bytes=$it-" }
     }
 
+    internal fun resolveResumeValidatorHeader(
+        fingerprint: ManagedDownloadStorage.WorkingResumeFingerprint?
+    ): String? {
+        return fingerprint?.validator
+    }
+
+    internal fun buildResumeRequest(
+        request: Request,
+        completedBytes: Long,
+        fingerprint: ManagedDownloadStorage.WorkingResumeFingerprint?
+    ): Request {
+        val resumeRangeHeader = buildResumeRangeHeader(completedBytes) ?: return request
+        val validator = resolveResumeValidatorHeader(fingerprint)
+        return request.newBuilder()
+            .header("Range", resumeRangeHeader)
+            .apply {
+                if (!validator.isNullOrBlank()) {
+                    header("If-Range", validator)
+                }
+            }
+            .build()
+    }
+
     private fun parseContentRangeStart(headers: Map<String, List<String>>): Long? {
         val contentRangeValue = headers.entries.firstOrNull { (key, _) ->
             key.equals("Content-Range", ignoreCase = true)
@@ -457,6 +481,36 @@ object AudioDownloadManager {
             ?.groupValues
             ?.getOrNull(1)
             ?.toLongOrNull()
+    }
+
+    private fun responseHeaderValue(
+        headers: Map<String, List<String>>,
+        name: String
+    ): String? {
+        return headers.entries.firstOrNull { (key, _) ->
+            key.equals(name, ignoreCase = true)
+        }?.value?.firstOrNull()?.takeIf(String::isNotBlank)
+    }
+
+    private fun updateWorkingResumeFingerprint(
+        destFile: File,
+        requestUrl: String,
+        headers: Map<String, List<String>>,
+        expectedContentLength: Long?
+    ) {
+        runCatching {
+            ManagedDownloadStorage.updateWorkingResumeFingerprint(
+                workingFile = destFile,
+                fingerprint = ManagedDownloadStorage.WorkingResumeFingerprint(
+                    sourceUrl = requestUrl,
+                    etag = responseHeaderValue(headers, "ETag"),
+                    lastModified = responseHeaderValue(headers, "Last-Modified"),
+                    expectedContentLength = expectedContentLength?.takeIf { it > 0L }
+                )
+            )
+        }.onFailure { error ->
+            NPLogger.e(TAG, "写入续传指纹失败，后续续传将退化为整文件重下: ${destFile.name}", error)
+        }
     }
 
     internal fun resolveResponseExpectedBytes(
@@ -603,9 +657,12 @@ object AudioDownloadManager {
         val checkpointFile = hlsResumeCheckpointFile(destFile)
         runCatching {
             checkpointFile.parentFile?.mkdirs()
-            checkpointFile.writeText(serializeHlsResumeState(state), Charsets.UTF_8)
+            ManagedDownloadAtomicFile.writeTextAtomically(
+                target = checkpointFile,
+                content = serializeHlsResumeState(state)
+            )
         }.onFailure { error ->
-            NPLogger.w(TAG, "写入 HLS 恢复点失败: ${checkpointFile.name}, ${error.message}")
+            NPLogger.e(TAG, "写入 HLS 恢复点失败: ${checkpointFile.name}", error)
         }
     }
 
@@ -3034,6 +3091,29 @@ object AudioDownloadManager {
                         sink.write(payload)
                         downloadedBytes += payload.size.toLong()
                     }
+                    runCatching {
+                        sink.flush()
+                    }.onFailure { flushError ->
+                        NPLogger.e(
+                            TAG,
+                            "HLS 段刷盘失败，暂缓推进 checkpoint: ${destFile.name}, segment=$index",
+                            flushError
+                        )
+                        throw flushError
+                    }
+
+                    val flushedBytes = destFile.length().coerceAtLeast(0L)
+                    assert(flushedBytes >= downloadedBytes) {
+                        "HLS checkpoint 领先磁盘: disk=$flushedBytes, tracked=$downloadedBytes, file=${destFile.name}"
+                    }
+                    if (flushedBytes < downloadedBytes) {
+                        NPLogger.e(
+                            TAG,
+                            "HLS checkpoint 领先磁盘，按磁盘实际长度回退记账: disk=$flushedBytes, tracked=$downloadedBytes, file=${destFile.name}",
+                            null
+                        )
+                        downloadedBytes = flushedBytes
+                    }
                     rememberHlsResumeState(
                         destFile = destFile,
                         playlistFingerprint = playlistFingerprint,
@@ -3055,9 +3135,6 @@ object AudioDownloadManager {
                             attemptId = attemptId
                         )
                     )
-                    if ((index + 1) % 8 == 0) {
-                        sink.flush()
-                    }
                 }
                 sink.flush()
             }
@@ -3151,16 +3228,24 @@ object AudioDownloadManager {
         }
 
         val startNs = System.nanoTime()
-        val resumedBytes = resolveWorkingFileBytes(destFile)
+        var resumedBytes = resolveWorkingFileBytes(destFile)
+        val resumeFingerprint = ManagedDownloadStorage.readWorkingResumeFingerprint(destFile)
+        if (resumedBytes > 0L && resolveResumeValidatorHeader(resumeFingerprint).isNullOrBlank()) {
+            NPLogger.w(TAG, "续传缺少 If-Range 校验符，回退整文件重下: ${destFile.name}")
+            deleteWorkingFile(destFile)
+            resumedBytes = 0L
+        }
         val resumeRangeHeader = buildResumeRangeHeader(resumedBytes)
         val effectiveRequest = if (resumeRangeHeader != null) {
             NPLogger.d(
                 TAG,
                 "恢复直链下载: ${destFile.name}, bytes=$resumedBytes, songId=$songId"
             )
-            request.newBuilder()
-                .header("Range", resumeRangeHeader)
-                .build()
+            buildResumeRequest(
+                request = request,
+                completedBytes = resumedBytes,
+                fingerprint = resumeFingerprint
+            )
         } else {
             request
         }
@@ -3213,6 +3298,12 @@ object AudioDownloadManager {
                 isPartialResponse = appending
             ) ?: 0L
             NPLogger.d(TAG, "文件总大小: $total bytes, songId=$songId")
+            updateWorkingResumeFingerprint(
+                destFile = destFile,
+                requestUrl = request.url.toString(),
+                headers = responseHeaders,
+                expectedContentLength = total.takeIf { it > 0L }
+            )
             val source = resp.body.source()
             var readSoFar = initialBytes
             val trafficAccumulator = newDownloadTrafficAccumulator()
@@ -3269,7 +3360,13 @@ object AudioDownloadManager {
         val startNs = System.nanoTime()
         NPLogger.d(TAG, "开始分块下载文件: ${destFile.name}, songId=$songId")
 
-        val resumedBytes = resolveWorkingFileBytes(destFile)
+        var resumedBytes = resolveWorkingFileBytes(destFile)
+        val resumeFingerprint = ManagedDownloadStorage.readWorkingResumeFingerprint(destFile)
+        if (resumedBytes > 0L && resolveResumeValidatorHeader(resumeFingerprint).isNullOrBlank()) {
+            NPLogger.w(TAG, "分块续传缺少 If-Range 校验符，回退整文件重下: ${destFile.name}")
+            deleteWorkingFile(destFile)
+            resumedBytes = 0L
+        }
         if (resumedBytes > 0L) {
             NPLogger.d(TAG, "恢复分块下载: ${destFile.name}, bytes=$resumedBytes, songId=$songId")
         }
@@ -3299,6 +3396,7 @@ object AudioDownloadManager {
                             request = request,
                             start = downloadedBytes,
                             requestedChunkLength = chunkLength,
+                            resumeFingerprint = resumeFingerprint,
                             sink = sink,
                             displayFileName = displayFileName,
                             songId = songId,
@@ -3368,6 +3466,7 @@ object AudioDownloadManager {
         request: Request,
         start: Long,
         requestedChunkLength: Long,
+        resumeFingerprint: ManagedDownloadStorage.WorkingResumeFingerprint?,
         sink: okio.BufferedSink,
         displayFileName: String,
         songId: Long,
@@ -3380,11 +3479,21 @@ object AudioDownloadManager {
         batchSessionId: Long? = null,
         attemptId: Long? = null
     ): ChunkDownloadResult {
-        val chunkRequest = YouTubeGoogleVideoRangeSupport.buildChunkedRequest(
+        val baseChunkRequest = YouTubeGoogleVideoRangeSupport.buildChunkedRequest(
             request = request,
             start = start,
             length = requestedChunkLength
         )
+        val effectiveResumeFingerprint = resumeFingerprint
+            ?: ManagedDownloadStorage.readWorkingResumeFingerprint(destFile)
+        val resumeValidator = resolveResumeValidatorHeader(effectiveResumeFingerprint)
+        val chunkRequest = baseChunkRequest.newBuilder()
+            .apply {
+                if (start > 0L && !resumeValidator.isNullOrBlank()) {
+                    header("If-Range", resumeValidator)
+                }
+            }
+            .build()
 
         val trafficAccumulator = newDownloadTrafficAccumulator()
         try {
@@ -3413,6 +3522,12 @@ object AudioDownloadManager {
                     uri = request.url.toString().toUri(),
                     headers = responseHeaders
                 ) ?: currentTotalBytes
+                updateWorkingResumeFingerprint(
+                    destFile = destFile,
+                    requestUrl = request.url.toString(),
+                    headers = responseHeaders,
+                    expectedContentLength = totalBytes.takeIf { it > 0L }
+                )
                 val actualChunkLength = YouTubeGoogleVideoRangeSupport.resolveChunkResponseLength(
                     requestedLength = requestedChunkLength,
                     headers = responseHeaders,

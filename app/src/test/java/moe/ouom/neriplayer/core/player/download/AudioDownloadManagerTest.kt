@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.player.download
 
 import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableStreamType
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -229,6 +230,50 @@ class AudioDownloadManagerTest {
     fun `resume range header starts from completed bytes`() {
         assertEquals(null, AudioDownloadManager.buildResumeRangeHeader(0L))
         assertEquals("bytes=1024-", AudioDownloadManager.buildResumeRangeHeader(1_024L))
+    }
+
+    @Test
+    fun `resume request includes if range validator when fingerprint is available`() {
+        val request = Request.Builder()
+            .url("https://example.com/audio.m4a")
+            .build()
+        val fingerprint = ManagedDownloadStorage.WorkingResumeFingerprint(
+            sourceUrl = request.url.toString(),
+            etag = "\"abc123\"",
+            lastModified = "Wed, 15 Jul 2026 12:00:00 GMT",
+            expectedContentLength = 4_096L
+        )
+
+        val resumedRequest = AudioDownloadManager.buildResumeRequest(
+            request = request,
+            completedBytes = 1_024L,
+            fingerprint = fingerprint
+        )
+
+        assertEquals("bytes=1024-", resumedRequest.header("Range"))
+        assertEquals("\"abc123\"", resumedRequest.header("If-Range"))
+    }
+
+    @Test
+    fun `resume request falls back to last modified validator`() {
+        val request = Request.Builder()
+            .url("https://example.com/audio.m4a")
+            .build()
+        val fingerprint = ManagedDownloadStorage.WorkingResumeFingerprint(
+            sourceUrl = request.url.toString(),
+            etag = null,
+            lastModified = "Wed, 15 Jul 2026 12:00:00 GMT",
+            expectedContentLength = 4_096L
+        )
+
+        val resumedRequest = AudioDownloadManager.buildResumeRequest(
+            request = request,
+            completedBytes = 1_024L,
+            fingerprint = fingerprint
+        )
+
+        assertEquals("bytes=1024-", resumedRequest.header("Range"))
+        assertEquals("Wed, 15 Jul 2026 12:00:00 GMT", resumedRequest.header("If-Range"))
     }
 
     @Test
