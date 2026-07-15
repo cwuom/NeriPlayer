@@ -71,13 +71,14 @@ Additional notes:
 NeriPlayer covers a broad product surface. Protect these paths first:
 
 - **Playback**: `PlayerManager`, stream resolution, cache, URL refresh,
-  auto source switching, state recovery, the USB-exclusive native path,
-  startup watchdogs, and foreground/background health audits.
+  auto source switching, state recovery, loudness normalization, channel balance,
+  high-resolution output, the USB-exclusive native path, startup watchdogs, and
+  foreground/background health audits.
 - **Downloads**: `AudioDownloadManager`, `GlobalDownloadManager`,
   `DownloadTaskStore`, `DownloadLifecyclePolicies`, `ManagedDownloadStorage`,
   resume checkpoints, sidecar files, queue recovery, cancellation cleanup, and SAF migration.
 - **Sync**: GitHub / WebDAV three-way merge, deletion records, playback stats,
-  and remote format compatibility.
+  missing-field snapshot cleanup, and remote format compatibility.
 - **Local data**: atomic playlist JSON writes, local metadata hydration,
   config import/export, encrypted auth storage, and DataStore settings.
 - **Lyrics and Now Playing UI**: `AdvancedLyricsView`, `SyncedLyricsView`,
@@ -255,6 +256,8 @@ Security reminders:
   - `download/AudioDownloadManager.kt`: resolves platform streams and saves downloads;
     `DownloadParallelism.kt` defines concurrency boundaries.
   - `effects/PlaybackEffectsController.kt`: speed, pitch, loudness enhancer, and equalizer.
+  - `engine/`: Media3 audio processors, including loudness normalization,
+    channel balance, and high-resolution output processing.
   - `playback/PlaybackStatsTracker.kt`: playback stats tracking. Playback commands
     and queue advancement live in `playback/PlayerManagerPlaybackExtensions.kt`.
   - `timer/SleepTimerManager.kt`: sleep timer.
@@ -271,7 +274,10 @@ Security reminders:
   - `model/`: player-specific state models. Cross-layer song models do not live here.
   - `usb/`: split into `device/`, `path/`, `session/`, `sink/`, `system/`, and
     `transport/` for USB-exclusive sessions, the native bridge, runtime snapshots,
-    and recovery controls. The current implementation only covers **UAC1.0** devices.
+    and recovery controls. The current implementation covers **UAC1.0** and
+    compatible **UAC2.0 Type I PCM** devices, with 32-bit PCM, software
+    PCM-float conversion, in-place reconfiguration, dynamic transfer scaling,
+    and backpressure stall recovery.
 
 - `app/src/main/java/moe/ouom/neriplayer/core/download/`
   - `GlobalDownloadManager.kt`: global download tasks and downloaded song list.
@@ -389,12 +395,21 @@ Security reminders:
 - Local and synced playlists use `songOrderVersion` to distinguish order semantics:
   `0` is the legacy order and `1` is the current display order. Older data must
   be migrated compatibly instead of being interpreted directly as the new order.
+- Sync snapshots may come from older JSON/ProtoBuf payloads or malformed remote
+  files. Use safe defaults, filter records without resolvable track identity,
+  valid deletion time, or valid playlist id, and never let songs with missing
+  `addedAt` sort ahead of songs that already have timestamps.
 - Platform cookies/auth data, GitHub tokens, and WebDAV passwords are encrypted
   with `Android Keystore + EncryptedSharedPreferences`.
 - `DataStore` stores regular settings and non-sensitive state, not platform login credentials.
-- USB exclusive playback depends on a compatible **UAC1.0** DAC, the foreground service,
-  wake locks, and the system background policy. The in-app background-permission
-  prompt is not decorative, so screen-off behavior must stay in scope.
+- 32-bit high-resolution system output preserves the high-precision pipeline on
+  regular Android system output and bypasses loudness normalization, channel
+  balance, audio visualization, and in-app speed processing. Check settings copy
+  and tests together when changing it.
+- USB exclusive playback depends on a compatible **UAC1.0** or
+  **UAC2.0 Type I PCM** DAC, the foreground service, wake locks, and the system
+  background policy. The in-app background-permission prompt is not decorative,
+  so screen-off behavior must stay in scope.
 - Local scan results may return quick metadata first and then hydrate richer
   title/artist/album/cover data in the background. Do not assume the first scan
   result is the final local metadata shape.
@@ -468,15 +483,21 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    `core/player/usb/transport/`, `core/player/usb/session/`,
    `core/player/watchdog/PlayerManagerStartupWatchdogExtensions.kt`,
    `core/player/lifecycle/PlayerManagerLifecycleExtensions.kt`, and related tests first.
-2. The current USB-exclusive implementation supports **UAC1.0** only. If support
-   is expanded to UAC2.0 or more complex devices, update the docs, boundaries,
+2. The current USB-exclusive implementation supports **UAC1.0** and compatible
+   **UAC2.0 Type I PCM** devices. If support expands to more complex UAC2.0
+   topologies or non-Type-I PCM devices, update the docs, boundaries,
    diagnostics, and compatibility assumptions together.
-3. Consider device selection, sample-rate/bit-depth policies, foreground/background
-   buffers, wake locks, background-permission prompts, and the system-fallback path together.
+3. Consider device selection, sample-rate/bit-depth policies, 32-bit PCM,
+   software PCM-float conversion, foreground/background buffers, wake locks,
+   background-permission prompts, and the system-fallback path together.
 4. When changing automatic recovery, keep-alive logic, or background audits,
    validate foreground playback, screen-off background playback, USB attach/detach,
    and Android system fallback paths.
-5. If error semantics or recovery behavior changes, update the Settings / Debug
+5. When changing in-place reconfiguration, dynamic transfer scaling, backpressure
+   recovery, or candidate bit-depth fallback, also check
+   `UsbExclusiveOutputFormatResolverTest`, `UsbExclusivePcmWritePlannerTest`,
+   `UsbExclusiveSessionControllerReusePolicyTest`, and native USB PCM/UAC tests.
+6. If error semantics or recovery behavior changes, update the Settings / Debug
    diagnostics surfaces and the matching tests.
 
 #### 7. Modify GitHub / WebDAV sync
@@ -491,11 +512,14 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    for observed-remove semantics. New fields must remain readable when legacy JSON
    or ProtoBuf payloads omit them; tokenized membership must not fall back to a
    timestamp-only deletion decision.
-5. Most merge logic lives in `GitHubSyncManager.kt`; WebDAV reuses the same data
+5. Missing-field or malformed snapshots must be cleaned before merging. `SyncSong`
+   needs at least one of id, audioId, or mediaUri; deletion records also need a
+   valid deletion time; songs with missing `addedAt` are low-priority display items.
+6. Most merge logic lives in `GitHubSyncManager.kt`; WebDAV reuses the same data
    model and much of the merge behavior.
-6. Do not break the delayed sync, periodic sync, validated-network checks, or retry
+7. Do not break the delayed sync, periodic sync, validated-network checks, or retry
    behavior in `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt`.
-7. Sensitive data must go through `SecureTokenStorage.kt` or `WebDavStorage.kt`.
+8. Sensitive data must go through `SecureTokenStorage.kt` or `WebDavStorage.kt`.
    Do not store it in `DataStore` or plaintext JSON.
 
 #### 8. Modify download storage
@@ -649,11 +673,13 @@ Existing focused tests cover areas such as:
 
 - YouTube login, challenge parsing, PoToken, playback, Range/Seek policy, and prefetching
 - NetEase lyrics, local smoke tests, auto source switching, and playback response parsing
-- USB-exclusive keep-alive, startup watchdogs, foreground/background recovery, and audio-focus policies
+- USB-exclusive keep-alive, startup watchdogs, foreground/background recovery,
+  32-bit/float output, in-place reconfiguration, backpressure recovery, and audio-focus policies
 - Download metadata, naming, directory migration, snapshot caches, `.nomedia`, delete semantics, and startup recovery
 - Startup stages, notification permission, playback-service startup, history recording, and safe-mode recovery planning
 - Local scanning, metadata hydration, cover fallback resolution, system-playlist de-duplication, and stable playlist order
-- GitHub/WebDAV sync serialization, legacy playlist-order migration, deletion policy, playback-stat merging, and upload retry
+- GitHub/WebDAV sync serialization, missing-field snapshot cleanup,
+  legacy playlist-order migration, deletion policy, playback-stat merging, and upload retry
 - Listen Together base URL validation, version gating, repeat/shuffle modes,
   stable-track-key target validation, playback sync planning, session control/cancellation, and protocol compatibility
 - Lyrics UI, word timing, external Bluetooth lyrics, playback sound controls, and playback policies

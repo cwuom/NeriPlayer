@@ -65,11 +65,13 @@
 这个项目功能面比较宽，提交前请优先保护这些链路：
 
 - **播放链路**：`PlayerManager`、取流策略、缓存、失败刷新、自动换源、
-  状态恢复、USB 独占 Native 链路、启动看门狗和前后台健康审计。
+  状态恢复、响度均衡、声道平衡、高解析输出、USB 独占 Native 链路、
+  启动看门狗和前后台健康审计。
 - **下载链路**：`AudioDownloadManager`、`GlobalDownloadManager`、
   `DownloadTaskStore`、`DownloadLifecyclePolicies`、`ManagedDownloadStorage`、
   续传检查点、sidecar 文件、任务队列恢复、取消清理和 SAF 目录迁移。
-- **同步链路**：GitHub / WebDAV 的三路合并、删除记录、播放统计和远端格式兼容。
+- **同步链路**：GitHub / WebDAV 的三路合并、删除记录、播放统计、
+  缺字段快照清洗和远端格式兼容。
 - **本地数据**：歌单 JSON 原子写入、本地元信息补全、配置导入导出、
   授权加密存储和 DataStore 设置。
 - **歌词与播放页 UI**：`AdvancedLyricsView`、`SyncedLyricsView`、
@@ -233,6 +235,7 @@
   - `download/AudioDownloadManager.kt`：下载核心链路；同目录的
     `DownloadParallelism.kt` 定义并发边界。
   - `effects/PlaybackEffectsController.kt`：倍速、音调、响度增强和均衡器。
+  - `engine/`：Media3 音频处理器，包括响度均衡、声道平衡和高解析输出相关处理。
   - `playback/PlaybackStatsTracker.kt`：播放统计采集；播放命令与队列推进也在
     `playback/PlayerManagerPlaybackExtensions.kt`。
   - `timer/SleepTimerManager.kt`：睡眠定时器。
@@ -248,7 +251,8 @@
   - `model/`：播放器专用状态模型；跨数据层共享的歌曲模型不在此处。
   - `usb/`：按 `device/`、`path/`、`session/`、`sink/`、`system/` 与
     `transport/` 拆分 USB 独占会话、Native 桥、运行态快照和恢复控制，
-    当前实现只覆盖 **UAC1.0** 设备。
+    当前实现覆盖 **UAC1.0** 和兼容 **UAC2.0 Type I PCM** 设备，
+    并已经包含 32-bit PCM、PCM float 软件转换、原地重配置、动态传输缩放和背压卡顿恢复。
 
 - `app/src/main/java/moe/ouom/neriplayer/core/download/`
   - `GlobalDownloadManager.kt` 维护全局下载任务与本地已下载列表。
@@ -349,10 +353,16 @@
   本地音频文件、Cookie 或播放 Token。
 - 本地歌单与同步歌单通过 `songOrderVersion` 区分顺序语义：`0` 是旧版顺序，
   `1` 是当前展示顺序；读取旧数据时要兼容迁移，不能直接按新版顺序解释。
+- 同步快照可能来自旧版 JSON/ProtoBuf 或异常远端文件；读取时要用安全默认值，
+  过滤缺少可解析歌曲身份、无有效删除时间或无效歌单 ID 的记录，
+  缺失 `addedAt` 的歌曲不能排到已有时间歌曲之前。
 - 平台 Cookie / 鉴权信息、GitHub Token、WebDAV 密码使用
   `Android Keystore + EncryptedSharedPreferences` 加密保存。
 - `DataStore` 只承担常规设置与非敏感状态，不承载平台登录凭据。
-- USB 独占依赖兼容 **UAC1.0** DAC、前台服务、唤醒锁和系统后台策略；
+- 32-bit 高解析系统输出会优先保留普通系统输出的高精度管线，并旁路响度均衡、
+  声道平衡、音频可视化和应用内倍速等处理；改动时必须同时确认设置文案和测试。
+- USB 独占依赖兼容 **UAC1.0** 或 **UAC2.0 Type I PCM** 的 DAC、
+  前台服务、唤醒锁和系统后台策略；
   设置页的后台权限提示不是装饰，改动相关逻辑时要同时考虑息屏场景。
 - 本地扫描结果可能先用快速元数据返回，再由后台任务补全歌曲名、歌手、
   专辑和封面；不要假设首次扫描结果已经是最终形态。
@@ -420,13 +430,17 @@
    `core/player/usb/transport/`、`core/player/usb/session/`、
    `core/player/watchdog/PlayerManagerStartupWatchdogExtensions.kt`、
    `core/player/lifecycle/PlayerManagerLifecycleExtensions.kt` 和相关测试。
-2. 当前 USB 独占实现只支持 **UAC1.0**；如要扩到 UAC2.0/更复杂设备，
-   需要把文档、能力边界、诊断和兼容性假设一起更新。
-3. 同时考虑设备选择、采样率/位深策略、前后台缓冲区、唤醒锁、
-   后台权限提示和系统回退链路。
+2. 当前 USB 独占实现覆盖 **UAC1.0** 和兼容 **UAC2.0 Type I PCM** 设备；
+   如要扩到更复杂的 UAC2.0 拓扑或非 Type I PCM 设备，需要把文档、能力边界、
+   诊断和兼容性假设一起更新。
+3. 同时考虑设备选择、采样率/位深策略、32-bit PCM、PCM float 软件转换、
+   前后台缓冲区、唤醒锁、后台权限提示和系统回退链路。
 4. 修改自动恢复、keep-alive 或后台审计时，要验证前台播放、息屏后台、
    USB 拔插和 system fallback 四条路径。
-5. 错误语义或恢复策略变化时，要同步更新设置页 / Debug 页诊断展示和对应测试。
+5. 改动原地重配置、动态传输缩放、背压恢复或候选位深回退时，要同步检查
+   `UsbExclusiveOutputFormatResolverTest`、`UsbExclusivePcmWritePlannerTest`、
+   `UsbExclusiveSessionControllerReusePolicyTest` 和 native USB PCM/UAC 测试。
+6. 错误语义或恢复策略变化时，要同步更新设置页 / Debug 页诊断展示和对应测试。
 
 #### 7. 修改 GitHub / WebDAV 同步
 
@@ -437,10 +451,12 @@
 4. 歌单成员使用 `syncMembershipTokens` / `removedMembershipTokens` 表达
    observed-remove 语义；新增字段必须兼容旧 JSON 与 ProtoBuf 的缺字段载荷，
    带 token 的成员不能退回只比较 `addedAt/deletedAt` 的删除裁决。
-5. 合并策略主要在 `GitHubSyncManager.kt`，WebDAV 复用同一套数据模型和多数合并逻辑。
-6. 不要破坏 `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt` 的延迟同步、
+5. 缺字段或畸形快照必须先清洗再合并；`SyncSong` 至少要有 id、audioId 或 mediaUri
+   之一，删除记录还需要有效删除时间，缺失 `addedAt` 的歌曲只能作为低优先级展示项。
+6. 合并策略主要在 `GitHubSyncManager.kt`，WebDAV 复用同一套数据模型和多数合并逻辑。
+7. 不要破坏 `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt` 的延迟同步、
    周期同步、validated network 检查和失败重试行为。
-7. 涉及敏感信息时统一走 `SecureTokenStorage.kt` 或 `WebDavStorage.kt`，
+8. 涉及敏感信息时统一走 `SecureTokenStorage.kt` 或 `WebDavStorage.kt`，
    不要放回 `DataStore` 或明文 JSON。
 
 #### 8. 修改下载存储
@@ -582,11 +598,13 @@ adb logcat | grep NeriPlayer
 
 - YouTube 登录、挑战解析、PoToken、取流、Range/Seek 策略与预取
 - 网易云歌词、本地 smoke test、自动换源和播放响应解析
-- USB 独占 keep-alive、启动看门狗、前后台恢复和音频焦点策略
+- USB 独占 keep-alive、启动看门狗、前后台恢复、32-bit/float 输出、
+  原地重配置、背压恢复和音频焦点策略
 - 下载元数据、命名、目录迁移、快照缓存、`.nomedia`、删除语义和启动恢复
 - 启动阶段、通知权限、播放服务启动、历史记录与安全模式恢复规划
 - 本地扫描、元信息补全、封面回退、系统歌单去重和歌单顺序稳定性
-- GitHub/WebDAV 同步序列化、旧歌单顺序迁移、删除策略、播放统计合并和上传重试
+- GitHub/WebDAV 同步序列化、缺字段快照清洗、旧歌单顺序迁移、删除策略、
+  播放统计合并和上传重试
 - 一起听地址校验、版本门控、循环/随机模式、stable track key 目标校验、
   播放同步规划、Session 控制/取消与协议兼容
 - 歌词视图、逐词时间、外部蓝牙歌词、播放音效和播放策略

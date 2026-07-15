@@ -119,11 +119,12 @@ Current positioning:
 ## Why it stands out
 
 - **Local-first, with real offline behavior**:
-  `NetworkStatusMonitor` detects whether Android has a validated network, while
-  `offlineCachedImageRequest` disables remote image requests in offline mode and
-  falls back to local caches. Home, Explore, Now Playing, Lyrics, playlists, and
-  downloads all receive `offlineMode`, so local files, downloaded audio,
-  playback cache, cached covers, and local playlists remain usable without a network.
+  `NetworkStatusMonitor` follows Android's default direct network transport,
+  while `offlineCachedImageRequest` disables remote image requests in offline
+  mode and falls back to local caches. Home, Explore, Now Playing, Lyrics,
+  playlists, and downloads all receive `offlineMode`, so local files,
+  downloaded audio, playback cache, cached covers, and local playlists remain
+  usable without a network.
 - **Multi-source playback is not just a list of entry points**:
   `PlayerManager` owns stream resolution, queues, and failure recovery. When a
   NetEase track is unavailable, has no playable URL, or only returns a preview,
@@ -168,12 +169,14 @@ Current positioning:
   `PlaybackEffectsController` applies speed, pitch, Android `Equalizer`, and
   `LoudnessEnhancer` to the current Media3 audio session. Presets, manual bands,
   loudness gain, per-track real-time normalization, fade/crossfade, pause on
-  Bluetooth disconnect, USB exclusive playback, and audio-focus behavior are
-  all available. Native USB exclusive
-  playback currently targets **UAC1.0** audio devices, so system sounds and other
-  apps cannot share the USB transport on that path. Device selection, sample-rate/bit-depth/
-  buffer policies, background-playback guidance, startup watchdogs, foreground/
-  background health audits, and automatic stall recovery are now part of the path.
+  Bluetooth disconnect, channel balance, 32-bit high-resolution system output,
+  USB exclusive playback, and audio-focus behavior are all available. Native USB
+  exclusive playback currently targets **UAC1.0** and compatible
+  **UAC2.0 Type I PCM** audio devices, so system sounds and other apps cannot
+  share the USB transport on that path. Device selection, sample-rate/bit-depth/
+  buffer policies, 32-bit PCM, software PCM-float conversion, background-playback
+  guidance, startup watchdogs, foreground/background health audits, dynamic
+  transfer scaling, and automatic stall recovery are now part of the path.
 - **Downloads have moved from "can save" to "can recover"**:
   downloads do not use the system `DownloadManager`. They use the shared
   `OkHttpClient`, configurable concurrency, staging files, and sidecar metadata.
@@ -191,7 +194,10 @@ Current positioning:
   data service. GitHub/WebDAV sync stores playlists, favorites, recent plays,
   and playback stats in the user's own remote. `PlaybackStatsRepository` records
   play count, total listen time, first/last played time, and daily buckets by
-  stable track identity, then participates in sync merging.
+  stable track identity, then participates in sync merging. Remote sync snapshots
+  tolerate legacy or malformed missing-field payloads, filter records without
+  resolvable track identity, and keep songs with missing `addedAt` behind dated
+  songs in current display-order playlists.
 - **Traffic controls are built into the product, not bolted on later**:
   `TrafficStatsRepository` tracks playback/download bytes, Wi-Fi/mobile/roaming
   distribution, and cache-hit bytes. Download flows can also warn before high-risk
@@ -304,17 +310,23 @@ For release build and signing details, see
 - 🎚️ **Playback sound controls**:
   Now Playing includes speed, pitch, loudness enhancer, Android system equalizer
   presets, and manual EQ bands. Playback settings also provide per-track
-  real-time loudness normalization, which is bypassed during USB exclusive playback.
+  real-time loudness normalization, channel balance, and 32-bit high-resolution
+  system output. Loudness normalization is bypassed during USB exclusive playback;
+  high-resolution system output keeps the high-precision pipeline where possible
+  and bypasses loudness normalization, channel balance, audio visualization, and
+  in-app speed processing.
 - 🎛️ **Fine-grained playback behavior**:
   keep last playback progress, restore playback mode, fade-in/fade-out,
   crossfade-next, pause on Bluetooth disconnect, USB exclusive playback,
   mixed playback, and preemptive audio focus are configurable.
 - 🔌 **USB exclusive playback**:
-  currently supports **UAC1.0** USB DAC devices, with device selection,
-  sample-rate/bit-depth/buffer policies, compatibility toggles, and
-  background-playback guidance. If playback startup,
-  native transfer, or foreground/background transitions become unhealthy, the
-  app tries to recover automatically and can fall back to Android system output.
+  supports **UAC1.0** and compatible **UAC2.0 Type I PCM** USB DAC devices, with
+  device selection, sample-rate/bit-depth/buffer policies, compatibility toggles,
+  and background-playback guidance. It also handles 32-bit PCM and software
+  conversion from PCM float into the selected device format. If playback startup,
+  native transfer backpressure, or foreground/background transitions become
+  unhealthy, the app tries in-place reconfiguration, dynamic transfer scaling,
+  and soft recovery before falling back to Android system output.
 - 💾 **Configurable streaming cache**:
   audio cache uses `SimpleCache + LRU`, defaults to **1 GB**, and supports
   cleanup for audio cache, image cache, download staging, share staging, and
@@ -507,11 +519,13 @@ For release build and signing details, see
 - Preemptive audio focus, mixed playback, pause on Bluetooth disconnect, and
   USB exclusive playback are stored in playback preference snapshots so they are
   available early in player startup.
-- USB exclusive playback currently supports **UAC1.0** devices, with device
-  selection, sample-rate/bit-depth/buffer policies, compatibility toggles, and
-  background buffer tuning. To reduce stuck
-  states, the player layer also includes startup watchdogs, foreground/background
-  health audits, keep-alive checks, native transfer recovery, and system-output fallback.
+- USB exclusive playback currently supports **UAC1.0** and compatible
+  **UAC2.0 Type I PCM** devices, with device selection, sample-rate/bit-depth/
+  buffer policies, compatibility toggles, and background buffer tuning.
+  It can use 32-bit PCM and software PCM-float conversion.
+  To reduce stuck states, the player layer also includes startup watchdogs,
+  foreground/background health audits, keep-alive checks, in-place reconfiguration,
+  dynamic transfer scaling, native-transfer backpressure recovery, and system-output fallback.
 
 ### Search and data sources
 
@@ -657,6 +671,10 @@ Current sync targets:
   deletion records, and playback stats. Newly added or restored songs carry
   membership tokens, so an older deletion only removes membership it actually
   observed instead of deleting restored content during the next sync.
+- 🧹 **Remote tolerance**: JSON/ProtoBuf sync snapshots tolerate legacy missing
+  fields, filter malformed records without resolvable track identity or valid
+  deletion time, and keep songs with missing `addedAt` behind dated songs so bad
+  snapshots cannot jump ahead in playlists.
 - 🪶 **Data Saver**: uses `ProtoBuf + GZIP` as `backup.bin`; JSON is used when
   Data Saver is disabled.
 - 📦 **Remote format**: a GitHub repository is not end-to-end encryption.
@@ -701,6 +719,9 @@ and community feedback. They are not fixed-date commitments.
 
 - [x] Listen Together repeat/shuffle sync, stable-track-key target validation,
   server clock-offset estimation, and authoritative stream recovery
+- [x] 32-bit high-resolution system output, PCM-float channel balance, and thread-safe loudness-normalization state
+- [x] USB exclusive 32-bit PCM, in-place reconfiguration, dynamic transfer scaling, and backpressure stall recovery
+- [x] GitHub/WebDAV cleanup for malformed sync snapshots, missing-field songs, and deletion records
 - [x] Responsibility-based package splits for player, download storage, startup,
   lyric UI, and Listen Together
 - [x] Versioned local-playlist display order with compatible migration of older
@@ -785,9 +806,14 @@ We will keep improving the project over time.
   Only network-policy pauses or recoverable errors keep resume state.
 - Custom SAF download directories make files easier to access externally, but
   scanning, migration, and finalization are usually slower than the app-private directory.
-- USB exclusive playback depends on a compatible **UAC1.0** USB DAC, the foreground service,
-  and the system's background/battery policy. If playback is limited after the
-  screen turns off, follow the in-app guidance to allow unrestricted background behavior.
+- USB exclusive playback depends on a compatible **UAC1.0** or
+  **UAC2.0 Type I PCM** USB DAC, the foreground service, and the system's
+  background/battery policy. If playback is limited after the screen turns off,
+  follow the in-app guidance to allow unrestricted background behavior.
+- 32-bit high-resolution system output only targets high-precision sources on
+  regular Android system output and bypasses parts of the in-app audio processing
+  chain. Keep it disabled when loudness normalization, channel balance, audio
+  visualization, or in-app speed processing is required.
 - Phonetic lyric display depends on phonetic data from the platform or embedded
   lyrics. The toggle stays unavailable when the current lyric has no phonetics.
 - Lyric cards are written to the app cache for system sharing and can be removed
