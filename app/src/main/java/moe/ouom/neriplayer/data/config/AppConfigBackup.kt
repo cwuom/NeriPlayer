@@ -106,6 +106,15 @@ data class GitHubSyncConfigSnapshot(
 }
 
 @Serializable
+data class SyncPreferencesConfigSnapshot(
+    val playHistoryUpdateMode: String = ""
+) {
+    fun hasData(): Boolean {
+        return playHistoryUpdateMode.isNotBlank()
+    }
+}
+
+@Serializable
 data class WebDavSyncConfigSnapshot(
     val serverUrl: String = "",
     val basePath: String = "",
@@ -134,7 +143,8 @@ data class AppConfigBackup(
     val biliAuth: SavedCookieConfigSnapshot = SavedCookieConfigSnapshot(),
     val youTubeAuth: YouTubeAuthConfigSnapshot = YouTubeAuthConfigSnapshot(),
     val gitHubSync: GitHubSyncConfigSnapshot = GitHubSyncConfigSnapshot(),
-    val webDavSync: WebDavSyncConfigSnapshot = WebDavSyncConfigSnapshot()
+    val webDavSync: WebDavSyncConfigSnapshot = WebDavSyncConfigSnapshot(),
+    val syncPreferences: SyncPreferencesConfigSnapshot = SyncPreferencesConfigSnapshot()
 ) {
     fun hasRestorableContent(): Boolean {
         return settings.entryCount() > 0 ||
@@ -144,7 +154,8 @@ data class AppConfigBackup(
             biliAuth.hasData() ||
             youTubeAuth.hasData() ||
             gitHubSync.hasData() ||
-            webDavSync.hasData()
+            webDavSync.hasData() ||
+            syncPreferences.hasData()
     }
 }
 

@@ -58,6 +58,9 @@ class AppConfigBackupCodecTest {
                 username = "user",
                 password = "pass",
                 autoSyncEnabled = true
+            ),
+            syncPreferences = SyncPreferencesConfigSnapshot(
+                playHistoryUpdateMode = "EVERY_30_MINUTES"
             )
         )
 

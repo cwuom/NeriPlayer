@@ -35,6 +35,7 @@ import com.google.gson.reflect.TypeToken
 import moe.ouom.neriplayer.data.config.GitHubSyncConfigSnapshot
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.data.sync.PlayHistoryUpdateMode
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import java.util.UUID
 
@@ -107,12 +108,6 @@ class SecureTokenStorage(private val context: Context) {
                 error
             )
         }
-    }
-
-    /** 播放历史更新模式 */
-    enum class PlayHistoryUpdateMode {
-        IMMEDIATE,  // 立即更新
-        BATCHED     // 批量更新（每10分钟）
     }
 
     /** 保存GitHub Token */
@@ -232,18 +227,20 @@ class SecureTokenStorage(private val context: Context) {
     }
 
     /** 设置播放历史更新模式 */
+    @Deprecated("Use PlayHistorySyncPreferences instead")
     fun setPlayHistoryUpdateMode(mode: PlayHistoryUpdateMode) {
         encryptedPrefs.edit { putString(KEY_PLAY_HISTORY_UPDATE_MODE, mode.name) }
     }
 
     /** 获取播放历史更新模式 */
+    @Deprecated("Use PlayHistorySyncPreferences instead")
     fun getPlayHistoryUpdateMode(): PlayHistoryUpdateMode {
-        val modeName = encryptedPrefs.getString(KEY_PLAY_HISTORY_UPDATE_MODE, PlayHistoryUpdateMode.IMMEDIATE.name)
-        return try {
-            PlayHistoryUpdateMode.valueOf(modeName ?: PlayHistoryUpdateMode.IMMEDIATE.name)
-        } catch (e: Exception) {
-            PlayHistoryUpdateMode.IMMEDIATE
-        }
+        return PlayHistoryUpdateMode.fromStoredName(getLegacyPlayHistoryUpdateModeName())
+            ?: PlayHistoryUpdateMode.IMMEDIATE
+    }
+
+    internal fun getLegacyPlayHistoryUpdateModeName(): String? {
+        return encryptedPrefs.getString(KEY_PLAY_HISTORY_UPDATE_MODE, null)
     }
 
     /** 检查是否已配置 */
@@ -468,7 +465,6 @@ class SecureTokenStorage(private val context: Context) {
             repoOwner = getRepoOwner().orEmpty(),
             repoName = getRepoName().orEmpty(),
             autoSyncEnabled = isAutoSyncEnabled(),
-            playHistoryUpdateMode = getPlayHistoryUpdateMode().name,
             dataSaverMode = isDataSaverMode()
         )
     }
@@ -486,11 +482,6 @@ class SecureTokenStorage(private val context: Context) {
             if (snapshot.repoOwner.isNotBlank()) putString(KEY_REPO_OWNER, snapshot.repoOwner)
             if (snapshot.repoName.isNotBlank()) putString(KEY_REPO_NAME, snapshot.repoName)
             putBoolean(KEY_AUTO_SYNC_ENABLED, snapshot.autoSyncEnabled)
-
-            val updateMode = runCatching {
-                PlayHistoryUpdateMode.valueOf(snapshot.playHistoryUpdateMode)
-            }.getOrDefault(PlayHistoryUpdateMode.IMMEDIATE)
-            putString(KEY_PLAY_HISTORY_UPDATE_MODE, updateMode.name)
             putBoolean(KEY_DATA_SAVER_MODE, snapshot.dataSaverMode)
         }
     }

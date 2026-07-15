@@ -83,6 +83,9 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSwitchItems
+import moe.ouom.neriplayer.data.sync.PlayHistoryUpdateMode
+import moe.ouom.neriplayer.data.sync.PlayHistorySyncPreferences
+import moe.ouom.neriplayer.data.sync.SyncPreferences
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.ui.viewmodel.ConfigTransferUiState
 import moe.ouom.neriplayer.ui.viewmodel.BackupRestoreUiState
@@ -144,7 +147,12 @@ internal fun SettingsBackupRestoreSection(
         var showPlayHistoryModeDialog by remember { mutableStateOf(false) }
         var showConfigExportWarningDialog by remember { mutableStateOf(false) }
         val storage = remember(context) { SecureTokenStorage(context) }
-        val currentMode = remember { mutableStateOf(storage.getPlayHistoryUpdateMode()) }
+        val syncPreferences = remember(context) { SyncPreferences(context) }
+        val currentMode = remember(storage, syncPreferences) {
+            mutableStateOf(
+                syncPreferences.getUpdateMode(storage.getLegacyPlayHistoryUpdateModeName())
+            )
+        }
         var dataSaverMode by remember { mutableStateOf(storage.isDataSaverMode()) }
         var pendingDataSaverMode by remember { mutableStateOf<Boolean?>(null) }
 
@@ -161,7 +169,9 @@ internal fun SettingsBackupRestoreSection(
             if (!configTransferUiState.isImporting && configTransferUiState.lastImportSuccess == true) {
                 githubVm.initialize(context)
                 webDavVm.initialize(context)
-                currentMode.value = storage.getPlayHistoryUpdateMode()
+                currentMode.value = syncPreferences.getUpdateMode(
+                    storage.getLegacyPlayHistoryUpdateModeName()
+                )
                 dataSaverMode = storage.isDataSaverMode()
                 pendingDataSaverMode = null
             }
@@ -397,6 +407,29 @@ internal fun SettingsBackupRestoreSection(
             ListItem(
                 leadingContent = {
                     Icon(
+                        Icons.Outlined.Timer,
+                        contentDescription = stringResource(R.string.settings_play_history_update_freq),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                headlineContent = { Text(stringResource(R.string.sync_history_frequency)) },
+                supportingContent = {
+                    Text(playHistoryUpdateModeSummary(currentMode.value))
+                },
+                modifier = Modifier.settingsItemClickable {
+                    showPlayHistoryModeDialog = true
+                },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+            )
+
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 8.dp),
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
+
+            ListItem(
+                leadingContent = {
+                    Icon(
                         Icons.Outlined.CloudSync,
                         contentDescription = stringResource(R.string.github_auto_sync),
                         tint = MaterialTheme.colorScheme.primary
@@ -523,35 +556,6 @@ internal fun SettingsBackupRestoreSection(
                         color = MaterialTheme.colorScheme.error
                     )
                 }
-            }
-
-            if (githubState.isConfigured || webDavState.isConfigured) {
-                ListItem(
-                    leadingContent = {
-                        Icon(
-                            Icons.Outlined.Timer,
-                            contentDescription = stringResource(R.string.settings_play_history_update_freq),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    headlineContent = { Text(stringResource(R.string.sync_history_frequency)) },
-                    supportingContent = {
-                        Text(
-                            when (currentMode.value) {
-                                SecureTokenStorage.PlayHistoryUpdateMode.IMMEDIATE -> {
-                                    stringResource(R.string.settings_update_immediate)
-                                }
-                                SecureTokenStorage.PlayHistoryUpdateMode.BATCHED -> {
-                                    stringResource(R.string.settings_sync_batch_update_time)
-                                }
-                            }
-                        )
-                    },
-                    modifier = Modifier.settingsItemClickable {
-                        showPlayHistoryModeDialog = true
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                )
             }
 
             HorizontalDivider(
@@ -699,7 +703,7 @@ internal fun SettingsBackupRestoreSection(
                 currentMode = currentMode.value,
                 onDismiss = { showPlayHistoryModeDialog = false },
                 onSelect = { mode ->
-                    storage.setPlayHistoryUpdateMode(mode)
+                    syncPreferences.setUpdateMode(mode)
                     currentMode.value = mode
                     showPlayHistoryModeDialog = false
                 }
@@ -872,9 +876,9 @@ private fun SyncMessageCard(
 
 @Composable
 private fun PlayHistoryModeDialog(
-    currentMode: SecureTokenStorage.PlayHistoryUpdateMode,
+    currentMode: PlayHistoryUpdateMode,
     onDismiss: () -> Unit,
-    onSelect: (SecureTokenStorage.PlayHistoryUpdateMode) -> Unit
+    onSelect: (PlayHistoryUpdateMode) -> Unit
 ) {
     MiuixSettingsDialog(
         onDismissRequest = onDismiss,
@@ -887,23 +891,16 @@ private fun PlayHistoryModeDialog(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
 
-                PlayHistoryModeOption(
-                    selected = currentMode == SecureTokenStorage.PlayHistoryUpdateMode.IMMEDIATE,
-                    title = stringResource(R.string.sync_after_play),
-                    description = stringResource(R.string.sync_after_play_desc),
-                    onClick = {
-                        onSelect(SecureTokenStorage.PlayHistoryUpdateMode.IMMEDIATE)
-                    }
-                )
-
-                PlayHistoryModeOption(
-                    selected = currentMode == SecureTokenStorage.PlayHistoryUpdateMode.BATCHED,
-                    title = stringResource(R.string.sync_batch_update),
-                    description = stringResource(R.string.sync_batch_update_desc),
-                    onClick = {
-                        onSelect(SecureTokenStorage.PlayHistoryUpdateMode.BATCHED)
-                    }
-                )
+                PlayHistorySyncPreferences.UpdateMode.selectableModes.forEach { mode ->
+                    PlayHistoryModeOption(
+                        selected = currentMode == mode,
+                        title = playHistoryUpdateModeTitle(mode),
+                        description = playHistoryUpdateModeDescription(mode),
+                        onClick = {
+                            onSelect(mode)
+                        }
+                    )
+                }
             }
         },
         confirmButton = {
@@ -912,6 +909,63 @@ private fun PlayHistoryModeDialog(
             }
         }
     )
+}
+
+@Composable
+private fun playHistoryUpdateModeSummary(
+    mode: PlayHistoryUpdateMode
+): String {
+    return when (mode) {
+        PlayHistoryUpdateMode.IMMEDIATE -> {
+            stringResource(R.string.settings_update_immediate)
+        }
+        else -> {
+            val intervalMinutes = mode.intervalMinutes
+                ?: return stringResource(R.string.settings_update_immediate)
+            stringResource(
+                R.string.settings_update_every_minutes,
+                intervalMinutes
+            )
+        }
+    }
+}
+
+@Composable
+private fun playHistoryUpdateModeTitle(
+    mode: PlayHistoryUpdateMode
+): String {
+    return when (mode) {
+        PlayHistoryUpdateMode.IMMEDIATE -> {
+            stringResource(R.string.sync_after_play)
+        }
+        else -> {
+            val intervalMinutes = mode.intervalMinutes
+                ?: return stringResource(R.string.sync_after_play)
+            stringResource(
+                R.string.sync_every_minutes,
+                intervalMinutes
+            )
+        }
+    }
+}
+
+@Composable
+private fun playHistoryUpdateModeDescription(
+    mode: PlayHistoryUpdateMode
+): String {
+    return when (mode) {
+        PlayHistoryUpdateMode.IMMEDIATE -> {
+            stringResource(R.string.sync_after_play_desc)
+        }
+        else -> {
+            val intervalMinutes = mode.intervalMinutes
+                ?: return stringResource(R.string.sync_after_play_desc)
+            stringResource(
+                R.string.sync_every_minutes_desc,
+                intervalMinutes
+            )
+        }
+    }
 }
 
 @Composable

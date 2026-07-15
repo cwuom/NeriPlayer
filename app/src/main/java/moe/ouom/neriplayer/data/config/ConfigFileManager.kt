@@ -24,6 +24,7 @@ import moe.ouom.neriplayer.data.settings.persistPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.persistThemePreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.toBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.settings.toPlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.sync.SyncPreferences
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.SyncCoordinator
@@ -45,6 +46,7 @@ class ConfigFileManager(private val context: Context) {
             val neteaseCookieRepo = NeteaseCookieRepository(context)
             val biliCookieRepo = BiliCookieRepository(context)
             val youTubeAuthRepo = YouTubeAuthRepository(context)
+            val gitHubStorage = SecureTokenStorage(context)
             val payload = AppConfigBackup(
                 exportedAt = System.currentTimeMillis(),
                 settings = settingsPrefs.toTypedPreferenceSnapshot(),
@@ -65,8 +67,11 @@ class ConfigFileManager(private val context: Context) {
                     )
                 },
                 youTubeAuth = youTubeAuthRepo.getAuthOnce().toConfigSnapshot(),
-                gitHubSync = SecureTokenStorage(context).snapshot(),
-                webDavSync = WebDavStorage(context).snapshot()
+                gitHubSync = gitHubStorage.snapshot(),
+                webDavSync = WebDavStorage(context).snapshot(),
+                syncPreferences = SyncPreferences(context).snapshot(
+                    gitHubStorage.getLegacyPlayHistoryUpdateModeName()
+                )
             )
 
             val encoded = AppConfigBackupCodec.encode(payload)
@@ -104,6 +109,11 @@ class ConfigFileManager(private val context: Context) {
                 val restoredAuthCount = restoreAuth(payload, warnings)
                 val gitHubStorage = SecureTokenStorage(context)
                 val webDavStorage = WebDavStorage(context)
+                val syncPreferences = SyncPreferences(context)
+                syncPreferences.restore(
+                    snapshot = payload.syncPreferences,
+                    legacyModeName = payload.gitHubSync.playHistoryUpdateMode
+                )
                 gitHubStorage.restore(payload.gitHubSync)
                 webDavStorage.restore(payload.webDavSync)
                 gitHubStorage.markSyncMutation()
@@ -238,7 +248,7 @@ private fun Preferences.toTypedPreferenceSnapshot(): TypedPreferenceSnapshot {
 }
 
 private fun AppConfigBackup.syncSectionCount(): Int {
-    return listOf(gitHubSync.hasData(), webDavSync.hasData()).count { it }
+    return listOf(gitHubSync.hasData(), webDavSync.hasData(), syncPreferences.hasData()).count { it }
 }
 
 private fun LanguageConfigSnapshot.toLanguageOrNull(): LanguageManager.Language? {

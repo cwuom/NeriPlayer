@@ -1053,7 +1053,6 @@
     <string name="language_restart_message_bilingual">语言已更改，需要重启应用以完全生效。\nLanguage changed. Restart the app to apply it completely.</string>
     <string name="language_restart_now_bilingual">立即重启 / Restart now</string>
     <string name="language_restart_later_bilingual">稍后 / Later</string>
-    <string name="settings_sync_batch_update_time">每10分钟更新</string>
     <string name="settings_color_picker_hint">长按颜色或点击 × 可删除自定义颜色</string>
     <string name="settings_phone_number_hint">+86 手机号</string>
     <string name="settings_resend_code_countdown">重新获取(%ds)</string>
@@ -1336,7 +1335,6 @@
     <string name="sync_initial_uploaded">初始数据已上传</string>
     <string name="sync_history_frequency">播放历史更新频率</string>
     <string name="sync_after_play">每次播放后立即同步</string>
-    <string name="sync_batch_update">批量更新</string>
     <string name="sync_configured">已配置</string>
     <string name="sync_not_configured">未配置</string>
     <string name="sync_config">配置</string>
@@ -1363,7 +1361,8 @@
     <string name="sync_last_time">上次同步: %s</string>
     <string name="sync_frequency_desc">选择播放历史同步到云端的频率：</string>
     <string name="sync_after_play_desc">每次播放后立即同步</string>
-    <string name="sync_batch_update_desc">每10分钟同步一次（节省流量）</string>
+    <string name="sync_every_minutes">每%1$d分钟同步</string>
+    <string name="sync_every_minutes_desc">播放历史变更后，至少间隔%1$d分钟再同步到云端</string>
     <string name="sync_step1_token">步骤1: 输入 GitHub Token</string>
     <string name="sync_create_token">在 GitHub 创建 Token</string>
     <string name="sync_step2_repo">步骤2: 选择仓库</string>
@@ -1420,6 +1419,7 @@
     <string name="settings_sync_now">立即同步</string>
     <string name="settings_play_history_update_freq">播放历史更新频率</string>
     <string name="settings_update_immediate">立即更新</string>
+    <string name="settings_update_every_minutes">每%1$d分钟更新</string>
     <string name="settings_data_saver">省流通道</string>
     <string name="github_auto_sync">GitHub 自动同步</string>
     <string name="github_sync_warning_title">GitHub 同步配置警告</string>

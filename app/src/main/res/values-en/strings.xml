@@ -1053,7 +1053,6 @@
     <string name="language_restart_message_bilingual">Language changed. Restart the app to apply it completely.\n语言已更改，需要重启应用以完全生效。</string>
     <string name="language_restart_now_bilingual">Restart now / 立即重启</string>
     <string name="language_restart_later_bilingual">Later / 稍后</string>
-    <string name="settings_sync_batch_update_time">Update every 10 minutes</string>
     <string name="settings_color_picker_hint">Long press color or tap × to delete custom color</string>
     <string name="settings_phone_number_hint">+86 Phone Number</string>
     <string name="settings_resend_code_countdown">Resend (%ds)</string>
@@ -1336,7 +1335,6 @@
     <string name="sync_initial_uploaded">Initial Data Uploaded</string>
     <string name="sync_history_frequency">Sync Frequency</string>
     <string name="sync_after_play">After Each Play</string>
-    <string name="sync_batch_update">Batch Update</string>
     <string name="sync_configured">Configured</string>
     <string name="sync_not_configured">Not Configured</string>
     <string name="sync_config">Configure</string>
@@ -1363,7 +1361,8 @@
     <string name="sync_last_time">Last sync: %s</string>
     <string name="sync_frequency_desc">Sync frequency:</string>
     <string name="sync_after_play_desc">After each play</string>
-    <string name="sync_batch_update_desc">Every 10 minutes</string>
+    <string name="sync_every_minutes">Every %1$d minutes</string>
+    <string name="sync_every_minutes_desc">Wait at least %1$d minutes between automatic play history syncs</string>
     <string name="sync_step1_token">Step 1: Enter GitHub Token</string>
     <string name="sync_create_token">Create Token on GitHub</string>
     <string name="sync_step2_repo">Step 2: Select Repository</string>
@@ -1420,6 +1419,7 @@
     <string name="settings_sync_now">Sync Now</string>
     <string name="settings_play_history_update_freq">Play History Update Frequency</string>
     <string name="settings_update_immediate">Immediate Update</string>
+    <string name="settings_update_every_minutes">Update every %1$d minutes</string>
     <string name="settings_data_saver">Data Saver</string>
     <string name="github_auto_sync">GitHub Auto Sync</string>
     <string name="github_sync_warning_title">GitHub Sync Configuration Warning</string>
