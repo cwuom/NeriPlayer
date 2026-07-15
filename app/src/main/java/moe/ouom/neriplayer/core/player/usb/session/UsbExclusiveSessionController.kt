@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnostics
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnosticsSnapshot
+import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveRuntimeReportSamplingPolicy
 import moe.ouom.neriplayer.core.player.usb.device.openPermittedUsbAudioDevice
 import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbAudioSinkReconfiguration
 import moe.ouom.neriplayer.core.player.usb.sink.ResolvedUsbOutputFormat
@@ -26,8 +27,11 @@ import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveIoGate
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeBridge
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
+import moe.ouom.neriplayer.core.player.usb.transport.allowsAlternativeOutputRetry
 import moe.ouom.neriplayer.core.player.usb.transport.booleanField
+import moe.ouom.neriplayer.core.player.usb.transport.requiresFreshNativeOpen
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
+import moe.ouom.neriplayer.core.player.usb.transport.usbExclusiveErrorCode
 import moe.ouom.neriplayer.data.settings.DEFAULT_USB_EXCLUSIVE_DEVICE_KEY
 import moe.ouom.neriplayer.data.settings.normalizeUsbExclusiveBackgroundBufferMs
 import moe.ouom.neriplayer.data.settings.normalizeUsbExclusiveForegroundBufferMs
@@ -38,7 +42,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 object UsbExclusiveSessionController {
     private const val TAG = "NERI-UsbExclusiveNative"
     private const val PLAYER_PCM_OPEN_MIN_INTERVAL_MS = 3_500L
-    private const val PLAYER_PCM_RECONFIGURE_CLOSE_GATE_MS = 180L
+    private const val PLAYER_PCM_RECONFIGURE_CLOSE_GATE_MS = 750L
     private const val PLAYER_PCM_FOCUS_COOLDOWN_MS = 8_000L
     private const val PLAYER_PCM_FAILURE_FUSE_MS = 18_000L
     private const val PLAYER_PCM_TRANSIENT_FUSE_MS = 5_000L
@@ -73,8 +77,11 @@ object UsbExclusiveSessionController {
     private var lastPlayerPcmBackpressureLogAtMs = 0L
     @Volatile
     private var lastPlayerPcmStateEmitAtMs = 0L
+    @Volatile
+    private var lastPlayerPcmRuntimeReportSampleAtMs = 0L
     private val latestPlayerPcmRuntime = AtomicReference(PlayerPcmRuntimeCache())
     private const val PCM_STATE_EMIT_INTERVAL_MS = 500L
+    private const val PCM_RUNTIME_REPORT_SAMPLE_INTERVAL_MS = 2_000L
 
     private data class PlayerPcmRuntimeCache(
         val handle: Long = 0L,
@@ -166,8 +173,10 @@ object UsbExclusiveSessionController {
             return false
         }
         val runtimeReport = current.runtimeReport
-        return runtimeReport.booleanField("deviceOnline") != false &&
-            runtimeReport.booleanField("transportFailed") != true &&
+        val metrics = runtimeReport.usbRuntimeMetrics()
+        return metrics.deviceOnline != false &&
+            metrics.transportFailed != true &&
+            metrics.errorCode.requiresFreshNativeOpen.not() &&
             current.lastError.isNullOrBlank()
     }
 
@@ -1080,6 +1089,7 @@ object UsbExclusiveSessionController {
                 val nowMs = SystemClock.elapsedRealtime()
                 val report = UsbExclusiveNativeBridge.runtimeReport(handle)
                 rememberPlayerPcmRuntimeReport(handle, report)
+                lastPlayerPcmRuntimeReportSampleAtMs = nowMs
                 val metrics = report.usbRuntimeMetrics()
                 _state.value = current.copy(
                     completedAudioFrames = UsbExclusiveNativeBridge.completedAudioFrames(handle),
@@ -1104,14 +1114,32 @@ object UsbExclusiveSessionController {
                 }
             } else {
                 val nowMs = SystemClock.elapsedRealtime()
-                val report = UsbExclusiveNativeBridge.runtimeReport(handle)
-                rememberPlayerPcmRuntimeReport(handle, report)
-                if (nowMs - lastPlayerPcmStateEmitAtMs >= PCM_STATE_EMIT_INTERVAL_MS) {
-                    lastPlayerPcmStateEmitAtMs = nowMs
-                    _state.value = current.copy(
+                val shouldEmitState = nowMs - lastPlayerPcmStateEmitAtMs >=
+                    PCM_STATE_EMIT_INTERVAL_MS
+                val shouldSampleReport =
+                    UsbExclusiveRuntimeReportSamplingPolicy.shouldSampleFullRuntimeReport(
+                        nowMs = nowMs,
+                        lastSampleAtMs = lastPlayerPcmRuntimeReportSampleAtMs,
+                        intervalMs = PCM_RUNTIME_REPORT_SAMPLE_INTERVAL_MS
+                    )
+                if (shouldEmitState || shouldSampleReport) {
+                    val updatedState = current.copy(
                         completedAudioFrames = UsbExclusiveNativeBridge.completedAudioFrames(handle),
                         queuedAudioFrames = UsbExclusiveNativeBridge.queuedPlayerFrames(handle)
-                    ).withRuntimeReport(report)
+                    ).withLivePlayerPcmFreeBytes(
+                        UsbExclusiveNativeBridge.playerPcmFreeBytes(handle)
+                    )
+                    if (shouldSampleReport) {
+                        val report = UsbExclusiveNativeBridge.runtimeReport(handle)
+                        rememberPlayerPcmRuntimeReport(handle, report)
+                        lastPlayerPcmRuntimeReportSampleAtMs = nowMs
+                        _state.value = updatedState.withRuntimeReport(report)
+                    } else {
+                        _state.value = updatedState
+                    }
+                }
+                if (shouldEmitState) {
+                    lastPlayerPcmStateEmitAtMs = nowMs
                 }
             }
             return written
@@ -1136,6 +1164,7 @@ object UsbExclusiveSessionController {
     private fun rememberPlayerPcmRuntimeReport(handle: Long, report: String) {
         if (handle == 0L || report.isBlank()) return
         latestPlayerPcmRuntime.set(PlayerPcmRuntimeCache(handle, report))
+        lastPlayerPcmRuntimeReportSampleAtMs = SystemClock.elapsedRealtime()
     }
 
     private fun clearPlayerPcmRuntimeReport() {
@@ -1985,7 +2014,10 @@ object UsbExclusiveSessionController {
     }
 
     private fun String.isHighRiskNativeOpenFailure(): Boolean {
-        return contains("claim_interface", ignoreCase = true) ||
+        val code = usbExclusiveErrorCode()
+        return code.requiresFreshNativeOpen ||
+            contains("feedback_scheduler", ignoreCase = true) ||
+            contains("claim_interface", ignoreCase = true) ||
             contains("set_alt", ignoreCase = true) ||
             contains("nativeOpen", ignoreCase = true) ||
             contains("usb", ignoreCase = true) ||
@@ -1993,6 +2025,8 @@ object UsbExclusiveSessionController {
     }
 
     private fun String.isRecoverableUserActionBlock(): Boolean {
+        val code = usbExclusiveErrorCode()
+        if (code.requiresFreshNativeOpen) return false
         if (startsWith("sample_rate_unsupported")) return false
         if (startsWith("bit_depth_unsupported")) return false
         if (startsWith("channel_count_unsupported")) return false
@@ -2009,9 +2043,12 @@ object UsbExclusiveSessionController {
     }
 
     private fun String.supportsAlternativeOutputRetry(): Boolean {
+        val code = usbExclusiveErrorCode()
+        if (code.allowsAlternativeOutputRetry) return true
         if (isBlank()) return false
         if (contains("no permitted usb audio streaming device", ignoreCase = true)) return false
         if (contains("permission", ignoreCase = true)) return false
+        if (contains("feedback_scheduler", ignoreCase = true)) return false
         if (contains("wrap_sys_device_failed", ignoreCase = true)) return false
         if (contains("claim_audio_function_failed", ignoreCase = true)) return false
         if (contains("claim_interface", ignoreCase = true)) return false
@@ -2072,9 +2109,26 @@ object UsbExclusiveSessionController {
             playerSignalFrames = metrics.playerSignalFrames ?: playerSignalFrames,
             playerSilentFrames = metrics.playerSilentFrames ?: playerSilentFrames,
             playerSignalBytes = metrics.playerSignalBytes ?: playerSignalBytes,
+            playerDroppedBytes = metrics.playerDroppedBytes ?: playerDroppedBytes,
+            playerUnderrunBytes = metrics.playerUnderrunBytes ?: playerUnderrunBytes,
             playerZeroFillBytes = metrics.playerZeroFillBytes ?: playerZeroFillBytes,
+            playerPausedZeroFillBytes = metrics.playerPausedZeroFillBytes
+                ?: playerPausedZeroFillBytes,
             outputPeak = metrics.outputPeak ?: outputPeak,
             lastOutputPeak = metrics.lastOutputPeak ?: lastOutputPeak
+        )
+    }
+
+    private fun UsbExclusiveNativeState.withLivePlayerPcmFreeBytes(
+        liveFreeBytes: Long?
+    ): UsbExclusiveNativeState {
+        val freeBytes = liveFreeBytes ?: return this
+        val capacity = pcmCapacityBytes.takeIf { it > 0L }
+        val normalizedFreeBytes = capacity?.let { freeBytes.coerceIn(0L, it) }
+            ?: freeBytes.coerceAtLeast(0L)
+        return copy(
+            pcmFreeBytes = normalizedFreeBytes,
+            pcmLevelBytes = capacity?.let { it - normalizedFreeBytes } ?: pcmLevelBytes
         )
     }
 

@@ -1,11 +1,19 @@
 package moe.ouom.neriplayer.core.player.policy.usb
 
+import moe.ouom.neriplayer.core.player.usb.transport.suppressesSystemFallbackPlayback
+import moe.ouom.neriplayer.core.player.usb.transport.usbExclusiveErrorCode
+
 internal fun isTransientUsbExclusiveOpenGate(reason: String): Boolean {
     val normalizedReason = reason.trim().lowercase()
     return normalizedReason.startsWith("native_open_deferred:route_jitter") ||
         normalizedReason.startsWith("native_open_deferred:native_close_in_flight") ||
         normalizedReason.startsWith("native_transition_in_flight") ||
         normalizedReason.startsWith("native_refresh_deferred")
+}
+
+internal fun shouldBypassCooldownForUsbExclusiveOpenGateRetry(reason: String): Boolean {
+    val normalizedReason = reason.trim().lowercase()
+    return normalizedReason.contains("native_transition_in_flight")
 }
 
 internal fun shouldSuppressSystemFallbackForUsbExclusiveFailure(
@@ -15,6 +23,7 @@ internal fun shouldSuppressSystemFallbackForUsbExclusiveFailure(
     if (!usbExclusivePlaybackEnabled) return false
     val normalizedReason = reason.trim().lowercase()
     if (normalizedReason.isEmpty()) return false
+    if (reason.usbExclusiveErrorCode().suppressesSystemFallbackPlayback) return true
     return normalizedReason.startsWith("native_open_deferred") ||
         normalizedReason.startsWith("native_reopen_cooling_down") ||
         normalizedReason.startsWith("native_open_failed") ||

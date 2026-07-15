@@ -33,8 +33,12 @@ import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.effects.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
+import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveAudioQualityRecoveryPolicy
+import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveAudioQualityRecoveryState
 import moe.ouom.neriplayer.core.player.policy.usb.isTransientUsbExclusiveOpenGate
 import moe.ouom.neriplayer.core.player.policy.command.resolvePlaybackSoundConfigForEngine
+import moe.ouom.neriplayer.core.player.policy.usb.resolveUsbExclusiveCompletedPositionUs
+import moe.ouom.neriplayer.core.player.policy.usb.shouldBypassCooldownForUsbExclusiveOpenGateRetry
 import moe.ouom.neriplayer.core.player.policy.usb.shouldSuppressSystemFallbackForUsbExclusiveFailure
 import moe.ouom.neriplayer.core.player.lifecycle.markUsbExclusiveNativePathActive
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackIfUnhealthy
@@ -48,7 +52,10 @@ import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
 import moe.ouom.neriplayer.core.player.usb.system.usbExclusiveEffectiveNativeVolume
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveRuntimeMetrics
 import moe.ouom.neriplayer.core.player.usb.transport.booleanField
+import moe.ouom.neriplayer.core.player.usb.transport.isRecoverableTransportFailure
+import moe.ouom.neriplayer.core.player.usb.transport.requiresFreshNativeOpen
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
+import moe.ouom.neriplayer.core.player.usb.transport.usbExclusiveErrorCode
 import moe.ouom.neriplayer.core.player.usb.transport.valueAfter
 import moe.ouom.neriplayer.core.player.usb.transport.withLivePcmFreeBytes
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -68,7 +75,7 @@ internal class UsbExclusiveAudioSink(
         const val SHORT_FOCUS_NATIVE_RESTART_MAX_ATTEMPTS = 2
         const val NATIVE_BACKPRESSURE_SOFT_RESTART_MIN_INTERVAL_MS = 1_500L
         const val NATIVE_BACKPRESSURE_SOFT_RESTART_MAX_ATTEMPTS = 2
-        const val NATIVE_OPEN_GATE_RETRY_MAX_ATTEMPTS = 2
+        const val NATIVE_OPEN_GATE_RETRY_MAX_ATTEMPTS = 3
         const val FIRST_COMPLETION_STALL_RECOVERY_MIN_MS = 220L
         const val FIRST_COMPLETION_STALL_RECOVERY_MAX_ATTEMPTS = 1
         const val NATIVE_START_PREROLL_MS = 80L
@@ -77,6 +84,7 @@ internal class UsbExclusiveAudioSink(
         const val NATIVE_BACKPRESSURE_LOG_INTERVAL_MS = 2_000L
         const val NATIVE_BACKPRESSURE_STALL_RECOVERY_MS = 3_000L
         const val NATIVE_BACKPRESSURE_PARK_MAX_US = 4_000L
+        const val NATIVE_POSITION_EXTRAPOLATION_US = 250_000L
         val audioThreadPriorityConfigured = ThreadLocal<Boolean>()
     }
 
@@ -143,6 +151,8 @@ internal class UsbExclusiveAudioSink(
     private var lastNativeBackpressureRefreshAtMs = 0L
     private var nativeBackpressureStartedAtMs = 0L
     private var nativeBackpressureCompletedTransfersBaseline = -1L
+    private var nativeQualityRecoveryState: UsbExclusiveAudioQualityRecoveryState =
+        UsbExclusiveAudioQualityRecoveryPolicy.reset()
     private var lastReleaseBarrierHoldLogAtMs = 0L
     private var systemVolumeObserverRegistered = false
     private var lastReportedNativeVolume = Float.NaN
@@ -343,6 +353,15 @@ internal class UsbExclusiveAudioSink(
             val nowMs = SystemClock.elapsedRealtime()
             val runtimeReport = refreshRuntimeAfterStalledWrite(nowMs)
             val metrics = runtimeReport.usbRuntimeMetrics()
+            if (
+                recoverNativePlaybackAfterAudioQualityDegradationIfNeeded(
+                    runtimeReport = runtimeReport,
+                    metrics = metrics,
+                    nowMs = nowMs
+                )
+            ) {
+                return false
+            }
             if (shouldFlushIdleNativeQueueAfterStalledWrite(runtimeReport)) {
                 flushIdleNativeQueueAfterStalledWrite(runtimeReport)
                 return false
@@ -406,6 +425,10 @@ internal class UsbExclusiveAudioSink(
         shortFocusNativeRestartAttempts = 0
         lastShortFocusNativeRestartAtMs = 0L
         nativeHasQueuedPcm = true
+
+        if (recoverNativePlaybackAfterAudioQualityDegradationIfNeeded()) {
+            return false
+        }
 
         if (playing && !startNativeTransportIfReady()) {
             requestSystemFailover("native_start_failed")
@@ -1214,6 +1237,29 @@ internal class UsbExclusiveAudioSink(
         return completedTransfers <= nativeBackpressureCompletedTransfersBaseline
     }
 
+    private fun recoverNativePlaybackAfterAudioQualityDegradationIfNeeded(
+        runtimeReport: String = UsbExclusiveSessionController.runtimeReportForWritePlanning(nativeHandle),
+        metrics: UsbExclusiveRuntimeMetrics = runtimeReport.usbRuntimeMetrics(),
+        nowMs: Long = SystemClock.elapsedRealtime()
+    ): Boolean {
+        if (!usingNative || nativeHandle == 0L || failoverRequested) return false
+        val decision = UsbExclusiveAudioQualityRecoveryPolicy.evaluate(
+            previous = nativeQualityRecoveryState,
+            handle = nativeHandle,
+            metrics = metrics,
+            nowMs = nowMs,
+            transportStartedAtMs = nativeTransportStartedAtMs
+        )
+        nativeQualityRecoveryState = decision.state
+        if (!decision.shouldRecover) return false
+        requestImmediateNativeRecoveryAfterTransferFailure(
+            reason = "native_audio_quality_degraded",
+            runtimeReport = "$runtimeReport qualityReason=${decision.reason} " +
+                "qualityDebug=${decision.debug}"
+        )
+        return true
+    }
+
     private fun parkForNativeBackpressure(runtimeReport: String, forceYield: Boolean) {
         if (Thread.currentThread() === Looper.getMainLooper().thread) return
         val metrics = runtimeReport.usbRuntimeMetrics()
@@ -1354,13 +1400,16 @@ internal class UsbExclusiveAudioSink(
         val nativeOutputSampleRate = UsbExclusiveSessionController.state.value.outputSampleRate
         if (startMediaTimeUs != C.TIME_UNSET && nativeOutputSampleRate > 0 && nativeHandle != 0L) {
             val completedFrames = UsbExclusiveSessionController.completedAudioFrames(nativeHandle)
-            if (completedFrames < completedFramesAtTimelineStart) {
-                return max(lastPositionUs, clockPositionUs)
-            }
-            val completedPositionUs = startMediaTimeUs +
-                (completedFrames - completedFramesAtTimelineStart) * 1_000_000L /
-                nativeOutputSampleRate
-            return max(completedPositionUs, clockPositionUs)
+            return resolveUsbExclusiveCompletedPositionUs(
+                startMediaTimeUs = startMediaTimeUs,
+                completedFrames = completedFrames,
+                completedFramesAtTimelineStart = completedFramesAtTimelineStart,
+                outputSampleRate = nativeOutputSampleRate,
+                clockPositionUs = clockPositionUs,
+                lastPositionUs = lastPositionUs,
+                extrapolationWindowUs = NATIVE_POSITION_EXTRAPOLATION_US,
+                canExtrapolate = playing && nativeTransportStarted && playAnchorElapsedNs != 0L
+            )
         }
         return clockPositionUs
     }
@@ -1383,6 +1432,7 @@ internal class UsbExclusiveAudioSink(
             lastShortFocusNativeRestartAtMs = 0L
         }
         firstCompletionStallRecoveryAttempts = 0
+        resetNativeQualityRecoveryState(nativeHandle)
         writtenFrames = 0L
         writtenFramesAtTimelineStart = 0L
         completedFramesAtTimelineStart = 0L
@@ -1416,6 +1466,7 @@ internal class UsbExclusiveAudioSink(
         nativeTransportStarted = false
         nativeHasQueuedPcm = false
         nativeTransportStartedAtMs = 0L
+        resetNativeQualityRecoveryState()
         if (updateFocus) {
             PlayerManager.applyAudioFocusPolicy()
         }
@@ -1734,6 +1785,7 @@ internal class UsbExclusiveAudioSink(
         nativeHasQueuedPcm = false
         nativeTransportStartedAtMs = 0L
         val inputDescription = configuredFormat?.let(::inputFormatDescription) ?: "none"
+        PlayerManager.markUsbExclusivePlaybackPreparing(true, "immediate_native_recovery:$reason")
         closeNative(updateFocus = false)
         UsbExclusiveSessionController.forceStopAllSessions(
             reason = "immediate_native_recovery:$reason",
@@ -1748,6 +1800,12 @@ internal class UsbExclusiveAudioSink(
             inputFormat = inputDescription
         )
         UsbExclusiveAudioPathTracker.updatePlaying(playing = false, usingNative = false)
+        PlayerManager.scheduleUsbAudioSinkReconfiguration(
+            reason = "usb_exclusive_immediate_native_recovery:$reason",
+            allowWhilePlaybackActive = true,
+            bypassCooldown = true
+        )
+        PlayerManager.applyAudioFocusPolicy()
         NPLogger.w(
             "NERI-UsbExclusive",
             "recover native USB playback after transfer failure: reason=$reason runtime=$runtimeReport"
@@ -1778,7 +1836,8 @@ internal class UsbExclusiveAudioSink(
     }
 
     private fun String.isHighRiskUsbTransferFailure(): Boolean {
-        return contains("transport", ignoreCase = true) ||
+        val code = usbExclusiveErrorCode()
+        return code.isRecoverableTransportFailure ||
             contains("LIBUSB_ERROR_IO", ignoreCase = true) ||
             contains("transfer_status=5", ignoreCase = true) ||
             contains("resubmit_failed", ignoreCase = true) ||
@@ -1804,8 +1863,7 @@ internal class UsbExclusiveAudioSink(
     }
 
     private fun String.shouldUseFastNativeOpenGateRetry(): Boolean {
-        return contains("native_close_in_flight", ignoreCase = true) ||
-            contains("native_transition_in_flight", ignoreCase = true)
+        return shouldBypassCooldownForUsbExclusiveOpenGateRetry(this)
     }
 
     private fun switchToSystemFallback(reason: String) {
@@ -1911,6 +1969,8 @@ internal class UsbExclusiveAudioSink(
     private fun isFatalNativeRuntime(runtimeReport: String): Boolean {
         val metrics = runtimeReport.usbRuntimeMetrics()
         if (metrics.isBenignBackpressure) return false
+        if (metrics.errorCode.requiresFreshNativeOpen) return true
+        if (metrics.errorCode.isRecoverableTransportFailure) return true
         if (runtimeReport.contains("transportFailed=true")) return true
         val lastError = metrics.lastError
         return lastError != "none" && lastError.isNotBlank()
@@ -1945,6 +2005,10 @@ internal class UsbExclusiveAudioSink(
         return metrics.lastError == "none"
     }
 
+    private fun resetNativeQualityRecoveryState(handle: Long = 0L) {
+        nativeQualityRecoveryState = UsbExclusiveAudioQualityRecoveryPolicy.reset(handle)
+    }
+
     private fun flushIdleNativeQueueAfterStalledWrite(runtimeReport: String) {
         val flushed = nativeHandle != 0L && UsbExclusiveSessionController.flushPlayerPcm(nativeHandle)
         nativeTransportStarted = false
@@ -1958,7 +2022,9 @@ internal class UsbExclusiveAudioSink(
     }
 
     private fun String.requiresNativeReopenForShortDisruption(): Boolean {
-        return contains("transfer_status=5") ||
+        val code = usbExclusiveErrorCode()
+        return code.requiresFreshNativeOpen ||
+            contains("transfer_status=5") ||
             contains("LIBUSB_ERROR_NO_DEVICE", ignoreCase = true) ||
             contains("LIBUSB_ERROR_IO", ignoreCase = true) ||
             contains("submit_failed", ignoreCase = true) ||
@@ -1966,6 +2032,8 @@ internal class UsbExclusiveAudioSink(
     }
 
     private fun String.requiresNativeCloseForTransferFailure(): Boolean {
+        val metrics = usbRuntimeMetrics()
+        if (metrics.errorCode.requiresFreshNativeOpen) return true
         if (requiresNativeReopenForShortDisruption()) return true
         if (contains("transportFailed=true")) return true
         return contains("lastError=", ignoreCase = true) &&
@@ -1978,12 +2046,15 @@ internal class UsbExclusiveAudioSink(
     }
 
     private fun shouldRetryNativeFailure(reason: String): Boolean {
+        val code = reason.usbExclusiveErrorCode()
+        if (code.requiresFreshNativeOpen || code.isRecoverableTransportFailure) return false
         return !reason.startsWith("native_open_deferred") &&
             !reason.startsWith("native_reopen_cooling_down") &&
             !reason.startsWith("sample_rate_unsupported") &&
             !reason.startsWith("bit_depth_unsupported") &&
             !reason.startsWith("channel_count_unsupported") &&
             !reason.startsWith("unsupported_input") &&
+            !reason.contains("feedback_scheduler", ignoreCase = true) &&
             !reason.startsWith("no_") &&
             !reason.contains("permission", ignoreCase = true)
     }

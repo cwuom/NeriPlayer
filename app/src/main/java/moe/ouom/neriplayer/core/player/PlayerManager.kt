@@ -176,6 +176,7 @@ import moe.ouom.neriplayer.core.player.url.refreshCurrentSongUrlImpl
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
+import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
 import moe.ouom.neriplayer.core.player.watchdog.cancelPlaybackStartupWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.clearActivePlaybackCandidates
 import moe.ouom.neriplayer.core.player.watchdog.shouldTreatReadyAtStartAsUnhealthyPrepared
@@ -854,13 +855,15 @@ object PlayerManager {
         if (!usbExclusivePlaybackEnabled || allowMixedPlaybackEnabled) return false
         val pathState = UsbExclusiveAudioPathTracker.state.value
         val nativeState = UsbExclusiveSessionController.state.value
+        val metrics = nativeState.runtimeReport.usbRuntimeMetrics()
         return pathState.effectivePath == UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB &&
             pathState.sinkPlaying &&
             pathState.fallbackReason == null &&
             nativeState.source == "player_pcm" &&
             nativeState.opened &&
             nativeState.streaming &&
-            !nativeState.transitioning
+            !nativeState.transitioning &&
+            metrics.hasHealthyTransport
     }
 
     internal fun isUsbExclusivePlaybackActiveForForegroundService(): Boolean {

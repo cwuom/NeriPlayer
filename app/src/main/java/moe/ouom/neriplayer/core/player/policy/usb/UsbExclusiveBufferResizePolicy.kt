@@ -5,5 +5,6 @@ internal fun shouldApplyActiveUsbBufferResize(
     currentBufferMs: Int,
     targetBufferMs: Int
 ): Boolean {
-    return !streaming || targetBufferMs >= currentBufferMs
+    if (!streaming) return true
+    return targetBufferMs >= currentBufferMs
 }

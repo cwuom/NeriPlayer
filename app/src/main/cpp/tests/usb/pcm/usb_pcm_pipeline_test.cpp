@@ -191,6 +191,34 @@ void verifiesTransportStartRampRearmsWithoutDroppingQueuedAudio() {
     assert(restartedSecondSample > restartedFirstSample);
 }
 
+void verifiesPartialUnderrunFadesLastValidFramesToSilence() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    assert(pipeline.configure(configFor(48000, 48000), &error));
+
+    constexpr int16_t fullScale = std::numeric_limits<int16_t>::max();
+    std::vector<uint8_t> input(4U * 4U, 0);
+    for (size_t offset = 0; offset < input.size(); offset += sizeof(fullScale)) {
+        std::memcpy(input.data() + offset, &fullScale, sizeof(fullScale));
+    }
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+
+    std::vector<uint8_t> output(8U * 4U, 0);
+    assert(pipeline.fill(output.data(), output.size(), true) == input.size());
+
+    const int16_t firstSample = readInt16Sample(output, 0);
+    const int16_t fadedSample = readInt16Sample(output, 3U * 4U);
+    const int16_t zeroFillSample = readInt16Sample(output, 4U * 4U);
+    assert(firstSample > 32000);
+    assert(fadedSample == 0);
+    assert(zeroFillSample == 0);
+
+    const auto snapshot = pipeline.snapshot();
+    const auto missingBytes = static_cast<int64_t>(output.size() - input.size());
+    assert(snapshot.underrunBytes == missingBytes);
+    assert(snapshot.zeroFillBytes == missingBytes);
+}
+
 void verifiesUnsupportedEncodingIsRejected() {
     neri::usb::PcmPipeline pipeline;
     std::string error;
@@ -324,7 +352,7 @@ void verifiesFloatInputPassThroughProduces32BitUsbSignal() {
 
     const auto snapshot = pipeline.snapshot();
     assert(snapshot.signalOutputFrames == inputFrames);
-    assert(snapshot.signalOutputBytes == output.size());
+    assert(snapshot.signalOutputBytes == static_cast<int64_t>(output.size()));
     assert(snapshot.outputPeak >= 0.5f);
     assert(snapshot.lastOutputPeak >= 0.5f);
 
@@ -359,7 +387,7 @@ void verifies32BitInputCanDrive24BitUsb32Container() {
 
     const auto snapshot = pipeline.snapshot();
     assert(snapshot.signalOutputFrames == inputFrames);
-    assert(snapshot.signalOutputBytes == output.size());
+    assert(snapshot.signalOutputBytes == static_cast<int64_t>(output.size()));
     assert(snapshot.outputPeak >= 0.5f);
     assert(snapshot.lastOutputPeak >= 0.5f);
 
@@ -416,6 +444,7 @@ int main() {
     verifiesPausePreservesQueuedAudio();
     verifiesResumeAfterSilentOutputRampsFromZero();
     verifiesTransportStartRampRearmsWithoutDroppingQueuedAudio();
+    verifiesPartialUnderrunFadesLastValidFramesToSilence();
     verifiesUnsupportedEncodingIsRejected();
     verifiesRuntimeRingResizePreservesQueuedAudio();
     verifiesHighResolutionRingUsesBoundedAllocation();

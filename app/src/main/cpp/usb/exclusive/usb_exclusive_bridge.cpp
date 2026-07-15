@@ -69,7 +69,7 @@ constexpr int kQuarantineDrainLogIntervalMs = 10000;
 constexpr int kQuarantineTotalTimeoutMs = 30000;
 constexpr size_t kMaximumParkedHandles = 8;
 constexpr size_t kMaximumHardRetainedHandles = 4;
-constexpr int kFirstTransferCompletionTimeoutMs = 1500;
+constexpr int kFirstTransferCompletionTimeoutMs = 3000;
 constexpr int kTransferCompletionStallTimeoutMs = 1500;
 constexpr int kInterfaceTransitionCooldownMs = 1500;
 constexpr int kUrgentAudioThreadPriority = -19;
@@ -181,6 +181,7 @@ struct UsbExclusiveHandle {
     std::atomic<bool> playerReplayFailed { false };
     double tonePhase = 0.0;
     std::atomic<int> completedTransfers { 0 };
+    std::atomic<int64_t> firstTransferSubmittedAtMs { 0 };
     std::atomic<int64_t> lastTransferCompletionAtMs { 0 };
     std::atomic<int> submitErrors { 0 };
     std::atomic<int> isoPacketErrors { 0 };
@@ -1073,11 +1074,14 @@ bool findStreamingAltUac1(
                 }
                 const std::string feedback = describeFeedback(alt, endpoint);
                 if (neri::usb::uac1::requiresFeedbackScheduler(endpoint.bmAttributes)) {
+                    const std::string feedbackBlockReason = feedback == "implicit"
+                        ? "implicit_feedback_scheduler_unavailable"
+                        : "async_feedback_scheduler_unavailable";
                     appendCandidateRejection(
                         &rejectionSummary,
                         alt.bInterfaceNumber,
                         alt.bAlternateSetting,
-                        "async_feedback_scheduler_unavailable"
+                        feedbackBlockReason + ":feedback=" + feedback
                     );
                     continue;
                 }
@@ -1345,11 +1349,14 @@ bool findStreamingAltUac2(
                 }
                 const std::string feedback = describeFeedback(alt, endpoint);
                 if (neri::usb::uac2::requiresFeedbackScheduler(endpoint.bmAttributes)) {
+                    const std::string feedbackBlockReason = feedback == "implicit"
+                        ? "implicit_feedback_scheduler_unavailable"
+                        : "async_feedback_scheduler_unavailable";
                     appendCandidateRejection(
                         &rejectionSummary,
                         alt.bInterfaceNumber,
                         alt.bAlternateSetting,
-                        "async_feedback_scheduler_unavailable"
+                        feedbackBlockReason + ":feedback=" + feedback
                     );
                     continue;
                 }
@@ -2257,7 +2264,8 @@ bool startStreamingInternal(
     handle->packetFramesMax.store(0);
     handle->lastTransferBytes.store(0);
     handle->shortWriteWarnings.store(0);
-    handle->lastTransferCompletionAtMs.store(steadyClockMillis());
+    handle->firstTransferSubmittedAtMs.store(0);
+    handle->lastTransferCompletionAtMs.store(0);
     handle->packetScheduler.reset();
     {
         std::lock_guard<std::mutex> submitGuard(handle->transferSubmitLock);
@@ -2302,6 +2310,14 @@ bool startStreamingInternal(
             if (!cancelled) {
                 rc = libusb_submit_transfer(transfer);
                 if (rc == LIBUSB_SUCCESS) {
+                    const int64_t submittedAtMs = steadyClockMillis();
+                    int64_t firstSubmittedAtMs = 0;
+                    if (handle->firstTransferSubmittedAtMs.compare_exchange_strong(
+                            firstSubmittedAtMs,
+                            submittedAtMs
+                        )) {
+                        handle->lastTransferCompletionAtMs.store(submittedAtMs);
+                    }
                     handle->inFlightTransfers.fetch_add(1);
                 }
             }
@@ -2885,7 +2901,6 @@ void freeTransfers(UsbExclusiveHandle* handle) {
 void eventLoopThread(UsbExclusiveHandle* handle) noexcept {
     try {
         configureUsbEventThreadPriority();
-        const auto startedAt = std::chrono::steady_clock::now();
         int consecutiveErrors = 0;
         LOGI("USB event loop entered");
         while (handle->deviceOnline.load() && !handle->stopRequested.load()) {
@@ -2934,11 +2949,12 @@ void eventLoopThread(UsbExclusiveHandle* handle) noexcept {
             } else {
                 consecutiveErrors = 0;
             }
+            const int64_t firstSubmittedAtMs = handle->firstTransferSubmittedAtMs.load();
             if (
                 handle->completedTransfers.load() == 0 &&
                 handle->inFlightTransfers.load() > 0 &&
-                std::chrono::steady_clock::now() - startedAt >=
-                    std::chrono::milliseconds(kFirstTransferCompletionTimeoutMs)
+                firstSubmittedAtMs > 0 &&
+                steadyClockMillis() - firstSubmittedAtMs >= kFirstTransferCompletionTimeoutMs
             ) {
                 handle->transportFailed.store(true);
                 handle->running.store(false);

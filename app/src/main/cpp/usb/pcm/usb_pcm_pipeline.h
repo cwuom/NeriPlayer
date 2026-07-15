@@ -86,6 +86,7 @@ private:
     size_t writeRingLocked(const uint8_t* input, size_t bytes);
     size_t readRingLocked(uint8_t* output, size_t bytes);
     void applyGain(uint8_t* output, size_t bytes);
+    void fadeOutTrailingFrames(uint8_t* output, size_t bytes);
     void markSilentOutputLocked();
     void updateOutputSignalStatsLocked(const uint8_t* output, size_t bytes);
 

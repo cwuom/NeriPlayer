@@ -909,11 +909,11 @@
     <string name="settings_usb_exclusive_unsupported_system_fallback">回退系统播放</string>
     <string name="settings_usb_exclusive_unsupported_system_fallback_desc">不转换，直接回到系统播放</string>
     <string name="settings_usb_exclusive_unsupported_closest">转换到最接近格式</string>
-    <string name="settings_usb_exclusive_unsupported_closest_desc">转换到设备支持的格式</string>
+    <string name="settings_usb_exclusive_unsupported_closest_desc">优先尝试设备支持的位深/容器，采样率不做隐式转换</string>
     <string name="settings_usb_exclusive_bit_depth_compatibility">位深兼容</string>
     <string name="settings_usb_exclusive_bit_depth_compatibility_desc">设备不支持源位深时自动回退</string>
     <string name="settings_usb_exclusive_sample_rate_compatibility">采样率兼容</string>
-    <string name="settings_usb_exclusive_sample_rate_compatibility_desc">设备不支持源采样率时自动回退</string>
+    <string name="settings_usb_exclusive_sample_rate_compatibility_desc">设备不支持源采样率时回到系统播放，避免低质量重采样</string>
     <string name="settings_usb_exclusive_channel_compatibility">声道兼容</string>
     <string name="settings_usb_exclusive_channel_compatibility_desc">设备不支持源声道时自动回退</string>
     <string name="settings_usb_exclusive_foreground_buffer">前台缓冲区</string>

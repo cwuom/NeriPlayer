@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.core.player.usb.sink
 
 import androidx.media3.common.C
+import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
+import moe.ouom.neriplayer.data.settings.UsbExclusiveSampleRateMode
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -38,6 +40,7 @@ class UsbExclusiveOutputFormatResolverTest {
             ),
             candidates.map(ResolvedUsbOutputFormat::description)
         )
+        assertTrue(candidates.all { it.sampleRate == 96_000 })
     }
 
     @Test
@@ -68,6 +71,7 @@ class UsbExclusiveOutputFormatResolverTest {
             ),
             candidates.map(ResolvedUsbOutputFormat::description)
         )
+        assertTrue(candidates.all { it.sampleRate == 48_000 })
     }
 
     @Test
@@ -87,6 +91,26 @@ class UsbExclusiveOutputFormatResolverTest {
         assertEquals(
             32,
             UsbExclusiveOutputFormatResolver.sourceBitDepthForEncoding(C.ENCODING_PCM_32BIT)
+        )
+    }
+
+    @Test
+    fun `follow source blocks implicit native sample rate conversion`() {
+        assertTrue(
+            UsbExclusiveOutputFormatResolver.shouldBlockImplicitNativeSampleRateConversion(
+                preferences = UsbExclusivePreferences(),
+                inputSampleRate = 96_000,
+                resolvedSampleRate = 48_000
+            )
+        )
+        assertFalse(
+            UsbExclusiveOutputFormatResolver.shouldBlockImplicitNativeSampleRateConversion(
+                preferences = UsbExclusivePreferences(
+                    sampleRateMode = UsbExclusiveSampleRateMode.RATE_48000
+                ),
+                inputSampleRate = 96_000,
+                resolvedSampleRate = 48_000
+            )
         )
     }
 
@@ -189,6 +213,29 @@ class UsbExclusiveOutputFormatResolverTest {
         )
 
         assertTrue(candidates.all { it.bitDepth == 32 })
+        assertEquals(listOf(192_000), candidates.map(ResolvedUsbOutputFormat::sampleRate))
+    }
+
+    @Test
+    fun `open candidates never change sample rate without a dedicated quality path`() {
+        val preferred = ResolvedUsbOutputFormat(
+            sampleRate = 192_000,
+            channelCount = 2,
+            bitDepth = 32,
+            subslotBytes = 4,
+            bufferDurationMs = 250,
+            description = "rate=192000 channels=2 bits=32 subslot=4 " +
+                "rateMode=follow_source bitMode=auto policy=closest_supported"
+        )
+
+        val candidates = UsbExclusiveOutputFormatResolver.openCandidates(
+            preferred = preferred,
+            inputEncoding = C.ENCODING_PCM_FLOAT
+        )
+
+        assertEquals(192_000, candidates.first().sampleRate)
+        assertTrue(candidates.all { it.sampleRate == 192_000 })
+        assertTrue(candidates.any { it.bitDepth == 16 && it.subslotBytes == 2 })
     }
 
     @Test

@@ -98,6 +98,9 @@ import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveWakeLock
+import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveErrorCode
+import moe.ouom.neriplayer.core.player.usb.transport.isRecoverableTransportFailure
+import moe.ouom.neriplayer.core.player.usb.transport.usbExclusiveErrorCode
 import moe.ouom.neriplayer.core.player.watchdog.cancelPlaybackStartupWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.clearActivePlaybackCandidates
 import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackStartupWatchdog
@@ -2311,7 +2314,9 @@ private fun PlayerManager.applyActiveUsbExclusiveBuffer(reason: String) {
     ) {
         NPLogger.d(
             "NERI-UsbExclusive",
-            "defer active USB buffer shrink: reason=$reason current=${nativeState.bufferDurationMs} target=$targetBufferMs"
+            "defer active USB buffer update: reason=$reason " +
+                "foreground=$usbExclusiveAppInForeground " +
+                "current=${nativeState.bufferDurationMs} target=$targetBufferMs"
         )
         return
     }
@@ -2922,6 +2927,7 @@ private fun String?.isRecoverableUsbExclusiveFallback(): Boolean {
     if (reason.startsWith("channel_count_unsupported", ignoreCase = true)) return false
     if (reason.startsWith("sample_rate_unsupported")) return false
     if (reason.startsWith("bit_depth_unsupported")) return false
+    if (reason.contains("feedback_scheduler", ignoreCase = true)) return false
     if (reason.contains("requires_system", ignoreCase = true)) return false
     if (reason.contains("requires_system_audio", ignoreCase = true)) return false
     if (reason.contains("playback_parameters_require", ignoreCase = true)) return false
@@ -2939,6 +2945,7 @@ private fun String.isNativeTransitionInFlightGate(): Boolean {
 }
 
 private fun String.isRecoverableUsbExclusiveNativeTransferFailure(): Boolean {
+    if (usbExclusiveErrorCode().isRecoverableTransportFailure) return true
     if (contains("LIBUSB_ERROR_NO_DEVICE", ignoreCase = true)) return false
     if (contains("permission", ignoreCase = true)) return false
     return isUsbExclusiveFirstCompletionTimeout() ||
@@ -2951,7 +2958,8 @@ private fun String.isRecoverableUsbExclusiveNativeTransferFailure(): Boolean {
 }
 
 private fun String.isUsbExclusiveFirstCompletionTimeout(): Boolean {
-    return contains("event_loop_first_completion_timeout", ignoreCase = true)
+    return usbExclusiveErrorCode() == UsbExclusiveErrorCode.TransferFirstCompletionTimeout ||
+        contains("event_loop_first_completion_timeout", ignoreCase = true)
 }
 
 private fun String.isLifecycleForegroundRecoveryReason(): Boolean {

@@ -125,16 +125,9 @@ data class UsbExclusivePreferences(
         }
         if (
             sampleRateMode == UsbExclusiveSampleRateMode.FOLLOW_SOURCE &&
-            unsupportedFormatPolicy == UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED &&
             requested !in normalizedSupported
         ) {
-            val sourceFamily = sampleRateFamily(requested)
-            if (sourceFamily != null) {
-                normalizedSupported
-                    .filter { sampleRateFamily(it) == sourceFamily }
-                    .nearestTo(requested)
-                    ?.let { return it }
-            }
+            return null
         }
         return resolveSupportedValue(
             requested = requested,
@@ -342,14 +335,6 @@ private fun Collection<Int>.nearestTo(requested: Int): Int? {
         compareBy<Int> { abs(it.toLong() - requested.toLong()) }
             .thenByDescending { it }
     )
-}
-
-private fun sampleRateFamily(sampleRateHz: Int): Int? {
-    return when {
-        sampleRateHz > 0 && sampleRateHz % 44_100 == 0 -> 44_100
-        sampleRateHz > 0 && sampleRateHz % 48_000 == 0 -> 48_000
-        else -> null
-    }
 }
 
 private fun <T : Enum<T>> Iterable<T>.findStoredValue(

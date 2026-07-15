@@ -909,11 +909,11 @@
     <string name="settings_usb_exclusive_unsupported_system_fallback">Fall back to system playback</string>
     <string name="settings_usb_exclusive_unsupported_system_fallback_desc">Do not convert; use system playback</string>
     <string name="settings_usb_exclusive_unsupported_closest">Convert to closest format</string>
-    <string name="settings_usb_exclusive_unsupported_closest_desc">Convert to a supported device format</string>
+    <string name="settings_usb_exclusive_unsupported_closest_desc">Try supported bit-depth/container variants; sample rate is not changed implicitly</string>
     <string name="settings_usb_exclusive_bit_depth_compatibility">Bit-depth compatibility</string>
     <string name="settings_usb_exclusive_bit_depth_compatibility_desc">Fall back when the device cannot use the source bit depth</string>
     <string name="settings_usb_exclusive_sample_rate_compatibility">Sample-rate compatibility</string>
-    <string name="settings_usb_exclusive_sample_rate_compatibility_desc">Fall back when the device cannot use the source sample rate</string>
+    <string name="settings_usb_exclusive_sample_rate_compatibility_desc">Fall back to system playback when the source sample rate is unsupported</string>
     <string name="settings_usb_exclusive_channel_compatibility">Channel compatibility</string>
     <string name="settings_usb_exclusive_channel_compatibility_desc">Fall back when the device cannot use the source channel count</string>
     <string name="settings_usb_exclusive_foreground_buffer">Foreground buffer</string>

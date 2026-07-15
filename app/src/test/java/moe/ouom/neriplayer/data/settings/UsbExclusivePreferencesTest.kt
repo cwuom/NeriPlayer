@@ -141,13 +141,13 @@ class UsbExclusivePreferencesTest {
     }
 
     @Test
-    fun `default policy converts 96000 source to 48000 device capability`() {
+    fun `default policy rejects implicit follow source sample rate conversion`() {
         val resolved = UsbExclusivePreferences().resolveSampleRateHz(
             sourceSampleRateHz = 96_000,
             supportedSampleRatesHz = listOf(48_000)
         )
 
-        assertEquals(48_000, resolved)
+        assertNull(resolved)
     }
 
     @Test
@@ -233,27 +233,31 @@ class UsbExclusivePreferencesTest {
     }
 
     @Test
-    fun `follow source closest prefers the 44100 sample rate family`() {
+    fun `follow source closest rejects 44100 family sample rate conversion`() {
         val preferences = UsbExclusivePreferences(
             unsupportedFormatPolicy = UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED
         )
 
-        assertEquals(
-            88_200,
-            preferences.resolveSampleRateHz(44_100, listOf(48_000, 88_200))
-        )
+        assertNull(preferences.resolveSampleRateHz(44_100, listOf(48_000, 88_200)))
     }
 
     @Test
-    fun `follow source closest prefers the 48000 sample rate family`() {
+    fun `follow source closest rejects 48000 family sample rate conversion`() {
         val preferences = UsbExclusivePreferences(
             unsupportedFormatPolicy = UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED
         )
 
-        assertEquals(
-            96_000,
-            preferences.resolveSampleRateHz(48_000, listOf(44_100, 96_000))
+        assertNull(preferences.resolveSampleRateHz(48_000, listOf(44_100, 96_000)))
+    }
+
+    @Test
+    fun `follow source closest rejects cross family sample rate fallback`() {
+        val preferences = UsbExclusivePreferences(
+            unsupportedFormatPolicy = UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED
         )
+
+        assertNull(preferences.resolveSampleRateHz(44_100, listOf(48_000, 96_000)))
+        assertNull(preferences.resolveSampleRateHz(48_000, listOf(44_100, 88_200)))
     }
 
     @Test
@@ -270,15 +274,12 @@ class UsbExclusivePreferencesTest {
     }
 
     @Test
-    fun `numeric closest boundary deterministically prefers higher sample rate`() {
+    fun `follow source rejects unknown sample rate family`() {
         val preferences = UsbExclusivePreferences(
             unsupportedFormatPolicy = UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED
         )
 
-        assertEquals(
-            48_000,
-            preferences.resolveSampleRateHz(46_050, listOf(44_100, 48_000))
-        )
+        assertNull(preferences.resolveSampleRateHz(46_050, listOf(44_100, 48_000)))
     }
 
     @Test

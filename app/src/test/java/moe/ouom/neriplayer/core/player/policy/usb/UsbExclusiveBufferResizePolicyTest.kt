@@ -28,6 +28,17 @@ class UsbExclusiveBufferResizePolicyTest {
     }
 
     @Test
+    fun `background target growth still applies to active stream`() {
+        assertTrue(
+            shouldApplyActiveUsbBufferResize(
+                streaming = true,
+                currentBufferMs = 250,
+                targetBufferMs = 1_500
+            )
+        )
+    }
+
+    @Test
     fun `idle stream applies the next configured buffer`() {
         assertTrue(
             shouldApplyActiveUsbBufferResize(

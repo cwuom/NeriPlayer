@@ -9,6 +9,7 @@ import android.media.AudioManager
 import androidx.media3.common.C
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
+import moe.ouom.neriplayer.data.settings.UsbExclusiveSampleRateMode
 
 internal data class ResolvedUsbOutputFormat(
     val sampleRate: Int,
@@ -107,6 +108,12 @@ internal object UsbExclusiveOutputFormatResolver {
             ?: return failure(
                 "sample_rate_unsupported:requested=$requestedRate supported=$reportedRates"
             )
+        if (shouldBlockImplicitNativeSampleRateConversion(preferences, inputSampleRate, resolvedRate)) {
+            return failure(
+                "sample_rate_unsupported:requested=$inputSampleRate " +
+                    "resolved=$resolvedRate native_resample_blocked"
+            )
+        }
 
         val sourceBitDepth = sourceBitDepthForEncoding(inputEncoding)
             ?: return failure("unsupported_input_encoding:$inputEncoding")
@@ -174,6 +181,17 @@ internal object UsbExclusiveOutputFormatResolver {
             C.ENCODING_PCM_FLOAT -> 32
             else -> null
         }
+    }
+
+    internal fun shouldBlockImplicitNativeSampleRateConversion(
+        preferences: UsbExclusivePreferences,
+        inputSampleRate: Int,
+        resolvedSampleRate: Int
+    ): Boolean {
+        return preferences.sampleRateMode == UsbExclusiveSampleRateMode.FOLLOW_SOURCE &&
+            inputSampleRate > 0 &&
+            resolvedSampleRate > 0 &&
+            resolvedSampleRate != inputSampleRate
     }
 
     internal fun pcmBytesPerSampleForEncoding(encoding: Int): Int? {
@@ -246,14 +264,16 @@ internal object UsbExclusiveOutputFormatResolver {
         val bitMode = candidateBitMode(preferred.description)
         val policy = candidatePolicy(preferred.description)
         val allowLowerBitDepthFallback = policy != "system_fallback"
+        val candidateRates = listOf(preferred.sampleRate).filter { it > 0 }
 
-        fun addCandidate(bitDepth: Int, subslotBytes: Int) {
+        fun addCandidate(sampleRate: Int, bitDepth: Int, subslotBytes: Int) {
             val normalizedSubslotBytes = subslotBytes.coerceAtLeast((bitDepth + 7) / 8)
             val candidate = preferred.copy(
+                sampleRate = sampleRate,
                 bitDepth = bitDepth,
                 subslotBytes = normalizedSubslotBytes,
                 description = buildDescription(
-                    sampleRate = preferred.sampleRate,
+                    sampleRate = sampleRate,
                     channelCount = preferred.channelCount,
                     bitDepth = bitDepth,
                     subslotBytes = normalizedSubslotBytes,
@@ -265,26 +285,32 @@ internal object UsbExclusiveOutputFormatResolver {
             candidates.putIfAbsent(candidate.description, candidate)
         }
 
-        when (preferred.bitDepth) {
-            24 -> {
-                addCandidate(bitDepth = 24, subslotBytes = preferred.subslotBytes)
-                addCandidate(bitDepth = 24, subslotBytes = 4)
-                addCandidate(bitDepth = 24, subslotBytes = 3)
-                if (allowLowerBitDepthFallback) {
-                    addCandidate(bitDepth = 16, subslotBytes = 2)
+        candidateRates.forEach { sampleRate ->
+            when (preferred.bitDepth) {
+                24 -> {
+                    addCandidate(
+                        sampleRate = sampleRate,
+                        bitDepth = 24,
+                        subslotBytes = preferred.subslotBytes
+                    )
+                    addCandidate(sampleRate = sampleRate, bitDepth = 24, subslotBytes = 4)
+                    addCandidate(sampleRate = sampleRate, bitDepth = 24, subslotBytes = 3)
+                    if (allowLowerBitDepthFallback) {
+                        addCandidate(sampleRate = sampleRate, bitDepth = 16, subslotBytes = 2)
+                    }
                 }
+                32 -> {
+                    addCandidate(sampleRate = sampleRate, bitDepth = 32, subslotBytes = 4)
+                    if (allowLowerBitDepthFallback && sourceBitDepth >= 24) {
+                        addCandidate(sampleRate = sampleRate, bitDepth = 24, subslotBytes = 3)
+                        addCandidate(sampleRate = sampleRate, bitDepth = 24, subslotBytes = 4)
+                    }
+                    if (allowLowerBitDepthFallback) {
+                        addCandidate(sampleRate = sampleRate, bitDepth = 16, subslotBytes = 2)
+                    }
+                }
+                16 -> addCandidate(sampleRate = sampleRate, bitDepth = 16, subslotBytes = 2)
             }
-            32 -> {
-                addCandidate(bitDepth = 32, subslotBytes = 4)
-                if (allowLowerBitDepthFallback && sourceBitDepth >= 24) {
-                    addCandidate(bitDepth = 24, subslotBytes = 3)
-                    addCandidate(bitDepth = 24, subslotBytes = 4)
-                }
-                if (allowLowerBitDepthFallback) {
-                    addCandidate(bitDepth = 16, subslotBytes = 2)
-                }
-            }
-            16 -> addCandidate(bitDepth = 16, subslotBytes = 2)
         }
         return candidates.values.toList()
     }

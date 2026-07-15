@@ -11,6 +11,7 @@ namespace neri::usb {
 namespace {
 
 constexpr int kGainRampDurationMs = 80;
+constexpr int kUnderrunEdgeRampMs = 5;
 constexpr double kPositionEpsilon = 0.000000001;
 constexpr int64_t kMaximumRingBufferBytes = 64LL * 1024LL * 1024LL;
 
@@ -506,6 +507,41 @@ void PcmPipeline::applyGain(uint8_t* output, size_t bytes) {
     appliedGain_.store(applied);
 }
 
+void PcmPipeline::fadeOutTrailingFrames(uint8_t* output, size_t bytes) {
+    const int frames = outputFormat_.frameBytes > 0
+        ? static_cast<int>(bytes / static_cast<size_t>(outputFormat_.frameBytes))
+        : 0;
+    if (output == nullptr || frames <= 0) {
+        return;
+    }
+    const int rampFrames = std::clamp(
+        outputFormat_.sampleRate * kUnderrunEdgeRampMs / 1000,
+        1,
+        frames
+    );
+    const int firstRampFrame = frames - rampFrames;
+    for (int frame = firstRampFrame; frame < frames; ++frame) {
+        const int remainingFrames = frames - frame - 1;
+        const float gain = rampFrames > 1
+            ? static_cast<float>(remainingFrames) / static_cast<float>(rampFrames - 1)
+            : 0.0f;
+        uint8_t* outputFrame = output + static_cast<size_t>(frame) * outputFormat_.frameBytes;
+        for (int channel = 0; channel < outputFormat_.channelCount; ++channel) {
+            uint8_t* sample = outputFrame + channel * outputFormat_.subslotBytes;
+            writeIntegerPcmSample(
+                sample,
+                outputFormat_.subslotBytes,
+                outputFormat_.bitsPerSample,
+                readIntegerPcmSample(
+                    sample,
+                    outputFormat_.subslotBytes,
+                    outputFormat_.bitsPerSample
+                ) * gain
+            );
+        }
+    }
+}
+
 void PcmPipeline::markSilentOutputLocked() {
     appliedGain_.store(0.0f);
     gainRampTarget_ = 0.0f;
@@ -567,6 +603,7 @@ size_t PcmPipeline::fill(uint8_t* output, size_t bytes, bool playbackEnabled) {
     }
     outputBytes_ += static_cast<int64_t>(bytes);
     const bool silentOutput = !playbackEnabled || read == 0;
+    const bool partialUnderrun = playbackEnabled && read > 0 && read < bytes;
     if (silentOutput) {
         markSilentOutputLocked();
         // 暂停或欠采样时缓冲区已知全零，跳过逐样本 decode 直接计数
@@ -576,7 +613,11 @@ size_t PcmPipeline::fill(uint8_t* output, size_t bytes, bool playbackEnabled) {
         silentOutputFrames_ += silentFrames;
         lastOutputPeak_ = 0.0f;
     } else {
-        applyGain(output, bytes);
+        applyGain(output, partialUnderrun ? read : bytes);
+        if (partialUnderrun) {
+            fadeOutTrailingFrames(output, read);
+            markSilentOutputLocked();
+        }
         updateOutputSignalStatsLocked(output, bytes);
     }
     return read;
