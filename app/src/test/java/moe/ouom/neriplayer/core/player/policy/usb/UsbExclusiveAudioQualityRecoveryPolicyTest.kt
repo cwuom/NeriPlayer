@@ -99,6 +99,59 @@ class UsbExclusiveAudioQualityRecoveryPolicyTest {
     }
 
     @Test
+    fun `minor background starvation with audible signal arms before reopening native playback`() {
+        val baseline = evaluate(
+            previous = UsbExclusiveAudioQualityRecoveryPolicy.reset(),
+            nowMs = 30_000L,
+            transportStartedAtMs = 1_000L,
+            metrics = metrics(
+                sampleRate = 44_100,
+                subslotBytes = 2,
+                completedTransfers = 4_000L,
+                playerSignalBytes = 5_500_000L,
+                playerUnderrunBytes = 11_840L,
+                playerZeroFillBytes = 11_840L,
+                lastOutputPeak = 0.2f
+            )
+        )
+        val firstTick = evaluate(
+            previous = baseline.state,
+            nowMs = 45_000L,
+            transportStartedAtMs = 1_000L,
+            metrics = metrics(
+                sampleRate = 44_100,
+                subslotBytes = 2,
+                completedTransfers = 4_534L,
+                playerSignalBytes = 6_411_624L,
+                playerUnderrunBytes = 14_952L,
+                playerZeroFillBytes = 14_952L,
+                lastOutputPeak = 0.007751f
+            )
+        )
+        val secondTick = evaluate(
+            previous = firstTick.state,
+            nowMs = 60_000L,
+            transportStartedAtMs = 1_000L,
+            metrics = metrics(
+                sampleRate = 44_100,
+                subslotBytes = 2,
+                completedTransfers = 5_100L,
+                playerSignalBytes = 7_100_000L,
+                playerUnderrunBytes = 17_912L,
+                playerZeroFillBytes = 17_912L,
+                lastOutputPeak = 0.01f
+            )
+        )
+
+        assertFalse(firstTick.shouldRecover)
+        assertEquals("minor_pcm_starvation_with_signal", firstTick.reason)
+        assertEquals(1, firstTick.state.consecutivePcmStarvationTicks)
+        assertTrue(secondTick.shouldRecover)
+        assertEquals("player_pcm_starvation", secondTick.reason)
+        assertEquals(2, secondTick.state.consecutivePcmStarvationTicks)
+    }
+
+    @Test
     fun `cached zero fill report keeps armed recovery tick until fresh counters arrive`() {
         val baseline = evaluate(
             previous = UsbExclusiveAudioQualityRecoveryPolicy.reset(),
@@ -289,25 +342,31 @@ class UsbExclusiveAudioQualityRecoveryPolicyTest {
 
     private fun metrics(
         completedTransfers: Long,
+        sampleRate: Int = 96_000,
+        subslotBytes: Int = 4,
         isoPacketErrors: Long = 0L,
         isoPacketErrorTransfers: Long = 0L,
         isoPacketErrorScore: Int = 0,
+        playerSignalBytes: Long? = null,
         playerDroppedBytes: Long = 0L,
         playerUnderrunBytes: Long = 0L,
-        playerZeroFillBytes: Long = 0L
+        playerZeroFillBytes: Long = 0L,
+        lastOutputPeak: Float? = null
     ): UsbExclusiveRuntimeMetrics {
         return UsbExclusiveRuntimeMetrics(
             source = "player_pcm",
-            sampleRate = 96_000,
+            sampleRate = sampleRate,
             channelCount = 2,
-            subslotBytes = 4,
+            subslotBytes = subslotBytes,
             completedTransfers = completedTransfers,
             isoPacketErrors = isoPacketErrors,
             isoPacketErrorTransfers = isoPacketErrorTransfers,
             isoPacketErrorScore = isoPacketErrorScore,
+            playerSignalBytes = playerSignalBytes,
             playerDroppedBytes = playerDroppedBytes,
             playerUnderrunBytes = playerUnderrunBytes,
             playerZeroFillBytes = playerZeroFillBytes,
+            lastOutputPeak = lastOutputPeak,
             transportFailed = false,
             running = true,
             paused = false,

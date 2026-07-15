@@ -9,6 +9,7 @@ internal data class UsbExclusiveAudioQualityRecoveryState(
     val isoPacketErrors: Long = 0L,
     val isoPacketErrorTransfers: Long = 0L,
     val isoPacketErrorScore: Int = 0,
+    val playerSignalBytes: Long = 0L,
     val playerDroppedBytes: Long = 0L,
     val playerUnderrunBytes: Long = 0L,
     val playerZeroFillBytes: Long = 0L,
@@ -26,6 +27,7 @@ internal object UsbExclusiveAudioQualityRecoveryPolicy {
     private const val STARTUP_PCM_COUNTER_GRACE_MS = 1_000L
     private const val PCM_STARVATION_RECOVERY_TICKS = 2
     private const val PCM_STARVATION_LARGE_GAP_MS = 80L
+    private const val PCM_STARVATION_AUDIBLE_OUTPUT_PEAK_MIN = 0.0001f
 
     fun reset(handle: Long = 0L): UsbExclusiveAudioQualityRecoveryState {
         return UsbExclusiveAudioQualityRecoveryState(handle = handle)
@@ -117,6 +119,21 @@ internal object UsbExclusiveAudioQualityRecoveryPolicy {
         val armedSnapshot = snapshot.copy(consecutivePcmStarvationTicks = nextTicks)
         val largeGapBytes = largeStarvationGapBytes(metrics)
         val largeGap = largeGapBytes > 0L && starvationDelta >= largeGapBytes
+        val signalDelta = max(0L, snapshot.playerSignalBytes - previous.playerSignalBytes)
+        if (
+            !largeGap &&
+            nextTicks < PCM_STARVATION_RECOVERY_TICKS &&
+            signalDelta > 0L &&
+            metrics.hasAudibleOutputPeak()
+        ) {
+            return ignore(
+                snapshot = armedSnapshot,
+                reason = "minor_pcm_starvation_with_signal",
+                debug = "underrunDelta=$underrunDelta zeroFillDelta=$zeroFillDelta " +
+                    "signalDelta=$signalDelta peak=${metrics.bestOutputPeak()} " +
+                    "ticks=$nextTicks threshold=$largeGapBytes"
+            )
+        }
         if (nextTicks >= PCM_STARVATION_RECOVERY_TICKS || largeGap) {
             return recover(
                 snapshot = armedSnapshot,
@@ -157,6 +174,7 @@ internal object UsbExclusiveAudioQualityRecoveryPolicy {
             isoPacketErrors = isoPacketErrors ?: 0L,
             isoPacketErrorTransfers = isoPacketErrorTransfers ?: 0L,
             isoPacketErrorScore = isoPacketErrorScore ?: 0,
+            playerSignalBytes = playerSignalBytes ?: 0L,
             playerDroppedBytes = playerDroppedBytes ?: 0L,
             playerUnderrunBytes = playerUnderrunBytes ?: 0L,
             playerZeroFillBytes = playerZeroFillBytes ?: 0L
@@ -170,6 +188,7 @@ internal object UsbExclusiveAudioQualityRecoveryPolicy {
             isoPacketErrors < previous.isoPacketErrors ||
             isoPacketErrorTransfers < previous.isoPacketErrorTransfers ||
             isoPacketErrorScore < previous.isoPacketErrorScore ||
+            playerSignalBytes < previous.playerSignalBytes ||
             playerDroppedBytes < previous.playerDroppedBytes ||
             playerUnderrunBytes < previous.playerUnderrunBytes ||
             playerZeroFillBytes < previous.playerZeroFillBytes
@@ -182,9 +201,20 @@ internal object UsbExclusiveAudioQualityRecoveryPolicy {
             isoPacketErrors == previous.isoPacketErrors &&
             isoPacketErrorTransfers == previous.isoPacketErrorTransfers &&
             isoPacketErrorScore == previous.isoPacketErrorScore &&
+            playerSignalBytes == previous.playerSignalBytes &&
             playerDroppedBytes == previous.playerDroppedBytes &&
             playerUnderrunBytes == previous.playerUnderrunBytes &&
             playerZeroFillBytes == previous.playerZeroFillBytes
+    }
+
+    private fun UsbExclusiveRuntimeMetrics.hasAudibleOutputPeak(): Boolean {
+        return bestOutputPeak()?.let { it > PCM_STARVATION_AUDIBLE_OUTPUT_PEAK_MIN } == true
+    }
+
+    private fun UsbExclusiveRuntimeMetrics.bestOutputPeak(): Float? {
+        val recentPeak = lastOutputPeak?.takeIf { !it.isNaN() }
+        if (recentPeak != null) return recentPeak
+        return outputPeak?.takeIf { !it.isNaN() }
     }
 
     private fun ignore(
@@ -194,6 +224,7 @@ internal object UsbExclusiveAudioQualityRecoveryPolicy {
     ): UsbExclusiveAudioQualityRecoveryDecision {
         val retainedSnapshot = if (
             reason == "armed_pcm_starvation" ||
+            reason == "minor_pcm_starvation_with_signal" ||
             reason == "awaiting_pcm_starvation_sample"
         ) {
             snapshot
