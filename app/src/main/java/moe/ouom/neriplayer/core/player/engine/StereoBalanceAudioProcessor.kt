@@ -5,6 +5,7 @@ import androidx.media3.common.audio.AudioProcessor.AudioFormat
 import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import kotlin.math.roundToInt
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_VOLUME_BALANCE
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
@@ -25,13 +26,19 @@ internal class StereoBalanceAudioProcessor(
     private val balanceProvider: () -> Float = PlaybackVolumeBalanceState::current
 ) : BaseAudioProcessor() {
 
+    private var encoding = C.ENCODING_PCM_16BIT
+
     override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat {
+        if (inputAudioFormat.channelCount != STEREO_CHANNEL_COUNT) {
+            return AudioFormat.NOT_SET
+        }
         if (
-            inputAudioFormat.encoding != C.ENCODING_PCM_16BIT ||
-            inputAudioFormat.channelCount != STEREO_CHANNEL_COUNT
+            inputAudioFormat.encoding != C.ENCODING_PCM_16BIT &&
+            inputAudioFormat.encoding != C.ENCODING_PCM_FLOAT
         ) {
             return AudioFormat.NOT_SET
         }
+        encoding = inputAudioFormat.encoding
         return inputAudioFormat
     }
 
@@ -47,7 +54,20 @@ internal class StereoBalanceAudioProcessor(
             return
         }
 
-        while (inputBuffer.remaining() >= STEREO_FRAME_SIZE_BYTES) {
+        if (encoding == C.ENCODING_PCM_FLOAT) {
+            processFloat(inputBuffer, outputBuffer, gains)
+        } else {
+            processPcm16(inputBuffer, outputBuffer, gains)
+        }
+        outputBuffer.flip()
+    }
+
+    private fun processPcm16(
+        inputBuffer: ByteBuffer,
+        outputBuffer: ByteBuffer,
+        gains: StereoBalanceGains
+    ) {
+        while (inputBuffer.remaining() >= STEREO_PCM16_FRAME_BYTES) {
             val left = inputBuffer.short
             val right = inputBuffer.short
             outputBuffer.putShort(scalePcm16(left, gains.left))
@@ -56,7 +76,27 @@ internal class StereoBalanceAudioProcessor(
         while (inputBuffer.hasRemaining()) {
             outputBuffer.put(inputBuffer.get())
         }
-        outputBuffer.flip()
+    }
+
+    private fun processFloat(
+        inputBuffer: ByteBuffer,
+        outputBuffer: ByteBuffer,
+        gains: StereoBalanceGains
+    ) {
+        val order = inputBuffer.order()
+        inputBuffer.order(ByteOrder.LITTLE_ENDIAN)
+        outputBuffer.order(ByteOrder.LITTLE_ENDIAN)
+        while (inputBuffer.remaining() >= STEREO_FLOAT_FRAME_BYTES) {
+            val left = inputBuffer.float
+            val right = inputBuffer.float
+            outputBuffer.putFloat((left * gains.left).coerceIn(-1f, 1f))
+            outputBuffer.putFloat((right * gains.right).coerceIn(-1f, 1f))
+        }
+        while (inputBuffer.hasRemaining()) {
+            outputBuffer.put(inputBuffer.get())
+        }
+        inputBuffer.order(order)
+        outputBuffer.order(order)
     }
 
     private fun scalePcm16(sample: Short, gain: Float): Short {
@@ -69,7 +109,9 @@ internal class StereoBalanceAudioProcessor(
     companion object {
         private const val STEREO_CHANNEL_COUNT = 2
         private const val BYTES_PER_PCM16_SAMPLE = 2
-        private const val STEREO_FRAME_SIZE_BYTES = STEREO_CHANNEL_COUNT * BYTES_PER_PCM16_SAMPLE
+        private const val BYTES_PER_FLOAT_SAMPLE = 4
+        private const val STEREO_PCM16_FRAME_BYTES = STEREO_CHANNEL_COUNT * BYTES_PER_PCM16_SAMPLE
+        private const val STEREO_FLOAT_FRAME_BYTES = STEREO_CHANNEL_COUNT * BYTES_PER_FLOAT_SAMPLE
     }
 }
 

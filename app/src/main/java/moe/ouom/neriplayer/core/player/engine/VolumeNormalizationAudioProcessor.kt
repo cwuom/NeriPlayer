@@ -5,6 +5,7 @@ import androidx.media3.common.audio.AudioProcessor.AudioFormat
 import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import java.nio.ByteBuffer
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.exp
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -16,24 +17,31 @@ internal data class PlaybackVolumeNormalizationSnapshot(
 )
 
 internal object PlaybackVolumeNormalizationState {
-    @Volatile
-    private var snapshot = PlaybackVolumeNormalizationSnapshot(enabled = false, generation = 0L)
+    private val ref = AtomicReference(
+        PlaybackVolumeNormalizationSnapshot(enabled = false, generation = 0L)
+    )
 
     fun updateEnabled(enabled: Boolean) {
-        val current = snapshot
-        if (current.enabled == enabled) return
-        snapshot = PlaybackVolumeNormalizationSnapshot(
-            enabled = enabled,
-            generation = current.generation + 1L
-        )
+        while (true) {
+            val current = ref.get()
+            if (current.enabled == enabled) return
+            val next = PlaybackVolumeNormalizationSnapshot(
+                enabled = enabled,
+                generation = current.generation + 1L
+            )
+            if (ref.compareAndSet(current, next)) return
+        }
     }
 
     fun resetForNewTrack() {
-        val current = snapshot
-        snapshot = current.copy(generation = current.generation + 1L)
+        while (true) {
+            val current = ref.get()
+            val next = current.copy(generation = current.generation + 1L)
+            if (ref.compareAndSet(current, next)) return
+        }
     }
 
-    fun current(): PlaybackVolumeNormalizationSnapshot = snapshot
+    fun current(): PlaybackVolumeNormalizationSnapshot = ref.get()
 }
 
 @UnstableApi
