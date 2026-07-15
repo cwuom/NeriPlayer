@@ -9,3 +9,14 @@ internal fun shouldSkipUsbExclusiveRouteRebuildForManualPlayback(
     if (!usbExclusivePlaybackEnabled || allowMixedPlaybackEnabled) return false
     return !hasUsbAudioOutput && !hasUsbHostAudioDevice
 }
+
+internal fun shouldStopUsbExclusivePlaybackForNoisyRoute(
+    usbExclusivePlaybackEnabled: Boolean,
+    allowMixedPlaybackEnabled: Boolean,
+    routeIsUsbOutput: Boolean,
+    playbackActive: Boolean
+): Boolean {
+    if (!usbExclusivePlaybackEnabled || allowMixedPlaybackEnabled) return false
+    if (!routeIsUsbOutput || !playbackActive) return false
+    return true
+}

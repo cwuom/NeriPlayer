@@ -22,7 +22,7 @@ internal fun shouldSuppressSystemFallbackForUsbExclusiveFailure(
 ): Boolean {
     if (!usbExclusivePlaybackEnabled) return false
     val normalizedReason = reason.trim().lowercase()
-    if (normalizedReason.isEmpty()) return false
+    if (normalizedReason.isEmpty()) return true
     if (reason.usbExclusiveErrorCode().suppressesSystemFallbackPlayback) return true
     return normalizedReason.startsWith("native_open_deferred") ||
         normalizedReason.startsWith("native_reopen_cooling_down") ||
@@ -35,6 +35,7 @@ internal fun shouldSuppressSystemFallbackForUsbExclusiveFailure(
         normalizedReason.contains("securityexception") ||
         normalizedReason.contains("libusb_error_no_device") ||
         normalizedReason.contains("deviceonline=false") ||
+        normalizedReason.contains("route_noisy") ||
         normalizedReason.contains("transport") ||
         normalizedReason.contains("transfer") ||
         normalizedReason.contains("submit") ||

@@ -53,4 +53,44 @@ class UsbExclusiveManualPlaybackRoutePolicyTest {
             )
         )
     }
+
+    @Test
+    fun `noisy USB route stops strict exclusive playback`() {
+        assertTrue(
+            shouldStopUsbExclusivePlaybackForNoisyRoute(
+                usbExclusivePlaybackEnabled = true,
+                allowMixedPlaybackEnabled = false,
+                routeIsUsbOutput = true,
+                playbackActive = true
+            )
+        )
+    }
+
+    @Test
+    fun `noisy USB route does not stop mixed or inactive playback`() {
+        assertFalse(
+            shouldStopUsbExclusivePlaybackForNoisyRoute(
+                usbExclusivePlaybackEnabled = true,
+                allowMixedPlaybackEnabled = true,
+                routeIsUsbOutput = true,
+                playbackActive = true
+            )
+        )
+        assertFalse(
+            shouldStopUsbExclusivePlaybackForNoisyRoute(
+                usbExclusivePlaybackEnabled = true,
+                allowMixedPlaybackEnabled = false,
+                routeIsUsbOutput = true,
+                playbackActive = false
+            )
+        )
+        assertFalse(
+            shouldStopUsbExclusivePlaybackForNoisyRoute(
+                usbExclusivePlaybackEnabled = true,
+                allowMixedPlaybackEnabled = false,
+                routeIsUsbOutput = false,
+                playbackActive = true
+            )
+        )
+    }
 }

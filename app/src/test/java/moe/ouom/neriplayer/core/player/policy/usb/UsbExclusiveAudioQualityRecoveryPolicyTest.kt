@@ -94,7 +94,7 @@ class UsbExclusiveAudioQualityRecoveryPolicyTest {
             )
         )
 
-        assertTrue(decision.shouldRecover)
+        assertTrue("reason=${decision.reason} debug=${decision.debug}", decision.shouldRecover)
         assertEquals("player_pcm_starvation", decision.reason)
     }
 
@@ -196,7 +196,7 @@ class UsbExclusiveAudioQualityRecoveryPolicyTest {
             )
         )
 
-        assertTrue(decision.shouldRecover)
+        assertTrue("reason=${decision.reason} debug=${decision.debug}", decision.shouldRecover)
         assertEquals("player_pcm_starvation", decision.reason)
     }
 
@@ -260,7 +260,7 @@ class UsbExclusiveAudioQualityRecoveryPolicyTest {
     }
 
     @Test
-    fun `dropped bytes after startup recover native playback`() {
+    fun `consecutive dropped bytes after startup recover native playback`() {
         val baseline = evaluate(
             previous = UsbExclusiveAudioQualityRecoveryPolicy.reset(),
             nowMs = 2_100L,
@@ -268,7 +268,7 @@ class UsbExclusiveAudioQualityRecoveryPolicyTest {
             metrics = metrics(completedTransfers = 24L)
         )
 
-        val decision = evaluate(
+        val armed = evaluate(
             previous = baseline.state,
             nowMs = 2_150L,
             transportStartedAtMs = 1_000L,
@@ -278,12 +278,72 @@ class UsbExclusiveAudioQualityRecoveryPolicyTest {
             )
         )
 
-        assertTrue(decision.shouldRecover)
+        assertFalse(armed.shouldRecover)
+        assertEquals("armed_player_drop", armed.reason)
+
+        val decision = evaluate(
+            previous = armed.state,
+            nowMs = 2_200L,
+            transportStartedAtMs = 1_000L,
+            metrics = metrics(
+                completedTransfers = 26L,
+                playerDroppedBytes = 768L
+            )
+        )
+
+        assertTrue("reason=${decision.reason} debug=${decision.debug}", decision.shouldRecover)
         assertEquals("player_pcm_dropped", decision.reason)
     }
 
     @Test
-    fun `historical iso packet errors do not repeat recovery without a new increment`() {
+    fun `cached dropped byte sample keeps recovery armed until counters refresh`() {
+        val baseline = evaluate(
+            previous = UsbExclusiveAudioQualityRecoveryPolicy.reset(),
+            nowMs = 2_100L,
+            transportStartedAtMs = 1_000L,
+            metrics = metrics(completedTransfers = 24L)
+        )
+
+        val armed = evaluate(
+            previous = baseline.state,
+            nowMs = 2_150L,
+            transportStartedAtMs = 1_000L,
+            metrics = metrics(
+                completedTransfers = 25L,
+                playerDroppedBytes = 384L
+            )
+        )
+
+        val cached = evaluate(
+            previous = armed.state,
+            nowMs = 2_200L,
+            transportStartedAtMs = 1_000L,
+            metrics = metrics(
+                completedTransfers = 25L,
+                playerDroppedBytes = 384L
+            )
+        )
+
+        assertFalse(cached.shouldRecover)
+        assertEquals("awaiting_player_drop_sample", cached.reason)
+        assertEquals(1, cached.state.consecutivePlayerDropTicks)
+
+        val decision = evaluate(
+            previous = cached.state,
+            nowMs = 2_250L,
+            transportStartedAtMs = 1_000L,
+            metrics = metrics(
+                completedTransfers = 26L,
+                playerDroppedBytes = 768L
+            )
+        )
+
+        assertTrue("reason=${decision.reason} debug=${decision.debug}", decision.shouldRecover)
+        assertEquals("player_pcm_dropped", decision.reason)
+    }
+
+    @Test
+    fun `historical iso packet errors do not repeat recovery without a burst`() {
         val historical = evaluate(
             previous = UsbExclusiveAudioQualityRecoveryPolicy.reset(),
             nowMs = 2_100L,
@@ -309,7 +369,7 @@ class UsbExclusiveAudioQualityRecoveryPolicyTest {
 
         assertFalse(repeated.shouldRecover)
 
-        val incremented = evaluate(
+        val minorIncrement = evaluate(
             previous = repeated.state,
             nowMs = 2_300L,
             transportStartedAtMs = 1_000L,
@@ -321,8 +381,48 @@ class UsbExclusiveAudioQualityRecoveryPolicyTest {
             )
         )
 
-        assertTrue(incremented.shouldRecover)
-        assertEquals("iso_packet_error", incremented.reason)
+        assertFalse(minorIncrement.shouldRecover)
+        assertEquals("minor_iso_packet_error", minorIncrement.reason)
+
+        val burst = evaluate(
+            previous = minorIncrement.state,
+            nowMs = 2_400L,
+            transportStartedAtMs = 1_000L,
+            metrics = metrics(
+                completedTransfers = 27L,
+                isoPacketErrors = 6L,
+                isoPacketErrorTransfers = 3L,
+                isoPacketErrorScore = 4
+            )
+        )
+
+        assertTrue(burst.shouldRecover)
+        assertEquals("iso_packet_error", burst.reason)
+    }
+
+    @Test
+    fun `startup iso packet error does not reopen native playback immediately`() {
+        val baseline = evaluate(
+            previous = UsbExclusiveAudioQualityRecoveryPolicy.reset(),
+            nowMs = 10_100L,
+            transportStartedAtMs = 10_000L,
+            metrics = metrics(completedTransfers = 0L)
+        )
+
+        val decision = evaluate(
+            previous = baseline.state,
+            nowMs = 10_450L,
+            transportStartedAtMs = 10_000L,
+            metrics = metrics(
+                completedTransfers = 56L,
+                isoPacketErrors = 1L,
+                isoPacketErrorTransfers = 1L,
+                isoPacketErrorScore = 1
+            )
+        )
+
+        assertFalse(decision.shouldRecover)
+        assertEquals("startup_iso_packet_error", decision.reason)
     }
 
     private fun evaluate(

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download
 
+import android.content.Context
 import java.io.FileNotFoundException
 import java.nio.file.Files
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
@@ -8,6 +9,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.Mockito.mock
 
 class ManagedDownloadStorageDeleteSemanticsTest {
 
@@ -40,6 +42,21 @@ class ManagedDownloadStorageDeleteSemanticsTest {
             ManagedDownloadStorage.isMissingManagedDocumentFailure(unrelatedError),
             ManagedDownloadReferenceIo.isMissingDocumentFailure(unrelatedError)
         )
+    }
+
+    @Test
+    fun `reference io resolves file uri as a local file`() {
+        val file = Files.createTempFile("neriplayer-reference", ".txt").toFile()
+        try {
+            file.writeText("local-reference", Charsets.UTF_8)
+            val context = mock(Context::class.java)
+            val reference = file.toURI().toString()
+
+            assertTrue(ManagedDownloadReferenceIo.exists(context, reference))
+            assertEquals("local-reference", ManagedDownloadReferenceIo.readText(context, reference))
+        } finally {
+            file.delete()
+        }
     }
 
     @Test

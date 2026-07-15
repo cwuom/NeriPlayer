@@ -56,11 +56,31 @@ class UsbExclusiveFallbackPolicyTest {
     }
 
     @Test
+    fun `exclusive playback suppresses blank system fallback while native route is unresolved`() {
+        assertTrue(
+            shouldSuppressSystemFallbackForUsbExclusiveFailure(
+                usbExclusivePlaybackEnabled = true,
+                reason = ""
+            )
+        )
+    }
+
+    @Test
     fun `feedback scheduler gaps suppress noisy fallback retries`() {
         assertTrue(
             shouldSuppressSystemFallbackForUsbExclusiveFailure(
                 usbExclusivePlaybackEnabled = true,
                 reason = "lastError=async_feedback_scheduler_unavailable"
+            )
+        )
+    }
+
+    @Test
+    fun `noisy USB route suppresses system fallback`() {
+        assertTrue(
+            shouldSuppressSystemFallbackForUsbExclusiveFailure(
+                usbExclusivePlaybackEnabled = true,
+                reason = "usb_audio_route_noisy"
             )
         )
     }

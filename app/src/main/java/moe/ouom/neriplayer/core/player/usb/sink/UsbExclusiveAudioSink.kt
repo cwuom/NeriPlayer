@@ -796,11 +796,14 @@ internal class UsbExclusiveAudioSink(
             holdSystemFallbackForTransientOpenGate(fallbackReason.orEmpty(), inputFormat)
             return
         }
+        val reportedFallbackReason = fallbackReason.orEmpty()
+        val suppressedFallbackReason = reportedFallbackReason
+            .ifBlank { "usb_exclusive_system_fallback_blocked" }
         val suppressSystemFallback = shouldHoldSystemFallbackForNativeFailure(
-            fallbackReason.orEmpty()
+            reportedFallbackReason
         )
         if (suppressSystemFallback) {
-            suppressSystemFallbackAfterNativeFailure(fallbackReason.orEmpty())
+            suppressSystemFallbackAfterNativeFailure(suppressedFallbackReason)
         } else {
             clearSystemFallbackPlaybackSuppression()
         }
@@ -814,7 +817,7 @@ internal class UsbExclusiveAudioSink(
             playing = false
             UsbExclusiveAudioPathTracker.updateConfigured(
                 usingNative = false,
-                fallbackReason = fallbackReason,
+                fallbackReason = suppressedFallbackReason,
                 inputFormat = inputFormat?.let(::inputFormatDescription) ?: "none"
             )
             UsbExclusiveAudioPathTracker.updatePlaying(playing = false, usingNative = false)
@@ -1935,7 +1938,11 @@ internal class UsbExclusiveAudioSink(
     }
 
     private fun shouldSuppressSystemFallbackPlayback(): Boolean {
-        return suppressSystemFallbackPlayback && PlayerManager.usbExclusivePlaybackEnabled
+        if (!PlayerManager.usbExclusivePlaybackEnabled) return false
+        if (suppressSystemFallbackPlayback) return true
+        return shouldHoldSystemFallbackForNativeFailure(
+            UsbExclusiveAudioPathTracker.state.value.fallbackReason.orEmpty()
+        )
     }
 
     private fun suppressSystemFallbackAfterNativeFailure(reason: String) {

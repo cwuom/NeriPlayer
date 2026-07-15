@@ -71,6 +71,7 @@ import moe.ouom.neriplayer.core.player.policy.usb.evaluateUsbExclusiveKeepAliveP
 import moe.ouom.neriplayer.core.player.policy.pending.shouldAcceptPlayerCallback
 import moe.ouom.neriplayer.core.player.policy.pending.shouldExposePlayerCallbackState
 import moe.ouom.neriplayer.core.player.policy.usb.shouldSkipUsbExclusiveRouteRebuildForManualPlayback
+import moe.ouom.neriplayer.core.player.policy.usb.shouldStopUsbExclusivePlaybackForNoisyRoute
 import moe.ouom.neriplayer.core.player.policy.usb.isTransientUsbExclusiveOpenGate
 import moe.ouom.neriplayer.core.player.policy.usb.shouldApplyActiveUsbBufferResize
 import moe.ouom.neriplayer.core.player.policy.usb.shouldSkipRedundantUsbExclusiveReconfiguration
@@ -1141,15 +1142,24 @@ internal fun PlayerManager.handleAudioBecomingNoisyImpl(): Boolean {
         NPLogger.d("NERI-PlayerManager", "handleAudioBecomingNoisy(): ignored because manager is not initialized")
         return false
     }
+    val currentDevice = _currentAudioDevice.value
+    val playbackActive = _isPlayingFlow.value || _playWhenReadyFlow.value || resumePlaybackRequested
     if (!_isPlayingFlow.value) {
+        if (shouldStopForUsbExclusiveNoisyRoute(currentDevice, playbackActive)) {
+            stopPlaybackAfterUsbExclusiveNoisyRoute(currentDevice)
+            return true
+        }
         NPLogger.d("NERI-PlayerManager", "handleAudioBecomingNoisy(): ignored because playback is already paused")
         return false
     }
-    val currentDevice = _currentAudioDevice.value
     NPLogger.d(
         "NERI-PlayerManager",
         "handleAudioBecomingNoisy(): currentDevice=${currentDevice?.type}:${currentDevice?.name}, isPlaying=${_isPlayingFlow.value}"
     )
+    if (shouldStopForUsbExclusiveNoisyRoute(currentDevice, playbackActive)) {
+        stopPlaybackAfterUsbExclusiveNoisyRoute(currentDevice)
+        return true
+    }
     if (usbExclusivePlaybackEnabled && currentDevice != null && isUsbOutputType(currentDevice.type)) {
         NPLogger.d("NERI-PlayerManager", "handleAudioBecomingNoisy(): ignored for USB exclusive route")
         return false
@@ -1173,6 +1183,28 @@ internal fun PlayerManager.handleAudioBecomingNoisyImpl(): Boolean {
     suppressPlaybackForAudioRouteLoss(reason = "becoming_noisy_immediate")
     pauseForAudioRouteLoss(reason = "becoming_noisy_immediate")
     return true
+}
+
+private fun PlayerManager.shouldStopForUsbExclusiveNoisyRoute(
+    currentDevice: AudioDevice?,
+    playbackActive: Boolean
+): Boolean {
+    return shouldStopUsbExclusivePlaybackForNoisyRoute(
+        usbExclusivePlaybackEnabled = usbExclusivePlaybackEnabled,
+        allowMixedPlaybackEnabled = allowMixedPlaybackEnabled,
+        routeIsUsbOutput = currentDevice?.type?.let(::isUsbOutputType) == true,
+        playbackActive = playbackActive
+    )
+}
+
+private fun PlayerManager.stopPlaybackAfterUsbExclusiveNoisyRoute(currentDevice: AudioDevice?) {
+    NPLogger.w(
+        "NERI-UsbExclusive",
+        "stop USB exclusive playback after noisy route event: " +
+            "device=${currentDevice?.type}:${currentDevice?.name} " +
+            "playWhenReady=${_playWhenReadyFlow.value} isPlaying=${_isPlayingFlow.value}"
+    )
+    stopPlaybackAfterUsbExclusiveNativeFailure("usb_audio_route_noisy")
 }
 
 private fun PlayerManager.handleDeviceChange(

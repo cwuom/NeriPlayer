@@ -13,6 +13,7 @@ internal data class UsbExclusiveAudioQualityRecoveryState(
     val playerDroppedBytes: Long = 0L,
     val playerUnderrunBytes: Long = 0L,
     val playerZeroFillBytes: Long = 0L,
+    val consecutivePlayerDropTicks: Int = 0,
     val consecutivePcmStarvationTicks: Int = 0
 )
 
@@ -25,9 +26,14 @@ internal data class UsbExclusiveAudioQualityRecoveryDecision(
 
 internal object UsbExclusiveAudioQualityRecoveryPolicy {
     private const val STARTUP_PCM_COUNTER_GRACE_MS = 1_000L
+    private const val PLAYER_DROPPED_RECOVERY_TICKS = 2
+    private const val PLAYER_DROPPED_LARGE_GAP_MS = 40L
     private const val PCM_STARVATION_RECOVERY_TICKS = 2
     private const val PCM_STARVATION_LARGE_GAP_MS = 80L
     private const val PCM_STARVATION_AUDIBLE_OUTPUT_PEAK_MIN = 0.0001f
+    private const val ISO_PACKET_ERROR_RECOVERY_SCORE = 4
+    private const val ISO_PACKET_ERROR_RECOVERY_PACKETS = 4L
+    private const val ISO_PACKET_ERROR_RECOVERY_TRANSFERS = 3L
 
     fun reset(handle: Long = 0L): UsbExclusiveAudioQualityRecoveryState {
         return UsbExclusiveAudioQualityRecoveryState(handle = handle)
@@ -51,6 +57,11 @@ internal object UsbExclusiveAudioQualityRecoveryPolicy {
             return ignore(snapshot, "baseline", "handle=$handle")
         }
 
+        val stablePcmWindow = isStablePcmQualityWindow(
+            nowMs = nowMs,
+            transportStartedAtMs = transportStartedAtMs,
+            completedTransfers = snapshot.completedTransfers
+        )
         val isoPacketDelta = max(0L, snapshot.isoPacketErrors - previous.isoPacketErrors)
         val isoTransferDelta = max(
             0L,
@@ -58,31 +69,70 @@ internal object UsbExclusiveAudioQualityRecoveryPolicy {
         )
         val isoScoreDelta = max(0, snapshot.isoPacketErrorScore - previous.isoPacketErrorScore)
         if (isoPacketDelta > 0L || isoTransferDelta > 0L || isoScoreDelta > 0) {
-            return recover(
-                snapshot = snapshot,
-                reason = "iso_packet_error",
-                debug = "isoDelta=$isoPacketDelta transferDelta=$isoTransferDelta scoreDelta=$isoScoreDelta"
-            )
-        }
-
-        val stablePcmWindow = isStablePcmQualityWindow(
-            nowMs = nowMs,
-            transportStartedAtMs = transportStartedAtMs,
-            completedTransfers = snapshot.completedTransfers
-        )
-        val droppedDelta = max(0L, snapshot.playerDroppedBytes - previous.playerDroppedBytes)
-        if (droppedDelta > 0L) {
-            if (stablePcmWindow) {
+            val burst = snapshot.isoPacketErrorScore >= ISO_PACKET_ERROR_RECOVERY_SCORE ||
+                isoPacketDelta >= ISO_PACKET_ERROR_RECOVERY_PACKETS ||
+                isoTransferDelta >= ISO_PACKET_ERROR_RECOVERY_TRANSFERS
+            val debug = "isoDelta=$isoPacketDelta transferDelta=$isoTransferDelta " +
+                "score=${snapshot.isoPacketErrorScore} scoreDelta=$isoScoreDelta"
+            if (stablePcmWindow && burst) {
                 return recover(
                     snapshot = snapshot,
-                    reason = "player_pcm_dropped",
-                    debug = "droppedDelta=$droppedDelta completedTransfers=${snapshot.completedTransfers}"
+                    reason = "iso_packet_error",
+                    debug = debug
                 )
             }
             return ignore(
                 snapshot = snapshot,
-                reason = "startup_player_drop",
-                debug = "droppedDelta=$droppedDelta completedTransfers=${snapshot.completedTransfers}"
+                reason = if (stablePcmWindow) {
+                    "minor_iso_packet_error"
+                } else {
+                    "startup_iso_packet_error"
+                },
+                debug = debug
+            )
+        }
+
+        val droppedDelta = max(0L, snapshot.playerDroppedBytes - previous.playerDroppedBytes)
+        if (droppedDelta > 0L) {
+            if (!stablePcmWindow) {
+                return ignore(
+                    snapshot = snapshot,
+                    reason = "startup_player_drop",
+                    debug = "droppedDelta=$droppedDelta completedTransfers=${snapshot.completedTransfers}"
+                )
+            }
+            val nextTicks = (previous.consecutivePlayerDropTicks + 1)
+                .coerceAtMost(PLAYER_DROPPED_RECOVERY_TICKS)
+            val armedSnapshot = snapshot.copy(consecutivePlayerDropTicks = nextTicks)
+            val largeGapBytes = largeDroppedGapBytes(metrics)
+            val largeDrop = largeGapBytes > 0L && droppedDelta >= largeGapBytes
+            val signalDelta = max(0L, snapshot.playerSignalBytes - previous.playerSignalBytes)
+            if (
+                !largeDrop &&
+                nextTicks < PLAYER_DROPPED_RECOVERY_TICKS &&
+                signalDelta > 0L &&
+                metrics.hasAudibleOutputPeak()
+            ) {
+                return ignore(
+                    snapshot = armedSnapshot,
+                    reason = "minor_player_drop_with_signal",
+                    debug = "droppedDelta=$droppedDelta signalDelta=$signalDelta " +
+                        "peak=${metrics.bestOutputPeak()} ticks=$nextTicks threshold=$largeGapBytes"
+                )
+            }
+            if (nextTicks >= PLAYER_DROPPED_RECOVERY_TICKS || largeDrop) {
+                return recover(
+                    snapshot = armedSnapshot,
+                    reason = "player_pcm_dropped",
+                    debug = "droppedDelta=$droppedDelta ticks=$nextTicks " +
+                        "largeDrop=$largeDrop threshold=$largeGapBytes " +
+                        "completedTransfers=${snapshot.completedTransfers}"
+                )
+            }
+            return ignore(
+                snapshot = armedSnapshot,
+                reason = "armed_player_drop",
+                debug = "droppedDelta=$droppedDelta ticks=$nextTicks"
             )
         }
 
@@ -90,6 +140,19 @@ internal object UsbExclusiveAudioQualityRecoveryPolicy {
         val zeroFillDelta = max(0L, snapshot.playerZeroFillBytes - previous.playerZeroFillBytes)
         val starvationDelta = max(underrunDelta, zeroFillDelta)
         if (starvationDelta <= 0L) {
+            if (
+                previous.consecutivePlayerDropTicks > 0 &&
+                snapshot.isSameRuntimeCounterSampleAs(previous)
+            ) {
+                return ignore(
+                    snapshot = snapshot.copy(
+                        consecutivePlayerDropTicks = previous.consecutivePlayerDropTicks
+                    ),
+                    reason = "awaiting_player_drop_sample",
+                    debug = "ticks=${previous.consecutivePlayerDropTicks} " +
+                        "completedTransfers=${snapshot.completedTransfers}"
+                )
+            }
             if (
                 previous.consecutivePcmStarvationTicks > 0 &&
                 snapshot.isSameRuntimeCounterSampleAs(previous)
@@ -165,6 +228,12 @@ internal object UsbExclusiveAudioQualityRecoveryPolicy {
         return sampleRate.toLong() * frameBytes * PCM_STARVATION_LARGE_GAP_MS / 1_000L
     }
 
+    private fun largeDroppedGapBytes(metrics: UsbExclusiveRuntimeMetrics): Long {
+        val sampleRate = metrics.sampleRate?.takeIf { it > 0 } ?: return Long.MAX_VALUE
+        val frameBytes = metrics.outputFrameBytes?.takeIf { it > 0 } ?: return Long.MAX_VALUE
+        return sampleRate.toLong() * frameBytes * PLAYER_DROPPED_LARGE_GAP_MS / 1_000L
+    }
+
     private fun UsbExclusiveRuntimeMetrics.toQualityState(
         handle: Long
     ): UsbExclusiveAudioQualityRecoveryState {
@@ -225,11 +294,17 @@ internal object UsbExclusiveAudioQualityRecoveryPolicy {
         val retainedSnapshot = if (
             reason == "armed_pcm_starvation" ||
             reason == "minor_pcm_starvation_with_signal" ||
-            reason == "awaiting_pcm_starvation_sample"
+            reason == "awaiting_pcm_starvation_sample" ||
+            reason == "armed_player_drop" ||
+            reason == "minor_player_drop_with_signal" ||
+            reason == "awaiting_player_drop_sample"
         ) {
             snapshot
         } else {
-            snapshot.copy(consecutivePcmStarvationTicks = 0)
+            snapshot.copy(
+                consecutivePlayerDropTicks = 0,
+                consecutivePcmStarvationTicks = 0
+            )
         }
         return UsbExclusiveAudioQualityRecoveryDecision(
             shouldRecover = false,
