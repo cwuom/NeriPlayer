@@ -743,6 +743,12 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
+    suspend fun setFloatingLyricsEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[SettingsKeys.FLOATING_LYRICS_ENABLED] = enabled
+        }
+    }
+
     suspend fun setAdvancedBlurEnabled(enabled: Boolean) {
         autoSettingsRepository.setAdvancedBlurEnabled(enabled)
     }

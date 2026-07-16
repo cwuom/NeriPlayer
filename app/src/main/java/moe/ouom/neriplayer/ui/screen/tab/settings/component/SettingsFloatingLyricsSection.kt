@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_CENTER
@@ -73,6 +74,9 @@ internal fun SettingsFloatingLyricsSection(
     onPreferencesChange: (FloatingLyricsPreferences) -> Unit
 ) {
     val normalizedPreferences = remember(preferences) { preferences.normalized() }
+    val temporarilyHidden by FloatingLyricsOverlayManager.temporaryHiddenFlow
+        .collectAsStateWithLifecycle()
+    val floatingLyricsEnabled = normalizedPreferences.enabled && !temporarilyHidden
     var pendingFontSizeSp by remember { mutableFloatStateOf(normalizedPreferences.fontSizeSp) }
     var pendingOutlineWidthDp by remember { mutableFloatStateOf(normalizedPreferences.outlineWidthDp) }
     var pendingLyricAlpha by remember {
@@ -176,10 +180,15 @@ internal fun SettingsFloatingLyricsSection(
                 stringResource(R.string.settings_floating_lyrics_permission_required)
             },
             icon = Icons.Outlined.PictureInPictureAlt,
-            checked = normalizedPreferences.enabled,
+            checked = floatingLyricsEnabled,
             onCheckedChange = { enabled ->
                 if (enabled && !overlayPermissionGranted) {
                     FloatingLyricsOverlayManager.openOverlayPermissionSettings(context)
+                }
+                if (enabled) {
+                    FloatingLyricsOverlayManager.restoreAfterTemporaryHide()
+                } else {
+                    FloatingLyricsOverlayManager.hideUntilNextAppOpen()
                 }
                 updatePreferences { it.copy(enabled = enabled) }
             }

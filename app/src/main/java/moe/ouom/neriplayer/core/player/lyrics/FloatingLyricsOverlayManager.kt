@@ -23,6 +23,9 @@ import android.view.WindowManager
 import android.widget.LinearLayout
 import androidx.core.graphics.toColorInt
 import androidx.core.net.toUri
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_LEFT
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_RIGHT
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
@@ -46,6 +49,8 @@ object FloatingLyricsOverlayManager {
     private var pendingLyricLine: String? = null
     private var pendingTranslationLine: String? = null
     private var contentUpdateScheduled = false
+    private val _temporaryHidden = MutableStateFlow(false)
+    val temporaryHiddenFlow: StateFlow<Boolean> = _temporaryHidden.asStateFlow()
     private val contentUpdateRunnable = Runnable {
         contentUpdateScheduled = false
         lyricLine = pendingLyricLine
@@ -70,6 +75,7 @@ object FloatingLyricsOverlayManager {
         val lifecycleCallbacks = object : Application.ActivityLifecycleCallbacks {
             override fun onActivityStarted(activity: Activity) {
                 startedActivityCount += 1
+                _temporaryHidden.value = false
                 syncOverlay()
             }
 
@@ -113,8 +119,26 @@ object FloatingLyricsOverlayManager {
         }
     }
 
+    fun hideUntilNextAppOpen() {
+        runOnMain {
+            _temporaryHidden.value = true
+            removeOverlay()
+        }
+    }
+
+    fun restoreAfterTemporaryHide() {
+        runOnMain {
+            if (!_temporaryHidden.value) {
+                return@runOnMain
+            }
+            _temporaryHidden.value = false
+            syncOverlay()
+        }
+    }
+
     fun release() {
         runOnMain {
+            _temporaryHidden.value = false
             removeOverlay()
             callbacks?.let { callback ->
                 application?.unregisterActivityLifecycleCallbacks(callback)
@@ -159,7 +183,7 @@ object FloatingLyricsOverlayManager {
 
     private fun shouldShowOverlay(): Boolean {
         val app = application ?: return false
-        if (!preferences.enabled || lyricLine.isNullOrBlank()) {
+        if (!preferences.enabled || _temporaryHidden.value || lyricLine.isNullOrBlank()) {
             return false
         }
         if (!hasOverlayPermission(app)) {

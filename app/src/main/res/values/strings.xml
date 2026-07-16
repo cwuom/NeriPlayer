@@ -203,6 +203,8 @@
     <string name="notification_timer_remaining">⏱ %1$s 后停止</string>
     <string name="notification_stop_after_current">⏱ 播完当前停止</string>
     <string name="notification_stop_after_playlist">⏱ 播完列表停止</string>
+    <string name="notification_hide_floating_lyrics">关闭悬浮歌词</string>
+    <string name="notification_show_floating_lyrics">开启悬浮歌词</string>
     <string name="nowplaying_favorited">已收藏</string>
     <string name="nowplaying_favorite">收藏</string>
     <string name="nowplaying_more_options">更多选项</string>

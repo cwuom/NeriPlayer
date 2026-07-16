@@ -203,6 +203,8 @@
     <string name="notification_timer_remaining">⏱ Stops in %1$s</string>
     <string name="notification_stop_after_current">⏱ Stop After Current</string>
     <string name="notification_stop_after_playlist">⏱ Stop After Playlist</string>
+    <string name="notification_hide_floating_lyrics">Hide floating lyrics</string>
+    <string name="notification_show_floating_lyrics">Enable floating lyrics</string>
     <string name="nowplaying_favorited">Favorited</string>
     <string name="nowplaying_favorite">Favorite</string>
     <string name="nowplaying_more_options">More Options</string>
