@@ -86,6 +86,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
+import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
+import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
+import com.mocharealm.accompanist.lyrics.core.parser.AutoParser
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.roundToLong
@@ -125,15 +129,61 @@ data class LyricEntry(
 )
 
 private val NeteaseYrcLineRegex = Regex("""\[\d+,\s*\d+]\(\d+,""")
+private val TtmlTagRegex = Regex("""<\s*tt(?:\s|>)""", RegexOption.IGNORE_CASE)
+private val TtmlLayoutWhitespaceRegex = Regex("""[\r\n]\s*""")
 
 fun isNeteaseYrc(content: String): Boolean = content.contains(NeteaseYrcLineRegex)
 
 fun parseNeteaseLyricsAuto(content: String): List<LyricEntry> {
-    return if (isNeteaseYrc(content)) {
-        parseNeteaseYrc(content)
-    } else {
-        parseNeteaseLrc(content)
+    return when {
+        TtmlTagRegex.containsMatchIn(content) -> parseTtmlLyrics(content)
+        isNeteaseYrc(content) -> parseNeteaseYrc(content)
+        else -> parseNeteaseLrc(content)
     }
+}
+
+fun parseTtmlLyrics(content: String): List<LyricEntry> {
+    return runCatching {
+        AutoParser().parse(content).lines
+            .mapNotNull(::toLyricEntry)
+            .filter { it.text.isNotBlank() }
+            .sortedBy { it.startTimeMs }
+    }.getOrDefault(emptyList())
+}
+
+private fun toLyricEntry(line: ISyncedLine): LyricEntry? {
+    val startMs = line.start.toLong()
+    val endMs = line.end.toLong().coerceAtLeast(startMs)
+    return when (line) {
+        is KaraokeLine -> {
+            val syllables = line.syllables
+                .map { syllable -> syllable to syllable.content.withoutTtmlLayoutWhitespace() }
+                .filter { (_, content) -> content.isNotBlank() }
+            val text = syllables.joinToString(separator = "") { (_, content) -> content }
+            LyricEntry(
+                text = text,
+                startTimeMs = startMs,
+                endTimeMs = endMs,
+                words = syllables.map { (syllable, content) ->
+                    WordTiming(
+                        startTimeMs = syllable.start.toLong(),
+                        endTimeMs = syllable.end.toLong().coerceAtLeast(syllable.start.toLong()),
+                        charCount = content.length
+                    )
+                }.takeIf { it.isNotEmpty() }
+            )
+        }
+        is SyncedLine -> LyricEntry(
+            text = line.content.withoutTtmlLayoutWhitespace(),
+            startTimeMs = startMs,
+            endTimeMs = endMs
+        )
+        else -> null
+    }
+}
+
+private fun String.withoutTtmlLayoutWhitespace(): String {
+    return replace(TtmlLayoutWhitespaceRegex, "")
 }
 
 /**

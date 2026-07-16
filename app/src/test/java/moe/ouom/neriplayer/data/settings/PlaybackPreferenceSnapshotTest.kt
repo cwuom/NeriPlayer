@@ -16,10 +16,12 @@ class PlaybackPreferenceSnapshotTest {
     @Test
     fun `preferences restore high resolution output setting`() {
         val snapshot = preferencesOf(
-            SettingsKeys.PLAYBACK_HIGH_RESOLUTION_OUTPUT_ENABLED to true
+            SettingsKeys.PLAYBACK_HIGH_RESOLUTION_OUTPUT_ENABLED to true,
+            SettingsKeys.AMLL_LYRICS_ENABLED to true
         ).toPlaybackPreferenceSnapshot()
 
         assertTrue(snapshot.playbackHighResolutionOutputEnabled)
+        assertTrue(snapshot.amllLyricsEnabled)
     }
 
     @Test
@@ -83,6 +85,7 @@ class PlaybackPreferenceSnapshotTest {
         assertFalse(snapshot.playbackVolumeNormalizationEnabled)
         assertFalse(snapshot.playbackHighResolutionOutputEnabled)
         assertFalse(snapshot.lyriconEnabled)
+        assertTrue(snapshot.amllLyricsEnabled)
         assertEquals(1024L * 1024 * 1024, snapshot.maxCacheSizeBytes)
     }
 }

@@ -779,6 +779,19 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
+            key = "amll_lyrics_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = true,
+            order = 11,
+            ui = SettingUiType.Switch
+        )
+        val amllLyricsEnabled = autoSetting(
+            titleRes = R.string.settings_amll_lyrics_enabled,
+            descriptionRes = R.string.settings_amll_lyrics_enabled_desc,
+            icon = AutoSettingIcon.Subtitles
+        )
+
+        @AutoSetting(
             key = "status_bar_lyrics_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = false,

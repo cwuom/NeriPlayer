@@ -27,19 +27,22 @@ import android.annotation.SuppressLint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import moe.ouom.neriplayer.BuildConfig
+import moe.ouom.neriplayer.core.api.lyrics.AmllTtmlClient
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.core.player.metadata.AmllLyricsResolver
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.IOException
 import java.util.Base64
-import moe.ouom.neriplayer.core.di.AppContainer
 
 @Serializable private data class QQMusicSearchResponse(val data: QQMusicSearchData?)
 @Serializable private data class QQMusicSearchData(val song: QQMusicSearchSong?)
@@ -64,14 +67,20 @@ import moe.ouom.neriplayer.core.di.AppContainer
     val mid: String,
     val name: String,
     val singer: List<QQMusicArtist>,
-    val album: QQMusicAlbum
+    val album: QQMusicAlbum,
+    val interval: Long = 0L
 )
 @Serializable private data class QQMusicAlbum(val name: String, val mid: String)
 
 @Serializable private data class QQMusicLyricResponse(val lyric: String?, val trans: String?)
 
 
-class QQMusicSearchApi : SearchApi {
+class QQMusicSearchApi(
+    private val amllTtmlClient: AmllTtmlClient = AppContainer.amllTtmlClient,
+    private val amllLyricsEnabledProvider: suspend () -> Boolean = {
+        AppContainer.settingsRepo.amllLyricsEnabledFlow.first()
+    }
+) : SearchApi {
 
     companion object {
         private const val TAG = "QQMusicSearchApi"
@@ -133,19 +142,42 @@ class QQMusicSearchApi : SearchApi {
 
             coroutineScope {
                 val lyricDeferred = async { fetchQQMusicLyric(id) }
+                val amllLyricDeferred = async {
+                    fetchAmllWordLyricIfEnabled(songData)
+                }
 
                 val (lyric, translatedLyric) = lyricDeferred.await()
+                val amllLyric = amllLyricDeferred.await()
                 SongDetails(
                     id = songData.mid,
                     songName = songData.name,
                     singer = songData.singer.joinToString("/") { it.name },
                     album = songData.album.name,
                     coverUrl = "https://y.qq.com/music/photo_new/T002R800x800M000${songData.album.mid}.jpg",
-                    lyric = lyric,
+                    lyric = amllLyric ?: lyric,
                     translatedLyric = translatedLyric
                 )
             }
         }
+    }
+
+    private suspend fun fetchAmllWordLyricIfEnabled(songData: QQMusicTrackInfo): String? {
+        return runCatching {
+            if (amllLyricsEnabledProvider()) {
+                val durationMs = songData.interval.takeIf { it > 0L }?.times(1000L) ?: 0L
+                AmllLyricsResolver.loadRawByMetadata(
+                    trackName = songData.name,
+                    artistName = songData.singer.joinToString("/") { it.name },
+                    durationMs = durationMs,
+                    amllTtmlClient = amllTtmlClient,
+                    requireDurationMatch = durationMs > 0L
+                )?.rawLyrics
+            } else {
+                null
+            }
+        }.onFailure { error ->
+            NPLogger.d(TAG, "AMLL QQ lyric lookup failed: ${error.message}")
+        }.getOrNull()
     }
 
     private fun logDetailResponse(label: String, responseJson: String) {

@@ -88,6 +88,7 @@ private const val PLAYBACK_MAX_CACHE_SIZE_BYTES_KEY = "max_cache_size_bytes"
 private const val PLAYBACK_CLOUD_MUSIC_LYRIC_OFFSET_KEY = "cloud_music_lyric_default_offset_ms"
 private const val PLAYBACK_QQ_MUSIC_LYRIC_OFFSET_KEY = "qq_music_lyric_default_offset_ms"
 private const val PLAYBACK_LYRICON_ENABLED_KEY = "lyricon_enabled"
+private const val PLAYBACK_AMLL_LYRICS_ENABLED_KEY = "amll_lyrics_enabled"
 private const val DEFAULT_MAX_CACHE_SIZE_BYTES = 1024L * 1024 * 1024
 private val playbackPreferenceSnapshotWarmScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 private val playbackPreferenceSnapshotWarmLock = Any()
@@ -142,6 +143,7 @@ data class PlaybackPreferenceSnapshot(
     val cloudMusicLyricDefaultOffsetMs: Long = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS,
     val qqMusicLyricDefaultOffsetMs: Long = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS,
     val lyriconEnabled: Boolean = false,
+    val amllLyricsEnabled: Boolean = true,
     val maxCacheSizeBytes: Long = DEFAULT_MAX_CACHE_SIZE_BYTES
 ) {
     fun sanitized(): PlaybackPreferenceSnapshot {
@@ -362,6 +364,10 @@ internal fun persistPlaybackPreferenceSnapshot(
                     normalizedSnapshot.qqMusicLyricDefaultOffsetMs
                 )
                 .putBoolean(PLAYBACK_LYRICON_ENABLED_KEY, normalizedSnapshot.lyriconEnabled)
+                .putBoolean(
+                    PLAYBACK_AMLL_LYRICS_ENABLED_KEY,
+                    normalizedSnapshot.amllLyricsEnabled
+                )
                 .putLong(PLAYBACK_MAX_CACHE_SIZE_BYTES_KEY, normalizedSnapshot.maxCacheSizeBytes)
         }
     }
@@ -456,6 +462,7 @@ internal fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnaps
             this[SettingsKeys.QQ_MUSIC_LYRIC_DEFAULT_OFFSET_MS]
                 ?: DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS,
         lyriconEnabled = this[SettingsKeys.LYRICON_ENABLED] ?: false,
+        amllLyricsEnabled = this[SettingsKeys.AMLL_LYRICS_ENABLED] ?: true,
         maxCacheSizeBytes =
             this[SettingsKeys.MAX_CACHE_SIZE_BYTES] ?: DEFAULT_MAX_CACHE_SIZE_BYTES
     ).sanitized()
@@ -587,6 +594,7 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
             DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
         ),
         lyriconEnabled = prefs.getBoolean(PLAYBACK_LYRICON_ENABLED_KEY, false),
+        amllLyricsEnabled = prefs.getBoolean(PLAYBACK_AMLL_LYRICS_ENABLED_KEY, true),
         maxCacheSizeBytes = prefs.getLong(
             PLAYBACK_MAX_CACHE_SIZE_BYTES_KEY,
             DEFAULT_MAX_CACHE_SIZE_BYTES

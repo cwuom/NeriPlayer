@@ -548,6 +548,8 @@ internal suspend fun PlayerManager.getLyricsImpl(song: SongItem): List<LyricEntr
         neteaseLyricsCache = neteaseLyricsCache,
         youtubeMusicClient = youtubeMusicClient,
         lrcLibClient = lrcLibClient,
+        amllTtmlClient = amllTtmlClient,
+        amllLyricsEnabled = amllLyricsEnabled,
         ytMusicLyricsCache = ytMusicLyricsCache,
         biliSourceTag = BILI_SOURCE_TAG
     )

@@ -1172,6 +1172,8 @@
     <string name="settings_motion_expand">展开以调整动效表现</string>
     <string name="settings_lyric_api_enabled">第三方歌词API适配</string>
     <string name="settings_lyric_api_enabled_desc">向 Lyricon &amp; SuperLyric 提供当前歌曲、播放状态、进度、逐字歌词和翻译</string>
+    <string name="settings_amll_lyrics_enabled">使用 AMLL 数据库</string>
+    <string name="settings_amll_lyrics_enabled_desc">平台没有逐字歌词时，从 AMLL TTML 数据库尝试匹配逐字歌词</string>
     <string name="settings_external_bluetooth_lyrics_enabled">外接设备蓝牙歌词</string>
     <string name="settings_external_bluetooth_lyrics_enabled_desc">连接蓝牙设备时，将当前歌词行同步到外接设备的歌曲信息区域</string>
     <string name="settings_lyrics_offset">歌词设置</string>

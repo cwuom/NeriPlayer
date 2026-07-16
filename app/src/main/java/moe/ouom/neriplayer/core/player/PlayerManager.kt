@@ -324,6 +324,8 @@ object PlayerManager {
     internal var playbackSoundConfig = PlaybackSoundConfig()
     internal var playbackHighResolutionOutputEnabled = false
     internal var lyriconEnabled = false
+    @Volatile
+    internal var amllLyricsEnabled = false
     internal var statusBarLyricsEnable = false
     internal var externalBluetoothLyricsEnabled = false
     internal var floatingLyricsEnabled = false
@@ -531,6 +533,7 @@ object PlayerManager {
     val cloudMusicSearchApi by lazy { AppContainer.cloudMusicSearchApi }
     val qqMusicSearchApi by lazy { AppContainer.qqMusicSearchApi }
     val lrcLibClient by lazy { AppContainer.lrcLibClient }
+    val amllTtmlClient by lazy { AppContainer.amllTtmlClient }
 
     // YouTube Music 歌词缓存，避免短时间内重复请求
     internal val ytMusicLyricsCache = android.util.LruCache<String, List<LyricEntry>>(20)

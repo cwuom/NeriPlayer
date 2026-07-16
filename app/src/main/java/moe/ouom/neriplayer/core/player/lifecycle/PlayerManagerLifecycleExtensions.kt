@@ -65,6 +65,7 @@ import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.model.AudioDevice
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
+import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.offload.requiresPcmAudioProcessing
 import moe.ouom.neriplayer.core.player.policy.usb.evaluateUsbExclusiveKeepAliveProgress
@@ -193,6 +194,7 @@ internal fun PlayerManager.initializeImpl(
         qqMusicLyricDefaultOffsetMs =
             initialPlaybackPreferences.qqMusicLyricDefaultOffsetMs
         externalBluetoothLyricsEnabled = false
+        amllLyricsEnabled = initialPlaybackPreferences.amllLyricsEnabled
         lyriconEnabled = initialPlaybackPreferences.lyriconEnabled
         LyriconManager.setEnabled(lyriconEnabled)
         if (lyriconEnabled && !LyriconManager.isInitialized()) {
@@ -680,6 +682,17 @@ internal fun PlayerManager.initializeImpl(
                 } else {
                     lyriconUpdateJob?.cancel()
                     lyriconUpdateJob = null
+                }
+            }
+        }
+        ioScope.launch {
+            settingsRepo.amllLyricsEnabledFlow.collect { enabled ->
+                val changed = amllLyricsEnabled != enabled
+                amllLyricsEnabled = enabled
+                if (changed) {
+                    ytMusicLyricsCache.evictAll()
+                    PlayerLyricsProvider.clearAmllLyricsCache()
+                    syncExternalBluetoothLyrics(_currentSongFlow.value)
                 }
             }
         }

@@ -1172,6 +1172,8 @@
     <string name="settings_motion_expand">Customize motion effects</string>
     <string name="settings_lyric_api_enabled">Third-party Lyrics API Integration</string>
     <string name="settings_lyric_api_enabled_desc">Provide Lyricon and SuperLyric with the current song, playback state, position, word-level lyrics, and translations</string>
+    <string name="settings_amll_lyrics_enabled">Use AMLL Database</string>
+    <string name="settings_amll_lyrics_enabled_desc">When platform lyrics are not word-level, try matching word-level lyrics from the AMLL TTML database</string>
     <string name="settings_external_bluetooth_lyrics_enabled">External Bluetooth Lyrics</string>
     <string name="settings_external_bluetooth_lyrics_enabled_desc">When a Bluetooth device is connected, sync the current lyric line to the device song info area</string>
     <string name="settings_lyrics_offset">Lyrics Settings</string>

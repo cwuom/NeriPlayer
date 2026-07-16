@@ -701,7 +701,14 @@ fun NowPlayingScreen(
                     currentMediaUrl.isNullOrBlank()
             val resolvedLyrics = when {
                 !effectiveRawLyrics.isNullOrBlank() -> {
-                    parseNeteaseLyricsAuto(effectiveRawLyrics)
+                    val parsedRawLyrics = parseNeteaseLyricsAuto(effectiveRawLyrics)
+                    if (parsedRawLyrics.hasWordTimedEntries() || song == null) {
+                        parsedRawLyrics
+                    } else {
+                        PlayerManager.getLyrics(song)
+                            .takeIf { it.hasWordTimedEntries() }
+                            ?: parsedRawLyrics
+                    }
                 }
                 shouldDelayOnlineLyrics -> {
                     // 当前曲目还在抢首播地址，先别让歌词请求去争 EJS 和鉴权链路

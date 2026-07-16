@@ -79,6 +79,28 @@ class PlayerLyricsProviderTest {
     }
 
     @Test
+    fun `parseNeteaseLyricsAuto parses ttml word timings`() {
+        val rawLyrics = """
+            <tt xmlns="http://www.w3.org/ns/ttml">
+                <body>
+                    <div>
+                        <p begin="00:01.000" end="00:02.000">
+                            <span begin="00:01.000" end="00:01.500">Hello</span>
+                            <span begin="00:01.500" end="00:02.000">World</span>
+                        </p>
+                    </div>
+                </body>
+            </tt>
+        """.trimIndent()
+
+        val parsed = parseNeteaseLyricsAuto(rawLyrics)
+
+        assertEquals("HelloWorld", parsed.single().text)
+        assertNotNull(parsed.single().words)
+        assertEquals(2, parsed.single().words!!.size)
+    }
+
+    @Test
     fun `extractRomanizedNeteaseLyricContent reads romalrc`() {
         val payload = """
             {
