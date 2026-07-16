@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.core.api.search
  */
 
 import android.annotation.SuppressLint
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -37,6 +38,7 @@ import moe.ouom.neriplayer.core.api.lyrics.AmllTtmlClient
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.metadata.AmllLyricsResolver
+import moe.ouom.neriplayer.util.network.awaitResponse
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -162,7 +164,7 @@ class QQMusicSearchApi(
     }
 
     private suspend fun fetchAmllWordLyricIfEnabled(songData: QQMusicTrackInfo): String? {
-        return runCatching {
+        return try {
             if (amllLyricsEnabledProvider()) {
                 val durationMs = songData.interval.takeIf { it > 0L }?.times(1000L) ?: 0L
                 AmllLyricsResolver.loadRawByMetadata(
@@ -175,9 +177,12 @@ class QQMusicSearchApi(
             } else {
                 null
             }
-        }.onFailure { error ->
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
             NPLogger.d(TAG, "AMLL QQ lyric lookup failed: ${error.message}")
-        }.getOrNull()
+            null
+        }
     }
 
     private fun logDetailResponse(label: String, responseJson: String) {
@@ -191,7 +196,7 @@ class QQMusicSearchApi(
         NPLogger.d(TAG, "获取歌曲详情响应: labelHash=${label.hashCode()}, length=${responseJson.length}")
     }
 
-    private fun fetchQQMusicLyric(songMid: String): Pair<String?, String?> {
+    private suspend fun fetchQQMusicLyric(songMid: String): Pair<String?, String?> {
         return try {
             val url = "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg".toHttpUrl().newBuilder()
                 .addQueryParameter("songmid", songMid)
@@ -214,8 +219,10 @@ class QQMusicSearchApi(
             val translatedLyric = decodeLyricPayload(lyricResponse.trans)
 
             Pair(lyric, translatedLyric)
-        } catch (e: Exception) {
-            NPLogger.e(TAG, "获取QQ音乐歌词失败", e)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.e(TAG, "获取QQ音乐歌词失败", error)
             Pair(null, null)
         }
     }
@@ -247,17 +254,17 @@ class QQMusicSearchApi(
     }
 
     @Throws(IOException::class)
-    private fun executeRequest(url: String, asBytes: Boolean = false): Any {
+    private suspend fun executeRequest(url: String, asBytes: Boolean = false): Any {
         val request = Request.Builder().url(url).build()
         return executeRequest(request, asBytes)
     }
 
     @Throws(IOException::class)
-    private fun executeRequest(request: Request, asBytes: Boolean = false): Any {
-        client.newCall(request).execute().use { response ->
+    private suspend fun executeRequest(request: Request, asBytes: Boolean = false): Any {
+        return client.newCall(request).awaitResponse { response ->
             if (!response.isSuccessful) throw IOException("请求失败: ${response.code} for url: ${request.url}")
             val body = response.body
-            return if (asBytes) body.bytes() else body.string()
+            if (asBytes) body.bytes() else body.string()
         }
     }
 

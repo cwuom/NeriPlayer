@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.core.api.search
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 
@@ -29,41 +32,43 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 object SearchManager {
     private const val MINIMUM_MATCH_SCORE = 60
 
-    private val cloudMusicApi = AppContainer.cloudMusicSearchApi
-    private val qqMusicApi = AppContainer.qqMusicSearchApi
-    private val whitespaceRegex = Regex("\\s+")
-    private val artistSeparatorRegex = Regex(
-        "\\s*([/,\\u3001\\uFF0C&])\\s*|\\s+(feat\\.?|ft\\.?)\\s+|\\s+[xX]\\s+",
-        RegexOption.IGNORE_CASE
-    )
+    private val whitespaceRegex by lazy(LazyThreadSafetyMode.PUBLICATION) { Regex("\\s+") }
+    private val artistSeparatorRegex by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        Regex(
+            "\\s*([/,\\u3001\\uFF0C&])\\s*|\\s+(feat\\.?|ft\\.?)\\s+|\\s+[xX]\\s+",
+            RegexOption.IGNORE_CASE
+        )
+    }
 
     suspend fun search(
         keyword: String,
         platform: MusicPlatform,
-    ): List<SongSearchInfo> {
-        val api = if (platform == MusicPlatform.CLOUD_MUSIC) cloudMusicApi else qqMusicApi
+    ): List<SongSearchInfo> = withContext(Dispatchers.IO) {
+        val api = searchApi(platform)
 
         NPLogger.d("SearchManager", "try to search $keyword")
-        return try {
+        try {
             api.search(keyword, page = 1).take(10)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             NPLogger.e("SearchManager", "Failed to find match", e)
-            emptyList()
+            throw e
         }
     }
 
     suspend fun findBestSearchCandidate(
         songName: String,
         songArtist: String
-    ): SongSearchInfo? {
+    ): SongSearchInfo? = withContext(Dispatchers.IO) {
         NPLogger.d("SearchManager", "try to match $songName / $songArtist")
 
         val searchResults = buildList {
-            addAll(searchCandidates(songName, qqMusicApi, "qq"))
-            addAll(searchCandidates(songName, cloudMusicApi, "cloud"))
+            addAll(searchCandidates(songName, searchApi(MusicPlatform.QQ_MUSIC), "qq"))
+            addAll(searchCandidates(songName, searchApi(MusicPlatform.CLOUD_MUSIC), "cloud"))
         }
         if (searchResults.isEmpty()) {
-            return null
+            return@withContext null
         }
 
         val normalizedSongName = normalizeText(songName)
@@ -82,16 +87,16 @@ object SearchManager {
             )
         }
 
-        val bestScore = scoredResults.maxOfOrNull { it.value.second } ?: return null
+        val bestScore = scoredResults.maxOfOrNull { it.value.second } ?: return@withContext null
         if (bestScore < MINIMUM_MATCH_SCORE) {
             NPLogger.d(
                 "SearchManager",
                 "No confident match for $songName / $songArtist, bestScore=$bestScore"
             )
-            return null
+            return@withContext null
         }
 
-        return scoredResults.firstOrNull { it.value.second == bestScore }?.value?.first
+        scoredResults.firstOrNull { it.value.second == bestScore }?.value?.first
     }
 
     private suspend fun searchCandidates(
@@ -99,14 +104,24 @@ object SearchManager {
         api: SearchApi,
         label: String
     ): List<SongSearchInfo> {
-        return runCatching { api.search(keyword, page = 1) }
-            .onFailure {
-                NPLogger.w(
-                    "SearchManager",
-                    "Failed to search $label for $keyword: ${it.message}"
-                )
-            }
-            .getOrDefault(emptyList())
+        return try {
+            api.search(keyword, page = 1)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            NPLogger.w(
+                "SearchManager",
+                "Failed to search $label for $keyword: ${e.message}"
+            )
+            emptyList()
+        }
+    }
+
+    private fun searchApi(platform: MusicPlatform): SearchApi {
+        return when (platform) {
+            MusicPlatform.CLOUD_MUSIC -> AppContainer.cloudMusicSearchApi
+            MusicPlatform.QQ_MUSIC -> AppContainer.qqMusicSearchApi
+        }
     }
 
     private fun scoreCandidate(

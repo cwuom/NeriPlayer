@@ -818,6 +818,9 @@ private fun PlayerManager.maybeAutoMatchYouTubeMusicLyrics(song: SongItem, reque
         if (requestToken != playbackRequestToken || !latestSong.sameIdentityAs(song)) {
             return@launch
         }
+        if (!shouldAutoMatchExternalLyrics(latestSong, isYouTubeMusicTrack(latestSong))) {
+            return@launch
+        }
 
         replaceMetadataFromSearch(latestSong, candidate, isAuto = true)
     }

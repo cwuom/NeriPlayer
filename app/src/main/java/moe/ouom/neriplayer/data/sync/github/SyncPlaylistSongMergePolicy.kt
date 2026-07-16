@@ -66,6 +66,18 @@ internal object SyncPlaylistSongMergePolicy {
                     isUpdated = false
                 )
             }
+            localChangedAfterSync && localModifiedAt > remoteModifiedAt -> {
+                return Result(
+                    songs = mergeConcurrentChanges(localSongs, remoteSongs),
+                    isUpdated = true
+                )
+            }
+            localChangedAfterSync && remoteModifiedAt > localModifiedAt -> {
+                return Result(
+                    songs = mergeConcurrentChanges(remoteSongs, localSongs),
+                    isUpdated = true
+                )
+            }
         }
 
         val uniqueLocalSongs = deduplicateSongs(localSongs)
@@ -92,7 +104,9 @@ internal object SyncPlaylistSongMergePolicy {
     ): List<SyncSong> {
         if (remoteSongs.isEmpty()) return localSongs
 
-        return SongMergeAccumulator(resolvePayloadDeterministically = true)
+        return SongMergeAccumulator(
+            resolvePayloadDeterministically = true
+        )
             .apply {
                 localSongs.forEach(::addIfAbsent)
                 remoteSongs.forEach(::addIfAbsent)
@@ -110,36 +124,28 @@ internal object SyncPlaylistSongMergePolicy {
         return accumulator.toList()
     }
 
+    private fun mergeConcurrentChanges(
+        primarySongs: List<SyncSong>,
+        secondarySongs: List<SyncSong>
+    ): List<SyncSong> {
+        return SongMergeAccumulator()
+            .apply {
+                primarySongs.forEach(::addIfAbsent)
+                secondarySongs.forEach(::addIfAbsent)
+            }
+            .toList()
+    }
+
     private fun hasMembershipTokens(songs: List<SyncSong>): Boolean {
         return songs.any { it.syncMembershipTokens.orEmpty().isNotEmpty() }
     }
 
     private fun sameSongList(left: List<SyncSong>, right: List<SyncSong>): Boolean {
         if (left.size != right.size) return false
-        return left.zip(right).all { (leftSong, rightSong) -> sameSongForMerge(leftSong, rightSong) }
-    }
-
-    private fun sameSongForMerge(left: SyncSong, right: SyncSong): Boolean {
-        return sameSongForMerge(left.toMergeCandidate(), right.toMergeCandidate()) &&
-            left.syncMembershipTokens.orEmpty().normalizedSyncCausalTokens() ==
-            right.syncMembershipTokens.orEmpty().normalizedSyncCausalTokens()
-    }
-
-    private fun sameSongForMerge(left: SongMergeCandidate, right: SongMergeCandidate): Boolean {
-        if (left.identity == right.identity) return true
-
-        val leftChannelKey = left.channelAudioKey
-        val rightChannelKey = right.channelAudioKey
-        if (leftChannelKey != null && leftChannelKey == rightChannelKey) return true
-
-        if (left.id == 0L || left.id != right.id) return false
-        val leftSource = left.sourceHint
-        val rightSource = right.sourceHint
-        if (leftSource != null && rightSource != null && leftSource != rightSource) return false
-
-        return left.normalizedName.isNotEmpty() &&
-            left.normalizedName == right.normalizedName &&
-            left.normalizedArtist == right.normalizedArtist
+        return left.zip(right).all { (leftSong, rightSong) ->
+            leftSong.copyWithNormalizedMembershipTokens() ==
+                rightSong.copyWithNormalizedMembershipTokens()
+        }
     }
 
     private fun SyncSong.toMergeCandidate(): SongMergeCandidate {
@@ -226,7 +232,7 @@ internal object SyncPlaylistSongMergePolicy {
         private val entries = mutableListOf<SongMergeEntry>()
 
         fun addIfAbsent(song: SyncSong) {
-            val normalizedSong = normalizeMembershipTokens(song)
+            val normalizedSong = normalizeSong(song)
             val matchingIndices = mergeIndex.findMatchingIndices(normalizedSong)
             if (matchingIndices.isNotEmpty()) {
                 mergeMembershipComponents(matchingIndices, normalizedSong)
@@ -241,7 +247,7 @@ internal object SyncPlaylistSongMergePolicy {
         }
 
         fun mergeMatchingMembershipTokens(song: SyncSong) {
-            val normalizedSong = normalizeMembershipTokens(song)
+            val normalizedSong = normalizeSong(song)
             val matchingIndices = mergeIndex.findMatchingIndices(normalizedSong)
             if (matchingIndices.isEmpty()) return
             mergeMembershipComponents(matchingIndices, normalizedSong)
@@ -267,13 +273,11 @@ internal object SyncPlaylistSongMergePolicy {
                 .plus(other)
                 .toList()
             val resolvedPayload = if (resolvePayloadDeterministically) {
-                payloadCandidates.maxBy(::canonicalPayloadKey)
+                payloadCandidates.maxBy(SyncSongMetadataMergePolicy::canonicalPayloadKey)
             } else {
                 primaryEntry.song
             }
-            primaryEntry.song = resolvedPayload
-                .withUserMetadataFallbacks(payloadCandidates)
-                .copy(syncMembershipTokens = mergedTokens)
+            primaryEntry.song = resolvedPayload.copy(syncMembershipTokens = mergedTokens)
             matchingIndices
                 .asSequence()
                 .filter { index -> index != primaryIndex }
@@ -308,7 +312,7 @@ internal object SyncPlaylistSongMergePolicy {
             }
         }
 
-        private fun normalizeMembershipTokens(song: SyncSong): SyncSong {
+        private fun normalizeSong(song: SyncSong): SyncSong {
             val normalizedTokens = song.syncMembershipTokens.orEmpty().normalizedSyncCausalTokens()
             return if (normalizedTokens == song.syncMembershipTokens) {
                 song
@@ -373,72 +377,5 @@ internal object SyncPlaylistSongMergePolicy {
 
     private fun String.normalizedText(): String {
         return trim().lowercase()
-    }
-
-    private fun SyncSong.withUserMetadataFallbacks(candidates: List<SyncSong>): SyncSong {
-        return copy(
-            matchedLyric = matchedLyric.nonBlankOrElse(candidates, SyncSong::matchedLyric),
-            matchedTranslatedLyric = matchedTranslatedLyric.nonBlankOrElse(
-                candidates,
-                SyncSong::matchedTranslatedLyric
-            ),
-            matchedLyricSource = matchedLyricSource.nonBlankOrElse(
-                candidates,
-                SyncSong::matchedLyricSource
-            ),
-            matchedSongId = matchedSongId.nonBlankOrElse(candidates, SyncSong::matchedSongId),
-            customCoverUrl = customCoverUrl.nonBlankOrElse(candidates, SyncSong::customCoverUrl),
-            customName = customName.nonBlankOrElse(candidates, SyncSong::customName),
-            customArtist = customArtist.nonBlankOrElse(candidates, SyncSong::customArtist),
-            originalName = originalName.nonBlankOrElse(candidates, SyncSong::originalName),
-            originalArtist = originalArtist.nonBlankOrElse(candidates, SyncSong::originalArtist),
-            originalCoverUrl = originalCoverUrl.nonBlankOrElse(candidates, SyncSong::originalCoverUrl),
-            originalLyric = originalLyric.nonBlankOrElse(candidates, SyncSong::originalLyric),
-            originalTranslatedLyric = originalTranslatedLyric.nonBlankOrElse(
-                candidates,
-                SyncSong::originalTranslatedLyric
-            )
-        )
-    }
-
-    private fun String?.nonBlankOrElse(
-        candidates: List<SyncSong>,
-        selector: (SyncSong) -> String?
-    ): String? {
-        return takeIf { !it.isNullOrBlank() }
-            ?: candidates.firstNotNullOfOrNull { candidate ->
-                selector(candidate)?.takeIf(String::isNotBlank)
-            }
-    }
-
-    private fun canonicalPayloadKey(song: SyncSong): String {
-        return listOf(
-            song.id.toString(),
-            song.name,
-            song.artist,
-            song.album,
-            song.albumId.toString(),
-            song.durationMs.toString(),
-            song.coverUrl.orEmpty(),
-            song.mediaUri.orEmpty(),
-            song.addedAt.toString(),
-            song.matchedLyric.orEmpty(),
-            song.matchedTranslatedLyric.orEmpty(),
-            song.matchedLyricSource.orEmpty(),
-            song.matchedSongId.orEmpty(),
-            song.userLyricOffsetMs.toString(),
-            song.customCoverUrl.orEmpty(),
-            song.customName.orEmpty(),
-            song.customArtist.orEmpty(),
-            song.originalName.orEmpty(),
-            song.originalArtist.orEmpty(),
-            song.originalCoverUrl.orEmpty(),
-            song.originalLyric.orEmpty(),
-            song.originalTranslatedLyric.orEmpty(),
-            song.channelId.orEmpty(),
-            song.audioId.orEmpty(),
-            song.subAudioId.orEmpty(),
-            song.playlistContextId.orEmpty()
-        ).joinToString(separator = "") { value -> "${value.length}:$value" }
     }
 }

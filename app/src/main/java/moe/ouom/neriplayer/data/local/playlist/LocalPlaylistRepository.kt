@@ -1378,10 +1378,14 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-    suspend fun updateSongMetadata(originalSong: SongItem, newSongInfo: SongItem) {
+    suspend fun updateSongMetadata(
+        originalSong: SongItem,
+        newSongInfo: SongItem,
+        triggerSync: Boolean = false
+    ) {
         withContext(Dispatchers.IO) {
             commitPlaylistMutation {
-                val modifiedAt = System.currentTimeMillis()
+                val modifiedAt = if (triggerSync) System.currentTimeMillis() else null
                 var changed = false
                 val updated = _playlists.value.map { playlist ->
                     val songIndex = playlist.songs.indexOfFirst { it.sameIdentityAs(originalSong) }
@@ -1401,7 +1405,7 @@ class LocalPlaylistRepository private constructor(
                         changed = true
                         playlist.copy(
                             songs = songs,
-                            modifiedAt = modifiedAt,
+                            modifiedAt = modifiedAt ?: playlist.modifiedAt,
                             songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                         )
                     }
@@ -1409,11 +1413,11 @@ class LocalPlaylistRepository private constructor(
                 if (!changed) {
                     return@commitPlaylistMutation
                 }
-                // 播放期自动补 metadata 只需要把本地视图写稳，不该顺手唤醒整条云同步链
+                // 调用方决定这次元数据变更是不是用户动作，避免播放期自动补全顺手唤醒云同步
                 publishLocked(
                     playlists = updated,
-                    triggerSync = false,
-                    markLocalMutation = true
+                    triggerSync = triggerSync,
+                    markLocalMutation = triggerSync
                 )
             }
         }
@@ -1425,7 +1429,6 @@ class LocalPlaylistRepository private constructor(
         }
 
         commitPlaylistMutation {
-            val modifiedAt = System.currentTimeMillis()
             val updateIndex = SongMetadataUpdateIndex(updates)
             var changed = false
             val updated = _playlists.value.map { playlist ->
@@ -1449,7 +1452,6 @@ class LocalPlaylistRepository private constructor(
                 if (playlistChanged) {
                     playlist.copy(
                         songs = refreshedSongs,
-                        modifiedAt = modifiedAt,
                         songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                     )
                 } else {
@@ -1461,7 +1463,7 @@ class LocalPlaylistRepository private constructor(
                 publishLocked(
                     playlists = updated,
                     triggerSync = false,
-                    markLocalMutation = true
+                    markLocalMutation = false
                 )
             }
         }
@@ -1492,10 +1494,16 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-    suspend fun updateSongMetadata(songId: Long, albumIdentifier: String, newSongInfo: SongItem) {
+    suspend fun updateSongMetadata(
+        songId: Long,
+        albumIdentifier: String,
+        newSongInfo: SongItem,
+        triggerSync: Boolean = false
+    ) {
         updateSongMetadata(
             originalSong = newSongInfo.copy(id = songId, album = albumIdentifier),
-            newSongInfo = newSongInfo
+            newSongInfo = newSongInfo,
+            triggerSync = triggerSync
         )
     }
 
@@ -1524,6 +1532,7 @@ class LocalPlaylistRepository private constructor(
         }
         withContext(Dispatchers.IO) {
             commitPlaylistMutation {
+                val modifiedAt = System.currentTimeMillis()
                 var changed = false
                 val updated = _playlists.value.map { playlist ->
                     var playlistChanged = false
@@ -1553,6 +1562,7 @@ class LocalPlaylistRepository private constructor(
                     } else {
                         playlist.copy(
                             songs = updatedSongs.toMutableList(),
+                            modifiedAt = modifiedAt,
                             songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                         )
                     }
@@ -1560,7 +1570,7 @@ class LocalPlaylistRepository private constructor(
                 if (changed) {
                     publishLocked(
                         playlists = updated,
-                        triggerSync = false,
+                        triggerSync = true,
                         markLocalMutation = true
                     )
                 }

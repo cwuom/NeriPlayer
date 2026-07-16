@@ -7,9 +7,11 @@ import android.os.SystemClock
 import android.widget.Toast
 import androidx.media3.common.Player
 import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
@@ -23,6 +25,10 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.metadata.applyManualSearchMetadata
 import moe.ouom.neriplayer.core.player.metadata.normalizeCustomMetadataValue
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
+import moe.ouom.neriplayer.core.player.metadata.SongMetadataRequestCoordinator
+import moe.ouom.neriplayer.core.player.metadata.hasUsableLyrics
+import moe.ouom.neriplayer.core.player.metadata.shouldAutoMatchExternalLyrics
+import moe.ouom.neriplayer.core.player.metadata.toBasicSongDetails
 import moe.ouom.neriplayer.core.player.metadata.withUpdatedLyricsPreservingOriginal
 import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
 import moe.ouom.neriplayer.core.player.model.PersistedState
@@ -44,9 +50,11 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.model.stableKey
 import java.io.File
 import java.io.OutputStreamWriter
 import java.lang.reflect.Type
+import java.util.concurrent.atomic.AtomicBoolean
 
 internal fun PlayerManager.hasItemsImpl(): Boolean = currentPlaylist.isNotEmpty()
 
@@ -62,6 +70,23 @@ internal data class RestoredPlayerStateSnapshot(
     val originalPlaylistSize: Int,
     val persistedIndex: Int
 )
+
+private val songMetadataRequestCoordinator = SongMetadataRequestCoordinator()
+private val songMetadataMutationMutex = Mutex()
+
+private suspend fun <T> runSongMetadataMutation(block: suspend () -> T): T {
+    return withContext(Dispatchers.IO) {
+        songMetadataMutationMutex.withLock { block() }
+    }
+}
+
+private fun PlayerManager.dispatchMetadataReplacementCompletion(
+    onComplete: ((Boolean) -> Unit)?,
+    applied: Boolean
+) {
+    val callback = onComplete ?: return
+    application.mainExecutor.execute { callback(applied) }
+}
 
 private fun buildPersistedPlaybackState(
     currentIndexSnapshot: Int,
@@ -831,69 +856,146 @@ internal fun PlayerManager.suppressFutureAutoResumeForCurrentSessionImpl(
 internal fun PlayerManager.replaceMetadataFromSearchImpl(
     originalSong: SongItem,
     selectedSong: SongSearchInfo,
-    isAuto: Boolean = false
+    isAuto: Boolean = false,
+    onComplete: ((Boolean) -> Unit)? = null
 ) {
-    ioScope.launch {
+    val requestToken = songMetadataRequestCoordinator.begin(
+        songKey = originalSong.stableKey(),
+        isAuto = isAuto
+    )
+    if (requestToken == null) {
+        dispatchMetadataReplacementCompletion(onComplete, applied = false)
+        return
+    }
+
+    val applied = AtomicBoolean(false)
+    val replacementJob = ioScope.launch {
         NPLogger.d(
             "NERI-PlayerManager",
             "replaceMetadataFromSearch: originalSong=${originalSong.name}, selectedId=${selectedSong.id}, source=${selectedSong.source}, isAuto=$isAuto, stack=[${debugStackHint()}]"
         )
-        val platform = selectedSong.source
-        if (
-            platform == MusicPlatform.CLOUD_MUSIC &&
-            AppContainer.neteaseCookieRepo.getAuthHealthOnce().state == SavedCookieAuthState.Missing
-        ) {
-            mainScope.launch {
-                Toast.makeText(
-                    application,
-                    getLocalizedString(R.string.netease_login_required_metadata),
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-            return@launch
-        }
-
-        val api = when (platform) {
-            MusicPlatform.CLOUD_MUSIC -> cloudMusicSearchApi
-            MusicPlatform.QQ_MUSIC -> qqMusicSearchApi
-        }
-
         try {
-            val newDetails = api.getSongInfo(selectedSong.id)
-
-            val updatedSong = if (isAuto) {
-                originalSong.withUpdatedLyricsPreservingOriginal(
-                    newLyrics = newDetails.lyric ?: originalSong.matchedLyric,
-                    newTranslatedLyric = newDetails.translatedLyric ?: originalSong.matchedTranslatedLyric
-                ).copy(
-                    matchedLyricSource = selectedSong.source,
-                    matchedSongId = selectedSong.id
-                )
-            } else {
-                applyManualSearchMetadata(
-                    originalSong = originalSong,
-                    songName = newDetails.songName,
-                    singer = newDetails.singer,
-                    coverUrl = newDetails.coverUrl,
-                    lyric = newDetails.lyric,
-                    translatedLyric = newDetails.translatedLyric,
-                    matchedSource = selectedSong.source,
-                    matchedSongId = selectedSong.id,
-                    useCustomOverride = shouldApplySearchMetadataAsCustomOverride(originalSong)
-                )
+            val platform = selectedSong.source
+            if (
+                platform == MusicPlatform.CLOUD_MUSIC &&
+                AppContainer.neteaseCookieRepo.getAuthHealthOnce().state == SavedCookieAuthState.Missing
+            ) {
+                mainScope.launch {
+                    Toast.makeText(
+                        application,
+                        getLocalizedString(R.string.netease_login_required_metadata),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                return@launch
             }
 
-            updateSongInAllPlaces(originalSong, updatedSong)
+            val api = when (platform) {
+                MusicPlatform.CLOUD_MUSIC -> cloudMusicSearchApi
+                MusicPlatform.QQ_MUSIC -> qqMusicSearchApi
+            }
+
+            val (newDetails, usedSearchSummaryFallback) = try {
+                api.getSongInfo(selectedSong.id) to false
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (isAuto) throw error
+                NPLogger.w(
+                    "NERI-PlayerManager",
+                    "Song detail lookup failed, applying search summary: selectedId=${selectedSong.id}, error=${error.message.orEmpty()}"
+                )
+                selectedSong.toBasicSongDetails() to true
+            }
+            applied.set(runSongMetadataMutation {
+                if (!songMetadataRequestCoordinator.isLatest(requestToken)) {
+                    NPLogger.d(
+                        "NERI-PlayerManager",
+                        "Skipping stale metadata replacement: song=${originalSong.name}, selectedId=${selectedSong.id}"
+                    )
+                    return@runSongMetadataMutation false
+                }
+
+                val latestOriginalSong = currentPlaylist.firstOrNull {
+                    it.sameIdentityAs(originalSong)
+                } ?: _currentSongFlow.value?.takeIf {
+                    it.sameIdentityAs(originalSong)
+                } ?: originalSong
+
+                if (
+                    isAuto &&
+                    !shouldAutoMatchExternalLyrics(
+                        song = latestOriginalSong,
+                        isYouTubeMusicTrack = isYouTubeMusicTrack(latestOriginalSong)
+                    )
+                ) {
+                    NPLogger.d(
+                        "NERI-PlayerManager",
+                        "Skipping obsolete auto metadata replacement: song=${latestOriginalSong.name}"
+                    )
+                    return@runSongMetadataMutation false
+                }
+
+                val updatedSong = if (isAuto) {
+                    if (!newDetails.hasUsableLyrics()) {
+                        NPLogger.d(
+                            "NERI-PlayerManager",
+                            "Skipping automatic metadata replacement without lyrics: selectedId=${selectedSong.id}"
+                        )
+                        return@runSongMetadataMutation false
+                    }
+                    latestOriginalSong.withUpdatedLyricsPreservingOriginal(
+                        newLyrics = newDetails.lyric ?: latestOriginalSong.matchedLyric,
+                        newTranslatedLyric = newDetails.translatedLyric
+                            ?: latestOriginalSong.matchedTranslatedLyric
+                    ).copy(
+                        matchedLyricSource = selectedSong.source,
+                        matchedSongId = selectedSong.id
+                    )
+                } else {
+                    applyManualSearchMetadata(
+                        originalSong = latestOriginalSong,
+                        songName = newDetails.songName,
+                        singer = newDetails.singer,
+                        coverUrl = newDetails.coverUrl,
+                        lyric = newDetails.lyric,
+                        translatedLyric = newDetails.translatedLyric,
+                        matchedSource = selectedSong.source,
+                        matchedSongId = selectedSong.id,
+                        useCustomOverride = shouldApplySearchMetadataAsCustomOverride(latestOriginalSong),
+                        preserveExistingMatchedLyrics = usedSearchSummaryFallback
+                    )
+                }
+
+                updateSongInAllPlaces(
+                    originalSong = latestOriginalSong,
+                    updatedSong = updatedSong,
+                    triggerSync = !isAuto
+                )
+                true
+            })
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            mainScope.launch {
-                Toast.makeText(
-                    application,
-                    getLocalizedString(R.string.toast_match_failed, e.message.orEmpty()),
-                    Toast.LENGTH_SHORT
-                ).show()
-                NPLogger.e("NERI-PlayerManager", "replaceMetadataFromSearch failed: ${e.message}", e)
+            if (songMetadataRequestCoordinator.isLatest(requestToken)) {
+                mainScope.launch {
+                    Toast.makeText(
+                        application,
+                        getLocalizedString(R.string.toast_match_failed, e.message.orEmpty()),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    NPLogger.e(
+                        "NERI-PlayerManager",
+                        "replaceMetadataFromSearch failed: ${e.message}",
+                        e
+                    )
+                }
             }
         }
+    }
+    replacementJob.invokeOnCompletion {
+        songMetadataRequestCoordinator.complete(requestToken)
+        dispatchMetadataReplacementCompletion(onComplete, applied.get())
     }
 }
 
@@ -912,74 +1014,80 @@ internal fun PlayerManager.updateSongCustomInfoImpl(
     clearMatchedMetadata: Boolean = false
 ) {
     ioScope.launch {
-        NPLogger.d(
-            "PlayerManager",
-            "updateSongCustomInfo: id=${originalSong.id}, album='${originalSong.album}', customName=${customName?.take(32)}, customArtist=${customArtist?.take(32)}, customCoverUrl=${customCoverUrl?.take(64)}, restoreBase=[$restoreBaseName,$restoreBaseArtist,$restoreBaseCover], clearMatched=$clearMatchedMetadata, stack=[${debugStackHint()}]"
-        )
+        runSongMetadataMutation {
+            NPLogger.d(
+                "PlayerManager",
+                "updateSongCustomInfo: id=${originalSong.id}, album='${originalSong.album}', customName=${customName?.take(32)}, customArtist=${customArtist?.take(32)}, customCoverUrl=${customCoverUrl?.take(64)}, restoreBase=[$restoreBaseName,$restoreBaseArtist,$restoreBaseCover], clearMatched=$clearMatchedMetadata, stack=[${debugStackHint()}]"
+            )
 
-        val currentSong = currentPlaylist.firstOrNull { it.sameIdentityAs(originalSong) }
-            ?: _currentSongFlow.value?.takeIf { it.sameIdentityAs(originalSong) }
-            ?: originalSong
+            val currentSong = currentPlaylist.firstOrNull { it.sameIdentityAs(originalSong) }
+                ?: _currentSongFlow.value?.takeIf { it.sameIdentityAs(originalSong) }
+                ?: originalSong
 
-        val baseName = currentSong.name
-        val baseArtist = currentSong.artist
-        val baseCoverUrl = currentSong.coverUrl
-        val restoredBaseName = customName.normalizedManualMetadataValue()
-            ?: currentSong.originalName
-            ?: baseName
-        val restoredBaseArtist = customArtist.normalizedManualMetadataValue()
-            ?: currentSong.originalArtist
-            ?: baseArtist
-        val restoredBaseCoverUrl = customCoverUrl.normalizedManualMetadataValue()
-            ?: currentSong.originalCoverUrl
+            val baseName = currentSong.name
+            val baseArtist = currentSong.artist
+            val baseCoverUrl = currentSong.coverUrl
+            val restoredBaseName = customName.normalizedManualMetadataValue()
+                ?: currentSong.originalName
+                ?: baseName
+            val restoredBaseArtist = customArtist.normalizedManualMetadataValue()
+                ?: currentSong.originalArtist
+                ?: baseArtist
+            val restoredBaseCoverUrl = customCoverUrl.normalizedManualMetadataValue()
+                ?: currentSong.originalCoverUrl
 
-        val nextBaseName = if (restoreBaseName) restoredBaseName else baseName
-        val nextBaseArtist = if (restoreBaseArtist) restoredBaseArtist else baseArtist
-        val nextBaseCoverUrl = if (restoreBaseCover) restoredBaseCoverUrl else baseCoverUrl
-        val originalName = currentSong.originalName ?: nextBaseName
-        val originalArtist = currentSong.originalArtist ?: nextBaseArtist
-        val originalCoverUrl = currentSong.originalCoverUrl ?: nextBaseCoverUrl
+            val nextBaseName = if (restoreBaseName) restoredBaseName else baseName
+            val nextBaseArtist = if (restoreBaseArtist) restoredBaseArtist else baseArtist
+            val nextBaseCoverUrl = if (restoreBaseCover) restoredBaseCoverUrl else baseCoverUrl
+            val originalName = currentSong.originalName ?: nextBaseName
+            val originalArtist = currentSong.originalArtist ?: nextBaseArtist
+            val originalCoverUrl = currentSong.originalCoverUrl ?: nextBaseCoverUrl
 
-        val normalizedCustomName = if (restoreBaseName) {
-            null
-        } else {
-            normalizeCustomMetadataValue(
-                desiredValue = customName,
-                baseValue = baseName
+            val normalizedCustomName = if (restoreBaseName) {
+                null
+            } else {
+                normalizeCustomMetadataValue(
+                    desiredValue = customName,
+                    baseValue = baseName
+                )
+            }
+            val normalizedCustomArtist = if (restoreBaseArtist) {
+                null
+            } else {
+                normalizeCustomMetadataValue(
+                    desiredValue = customArtist,
+                    baseValue = baseArtist
+                )
+            }
+            val normalizedCustomCoverUrl = if (restoreBaseCover) {
+                null
+            } else {
+                normalizeCustomMetadataValue(
+                    desiredValue = customCoverUrl,
+                    baseValue = baseCoverUrl
+                )
+            }
+
+            val updatedSong = currentSong.copy(
+                name = nextBaseName,
+                artist = nextBaseArtist,
+                coverUrl = nextBaseCoverUrl,
+                customName = normalizedCustomName,
+                customArtist = normalizedCustomArtist,
+                customCoverUrl = normalizedCustomCoverUrl,
+                originalName = originalName,
+                originalArtist = originalArtist,
+                originalCoverUrl = originalCoverUrl,
+                matchedLyricSource = if (clearMatchedMetadata) null else currentSong.matchedLyricSource,
+                matchedSongId = if (clearMatchedMetadata) null else currentSong.matchedSongId
+            )
+
+            updateSongInAllPlaces(
+                originalSong = originalSong,
+                updatedSong = updatedSong,
+                triggerSync = true
             )
         }
-        val normalizedCustomArtist = if (restoreBaseArtist) {
-            null
-        } else {
-            normalizeCustomMetadataValue(
-                desiredValue = customArtist,
-                baseValue = baseArtist
-            )
-        }
-        val normalizedCustomCoverUrl = if (restoreBaseCover) {
-            null
-        } else {
-            normalizeCustomMetadataValue(
-                desiredValue = customCoverUrl,
-                baseValue = baseCoverUrl
-            )
-        }
-
-        val updatedSong = currentSong.copy(
-            name = nextBaseName,
-            artist = nextBaseArtist,
-            coverUrl = nextBaseCoverUrl,
-            customName = normalizedCustomName,
-            customArtist = normalizedCustomArtist,
-            customCoverUrl = normalizedCustomCoverUrl,
-            originalName = originalName,
-            originalArtist = originalArtist,
-            originalCoverUrl = originalCoverUrl,
-            matchedLyricSource = if (clearMatchedMetadata) null else currentSong.matchedLyricSource,
-            matchedSongId = if (clearMatchedMetadata) null else currentSong.matchedSongId
-        )
-
-        updateSongInAllPlaces(originalSong, updatedSong)
     }
 }
 
@@ -989,18 +1097,24 @@ private fun String?.normalizedManualMetadataValue(): String? {
 
 internal fun PlayerManager.hydrateSongMetadataImpl(originalSong: SongItem, updatedSong: SongItem) {
     ioScope.launch {
-        NPLogger.d(
-            "NERI-PlayerManager",
-            "hydrateSongMetadata: original=${originalSong.name}/${originalSong.id}, updated=${updatedSong.name}/${updatedSong.id}, stack=[${debugStackHint()}]"
-        )
-        updateSongInAllPlaces(originalSong, updatedSong)
+        runSongMetadataMutation {
+            NPLogger.d(
+                "NERI-PlayerManager",
+                "hydrateSongMetadata: original=${originalSong.name}/${originalSong.id}, updated=${updatedSong.name}/${updatedSong.id}, stack=[${debugStackHint()}]"
+            )
+            updateSongInAllPlaces(
+                originalSong = originalSong,
+                updatedSong = updatedSong,
+                triggerSync = false
+            )
+        }
     }
 }
 
 internal suspend fun PlayerManager.updateUserLyricOffsetImpl(
     songToUpdate: SongItem,
     newOffset: Long
-) {
+) = runSongMetadataMutation {
     NPLogger.d(
         "NERI-PlayerManager",
         "updateUserLyricOffset: song=${songToUpdate.name}, id=${songToUpdate.id}, newOffset=$newOffset"
@@ -1023,7 +1137,11 @@ internal suspend fun PlayerManager.updateUserLyricOffsetImpl(
     if (latestSong != null) {
         runLocalPlaylistMutationSafely("updateUserLyricOffset") {
             withContext(Dispatchers.IO) {
-                localRepo.updateSongMetadata(songToUpdate, latestSong)
+                localRepo.updateSongMetadata(
+                    originalSong = songToUpdate,
+                    newSongInfo = latestSong,
+                    triggerSync = true
+                )
             }
         }
     }
@@ -1035,9 +1153,9 @@ internal suspend fun PlayerManager.rebaseUserLyricOffsetsForSourceImpl(
     targetSource: MusicPlatform,
     previousDefaultOffsetMs: Long,
     newDefaultOffsetMs: Long
-) {
+) = runSongMetadataMutation {
     if (previousDefaultOffsetMs == newDefaultOffsetMs) {
-        return
+        return@runSongMetadataMutation
     }
     NPLogger.d(
         "NERI-PlayerManager",
@@ -1111,7 +1229,7 @@ internal suspend fun PlayerManager.rebaseUserLyricOffsetsForSourceImpl(
 internal suspend fun PlayerManager.updateSongLyricsImpl(
     songToUpdate: SongItem,
     newLyrics: String?
-) {
+) = runSongMetadataMutation {
     NPLogger.d(
         "NERI-PlayerManager",
         "updateSongLyrics: song=${songToUpdate.name}, id=${songToUpdate.id}, lyricLength=${newLyrics?.length ?: 0}"
@@ -1139,7 +1257,11 @@ internal suspend fun PlayerManager.updateSongLyricsImpl(
     if (latestSong != null) {
         runLocalPlaylistMutationSafely("updateSongLyrics") {
             withContext(Dispatchers.IO) {
-                localRepo.updateSongMetadata(songToUpdate, latestSong)
+                localRepo.updateSongMetadata(
+                    originalSong = songToUpdate,
+                    newSongInfo = latestSong,
+                    triggerSync = true
+                )
             }
         }
         GlobalDownloadManager.syncDownloadedSongMetadata(latestSong)
@@ -1153,7 +1275,7 @@ internal suspend fun PlayerManager.updateSongLyricsImpl(
 internal suspend fun PlayerManager.updateSongTranslatedLyricsImpl(
     songToUpdate: SongItem,
     newTranslatedLyrics: String?
-) {
+) = runSongMetadataMutation {
     NPLogger.d(
         "NERI-PlayerManager",
         "updateSongTranslatedLyrics: song=${songToUpdate.name}, id=${songToUpdate.id}, translatedLength=${newTranslatedLyrics?.length ?: 0}"
@@ -1181,7 +1303,11 @@ internal suspend fun PlayerManager.updateSongTranslatedLyricsImpl(
     if (latestSong != null) {
         runLocalPlaylistMutationSafely("updateSongTranslatedLyrics") {
             withContext(Dispatchers.IO) {
-                localRepo.updateSongMetadata(songToUpdate, latestSong)
+                localRepo.updateSongMetadata(
+                    originalSong = songToUpdate,
+                    newSongInfo = latestSong,
+                    triggerSync = true
+                )
             }
         }
         GlobalDownloadManager.syncDownloadedSongMetadata(latestSong)
@@ -1196,7 +1322,7 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
     songToUpdate: SongItem,
     newLyrics: String?,
     newTranslatedLyrics: String?
-) {
+) = runSongMetadataMutation {
     val queueIndex = queueIndexOf(songToUpdate)
 
     if (queueIndex != -1) {
@@ -1237,7 +1363,11 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
     if (latestSong != null) {
         runLocalPlaylistMutationSafely("updateSongLyricsAndTranslation") {
             withContext(Dispatchers.IO) {
-                localRepo.updateSongMetadata(songToUpdate, latestSong)
+                localRepo.updateSongMetadata(
+                    originalSong = songToUpdate,
+                    newSongInfo = latestSong,
+                    triggerSync = true
+                )
             }
         }
         GlobalDownloadManager.syncDownloadedSongMetadata(latestSong)
@@ -1257,7 +1387,8 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
 
 private suspend fun PlayerManager.updateSongInAllPlaces(
     originalSong: SongItem,
-    updatedSong: SongItem
+    updatedSong: SongItem,
+    triggerSync: Boolean
 ) {
     NPLogger.d(
         "NERI-PlayerManager",
@@ -1277,11 +1408,19 @@ private suspend fun PlayerManager.updateSongInAllPlaces(
 
     runLocalPlaylistMutationSafely("updateSongInAllPlaces") {
         withContext(Dispatchers.IO) {
-            localRepo.updateSongMetadata(originalSong, updatedSong)
+            localRepo.updateSongMetadata(
+                originalSong = originalSong,
+                newSongInfo = updatedSong,
+                triggerSync = triggerSync
+            )
         }
     }
     GlobalDownloadManager.syncDownloadedSongMetadata(updatedSong)
-    AppContainer.playHistoryRepo.updateSongMetadata(originalSong, updatedSong)
+    AppContainer.playHistoryRepo.updateSongMetadata(
+        originalSong = originalSong,
+        updatedSong = updatedSong,
+        triggerSync = triggerSync
+    )
     AppContainer.playlistUsageRepo.syncLocalEntries(localRepo.playlists.value)
 
     persistState()

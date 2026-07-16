@@ -6,6 +6,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
@@ -531,7 +532,7 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
-    fun `metadata update preserves membership token and display order`() = runTest {
+    fun `automatic metadata update stays local without advancing sync version`() = runTest {
         val playlistId = 146L
         val membershipToken = SyncCausalToken(deviceId = "existing", counter = 9L)
         val original = remoteNeteaseSong(id = 147L).copy(
@@ -572,9 +573,87 @@ class LocalPlaylistRepositoryTest {
         assertEquals("Hydrated", updated.name)
         assertEquals(500L, updated.addedAt)
         assertEquals(listOf(membershipToken), updated.syncMembershipTokens)
+        assertEquals(10L, repository.playlists.value.single().modifiedAt)
+        assertEquals(0L, syncStore.mutationVersion)
+        assertEquals(0, autoSyncTriggerCount)
+    }
+
+    @Test
+    fun `user metadata update schedules auto sync when requested`() = runTest {
+        val playlistId = 156L
+        val original = remoteNeteaseSong(id = 157L)
+        val syncStore = RecordingSyncMutationStore()
+        var autoSyncTriggerCount = 0
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "metadata_user_sync.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = true,
+            syncMutationStore = syncStore,
+            autoSyncTrigger = { autoSyncTriggerCount++ }
+        )
+        repository.updatePlaylists(
+            listOf(
+                LocalPlaylist(
+                    id = playlistId,
+                    name = "metadata",
+                    songs = mutableListOf(original),
+                    modifiedAt = 10L
+                )
+            )
+        )
+
+        repository.updateSongMetadata(
+            originalSong = original,
+            newSongInfo = original.copy(customName = "User title"),
+            triggerSync = true
+        )
+
+        assertEquals("User title", repository.playlists.value.single().songs.single().customName)
         assertTrue(repository.playlists.value.single().modifiedAt > 10L)
         assertEquals(1L, syncStore.mutationVersion)
-        assertEquals(0, autoSyncTriggerCount)
+        assertEquals(1, autoSyncTriggerCount)
+    }
+
+    @Test
+    fun `lyric offset rebase updates playlist timestamp and schedules sync`() = runTest {
+        val playlistId = 158L
+        val original = remoteNeteaseSong(id = 159L).copy(
+            matchedLyricSource = MusicPlatform.QQ_MUSIC,
+            userLyricOffsetMs = 300L
+        )
+        val syncStore = RecordingSyncMutationStore()
+        var autoSyncTriggerCount = 0
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "offset_rebase_sync.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = true,
+            syncMutationStore = syncStore,
+            autoSyncTrigger = { autoSyncTriggerCount++ }
+        )
+        repository.updatePlaylists(
+            listOf(
+                LocalPlaylist(
+                    id = playlistId,
+                    name = "offset",
+                    songs = mutableListOf(original),
+                    modifiedAt = 10L
+                )
+            )
+        )
+
+        repository.rebaseLyricOffsetsForSource(
+            targetSource = MusicPlatform.QQ_MUSIC,
+            previousDefaultOffsetMs = 100L,
+            newDefaultOffsetMs = 50L
+        )
+
+        val playlist = repository.playlists.value.single()
+        assertEquals(350L, playlist.songs.single().userLyricOffsetMs)
+        assertTrue(playlist.modifiedAt > 10L)
+        assertEquals(1L, syncStore.mutationVersion)
+        assertEquals(1, autoSyncTriggerCount)
     }
 
     @Test

@@ -287,7 +287,11 @@ class PlayHistoryRepository private constructor(private val app: Context) {
         }
     }
 
-    fun updateSongMetadata(originalSong: SongItem, updatedSong: SongItem) {
+    fun updateSongMetadata(
+        originalSong: SongItem,
+        updatedSong: SongItem,
+        triggerSync: Boolean = true
+    ) {
         scope.launch {
             historyMutex.withLock {
                 NPLogger.d(
@@ -301,6 +305,9 @@ class PlayHistoryRepository private constructor(private val app: Context) {
                 }
 
                 val updatedEntry = current[existingIndex].mergeSongMetadata(updatedSong)
+                if (updatedEntry == current[existingIndex]) {
+                    return@withLock
+                }
                 val updated = current.toMutableList().apply {
                     this[existingIndex] = updatedEntry
                 }
@@ -310,7 +317,9 @@ class PlayHistoryRepository private constructor(private val app: Context) {
 
                 _history.value = updated
                 persistToDisk(updated)
-                triggerSyncIfNeeded(PlayHistorySyncUrgency.SETTLED)
+                if (triggerSync) {
+                    triggerSyncIfNeeded(PlayHistorySyncUrgency.SETTLED)
+                }
             }
         }
     }

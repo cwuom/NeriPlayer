@@ -26,7 +26,6 @@ package moe.ouom.neriplayer.ui.screen
 import android.Manifest
 import android.content.ClipData
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.media.AudioDeviceCallback
@@ -99,12 +98,9 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SpeakerGroup
-import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.FormatSize
-import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.LibraryMusic
@@ -113,12 +109,10 @@ import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Save
-import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Timer
-import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -159,8 +153,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -172,7 +164,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -199,18 +190,13 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.download.DownloadStatus
-import moe.ouom.neriplayer.core.download.isDownloadTaskCancellable
-import moe.ouom.neriplayer.core.download.isDownloadTaskFinalizing
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.shouldHideRemoteDownloadAction
-import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlaybackQualityOption
-import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
@@ -244,6 +230,7 @@ import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.LyricShareSheet
 import moe.ouom.neriplayer.ui.component.lyrics.LyricVisualSpec
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSoundSheet
+import moe.ouom.neriplayer.ui.component.playback.SongMetadataSearchContent
 import moe.ouom.neriplayer.ui.component.playback.PlaybackControlIndicator
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceBadge
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
@@ -274,8 +261,6 @@ import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.util.media.saveCoverToPictures
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -339,12 +324,12 @@ internal fun resolveNowPlayingPlaybackSourceType(
     }
 }
 
-private fun hasCachedLocalDownload(song: SongItem): Boolean {
+internal fun hasCachedLocalDownload(song: SongItem): Boolean {
     return GlobalDownloadManager.hasDownloadedSongCached(song) ||
         ManagedDownloadStorage.peekDownloadedAudio(song) != null
 }
 
-private fun buildRemoteSongShareUrl(originalSong: SongItem, queue: List<SongItem>): String {
+internal fun buildRemoteSongShareUrl(originalSong: SongItem, queue: List<SongItem>): String {
     extractYouTubeMusicVideoId(originalSong.mediaUri)?.let { videoId ->
         return "https://music.youtube.com/watch?v=$videoId"
     }
@@ -393,7 +378,10 @@ private data class LoadedLyricsState(
     val rawPhoneticLyrics: String?,
     val lyrics: List<LyricEntry>,
     val translatedLyrics: List<LyricEntry>,
-    val phoneticLyrics: List<LyricEntry>
+    val phoneticLyrics: List<LyricEntry>,
+    val plainLyrics: List<LyricEntry>,
+    val plainTranslatedLyrics: List<LyricEntry>,
+    val embeddedPhoneticLyrics: List<LyricEntry>
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
@@ -610,6 +598,13 @@ fun NowPlayingScreen(
     var rawTranslatedLyricsText by remember(currentSong?.id) { mutableStateOf<String?>(null) }
     var rawPhoneticLyricsText by remember(currentSong?.id) { mutableStateOf<String?>(null) }
     var remotePhoneticLyrics by remember(currentSong?.id) { mutableStateOf<List<LyricEntry>>(emptyList()) }
+    var plainLyrics by remember(currentSong?.id) { mutableStateOf<List<LyricEntry>>(emptyList()) }
+    var plainTranslatedLyrics by remember(currentSong?.id) {
+        mutableStateOf<List<LyricEntry>>(emptyList())
+    }
+    var embeddedPhoneticLyrics by remember(currentSong?.id) {
+        mutableStateOf<List<LyricEntry>>(emptyList())
+    }
     val nowPlayingViewModel: NowPlayingViewModel = viewModel()
     var artistPickerCandidates by remember { mutableStateOf<List<NeteaseArtistSummary>>(emptyList()) }
     var resolvingArtistNavigation by remember { mutableStateOf(false) }
@@ -759,7 +754,13 @@ fun NowPlayingScreen(
                 rawPhoneticLyrics = rawNeteasePhoneticLyric.takeIf { it.isNotBlank() },
                 lyrics = resolvedLyrics,
                 translatedLyrics = resolvedTranslatedLyrics,
-                phoneticLyrics = resolvedPhoneticLyrics
+                phoneticLyrics = resolvedPhoneticLyrics,
+                plainLyrics = resolvedLyrics.flattenWordTimedEntries(),
+                plainTranslatedLyrics = resolvedTranslatedLyrics.flattenWordTimedEntries(),
+                embeddedPhoneticLyrics = buildPhoneticLyricEntries(
+                    rawLyrics = effectiveRawLyrics,
+                    lyrics = resolvedLyrics
+                )
             )
         }
         rawLyricsText = loadedLyricsState.rawLyrics
@@ -768,14 +769,9 @@ fun NowPlayingScreen(
         lyrics = loadedLyricsState.lyrics
         translatedLyrics = loadedLyricsState.translatedLyrics
         remotePhoneticLyrics = loadedLyricsState.phoneticLyrics
-    }
-    val plainLyrics = remember(lyrics) { lyrics.flattenWordTimedEntries() }
-    val plainTranslatedLyrics = remember(translatedLyrics) { translatedLyrics.flattenWordTimedEntries() }
-    val embeddedPhoneticLyrics = remember(rawLyricsText, lyrics) {
-        buildPhoneticLyricEntries(
-            rawLyrics = rawLyricsText,
-            lyrics = lyrics
-        )
+        plainLyrics = loadedLyricsState.plainLyrics
+        plainTranslatedLyrics = loadedLyricsState.plainTranslatedLyrics
+        embeddedPhoneticLyrics = loadedLyricsState.embeddedPhoneticLyrics
     }
     val phoneticLyrics = remember(rawPhoneticLyricsText, remotePhoneticLyrics, embeddedPhoneticLyrics) {
         remotePhoneticLyrics.takeIf { it.isNotEmpty() } ?: embeddedPhoneticLyrics
@@ -2011,6 +2007,16 @@ private fun NeteaseArtistPickerSheet(
     }
 }
 
+private enum class MoreOptionsPage {
+    MAIN,
+    SEARCH,
+    LYRIC_BEHAVIOR,
+    FONT_SIZE,
+    EDIT_INFO,
+    LISTEN_TOGETHER,
+    PLAYBACK_SOUND
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MoreOptionsSheet(
@@ -2032,113 +2038,51 @@ fun MoreOptionsSheet(
     offlineMode: Boolean = false
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var showSearchView by remember { mutableStateOf(false) }
-    var showOffsetSheet by remember { mutableStateOf(false) }
-    var showFontSizeSheet by remember { mutableStateOf(false) }
-    var showEditInfoSheet by remember { mutableStateOf(false) }
-    var showListenTogetherSheet by remember { mutableStateOf(false) }
-    var showPlaybackSoundSheet by remember { mutableStateOf(false) }
+    var page by remember { mutableStateOf(MoreOptionsPage.MAIN) }
+    var isDismissing by remember { mutableStateOf(false) }
 
-    val focusManager = LocalFocusManager.current
-    val searchFocusRequester = remember { FocusRequester() }
-    val keyboardController = LocalSoftwareKeyboardController.current
-    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
     val actualSong = currentSong?.takeIf { it.sameIdentityAs(originalSong) } ?: originalSong
     val isLocalSong = actualSong.isLocalSong()
-    val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsStateWithLifecycle(initialValue = false)
-    val qualityOptions = currentPlaybackAudioInfo?.qualityOptions.orEmpty()
-    val canSwitchQuality = qualityOptions.size > 1
-    val currentQualityLabel = currentPlaybackAudioInfo?.qualityLabel
     val playbackSoundState by PlayerManager.playbackSoundStateFlow.collectAsStateWithLifecycle()
-    val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
-    val hasLocalDownload = remember(downloadPresenceVersion, originalSong) {
-        hasCachedLocalDownload(originalSong)
-    }
-    val downloadSongKey = remember(originalSong) { originalSong.stableKey() }
-    val currentDownloadTaskFlow = remember(downloadSongKey) {
-        GlobalDownloadManager.downloadTasks
-            .map { tasks -> tasks.firstOrNull { it.song.stableKey() == downloadSongKey } }
-            .distinctUntilChanged()
-    }
-    val currentDownloadTask by currentDownloadTaskFlow.collectAsStateWithLifecycle(initialValue = null)
-    val shouldHideDownloadAction = remember(hasLocalDownload, currentDownloadTask) {
-        shouldHideDownloadActionForSong(hasLocalDownload, currentDownloadTask)
-    }
-    val currentDownloadFinalizing = remember(currentDownloadTask) {
-        isDownloadTaskFinalizing(currentDownloadTask)
-    }
-    val currentDownloadCancellable = remember(currentDownloadTask) {
-        isDownloadTaskCancellable(currentDownloadTask)
-    }
 
-    LaunchedEffect(showSearchView) {
-        if (showSearchView) {
-            viewModel.prepareForSearch(actualSong.displayName())
-            viewModel.performSearch()
-            if (autoShowKeyboard) {
-                delay(120)
-                searchFocusRequester.requestFocus()
-                keyboardController?.show()
+    fun dismissSheet(afterHidden: () -> Unit = {}) {
+        if (isDismissing) return
+        isDismissing = true
+        coroutineScope.launch {
+            try {
+                sheetState.hide()
+                afterHidden()
+            } finally {
+                try {
+                    onDismiss()
+                } finally {
+                    isDismissing = false
+                }
             }
         }
     }
 
     ModalBottomSheet(
-        onDismissRequest = {
-            coroutineScope.launch {
-                sheetState.hide()
-                onDismiss()
-            }
-        },
+        onDismissRequest = { dismissSheet() },
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface
     ) {
-        // 处理子页面的返回键导航
         BackHandler(
-            enabled = showOffsetSheet ||
-                showFontSizeSheet ||
-                showSearchView ||
-                showEditInfoSheet ||
-                showListenTogetherSheet ||
-                showPlaybackSoundSheet
+            enabled = page != MoreOptionsPage.MAIN
         ) {
-            when {
-                showOffsetSheet -> showOffsetSheet = false
-                showFontSizeSheet -> showFontSizeSheet = false
-                showSearchView -> showSearchView = false
-                showEditInfoSheet -> showEditInfoSheet = false
-                showListenTogetherSheet -> showListenTogetherSheet = false
-                showPlaybackSoundSheet -> showPlaybackSoundSheet = false
-            }
+            page = MoreOptionsPage.MAIN
         }
 
-        // 处理主页面的返回键
         BackHandler(
-            enabled = !showOffsetSheet &&
-                !showFontSizeSheet &&
-                !showSearchView &&
-                !showEditInfoSheet &&
-                !showListenTogetherSheet &&
-                !showPlaybackSoundSheet
+            enabled = page == MoreOptionsPage.MAIN
         ) {
-            coroutineScope.launch {
-                sheetState.hide()
-                onDismiss()
-            }
+            dismissSheet()
         }
 
         AnimatedContent(
-            targetState = when {
-                showOffsetSheet -> "Offset"
-                showFontSizeSheet -> "FontSize"
-                showSearchView -> "Search"
-                showEditInfoSheet -> "EditInfo"
-                showListenTogetherSheet -> "ListenTogether"
-                showPlaybackSoundSheet -> "PlaybackSound"
-                else -> "Main"
-            },
+            targetState = page,
             transitionSpec = {
                 (fadeIn(animationSpec = tween(220, delayMillis = 90)) +
                         scaleIn(initialScale = 0.92f, animationSpec = tween(220, delayMillis = 90)))
@@ -2147,306 +2091,41 @@ fun MoreOptionsSheet(
             label = "more_options_sheet_content"
         ) { targetState ->
             when (targetState) {
-                "Main" -> {
-                    val mainScrollState = rememberScrollState()
-                    Column(
-                        Modifier
-                            .bottomSheetScrollGuard { mainScrollState.value == 0 }
-                            .verticalScroll(mainScrollState)
-                            .padding(bottom = 32.dp)
-                    ) {
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.music_get_info)) },
-                            leadingContent = { Icon(Icons.Outlined.Info, null) },
-                            modifier = Modifier.clickable { showSearchView = true }
-                        )
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.music_edit_info)) },
-                            leadingContent = { Icon(Icons.Outlined.Edit, null) },
-                            modifier = Modifier.clickable { showEditInfoSheet = true }
-                        )
-                        if (canSwitchQuality) {
-                            ListItem(
-                                headlineContent = { Text(stringResource(R.string.nowplaying_quality_switch_title)) },
-                                leadingContent = { Icon(Icons.Outlined.MusicNote, null) },
-                                supportingContent = currentQualityLabel?.takeIf { it.isNotBlank() }?.let { label ->
-                                    { Text(label) }
-                                },
-                                modifier = Modifier.clickable {
-                                    onDismiss()
-                                    onShowQualitySwitch()
-                                }
-                            )
-                        }
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.nowplaying_audio_effects_title)) },
-                            leadingContent = { Icon(Icons.Outlined.Tune, null) },
-                            supportingContent = {
-                                Text(stringResource(R.string.nowplaying_audio_effects_desc))
-                            },
-                            modifier = Modifier.clickable { showPlaybackSoundSheet = true }
-                        )
-                        if (isLocalSong) {
-                            ListItem(
-                                headlineContent = { Text(stringResource(R.string.local_song_open_details)) },
-                                leadingContent = { Icon(Icons.Outlined.Info, null) },
-                                modifier = Modifier.clickable {
-                                    onShowSongDetails(originalSong)
-                                    onDismiss()
-                                }
-                            )
-                        } else if (!shouldHideDownloadAction) {
-                            val task = currentDownloadTask
-                            val downloadHeadlineRes = when {
-                                task?.status == DownloadStatus.QUEUED -> R.string.download_cancel_download
-                                task?.status == DownloadStatus.DOWNLOADING -> R.string.download_cancel_download
-                                task?.status == DownloadStatus.WAITING_NETWORK -> R.string.download_cancel_download
-                                task?.status == DownloadStatus.CANCELLED -> R.string.download_to_local
-                                task?.status == DownloadStatus.FAILED -> R.string.action_retry
-                                else -> R.string.download_to_local
+                MoreOptionsPage.MAIN -> {
+                    MoreOptionsMainContent(
+                        viewModel = viewModel,
+                        originalSong = originalSong,
+                        queue = queue,
+                        isLocalSong = isLocalSong,
+                        lyricFontScale = lyricFontScale,
+                        currentPlaybackAudioInfo = currentPlaybackAudioInfo,
+                        isDismissing = isDismissing,
+                        snackbarHostState = snackbarHostState,
+                        onOpenSearch = { page = MoreOptionsPage.SEARCH },
+                        onOpenEditInfo = { page = MoreOptionsPage.EDIT_INFO },
+                        onOpenPlaybackSound = { page = MoreOptionsPage.PLAYBACK_SOUND },
+                        onOpenLyricBehavior = { page = MoreOptionsPage.LYRIC_BEHAVIOR },
+                        onOpenFontSize = { page = MoreOptionsPage.FONT_SIZE },
+                        onOpenListenTogether = { page = MoreOptionsPage.LISTEN_TOGETHER },
+                        onShowSongDetails = {
+                            dismissSheet { onShowSongDetails(originalSong) }
+                        },
+                        onShowQualitySwitch = {
+                            dismissSheet { onShowQualitySwitch() }
+                        },
+                        onEnterAlbum = { album ->
+                            dismissSheet {
+                                onEnterAlbum(album)
+                                onNavigateUp()
                             }
-                            val canClickDownloadAction =
-                                (task?.status != DownloadStatus.QUEUED &&
-                                    task?.status != DownloadStatus.DOWNLOADING &&
-                                    task?.status != DownloadStatus.WAITING_NETWORK) ||
-                                    currentDownloadCancellable
-
-                            ListItem(
-                                headlineContent = {
-                                    Text(stringResource(downloadHeadlineRes))
-                                },
-                                leadingContent = { Icon(Icons.Outlined.Download, null) },
-                                supportingContent = {
-                                    val progress = task?.progress
-                                    when {
-                                        progress != null -> {
-                                            Column {
-                                                if (progress.stage == AudioDownloadManager.DownloadStage.FINALIZING) {
-                                                    Text(stringResource(R.string.download_finalizing))
-                                                    LinearProgressIndicator(
-                                                        modifier = Modifier.fillMaxWidth()
-                                                    )
-                                                } else {
-                                                    Text(
-                                                        stringResource(
-                                                            R.string.download_progress_file_label,
-                                                            progress.percentage,
-                                                            progress.fileName
-                                                        )
-                                                    )
-                                                    if (progress.totalBytes > 0L) {
-                                                        LinearProgressIndicator(
-                                                            progress = {
-                                                                (progress.bytesRead.toFloat() /
-                                                                    progress.totalBytes.toFloat())
-                                                                    .coerceIn(0f, 1f)
-                                                            },
-                                                            modifier = Modifier.fillMaxWidth()
-                                                        )
-                                                    } else {
-                                                        LinearProgressIndicator(
-                                                            modifier = Modifier.fillMaxWidth()
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        task?.status == DownloadStatus.FAILED -> {
-                                            Text(stringResource(R.string.download_failed))
-                                        }
-
-                                        task?.status == DownloadStatus.WAITING_NETWORK -> {
-                                            Text(stringResource(R.string.download_waiting_network_recovery))
-                                        }
-                                    }
-                                },
-                                modifier = Modifier.clickable(enabled = canClickDownloadAction) {
-                                    when (task?.status) {
-                                        DownloadStatus.QUEUED,
-                                        DownloadStatus.WAITING_NETWORK,
-                                        DownloadStatus.DOWNLOADING -> {
-                                            viewModel.cancelDownload(downloadSongKey)
-                                        }
-
-                                        DownloadStatus.CANCELLED -> {
-                                            viewModel.resumeDownload(context, downloadSongKey)
-                                        }
-
-                                        DownloadStatus.FAILED -> {
-                                            viewModel.retryDownload(context, originalSong)
-                                        }
-
-                                        else -> {
-                                            viewModel.downloadSong(context, originalSong)
-                                        }
-                                    }
-                                }
-                            )
+                        },
+                        onDismissSheet = { afterHidden ->
+                            dismissSheet(afterHidden)
                         }
-
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.lyrics_adjust_behavior)) },
-                            leadingContent = { Icon(Icons.Outlined.Timer, null) },
-                            modifier = Modifier.clickable { showOffsetSheet = true }
-                        )
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.lyrics_font_size)) },
-                            leadingContent = { Icon(Icons.Outlined.FormatSize, null) },
-                            supportingContent = {
-                                Text(
-                                    stringResource(
-                                        R.string.common_percent_int,
-                                        (lyricFontScale * 100).roundToInt()
-                                    )
-                                )
-                            },
-                            modifier = Modifier.clickable { showFontSizeSheet = true }
-                        )
-                        if (originalSong.album.startsWith(PlayerManager.NETEASE_SOURCE_TAG)) {
-                            val albumName = originalSong.album.replace(PlayerManager.NETEASE_SOURCE_TAG, "")
-                            val album = AlbumSummary(
-                                id = originalSong.albumId,
-                                name = albumName,
-                                size = 0,
-                                picUrl = originalSong.coverUrl ?: ""
-                            )
-                            ListItem(
-                                headlineContent = { Text(stringResource(R.string.music_view_album, albumName)) },
-                                leadingContent = { Icon(Icons.Outlined.LibraryMusic, null) },
-                                modifier = Modifier.clickable {
-                                    onEnterAlbum(album)
-                                    onDismiss()
-                                    onNavigateUp()
-                                }
-                            )
-                        }
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.action_share)) },
-                            leadingContent = { Icon(Icons.Outlined.Share, null) },
-                            modifier = Modifier.clickable {
-                                if (originalSong.isLocalSong()) {
-                                    coroutineScope.launch {
-                                        val shared = runCatching {
-                                            LocalMediaSupport.shareSongFile(context, originalSong)
-                                        }.getOrElse { false }
-                                        if (!shared) {
-                                            snackbarHostState.showSnackbar(
-                                                context.getString(R.string.local_song_share_failed)
-                                            )
-                                        } else {
-                                            onDismiss()
-                                        }
-                                    }
-                                } else {
-                                    val url = buildRemoteSongShareUrl(originalSong, queue)
-
-                                    val shareText = context.getString(R.string.nowplaying_share_song, originalSong.name, originalSong.artist, url)
-
-                                    val sendIntent: Intent = Intent().apply {
-                                        action = Intent.ACTION_SEND
-                                        putExtra(Intent.EXTRA_TEXT, shareText)
-                                        type = "text/plain"
-                                    }
-
-                                    val shareIntent = Intent.createChooser(sendIntent, null)
-                                    context.startActivity(shareIntent)
-                                    onDismiss()
-                                }
-                            }
-                        )
-                        val trackStat = remember(originalSong) {
-                            AppContainer.playbackStatsRepo.getStatForTrack(originalSong.stableKey())
-                        }
-                        var showStatsDialog by remember { mutableStateOf(false) }
-                        if (trackStat != null) {
-                            ListItem(
-                                headlineContent = { Text(stringResource(R.string.stats_title)) },
-                                leadingContent = { Icon(Icons.Outlined.BarChart, null) },
-                                modifier = Modifier.clickable { showStatsDialog = true }
-                            )
-                        }
-                        if (showStatsDialog && trackStat != null) {
-                            val dateFormat = remember { SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()) }
-                            val firstPlayedText = remember(trackStat.firstPlayedAt) {
-                                dateFormat.format(Date(trackStat.firstPlayedAt))
-                            }
-                            val totalListenText = remember(trackStat.totalListenMs) {
-                                val totalSeconds = trackStat.totalListenMs / 1000
-                                val hours = totalSeconds / 3600
-                                val minutes = (totalSeconds % 3600) / 60
-                                when {
-                                    hours > 0 -> "${hours}h ${minutes}m"
-                                    minutes > 0 -> "${minutes}m"
-                                    else -> "${totalSeconds}s"
-                                }
-                            }
-                            AlertDialog(
-                                onDismissRequest = { showStatsDialog = false },
-                                icon = { Icon(Icons.Outlined.BarChart, null) },
-                                title = { Text(stringResource(R.string.stats_title)) },
-                                shape = RoundedCornerShape(28.dp),
-                                text = {
-                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Card(
-                                            shape = RoundedCornerShape(16.dp),
-                                            colors = CardDefaults.cardColors(
-                                                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.25f)
-                                            )
-                                        ) {
-                                            ListItem(
-                                                headlineContent = { Text(stringResource(R.string.stats_song_first_played)) },
-                                                supportingContent = { Text(firstPlayedText) }
-                                            )
-                                        }
-                                        Card(
-                                            shape = RoundedCornerShape(16.dp),
-                                            colors = CardDefaults.cardColors(
-                                                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.25f)
-                                            )
-                                        ) {
-                                            ListItem(
-                                                headlineContent = { Text(stringResource(R.string.stats_song_total_listen)) },
-                                                supportingContent = { Text(totalListenText) }
-                                            )
-                                        }
-                                        Card(
-                                            shape = RoundedCornerShape(16.dp),
-                                            colors = CardDefaults.cardColors(
-                                                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.25f)
-                                            )
-                                        ) {
-                                            ListItem(
-                                                headlineContent = { Text(stringResource(R.string.stats_song_play_count_label)) },
-                                                supportingContent = {
-                                                    Text(
-                                                        pluralStringResource(
-                                                            R.plurals.stats_play_count_value,
-                                                            trackStat.playCount,
-                                                            trackStat.playCount
-                                                        )
-                                                    )
-                                                }
-                                            )
-                                        }
-                                    }
-                                },
-                                confirmButton = {
-                                    HapticTextButton(onClick = { showStatsDialog = false }) {
-                                        Text(stringResource(R.string.action_close))
-                                    }
-                                }
-                            )
-                        }
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.listen_together_title)) },
-                            leadingContent = { Icon(Icons.Outlined.Headphones, null) },
-                            modifier = Modifier.clickable { showListenTogetherSheet = true }
-                        )
-                    }
+                    )
                 }
 
-                "ListenTogether" -> {
+                MoreOptionsPage.LISTEN_TOGETHER -> {
                     val listenTogetherScrollState = rememberScrollState()
                     Column(
                         Modifier
@@ -2462,167 +2141,50 @@ fun MoreOptionsSheet(
                     }
                 }
 
-                "Search" -> {
-                    // 搜索界面
-                    val searchState by viewModel.manualSearchState.collectAsStateWithLifecycle()
-                    val searchResultsListState = rememberLazyListState()
-
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        OutlinedTextField(
-                            value = searchState.keyword,
-                            onValueChange = { viewModel.onKeywordChange(it) },
-                            label = { Text(stringResource(R.string.search_keywords)) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .focusRequester(searchFocusRequester)
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            trailingIcon = {
-                                HapticIconButton(
-                                    onClick = { viewModel.performSearch() },
-                                    enabled = searchState.selectedPlatform != MusicPlatform.CLOUD_MUSIC ||
-                                        searchState.isCloudMusicAvailable
-                                ) {
-                                    Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.cd_search))
-                                }
-                            },
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions(onSearch = {
-                                if (
-                                    searchState.selectedPlatform != MusicPlatform.CLOUD_MUSIC ||
-                                    searchState.isCloudMusicAvailable
-                                ) {
-                                    viewModel.performSearch()
-                                }
-                                focusManager.clearFocus()
-                            }),
-                        )
-                        if (
-                            searchState.selectedPlatform == MusicPlatform.CLOUD_MUSIC &&
-                            !searchState.isCloudMusicAvailable
-                        ) {
-                            Text(
-                                text = stringResource(R.string.netease_login_required_metadata),
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-
-                        // 平台切换
-                        androidx.compose.material3.PrimaryTabRow(
-                            selectedTabIndex = searchState.selectedPlatform.ordinal,
-                            containerColor = Color.Transparent,
-                            contentColor = MaterialTheme.colorScheme.primary
-                        ) {
-                            MusicPlatform.entries.forEachIndexed { index, platform ->
-                                Tab(
-                                    selected = searchState.selectedPlatform.ordinal == index,
-                                    onClick = { viewModel.selectPlatform(platform) },
-                                    text = { Text(musicPlatformLabel(platform)) }
-                                )
+                MoreOptionsPage.SEARCH -> {
+                    SongMetadataSearchContent(
+                        viewModel = viewModel,
+                        song = actualSong,
+                        offlineMode = offlineMode,
+                        enabled = !isDismissing,
+                        onSongSelected = { songResult ->
+                            dismissSheet {
+                                viewModel.onSongSelected(actualSong, songResult)
                             }
-                        }
-
-                        // 搜索结果区域
-                        Box(Modifier.height(300.dp)) {
-                            if (searchState.isLoading) {
-                                CircularProgressIndicator(Modifier.align(Alignment.Center))
-                            } else if (searchState.searchResults.isNotEmpty()) {
-                                LazyColumn(
-                                    state = searchResultsListState,
-                                    modifier = Modifier.bottomSheetScrollGuard {
-                                        !searchResultsListState.canScrollBackward
-                                    }
-                                ) {
-                                    items(
-                                        items = searchState.searchResults,
-                                        key = { songResult ->
-                                            "${songResult.source.name}:${songResult.id}"
-                                        },
-                                        contentType = { "search_result" }
-                                    ) { songResult ->
-                                        ListItem(
-                                            headlineContent = { Text(songResult.songName, maxLines = 1) },
-                                            supportingContent = { Text(songResult.singer, maxLines = 1) },
-                                            leadingContent = {
-                                                val context = LocalContext.current
-                                                AsyncImage(
-                                                    model = offlineCachedImageRequest(
-                                                        context = context,
-                                                        data = songResult.coverUrl?.replaceFirst(
-                                                            "http://",
-                                                            "https://"
-                                                        ),
-                                                        offlineMode = offlineMode
-                                                    ),
-                                                    contentDescription = songResult.songName,
-                                                    modifier = Modifier
-                                                        .size(48.dp)
-                                                        .clip(RoundedCornerShape(8.dp))
-                                                )
-                                            },
-                                            modifier = Modifier.clickable {
-                                                viewModel.onSongSelected(actualSong, songResult)
-                                                onDismiss()
-                                            }
-                                        )
-                                    }
-                                }
-                            } else {
-                                Text(
-                                    text = searchState.error ?: stringResource(R.string.nowplaying_no_search_result),
-                                    modifier = Modifier.align(Alignment.Center),
-                                    color = if (searchState.error != null) MaterialTheme.colorScheme.error else LocalContentColor.current
-                                )
-                            }
-                        }
-
-                        // 完成按钮
-                        HapticTextButton(
-                            onClick = { showSearchView = false },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
-                        ) {
-                            Text(stringResource(R.string.action_done))
-                        }
-                    }
+                        },
+                        onDone = { page = MoreOptionsPage.MAIN }
+                    )
                 }
 
-                "Offset" -> {
+                MoreOptionsPage.LYRIC_BEHAVIOR -> {
                     LyricBehaviorSheet(
                         song = originalSong,
                         hasPhoneticLyrics = hasPhoneticLyrics,
-                        onDismiss = { showOffsetSheet = false }
+                        onDismiss = { page = MoreOptionsPage.MAIN }
                     )
                 }
 
-                "FontSize" -> {
+                MoreOptionsPage.FONT_SIZE -> {
                     LyricFontSizeSheet(
                         currentScale = lyricFontScale,
                         onScaleCommit = onLyricFontScaleChange,
-                        onDismiss = { showFontSizeSheet = false }
+                        onDismiss = { page = MoreOptionsPage.MAIN }
                     )
                 }
 
-                "EditInfo" -> {
+                MoreOptionsPage.EDIT_INFO -> {
                     EditSongInfoSheet(
                         viewModel = viewModel,
                         originalSong = actualSong,
                         displayedLyrics = displayedLyrics,
                         displayedTranslatedLyrics = displayedTranslatedLyrics,
-                        onDismiss = { showEditInfoSheet = false },
+                        onDismiss = { page = MoreOptionsPage.MAIN },
                         snackbarHostState = snackbarHostState,
                         offlineMode = offlineMode
                     )
                 }
 
-                "PlaybackSound" -> {
+                MoreOptionsPage.PLAYBACK_SOUND -> {
                     PlaybackSoundSheet(
                         state = playbackSoundState,
                         onSpeedChange = { value, persist -> viewModel.setPlaybackSpeed(value, persist) },
@@ -2634,7 +2196,7 @@ fun MoreOptionsSheet(
                             viewModel.updatePlaybackEqualizerBandLevel(index, value, persist)
                         },
                         onReset = viewModel::resetPlaybackSoundSettings,
-                        onDismiss = { showPlaybackSoundSheet = false }
+                        onDismiss = { page = MoreOptionsPage.MAIN }
                     )
                 }
             }

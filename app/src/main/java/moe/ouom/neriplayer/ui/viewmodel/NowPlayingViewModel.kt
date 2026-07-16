@@ -26,7 +26,9 @@ package moe.ouom.neriplayer.ui.viewmodel
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -53,10 +55,16 @@ data class ManualSearchState(
     val searchResults: List<SongSearchInfo> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
-    val isCloudMusicAvailable: Boolean = false
+    val isCloudMusicAvailable: Boolean = false,
+    val isApplyingMetadata: Boolean = false
 )
 
 class NowPlayingViewModel : ViewModel() {
+
+    private val searchRequestCoordinator = ManualSearchRequestCoordinator()
+    private var searchJob: Job? = null
+    private var nextSearchSessionId = 0L
+    private var activeSearchSessionId = 0L
 
     private val _manualSearchState = MutableStateFlow(
         ManualSearchState(
@@ -76,6 +84,11 @@ class NowPlayingViewModel : ViewModel() {
         viewModelScope.launch {
             AppContainer.neteaseCookieRepo.authHealthFlow.collect { health ->
                 val isCloudMusicAvailable = health.state != SavedCookieAuthState.Missing
+                val shouldFallbackToQq = !isCloudMusicAvailable &&
+                    _manualSearchState.value.selectedPlatform == MusicPlatform.CLOUD_MUSIC
+                if (shouldFallbackToQq) {
+                    cancelSearchRequest()
+                }
                 _manualSearchState.update { current ->
                     val nextPlatform = if (
                         !isCloudMusicAvailable && current.selectedPlatform == MusicPlatform.CLOUD_MUSIC
@@ -86,14 +99,23 @@ class NowPlayingViewModel : ViewModel() {
                     }
                     current.copy(
                         selectedPlatform = nextPlatform,
-                        isCloudMusicAvailable = isCloudMusicAvailable
+                        isCloudMusicAvailable = isCloudMusicAvailable,
+                        searchResults = if (shouldFallbackToQq) {
+                            emptyList()
+                        } else {
+                            current.searchResults
+                        },
+                        error = if (shouldFallbackToQq) null else current.error
                     )
                 }
             }
         }
     }
 
-    fun prepareForSearch(initialKeyword: String) {
+    fun prepareForSearch(initialKeyword: String): Long {
+        cancelSearchRequest()
+        val sessionId = ++nextSearchSessionId
+        activeSearchSessionId = sessionId
         _manualSearchState.update {
             it.copy(
                 keyword = initialKeyword,
@@ -101,23 +123,46 @@ class NowPlayingViewModel : ViewModel() {
                 error = null
             )
         }
+        return sessionId
     }
 
     fun onKeywordChange(newKeyword: String) {
-        _manualSearchState.update { it.copy(keyword = newKeyword) }
+        if (_manualSearchState.value.keyword == newKeyword) return
+        cancelSearchRequest()
+        _manualSearchState.update {
+            it.copy(
+                keyword = newKeyword,
+                searchResults = emptyList(),
+                error = null
+            )
+        }
     }
 
     fun selectPlatform(platform: MusicPlatform) {
-        _manualSearchState.update { it.copy(selectedPlatform = platform) }
+        if (_manualSearchState.value.selectedPlatform == platform) return
+        cancelSearchRequest()
+        _manualSearchState.update {
+            it.copy(
+                selectedPlatform = platform,
+                searchResults = emptyList(),
+                error = null
+            )
+        }
         performSearch()
     }
 
     fun performSearch() {
-        if (_manualSearchState.value.keyword.isBlank()) return
+        val state = _manualSearchState.value
+        val keyword = state.keyword.trim()
+        if (keyword.isBlank()) {
+            cancelSearchRequest()
+            return
+        }
         if (
-            _manualSearchState.value.selectedPlatform == MusicPlatform.CLOUD_MUSIC &&
+            state.selectedPlatform == MusicPlatform.CLOUD_MUSIC &&
             AppContainer.neteaseCookieRepo.getAuthHealthOnce().state == SavedCookieAuthState.Missing
         ) {
+            cancelSearchRequest()
             _manualSearchState.update {
                 it.copy(
                     isLoading = false,
@@ -128,23 +173,88 @@ class NowPlayingViewModel : ViewModel() {
             return
         }
 
-        viewModelScope.launch {
-            _manualSearchState.update { it.copy(isLoading = true, error = null) }
+        val request = ManualSearchRequest(
+            keyword = keyword,
+            platform = state.selectedPlatform
+        )
+        val requestToken = searchRequestCoordinator.begin(request) ?: return
+        searchJob?.cancel()
+        _manualSearchState.update {
+            it.copy(
+                isLoading = true,
+                searchResults = emptyList(),
+                error = null
+            )
+        }
+        searchJob = viewModelScope.launch {
             try {
                 val results = SearchManager.search(
-                    keyword = _manualSearchState.value.keyword,
-                    platform = _manualSearchState.value.selectedPlatform,
+                    keyword = request.keyword,
+                    platform = request.platform,
                 )
-                _manualSearchState.update { it.copy(isLoading = false, searchResults = results) }
-
+                if (!searchRequestCoordinator.isLatest(requestToken)) return@launch
+                _manualSearchState.update { current ->
+                    if (!current.matches(request)) current else current.copy(
+                        searchResults = results,
+                        error = null
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _manualSearchState.update { it.copy(isLoading = false, error = "Search failed: ${e.message}") }  // Localized in UI
+                if (searchRequestCoordinator.isLatest(requestToken)) {
+                    _manualSearchState.update { current ->
+                        if (!current.matches(request)) current else current.copy(
+                            error = AppContainer.applicationContext.getString(
+                                R.string.error_search_failed,
+                                e.message.orEmpty()
+                            )
+                        )
+                    }
+                }
+            } finally {
+                if (searchRequestCoordinator.isLatest(requestToken)) {
+                    searchRequestCoordinator.complete(requestToken)
+                    searchJob = null
+                    _manualSearchState.update { current ->
+                        if (current.isLoading) current.copy(isLoading = false) else current
+                    }
+                }
             }
         }
     }
 
-    fun onSongSelected(originalSong: SongItem, selectedSong: SongSearchInfo) {
-        PlayerManager.replaceMetadataFromSearch(originalSong, selectedSong)
+    fun finishSearchSession(sessionId: Long) {
+        if (activeSearchSessionId != sessionId) return
+        activeSearchSessionId = 0L
+        cancelSearchRequest()
+    }
+
+    private fun cancelSearchRequest() {
+        searchJob?.cancel()
+        searchJob = null
+        searchRequestCoordinator.invalidate()
+        _manualSearchState.update { current ->
+            if (current.isLoading) current.copy(isLoading = false) else current
+        }
+    }
+
+    fun onSongSelected(
+        originalSong: SongItem,
+        selectedSong: SongSearchInfo,
+        onComplete: (Boolean) -> Unit = {}
+    ): Boolean {
+        if (_manualSearchState.value.isApplyingMetadata) return false
+        _manualSearchState.update { it.copy(isApplyingMetadata = true) }
+        PlayerManager.replaceMetadataFromSearch(
+            originalSong = originalSong,
+            selectedSong = selectedSong,
+            onComplete = { success ->
+                _manualSearchState.update { it.copy(isApplyingMetadata = false) }
+                onComplete(success)
+            }
+        )
+        return true
     }
 
     fun downloadSong(context: Context, song: SongItem) {
@@ -353,6 +463,10 @@ class NowPlayingViewModel : ViewModel() {
         }
     }
 
+}
+
+private fun ManualSearchState.matches(request: ManualSearchRequest): Boolean {
+    return keyword.trim() == request.keyword && selectedPlatform == request.platform
 }
 
 internal fun buildLocalOriginalSongInfo(song: SongItem): NowPlayingViewModel.OriginalSongInfo {

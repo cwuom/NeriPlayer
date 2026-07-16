@@ -508,8 +508,14 @@ object PlayerManager {
     internal var playbackRequestToken = 0L
     @Volatile
     internal var loadedMediaRequestToken = 0L
+    internal val _pendingMediaLoadFlow = MutableStateFlow(false)
+    val pendingMediaLoadFlow: StateFlow<Boolean> = _pendingMediaLoadFlow
     @Volatile
     internal var pendingMediaLoadActive = false
+        set(value) {
+            field = value
+            _pendingMediaLoadFlow.value = value
+        }
     @Volatile
     internal var pendingMediaLoadPositionMs = 0L
     internal var activePlaybackCandidates: List<PlaybackUrlCandidate> = emptyList()
@@ -2065,8 +2071,9 @@ object PlayerManager {
     fun replaceMetadataFromSearch(
         originalSong: SongItem,
         selectedSong: SongSearchInfo,
-        isAuto: Boolean = false
-    ) = replaceMetadataFromSearchImpl(originalSong, selectedSong, isAuto)
+        isAuto: Boolean = false,
+        onComplete: ((Boolean) -> Unit)? = null
+    ) = replaceMetadataFromSearchImpl(originalSong, selectedSong, isAuto, onComplete)
 
     fun updateSongCustomInfo(
         originalSong: SongItem,

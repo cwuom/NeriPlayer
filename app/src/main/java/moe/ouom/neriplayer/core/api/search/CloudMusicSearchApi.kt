@@ -24,9 +24,8 @@ package moe.ouom.neriplayer.core.api.search
  */
 
 import android.annotation.SuppressLint
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -36,6 +35,7 @@ import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.player.metadata.normalizeLegacyLrcTimestamps
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.util.network.awaitResponse
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
@@ -83,7 +83,7 @@ class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi 
     override suspend fun search(keyword: String, page: Int): List<SongSearchInfo> {
         return withContext(Dispatchers.IO) {
             val offset = (page - 1).coerceAtLeast(0) * 20
-            val responseJson = neteaseClient.searchSongs(
+            val responseJson = neteaseClient.searchSongsCancellable(
                 keyword = keyword,
                 limit = 20,
                 offset = offset,
@@ -114,36 +114,41 @@ class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi 
             val songData = json.decodeFromString<CloudMusicSongDetailResponse>(songInfoJson).songs.firstOrNull()
                 ?: throw IOException("找不到ID为 $id 的歌曲")
 
-            coroutineScope {
-                val lyricDeferred = async {
-                    val lyricUrl =
-                        "https://music.163.com/api/song/lyric?id=${id}&lv=-1&tv=-1&rv=-1&yv=-1&ytv=-1&yrv=-1"
-                    val lyricJson = executeRequest(lyricUrl) as String
-                    val lyricResponse = json.decodeFromString<CloudMusicLyricResponse>(lyricJson)
-                    Pair(
-                        lyricResponse.yrc?.lyric?.takeIf { !it.isNullOrBlank() }
-                            ?: lyricResponse.lrc?.lyric?.let(::normalizeLegacyLrcTimestamps),
-                        lyricResponse.ytlrc?.lyric?.takeIf { !it.isNullOrBlank() }
-                            ?: lyricResponse.tlyric?.lyric?.let(::normalizeLegacyLrcTimestamps)
-                    )
-                }
-
-                val (lyric, translatedLyric) = lyricDeferred.await()
-                SongDetails(
-                    id = id,
-                    songName = songData.name,
-                    singer = songData.artists.joinToString("/") { it.name },
-                    album = songData.album.name,
-                    coverUrl = songData.album.picUrl,
-                    lyric = lyric,
-                    translatedLyric = translatedLyric
-                )
+            val (lyric, translatedLyric) = try {
+                fetchLyrics(id)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.w(TAG, "网易云歌词获取失败，继续使用歌曲详情: ${error.message.orEmpty()}")
+                null to null
             }
+            SongDetails(
+                id = id,
+                songName = songData.name,
+                singer = songData.artists.joinToString("/") { it.name },
+                album = songData.album.name,
+                coverUrl = songData.album.picUrl,
+                lyric = lyric,
+                translatedLyric = translatedLyric
+            )
         }
     }
 
+    private suspend fun fetchLyrics(id: String): Pair<String?, String?> {
+        val lyricUrl =
+            "https://music.163.com/api/song/lyric?id=${id}&lv=-1&tv=-1&rv=-1&yv=-1&ytv=-1&yrv=-1"
+        val lyricJson = executeRequest(lyricUrl) as String
+        val lyricResponse = json.decodeFromString<CloudMusicLyricResponse>(lyricJson)
+        return Pair(
+            lyricResponse.yrc?.lyric?.takeIf { !it.isNullOrBlank() }
+                ?: lyricResponse.lrc?.lyric?.let(::normalizeLegacyLrcTimestamps),
+            lyricResponse.ytlrc?.lyric?.takeIf { !it.isNullOrBlank() }
+                ?: lyricResponse.tlyric?.lyric?.let(::normalizeLegacyLrcTimestamps)
+        )
+    }
+
     @Throws(IOException::class)
-    private fun executeRequest(url: String, asBytes: Boolean = false): Any {
+    private suspend fun executeRequest(url: String, asBytes: Boolean = false): Any {
         val cookies = neteaseClient.getCookies()
         val cookieString = cookies.map { "${it.key}=${it.value}" }.joinToString("; ")
 
@@ -154,16 +159,16 @@ class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi 
             .header("Cookie", cookieString)
             .build()
 
-        client.newCall(request).execute().use { response ->
+        return client.newCall(request).awaitResponse { response ->
             if (!response.isSuccessful) throw IOException("请求失败: ${response.code} for url: $url")
             val body = response.body
 
             if (asBytes) {
-                return body.bytes()
+                body.bytes()
             } else {
                 val jsonString = body.string()
                 logResponseSummary(label = request.url.encodedPath, json = jsonString)
-                return jsonString
+                jsonString
             }
         }
     }

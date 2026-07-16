@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.core.api.netease
 
 import moe.ouom.neriplayer.util.json.JsonUtil.jsonQuote
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.network.awaitResponse
 import moe.ouom.neriplayer.util.network.isTransientHttp2StreamReset
 import moe.ouom.neriplayer.util.io.readBytesLimited
 import okhttp3.Cookie
@@ -34,6 +35,7 @@ import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
+import okhttp3.Response
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.brotli.dec.BrotliInputStream
 import org.json.JSONArray
@@ -200,6 +202,32 @@ class NeteaseClient {
         usePersistedCookies: Boolean = true,
         retryHttp1OnStreamReset: Boolean = false
     ): String {
+        val request = buildRequest(
+            url = url,
+            params = params,
+            mode = mode,
+            method = method,
+            usePersistedCookies = usePersistedCookies
+        )
+        return try {
+            executeRequest(okHttpClient, request)
+        } catch (error: IOException) {
+            if (!retryHttp1OnStreamReset || !error.isTransientHttp2StreamReset()) throw error
+            NPLogger.w(
+                "NERI-NeteaseClient",
+                "HTTP/2 stream reset for $url, retrying with HTTP/1.1: ${error.message.orEmpty()}"
+            )
+            executeRequest(http1RetryClient, request)
+        }
+    }
+
+    private fun buildRequest(
+        url: String,
+        params: Map<String, Any>,
+        mode: CryptoMode,
+        method: String,
+        usePersistedCookies: Boolean
+    ): Request {
         val requestUrl = url.toHttpUrl()
 
         NPLogger.d("NERI-NeteaseClient", "call $url, $method, $mode")
@@ -251,35 +279,37 @@ class NeteaseClient {
             else -> throw IllegalArgumentException("不支持的请求方法: $method")
         }
 
-        val request = builder.build()
-        return try {
-            executeRequest(okHttpClient, request)
-        } catch (error: IOException) {
-            if (!retryHttp1OnStreamReset || !error.isTransientHttp2StreamReset()) throw error
-            NPLogger.w(
-                "NERI-NeteaseClient",
-                "HTTP/2 stream reset for $url, retrying with HTTP/1.1: ${error.message.orEmpty()}"
-            )
-            executeRequest(http1RetryClient, request)
-        }
+        return builder.build()
     }
 
     @Throws(IOException::class)
     private fun executeRequest(client: OkHttpClient, request: Request): String {
         client.newCall(request).execute().use { resp ->
-            val responseBody = resp.body ?: throw IOException("Empty response body")
-            val encoding = resp.header("Content-Encoding")?.lowercase(Locale.getDefault())
-            val bytes = when (encoding) {
-                "br"   -> BrotliInputStream(responseBody.byteStream()).use { it.readBytesLimited(MAX_RESPONSE_BYTES) }
-                "gzip" -> GZIPInputStream(responseBody.byteStream()).use { it.readBytesLimited(MAX_RESPONSE_BYTES) }
-                else   -> responseBody.byteStream().use { it.readBytesLimited(MAX_RESPONSE_BYTES) }
-            }
-            if (!resp.isSuccessful) {
-                val msg = String(bytes, StandardCharsets.UTF_8)
-                throw IOException("HTTP ${resp.code}: $msg")
-            }
-            return String(bytes, StandardCharsets.UTF_8)
+            return readResponseString(resp)
         }
+    }
+
+    private suspend fun executeRequestCancellable(client: OkHttpClient, request: Request): String {
+        return client.newCall(request).awaitResponse(::readResponseString)
+    }
+
+    private fun readResponseString(response: Response): String {
+        val responseBody = response.body ?: throw IOException("Empty response body")
+        val encoding = response.header("Content-Encoding")?.lowercase(Locale.getDefault())
+        val bytes = when (encoding) {
+            "br" -> BrotliInputStream(responseBody.byteStream()).use {
+                it.readBytesLimited(MAX_RESPONSE_BYTES)
+            }
+            "gzip" -> GZIPInputStream(responseBody.byteStream()).use {
+                it.readBytesLimited(MAX_RESPONSE_BYTES)
+            }
+            else -> responseBody.byteStream().use { it.readBytesLimited(MAX_RESPONSE_BYTES) }
+        }
+        if (!response.isSuccessful) {
+            val message = String(bytes, StandardCharsets.UTF_8)
+            throw IOException("HTTP ${response.code}: $message")
+        }
+        return String(bytes, StandardCharsets.UTF_8)
     }
 
     @Throws(IOException::class)
@@ -382,6 +412,31 @@ class NeteaseClient {
             "total" to "true"
         )
         return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = usePersistedCookies)
+    }
+
+    suspend fun searchSongsCancellable(
+        keyword: String,
+        limit: Int = 30,
+        offset: Int = 0,
+        type: Int = 1,
+        usePersistedCookies: Boolean = true
+    ): String {
+        val url = "https://music.163.com/weapi/cloudsearch/get/web"
+        val params = mutableMapOf<String, Any>(
+            "s" to keyword,
+            "type" to type.toString(),
+            "limit" to limit.toString(),
+            "offset" to offset.toString(),
+            "total" to "true"
+        )
+        val request = buildRequest(
+            url = url,
+            params = params,
+            mode = CryptoMode.WEAPI,
+            method = "POST",
+            usePersistedCookies = usePersistedCookies
+        )
+        return executeRequestCancellable(okHttpClient, request)
     }
 
     /**

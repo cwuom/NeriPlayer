@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.core.player.metadata
 
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.core.api.search.SongDetails
+import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal fun SongItem.withUpdatedLyricsPreservingOriginal(
@@ -34,6 +36,22 @@ internal fun normalizeCustomMetadataValue(
     return normalizedDesired.takeIf { it != baseValue }
 }
 
+internal fun SongSearchInfo.toBasicSongDetails(): SongDetails {
+    return SongDetails(
+        id = id,
+        songName = songName,
+        singer = singer,
+        album = albumName.orEmpty(),
+        coverUrl = coverUrl,
+        lyric = null,
+        translatedLyric = null
+    )
+}
+
+internal fun SongDetails.hasUsableLyrics(): Boolean {
+    return !lyric.isNullOrBlank() || !translatedLyric.isNullOrBlank()
+}
+
 internal fun applyManualSearchMetadata(
     originalSong: SongItem,
     songName: String,
@@ -43,18 +61,38 @@ internal fun applyManualSearchMetadata(
     translatedLyric: String?,
     matchedSource: MusicPlatform,
     matchedSongId: String,
-    useCustomOverride: Boolean
+    useCustomOverride: Boolean,
+    preserveExistingMatchedLyrics: Boolean = false
 ): SongItem {
     val originalName = originalSong.originalName ?: originalSong.name
     val originalArtist = originalSong.originalArtist ?: originalSong.artist
     val originalCoverUrl = originalSong.originalCoverUrl ?: originalSong.coverUrl
+    val hasExistingMatchedLyrics = originalSong.matchedLyric != null ||
+        originalSong.matchedTranslatedLyric != null
+    val keepExistingMatch = preserveExistingMatchedLyrics && hasExistingMatchedLyrics
+    val resolvedLyric = if (keepExistingMatch) originalSong.matchedLyric else lyric
+    val resolvedTranslatedLyric = if (keepExistingMatch) {
+        originalSong.matchedTranslatedLyric
+    } else {
+        translatedLyric
+    }
+    val resolvedMatchedSource = if (keepExistingMatch) {
+        originalSong.matchedLyricSource ?: matchedSource
+    } else {
+        matchedSource
+    }
+    val resolvedMatchedSongId = if (keepExistingMatch) {
+        originalSong.matchedSongId ?: matchedSongId
+    } else {
+        matchedSongId
+    }
 
     return if (useCustomOverride) {
         originalSong.copy(
-            matchedLyric = lyric,
-            matchedTranslatedLyric = translatedLyric,
-            matchedLyricSource = matchedSource,
-            matchedSongId = matchedSongId,
+            matchedLyric = resolvedLyric,
+            matchedTranslatedLyric = resolvedTranslatedLyric,
+            matchedLyricSource = resolvedMatchedSource,
+            matchedSongId = resolvedMatchedSongId,
             customCoverUrl = normalizeCustomMetadataValue(coverUrl, originalSong.coverUrl),
             customName = normalizeCustomMetadataValue(songName, originalSong.name),
             customArtist = normalizeCustomMetadataValue(singer, originalSong.artist),
@@ -69,10 +107,10 @@ internal fun applyManualSearchMetadata(
             name = songName,
             artist = singer,
             coverUrl = coverUrl,
-            matchedLyric = lyric,
-            matchedTranslatedLyric = translatedLyric,
-            matchedLyricSource = matchedSource,
-            matchedSongId = matchedSongId,
+            matchedLyric = resolvedLyric,
+            matchedTranslatedLyric = resolvedTranslatedLyric,
+            matchedLyricSource = resolvedMatchedSource,
+            matchedSongId = resolvedMatchedSongId,
             customCoverUrl = null,
             customName = null,
             customArtist = null,
