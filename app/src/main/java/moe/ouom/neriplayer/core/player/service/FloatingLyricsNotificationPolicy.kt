@@ -6,3 +6,13 @@ internal fun isFloatingLyricsEffectivelyEnabled(
 ): Boolean {
     return enabled && !temporarilyHidden
 }
+internal fun resolveFloatingLyricsExternalTargetEnabled(
+    currentEnabled: Boolean,
+    legacyHideAction: Boolean,
+): Boolean {
+    return if (legacyHideAction) {
+        false
+    } else {
+        !currentEnabled
+    }
+}

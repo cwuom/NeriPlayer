@@ -857,10 +857,15 @@ class AudioPlayerService : Service() {
                         updateAll()
                     }
                 }
-                ACTION_TOGGLE_FLOATING_LYRICS,
-                LEGACY_ACTION_HIDE_FLOATING_LYRICS -> {
+                ACTION_TOGGLE_FLOATING_LYRICS -> {
                     runWhenPlayerRuntimeReady("media_session_hide_floating_lyrics") {
                         toggleFloatingLyricsFromExternalSurface()
+                        updateAll()
+                    }
+                }
+                LEGACY_ACTION_HIDE_FLOATING_LYRICS -> {
+                    runWhenPlayerRuntimeReady("media_session_legacy_hide_floating_lyrics") {
+                        setFloatingLyricsEnabledForExternalAction(legacyHideAction = true)
                         updateAll()
                     }
                 }
@@ -917,7 +922,24 @@ class AudioPlayerService : Service() {
             }
         }
     }
+    private fun setFloatingLyricsEnabledForExternalAction(legacyHideAction: Boolean) {
+        val targetEnabled = resolveFloatingLyricsExternalTargetEnabled(
+            currentEnabled = isFloatingLyricsCurrentlyEnabled(),
+            legacyHideAction = legacyHideAction,
+        )
+        serviceScope.launch {
+            runCatching {
+                AppContainer.settingsRepo.setFloatingLyricsEnabled(targetEnabled)
+            }.onFailure { error ->
+                NPLogger.e(
+                    "NERI-APS",
+                    "Failed to persist floating lyrics state from external action",
+                    error
+                )
+            }
+        }
 
+    }
     override fun onCreate() {
         super.onCreate()
         if (SafeModeManager.shouldEnterSafeMode(this)) {
@@ -1363,9 +1385,13 @@ class AudioPlayerService : Service() {
                 updateNotification()
             }
 
-            ACTION_TOGGLE_FLOATING_LYRICS,
-            LEGACY_ACTION_HIDE_FLOATING_LYRICS -> {
+            ACTION_TOGGLE_FLOATING_LYRICS -> {
                 toggleFloatingLyricsFromExternalSurface()
+                updatePlaybackState(force = true)
+                updateNotification(force = true)
+            }
+            LEGACY_ACTION_HIDE_FLOATING_LYRICS -> {
+                setFloatingLyricsEnabledForExternalAction(legacyHideAction = true)
                 updatePlaybackState(force = true)
                 updateNotification(force = true)
             }

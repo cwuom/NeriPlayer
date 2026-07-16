@@ -26,5 +26,21 @@ class FloatingLyricsNotificationPolicyTest {
                 temporarilyHidden = true,
             )
         )
+
+    }
+    @Test
+    fun `legacy hide action always targets disabled state`() {
+        assertFalse(
+            resolveFloatingLyricsExternalTargetEnabled(
+                currentEnabled = true,
+                legacyHideAction = true,
+            )
+        )
+        assertFalse(
+            resolveFloatingLyricsExternalTargetEnabled(
+                currentEnabled = false,
+                legacyHideAction = true,
+            )
+        )
     }
 }
