@@ -329,6 +329,8 @@ fun SettingsScreen(
     onPlaybackFadeInChange: (Boolean) -> Unit,
     playbackCrossfadeNext: Boolean,
     onPlaybackCrossfadeNextChange: (Boolean) -> Unit,
+    sleepTimerFinishCurrentOnExpiry: Boolean,
+    onSleepTimerFinishCurrentOnExpiryChange: (Boolean) -> Unit,
     playbackFadeInDurationMs: Long,
     onPlaybackFadeInDurationMsChange: (Long) -> Unit,
     playbackFadeOutDurationMs: Long,
@@ -1280,6 +1282,9 @@ fun SettingsScreen(
                             onPlaybackFadeInChange = onPlaybackFadeInChange,
                             playbackCrossfadeNext = playbackCrossfadeNext,
                             onPlaybackCrossfadeNextChange = onPlaybackCrossfadeNextChange,
+                            sleepTimerFinishCurrentOnExpiry = sleepTimerFinishCurrentOnExpiry,
+                            onSleepTimerFinishCurrentOnExpiryChange =
+                                onSleepTimerFinishCurrentOnExpiryChange,
                             playbackFadeInDurationMs = playbackFadeInDurationMs,
                             onPlaybackFadeInDurationMsChange = onPlaybackFadeInDurationMsChange,
                             playbackFadeOutDurationMs = playbackFadeOutDurationMs,

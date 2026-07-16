@@ -11,6 +11,13 @@ private data class MediaSessionPlaybackStateSnapshot(
     val elapsedRealtimeMs: Long,
 )
 
+internal fun buildMediaSessionControlFingerprint(
+    favoriteControlFingerprint: Int,
+    floatingLyricsEnabled: Boolean,
+): Int {
+    return favoriteControlFingerprint * 2 + if (floatingLyricsEnabled) 1 else 0
+}
+
 internal class MediaSessionPlaybackStateThrottler(
     private val minUpdateIntervalMs: Long = 1_000L,
     private val positionDriftThresholdMs: Long = 1_500L,

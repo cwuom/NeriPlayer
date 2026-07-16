@@ -37,6 +37,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.timer.SleepTimerMode
 import moe.ouom.neriplayer.R
@@ -46,6 +47,9 @@ fun SleepTimerDialog(
     onDismiss: () -> Unit
 ) {
     val timerState by PlayerManager.sleepTimerManager.timerState.collectAsStateWithLifecycle()
+    val sleepTimerFinishCurrentOnExpiry by AppContainer.settingsRepo
+        .sleepTimerFinishCurrentOnExpiryFlow
+        .collectAsStateWithLifecycle(initialValue = false)
     var sliderValue by remember { mutableFloatStateOf(30f) }
 
     AlertDialog(
@@ -78,11 +82,20 @@ fun SleepTimerDialog(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             when (timerState.mode) {
-                                SleepTimerMode.COUNTDOWN -> {
+                                SleepTimerMode.COUNTDOWN,
+                                SleepTimerMode.COUNTDOWN_FINISH_CURRENT -> {
                                     Text(
                                         text = PlayerManager.sleepTimerManager.formatRemainingTime(),
                                         style = MaterialTheme.typography.headlineMedium
                                     )
+                                    if (timerState.mode == SleepTimerMode.COUNTDOWN_FINISH_CURRENT) {
+                                        Text(
+                                            text = stringResource(
+                                                R.string.sleep_timer_countdown_finish_current
+                                            ),
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                    }
                                 }
                                 SleepTimerMode.FINISH_CURRENT -> {
                                     Text(
@@ -129,7 +142,10 @@ fun SleepTimerDialog(
 
                 OutlinedButton(
                     onClick = {
-                        PlayerManager.sleepTimerManager.startCountdown(sliderValue.toInt())
+                        PlayerManager.sleepTimerManager.startCountdown(
+                            minutes = sliderValue.toInt(),
+                            finishCurrentOnExpiry = sleepTimerFinishCurrentOnExpiry
+                        )
                         onDismiss()
                     },
                     modifier = Modifier.fillMaxWidth()

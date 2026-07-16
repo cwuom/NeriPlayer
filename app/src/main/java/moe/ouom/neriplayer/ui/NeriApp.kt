@@ -862,6 +862,10 @@ private fun NeriAppContent(
     val showHomeRecommendedCard by repo.homeCardRecommendedFlow.collectAsStateWithLifecycle(initialValue = true)
     val playbackFadeIn by repo.playbackFadeInFlow.collectAsStateWithLifecycle(initialValue = false)
     val playbackCrossfadeNext by repo.playbackCrossfadeNextFlow.collectAsStateWithLifecycle(initialValue = false)
+    val sleepTimerFinishCurrentOnExpiry by repo.sleepTimerFinishCurrentOnExpiryFlow
+        .collectAsStateWithLifecycle(
+            initialValue = startupPlaybackPreferences.sleepTimerFinishCurrentOnExpiry
+        )
     val playbackFadeInDurationMs by repo.playbackFadeInDurationMsFlow.collectAsStateWithLifecycle(initialValue = 500L)
     val playbackFadeOutDurationMs by repo.playbackFadeOutDurationMsFlow.collectAsStateWithLifecycle(initialValue = 500L)
     val playbackCrossfadeInDurationMs by repo.playbackCrossfadeInDurationMsFlow.collectAsStateWithLifecycle(initialValue = 500L)
@@ -2167,6 +2171,13 @@ private fun NeriAppContent(
                                         playbackCrossfadeNext = playbackCrossfadeNext,
                                         onPlaybackCrossfadeNextChange = { enabled ->
                                             scope.launch { repo.setPlaybackCrossfadeNext(enabled) }
+                                        },
+                                        sleepTimerFinishCurrentOnExpiry =
+                                            sleepTimerFinishCurrentOnExpiry,
+                                        onSleepTimerFinishCurrentOnExpiryChange = { enabled ->
+                                            scope.launch {
+                                                repo.setSleepTimerFinishCurrentOnExpiry(enabled)
+                                            }
                                         },
                                         playbackFadeInDurationMs = playbackFadeInDurationMs,
                                         onPlaybackFadeInDurationMsChange = { duration ->

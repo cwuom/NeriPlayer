@@ -359,6 +359,11 @@ class SettingsRepository(private val context: Context) {
     val playbackCrossfadeNextFlow: Flow<Boolean> =
         dataStoreSettingFlow { it[SettingsKeys.PLAYBACK_CROSSFADE_NEXT] ?: false }
 
+    val sleepTimerFinishCurrentOnExpiryFlow: Flow<Boolean> =
+        dataStoreSettingFlow {
+            it[SettingsKeys.PLAYBACK_SLEEP_TIMER_FINISH_CURRENT_ON_EXPIRY] ?: false
+        }
+
     val playbackFadeInDurationMsFlow: Flow<Long> =
         dataStoreSettingFlow { it[SettingsKeys.PLAYBACK_FADE_IN_DURATION_MS] ?: 500L }
 
@@ -907,6 +912,15 @@ class SettingsRepository(private val context: Context) {
     suspend fun setPlaybackCrossfadeNext(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.PLAYBACK_CROSSFADE_NEXT] = enabled }
         updatePlaybackPreferenceSnapshot(context) { it.copy(playbackCrossfadeNext = enabled) }
+    }
+
+    suspend fun setSleepTimerFinishCurrentOnExpiry(enabled: Boolean) {
+        context.dataStore.edit {
+            it[SettingsKeys.PLAYBACK_SLEEP_TIMER_FINISH_CURRENT_ON_EXPIRY] = enabled
+        }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(sleepTimerFinishCurrentOnExpiry = enabled)
+        }
     }
 
     suspend fun setPlaybackFadeInDurationMs(durationMs: Long) {

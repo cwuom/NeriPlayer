@@ -89,7 +89,6 @@ import moe.ouom.neriplayer.core.player.metadata.shouldUseExternalBluetoothLyrics
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveKeepAliveProgress
 import moe.ouom.neriplayer.core.player.policy.usb.evaluateUsbExclusiveKeepAliveProgress
 import moe.ouom.neriplayer.core.player.lifecycle.stopPlaybackAfterUsbExclusiveNativeFailure
-import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
 import moe.ouom.neriplayer.core.player.timer.SleepTimerMode
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
@@ -858,14 +857,14 @@ class AudioPlayerService : Service() {
                     }
                 }
                 ACTION_TOGGLE_FLOATING_LYRICS -> {
-                    runWhenPlayerRuntimeReady("media_session_hide_floating_lyrics") {
-                        toggleFloatingLyricsFromExternalSurface()
+                    runWhenPlayerRuntimeReady("media_session_toggle_floating_lyrics") {
+                        applyFloatingLyricsExternalAction(legacyHideAction = false)
                         updateAll()
                     }
                 }
                 LEGACY_ACTION_HIDE_FLOATING_LYRICS -> {
                     runWhenPlayerRuntimeReady("media_session_legacy_hide_floating_lyrics") {
-                        setFloatingLyricsEnabledForExternalAction(legacyHideAction = true)
+                        applyFloatingLyricsExternalAction(legacyHideAction = true)
                         updateAll()
                     }
                 }
@@ -901,28 +900,10 @@ class AudioPlayerService : Service() {
     private fun isFloatingLyricsCurrentlyEnabled(): Boolean {
         return isFloatingLyricsEffectivelyEnabled(
             enabled = floatingLyricsEnabledForNotification,
-            temporarilyHidden = FloatingLyricsOverlayManager.temporaryHiddenFlow.value,
         )
     }
 
-    private fun toggleFloatingLyricsFromExternalSurface() {
-        if (isFloatingLyricsCurrentlyEnabled()) {
-            FloatingLyricsOverlayManager.hideUntilNextAppOpen()
-            return
-        }
-        FloatingLyricsOverlayManager.restoreAfterTemporaryHide()
-        if (floatingLyricsEnabledForNotification) {
-            return
-        }
-        serviceScope.launch {
-            runCatching {
-                AppContainer.settingsRepo.setFloatingLyricsEnabled(true)
-            }.onFailure { error ->
-                NPLogger.e("NERI-APS", "Failed to enable floating lyrics from external surface", error)
-            }
-        }
-    }
-    private fun setFloatingLyricsEnabledForExternalAction(legacyHideAction: Boolean) {
+    private fun applyFloatingLyricsExternalAction(legacyHideAction: Boolean) {
         val targetEnabled = resolveFloatingLyricsExternalTargetEnabled(
             currentEnabled = isFloatingLyricsCurrentlyEnabled(),
             legacyHideAction = legacyHideAction,
@@ -933,13 +914,13 @@ class AudioPlayerService : Service() {
             }.onFailure { error ->
                 NPLogger.e(
                     "NERI-APS",
-                    "Failed to persist floating lyrics state from external action",
+                    "Failed to persist floating lyrics toggle from external surface",
                     error
                 )
             }
         }
-
     }
+
     override fun onCreate() {
         super.onCreate()
         if (SafeModeManager.shouldEnterSafeMode(this)) {
@@ -1188,14 +1169,6 @@ class AudioPlayerService : Service() {
                     }
                 }
         }
-        serviceScope.launch {
-            FloatingLyricsOverlayManager.temporaryHiddenFlow
-                .collectSafely("floatingLyricsTemporaryHiddenFlow") {
-                    updatePlaybackState(force = true)
-                    updateNotification()
-                }
-        }
-
         becomingNoisyReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 when (intent.action) {
@@ -1386,12 +1359,13 @@ class AudioPlayerService : Service() {
             }
 
             ACTION_TOGGLE_FLOATING_LYRICS -> {
-                toggleFloatingLyricsFromExternalSurface()
+                applyFloatingLyricsExternalAction(legacyHideAction = false)
                 updatePlaybackState(force = true)
                 updateNotification(force = true)
             }
+
             LEGACY_ACTION_HIDE_FLOATING_LYRICS -> {
-                setFloatingLyricsEnabledForExternalAction(legacyHideAction = true)
+                applyFloatingLyricsExternalAction(legacyHideAction = true)
                 updatePlaybackState(force = true)
                 updateNotification(force = true)
             }
@@ -1518,9 +1492,15 @@ class AudioPlayerService : Service() {
         val timerState = PlayerManager.sleepTimerManager.timerState.value
         val contentText = if (timerState.isActive) {
             val timerInfo = when (timerState.mode) {
-                SleepTimerMode.COUNTDOWN -> {
+                SleepTimerMode.COUNTDOWN,
+                SleepTimerMode.COUNTDOWN_FINISH_CURRENT -> {
                     val remaining = PlayerManager.sleepTimerManager.formatRemainingTimeForNotification()
-                    getString(R.string.notification_timer_remaining, remaining)
+                    val stringRes = if (timerState.mode == SleepTimerMode.COUNTDOWN_FINISH_CURRENT) {
+                        R.string.notification_timer_finish_current_remaining
+                    } else {
+                        R.string.notification_timer_remaining
+                    }
+                    getString(stringRes, remaining)
                 }
                 SleepTimerMode.FINISH_CURRENT -> getString(R.string.notification_stop_after_current)
                 SleepTimerMode.FINISH_PLAYLIST -> getString(R.string.notification_stop_after_playlist)
@@ -1626,9 +1606,15 @@ class AudioPlayerService : Service() {
         val timerState = PlayerManager.sleepTimerManager.timerState.value
         val text = if (timerState.isActive) {
             val timerInfo = when (timerState.mode) {
-                SleepTimerMode.COUNTDOWN -> {
+                SleepTimerMode.COUNTDOWN,
+                SleepTimerMode.COUNTDOWN_FINISH_CURRENT -> {
                     val remaining = PlayerManager.sleepTimerManager.formatRemainingTimeForNotification()
-                    getString(R.string.notification_timer_remaining, remaining)
+                    val stringRes = if (timerState.mode == SleepTimerMode.COUNTDOWN_FINISH_CURRENT) {
+                        R.string.notification_timer_finish_current_remaining
+                    } else {
+                        R.string.notification_timer_remaining
+                    }
+                    getString(stringRes, remaining)
                 }
                 SleepTimerMode.FINISH_CURRENT -> getString(R.string.notification_stop_after_current)
                 SleepTimerMode.FINISH_PLAYLIST -> getString(R.string.notification_stop_after_playlist)
@@ -1835,11 +1821,15 @@ class AudioPlayerService : Service() {
         } else {
             0.0f
         }
-        val controlFingerprint = when {
+        val favoriteControlFingerprint = when {
             !canToggleFavoriteFromExternalSurface(song) -> 0
             isFav -> 2
             else -> 1
         }
+        val controlFingerprint = buildMediaSessionControlFingerprint(
+            favoriteControlFingerprint = favoriteControlFingerprint,
+            floatingLyricsEnabled = floatingLyricsEnabled,
+        )
         val nowElapsedRealtimeMs = SystemClock.elapsedRealtime()
 
         if (!mediaSessionPlaybackStateThrottler.shouldDispatch(

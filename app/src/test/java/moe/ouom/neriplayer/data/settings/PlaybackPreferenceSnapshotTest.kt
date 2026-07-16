@@ -25,6 +25,15 @@ class PlaybackPreferenceSnapshotTest {
     }
 
     @Test
+    fun `preferences restore sleep timer finish current setting`() {
+        val snapshot = preferencesOf(
+            SettingsKeys.PLAYBACK_SLEEP_TIMER_FINISH_CURRENT_ON_EXPIRY to true
+        ).toPlaybackPreferenceSnapshot()
+
+        assertTrue(snapshot.sleepTimerFinishCurrentOnExpiry)
+    }
+
+    @Test
     fun `sanitized normalizes playback runtime values`() {
         val snapshot = PlaybackPreferenceSnapshot(
             playbackFadeInDurationMs = -100L,
@@ -82,6 +91,7 @@ class PlaybackPreferenceSnapshotTest {
         assertTrue(snapshot.keepPlaybackModeState)
         assertFalse(snapshot.allowMixedPlayback)
         assertFalse(snapshot.playbackFadeIn)
+        assertFalse(snapshot.sleepTimerFinishCurrentOnExpiry)
         assertFalse(snapshot.playbackVolumeNormalizationEnabled)
         assertFalse(snapshot.playbackHighResolutionOutputEnabled)
         assertFalse(snapshot.lyriconEnabled)

@@ -7,27 +7,25 @@ import org.junit.Test
 class FloatingLyricsNotificationPolicyTest {
 
     @Test
-    fun `effective state is disabled when setting is off or temporarily hidden`() {
+    fun `effective state follows the persisted setting`() {
         assertTrue(
             isFloatingLyricsEffectivelyEnabled(
                 enabled = true,
-                temporarilyHidden = false,
             )
         )
         assertFalse(
             isFloatingLyricsEffectivelyEnabled(
                 enabled = false,
-                temporarilyHidden = false,
             )
         )
-        assertFalse(
-            isFloatingLyricsEffectivelyEnabled(
-                enabled = true,
-                temporarilyHidden = true,
-            )
-        )
-
     }
+
+    @Test
+    fun `toggle target persists the opposite state`() {
+        assertFalse(nextFloatingLyricsEnabled(currentEnabled = true))
+        assertTrue(nextFloatingLyricsEnabled(currentEnabled = false))
+    }
+
     @Test
     fun `legacy hide action always targets disabled state`() {
         assertFalse(

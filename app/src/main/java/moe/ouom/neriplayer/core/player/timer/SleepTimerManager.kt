@@ -38,6 +38,8 @@ import kotlinx.coroutines.launch
 enum class SleepTimerMode {
     /** 倒计时模式 */
     COUNTDOWN,
+    /** 倒计时结束后播放完当前歌曲 */
+    COUNTDOWN_FINISH_CURRENT,
     /** 播放完当前歌曲后停止 */
     FINISH_CURRENT,
     /** 播放完播放列表后停止 */
@@ -73,14 +75,23 @@ class SleepTimerManager(
     /**
      * 启动倒计时定时器
      * @param minutes 倒计时分钟数
+     * @param finishCurrentOnExpiry 倒计时结束后是否播放完当前歌曲
      */
-    fun startCountdown(minutes: Int) {
+    fun startCountdown(
+        minutes: Int,
+        finishCurrentOnExpiry: Boolean = false
+    ) {
         cancel(notifyStateChanged = false)
         val totalMillis = minutes * 60 * 1000L
+        val timerMode = if (finishCurrentOnExpiry) {
+            SleepTimerMode.COUNTDOWN_FINISH_CURRENT
+        } else {
+            SleepTimerMode.COUNTDOWN
+        }
         updateTimerState(
             SleepTimerState(
                 isActive = true,
-                mode = SleepTimerMode.COUNTDOWN,
+                mode = timerMode,
                 remainingMillis = totalMillis,
                 totalMillis = totalMillis
             )
@@ -94,8 +105,17 @@ class SleepTimerManager(
                 _timerState.value = _timerState.value.copy(remainingMillis = remaining)
             }
             if (remaining <= 0) {
-                onTimerExpired()
-                updateTimerState(SleepTimerState())
+                if (timerMode == SleepTimerMode.COUNTDOWN_FINISH_CURRENT) {
+                    updateTimerState(
+                        SleepTimerState(
+                            isActive = true,
+                            mode = SleepTimerMode.FINISH_CURRENT
+                        )
+                    )
+                } else {
+                    onTimerExpired()
+                    updateTimerState(SleepTimerState())
+                }
             }
         }
     }
@@ -155,7 +175,7 @@ class SleepTimerManager(
      */
     fun formatRemainingTime(): String {
         val state = _timerState.value
-        if (!state.isActive || state.mode != SleepTimerMode.COUNTDOWN) {
+        if (!state.isActive || !state.mode.isCountdownMode()) {
             return ""
         }
 
@@ -173,7 +193,7 @@ class SleepTimerManager(
     // 通知专用：> 60s 时只显示分钟，减少通知重建频率
     fun formatRemainingTimeForNotification(): String {
         val state = _timerState.value
-        if (!state.isActive || state.mode != SleepTimerMode.COUNTDOWN) {
+        if (!state.isActive || !state.mode.isCountdownMode()) {
             return ""
         }
 
@@ -198,4 +218,9 @@ class SleepTimerManager(
             onTimerStateChanged(state)
         }
     }
+}
+
+private fun SleepTimerMode.isCountdownMode(): Boolean {
+    return this == SleepTimerMode.COUNTDOWN ||
+        this == SleepTimerMode.COUNTDOWN_FINISH_CURRENT
 }

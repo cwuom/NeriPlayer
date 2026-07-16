@@ -2,10 +2,14 @@ package moe.ouom.neriplayer.core.player.service
 
 internal fun isFloatingLyricsEffectivelyEnabled(
     enabled: Boolean,
-    temporarilyHidden: Boolean,
 ): Boolean {
-    return enabled && !temporarilyHidden
+    return enabled
 }
+
+internal fun nextFloatingLyricsEnabled(currentEnabled: Boolean): Boolean {
+    return !currentEnabled
+}
+
 internal fun resolveFloatingLyricsExternalTargetEnabled(
     currentEnabled: Boolean,
     legacyHideAction: Boolean,
@@ -13,6 +17,6 @@ internal fun resolveFloatingLyricsExternalTargetEnabled(
     return if (legacyHideAction) {
         false
     } else {
-        !currentEnabled
+        nextFloatingLyricsEnabled(currentEnabled)
     }
 }

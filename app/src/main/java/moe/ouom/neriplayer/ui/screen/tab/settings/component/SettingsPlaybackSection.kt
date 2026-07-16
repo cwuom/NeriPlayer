@@ -46,6 +46,7 @@ import androidx.compose.material.icons.outlined.HighQuality
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.SurroundSound
 import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Usb
 import androidx.compose.material3.Icon
@@ -88,6 +89,8 @@ internal fun SettingsPlaybackSection(
     onPlaybackFadeInChange: (Boolean) -> Unit,
     playbackCrossfadeNext: Boolean,
     onPlaybackCrossfadeNextChange: (Boolean) -> Unit,
+    sleepTimerFinishCurrentOnExpiry: Boolean,
+    onSleepTimerFinishCurrentOnExpiryChange: (Boolean) -> Unit,
     playbackFadeInDurationMs: Long,
     onPlaybackFadeInDurationMsChange: (Long) -> Unit,
     playbackFadeOutDurationMs: Long,
@@ -209,6 +212,29 @@ internal fun SettingsPlaybackSection(
                     )
                 }
             }
+
+            PlaybackSwitchItem(
+                setting = AutoSettingsMetadata.requireSetting(
+                    AutoSettingsKeys.PLAYBACK_SLEEP_TIMER_FINISH_CURRENT_ON_EXPIRY
+                ),
+                checked = sleepTimerFinishCurrentOnExpiry,
+                icon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Timer,
+                        contentDescription = stringResource(
+                            R.string.settings_playback_sleep_timer_finish_current_on_expiry
+                        ),
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                },
+                onToggle = {
+                    onSleepTimerFinishCurrentOnExpiryChange(
+                        !sleepTimerFinishCurrentOnExpiry
+                    )
+                },
+                onCheckedChange = onSleepTimerFinishCurrentOnExpiryChange
+            )
 
             PlaybackSwitchItem(
                 setting = AutoSettingsMetadata.requireSetting(

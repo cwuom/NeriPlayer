@@ -1243,6 +1243,19 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
+            key = "playback_sleep_timer_finish_current_on_expiry",
+            type = SettingValueType.Boolean,
+            defaultBoolean = false,
+            order = 25,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val sleepTimerFinishCurrentOnExpiry = autoSetting(
+            titleRes = R.string.settings_playback_sleep_timer_finish_current_on_expiry,
+            descriptionRes = R.string.settings_playback_sleep_timer_finish_current_on_expiry_desc
+        )
+
+        @AutoSetting(
             key = "playback_fade_in_duration_ms",
             type = SettingValueType.Long,
             defaultLong = 500L,

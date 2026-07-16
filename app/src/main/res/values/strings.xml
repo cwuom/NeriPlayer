@@ -190,6 +190,7 @@
     <string name="sleep_timer_finish_current">播放完当前歌曲后停止</string>
     <string name="sleep_timer_finish_playlist">播放完播放列表后停止</string>
     <string name="sleep_timer_start_countdown">开始倒计时</string>
+    <string name="sleep_timer_countdown_finish_current">倒计时结束后播放完当前歌曲</string>
     <string name="sleep_timer_other_modes">其他模式</string>
     <string name="sleep_timer_close">关闭</string>
     <string name="playback_invalid_url">播放地址无效，请重新登录或切换音质后重试</string>
@@ -201,6 +202,7 @@
     <string name="playback_url_error_detail">获取播放地址失败：%1$s</string>
     <string name="nowplaying_no_playback">暂无播放</string>
     <string name="notification_timer_remaining">⏱ %1$s 后停止</string>
+    <string name="notification_timer_finish_current_remaining">⏱ %1$s 后播完当前歌曲停止</string>
     <string name="notification_stop_after_current">⏱ 播完当前停止</string>
     <string name="notification_stop_after_playlist">⏱ 播完列表停止</string>
     <string name="notification_hide_floating_lyrics">关闭悬浮歌词</string>
@@ -835,6 +837,8 @@
     <string name="settings_playback_fade_duration_value">当前：%.1f 秒</string>
     <string name="settings_playback_crossfade_next">下一首淡入淡出</string>
     <string name="settings_playback_crossfade_next_desc">切换到下一首时使用淡入淡出过渡</string>
+    <string name="settings_playback_sleep_timer_finish_current_on_expiry">定时器到点后播放完当前歌曲</string>
+    <string name="settings_playback_sleep_timer_finish_current_on_expiry_desc">开启后，倒计时结束时播放完当前歌曲再停止</string>
     <string name="settings_playback_crossfade_in_duration">下一首淡入时长</string>
     <string name="settings_playback_crossfade_out_duration">当前曲淡出时长</string>
     <string name="settings_playback_volume_normalization">响度均衡</string>

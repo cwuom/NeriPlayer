@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.player
 
 import android.support.v4.media.session.PlaybackStateCompat
+import moe.ouom.neriplayer.core.player.service.buildMediaSessionControlFingerprint
 import moe.ouom.neriplayer.core.player.service.MediaSessionPlaybackStateThrottler
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -184,6 +185,36 @@ class MediaSessionPlaybackStateThrottlerTest {
                 controlFingerprint = defaultControlFingerprint + 1,
                 nowElapsedRealtimeMs = 5L,
                 force = true,
+            )
+        )
+    }
+
+    @Test
+    fun `floating lyrics action changes bypass duplicate suppression`() {
+        val floatingLyricsDisabledFingerprint = buildMediaSessionControlFingerprint(
+            favoriteControlFingerprint = defaultControlFingerprint,
+            floatingLyricsEnabled = false,
+        )
+        val floatingLyricsEnabledFingerprint = buildMediaSessionControlFingerprint(
+            favoriteControlFingerprint = defaultControlFingerprint,
+            floatingLyricsEnabled = true,
+        )
+
+        throttler.recordDispatch(
+            playbackState = PlaybackStateCompat.STATE_PLAYING,
+            positionMs = 12_000L,
+            speed = 1.0f,
+            controlFingerprint = floatingLyricsDisabledFingerprint,
+            nowElapsedRealtimeMs = 0L,
+        )
+
+        assertTrue(
+            throttler.shouldDispatch(
+                playbackState = PlaybackStateCompat.STATE_PLAYING,
+                positionMs = 12_000L,
+                speed = 1.0f,
+                controlFingerprint = floatingLyricsEnabledFingerprint,
+                nowElapsedRealtimeMs = 5L,
             )
         )
     }

@@ -190,6 +190,7 @@
     <string name="sleep_timer_finish_current">Stop after current song</string>
     <string name="sleep_timer_finish_playlist">Stop after playlist</string>
     <string name="sleep_timer_start_countdown">Start Countdown</string>
+    <string name="sleep_timer_countdown_finish_current">After countdown, finish current song</string>
     <string name="sleep_timer_other_modes">Other Modes</string>
     <string name="sleep_timer_close">Close</string>
     <string name="playback_invalid_url">Playback URL is invalid. Please sign in again or switch audio quality and retry.</string>
@@ -201,6 +202,7 @@
     <string name="playback_url_error_detail">Failed to resolve playback URL: %1$s</string>
     <string name="nowplaying_no_playback">No Playback</string>
     <string name="notification_timer_remaining">⏱ Stops in %1$s</string>
+    <string name="notification_timer_finish_current_remaining">⏱ Stop after current song in %1$s</string>
     <string name="notification_stop_after_current">⏱ Stop After Current</string>
     <string name="notification_stop_after_playlist">⏱ Stop After Playlist</string>
     <string name="notification_hide_floating_lyrics">Hide floating lyrics</string>
@@ -835,6 +837,8 @@
     <string name="settings_playback_fade_duration_value">Current: %.1fs</string>
     <string name="settings_playback_crossfade_next">Next Track Fade</string>
     <string name="settings_playback_crossfade_next_desc">Fade between tracks when moving to the next song</string>
+    <string name="settings_playback_sleep_timer_finish_current_on_expiry">Finish current song when timer expires</string>
+    <string name="settings_playback_sleep_timer_finish_current_on_expiry_desc">When enabled, finish the current song before stopping after the countdown ends</string>
     <string name="settings_playback_crossfade_in_duration">Next Track Fade-in Duration</string>
     <string name="settings_playback_crossfade_out_duration">Current Track Fade-out Duration</string>
     <string name="settings_playback_volume_normalization">Loudness Normalization</string>
