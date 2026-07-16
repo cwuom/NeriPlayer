@@ -33,6 +33,7 @@ demo
 /build-logic/convention/bin/
 /.cpu-perfetto/
 /.har/
+/output/
 .claude/
 CLAUDE.md
 AGENTS.md

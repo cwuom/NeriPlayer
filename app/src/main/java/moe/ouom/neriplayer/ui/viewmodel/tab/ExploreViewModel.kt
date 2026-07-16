@@ -113,6 +113,8 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     private val neteaseRepo = NeteaseCookieRepository(application)
     private var highQualityLoadJob: Job? = null
     private var searchJob: Job? = null
+    private var ytMusicPlaylistsJob: Job? = null
+    private var ytMusicPlaylistsPending = false
     private var searchRequestVersion = 0L
 
     private val _uiState = MutableStateFlow(ExploreUiState())
@@ -474,9 +476,15 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
 
     /** 加载 YouTube Music 歌单列表 */
     fun loadYtMusicPlaylists() {
+        if (ytMusicPlaylistsJob?.isActive == true) {
+            ytMusicPlaylistsPending = true
+            NPLogger.d(TAG, "loadYtMusicPlaylists coalesced while loading")
+            return
+        }
+        ytMusicPlaylistsPending = false
         _uiState.value = _uiState.value.copy(ytMusicPlaylistsLoading = true, ytMusicPlaylistsError = null)
         NPLogger.d(TAG, "loadYtMusicPlaylists start")
-        viewModelScope.launch {
+        ytMusicPlaylistsJob = viewModelScope.launch {
             try {
                 val library = withContext(Dispatchers.IO) {
                     AppContainer.youtubeMusicClient.getLibraryPlaylists(
@@ -506,6 +514,12 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     ytMusicPlaylistsLoading = false,
                     ytMusicPlaylistsError = "YouTube Music: ${e.message ?: "unknown error"}"
                 )
+            } finally {
+                ytMusicPlaylistsJob = null
+                if (ytMusicPlaylistsPending) {
+                    ytMusicPlaylistsPending = false
+                    loadYtMusicPlaylists()
+                }
             }
         }
     }

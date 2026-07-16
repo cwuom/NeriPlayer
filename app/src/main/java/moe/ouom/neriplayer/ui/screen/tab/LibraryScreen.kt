@@ -261,10 +261,6 @@ fun LibraryScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
-        vm.refreshYouTubeMusicPlaylists()
-    }
-
     Column(
         Modifier
             .fillMaxSize()

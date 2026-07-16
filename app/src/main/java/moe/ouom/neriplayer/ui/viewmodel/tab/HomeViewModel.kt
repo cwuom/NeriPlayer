@@ -94,6 +94,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var radarSongsJob: Job? = null
     private var ytMusicPlaylistJob: Job? = null
     private var ytMusicHomeFeedJob: Job? = null
+    private var ytMusicPlaylistRefreshPending = false
+    private var ytMusicHomeFeedRefreshPending = false
     private var hasRecommendLogin = false
     private var homeRecommendationsBootstrapped = false
     private var lastYouTubeAuthFingerprint: String? = null
@@ -200,6 +202,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         radarSongsJob?.cancel()
         ytMusicPlaylistJob?.cancel()
         ytMusicHomeFeedJob?.cancel()
+        ytMusicPlaylistRefreshPending = false
+        ytMusicHomeFeedRefreshPending = false
     }
 
     /** 拉首页推荐歌单 */
@@ -368,41 +372,54 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshYtMusicPlaylists() {
         if (offlineMode) return
 
+        if (ytMusicPlaylistJob?.isActive == true) {
+            ytMusicPlaylistRefreshPending = true
+            NPLogger.d(TAG, "refreshYtMusicPlaylists coalesced while loading")
+            return
+        }
+        ytMusicPlaylistRefreshPending = false
         NPLogger.d(TAG, "refreshYtMusicPlaylists start")
-        ytMusicPlaylistJob?.cancel()
         _uiState.value = _uiState.value.copy(
             ytMusicPlaylists = _uiState.value.ytMusicPlaylists.copy(loading = true, error = null)
         )
         ytMusicPlaylistJob = viewModelScope.launch {
-            when (val result = fetchWithRetry("refreshYtMusicPlaylists") {
-                val library = withContext(Dispatchers.IO) {
-                    AppContainer.youtubeMusicClient.getHomePlaylistRecommendations()
-                }
-                library.map { pl ->
-                    YouTubeMusicPlaylist(
-                        browseId = pl.browseId,
-                        playlistId = pl.playlistId,
-                        title = pl.title,
-                        subtitle = pl.subtitle,
-                        coverUrl = pl.coverUrl,
-                        trackCount = pl.trackCount ?: 0
-                    )
-                }.take(HOME_YT_MUSIC_PLAYLIST_LIMIT)
-            }) {
-                is RetryLoadResult.Success -> {
-                    NPLogger.d(TAG, "refreshYtMusicPlaylists success: count=${result.items.size}")
-                    _uiState.value = _uiState.value.copy(
-                        ytMusicPlaylists = HomeSectionState(items = result.items)
-                    )
-                }
-                is RetryLoadResult.Failure -> {
-                    NPLogger.e(TAG, "refreshYtMusicPlaylists failed", result.throwable)
-                    _uiState.value = _uiState.value.copy(
-                        ytMusicPlaylists = _uiState.value.ytMusicPlaylists.copy(
-                            loading = false,
-                            error = buildHomeErrorMessage(result.throwable)
+            try {
+                when (val result = fetchWithRetry("refreshYtMusicPlaylists") {
+                    val library = withContext(Dispatchers.IO) {
+                        AppContainer.youtubeMusicClient.getHomePlaylistRecommendations()
+                    }
+                    library.map { pl ->
+                        YouTubeMusicPlaylist(
+                            browseId = pl.browseId,
+                            playlistId = pl.playlistId,
+                            title = pl.title,
+                            subtitle = pl.subtitle,
+                            coverUrl = pl.coverUrl,
+                            trackCount = pl.trackCount ?: 0
                         )
-                    )
+                    }.take(HOME_YT_MUSIC_PLAYLIST_LIMIT)
+                }) {
+                    is RetryLoadResult.Success -> {
+                        NPLogger.d(TAG, "refreshYtMusicPlaylists success: count=${result.items.size}")
+                        _uiState.value = _uiState.value.copy(
+                            ytMusicPlaylists = HomeSectionState(items = result.items)
+                        )
+                    }
+                    is RetryLoadResult.Failure -> {
+                        NPLogger.e(TAG, "refreshYtMusicPlaylists failed", result.throwable)
+                        _uiState.value = _uiState.value.copy(
+                            ytMusicPlaylists = _uiState.value.ytMusicPlaylists.copy(
+                                loading = false,
+                                error = buildHomeErrorMessage(result.throwable)
+                            )
+                        )
+                    }
+                }
+            } finally {
+                ytMusicPlaylistJob = null
+                if (ytMusicPlaylistRefreshPending && !offlineMode) {
+                    ytMusicPlaylistRefreshPending = false
+                    refreshYtMusicPlaylists()
                 }
             }
         }
@@ -413,34 +430,47 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshYtMusicHomeFeed() {
         if (offlineMode) return
 
+        if (ytMusicHomeFeedJob?.isActive == true) {
+            ytMusicHomeFeedRefreshPending = true
+            NPLogger.d(TAG, "refreshYtMusicHomeFeed coalesced while loading")
+            return
+        }
+        ytMusicHomeFeedRefreshPending = false
         NPLogger.d(TAG, "refreshYtMusicHomeFeed start")
-        ytMusicHomeFeedJob?.cancel()
         _uiState.value = _uiState.value.copy(
             ytMusicHomeShelves = _uiState.value.ytMusicHomeShelves.copy(loading = true, error = null)
         )
         ytMusicHomeFeedJob = viewModelScope.launch {
-            when (val result = fetchWithRetry("refreshYtMusicHomeFeed") {
-                withContext(Dispatchers.IO) {
-                    AppContainer.youtubeMusicClient.getHomeFeed(
-                        fillShelfContinuations = false,
-                        requireLogin = true
-                    )
-                }
-            }) {
-                is RetryLoadResult.Success -> {
-                    NPLogger.d(TAG, "refreshYtMusicHomeFeed success: count=${result.items.size}")
-                    _uiState.value = _uiState.value.copy(
-                        ytMusicHomeShelves = HomeSectionState(items = result.items)
-                    )
-                }
-                is RetryLoadResult.Failure -> {
-                    NPLogger.e(TAG, "refreshYtMusicHomeFeed failed", result.throwable)
-                    _uiState.value = _uiState.value.copy(
-                        ytMusicHomeShelves = _uiState.value.ytMusicHomeShelves.copy(
-                            loading = false,
-                            error = buildHomeErrorMessage(result.throwable)
+            try {
+                when (val result = fetchWithRetry("refreshYtMusicHomeFeed") {
+                    withContext(Dispatchers.IO) {
+                        AppContainer.youtubeMusicClient.getHomeFeed(
+                            fillShelfContinuations = false,
+                            requireLogin = true
                         )
-                    )
+                    }
+                }) {
+                    is RetryLoadResult.Success -> {
+                        NPLogger.d(TAG, "refreshYtMusicHomeFeed success: count=${result.items.size}")
+                        _uiState.value = _uiState.value.copy(
+                            ytMusicHomeShelves = HomeSectionState(items = result.items)
+                        )
+                    }
+                    is RetryLoadResult.Failure -> {
+                        NPLogger.e(TAG, "refreshYtMusicHomeFeed failed", result.throwable)
+                        _uiState.value = _uiState.value.copy(
+                            ytMusicHomeShelves = _uiState.value.ytMusicHomeShelves.copy(
+                                loading = false,
+                                error = buildHomeErrorMessage(result.throwable)
+                            )
+                        )
+                    }
+                }
+            } finally {
+                ytMusicHomeFeedJob = null
+                if (ytMusicHomeFeedRefreshPending && !offlineMode) {
+                    ytMusicHomeFeedRefreshPending = false
+                    refreshYtMusicHomeFeed()
                 }
             }
         }

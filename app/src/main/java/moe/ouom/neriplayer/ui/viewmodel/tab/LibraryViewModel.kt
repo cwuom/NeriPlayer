@@ -26,7 +26,9 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -80,6 +82,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     )
     val uiState: StateFlow<LibraryUiState> = _uiState
     private var lastYouTubeAuthFingerprint: String? = null
+    private var youtubeMusicPlaylistsJob: Job? = null
+    private var youtubeMusicPlaylistsPending = false
 
     init {
         // 本地歌单
@@ -299,7 +303,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun refreshYouTubeMusicPlaylists() {
-        viewModelScope.launch {
+        val runningJob = youtubeMusicPlaylistsJob
+        if (runningJob?.isActive == true) {
+            youtubeMusicPlaylistsPending = true
+            NPLogger.d("LibraryViewModel", "refreshYouTubeMusicPlaylists coalesced while loading")
+            return
+        }
+        youtubeMusicPlaylistsPending = false
+        youtubeMusicPlaylistsJob = viewModelScope.launch {
             try {
                 val playlists = withContext(Dispatchers.IO) {
                     youtubeMusicClient.getLibraryPlaylists(
@@ -310,6 +321,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     youtubeMusicPlaylists = playlists.map(::mapYouTubeMusicPlaylist),
                     youtubeMusicError = null
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: IOException) {
                 _uiState.value = _uiState.value.copy(
                     youtubeMusicPlaylists = emptyList(),
@@ -320,6 +333,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     youtubeMusicPlaylists = emptyList(),
                     youtubeMusicError = e.message
                 )
+            } finally {
+                youtubeMusicPlaylistsJob = null
+                if (youtubeMusicPlaylistsPending) {
+                    youtubeMusicPlaylistsPending = false
+                    refreshYouTubeMusicPlaylists()
+                }
             }
         }
     }

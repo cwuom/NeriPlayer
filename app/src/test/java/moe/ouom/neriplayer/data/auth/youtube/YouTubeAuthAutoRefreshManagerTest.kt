@@ -17,7 +17,6 @@ class YouTubeAuthAutoRefreshManagerTest {
                 pageReady = true,
                 hasYtcfg = true,
                 hasLiveSessionSignal = false,
-                authChanged = false,
                 recoveredActiveSession = false
             )
         )
@@ -30,7 +29,6 @@ class YouTubeAuthAutoRefreshManagerTest {
                 pageReady = true,
                 hasYtcfg = true,
                 hasLiveSessionSignal = false,
-                authChanged = true,
                 recoveredActiveSession = true
             )
         )
@@ -43,7 +41,6 @@ class YouTubeAuthAutoRefreshManagerTest {
                 pageReady = true,
                 hasYtcfg = true,
                 hasLiveSessionSignal = false,
-                authChanged = true,
                 recoveredActiveSession = false
             )
         )
@@ -56,21 +53,31 @@ class YouTubeAuthAutoRefreshManagerTest {
                 pageReady = true,
                 hasYtcfg = true,
                 hasLiveSessionSignal = true,
-                authChanged = false,
                 recoveredActiveSession = false
             )
         )
     }
 
     @Test
-    fun shouldAcceptYouTubeRefreshResult_allowsCookieRecoveryBeforePageSettles() {
+    fun shouldAcceptYouTubeRefreshResult_rejectsCookieChurnBeforePageSettles() {
+        assertFalse(
+            shouldAcceptYouTubeRefreshResult(
+                pageReady = false,
+                hasYtcfg = false,
+                hasLiveSessionSignal = false,
+                recoveredActiveSession = false
+            )
+        )
+    }
+
+    @Test
+    fun shouldAcceptYouTubeRefreshResult_allowsActiveSessionRecoveryBeforePageSettles() {
         assertTrue(
             shouldAcceptYouTubeRefreshResult(
                 pageReady = false,
                 hasYtcfg = false,
                 hasLiveSessionSignal = false,
-                authChanged = true,
-                recoveredActiveSession = false
+                recoveredActiveSession = true
             )
         )
     }

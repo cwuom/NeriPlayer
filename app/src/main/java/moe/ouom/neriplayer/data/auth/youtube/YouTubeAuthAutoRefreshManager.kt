@@ -95,17 +95,19 @@ internal fun shouldAcceptYouTubeRefreshResult(
     pageReady: Boolean,
     hasYtcfg: Boolean,
     hasLiveSessionSignal: Boolean,
-    authChanged: Boolean,
     recoveredActiveSession: Boolean
 ): Boolean {
     if (hasLiveSessionSignal) {
         return true
     }
+    if (recoveredActiveSession) {
+        return true
+    }
     if (!pageReady || !hasYtcfg) {
-        return authChanged || recoveredActiveSession
+        return false
     }
     // 页面和 ytcfg 都稳定了却还没确认登录，说明这份 cookie 快照大概率是游客态
-    return recoveredActiveSession
+    return false
 }
 
 internal fun resolveObservedYouTubeAuthUser(
@@ -304,7 +306,6 @@ class YouTubeAuthAutoRefreshManager(
                             pageReady = pageReady,
                             hasYtcfg = pageSnapshot?.hasYtcfg == true,
                             hasLiveSessionSignal = pageConfirmedSession,
-                            authChanged = authChanged,
                             recoveredActiveSession = recoveredActiveSession
                         )
                     ) {
@@ -325,7 +326,7 @@ class YouTubeAuthAutoRefreshManager(
                     circuitOpenUntilMs = 0L
                     NPLogger.i(
                         TAG,
-                        "refresh success reason=$reason url=$url authChanged=$shouldPersist state=${refreshedHealth.state} liveSession=$pageConfirmedSession"
+                        "refresh success reason=$reason url=$url authChanged=$authChanged persisted=$shouldPersist state=${refreshedHealth.state} liveSession=$pageConfirmedSession"
                     )
                     return@withLock YouTubeAuthAutoRefreshResult(
                         attempted = true,
