@@ -1381,6 +1381,7 @@ class LocalPlaylistRepository private constructor(
     suspend fun updateSongMetadata(originalSong: SongItem, newSongInfo: SongItem) {
         withContext(Dispatchers.IO) {
             commitPlaylistMutation {
+                val modifiedAt = System.currentTimeMillis()
                 var changed = false
                 val updated = _playlists.value.map { playlist ->
                     val songIndex = playlist.songs.indexOfFirst { it.sameIdentityAs(originalSong) }
@@ -1400,6 +1401,7 @@ class LocalPlaylistRepository private constructor(
                         changed = true
                         playlist.copy(
                             songs = songs,
+                            modifiedAt = modifiedAt,
                             songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                         )
                     }
@@ -1423,6 +1425,7 @@ class LocalPlaylistRepository private constructor(
         }
 
         commitPlaylistMutation {
+            val modifiedAt = System.currentTimeMillis()
             val updateIndex = SongMetadataUpdateIndex(updates)
             var changed = false
             val updated = _playlists.value.map { playlist ->
@@ -1446,6 +1449,7 @@ class LocalPlaylistRepository private constructor(
                 if (playlistChanged) {
                     playlist.copy(
                         songs = refreshedSongs,
+                        modifiedAt = modifiedAt,
                         songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                     )
                 } else {

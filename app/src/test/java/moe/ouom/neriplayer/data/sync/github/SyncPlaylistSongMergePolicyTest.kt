@@ -486,6 +486,87 @@ class SyncPlaylistSongMergePolicyTest {
     }
 
     @Test
+    fun `remote primary keeps local custom metadata fallbacks`() {
+        val local = syncSong(
+            id = 1L,
+            name = "Local metadata",
+            membershipTokens = listOf(token("local", 1L))
+        ).copy(
+            customName = "Custom title",
+            customArtist = "Custom artist",
+            customCoverUrl = "https://example.com/custom.jpg",
+            originalName = "Original title",
+            originalArtist = "Original artist",
+            originalCoverUrl = "https://example.com/original.jpg",
+            matchedLyric = "[00:00.00]lyric",
+            matchedTranslatedLyric = "[00:00.00]translation",
+            matchedLyricSource = "CLOUD_MUSIC",
+            matchedSongId = "netease:1",
+            originalLyric = "[00:00.00]old lyric",
+            originalTranslatedLyric = "[00:00.00]old translation"
+        )
+        val remote = syncSong(
+            id = 1L,
+            name = "Remote metadata",
+            membershipTokens = listOf(token("remote", 1L))
+        )
+
+        val result = SyncPlaylistSongMergePolicy.mergeSongs(
+            localSongs = listOf(local),
+            remoteSongs = listOf(remote),
+            localModifiedAt = 100L,
+            remoteModifiedAt = 200L,
+            localChangedAfterSync = false,
+            remoteChangedAfterSync = true,
+            lastSyncTime = 150L,
+            isFavorites = false
+        )
+
+        val merged = result.songs.single()
+        assertEquals("Remote metadata", merged.name)
+        assertEquals("Custom title", merged.customName)
+        assertEquals("Custom artist", merged.customArtist)
+        assertEquals("https://example.com/custom.jpg", merged.customCoverUrl)
+        assertEquals("Original title", merged.originalName)
+        assertEquals("Original artist", merged.originalArtist)
+        assertEquals("https://example.com/original.jpg", merged.originalCoverUrl)
+        assertEquals("[00:00.00]lyric", merged.matchedLyric)
+        assertEquals("[00:00.00]translation", merged.matchedTranslatedLyric)
+        assertEquals("CLOUD_MUSIC", merged.matchedLyricSource)
+        assertEquals("netease:1", merged.matchedSongId)
+        assertEquals("[00:00.00]old lyric", merged.originalLyric)
+        assertEquals("[00:00.00]old translation", merged.originalTranslatedLyric)
+        assertEquals(listOf(token("local", 1L), token("remote", 1L)), merged.syncMembershipTokens)
+    }
+
+    @Test
+    fun `custom metadata fallback does not overwrite primary custom values`() {
+        val local = syncSong(
+            id = 1L,
+            name = "Local metadata",
+            membershipTokens = listOf(token("local", 1L))
+        ).copy(customName = "Local custom title")
+        val remote = syncSong(
+            id = 1L,
+            name = "Remote metadata",
+            membershipTokens = listOf(token("remote", 1L))
+        ).copy(customName = "Remote custom title")
+
+        val result = SyncPlaylistSongMergePolicy.mergeSongs(
+            localSongs = listOf(local),
+            remoteSongs = listOf(remote),
+            localModifiedAt = 100L,
+            remoteModifiedAt = 200L,
+            localChangedAfterSync = false,
+            remoteChangedAfterSync = true,
+            lastSyncTime = 150L,
+            isFavorites = false
+        )
+
+        assertEquals("Remote custom title", result.songs.single().customName)
+    }
+
+    @Test
     fun `large local clear skips remote refill`() {
         val remoteSongs = (1..2_000).map { index ->
             syncSong(id = index.toLong(), name = "Song $index")

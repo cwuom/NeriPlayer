@@ -261,16 +261,19 @@ internal object SyncPlaylistSongMergePolicy {
                 .plus(other.syncMembershipTokens.orEmpty().asSequence())
                 .toList()
                 .normalizedSyncCausalTokens()
+            val payloadCandidates = matchingIndices
+                .asSequence()
+                .map { index -> entries[index].song }
+                .plus(other)
+                .toList()
             val resolvedPayload = if (resolvePayloadDeterministically) {
-                matchingIndices
-                    .asSequence()
-                    .map { index -> entries[index].song }
-                    .plus(other)
-                    .maxBy(::canonicalPayloadKey)
+                payloadCandidates.maxBy(::canonicalPayloadKey)
             } else {
                 primaryEntry.song
             }
-            primaryEntry.song = resolvedPayload.copy(syncMembershipTokens = mergedTokens)
+            primaryEntry.song = resolvedPayload
+                .withUserMetadataFallbacks(payloadCandidates)
+                .copy(syncMembershipTokens = mergedTokens)
             matchingIndices
                 .asSequence()
                 .filter { index -> index != primaryIndex }
@@ -370,6 +373,42 @@ internal object SyncPlaylistSongMergePolicy {
 
     private fun String.normalizedText(): String {
         return trim().lowercase()
+    }
+
+    private fun SyncSong.withUserMetadataFallbacks(candidates: List<SyncSong>): SyncSong {
+        return copy(
+            matchedLyric = matchedLyric.nonBlankOrElse(candidates, SyncSong::matchedLyric),
+            matchedTranslatedLyric = matchedTranslatedLyric.nonBlankOrElse(
+                candidates,
+                SyncSong::matchedTranslatedLyric
+            ),
+            matchedLyricSource = matchedLyricSource.nonBlankOrElse(
+                candidates,
+                SyncSong::matchedLyricSource
+            ),
+            matchedSongId = matchedSongId.nonBlankOrElse(candidates, SyncSong::matchedSongId),
+            customCoverUrl = customCoverUrl.nonBlankOrElse(candidates, SyncSong::customCoverUrl),
+            customName = customName.nonBlankOrElse(candidates, SyncSong::customName),
+            customArtist = customArtist.nonBlankOrElse(candidates, SyncSong::customArtist),
+            originalName = originalName.nonBlankOrElse(candidates, SyncSong::originalName),
+            originalArtist = originalArtist.nonBlankOrElse(candidates, SyncSong::originalArtist),
+            originalCoverUrl = originalCoverUrl.nonBlankOrElse(candidates, SyncSong::originalCoverUrl),
+            originalLyric = originalLyric.nonBlankOrElse(candidates, SyncSong::originalLyric),
+            originalTranslatedLyric = originalTranslatedLyric.nonBlankOrElse(
+                candidates,
+                SyncSong::originalTranslatedLyric
+            )
+        )
+    }
+
+    private fun String?.nonBlankOrElse(
+        candidates: List<SyncSong>,
+        selector: (SyncSong) -> String?
+    ): String? {
+        return takeIf { !it.isNullOrBlank() }
+            ?: candidates.firstNotNullOfOrNull { candidate ->
+                selector(candidate)?.takeIf(String::isNotBlank)
+            }
     }
 
     private fun canonicalPayloadKey(song: SyncSong): String {

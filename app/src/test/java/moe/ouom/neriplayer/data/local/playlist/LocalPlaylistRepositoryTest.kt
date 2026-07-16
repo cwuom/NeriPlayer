@@ -549,7 +549,14 @@ class LocalPlaylistRepositoryTest {
             autoSyncTrigger = { autoSyncTriggerCount++ }
         )
         repository.updatePlaylists(
-            listOf(LocalPlaylist(id = playlistId, name = "metadata", songs = mutableListOf(original)))
+            listOf(
+                LocalPlaylist(
+                    id = playlistId,
+                    name = "metadata",
+                    songs = mutableListOf(original),
+                    modifiedAt = 10L
+                )
+            )
         )
 
         repository.updateSongMetadata(
@@ -565,6 +572,7 @@ class LocalPlaylistRepositoryTest {
         assertEquals("Hydrated", updated.name)
         assertEquals(500L, updated.addedAt)
         assertEquals(listOf(membershipToken), updated.syncMembershipTokens)
+        assertTrue(repository.playlists.value.single().modifiedAt > 10L)
         assertEquals(1L, syncStore.mutationVersion)
         assertEquals(0, autoSyncTriggerCount)
     }
