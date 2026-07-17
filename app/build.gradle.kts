@@ -318,5 +318,8 @@ dependencies {
     // 取主题色
     implementation(libs.androidx.palette.ktx)
 
+    // 模糊
+    implementation(libs.haze.jetpack.compose)
+
     implementation(libs.superlyricapi)
 }
