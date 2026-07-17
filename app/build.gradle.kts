@@ -301,10 +301,7 @@ dependencies {
 
     implementation(libs.material.kolor)
 
-    implementation(files("libs/lib-decoder-ffmpeg-release.aar"))
-
-    // 模糊
-    implementation(libs.haze.jetpack.compose)
+    implementation(files("libs/lib-decoder-ffmpeg-media3-1.8.0-ffmpeg-6.0-api28-common-release.aar"))
 
     // Security - 加密存储
     implementation(libs.androidx.security.crypto)
