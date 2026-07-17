@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -12,6 +13,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.player.model.PlaybackQualityOption
+import moe.ouom.neriplayer.ui.component.playback.NowPlayingCoverPreviewDialog
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
@@ -208,6 +210,48 @@ class NowPlayingDialogsTest {
 
         composeRule.runOnIdle {
             assertEquals("master", selectedKey)
+            assertTrue(dismissed)
+        }
+    }
+
+    @Test
+    fun coverPreviewDialog_routesDownloadAndDismissActions() {
+        val context = targetContext
+        var downloadRequested = false
+        var dismissed = false
+
+        composeRule.setContent {
+            MaterialTheme {
+                NowPlayingCoverPreviewDialog(
+                    coverUrl = "file:///cover-preview-test.jpg",
+                    songName = "夜航星",
+                    offlineMode = true,
+                    onDownload = { downloadRequested = true },
+                    onDismiss = { dismissed = true }
+                )
+            }
+        }
+
+        waitForText("夜航星")
+        waitForText(context.getString(R.string.cover_preview_zoom_percent, 100))
+        composeRule.onNodeWithContentDescription(
+            context.getString(R.string.cover_preview_reset_zoom)
+        ).fetchSemanticsNode()
+        composeRule.onNodeWithContentDescription(
+            context.getString(
+                R.string.cover_preview_image_content_description_named,
+                "夜航星"
+            )
+        ).fetchSemanticsNode()
+        composeRule.onNodeWithText(
+            context.getString(R.string.action_download_cover)
+        ).performClick()
+        composeRule.onNodeWithContentDescription(
+            context.getString(R.string.action_close)
+        ).performClick()
+
+        composeRule.runOnIdle {
+            assertTrue(downloadRequested)
             assertTrue(dismissed)
         }
     }

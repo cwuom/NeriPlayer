@@ -310,6 +310,13 @@
     <string name="cover_download_success">Cover saved: %s</string>
     <string name="cover_download_failed">Failed to save cover: %s</string>
     <string name="cover_download_permission_required">Grant storage permission before saving covers</string>
+    <string name="cover_preview_unavailable">No cover is available to preview</string>
+    <string name="cover_preview_title">Cover Artwork</string>
+    <string name="cover_preview_image_content_description">Full-size song artwork</string>
+    <string name="cover_preview_image_content_description_named">Full-size artwork for %s</string>
+    <string name="cover_preview_zoom_hint">Pinch to zoom · Drag to explore</string>
+    <string name="cover_preview_zoom_percent">%1$d%%</string>
+    <string name="cover_preview_reset_zoom">Reset zoom</string>
     <string name="music_view_album">View Album %s</string>
 
     <!-- Playlist -->

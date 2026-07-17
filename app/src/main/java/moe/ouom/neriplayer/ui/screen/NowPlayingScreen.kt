@@ -98,7 +98,6 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SpeakerGroup
-import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Info
@@ -231,6 +230,7 @@ import moe.ouom.neriplayer.ui.component.lyrics.LyricShareSheet
 import moe.ouom.neriplayer.ui.component.lyrics.LyricVisualSpec
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSoundSheet
 import moe.ouom.neriplayer.ui.component.playback.SongMetadataSearchContent
+import moe.ouom.neriplayer.ui.component.playback.NowPlayingCoverPreviewDialog
 import moe.ouom.neriplayer.ui.component.playback.PlaybackControlIndicator
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceBadge
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
@@ -509,7 +509,7 @@ fun NowPlayingScreen(
     var showCoverPageSourceBadge by remember { mutableStateOf(false) }
     var animateCoverPageSourceBadge by remember { mutableStateOf(false) }
     var previousLyricsScreenState by remember { mutableStateOf(false) }
-    var showCoverMenu by remember { mutableStateOf(false) }
+    var showCoverPreview by remember(playbackSourceSongKey) { mutableStateOf(false) }
     var showMoreOptions by remember { mutableStateOf(false) }
     var showSongNameMenu by remember { mutableStateOf(false) }
     var showArtistMenu by remember { mutableStateOf(false) }
@@ -569,7 +569,7 @@ fun NowPlayingScreen(
     }
 
     val requestCoverDownload: () -> Unit = {
-        showCoverMenu = false
+        showCoverPreview = false
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
             val hasPermission = ContextCompat.checkSelfPermission(
                 context,
@@ -897,6 +897,17 @@ fun NowPlayingScreen(
         }
     }
 
+    val previewCoverUrl = currentCoverUrl
+    if (showCoverPreview && !previewCoverUrl.isNullOrBlank()) {
+        NowPlayingCoverPreviewDialog(
+            coverUrl = previewCoverUrl,
+            songName = currentSong?.displayName().orEmpty(),
+            offlineMode = offlineMode,
+            onDownload = requestCoverDownload,
+            onDismiss = { showCoverPreview = false }
+        )
+    }
+
     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
         SharedTransitionLayout {
             Box(modifier = Modifier.fillMaxSize()) {
@@ -1123,12 +1134,12 @@ fun NowPlayingScreen(
                                                 screenScope.launch {
                                                     snackbarHostState.showSnackbar(
                                                         context.getString(
-                                                            R.string.cover_download_unavailable
+                                                            R.string.cover_preview_unavailable
                                                         )
                                                     )
                                                 }
                                             } else {
-                                                showCoverMenu = true
+                                                showCoverPreview = true
                                             }
                                         }
                                     )
@@ -1149,22 +1160,6 @@ fun NowPlayingScreen(
                                         modifier = Modifier.fillMaxSize()
                                     )
                                 }
-                            }
-
-                            DropdownMenu(
-                                expanded = showCoverMenu,
-                                onDismissRequest = { showCoverMenu = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.action_download_cover)) },
-                                    leadingIcon = {
-                                        Icon(
-                                            Icons.Outlined.Download,
-                                            contentDescription = null
-                                        )
-                                    },
-                                    onClick = requestCoverDownload
-                                )
                             }
 
                             val coverPageSourceBadgeScale by animateFloatAsState(

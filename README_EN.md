@@ -164,7 +164,9 @@ Current positioning:
 - **Large screens and daily controls are getting real polish**:
   tablet/landscape Now Playing, Lyrics, Settings, and artist pages use steadier
   width constraints and bottom control layouts. The `Mini Player` supports
-  horizontal swipe for previous/next without expanding the full player.
+  horizontal swipe for previous/next without expanding the full player. Long-
+  pressing the Now Playing artwork opens an immersive preview with pinch-to-zoom,
+  panning, and a download action.
 - **Sound controls are tied to the active audio session**:
   `PlaybackEffectsController` applies speed, pitch, Android `Equalizer`, and
   `LoudnessEnhancer` to the current Media3 audio session. Presets, manual bands,

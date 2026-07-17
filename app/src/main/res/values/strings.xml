@@ -310,6 +310,13 @@
     <string name="cover_download_success">封面已保存：%s</string>
     <string name="cover_download_failed">封面保存失败：%s</string>
     <string name="cover_download_permission_required">保存封面前请先授予存储权限</string>
+    <string name="cover_preview_unavailable">当前没有可预览封面</string>
+    <string name="cover_preview_title">封面大图</string>
+    <string name="cover_preview_image_content_description">歌曲封面大图</string>
+    <string name="cover_preview_image_content_description_named">%s 的封面大图</string>
+    <string name="cover_preview_zoom_hint">双指缩放 · 拖动查看</string>
+    <string name="cover_preview_zoom_percent">%1$d%%</string>
+    <string name="cover_preview_reset_zoom">重置缩放</string>
     <string name="music_view_album">查看专辑 %s</string>
 
     <!-- Playlist -->
