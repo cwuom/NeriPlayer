@@ -51,6 +51,8 @@ import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.stats.TrackStat
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 
 private val StatsPeriodOptions = listOf(
@@ -107,13 +109,14 @@ internal fun StatsOverviewCard(
     totalListenMs: Long,
     trackCount: Int
 ) {
-    Card(
+    val shape = RoundedCornerShape(16.dp)
+    val baseColor = MaterialTheme.colorScheme.secondaryContainer
+    AdvancedGlassSurface(
+        role = AdvancedGlassRole.SemanticCard,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.25f)
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        shape = shape,
+        fallbackColor = baseColor.copy(alpha = 0.25f),
+        tintColor = baseColor
     ) {
         Row(
             modifier = Modifier

@@ -68,6 +68,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistDetailUiState
 import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistHeader
@@ -222,25 +224,33 @@ private fun ArtistContent(
                     .fillMaxWidth()
                     .padding(vertical = 8.dp),
                 shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+                color = Color.Transparent
             ) {
-                PrimaryTabRow(
-                    selectedTabIndex = selectedTab,
-                    containerColor = Color.Transparent,
-                    contentColor = MaterialTheme.colorScheme.primary
+                AdvancedGlassSurface(
+                    role = AdvancedGlassRole.ScreenTopTab,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    fallbackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
+                    tintColor = MaterialTheme.colorScheme.surfaceVariant
                 ) {
-                    Tab(
-                        selected = selectedTab == 0,
-                        onClick = { onTabSelected(0) },
-                        text = { Text(stringResource(R.string.artist_tab_songs)) },
-                        icon = { Icon(Icons.Outlined.MusicNote, contentDescription = null) }
-                    )
-                    Tab(
-                        selected = selectedTab == 1,
-                        onClick = { onTabSelected(1) },
-                        text = { Text(stringResource(R.string.artist_tab_albums)) },
-                        icon = { Icon(Icons.Outlined.LibraryMusic, contentDescription = null) }
-                    )
+                    PrimaryTabRow(
+                        selectedTabIndex = selectedTab,
+                        containerColor = Color.Transparent,
+                        contentColor = MaterialTheme.colorScheme.primary
+                    ) {
+                        Tab(
+                            selected = selectedTab == 0,
+                            onClick = { onTabSelected(0) },
+                            text = { Text(stringResource(R.string.artist_tab_songs)) },
+                            icon = { Icon(Icons.Outlined.MusicNote, contentDescription = null) }
+                        )
+                        Tab(
+                            selected = selectedTab == 1,
+                            onClick = { onTabSelected(1) },
+                            text = { Text(stringResource(R.string.artist_tab_albums)) },
+                            icon = { Icon(Icons.Outlined.LibraryMusic, contentDescription = null) }
+                        )
+                    }
                 }
             }
         }

@@ -133,6 +133,7 @@ internal object SyncDataChangeDetector {
             a.audioId == b.audioId &&
             a.subAudioId == b.subAudioId &&
             a.playlistContextId == b.playlistContextId &&
-            a.syncMembershipTokens.orEmpty().toSet() == b.syncMembershipTokens.orEmpty().toSet()
+            a.syncMetadataVersion == b.syncMetadataVersion &&
+            a.syncMembershipTokens.toSet() == b.syncMembershipTokens.toSet()
     }
 }

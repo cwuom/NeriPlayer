@@ -27,12 +27,6 @@ import android.net.Uri
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -48,6 +42,10 @@ import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.ThemeMode
 import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassScene
+import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassController
+import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassVerticalTransition
 import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
 import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
 import moe.ouom.neriplayer.ui.screen.tab.SettingsScreen
@@ -59,6 +57,13 @@ private enum class SettingsScreenState {
 }
 
 private fun SettingsScreenState.saveableKey(): String = "settings_host:${name}"
+
+private val SettingsScreenState.navigationDepth: Int
+    get() = when (this) {
+        SettingsScreenState.Settings -> 0
+        SettingsScreenState.DownloadManager -> 1
+        SettingsScreenState.DownloadProgress -> 2
+    }
 
 @Composable
 fun SettingsHostScreen(
@@ -105,6 +110,10 @@ fun SettingsHostScreen(
     onFloatingLyricsPreferencesChange: (FloatingLyricsPreferences) -> Unit,
     advancedBlurEnabled: Boolean,
     onAdvancedBlurEnabledChange: (Boolean) -> Unit,
+    enhancedAdvancedBlurEnabled: Boolean,
+    onEnhancedAdvancedBlurEnabledChange: (Boolean) -> Unit,
+    enhancedAdvancedBlurRadiusDp: Float,
+    onEnhancedAdvancedBlurRadiusDpChange: (Float) -> Unit,
     nowPlayingAudioReactiveEnabled: Boolean,
     onNowPlayingAudioReactiveEnabledChange: (Boolean) -> Unit,
     nowPlayingDynamicBackgroundEnabled: Boolean,
@@ -185,6 +194,7 @@ fun SettingsHostScreen(
 ) {
     var screenState by rememberSaveable { mutableStateOf(SettingsScreenState.Settings) }
     val saveableStateHolder = rememberSaveableStateHolder()
+    val isolateAdvancedGlassTransitions = LocalAdvancedGlassController.current.isEnabled
 
     // 保存设置页面的滚动状态，使用正确的Saver
     val settingsListSaver: Saver<LazyListState, *> = LazyListState.Saver
@@ -209,26 +219,21 @@ fun SettingsHostScreen(
             targetState = screenState,
             label = "settings_screen_switch",
             transitionSpec = {
-                when {
-                    initialState == SettingsScreenState.Settings && targetState != SettingsScreenState.Settings -> {
-                        (slideInVertically(animationSpec = tween(220)) { it } + fadeIn()) togetherWith
-                                (fadeOut(animationSpec = tween(160)))
-                    }
-                    initialState != SettingsScreenState.Settings && targetState == SettingsScreenState.Settings -> {
-                        (slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()) togetherWith
-                                (slideOutVertically(animationSpec = tween(240)) { it } + fadeOut())
-                    }
-                    else -> {
-                        (slideInVertically(animationSpec = tween(220)) { it } + fadeIn()) togetherWith
-                                (slideOutVertically(animationSpec = tween(220)) { -it } + fadeOut())
-                    }
-                }.using(SizeTransform(clip = false))
+                isolatedAdvancedGlassVerticalTransition(
+                    forward = targetState.navigationDepth > initialState.navigationDepth
+                ).using(SizeTransform(clip = true))
             }
         ) { state ->
-            saveableStateHolder.SaveableStateProvider(state.saveableKey()) {
-                when (state) {
-                    SettingsScreenState.Settings -> {
-                        SettingsScreen(
+            AdvancedGlassNavigationHandoff(
+                enabled = isolateAdvancedGlassTransitions && transition.isRunning
+            ) {
+                AdvancedGlassScene(
+                    active = isolateAdvancedGlassTransitions || state == screenState
+                ) {
+                    saveableStateHolder.SaveableStateProvider(state.saveableKey()) {
+                        when (state) {
+                            SettingsScreenState.Settings -> {
+                                SettingsScreen(
                             listState = settingsListState,
                             dynamicColor = dynamicColor,
                             onDynamicColorChange = onDynamicColorChange,
@@ -278,6 +283,12 @@ fun SettingsHostScreen(
                             onFloatingLyricsPreferencesChange = onFloatingLyricsPreferencesChange,
                             advancedBlurEnabled = advancedBlurEnabled,
                             onAdvancedBlurEnabledChange = onAdvancedBlurEnabledChange,
+                            enhancedAdvancedBlurEnabled = enhancedAdvancedBlurEnabled,
+                            onEnhancedAdvancedBlurEnabledChange =
+                                onEnhancedAdvancedBlurEnabledChange,
+                            enhancedAdvancedBlurRadiusDp = enhancedAdvancedBlurRadiusDp,
+                            onEnhancedAdvancedBlurRadiusDpChange =
+                                onEnhancedAdvancedBlurRadiusDpChange,
                             nowPlayingAudioReactiveEnabled = nowPlayingAudioReactiveEnabled,
                             onNowPlayingAudioReactiveEnabledChange = onNowPlayingAudioReactiveEnabledChange,
                             nowPlayingDynamicBackgroundEnabled = nowPlayingDynamicBackgroundEnabled,
@@ -360,20 +371,24 @@ fun SettingsHostScreen(
                             onMaxCacheSizeBytesChange = onMaxCacheSizeBytesChange,
                             onClearCacheClick = onClearCacheClick,
                             onBeforeLanguageRestart = onBeforeLanguageRestart
-                        )
-                    }
+                                )
+                            }
 
-                    SettingsScreenState.DownloadManager -> {
-                        DownloadManagerScreen(
-                            onBack = { screenState = SettingsScreenState.Settings },
-                            onOpenDownloadProgress = { screenState = SettingsScreenState.DownloadProgress }
-                        )
-                    }
+                            SettingsScreenState.DownloadManager -> {
+                                DownloadManagerScreen(
+                                    onBack = { screenState = SettingsScreenState.Settings },
+                                    onOpenDownloadProgress = {
+                                        screenState = SettingsScreenState.DownloadProgress
+                                    }
+                                )
+                            }
 
-                    SettingsScreenState.DownloadProgress -> {
-                        DownloadProgressScreen(
-                            onBack = { screenState = SettingsScreenState.DownloadManager }
-                        )
+                            SettingsScreenState.DownloadProgress -> {
+                                DownloadProgressScreen(
+                                    onBack = { screenState = SettingsScreenState.DownloadManager }
+                                )
+                            }
+                        }
                     }
                 }
             }

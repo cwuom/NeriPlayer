@@ -219,6 +219,7 @@ enum class AutoSettingIcon {
     Home,
     Info,
     Keyboard,
+    Layers,
     LibraryMusic,
     Palette,
     PlaylistPlay,

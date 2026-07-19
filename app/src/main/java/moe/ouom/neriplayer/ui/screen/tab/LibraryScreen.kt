@@ -118,6 +118,8 @@ import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.model.buildLocalArtistSummaries
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
@@ -161,6 +163,8 @@ private const val FAVORITE_CATEGORY_PLAYLIST = 0
 private const val FAVORITE_CATEGORY_ARTIST = 1
 private const val LOCAL_CATEGORY_PLAYLIST = 0
 private const val LOCAL_CATEGORY_ARTIST = 1
+private val LibraryPrimaryTabShape = RoundedCornerShape(20.dp)
+private val LibrarySearchFieldShape = RoundedCornerShape(16.dp)
 
 private enum class LocalArtistSortMode {
     SONG_COUNT,
@@ -411,23 +415,33 @@ private fun LibraryMainTabs(
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
     ) {
-        PrimaryScrollableTabRow(
-            selectedTabIndex = selectedTabIndex,
-            edgePadding = 8.dp,
-            containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.weight(1f)
+        AdvancedGlassSurface(
+            role = AdvancedGlassRole.ScreenTopTab,
+            modifier = Modifier
+                .weight(1f)
+                .clip(LibraryPrimaryTabShape),
+            shape = LibraryPrimaryTabShape
         ) {
-            tabs.forEachIndexed { index, tab ->
-                Tab(
-                    selected = selectedTabIndex == index,
-                    onClick = { onTabSelected(index) },
-                    selectedContentColor = MaterialTheme.colorScheme.primary,
-                    unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    text = { Text(stringResource(tab.labelResId)) }
-                )
+            PrimaryScrollableTabRow(
+                selectedTabIndex = selectedTabIndex,
+                edgePadding = 8.dp,
+                containerColor = Color.Transparent,
+                contentColor = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                tabs.forEachIndexed { index, tab ->
+                    Tab(
+                        selected = selectedTabIndex == index,
+                        onClick = { onTabSelected(index) },
+                        selectedContentColor = MaterialTheme.colorScheme.primary,
+                        unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = { Text(stringResource(tab.labelResId)) }
+                    )
+                }
             }
         }
 
@@ -718,7 +732,8 @@ private fun BiliPlaylistList(
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 placeholder = { Text(stringResource(R.string.library_bili_search_hint)) },
-                singleLine = true
+                singleLine = true,
+                shape = LibrarySearchFieldShape
             )
         }
         if (playlists.isNotEmpty() && filteredPlaylists.isEmpty()) {
@@ -1690,6 +1705,7 @@ private fun LocalArtistSearchAndSortRow(
             modifier = Modifier.weight(1f),
             placeholder = { Text(stringResource(R.string.library_local_artist_search_hint)) },
             singleLine = true,
+            shape = LibrarySearchFieldShape,
             trailingIcon = {
                 if (query.isNotEmpty()) {
                     HapticIconButton(onClick = { onQueryChange("") }) {
@@ -1775,40 +1791,48 @@ private fun LocalCategoryTabs(
     Card(
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+            containerColor = Color.Transparent
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 6.dp)
     ) {
-        PrimaryTabRow(
-            selectedTabIndex = selectedCategory,
-            containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.primary
+        AdvancedGlassSurface(
+            role = AdvancedGlassRole.ScreenTopTab,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            fallbackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
+            tintColor = MaterialTheme.colorScheme.surfaceVariant
         ) {
-            Tab(
-                selected = selectedCategory == LOCAL_CATEGORY_PLAYLIST,
-                onClick = onPlaylistSelected,
-                text = { Text(stringResource(R.string.library_favorite_tab_playlists)) },
-                icon = {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                        contentDescription = null
-                    )
-                }
-            )
-            Tab(
-                selected = selectedCategory == LOCAL_CATEGORY_ARTIST,
-                onClick = onArtistSelected,
-                text = { Text(stringResource(R.string.library_favorite_tab_artists)) },
-                icon = {
-                    Icon(
-                        imageVector = Icons.Filled.AccountCircle,
-                        contentDescription = null
-                    )
-                }
-            )
+            PrimaryTabRow(
+                selectedTabIndex = selectedCategory,
+                containerColor = Color.Transparent,
+                contentColor = MaterialTheme.colorScheme.primary
+            ) {
+                Tab(
+                    selected = selectedCategory == LOCAL_CATEGORY_PLAYLIST,
+                    onClick = onPlaylistSelected,
+                    text = { Text(stringResource(R.string.library_favorite_tab_playlists)) },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                            contentDescription = null
+                        )
+                    }
+                )
+                Tab(
+                    selected = selectedCategory == LOCAL_CATEGORY_ARTIST,
+                    onClick = onArtistSelected,
+                    text = { Text(stringResource(R.string.library_favorite_tab_artists)) },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Filled.AccountCircle,
+                            contentDescription = null
+                        )
+                    }
+                )
+            }
         }
     }
 }
@@ -1827,6 +1851,7 @@ private fun LibraryInlineSearchField(
             .padding(horizontal = 16.dp, vertical = 4.dp),
         placeholder = { Text(stringResource(placeholderResId)) },
         singleLine = true,
+        shape = LibrarySearchFieldShape,
         trailingIcon = {
             if (query.isNotEmpty()) {
                 HapticIconButton(onClick = { onQueryChange("") }) {
@@ -2149,40 +2174,48 @@ private fun NeteaseCategoryTabs(
     Card(
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+            containerColor = Color.Transparent
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 6.dp)
     ) {
-        PrimaryTabRow(
-            selectedTabIndex = selectedCategory,
-            containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.primary
+        AdvancedGlassSurface(
+            role = AdvancedGlassRole.ScreenTopTab,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            fallbackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
+            tintColor = MaterialTheme.colorScheme.surfaceVariant
         ) {
-            Tab(
-                selected = selectedCategory == NETEASE_CATEGORY_PLAYLIST,
-                onClick = { onCategoryChange(NETEASE_CATEGORY_PLAYLIST) },
-                text = { Text(stringResource(R.string.library_netease_tab_playlists)) },
-                icon = {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                        contentDescription = null
-                    )
-                }
-            )
-            Tab(
-                selected = selectedCategory == NETEASE_CATEGORY_ALBUM,
-                onClick = { onCategoryChange(NETEASE_CATEGORY_ALBUM) },
-                text = { Text(stringResource(R.string.library_netease_tab_albums)) },
-                icon = {
-                    Icon(
-                        imageVector = Icons.Filled.Album,
-                        contentDescription = null
-                    )
-                }
-            )
+            PrimaryTabRow(
+                selectedTabIndex = selectedCategory,
+                containerColor = Color.Transparent,
+                contentColor = MaterialTheme.colorScheme.primary
+            ) {
+                Tab(
+                    selected = selectedCategory == NETEASE_CATEGORY_PLAYLIST,
+                    onClick = { onCategoryChange(NETEASE_CATEGORY_PLAYLIST) },
+                    text = { Text(stringResource(R.string.library_netease_tab_playlists)) },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                            contentDescription = null
+                        )
+                    }
+                )
+                Tab(
+                    selected = selectedCategory == NETEASE_CATEGORY_ALBUM,
+                    onClick = { onCategoryChange(NETEASE_CATEGORY_ALBUM) },
+                    text = { Text(stringResource(R.string.library_netease_tab_albums)) },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Filled.Album,
+                            contentDescription = null
+                        )
+                    }
+                )
+            }
         }
     }
 }
@@ -2364,7 +2397,8 @@ private fun NeteasePlaylistList(
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 placeholder = { Text(stringResource(R.string.library_netease_search_hint)) },
-                singleLine = true
+                singleLine = true,
+                shape = LibrarySearchFieldShape
             )
         }
         if (playlists.isNotEmpty() && filteredPlaylists.isEmpty()) {
@@ -2522,7 +2556,8 @@ private fun NeteaseAlbumList(
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 placeholder = { Text(stringResource(R.string.library_netease_search_hint)) },
-                singleLine = true
+                singleLine = true,
+                shape = LibrarySearchFieldShape
             )
         }
         if (playlists.isNotEmpty() && filteredAlbums.isEmpty()) {
@@ -2751,50 +2786,58 @@ private fun FavoritePlaylistList(
             Card(
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+                    containerColor = Color.Transparent
                 ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 6.dp)
             ) {
-                PrimaryTabRow(
-                    selectedTabIndex = selectedFavoriteCategory,
-                    containerColor = Color.Transparent,
-                    contentColor = MaterialTheme.colorScheme.primary
+                AdvancedGlassSurface(
+                    role = AdvancedGlassRole.ScreenTopTab,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    fallbackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
+                    tintColor = MaterialTheme.colorScheme.surfaceVariant
                 ) {
-                    Tab(
-                        selected = selectedFavoriteCategory == FAVORITE_CATEGORY_PLAYLIST,
-                        onClick = {
-                            if (selectedFavoriteCategory != FAVORITE_CATEGORY_PLAYLIST) {
-                                selectedFavoriteCategory = FAVORITE_CATEGORY_PLAYLIST
-                                exitEditMode()
+                    PrimaryTabRow(
+                        selectedTabIndex = selectedFavoriteCategory,
+                        containerColor = Color.Transparent,
+                        contentColor = MaterialTheme.colorScheme.primary
+                    ) {
+                        Tab(
+                            selected = selectedFavoriteCategory == FAVORITE_CATEGORY_PLAYLIST,
+                            onClick = {
+                                if (selectedFavoriteCategory != FAVORITE_CATEGORY_PLAYLIST) {
+                                    selectedFavoriteCategory = FAVORITE_CATEGORY_PLAYLIST
+                                    exitEditMode()
+                                }
+                            },
+                            text = { Text(stringResource(R.string.library_favorite_tab_playlists)) },
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                    contentDescription = null
+                                )
                             }
-                        },
-                        text = { Text(stringResource(R.string.library_favorite_tab_playlists)) },
-                        icon = {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                contentDescription = null
-                            )
-                        }
-                    )
-                    Tab(
-                        selected = selectedFavoriteCategory == FAVORITE_CATEGORY_ARTIST,
-                        onClick = {
-                            if (selectedFavoriteCategory != FAVORITE_CATEGORY_ARTIST) {
-                                selectedFavoriteCategory = FAVORITE_CATEGORY_ARTIST
-                                exitEditMode()
+                        )
+                        Tab(
+                            selected = selectedFavoriteCategory == FAVORITE_CATEGORY_ARTIST,
+                            onClick = {
+                                if (selectedFavoriteCategory != FAVORITE_CATEGORY_ARTIST) {
+                                    selectedFavoriteCategory = FAVORITE_CATEGORY_ARTIST
+                                    exitEditMode()
+                                }
+                            },
+                            text = { Text(stringResource(R.string.library_favorite_tab_artists)) },
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Filled.AccountCircle,
+                                    contentDescription = null
+                                )
                             }
-                        },
-                        text = { Text(stringResource(R.string.library_favorite_tab_artists)) },
-                        icon = {
-                            Icon(
-                                imageVector = Icons.Filled.AccountCircle,
-                                contentDescription = null
-                            )
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }

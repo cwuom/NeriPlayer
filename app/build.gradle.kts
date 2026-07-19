@@ -311,15 +311,10 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.javascriptengine)
 
-
-
     implementation(libs.androidx.webkit)
 
     // 取主题色
     implementation(libs.androidx.palette.ktx)
-
-    // 模糊
-    implementation(libs.haze.jetpack.compose)
 
     implementation(libs.superlyricapi)
 }

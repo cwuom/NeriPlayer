@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.ksp.annotations.AutoSettingsSection
 import moe.ouom.neriplayer.ksp.annotations.SettingAccessMode
 import moe.ouom.neriplayer.ksp.annotations.SettingUiType
 import moe.ouom.neriplayer.ksp.annotations.SettingValueType
+import moe.ouom.neriplayer.ksp.annotations.autoFloatSetting
 import moe.ouom.neriplayer.ksp.annotations.autoIntSetting
 import moe.ouom.neriplayer.ksp.annotations.autoSetting
 import moe.ouom.neriplayer.ksp.annotations.autoSettingsSection
@@ -661,6 +662,35 @@ object AutoSettingsSchema {
             titleRes = R.string.settings_advanced_blur,
             descriptionRes = R.string.settings_advanced_blur_desc,
             icon = AutoSettingIcon.BlurOn
+        )
+
+        @AutoSetting(
+            key = "enhanced_advanced_blur_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = false,
+            order = 25,
+            ui = SettingUiType.Custom
+        )
+        val enhancedAdvancedBlurEnabled = autoSwitchSetting(
+            key = "enhanced_advanced_blur_enabled",
+            defaultValue = false,
+            titleRes = R.string.settings_enhanced_advanced_blur,
+            descriptionRes = R.string.settings_enhanced_advanced_blur_desc,
+            icon = AutoSettingIcon.Layers
+        )
+
+        @AutoSetting(
+            key = "enhanced_advanced_blur_radius_dp",
+            type = SettingValueType.Float,
+            defaultFloat = DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP,
+            order = 27,
+            ui = SettingUiType.Custom,
+            normalizer = EnhancedAdvancedBlurPreference::class
+        )
+        val enhancedAdvancedBlurRadiusDp = autoFloatSetting(
+            key = "enhanced_advanced_blur_radius_dp",
+            defaultValue = DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP,
+            titleRes = R.string.settings_enhanced_advanced_blur_radius
         )
 
         @AutoSetting(

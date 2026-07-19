@@ -6,7 +6,6 @@ datastorePreferences = "1.1.7"
 dec = "0.1.2"
 documentfile = "1.0.1"
 gson = "2.13.1"
-hazeJetpackCompose = "0.7.0"
 kotlin = "2.2.0"
 ksp = "2.2.0-2.0.2"
 kotlinxCoroutines = "1.9.0"
@@ -73,7 +72,6 @@ androidx-webkit = { module = "androidx.webkit:webkit", version.ref = "webkit" }
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coilCompose" }
 dec = { module = "org.brotli:dec", version.ref = "dec" }
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
-haze-jetpack-compose = { module = "dev.chrisbanes.haze:haze-jetpack-compose", version.ref = "hazeJetpackCompose" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 org-json = { module = "org.json:json", version.ref = "json" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }

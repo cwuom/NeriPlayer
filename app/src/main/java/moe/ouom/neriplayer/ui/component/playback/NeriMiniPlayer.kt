@@ -23,7 +23,6 @@ package moe.ouom.neriplayer.ui.component.playback
  * Created: 2025/8/8
  */
 
-import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -34,6 +33,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -66,11 +66,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.hazeChild
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import kotlin.math.abs
@@ -93,14 +93,11 @@ fun NeriMiniPlayer(
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onExpand: () -> Unit,
-    hazeState: HazeState,
-    enableHaze: Boolean = true,
+    enableBlur: Boolean = true,
     offlineMode: Boolean = false,
     isPlaybackWaiting: Boolean = false
 ) {
     val shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
-    val supportsBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val hazeContainerAlpha = if (supportsBlur && enableHaze) 0.4f else 1f
     val currentOnPrevious by rememberUpdatedState(onPrevious)
     val currentOnNext by rememberUpdatedState(onNext)
     val swipeOffset = remember { Animatable(0f) }
@@ -130,14 +127,10 @@ fun NeriMiniPlayer(
         }
     }
 
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(
-                alpha = hazeContainerAlpha
-            )
-        ),
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+    AdvancedGlassSurface(
+        role = AdvancedGlassRole.MiniPlayer,
         modifier = modifier
+            .fillMaxWidth()
             .height(NeriMiniPlayerDefaults.Height)
             .padding(start = 16.dp, end = 8.dp)
             .clip(shape)
@@ -192,95 +185,104 @@ fun NeriMiniPlayer(
                     }
                 )
             }
-            .clickable { onExpand() }
-            .then(
-                if (supportsBlur && enableHaze) Modifier.hazeChild(state = hazeState, shape = shape)
-                else Modifier
-            )
+            .clickable { onExpand() },
+        shape = shape,
+        fallbackColor = MaterialTheme.colorScheme.secondaryContainer,
+        tintColor = MaterialTheme.colorScheme.secondaryContainer,
+        enabled = enableBlur
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier
-                .graphicsLayer {
-                    translationX = swipeOffset.value
-                    val offsetRatio = (abs(swipeOffset.value) / reboundPeakPx).coerceIn(0f, 1f)
-                    scaleX = 1f - offsetRatio * 0.025f
-                    scaleY = 1f - offsetRatio * 0.025f
-                }
-                .padding(horizontal = 12.dp, vertical = 8.dp)
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+            shape = shape,
+            modifier = Modifier.matchParentSize()
         ) {
-            Box(
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier
-                    .size(40.dp)
-                    .background(
-                        color = if (coverUrl != null) Color.Transparent else MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(8.dp)
-                    )
+                    .graphicsLayer {
+                        translationX = swipeOffset.value
+                        val offsetRatio = (abs(swipeOffset.value) / reboundPeakPx).coerceIn(0f, 1f)
+                        scaleX = 1f - offsetRatio * 0.025f
+                        scaleY = 1f - offsetRatio * 0.025f
+                    }
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                if (coverUrl != null) {
-                    val context = LocalContext.current
-                    AsyncImage(
-                        model = fastScrollableImageRequest(
-                            context = context,
-                            data = coverUrl,
-                            sizePx = 128,
-                            crossfade = false,
-                            offlineMode = offlineMode
-                        ),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .matchParentSize()
-                            .clip(RoundedCornerShape(8.dp))
-                    )
-                } else {
-                    // 显示默认音乐图标
-                    Box(
-                        modifier = Modifier.matchParentSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.MusicNote,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(
+                            color = if (coverUrl != null) {
+                                Color.Transparent
+                            } else {
+                                MaterialTheme.colorScheme.primaryContainer
+                            },
+                            shape = RoundedCornerShape(8.dp)
                         )
+                ) {
+                    if (coverUrl != null) {
+                        val context = LocalContext.current
+                        AsyncImage(
+                            model = fastScrollableImageRequest(
+                                context = context,
+                                data = coverUrl,
+                                sizePx = 128,
+                                crossfade = false,
+                                offlineMode = offlineMode
+                            ),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clip(RoundedCornerShape(8.dp))
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier.matchParentSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.MusicNote,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
                     }
                 }
-            }
 
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = artist,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = artist,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
 
-            HapticIconButton(
-                onClick = { onPlayPause() },
-                enabled = playPauseEnabled
-            ) {
-                PlaybackControlIndicator(
-                    isPlaying = isPlaying,
-                    isPlaybackWaiting = isPlaybackWaiting,
-                    playContentDescription = stringResource(R.string.lyrics_play),
-                    pauseContentDescription = stringResource(R.string.lyrics_pause),
-                    waitingContentDescription = stringResource(R.string.player_waiting),
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    progressIndicatorSize = 22.dp,
-                    progressStrokeWidth = 2.dp
-                )
+                HapticIconButton(
+                    onClick = { onPlayPause() },
+                    enabled = playPauseEnabled
+                ) {
+                    PlaybackControlIndicator(
+                        isPlaying = isPlaying,
+                        isPlaybackWaiting = isPlaybackWaiting,
+                        playContentDescription = stringResource(R.string.lyrics_play),
+                        pauseContentDescription = stringResource(R.string.lyrics_pause),
+                        waitingContentDescription = stringResource(R.string.player_waiting),
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        progressIndicatorSize = 22.dp,
+                        progressStrokeWidth = 2.dp
+                    )
+                }
             }
         }
     }

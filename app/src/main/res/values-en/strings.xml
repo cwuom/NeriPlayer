@@ -1166,7 +1166,12 @@
     <string name="settings_advanced_lyrics">Advanced Lyrics</string>
     <string name="settings_advanced_lyrics_desc">Enable a more modern lyrics layout and motion, and prefer word-level lyrics when available</string>
     <string name="settings_advanced_blur">Advanced Blur Effects</string>
-    <string name="settings_advanced_blur_desc">Enable Haze blur for the mini player and bottom bar</string>
+    <string name="settings_advanced_blur_desc">Enable live background blur for the mini player and bottom bar on Android 13+</string>
+    <string name="settings_enhanced_advanced_blur">Enhanced Advanced Blur</string>
+    <string name="settings_enhanced_advanced_blur_desc">Enable adjustable live glass blur for top and bottom tabs and settings cards</string>
+    <string name="settings_enhanced_advanced_blur_radius">Enhanced blur radius</string>
+    <string name="settings_enhanced_advanced_blur_radius_value">Blur radius: %1$d dp</string>
+    <string name="settings_enhanced_advanced_blur_background_hint">For a better effect, use Enhanced Advanced Blur with a background image from Personalization.</string>
     <string name="settings_audio_quality_netease_member_quality_notice">If you do not have a membership, switching to lossless or higher quality may cause songs to fail playback.</string>
     <string name="settings_audio_quality_bili_dolby_notice">The highest quality profile may cause songs to fail parsing unless the song natively supports Dolby.</string>
     <string name="settings_audio_quality_standard">Standard</string>

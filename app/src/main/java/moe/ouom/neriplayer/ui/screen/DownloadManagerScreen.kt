@@ -58,6 +58,8 @@ import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.DownloadedSong
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.viewmodel.DownloadManagerViewModel
 import moe.ouom.neriplayer.util.format.formatDate
 import moe.ouom.neriplayer.util.format.formatFileSize
@@ -238,57 +240,55 @@ fun DownloadManagerScreen(
             }
         }
 
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceAround,
-                verticalAlignment = Alignment.CenterVertically
+        Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+            val shape = RoundedCornerShape(16.dp)
+            val baseColor = MaterialTheme.colorScheme.surfaceVariant
+            AdvancedGlassSurface(
+                role = AdvancedGlassRole.SemanticCard,
+                modifier = Modifier.fillMaxWidth(),
+                shape = shape,
+                fallbackColor = baseColor.copy(alpha = 0.3f),
+                tintColor = baseColor
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = downloadedSongs.size.toString(),
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = stringResource(R.string.downloaded_songs),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                VerticalDivider(
+                Row(
                     modifier = Modifier
-                        .height(32.dp)
-                        .width(1.dp),
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                )
-
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceAround,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = formatFileSize(totalSize),
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.primary
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = downloadedSongs.size.toString(),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = stringResource(R.string.downloaded_songs),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    VerticalDivider(
+                        modifier = Modifier
+                            .height(32.dp)
+                            .width(1.dp),
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
                     )
-                    Text(
-                        text = stringResource(R.string.download_space_used),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = formatFileSize(totalSize),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = stringResource(R.string.download_space_used),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -545,18 +545,23 @@ private fun DownloadedSongItem(
         resolveDownloadedSongCoverReference(song)
     }
 
-    Card(
+    val shape = RoundedCornerShape(12.dp)
+    val fallbackColor = if (isSelected) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
+    } else {
+        Color.Transparent
+    }
+    val tintColor = if (isSelected) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant
+    }
+    AdvancedGlassSurface(
+        role = AdvancedGlassRole.SemanticCard,
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected)
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
-            else
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0f)
-        ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 0.dp
-        ),
-        shape = RoundedCornerShape(12.dp)
+        shape = shape,
+        fallbackColor = fallbackColor,
+        tintColor = tintColor
     ) {
         Row(
             modifier = Modifier

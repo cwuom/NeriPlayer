@@ -272,12 +272,23 @@ internal object SyncPlaylistSongMergePolicy {
                 .map { index -> entries[index].song }
                 .plus(other)
                 .toList()
-            val resolvedPayload = if (resolvePayloadDeterministically) {
-                payloadCandidates.maxBy(SyncSongMetadataMergePolicy::canonicalPayloadKey)
+            val selectedPayload = if (resolvePayloadDeterministically) {
+                SyncSongMetadataMergePolicy.selectDeterministicPayload(payloadCandidates)
             } else {
                 primaryEntry.song
             }
-            primaryEntry.song = resolvedPayload.copy(syncMembershipTokens = mergedTokens)
+            val resolvedPayload = SyncSongMetadataMergePolicy.resolveSelectedPayload(
+                selected = selectedPayload,
+                candidates = payloadCandidates
+            )
+            primaryEntry.song = resolvedPayload.copy(
+                addedAt = SyncSongMetadataMergePolicy.resolveAddedAt(
+                    selectedAddedAt = selectedPayload.addedAt,
+                    candidates = payloadCandidates
+                ),
+                syncMembershipTokens = mergedTokens,
+                syncMetadataVersion = CURRENT_SYNC_METADATA_VERSION
+            )
             matchingIndices
                 .asSequence()
                 .filter { index -> index != primaryIndex }

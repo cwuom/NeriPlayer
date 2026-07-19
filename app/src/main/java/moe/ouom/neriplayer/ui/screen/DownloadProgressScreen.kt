@@ -57,6 +57,8 @@ import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.util.format.formatFileSize
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 
@@ -195,13 +197,14 @@ fun DownloadProgressScreen(
             ) {
                 if (queuedTaskCount > 0) {
                     item(key = "queued-summary") {
-                        Card(
+                        val shape = RoundedCornerShape(12.dp)
+                        val baseColor = MaterialTheme.colorScheme.surfaceVariant
+                        AdvancedGlassSurface(
+                            role = AdvancedGlassRole.SemanticCard,
                             modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                            ),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = shape,
+                            fallbackColor = baseColor.copy(alpha = 0.3f),
+                            tintColor = baseColor
                         ) {
                             Column(
                                 modifier = Modifier
@@ -298,13 +301,14 @@ private fun DownloadTaskItem(
 ) {
     val songName = remember(task.song) { task.song.displayName() }
     val songArtist = remember(task.song) { task.song.displayArtist() }
-    Card(
+    val shape = RoundedCornerShape(12.dp)
+    val baseColor = MaterialTheme.colorScheme.surfaceVariant
+    AdvancedGlassSurface(
+        role = AdvancedGlassRole.SemanticCard,
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        shape = RoundedCornerShape(12.dp)
+        shape = shape,
+        fallbackColor = baseColor.copy(alpha = 0.3f),
+        tintColor = baseColor
     ) {
         Column(
             modifier = Modifier

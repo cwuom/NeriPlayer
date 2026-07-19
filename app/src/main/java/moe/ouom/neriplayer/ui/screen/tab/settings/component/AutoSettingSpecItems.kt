@@ -19,6 +19,7 @@ import androidx.compose.material.icons.outlined.Error
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Keyboard
+import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Router
@@ -188,6 +189,7 @@ private fun autoSettingSpecIconVector(icon: AutoSettingIcon): ImageVector? {
         AutoSettingIcon.Home -> Icons.Outlined.Home
         AutoSettingIcon.Info -> Icons.Outlined.Info
         AutoSettingIcon.Keyboard -> Icons.Outlined.Keyboard
+        AutoSettingIcon.Layers -> Icons.Outlined.Layers
         AutoSettingIcon.LibraryMusic -> Icons.Outlined.LibraryMusic
         AutoSettingIcon.Palette -> Icons.Outlined.Palette
         AutoSettingIcon.PlaylistPlay -> Icons.AutoMirrored.Outlined.PlaylistPlay

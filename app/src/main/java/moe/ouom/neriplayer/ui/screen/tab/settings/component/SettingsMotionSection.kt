@@ -42,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -52,6 +53,11 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.settings.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
+import moe.ouom.neriplayer.data.settings.ENHANCED_ADVANCED_BLUR_RADIUS_STEP_DP
+import moe.ouom.neriplayer.data.settings.EnhancedAdvancedBlurPreference
+import moe.ouom.neriplayer.data.settings.MAX_ENHANCED_ADVANCED_BLUR_RADIUS_DP
+import moe.ouom.neriplayer.data.settings.MIN_ENHANCED_ADVANCED_BLUR_RADIUS_DP
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingInfo
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
@@ -59,8 +65,12 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSwitchItems
+import moe.ouom.neriplayer.ui.effect.glass.ADVANCED_GLASS_MIN_SDK
+import moe.ouom.neriplayer.ui.effect.glass.shouldShowEnhancedAdvancedBlurSetting
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 
 @Composable
 internal fun SettingsMotionSection(
@@ -72,6 +82,10 @@ internal fun SettingsMotionSection(
     scope: kotlinx.coroutines.CoroutineScope,
     advancedBlurEnabled: Boolean,
     onAdvancedBlurEnabledChange: (Boolean) -> Unit,
+    enhancedAdvancedBlurEnabled: Boolean,
+    onEnhancedAdvancedBlurEnabledChange: (Boolean) -> Unit,
+    enhancedAdvancedBlurRadiusDp: Float,
+    onEnhancedAdvancedBlurRadiusDpChange: (Float) -> Unit,
     nowPlayingAudioReactiveEnabled: Boolean,
     onNowPlayingAudioReactiveEnabledChange: (Boolean) -> Unit,
     nowPlayingDynamicBackgroundEnabled: Boolean,
@@ -115,7 +129,7 @@ internal fun SettingsMotionSection(
                 )
         ) {
             val coverBlurAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-            val advancedBlurAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+            val advancedBlurAvailable = Build.VERSION.SDK_INT >= ADVANCED_GLASS_MIN_SDK
             val dynamicBackgroundApiAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
 
             LaunchedEffect(
@@ -190,7 +204,7 @@ internal fun SettingsMotionSection(
 
             MotionSwitchItem(
                 setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.ADVANCED_BLUR_ENABLED),
-                disabledSuffix = stringResource(R.string.settings_android12_required),
+                disabledSuffix = stringResource(R.string.settings_android13_required),
                 checked = advancedBlurAvailable && advancedBlurEnabled,
                 enabled = advancedBlurAvailable,
                 alpha = if (advancedBlurAvailable) 1f else 0.5f,
@@ -204,6 +218,15 @@ internal fun SettingsMotionSection(
                         onAdvancedBlurEnabledChange(it)
                     }
                 }
+            )
+
+            EnhancedAdvancedBlurSettingItem(
+                sdkInt = Build.VERSION.SDK_INT,
+                advancedBlurEnabled = advancedBlurEnabled,
+                enhancedAdvancedBlurEnabled = enhancedAdvancedBlurEnabled,
+                onEnhancedAdvancedBlurEnabledChange = onEnhancedAdvancedBlurEnabledChange,
+                enhancedAdvancedBlurRadiusDp = enhancedAdvancedBlurRadiusDp,
+                onEnhancedAdvancedBlurRadiusDpChange = onEnhancedAdvancedBlurRadiusDpChange
             )
 
             MotionSwitchItem(
@@ -319,6 +342,93 @@ internal fun SettingsMotionSection(
 }
 
 @Composable
+internal fun EnhancedAdvancedBlurSettingItem(
+    sdkInt: Int,
+    advancedBlurEnabled: Boolean,
+    enhancedAdvancedBlurEnabled: Boolean,
+    onEnhancedAdvancedBlurEnabledChange: (Boolean) -> Unit,
+    enhancedAdvancedBlurRadiusDp: Float = DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP,
+    onEnhancedAdvancedBlurRadiusDpChange: (Float) -> Unit = {}
+) {
+    var showBackgroundImageHint by remember { mutableStateOf(false) }
+    val updateEnabled: (Boolean) -> Unit = { enabled ->
+        onEnhancedAdvancedBlurEnabledChange(enabled)
+        if (enabled && !enhancedAdvancedBlurEnabled) {
+            showBackgroundImageHint = true
+        }
+    }
+
+    LazyAnimatedVisibility(
+        visible = shouldShowEnhancedAdvancedBlurSetting(
+            sdkInt = sdkInt,
+            advancedBlurEnabled = advancedBlurEnabled
+        )
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            MotionSwitchItem(
+                setting = AutoSettingsMetadata.requireSetting(
+                    AutoSettingsKeys.ENHANCED_ADVANCED_BLUR_ENABLED
+                ),
+                disabledSuffix = null,
+                checked = enhancedAdvancedBlurEnabled,
+                enabled = true,
+                alpha = 1f,
+                onToggle = {
+                    updateEnabled(!enhancedAdvancedBlurEnabled)
+                },
+                onCheckedChange = updateEnabled
+            )
+
+            LazyAnimatedVisibility(visible = enhancedAdvancedBlurEnabled) {
+                SnappedFloatSliderListItem(
+                    setting = AutoSettingsMetadata.requireSetting(
+                        AutoSettingsKeys.ENHANCED_ADVANCED_BLUR_RADIUS_DP
+                    ),
+                    value = EnhancedAdvancedBlurPreference.normalize(
+                        enhancedAdvancedBlurRadiusDp
+                    ),
+                    valueText = { current ->
+                        stringResource(
+                            R.string.settings_enhanced_advanced_blur_radius_value,
+                            current.roundToInt()
+                        )
+                    },
+                    valueRange = MIN_ENHANCED_ADVANCED_BLUR_RADIUS_DP..
+                        MAX_ENHANCED_ADVANCED_BLUR_RADIUS_DP,
+                    steps = (
+                        (MAX_ENHANCED_ADVANCED_BLUR_RADIUS_DP -
+                            MIN_ENHANCED_ADVANCED_BLUR_RADIUS_DP) /
+                            ENHANCED_ADVANCED_BLUR_RADIUS_STEP_DP
+                        ).roundToInt() - 1,
+                    snapStep = ENHANCED_ADVANCED_BLUR_RADIUS_STEP_DP,
+                    onValueChanged = onEnhancedAdvancedBlurRadiusDpChange,
+                    onValueCommitted = onEnhancedAdvancedBlurRadiusDpChange
+                )
+            }
+        }
+    }
+
+    if (showBackgroundImageHint) {
+        MiuixSettingsDialog(
+            onDismissRequest = { showBackgroundImageHint = false },
+            title = { Text(stringResource(R.string.settings_enhanced_advanced_blur)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.settings_enhanced_advanced_blur_background_hint
+                    )
+                )
+            },
+            confirmButton = {
+                MiuixSettingsTextButton(onClick = { showBackgroundImageHint = false }) {
+                    Text(stringResource(R.string.action_ok))
+                }
+            }
+        )
+    }
+}
+
+@Composable
 private fun MotionSwitchItem(
     setting: AutoSettingInfo,
     descriptionOverride: String? = null,
@@ -358,6 +468,7 @@ private fun SnappedFloatSliderListItem(
     valueRange: ClosedFloatingPointRange<Float>,
     steps: Int,
     snapStep: Float? = null,
+    onValueChanged: ((Float) -> Unit)? = null,
     onValueCommitted: (Float) -> Unit
 ) {
     var pendingValue by remember { mutableFloatStateOf(value) }
@@ -381,12 +492,16 @@ private fun SnappedFloatSliderListItem(
                 MiuixSettingsSlider(
                     value = pendingValue,
                     onValueChange = { changed ->
-                        pendingValue = snapStep
+                        val nextValue = snapStep
                             ?.let { step ->
                                 ((changed / step).roundToInt() * step)
                                     .coerceIn(valueRange.start, valueRange.endInclusive)
                             }
                             ?: changed
+                        if ((nextValue - pendingValue).absoluteValue > 0.01f) {
+                            pendingValue = nextValue
+                            onValueChanged?.invoke(nextValue)
+                        }
                     },
                     onValueChangeFinished = { onValueCommitted(pendingValue) },
                     valueRange = valueRange,

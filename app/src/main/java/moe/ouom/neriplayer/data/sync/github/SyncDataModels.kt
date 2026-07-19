@@ -41,6 +41,17 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import moe.ouom.neriplayer.data.sync.model.normalizedSyncCausalTokens
 
+internal const val LEGACY_SYNC_METADATA_VERSION = 0
+internal const val CURRENT_SYNC_METADATA_VERSION = 1
+
+internal fun mergePositiveTimestamp(left: Long, right: Long): Long {
+    return when {
+        left <= 0L -> right.coerceAtLeast(0L)
+        right <= 0L -> left
+        else -> minOf(left, right)
+    }
+}
+
 /**
  * 同步数据结构
  * 包含所有需要同步的数据和元信息
@@ -65,14 +76,15 @@ data class SyncData(
 /**
  * 同步歌单
  * 包含时间戳用于冲突检测
+ * 桌面端 ProtoBuf 编码会省略默认值，因此可为空或为零的字段需要提供解码默认值
  */
 @Serializable
 data class SyncPlaylist(
     @ProtoNumber(1) val id: Long,
-    @ProtoNumber(2) val name: String,
-    @ProtoNumber(3) val songs: List<SyncSong>,
-    @ProtoNumber(4) val createdAt: Long,
-    @ProtoNumber(5) val modifiedAt: Long,
+    @ProtoNumber(2) val name: String = "",
+    @ProtoNumber(3) val songs: List<SyncSong> = emptyList(),
+    @ProtoNumber(4) val createdAt: Long = 0L,
+    @ProtoNumber(5) val modifiedAt: Long = 0L,
     @ProtoNumber(6) val isDeleted: Boolean = false,
     @ProtoNumber(7) val songOrderVersion: Int = LEGACY_SONG_ORDER_VERSION
 ) {
@@ -188,7 +200,8 @@ data class SyncSong(
     @ProtoNumber(24) val audioId: String? = null,
     @ProtoNumber(25) val subAudioId: String? = null,
     @ProtoNumber(26) val playlistContextId: String? = null,
-    @ProtoNumber(27) val syncMembershipTokens: List<SyncCausalToken> = emptyList()
+    @ProtoNumber(27) val syncMembershipTokens: List<SyncCausalToken> = emptyList(),
+    @ProtoNumber(28) val syncMetadataVersion: Int = LEGACY_SYNC_METADATA_VERSION
 ) {
     companion object {
         fun fromSongItemOrNull(song: SongItem, context: Context? = null): SyncSong? {
@@ -232,7 +245,8 @@ data class SyncSong(
                 audioId = song.audioId,
                 subAudioId = song.subAudioId,
                 playlistContextId = song.playlistContextId,
-                syncMembershipTokens = song.syncMembershipTokens.normalizedSyncCausalTokens()
+                syncMembershipTokens = song.syncMembershipTokens.normalizedSyncCausalTokens(),
+                syncMetadataVersion = CURRENT_SYNC_METADATA_VERSION
             )
         }
     }

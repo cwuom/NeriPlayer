@@ -306,7 +306,8 @@ class GitHubSyncManager private constructor(context: Context) {
                         originalArtist = playedEntry.originalArtist,
                         originalCoverUrl = playedEntry.originalCoverUrl,
                         originalLyric = playedEntry.originalLyric,
-                        originalTranslatedLyric = playedEntry.originalTranslatedLyric
+                        originalTranslatedLyric = playedEntry.originalTranslatedLyric,
+                        syncMetadataVersion = CURRENT_SYNC_METADATA_VERSION
                     ),
                     playedAt = playedEntry.playedAt,
                     deviceId = getDeviceId()
@@ -620,7 +621,7 @@ class GitHubSyncManager private constructor(context: Context) {
                 id = resolvedPlaylistId,
                 name = finalName,
                 songs = mergedSongs,
-                createdAt = minOf(local.createdAt, remote.createdAt),
+                createdAt = mergePositiveTimestamp(local.createdAt, remote.createdAt),
                 modifiedAt = maxOf(local.modifiedAt, remote.modifiedAt),
                 songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
             ),
@@ -761,7 +762,7 @@ class GitHubSyncManager private constructor(context: Context) {
             id = systemDescriptor?.id ?: local.id,
             name = resolvedName,
             songs = emptyList(),
-            createdAt = minOf(local.createdAt, remote.createdAt),
+            createdAt = mergePositiveTimestamp(local.createdAt, remote.createdAt),
             modifiedAt = maxOf(local.modifiedAt, remote.modifiedAt),
             isDeleted = true,
             songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION

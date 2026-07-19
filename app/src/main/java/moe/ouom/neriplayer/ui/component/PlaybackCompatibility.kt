@@ -2,7 +2,6 @@ package moe.ouom.neriplayer.ui.component
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import dev.chrisbanes.haze.HazeState
 import moe.ouom.neriplayer.core.player.model.PlaybackSoundState
 
 typealias NeriMiniPlayerDefaults = moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayerDefaults
@@ -20,8 +19,7 @@ fun NeriMiniPlayer(
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onExpand: () -> Unit,
-    hazeState: HazeState,
-    enableHaze: Boolean = true,
+    enableBlur: Boolean = true,
     offlineMode: Boolean = false,
     isPlaybackWaiting: Boolean = false
 ) {
@@ -36,8 +34,7 @@ fun NeriMiniPlayer(
         onPrevious = onPrevious,
         onNext = onNext,
         onExpand = onExpand,
-        hazeState = hazeState,
-        enableHaze = enableHaze,
+        enableBlur = enableBlur,
         offlineMode = offlineMode,
         isPlaybackWaiting = isPlaybackWaiting
     )

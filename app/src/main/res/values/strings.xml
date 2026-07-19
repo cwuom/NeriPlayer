@@ -1166,7 +1166,12 @@
     <string name="settings_advanced_lyrics">高级歌词</string>
     <string name="settings_advanced_lyrics_desc">启用更现代的歌词排版与动效，并优先使用逐字歌词</string>
     <string name="settings_advanced_blur">高级模糊效果</string>
-    <string name="settings_advanced_blur_desc">启用作用于小播放器和底部栏的 Haze 动态模糊</string>
+    <string name="settings_advanced_blur_desc">在 Android 13 及以上启用小播放器和底部栏的实时背景模糊</string>
+    <string name="settings_enhanced_advanced_blur">进阶高级模糊</string>
+    <string name="settings_enhanced_advanced_blur_desc">为顶部和底部 Tab、设置卡片启用可调节的实时玻璃模糊</string>
+    <string name="settings_enhanced_advanced_blur_radius">进阶模糊度</string>
+    <string name="settings_enhanced_advanced_blur_radius_value">模糊度：%1$d dp</string>
+    <string name="settings_enhanced_advanced_blur_background_hint">配合“个性化”设置里的背景图，进阶高级模糊效果会更好。</string>
     <string name="settings_audio_quality_netease_member_quality_notice">如果没有会员，切换到无损及以上音质可能导致歌曲无法播放。</string>
     <string name="settings_audio_quality_bili_dolby_notice">最高规格音质可能导致歌曲无法正确解析（除非歌曲默认支持杜比）。</string>
     <string name="settings_audio_quality_standard">标准</string>

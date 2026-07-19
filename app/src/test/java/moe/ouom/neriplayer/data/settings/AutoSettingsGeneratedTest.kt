@@ -39,6 +39,14 @@ class AutoSettingsGeneratedTest {
             "advanced_lyrics_enabled" in booleanKeyNames
         )
         assertTrue(
+            "enhanced advanced blur choice should be exportable",
+            "enhanced_advanced_blur_enabled" in booleanKeyNames
+        )
+        assertTrue(
+            "enhanced advanced blur radius should be exportable",
+            "enhanced_advanced_blur_radius_dp" in floatKeyNames
+        )
+        assertTrue(
             "backup switch should be exportable",
             "silent_github_sync_failure" in booleanKeyNames
         )
@@ -249,6 +257,30 @@ class AutoSettingsGeneratedTest {
 
         assertEquals("haptic_feedback_enabled", setting.preferencesKey.name)
         assertEquals(true, setting.defaultValue)
+    }
+
+    @Test
+    fun enhancedAdvancedBlurDefaultsOffAndUsesCustomUi() {
+        val setting = AutoSettingsSchema.motion.enhancedAdvancedBlurEnabled
+        val metadata = AutoSettingsMetadata.setting("enhanced_advanced_blur_enabled")
+        val radiusSetting = AutoSettingsSchema.motion.enhancedAdvancedBlurRadiusDp
+        val radiusMetadata = AutoSettingsMetadata.setting("enhanced_advanced_blur_radius_dp")
+
+        assertEquals(false, setting.defaultValue)
+        assertEquals(SettingUiType.Custom, metadata?.ui)
+        assertEquals(AutoSettingsSections.motion, metadata?.section)
+        assertEquals(AutoSettingIcon.Layers, metadata?.icon)
+        val otherMotionIcons = AutoSettingsMetadata.settingsIn(AutoSettingsSections.motion)
+            .filter { it.keyName != "enhanced_advanced_blur_enabled" }
+            .map { it.icon }
+            .filter { it != AutoSettingIcon.None }
+        assertTrue(
+            "enhanced advanced blur icon must be unique within motion settings",
+            metadata?.icon !in otherMotionIcons
+        )
+        assertEquals(DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP, radiusSetting.defaultValue)
+        assertEquals(SettingValueType.Float, radiusMetadata?.valueType)
+        assertEquals(SettingUiType.Custom, radiusMetadata?.ui)
     }
 
     @Test

@@ -1,12 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.page
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
+import androidx.compose.animation.SizeTransform
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -43,7 +38,6 @@ import androidx.compose.material3.TopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -53,11 +47,26 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassScene
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
+import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassController
+import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassHorizontalTransition
 
 private val MiuixCardShape = RoundedCornerShape(16.dp)
 private val MiuixSettingsContentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
 private val MiuixPageRowPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
 private val MiuixSettingsTabletMaxWidth = 920.dp
+
+private fun isForwardSettingsDetailTransition(
+    initialPage: SettingsPage,
+    targetPage: SettingsPage
+): Boolean {
+    if (targetPage.backTargetPage() == initialPage) return true
+    if (initialPage.backTargetPage() == targetPage) return false
+    return targetPage.ordinal >= initialPage.ordinal
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -125,10 +134,7 @@ internal fun MiuixSettingsPageGroupCard(
         return
     }
 
-    val cardBackgroundModifier = Modifier.settingsCardBackground(
-        baseColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-        alpha = 0.58f
-    )
+    val fallbackColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.58f)
 
     ElevatedCard(
         modifier = modifier.fillMaxWidth(),
@@ -138,7 +144,13 @@ internal fun MiuixSettingsPageGroupCard(
         ),
         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 0.dp)
     ) {
-        Box(modifier = cardBackgroundModifier) {
+        AdvancedGlassSurface(
+            role = AdvancedGlassRole.SettingsGroup,
+            modifier = Modifier.fillMaxWidth(),
+            shape = MiuixCardShape,
+            fallbackColor = fallbackColor,
+            tintColor = MaterialTheme.colorScheme.surfaceContainerHighest
+        ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 pages.forEachIndexed { index, page ->
                     MiuixSettingsPageRow(
@@ -322,6 +334,7 @@ internal fun MiuixSettingsResponsiveDetailScaffold(
         )
         return
     }
+    val isolateAdvancedGlassTransitions = LocalAdvancedGlassController.current.isEnabled
 
     Row(modifier = modifier.fillMaxSize()) {
         Box(
@@ -357,30 +370,33 @@ internal fun MiuixSettingsResponsiveDetailScaffold(
                     modifier = Modifier.fillMaxSize(),
                     label = "settings_split_detail_switch",
                     transitionSpec = {
-                        (
-                            slideInHorizontally(
-                                animationSpec = tween(180),
-                                initialOffsetX = { it / 10 }
-                            ) + fadeIn(animationSpec = tween(160))
-                            ) togetherWith (
-                            slideOutHorizontally(
-                                animationSpec = tween(140),
-                                targetOffsetX = { -it / 12 }
-                            ) + fadeOut(animationSpec = tween(120))
+                        isolatedAdvancedGlassHorizontalTransition(
+                            forward = isForwardSettingsDetailTransition(
+                                initialPage = initialState,
+                                targetPage = targetState
                             )
+                        ).using(SizeTransform(clip = true))
                     }
                 ) { page ->
-                    MiuixSettingsDetailScaffold(
-                        title = stringResource(page.titleRes),
-                        onBack = onBack,
-                        listState = listState,
-                        topAppBarState = topAppBarState,
-                        showBackButton = showSplitDetailBackButton
+                    AdvancedGlassNavigationHandoff(
+                        enabled = isolateAdvancedGlassTransitions && transition.isRunning
                     ) {
-                        if (detailContent == null) {
-                            content()
-                        } else {
-                            detailContent(page)
+                        AdvancedGlassScene(
+                            active = isolateAdvancedGlassTransitions || page == targetPage
+                        ) {
+                            MiuixSettingsDetailScaffold(
+                                title = stringResource(page.titleRes),
+                                onBack = onBack,
+                                listState = listState,
+                                topAppBarState = topAppBarState,
+                                showBackButton = showSplitDetailBackButton
+                            ) {
+                                if (detailContent == null) {
+                                    content()
+                                } else {
+                                    detailContent(page)
+                                }
+                            }
                         }
                     }
                 }
@@ -396,10 +412,7 @@ internal fun MiuixSettingsHeader(
     description: String,
     modifier: Modifier = Modifier
 ) {
-    val cardBackgroundModifier = Modifier.settingsCardBackground(
-        baseColor = MaterialTheme.colorScheme.primaryContainer,
-        alpha = 0.48f
-    )
+    val fallbackColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.48f)
 
     ElevatedCard(
         modifier = modifier.fillMaxWidth(),
@@ -409,7 +422,13 @@ internal fun MiuixSettingsHeader(
         ),
         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 0.dp)
     ) {
-        Box(modifier = cardBackgroundModifier) {
+        AdvancedGlassSurface(
+            role = AdvancedGlassRole.SettingsHeader,
+            modifier = Modifier.fillMaxWidth(),
+            shape = MiuixCardShape,
+            fallbackColor = fallbackColor,
+            tintColor = MaterialTheme.colorScheme.primaryContainer
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -443,10 +462,7 @@ internal fun MiuixSettingsSectionCard(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
-    val cardBackgroundModifier = Modifier.settingsCardBackground(
-        baseColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-        alpha = 0.56f
-    )
+    val fallbackColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.56f)
 
     ElevatedCard(
         modifier = modifier.fillMaxWidth(),
@@ -456,7 +472,13 @@ internal fun MiuixSettingsSectionCard(
         ),
         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 0.dp)
     ) {
-        Box(modifier = cardBackgroundModifier) {
+        AdvancedGlassSurface(
+            role = AdvancedGlassRole.SettingsSection,
+            modifier = Modifier.fillMaxWidth(),
+            shape = MiuixCardShape,
+            fallbackColor = fallbackColor,
+            tintColor = MaterialTheme.colorScheme.surfaceContainerHighest
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -466,15 +488,6 @@ internal fun MiuixSettingsSectionCard(
             }
         }
     }
-}
-
-private fun Modifier.settingsCardBackground(
-    baseColor: Color,
-    alpha: Float
-): Modifier {
-    return fillMaxWidth()
-        .clip(MiuixCardShape)
-        .background(baseColor.copy(alpha = alpha), MiuixCardShape)
 }
 
 internal fun LazyListScope.miuixSettingsSectionCardItem(

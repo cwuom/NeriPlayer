@@ -65,6 +65,8 @@ import moe.ouom.neriplayer.data.sync.github.SyncPlaylistSongMergePolicy
 import moe.ouom.neriplayer.data.sync.github.SyncTrackStat
 import moe.ouom.neriplayer.data.sync.github.LocalSyncMutationConflictException
 import moe.ouom.neriplayer.data.sync.github.SyncUploadRetryExecutor
+import moe.ouom.neriplayer.data.sync.github.CURRENT_SYNC_METADATA_VERSION
+import moe.ouom.neriplayer.data.sync.github.mergePositiveTimestamp
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.data.sync.SyncCoordinator
 import moe.ouom.neriplayer.util.platform.LanguageManager
@@ -313,7 +315,8 @@ class WebDavSyncManager private constructor(context: Context) {
                         originalArtist = playedEntry.originalArtist,
                         originalCoverUrl = playedEntry.originalCoverUrl,
                         originalLyric = playedEntry.originalLyric,
-                        originalTranslatedLyric = playedEntry.originalTranslatedLyric
+                        originalTranslatedLyric = playedEntry.originalTranslatedLyric,
+                        syncMetadataVersion = CURRENT_SYNC_METADATA_VERSION
                     ),
                     playedAt = playedEntry.playedAt,
                     deviceId = getDeviceId()
@@ -627,7 +630,7 @@ class WebDavSyncManager private constructor(context: Context) {
                 id = resolvedPlaylistId,
                 name = finalName,
                 songs = mergedSongs,
-                createdAt = minOf(local.createdAt, remote.createdAt),
+                createdAt = mergePositiveTimestamp(local.createdAt, remote.createdAt),
                 modifiedAt = maxOf(local.modifiedAt, remote.modifiedAt),
                 songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
             ),
@@ -752,7 +755,7 @@ class WebDavSyncManager private constructor(context: Context) {
             id = systemDescriptor?.id ?: local.id,
             name = resolvedName,
             songs = emptyList(),
-            createdAt = minOf(local.createdAt, remote.createdAt),
+            createdAt = mergePositiveTimestamp(local.createdAt, remote.createdAt),
             modifiedAt = maxOf(local.modifiedAt, remote.modifiedAt),
             isDeleted = true,
             songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION

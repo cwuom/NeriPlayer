@@ -38,18 +38,18 @@ import android.view.View
 import android.view.ViewTreeObserver
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.EaseInOutCubic
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -111,12 +111,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.createBitmap
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -131,11 +133,6 @@ import coil.size.Precision
 import com.google.gson.Gson
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
-import dev.chrisbanes.haze.HazeDefaults
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeStyle
-import dev.chrisbanes.haze.haze
-import dev.chrisbanes.haze.hazeChild
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -165,6 +162,7 @@ import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.settings.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
@@ -179,6 +177,13 @@ import moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayer
 import moe.ouom.neriplayer.ui.component.playback.resolvePlaybackWaiting
 import moe.ouom.neriplayer.ui.component.common.ThemeRevealOverlay
 import moe.ouom.neriplayer.ui.component.common.blockUnderlyingTouches
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassController
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassHost
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
+import moe.ouom.neriplayer.ui.effect.glass.advancedGlassMainTabNavigationSpringSpec
+import moe.ouom.neriplayer.ui.effect.glass.captureAdvancedGlassBackdrop
+import moe.ouom.neriplayer.ui.effect.glass.isAdvancedGlassBackendSupported
+import moe.ouom.neriplayer.ui.effect.glass.rememberAdvancedGlassBackdrop
 import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
 import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
 import moe.ouom.neriplayer.ui.screen.NowPlayingScreen
@@ -235,6 +240,67 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private val navigationGson: Gson by lazy(LazyThreadSafetyMode.PUBLICATION) { Gson() }
+private val MAIN_TAB_ROUTES = listOf(
+    Destinations.Home.route,
+    Destinations.Explore.route,
+    Destinations.Library.route,
+    Destinations.Settings.route,
+    Destinations.Debug.route
+)
+
+internal fun resolveMainTabTransitionDirection(
+    initialRoute: String?,
+    targetRoute: String?
+): Int? {
+    val initialIndex = MAIN_TAB_ROUTES.indexOf(initialRoute).takeIf { it >= 0 } ?: return null
+    val targetIndex = MAIN_TAB_ROUTES.indexOf(targetRoute).takeIf { it >= 0 } ?: return null
+    if (initialIndex == targetIndex) return null
+    return if (targetIndex > initialIndex) 1 else -1
+}
+
+internal data class BottomBarLayoutInsets(
+    val navContentBottomPadding: Dp,
+    val screenBottomInset: Dp,
+    val miniPlayerBottomPadding: Dp
+)
+
+internal fun resolveBottomBarLayoutInsets(
+    baseBlurRequested: Boolean,
+    bottomBarInset: Dp,
+    reservedMiniPlayerHeight: Dp
+): BottomBarLayoutInsets = if (baseBlurRequested) {
+    BottomBarLayoutInsets(
+        navContentBottomPadding = 0.dp,
+        screenBottomInset = reservedMiniPlayerHeight + bottomBarInset,
+        miniPlayerBottomPadding = bottomBarInset
+    )
+} else {
+    BottomBarLayoutInsets(
+        navContentBottomPadding = bottomBarInset,
+        screenBottomInset = reservedMiniPlayerHeight,
+        miniPlayerBottomPadding = 0.dp
+    )
+}
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabEnterTransition(): EnterTransition {
+    val direction = resolveMainTabTransitionDirection(
+        initialRoute = initialState.destination.route,
+        targetRoute = targetState.destination.route
+    ) ?: return EnterTransition.None
+    return slideInHorizontally(
+        animationSpec = advancedGlassMainTabNavigationSpringSpec()
+    ) { fullWidth -> direction * fullWidth }
+}
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabExitTransition(): ExitTransition {
+    val direction = resolveMainTabTransitionDirection(
+        initialRoute = initialState.destination.route,
+        targetRoute = targetState.destination.route
+    ) ?: return ExitTransition.None
+    return slideOutHorizontally(
+        animationSpec = advancedGlassMainTabNavigationSpringSpec()
+    ) { fullWidth -> -direction * fullWidth }
+}
 
 private fun resolveMainStartDestination(
     preferredRoute: String,
@@ -488,7 +554,6 @@ private fun UsbExclusiveBackgroundPermissionDialog(
 private const val THEME_REVEAL_SNAPSHOT_MAX_DIMENSION_PX = 1080
 private const val THEME_REVEAL_STABLE_DRAW_PASSES = 1
 private val THEME_REVEAL_SNAPSHOT_CONFIG = Bitmap.Config.RGB_565
-private val ROOT_HAZE_BLUR_RADIUS = 24.dp
 
 internal data class ThemeRevealSnapshotDimensions(
     val width: Int,
@@ -831,7 +896,13 @@ private fun NeriAppContent(
     )
     val advancedLyricsEnabled by repo.advancedLyricsEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
     val advancedBlurEnabled by repo.advancedBlurEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
-    val advancedBlurAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val enhancedAdvancedBlurEnabled by repo.enhancedAdvancedBlurEnabledFlow
+        .collectAsStateWithLifecycle(initialValue = false)
+    val enhancedAdvancedBlurRadiusDp by repo.enhancedAdvancedBlurRadiusDpFlow
+        .collectAsStateWithLifecycle(
+            initialValue = DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
+        )
+    val advancedBlurAvailable = isAdvancedGlassBackendSupported(Build.VERSION.SDK_INT)
     val effectiveAdvancedBlurEnabled = advancedBlurAvailable && advancedBlurEnabled
     val nowPlayingAudioReactiveEnabled by repo.nowPlayingAudioReactiveEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
     val nowPlayingDynamicBackgroundEnabled by repo.nowPlayingDynamicBackgroundEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
@@ -1139,7 +1210,21 @@ private fun NeriAppContent(
         mode = themeMode,
         systemDark = systemDark
     )
-    val hazeState = remember { HazeState() }
+    val backgroundGlassBackdrop = rememberAdvancedGlassBackdrop()
+    val contentGlassBackdrop = rememberAdvancedGlassBackdrop()
+    val advancedGlassController = remember(
+        advancedBlurEnabled,
+        enhancedAdvancedBlurEnabled,
+        enhancedAdvancedBlurRadiusDp
+    ) {
+        AdvancedGlassController(
+            sdkInt = Build.VERSION.SDK_INT,
+            advancedBlurEnabled = advancedBlurEnabled,
+            enhancedAdvancedBlurEnabled = enhancedAdvancedBlurEnabled,
+            backendReady = isAdvancedGlassBackendSupported(Build.VERSION.SDK_INT),
+            enhancedAdvancedBlurRadiusDp = enhancedAdvancedBlurRadiusDp
+        )
+    }
     val preferredQuality by repo.audioQualityFlow.collectAsStateWithLifecycle(initialValue = "exhigh")
     val youtubePreferredQuality by repo.youtubeAudioQualityFlow.collectAsStateWithLifecycle(initialValue = "high")
     val biliPreferredQuality by repo.biliAudioQualityFlow.collectAsStateWithLifecycle(initialValue = "high")
@@ -1395,6 +1480,16 @@ private fun NeriAppContent(
         ) {
             val navController = rememberNavController()
             val backEntry by navController.currentBackStackEntryAsState()
+            // Keep every NavHost entry that is still participating in the transition active
+            val visibleNavigationEntries by navController.visibleEntries
+                .collectAsStateWithLifecycle()
+            val visibleNavigationOwners = remember(visibleNavigationEntries, backEntry) {
+                if (visibleNavigationEntries.isNotEmpty()) {
+                    visibleNavigationEntries.toSet()
+                } else {
+                    backEntry?.let { setOf(it) }.orEmpty()
+                }
+            }
             val currentRoute = backEntry?.destination?.route
             fun navigateToNeteaseArtist(artist: NeteaseArtistSummary) {
                 val json = Uri.encode(navigationGson.toJson(artist))
@@ -1490,33 +1585,30 @@ private fun NeriAppContent(
                 }
             }
 
-            Box(modifier = Modifier.fillMaxSize()) {
-                val modifier = if (backgroundImageUri == null || !effectiveAdvancedBlurEnabled) {
-                    Modifier
-                } else Modifier
-                    .haze(
-                        hazeState,
-                        HazeStyle(
-                            tint = MaterialTheme.colorScheme.onSurface.copy(.0f),
-                            blurRadius = 30.dp,
-                            noiseFactor = HazeDefaults.noiseFactor
-                        )
+            AdvancedGlassHost(
+                controller = advancedGlassController,
+                backgroundBackdrop = backgroundGlassBackdrop,
+                contentBackdrop = contentGlassBackdrop,
+                activeNavigationOwners = visibleNavigationOwners,
+                disableStretchOverscroll = backgroundImageUri != null
+            ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .captureAdvancedGlassBackdrop(backgroundGlassBackdrop)
+                        .background(MaterialTheme.colorScheme.background)
+                ) {
+                    CustomBackground(
+                        imageUri = backgroundImageUri,
+                        blur = backgroundImageBlur,
+                        alpha = effectiveBackgroundImageAlpha
                     )
+                }
 
-                CustomBackground(
-                    imageUri = backgroundImageUri,
-                    blur = backgroundImageBlur,
-                    alpha = effectiveBackgroundImageAlpha,
-                    modifier = modifier
-                )
-
-                val containerColor = if (backgroundImageUri == null) {
-                    MaterialTheme.colorScheme.background
-                } else Color.Transparent
+                val containerColor = Color.Transparent
 
                 val selectAlpha = if (backgroundImageUri == null) 1f else 0f
-                val bottomBarHazeModifier =
-                    if (effectiveAdvancedBlurEnabled) Modifier.hazeChild(state = hazeState) else Modifier
 
                 val isMiniPlayerVisible = currentSong != null && !showNowPlaying
                 val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsStateWithLifecycle()
@@ -1588,7 +1680,6 @@ private fun NeriAppContent(
                                                     .toFloat()
                                             alpha = bottomBarVisibilityProgress
                                         }
-                                        .then(bottomBarHazeModifier)
                                 ) {
                                     AnimatedVisibility(visible = offlineMode) {
                                         OfflineModeBottomBanner()
@@ -1615,64 +1706,44 @@ private fun NeriAppContent(
                             }
                         }
                     ) { innerPadding ->
-                        Box(
-                            modifier = Modifier.padding(
-                                bottom = innerPadding.calculateBottomPadding()
-                                    .coerceAtLeast(0.dp)
-                            ).clipToBounds()
+                        val bottomBarInset = innerPadding.calculateBottomPadding()
+                            .coerceAtLeast(0.dp)
+                        val bottomBarLayoutInsets = resolveBottomBarLayoutInsets(
+                            baseBlurRequested = advancedGlassController.isBaseBlurRequested,
+                            bottomBarInset = bottomBarInset,
+                            reservedMiniPlayerHeight = reservedMiniPlayerHeightDp
+                        )
+                        CompositionLocalProvider(
+                            LocalMiniPlayerHeight provides bottomBarLayoutInsets.screenBottomInset
                         ) {
-                            NavHost(
-                                navController = navController,
-                                startDestination = effectiveStartDestination,
+                            Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .then(
-                                        if (effectiveAdvancedBlurEnabled) {
-                                            Modifier.haze(
-                                                hazeState,
-                                                HazeStyle(
-                                                    tint = MaterialTheme.colorScheme.onSurface.copy(.0f),
-                                                    blurRadius = ROOT_HAZE_BLUR_RADIUS,
-                                                    noiseFactor = HazeDefaults.noiseFactor
-                                                )
-                                            )
-                                        } else {
-                                            Modifier
-                                        }
+                                    .padding(
+                                        bottom = bottomBarLayoutInsets.navContentBottomPadding
                                     )
+                                    .clipToBounds()
                             ) {
+                                // Keep the effect on a stable layer outside NavHost transitions
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .captureAdvancedGlassBackdrop(contentGlassBackdrop)
+                                ) {
+                                    AdvancedGlassNavigationHandoff(
+                                        enabled = visibleNavigationEntries.size > 1
+                                    ) {
+                                        NavHost(
+                                            navController = navController,
+                                            startDestination = effectiveStartDestination,
+                                            modifier = Modifier.fillMaxSize()
+                                        ) {
                                 composable(
                                     Destinations.Home.route,
-                                    enterTransition = {
-                                        scaleIn(
-                                            animationSpec = spring(
-                                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                stiffness = Spring.StiffnessLow
-                                            ),
-                                            initialScale = 0.85f
-                                        ) + fadeIn(animationSpec = tween(300, easing = EaseInOutCubic))
-                                    },
-                                    exitTransition = {
-                                        scaleOut(
-                                            animationSpec = tween(200, easing = EaseInOutCubic),
-                                            targetScale = 0.95f
-                                        ) + fadeOut(animationSpec = tween(200, easing = EaseInOutCubic))
-                                    },
-                                    popEnterTransition = {
-                                        scaleIn(
-                                            animationSpec = spring(
-                                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                stiffness = Spring.StiffnessLow
-                                            ),
-                                            initialScale = 0.95f
-                                        ) + fadeIn(animationSpec = tween(300, easing = EaseInOutCubic))
-                                    },
-                                    popExitTransition = {
-                                        scaleOut(
-                                            animationSpec = tween(200, easing = EaseInOutCubic),
-                                            targetScale = 0.85f
-                                        ) + fadeOut(animationSpec = tween(200, easing = EaseInOutCubic))
-                                    }
+                                    enterTransition = { mainTabEnterTransition() },
+                                    exitTransition = { mainTabExitTransition() },
+                                    popEnterTransition = { mainTabEnterTransition() },
+                                    popExitTransition = { mainTabExitTransition() }
                                 ) {
                                     HomeHostScreen(
                                         showContinueCard = showHomeContinueCard,
@@ -1795,36 +1866,10 @@ private fun NeriAppContent(
 
                                 composable(
                                     Destinations.Explore.route,
-                                    enterTransition = {
-                                        scaleIn(
-                                            animationSpec = spring(
-                                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                stiffness = Spring.StiffnessLow
-                                            ),
-                                            initialScale = 0.85f
-                                        ) + fadeIn(animationSpec = tween(300, easing = EaseInOutCubic))
-                                    },
-                                    exitTransition = {
-                                        scaleOut(
-                                            animationSpec = tween(200, easing = EaseInOutCubic),
-                                            targetScale = 0.95f
-                                        ) + fadeOut(animationSpec = tween(200, easing = EaseInOutCubic))
-                                    },
-                                    popEnterTransition = {
-                                        scaleIn(
-                                            animationSpec = spring(
-                                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                stiffness = Spring.StiffnessLow
-                                            ),
-                                            initialScale = 0.95f
-                                        ) + fadeIn(animationSpec = tween(300, easing = EaseInOutCubic))
-                                    },
-                                    popExitTransition = {
-                                        scaleOut(
-                                            animationSpec = tween(200, easing = EaseInOutCubic),
-                                            targetScale = 0.85f
-                                        ) + fadeOut(animationSpec = tween(200, easing = EaseInOutCubic))
-                                    }
+                                    enterTransition = { mainTabEnterTransition() },
+                                    exitTransition = { mainTabExitTransition() },
+                                    popEnterTransition = { mainTabEnterTransition() },
+                                    popExitTransition = { mainTabExitTransition() }
                                 ) {
                                     ExploreHostScreen(
                                         offlineMode = offlineMode,
@@ -1838,36 +1883,10 @@ private fun NeriAppContent(
 
                                 composable(
                                     Destinations.Library.route,
-                                    enterTransition = {
-                                        scaleIn(
-                                            animationSpec = spring(
-                                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                stiffness = Spring.StiffnessLow
-                                            ),
-                                            initialScale = 0.85f
-                                        ) + fadeIn(animationSpec = tween(300, easing = EaseInOutCubic))
-                                    },
-                                    exitTransition = {
-                                        scaleOut(
-                                            animationSpec = tween(200, easing = EaseInOutCubic),
-                                            targetScale = 0.95f
-                                        ) + fadeOut(animationSpec = tween(200, easing = EaseInOutCubic))
-                                    },
-                                    popEnterTransition = {
-                                        scaleIn(
-                                            animationSpec = spring(
-                                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                stiffness = Spring.StiffnessLow
-                                            ),
-                                            initialScale = 0.95f
-                                        ) + fadeIn(animationSpec = tween(300, easing = EaseInOutCubic))
-                                    },
-                                    popExitTransition = {
-                                        scaleOut(
-                                            animationSpec = tween(200, easing = EaseInOutCubic),
-                                            targetScale = 0.85f
-                                        ) + fadeOut(animationSpec = tween(200, easing = EaseInOutCubic))
-                                    }
+                                    enterTransition = { mainTabEnterTransition() },
+                                    exitTransition = { mainTabExitTransition() },
+                                    popEnterTransition = { mainTabEnterTransition() },
+                                    popExitTransition = { mainTabExitTransition() }
                                 ) {
                                     LibraryHostScreen(
                                         onSongClick = ::playSongsAndOpenNowPlaying,
@@ -1932,36 +1951,10 @@ private fun NeriAppContent(
 
                                 composable(
                                     Destinations.Settings.route,
-                                    enterTransition = {
-                                        scaleIn(
-                                            animationSpec = spring(
-                                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                stiffness = Spring.StiffnessLow
-                                            ),
-                                            initialScale = 0.85f
-                                        ) + fadeIn(animationSpec = tween(300, easing = EaseInOutCubic))
-                                    },
-                                    exitTransition = {
-                                        scaleOut(
-                                            animationSpec = tween(200, easing = EaseInOutCubic),
-                                            targetScale = 0.95f
-                                        ) + fadeOut(animationSpec = tween(200, easing = EaseInOutCubic))
-                                    },
-                                    popEnterTransition = {
-                                        scaleIn(
-                                            animationSpec = spring(
-                                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                stiffness = Spring.StiffnessLow
-                                            ),
-                                            initialScale = 0.95f
-                                        ) + fadeIn(animationSpec = tween(300, easing = EaseInOutCubic))
-                                    },
-                                    popExitTransition = {
-                                        scaleOut(
-                                            animationSpec = tween(200, easing = EaseInOutCubic),
-                                            targetScale = 0.85f
-                                        ) + fadeOut(animationSpec = tween(200, easing = EaseInOutCubic))
-                                    }
+                                    enterTransition = { mainTabEnterTransition() },
+                                    exitTransition = { mainTabExitTransition() },
+                                    popEnterTransition = { mainTabEnterTransition() },
+                                    popExitTransition = { mainTabExitTransition() }
                                 ) {
                                     SettingsHostScreen(
                                         dynamicColor = dynamicColorEnabled,
@@ -2081,6 +2074,19 @@ private fun NeriAppContent(
                                         advancedBlurEnabled = advancedBlurEnabled,
                                         onAdvancedBlurEnabledChange = { enabled ->
                                             scope.launch { repo.setAdvancedBlurEnabled(enabled) }
+                                        },
+                                        enhancedAdvancedBlurEnabled = enhancedAdvancedBlurEnabled,
+                                        onEnhancedAdvancedBlurEnabledChange = { enabled ->
+                                            scope.launch {
+                                                repo.setEnhancedAdvancedBlurEnabled(enabled)
+                                            }
+                                        },
+                                        enhancedAdvancedBlurRadiusDp =
+                                            enhancedAdvancedBlurRadiusDp,
+                                        onEnhancedAdvancedBlurRadiusDpChange = { radiusDp ->
+                                            scope.launch {
+                                                repo.setEnhancedAdvancedBlurRadiusDp(radiusDp)
+                                            }
                                         },
                                         nowPlayingAudioReactiveEnabled = nowPlayingAudioReactiveEnabled,
                                         onNowPlayingAudioReactiveEnabledChange = { enabled ->
@@ -2319,36 +2325,10 @@ private fun NeriAppContent(
 
                                 composable(
                                     Destinations.Debug.route,
-                                    enterTransition = {
-                                        scaleIn(
-                                            animationSpec = spring(
-                                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                stiffness = Spring.StiffnessLow
-                                            ),
-                                            initialScale = 0.85f
-                                        ) + fadeIn(animationSpec = tween(300, easing = EaseInOutCubic))
-                                    },
-                                    exitTransition = {
-                                        scaleOut(
-                                            animationSpec = tween(200, easing = EaseInOutCubic),
-                                            targetScale = 0.95f
-                                        ) + fadeOut(animationSpec = tween(200, easing = EaseInOutCubic))
-                                    },
-                                    popEnterTransition = {
-                                        scaleIn(
-                                            animationSpec = spring(
-                                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                stiffness = Spring.StiffnessLow
-                                            ),
-                                            initialScale = 0.95f
-                                        ) + fadeIn(animationSpec = tween(300, easing = EaseInOutCubic))
-                                    },
-                                    popExitTransition = {
-                                        scaleOut(
-                                            animationSpec = tween(200, easing = EaseInOutCubic),
-                                            targetScale = 0.85f
-                                        ) + fadeOut(animationSpec = tween(200, easing = EaseInOutCubic))
-                                    }
+                                    enterTransition = { mainTabEnterTransition() },
+                                    exitTransition = { mainTabExitTransition() },
+                                    popEnterTransition = { mainTabEnterTransition() },
+                                    popExitTransition = { mainTabExitTransition() }
                                 ) {
                                     DebugHomeScreen(
                                         alwaysRecordLogsEnabled = alwaysRecordLogsEnabled,
@@ -2460,11 +2440,17 @@ private fun NeriAppContent(
                                         onBack = { navController.popBackStack() }
                                     )
                                 }
-                            }
+                                        }
+                                    }
+                                }
 
-                            AnimatedVisibility(
-                                visible = currentSong != null && !showNowPlaying,
-                                modifier = Modifier.align(Alignment.BottomStart),
+                                AnimatedVisibility(
+                                    visible = currentSong != null && !showNowPlaying,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomStart)
+                                        .padding(
+                                            bottom = bottomBarLayoutInsets.miniPlayerBottomPadding
+                                        ),
                                 enter = slideInVertically(
                                     animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
                                     initialOffsetY = { it / 2 }
@@ -2473,8 +2459,8 @@ private fun NeriAppContent(
                                     animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
                                     targetOffsetY = { it / 2 }
                                 ) + fadeOut(animationSpec = tween(durationMillis = 120))
-                            ) {
-                                NeriMiniPlayer(
+                                ) {
+                                    NeriMiniPlayer(
                                     title = currentSong?.displayName()
                                         ?: context.getString(R.string.nowplaying_no_playback),
                                     artist = currentSong?.displayArtist() ?: "",
@@ -2486,13 +2472,12 @@ private fun NeriAppContent(
                                     onPrevious = { PlayerManager.previous() },
                                     onNext = { PlayerManager.next() },
                                     onExpand = { showNowPlaying = true },
-                                    hazeState = hazeState,
-                                    enableHaze = effectiveAdvancedBlurEnabled,
+                                    enableBlur = effectiveAdvancedBlurEnabled,
                                     offlineMode = offlineMode,
                                     isPlaybackWaiting = isPlaybackWaiting
-                                )
+                                    )
+                                }
                             }
-
                         }
                     }
                 }
@@ -2838,6 +2823,7 @@ private fun NeriAppContent(
                     )
                 }
 
+                }
             }
         }
     }

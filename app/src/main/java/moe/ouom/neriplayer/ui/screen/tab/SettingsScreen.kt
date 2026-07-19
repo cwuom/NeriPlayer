@@ -35,13 +35,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -140,6 +136,10 @@ import moe.ouom.neriplayer.listentogether.invite.configuredListenTogetherBaseUrl
 import moe.ouom.neriplayer.listentogether.invite.isDefaultListenTogetherBaseUrl
 import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherBaseUrl
 import moe.ouom.neriplayer.ui.component.settings.LanguageSettingItem
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassScene
+import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassController
+import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassHorizontalTransition
 import moe.ouom.neriplayer.ui.screen.tab.settings.about.SettingsAboutContent
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsBiliAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsNeteaseAuthDialogs
@@ -200,6 +200,17 @@ private data class PendingDownloadDirectoryChange(
     val shouldReleasePreviousPermission: Boolean
         get() = !previousUri.isNullOrBlank() &&
             !ManagedDownloadStorage.areEquivalentDirectoryUris(previousUri, targetUri)
+}
+
+private fun isForwardSettingsPageTransition(
+    initialPage: SettingsPage?,
+    targetPage: SettingsPage?
+): Boolean {
+    if (targetPage == null) return false
+    if (initialPage == null) return true
+    if (targetPage.backTargetPage() == initialPage) return true
+    if (initialPage.backTargetPage() == targetPage) return false
+    return targetPage.ordinal >= initialPage.ordinal
 }
 
 private fun Context.neteaseQualityLabel(value: String): String {
@@ -286,6 +297,10 @@ fun SettingsScreen(
     onFloatingLyricsPreferencesChange: (FloatingLyricsPreferences) -> Unit,
     advancedBlurEnabled: Boolean,
     onAdvancedBlurEnabledChange: (Boolean) -> Unit,
+    enhancedAdvancedBlurEnabled: Boolean,
+    onEnhancedAdvancedBlurEnabledChange: (Boolean) -> Unit,
+    enhancedAdvancedBlurRadiusDp: Float,
+    onEnhancedAdvancedBlurRadiusDpChange: (Float) -> Unit,
     nowPlayingAudioReactiveEnabled: Boolean,
     onNowPlayingAudioReactiveEnabledChange: (Boolean) -> Unit,
     nowPlayingDynamicBackgroundEnabled: Boolean,
@@ -921,6 +936,7 @@ fun SettingsScreen(
     }
 
     val settingsPageBackTarget = activeSettingsPage?.backTargetPage()
+    val isolateAdvancedGlassTransitions = LocalAdvancedGlassController.current.isEnabled
     BackHandler(
         enabled = activeSettingsPage != null &&
             (!isSettingsSplitLayout || settingsPageBackTarget != null)
@@ -959,43 +975,29 @@ fun SettingsScreen(
         label = "settings_page_switch",
         transitionSpec = {
             if (isSettingsSplitLayout) {
-                fadeIn(animationSpec = tween(0)) togetherWith fadeOut(animationSpec = tween(0))
-            } else if (initialState == null && targetState != null) {
-                (
-                    slideInHorizontally(
-                        animationSpec = tween(280, easing = FastOutSlowInEasing),
-                        initialOffsetX = { it / 4 }
-                    ) + fadeIn(animationSpec = tween(220, delayMillis = 40))
-                    ) togetherWith (
-                    slideOutHorizontally(
-                        animationSpec = tween(220, easing = FastOutSlowInEasing),
-                        targetOffsetX = { -it / 10 }
-                    ) + fadeOut(animationSpec = tween(140))
-                    )
+                EnterTransition.None togetherWith ExitTransition.None
             } else {
-                (
-                    slideInHorizontally(
-                        animationSpec = tween(240, easing = FastOutSlowInEasing),
-                        initialOffsetX = { -it / 8 }
-                    ) + fadeIn(animationSpec = tween(180, delayMillis = 30))
-                    ) togetherWith (
-                    slideOutHorizontally(
-                        animationSpec = tween(260, easing = FastOutSlowInEasing),
-                        targetOffsetX = { it / 3 }
-                    ) + fadeOut(animationSpec = tween(160))
-                    )
-            }.using(SizeTransform(clip = false))
+                isolatedAdvancedGlassHorizontalTransition(
+                    forward = isForwardSettingsPageTransition(initialState, targetState)
+                ).using(SizeTransform(clip = true))
+            }
         }
     ) { selectedPage ->
-        if (selectedPage == null) {
-            MiuixSettingsHomeScaffold(
-                listState = listState,
-                topAppBarState = homeTopAppBarState,
-                title = settingsHomeTitle,
-                content = settingsHomeContent
-            )
-        } else {
-            MiuixSettingsResponsiveDetailScaffold(
+        AdvancedGlassNavigationHandoff(
+            enabled = isolateAdvancedGlassTransitions && transition.isRunning
+        ) {
+            AdvancedGlassScene(
+                active = isolateAdvancedGlassTransitions || selectedPage == activeSettingsPage
+            ) {
+                if (selectedPage == null) {
+                    MiuixSettingsHomeScaffold(
+                        listState = listState,
+                        topAppBarState = homeTopAppBarState,
+                        title = settingsHomeTitle,
+                        content = settingsHomeContent
+                    )
+                } else {
+                    MiuixSettingsResponsiveDetailScaffold(
                 title = stringResource(selectedPage.titleRes),
                 onBack = ::navigateBackFromActiveSettingsPage,
                 listState = detailListStates.getValue(selectedPage),
@@ -1007,7 +1009,7 @@ fun SettingsScreen(
                 homeTopAppBarState = homeTopAppBarState,
                 homeTitle = settingsHomeTitle,
                 homeContent = settingsHomeContent
-            ) {
+                ) {
                 item(key = "${selectedPage.name}:header") {
                     MiuixSettingsHeader(
                         icon = selectedPage.icon,
@@ -1214,6 +1216,12 @@ fun SettingsScreen(
                             scope = scope,
                             advancedBlurEnabled = advancedBlurEnabled,
                             onAdvancedBlurEnabledChange = onAdvancedBlurEnabledChange,
+                            enhancedAdvancedBlurEnabled = enhancedAdvancedBlurEnabled,
+                            onEnhancedAdvancedBlurEnabledChange =
+                                onEnhancedAdvancedBlurEnabledChange,
+                            enhancedAdvancedBlurRadiusDp = enhancedAdvancedBlurRadiusDp,
+                            onEnhancedAdvancedBlurRadiusDpChange =
+                                onEnhancedAdvancedBlurRadiusDpChange,
                             nowPlayingAudioReactiveEnabled = nowPlayingAudioReactiveEnabled,
                             onNowPlayingAudioReactiveEnabledChange = onNowPlayingAudioReactiveEnabledChange,
                             nowPlayingDynamicBackgroundEnabled = nowPlayingDynamicBackgroundEnabled,
@@ -1624,6 +1632,8 @@ fun SettingsScreen(
                                 context.startActivity(intent)
                             }
                         )
+                    }
+                }
                     }
                 }
             }

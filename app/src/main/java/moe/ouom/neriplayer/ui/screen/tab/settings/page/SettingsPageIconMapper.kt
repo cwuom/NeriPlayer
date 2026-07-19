@@ -7,6 +7,7 @@ import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material.icons.outlined.Settings
@@ -24,6 +25,7 @@ internal fun AutoSettingIcon.toSettingsPageIcon(fallbackIcon: ImageVector): Imag
         AutoSettingIcon.Bolt -> Icons.Outlined.Bolt
         AutoSettingIcon.Download -> Icons.Outlined.Download
         AutoSettingIcon.Info -> Icons.Outlined.Info
+        AutoSettingIcon.Layers -> Icons.Outlined.Layers
         AutoSettingIcon.Palette -> Icons.Outlined.Palette
         AutoSettingIcon.PlaylistPlay -> Icons.AutoMirrored.Outlined.PlaylistPlay
         AutoSettingIcon.Router -> Icons.Outlined.Router

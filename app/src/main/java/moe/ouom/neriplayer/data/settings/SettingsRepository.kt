@@ -254,6 +254,12 @@ class SettingsRepository(private val context: Context) {
     val advancedBlurEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.advancedBlurEnabledFlow
 
+    val enhancedAdvancedBlurEnabledFlow: Flow<Boolean> =
+        autoSettingsRepository.enhancedAdvancedBlurEnabledFlow
+
+    val enhancedAdvancedBlurRadiusDpFlow: Flow<Float> =
+        autoSettingsRepository.enhancedAdvancedBlurRadiusDpFlow
+
     val nowPlayingAudioReactiveEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.nowPlayingAudioReactiveEnabledFlow
 
@@ -756,6 +762,14 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setAdvancedBlurEnabled(enabled: Boolean) {
         autoSettingsRepository.setAdvancedBlurEnabled(enabled)
+    }
+
+    suspend fun setEnhancedAdvancedBlurEnabled(enabled: Boolean) {
+        autoSettingsRepository.setEnhancedAdvancedBlurEnabled(enabled)
+    }
+
+    suspend fun setEnhancedAdvancedBlurRadiusDp(radiusDp: Float) {
+        autoSettingsRepository.setEnhancedAdvancedBlurRadiusDp(radiusDp)
     }
 
     suspend fun setNowPlayingAudioReactiveEnabled(enabled: Boolean) {

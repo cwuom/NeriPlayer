@@ -60,6 +60,22 @@ class SyncDataChangeDetectorTest {
     }
 
     @Test
+    fun `detects sync metadata version upgrade`() {
+        val remote = syncData(
+            playlists = listOf(
+                playlist(song(1).copy(syncMetadataVersion = LEGACY_SYNC_METADATA_VERSION))
+            )
+        )
+        val merged = syncData(
+            playlists = listOf(
+                playlist(song(1).copy(syncMetadataVersion = CURRENT_SYNC_METADATA_VERSION))
+            )
+        )
+
+        assertTrue(SyncDataChangeDetector.hasDataChanged(remote, merged))
+    }
+
+    @Test
     fun `detects observed token change in playlist deletion`() {
         val remote = syncData(
             playlistSongDeletions = listOf(

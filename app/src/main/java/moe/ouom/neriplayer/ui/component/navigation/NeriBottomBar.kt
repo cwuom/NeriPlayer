@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.ui.component.navigation
  */
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -41,6 +42,9 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import moe.ouom.neriplayer.navigation.Destinations
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
+import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassController
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 
 @Composable
@@ -53,40 +57,63 @@ fun NeriBottomBar(
 ) {
     val context = LocalContext.current
     val alwaysShowLabel = selectAlpha != 0f
-
-    NavigationBar(
-        modifier = modifier.background(Color.Transparent),
-        containerColor = Color.Transparent,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        tonalElevation = 0.dp,
+    val baseBlurRequested = LocalAdvancedGlassController.current.isBaseBlurRequested
+    val fallbackColor = if (
+        shouldUseOpaqueBottomBarFallback(selectAlpha, baseBlurRequested)
     ) {
-        items.forEach { (dest, icon) ->
-            val selected = currentDestination?.hierarchy?.any { it.route == dest.route } == true
-            val label = stringResource(dest.labelResId)
-            NavigationBarItem(
-                selected = selected,
-                onClick = {
-                    context.performHapticFeedback()
-                    onItemSelected(dest)
-                },
-                icon = { Icon(icon, contentDescription = label) },
-                label = {
-                    Text(
-                        text = label,
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Ellipsis
+        MaterialTheme.colorScheme.background
+    } else {
+        Color.Transparent
+    }
+
+    AdvancedGlassSurface(
+        role = AdvancedGlassRole.BottomNavigation,
+        modifier = modifier,
+        fallbackColor = fallbackColor
+    ) {
+        NavigationBar(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color.Transparent),
+            containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            tonalElevation = 0.dp,
+        ) {
+            items.forEach { (dest, icon) ->
+                val selected = currentDestination?.hierarchy?.any { it.route == dest.route } == true
+                val label = stringResource(dest.labelResId)
+                NavigationBarItem(
+                    selected = selected,
+                    onClick = {
+                        context.performHapticFeedback()
+                        onItemSelected(dest)
+                    },
+                    icon = { Icon(icon, contentDescription = label) },
+                    label = {
+                        Text(
+                            text = label,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    alwaysShowLabel = alwaysShowLabel,
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                        indicatorColor = MaterialTheme.colorScheme.secondaryContainer.copy(
+                            alpha = selectAlpha
+                        ),
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                },
-                alwaysShowLabel = alwaysShowLabel,
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = selectAlpha),
-                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            )
+            }
         }
     }
 }
+
+internal fun shouldUseOpaqueBottomBarFallback(
+    selectAlpha: Float,
+    baseBlurRequested: Boolean
+): Boolean = selectAlpha != 0f || baseBlurRequested

@@ -137,9 +137,9 @@ Current positioning:
   `BgEffectPainter`, `RuntimeShader`, and `assets/hyper_background_effect.glsl`.
   The shader combines cover-derived colors, animated color blobs, and lightweight
   grain while reacting to `uMusicLevel / uBeat`; it is not just a Gaussian-blurred
-  cover. The RuntimeShader/audio-reactive path requires Android 13+. Cover blur and
-  advanced blur require Android 12+, and older versions automatically use a
-  compatible fallback without those effects.
+  cover. The RuntimeShader/audio-reactive path requires Android 13+. Cover blur
+  requires Android 12+, while advanced blur requires Android 13+; older versions
+  automatically use a compatible fallback without those effects.
 - **Apple Music-style lyrics, backed by the playback pipeline**:
   `SyncedLyricsView` and `AdvancedLyricsView` support word/character-timed
   highlighting, translated lyrics, phonetic display, lyric offset, click-to-seek,
@@ -207,8 +207,14 @@ Current positioning:
 - **Highly personalized, beyond theme colors**:
   `AutoSettingsSchema` covers dynamic colors, seed colors, palette style,
   auto/light/dark mode, UI scaling, custom backgrounds, lyric font size,
-  lyric blur, the fluid Now Playing background, Home card toggles, default start
+  lyric blur, two-level advanced blur, the fluid Now Playing background,
+  Home card toggles, default start
   destination, haptic feedback, and custom song title/artist/cover metadata.
+  Enhanced Advanced Blur is off by default and is available only on Android 13+
+  while its parent blur setting is enabled. It adds shared live-glass material to
+  screen-level top tabs, the bottom tab bar, and structural settings cards without
+  changing foreground content, layout, or touch targets. Its blur radius is adjustable
+  from `12-64 dp`.
 - **ANR, crash logs, and safe mode form a diagnostics loop**:
   `AnrWatchdog` reads Android `ApplicationExitInfo.REASON_ANR` and stores the
   system ANR trace. `ExceptionHandler` and `NativeCrashHandler` record JVM and
@@ -395,14 +401,17 @@ For release build and signing details, see
 - 🌈 **Personalization and themes**:
   auto/light/dark mode, dynamic color, seed colors, theme styles, UI scaling,
   custom background image, haptic feedback, lyric font size, lyric blur,
-  default start destination, and Home card toggles.
+  default start destination, and Home card toggles. Android 13+ can optionally
+  enable Enhanced Advanced Blur for top/bottom tabs and structural settings cards;
+  its radius is adjustable from `12-64 dp`, and disabling the parent preserves the
+  child choice and radius while removing enhanced drawing.
 - ✨ **Now Playing visuals and lyrics**:
   `RuntimeShader` / GLSL fluid background, audio-reactive dynamic background,
   cover blur background, Apple Music-style lyrics, advanced lyrics, word-timed
   lyrics, translated lyrics, lyric offset, phonetic display, long-press lyric
   sharing, lyric card generation, lyric editing, font scaling, lyric-aware
   haptics, and a full Lyrics page. RuntimeShader animation is enabled on Android
-  13+, while cover/advanced blur requires Android 12+; older versions fall back.
+  13+; cover blur requires Android 12+, while advanced blur requires Android 13+.
 - 👆 **Mini Player gestures**:
   the bottom Mini Player supports horizontal swipe for previous/next while
   keeping tap-to-expand and play/pause controls.

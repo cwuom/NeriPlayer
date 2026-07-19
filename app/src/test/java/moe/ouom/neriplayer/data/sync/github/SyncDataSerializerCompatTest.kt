@@ -20,6 +20,60 @@ import org.junit.Test
 
 class SyncDataSerializerCompatTest {
     @Test
+    fun `protobuf desktop playlist with omitted default fields decodes`() {
+        val desktopData = DefaultOmittingSyncData(
+            deviceId = "desktop",
+            deviceName = "Desktop",
+            playlists = listOf(
+                DefaultOmittingSyncPlaylist(
+                    id = 1L,
+                    modifiedAt = 20L,
+                    isDeleted = true,
+                    songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
+                )
+            )
+        )
+
+        val decoded = ProtoBuf.decodeFromByteArray<SyncData>(
+            ProtoBuf.encodeToByteArray(desktopData)
+        )
+        val playlist = decoded.playlists.single()
+
+        assertEquals("", playlist.name)
+        assertEquals(emptyList<SyncSong>(), playlist.songs)
+        assertEquals(0L, playlist.createdAt)
+        assertEquals(20L, playlist.modifiedAt)
+        assertTrue(playlist.isDeleted)
+    }
+
+    @Test
+    fun `json desktop playlist with omitted default fields decodes`() {
+        val decoded = SyncDataSerializer.deserialize(
+            content = """
+                {
+                  "deviceId": "desktop",
+                  "deviceName": "Desktop",
+                  "playlists": [
+                    {
+                      "id": 1,
+                      "modifiedAt": 20,
+                      "isDeleted": true
+                    }
+                  ]
+                }
+            """.trimIndent(),
+            isBinaryFormat = false
+        )
+        val playlist = decoded.playlists.single()
+
+        assertEquals("", playlist.name)
+        assertEquals(emptyList<SyncSong>(), playlist.songs)
+        assertEquals(0L, playlist.createdAt)
+        assertEquals(20L, playlist.modifiedAt)
+        assertTrue(playlist.isDeleted)
+    }
+
+    @Test
     fun `protobuf sync song with missing id decodes with zero fallback`() {
         val oldData = MissingIdSyncData(
             deviceId = "old-device",
@@ -219,6 +273,7 @@ class SyncDataSerializerCompatTest {
         assertEquals(180_000L, song.durationMs)
         assertEquals(0L, song.addedAt)
         assertEquals(emptyList<SyncCausalToken>(), song.syncMembershipTokens)
+        assertEquals(LEGACY_SYNC_METADATA_VERSION, song.syncMetadataVersion)
         assertEquals(LEGACY_SONG_ORDER_VERSION, decoded.playlists.single().songOrderVersion)
         assertEquals(
             emptyList<SyncCausalToken>(),
@@ -331,6 +386,10 @@ class SyncDataSerializerCompatTest {
         val decoded = ProtoBuf.decodeFromByteArray<SyncData>(ProtoBuf.encodeToByteArray(data))
 
         assertEquals(tokens, decoded.playlists.single().songs.single().syncMembershipTokens)
+        assertEquals(
+            CURRENT_SYNC_METADATA_VERSION,
+            decoded.playlists.single().songs.single().syncMetadataVersion
+        )
         assertEquals(tokens, decoded.playlistSongDeletions.single().removedMembershipTokens)
     }
 
@@ -368,6 +427,7 @@ class SyncDataSerializerCompatTest {
         )
 
         assertEquals(emptyList<SyncCausalToken>(), syncSong.syncMembershipTokens)
+        assertEquals(CURRENT_SYNC_METADATA_VERSION, syncSong.syncMetadataVersion)
         assertEquals(emptyList<SyncCausalToken>(), syncSong.toSongItem().syncMembershipTokens)
         assertEquals(emptyList<SyncCausalToken>(), legacySyncSong.toSongItem().syncMembershipTokens)
         assertEquals(20L, copiedSyncSong.addedAt)
@@ -541,6 +601,21 @@ class SyncDataSerializerCompatTest {
         @ProtoNumber(9) val addedAt: Long = 0L
     )
 
+    @Serializable
+    private data class DefaultOmittingSyncData(
+        @ProtoNumber(2) val deviceId: String,
+        @ProtoNumber(3) val deviceName: String,
+        @ProtoNumber(5) val playlists: List<DefaultOmittingSyncPlaylist>
+    )
+
+    @Serializable
+    private data class DefaultOmittingSyncPlaylist(
+        @ProtoNumber(1) val id: Long,
+        @ProtoNumber(5) val modifiedAt: Long,
+        @ProtoNumber(6) val isDeleted: Boolean,
+        @ProtoNumber(7) val songOrderVersion: Int
+    )
+
     private fun syncSong(
         name: String,
         coverUrl: String?,
@@ -554,7 +629,8 @@ class SyncDataSerializerCompatTest {
             albumId = 1L,
             durationMs = 1_000L,
             coverUrl = coverUrl,
-            addedAt = addedAt
+            addedAt = addedAt,
+            syncMetadataVersion = CURRENT_SYNC_METADATA_VERSION
         )
     }
 }

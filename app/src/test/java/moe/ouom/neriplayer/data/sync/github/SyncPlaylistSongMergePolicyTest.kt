@@ -11,6 +11,146 @@ import org.junit.Test
 
 class SyncPlaylistSongMergePolicyTest {
     @Test
+    fun `remote phone reorder keeps remote addedAt values and order`() {
+        val local = listOf(
+            syncSong(id = 1L, name = "A", addedAt = 300L),
+            syncSong(id = 2L, name = "B", addedAt = 200L),
+            syncSong(id = 3L, name = "C", addedAt = 100L)
+        )
+        val remote = listOf(
+            local[2].copy(addedAt = 900L),
+            local[0].copy(addedAt = 899L),
+            local[1].copy(addedAt = 898L)
+        )
+
+        val result = SyncPlaylistSongMergePolicy.mergeSongs(
+            localSongs = local,
+            remoteSongs = remote,
+            localModifiedAt = 100L,
+            remoteModifiedAt = 300L,
+            localChangedAfterSync = false,
+            remoteChangedAfterSync = true,
+            lastSyncTime = 200L,
+            isFavorites = false
+        )
+
+        assertEquals(listOf(3L, 1L, 2L), result.songs.map(SyncSong::id))
+        assertEquals(listOf(900L, 899L, 898L), result.songs.map(SyncSong::addedAt))
+    }
+
+    @Test
+    fun `local desktop reorder keeps local addedAt values and order`() {
+        val remote = listOf(
+            syncSong(id = 1L, name = "A", addedAt = 300L),
+            syncSong(id = 2L, name = "B", addedAt = 200L),
+            syncSong(id = 3L, name = "C", addedAt = 100L)
+        )
+        val local = listOf(
+            remote[1].copy(addedAt = 900L),
+            remote[2].copy(addedAt = 899L),
+            remote[0].copy(addedAt = 898L)
+        )
+
+        val result = SyncPlaylistSongMergePolicy.mergeSongs(
+            localSongs = local,
+            remoteSongs = remote,
+            localModifiedAt = 300L,
+            remoteModifiedAt = 100L,
+            localChangedAfterSync = true,
+            remoteChangedAfterSync = false,
+            lastSyncTime = 200L,
+            isFavorites = false
+        )
+
+        assertEquals(listOf(2L, 3L, 1L), result.songs.map(SyncSong::id))
+        assertEquals(listOf(900L, 899L, 898L), result.songs.map(SyncSong::addedAt))
+    }
+
+    @Test
+    fun `legacy primary order keeps current rich metadata`() {
+        val current = syncSong(id = 1L, name = "Original", addedAt = 100L).copy(
+            matchedLyric = "[00:01.00]lyric",
+            customName = "Custom title",
+            originalName = "Original"
+        )
+        val legacyPrimary = current.copy(
+            name = "Custom title",
+            addedAt = 900L,
+            matchedLyric = null,
+            customName = null,
+            originalName = null,
+            syncMetadataVersion = LEGACY_SYNC_METADATA_VERSION
+        )
+
+        val result = SyncPlaylistSongMergePolicy.mergeSongs(
+            localSongs = listOf(current),
+            remoteSongs = listOf(legacyPrimary),
+            localModifiedAt = 100L,
+            remoteModifiedAt = 300L,
+            localChangedAfterSync = false,
+            remoteChangedAfterSync = true,
+            lastSyncTime = 200L,
+            isFavorites = false
+        )
+
+        val merged = result.songs.single()
+        assertEquals(900L, merged.addedAt)
+        assertEquals("Original", merged.name)
+        assertEquals("[00:01.00]lyric", merged.matchedLyric)
+        assertEquals("Custom title", merged.customName)
+        assertEquals(CURRENT_SYNC_METADATA_VERSION, merged.syncMetadataVersion)
+    }
+
+    @Test
+    fun `current primary can intentionally clear metadata`() {
+        val local = syncSong(id = 1L, name = "Song", addedAt = 100L).copy(
+            matchedLyric = "[00:01.00]old lyric",
+            customName = "Old custom title"
+        )
+        val remote = local.copy(
+            addedAt = 200L,
+            matchedLyric = null,
+            customName = null
+        )
+
+        val result = SyncPlaylistSongMergePolicy.mergeSongs(
+            localSongs = listOf(local),
+            remoteSongs = listOf(remote),
+            localModifiedAt = 100L,
+            remoteModifiedAt = 300L,
+            localChangedAfterSync = false,
+            remoteChangedAfterSync = true,
+            lastSyncTime = 200L,
+            isFavorites = false
+        )
+
+        assertNull(result.songs.single().matchedLyric)
+        assertNull(result.songs.single().customName)
+    }
+
+    @Test
+    fun `primary missing addedAt inherits known value instead of moving to top`() {
+        val current = syncSong(id = 1L, name = "Song", addedAt = 500L)
+        val legacyPrimary = current.copy(
+            addedAt = 0L,
+            syncMetadataVersion = LEGACY_SYNC_METADATA_VERSION
+        )
+
+        val result = SyncPlaylistSongMergePolicy.mergeSongs(
+            localSongs = listOf(current),
+            remoteSongs = listOf(legacyPrimary),
+            localModifiedAt = 100L,
+            remoteModifiedAt = 300L,
+            localChangedAfterSync = false,
+            remoteChangedAfterSync = true,
+            lastSyncTime = 200L,
+            isFavorites = false
+        )
+
+        assertEquals(500L, result.songs.single().addedAt)
+    }
+
+    @Test
     fun `local clear wins when local playlist changed after sync`() {
         val remoteSong = syncSong(id = 1L, name = "Song")
 
@@ -229,14 +369,16 @@ class SyncPlaylistSongMergePolicyTest {
             name = "Z Legacy user title",
             channelId = "netease",
             audioId = "1",
-            membershipTokens = listOf(token("local", 1L))
+            membershipTokens = listOf(token("local", 1L)),
+            syncMetadataVersion = LEGACY_SYNC_METADATA_VERSION
         ).copy(customName = "Z Legacy custom title")
         val remote = syncSong(
             id = 1L,
             name = "A Synced title",
             channelId = "netease",
             audioId = "1",
-            membershipTokens = listOf(token("remote", 1L))
+            membershipTokens = listOf(token("remote", 1L)),
+            syncMetadataVersion = LEGACY_SYNC_METADATA_VERSION
         )
 
         val result = SyncPlaylistSongMergePolicy.mergeSongs(
@@ -1040,7 +1182,9 @@ class SyncPlaylistSongMergePolicyTest {
         channelId: String? = null,
         audioId: String? = null,
         mediaUri: String? = null,
-        membershipTokens: List<SyncCausalToken> = emptyList()
+        addedAt: Long = 0L,
+        membershipTokens: List<SyncCausalToken> = emptyList(),
+        syncMetadataVersion: Int = CURRENT_SYNC_METADATA_VERSION
     ): SyncSong {
         return SyncSong(
             id = id,
@@ -1050,7 +1194,9 @@ class SyncPlaylistSongMergePolicyTest {
             channelId = channelId,
             audioId = audioId,
             mediaUri = mediaUri,
-            syncMembershipTokens = membershipTokens
+            addedAt = addedAt,
+            syncMembershipTokens = membershipTokens,
+            syncMetadataVersion = syncMetadataVersion
         )
     }
 

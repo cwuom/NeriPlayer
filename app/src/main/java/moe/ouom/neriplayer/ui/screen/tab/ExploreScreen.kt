@@ -118,6 +118,8 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
@@ -146,6 +148,8 @@ import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 
 private const val SEARCH_INPUT_DEBOUNCE_MS = 300L
+private val ExplorePrimaryTabShape = RoundedCornerShape(20.dp)
+private val ExploreSearchFieldShape = RoundedCornerShape(16.dp)
 
 @Composable
 private fun searchSourceLabel(source: SearchSource): String {
@@ -370,6 +374,7 @@ fun ExploreScreen(
                             focusManager.clearFocus()
                         }),
                         singleLine = true,
+                        shape = ExploreSearchFieldShape,
                         modifier = Modifier.fillMaxWidth()
                     )
                     if (ui.selectedSearchSource == SearchSource.NETEASE && !ui.isNeteaseLoggedIn) {
@@ -381,21 +386,29 @@ fun ExploreScreen(
                         )
                     }
                     Spacer(Modifier.height(8.dp))
-                    PrimaryTabRow(
-                        selectedTabIndex = pagerState.currentPage,
-                        containerColor = Color.Transparent,
-                        contentColor = MaterialTheme.colorScheme.primary
+                    AdvancedGlassSurface(
+                        role = AdvancedGlassRole.ScreenTopTab,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(ExplorePrimaryTabShape),
+                        shape = ExplorePrimaryTabShape
                     ) {
-                        orderedSearchSources.forEachIndexed { index, source ->
-                            Tab(
-                                selected = pagerState.currentPage == index,
-                                onClick = {
-                                    scope.launch {
-                                        pagerState.animateScrollToPage(index)
-                                    }
-                                },
-                                text = { Text(searchSourceLabel(source)) }
-                            )
+                        PrimaryTabRow(
+                            selectedTabIndex = pagerState.currentPage,
+                            containerColor = Color.Transparent,
+                            contentColor = MaterialTheme.colorScheme.primary
+                        ) {
+                            orderedSearchSources.forEachIndexed { index, source ->
+                                Tab(
+                                    selected = pagerState.currentPage == index,
+                                    onClick = {
+                                        scope.launch {
+                                            pagerState.animateScrollToPage(index)
+                                        }
+                                    },
+                                    text = { Text(searchSourceLabel(source)) }
+                                )
+                            }
                         }
                     }
                 }
