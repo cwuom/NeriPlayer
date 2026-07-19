@@ -100,7 +100,7 @@ class NeriAppMainTabTransitionPolicyTest {
         assertNull(
             resolveMainTabDetailHandoff(
                 initialRoute = Destinations.Library.route,
-                targetRoute = Destinations.LocalPlaylistDetail.route
+                targetRoute = "unknown_detail"
             )
         )
         assertNull(

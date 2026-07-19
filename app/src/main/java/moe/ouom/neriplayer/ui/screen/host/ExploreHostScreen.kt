@@ -26,12 +26,8 @@ package moe.ouom.neriplayer.ui.screen.host
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -42,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.core.api.bili.BiliClient
@@ -50,6 +47,7 @@ import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.ExploreScreen
+import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassVerticalTransition
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
@@ -59,6 +57,9 @@ private sealed class ExploreSelectedItem {
     data class Netease(val playlist: PlaylistSummary) : ExploreSelectedItem()
     data class YouTubeMusic(val playlist: YouTubeMusicPlaylist) : ExploreSelectedItem()
 }
+
+private val ExploreSelectedItem?.navigationDepth: Int
+    get() = if (this == null) 0 else 1
 
 @Composable
 fun ExploreHostScreen(
@@ -89,66 +90,65 @@ fun ExploreHostScreen(
         LazyGridState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
 
-    Surface(color = Color.Transparent) {
+    Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
         AnimatedContent(
             targetState = selected,
+            modifier = Modifier.fillMaxSize(),
             label = "explore_host_switch",
             transitionSpec = {
-                if (initialState == null && targetState != null) {
-                    (slideInVertically(animationSpec = tween(220)) { it } + fadeIn()) togetherWith
-                            (fadeOut(animationSpec = tween(160)))
-                } else {
-                    (slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()) togetherWith
-                            (slideOutVertically(animationSpec = tween(240)) { it } + fadeOut())
-                }.using(SizeTransform(clip = false))
+                isolatedAdvancedGlassVerticalTransition(
+                    forward = targetState.navigationDepth > initialState.navigationDepth
+                ).using(SizeTransform(clip = true))
             }
         ) { current ->
-            if (current == null) {
-                ExploreScreen(
-                    gridState = gridState,
-                    offlineMode = offlineMode,
-                    onPlay = { pl ->
-                        AppContainer.playlistUsageRepo.recordOpen(
-                            id = pl.id, name = pl.name, picUrl = pl.picUrl,
-                            trackCount = pl.trackCount, source = "netease"
-                        )
-                        selected = ExploreSelectedItem.Netease(pl)
-                    },
-                    onYouTubeMusicPlaylistClick = { pl ->
-                        AppContainer.playlistUsageRepo.recordOpen(
-                            id = stableYouTubeMusicId(pl.playlistId.ifBlank { pl.browseId }),
-                            name = pl.title,
-                            picUrl = pl.coverUrl,
-                            trackCount = pl.trackCount,
-                            source = "youtubeMusic",
-                            browseId = pl.browseId,
-                            playlistId = pl.playlistId
-                        )
-                        selected = ExploreSelectedItem.YouTubeMusic(pl)
-                    },
-                    onSongClick = onSongClick,
-                    onSongPlayPreservingQueue = onSongPlayPreservingQueue,
-                    onSongPlayNext = onSongPlayNext,
-                    onSongAddToQueueEnd = onSongAddToQueueEnd,
-                    onPlayParts = onPlayParts
-                )
-            } else {
-                when (current) {
-                    is ExploreSelectedItem.Netease -> {
-                        NeteasePlaylistDetailScreen(
-                            playlist = current.playlist,
-                            onBack = { selected = null },
-                            onSongClick = onSongClick,
-                            offlineMode = offlineMode
-                        )
-                    }
-                    is ExploreSelectedItem.YouTubeMusic -> {
-                        YouTubeMusicPlaylistDetailScreen(
-                            playlist = current.playlist,
-                            onBack = { selected = null },
-                            onSongClick = onSongClick,
-                            offlineMode = offlineMode
-                        )
+            Box(modifier = Modifier.fillMaxSize()) {
+                if (current == null) {
+                    ExploreScreen(
+                        gridState = gridState,
+                        offlineMode = offlineMode,
+                        onPlay = { pl ->
+                            AppContainer.playlistUsageRepo.recordOpen(
+                                id = pl.id, name = pl.name, picUrl = pl.picUrl,
+                                trackCount = pl.trackCount, source = "netease"
+                            )
+                            selected = ExploreSelectedItem.Netease(pl)
+                        },
+                        onYouTubeMusicPlaylistClick = { pl ->
+                            AppContainer.playlistUsageRepo.recordOpen(
+                                id = stableYouTubeMusicId(pl.playlistId.ifBlank { pl.browseId }),
+                                name = pl.title,
+                                picUrl = pl.coverUrl,
+                                trackCount = pl.trackCount,
+                                source = "youtubeMusic",
+                                browseId = pl.browseId,
+                                playlistId = pl.playlistId
+                            )
+                            selected = ExploreSelectedItem.YouTubeMusic(pl)
+                        },
+                        onSongClick = onSongClick,
+                        onSongPlayPreservingQueue = onSongPlayPreservingQueue,
+                        onSongPlayNext = onSongPlayNext,
+                        onSongAddToQueueEnd = onSongAddToQueueEnd,
+                        onPlayParts = onPlayParts
+                    )
+                } else {
+                    when (current) {
+                        is ExploreSelectedItem.Netease -> {
+                            NeteasePlaylistDetailScreen(
+                                playlist = current.playlist,
+                                onBack = { selected = null },
+                                onSongClick = onSongClick,
+                                offlineMode = offlineMode
+                            )
+                        }
+                        is ExploreSelectedItem.YouTubeMusic -> {
+                            YouTubeMusicPlaylistDetailScreen(
+                                playlist = current.playlist,
+                                onBack = { selected = null },
+                                onSongClick = onSongClick,
+                                offlineMode = offlineMode
+                            )
+                        }
                     }
                 }
             }

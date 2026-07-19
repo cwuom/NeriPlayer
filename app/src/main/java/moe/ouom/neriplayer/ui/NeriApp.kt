@@ -248,14 +248,33 @@ private val MAIN_TAB_ROUTES = listOf(
     Destinations.Debug.route
 )
 private val TRANSPARENT_MAIN_TAB_DETAIL_ROUTES = setOf(
+    Destinations.PlaylistDetail.route,
     Destinations.NeteaseAlbumDetail.route,
+    Destinations.NeteaseArtistDetail.route,
+    Destinations.BiliPlaylistDetail.route,
+    Destinations.LocalPlaylistDetail.route,
     Destinations.Recent.route,
-    Destinations.PlaybackStats.route
+    Destinations.PlaybackStats.route,
+    Destinations.DownloadManager.route,
+    Destinations.DownloadProgress.route
+)
+private val DEBUG_NAVIGATION_DEPTH_BY_ROUTE = mapOf(
+    Destinations.Debug.route to 0,
+    Destinations.DebugListenTogether.route to 1,
+    Destinations.DebugUsbExclusive.route to 1,
+    Destinations.DebugYouTube.route to 1,
+    Destinations.DebugBili.route to 1,
+    Destinations.DebugNetease.route to 1,
+    Destinations.DebugSearch.route to 1,
+    Destinations.DebugLogsList.route to 1,
+    Destinations.DebugCrashLogsList.route to 1,
+    Destinations.DebugLogViewer.route to 2
 )
 
 internal const val MAIN_TAB_DETAIL_OPEN_DURATION_MS = 220
 internal const val MAIN_TAB_DETAIL_CLOSE_DURATION_MS = 240
-internal const val TRANSPARENT_DETAIL_EXIT_FADE_DURATION_MS = 160
+internal const val DEBUG_NAVIGATION_OPEN_DURATION_MS = 220
+internal const val DEBUG_NAVIGATION_CLOSE_DURATION_MS = 240
 
 internal enum class MainTabDetailHandoff {
     OPEN_DETAIL,
@@ -288,6 +307,16 @@ internal fun resolveMainTabDetailHandoff(
     }
 }
 
+internal fun resolveDebugNavigationTransitionDirection(
+    initialRoute: String?,
+    targetRoute: String?
+): Int? {
+    val initialDepth = DEBUG_NAVIGATION_DEPTH_BY_ROUTE[initialRoute] ?: return null
+    val targetDepth = DEBUG_NAVIGATION_DEPTH_BY_ROUTE[targetRoute] ?: return null
+    if (initialDepth == targetDepth) return null
+    return if (targetDepth > initialDepth) 1 else -1
+}
+
 internal data class BottomBarLayoutInsets(
     val navContentBottomPadding: Dp,
     val screenBottomInset: Dp,
@@ -318,7 +347,20 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabEnterTrans
     val direction = resolveMainTabTransitionDirection(
         initialRoute = initialRoute,
         targetRoute = targetRoute
-    ) ?: return if (
+    )
+    if (direction != null) {
+        return slideInHorizontally(
+            animationSpec = advancedGlassMainTabNavigationSpringSpec()
+        ) { fullWidth -> direction * fullWidth }
+    }
+    val debugDirection = resolveDebugNavigationTransitionDirection(
+        initialRoute = initialRoute,
+        targetRoute = targetRoute
+    )
+    if (debugDirection != null) {
+        return debugNavigationEnterTransition(debugDirection)
+    }
+    return if (
         resolveMainTabDetailHandoff(initialRoute, targetRoute) ==
         MainTabDetailHandoff.RETURN_TO_TAB
     ) {
@@ -328,9 +370,6 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabEnterTrans
     } else {
         EnterTransition.None
     }
-    return slideInHorizontally(
-        animationSpec = advancedGlassMainTabNavigationSpringSpec()
-    ) { fullWidth -> direction * fullWidth }
 }
 
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabExitTransition(): ExitTransition {
@@ -339,7 +378,20 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabExitTransi
     val direction = resolveMainTabTransitionDirection(
         initialRoute = initialRoute,
         targetRoute = targetRoute
-    ) ?: return if (
+    )
+    if (direction != null) {
+        return slideOutHorizontally(
+            animationSpec = advancedGlassMainTabNavigationSpringSpec()
+        ) { fullWidth -> -direction * fullWidth }
+    }
+    val debugDirection = resolveDebugNavigationTransitionDirection(
+        initialRoute = initialRoute,
+        targetRoute = targetRoute
+    )
+    if (debugDirection != null) {
+        return debugNavigationExitTransition(debugDirection)
+    }
+    return if (
         resolveMainTabDetailHandoff(initialRoute, targetRoute) ==
         MainTabDetailHandoff.OPEN_DETAIL
     ) {
@@ -349,9 +401,6 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabExitTransi
     } else {
         ExitTransition.None
     }
-    return slideOutHorizontally(
-        animationSpec = advancedGlassMainTabNavigationSpringSpec()
-    ) { fullWidth -> -direction * fullWidth }
 }
 
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailEnterTransition(): EnterTransition {
@@ -374,8 +423,20 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetail
             animationSpec = tween(MAIN_TAB_DETAIL_CLOSE_DURATION_MS)
         )
     } else {
-        fadeOut(animationSpec = tween(TRANSPARENT_DETAIL_EXIT_FADE_DURATION_MS))
+        slideOutVertically(
+            animationSpec = tween(MAIN_TAB_DETAIL_OPEN_DURATION_MS)
+        ) { fullHeight -> -fullHeight } + fadeOut(
+            animationSpec = tween(MAIN_TAB_DETAIL_OPEN_DURATION_MS)
+        )
     }
+}
+
+internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailPopEnterTransition(): EnterTransition {
+    return slideInVertically(
+        animationSpec = tween(MAIN_TAB_DETAIL_CLOSE_DURATION_MS)
+    ) { fullHeight -> -fullHeight } + fadeIn(
+        animationSpec = tween(MAIN_TAB_DETAIL_CLOSE_DURATION_MS)
+    )
 }
 
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailPopExitTransition(): ExitTransition {
@@ -384,6 +445,42 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetail
     ) { fullHeight -> fullHeight } + fadeOut(
         animationSpec = tween(MAIN_TAB_DETAIL_CLOSE_DURATION_MS)
     )
+}
+
+internal fun AnimatedContentTransitionScope<NavBackStackEntry>.debugNavigationEnterTransition(): EnterTransition {
+    val direction = resolveDebugNavigationTransitionDirection(
+        initialRoute = initialState.destination.route,
+        targetRoute = targetState.destination.route
+    ) ?: return EnterTransition.None
+    return debugNavigationEnterTransition(direction)
+}
+
+internal fun AnimatedContentTransitionScope<NavBackStackEntry>.debugNavigationExitTransition(): ExitTransition {
+    val direction = resolveDebugNavigationTransitionDirection(
+        initialRoute = initialState.destination.route,
+        targetRoute = targetState.destination.route
+    ) ?: return ExitTransition.None
+    return debugNavigationExitTransition(direction)
+}
+
+private fun debugNavigationEnterTransition(direction: Int): EnterTransition {
+    return slideInVertically(
+        animationSpec = tween(debugNavigationDurationMs(direction))
+    ) { fullHeight -> direction * fullHeight }
+}
+
+private fun debugNavigationExitTransition(direction: Int): ExitTransition {
+    return slideOutVertically(
+        animationSpec = tween(debugNavigationDurationMs(direction))
+    ) { fullHeight -> -direction * fullHeight }
+}
+
+private fun debugNavigationDurationMs(direction: Int): Int {
+    return if (direction > 0) {
+        DEBUG_NAVIGATION_OPEN_DURATION_MS
+    } else {
+        DEBUG_NAVIGATION_CLOSE_DURATION_MS
+    }
 }
 
 private fun resolveMainStartDestination(
@@ -1844,10 +1941,8 @@ private fun NeriAppContent(
                                     arguments = listOf(navArgument("playlistJson") {
                                         type = NavType.StringType
                                     }),
-                                    enterTransition = {
-                                        slideInVertically(animationSpec = tween(220)) { it } + fadeIn()
-                                    },
-                                    exitTransition = { fadeOut(animationSpec = tween(160)) },
+                                    enterTransition = { transparentDetailEnterTransition() },
+                                    exitTransition = { transparentDetailExitTransition() },
                                     popEnterTransition = {
                                         slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()
                                     },
@@ -1870,9 +1965,7 @@ private fun NeriAppContent(
                                     }),
                                     enterTransition = { transparentDetailEnterTransition() },
                                     exitTransition = { transparentDetailExitTransition() },
-                                    popEnterTransition = {
-                                        slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()
-                                    },
+                                    popEnterTransition = { transparentDetailPopEnterTransition() },
                                     popExitTransition = { transparentDetailPopExitTransition() }
                                 ) { backStackEntry ->
                                     val playlistJson = backStackEntry.arguments?.getString("playlistJson")
@@ -1890,13 +1983,9 @@ private fun NeriAppContent(
                                     arguments = listOf(navArgument("artistJson") {
                                         type = NavType.StringType
                                     }),
-                                    enterTransition = {
-                                        slideInVertically(animationSpec = tween(220)) { it } + fadeIn()
-                                    },
-                                    exitTransition = { fadeOut(animationSpec = tween(160)) },
-                                    popEnterTransition = {
-                                        slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()
-                                    },
+                                    enterTransition = { transparentDetailEnterTransition() },
+                                    exitTransition = { transparentDetailExitTransition() },
+                                    popEnterTransition = { transparentDetailPopEnterTransition() },
                                     popExitTransition = { transparentDetailPopExitTransition() }
                                 ) { backStackEntry ->
                                     val artistJson = backStackEntry.arguments?.getString("artistJson")
@@ -1918,13 +2007,9 @@ private fun NeriAppContent(
                                     arguments = listOf(navArgument("playlistJson") {
                                         type = NavType.StringType
                                     }),
-                                    enterTransition = {
-                                        slideInVertically(animationSpec = tween(220)) { it } + fadeIn()
-                                    },
-                                    exitTransition = { fadeOut(animationSpec = tween(160)) },
-                                    popEnterTransition = {
-                                        slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()
-                                    },
+                                    enterTransition = { transparentDetailEnterTransition() },
+                                    exitTransition = { transparentDetailExitTransition() },
+                                    popEnterTransition = { transparentDetailPopEnterTransition() },
                                     popExitTransition = { transparentDetailPopExitTransition() }
                                 ) { backStackEntry ->
                                     val playlistJson = backStackEntry.arguments?.getString("playlistJson")
@@ -1974,13 +2059,9 @@ private fun NeriAppContent(
                                 composable(
                                     route = Destinations.LocalPlaylistDetail.route,
                                     arguments = listOf(navArgument("playlistId") { type = NavType.LongType }),
-                                    enterTransition = {
-                                        slideInVertically(animationSpec = tween(220)) { it } + fadeIn()
-                                    },
-                                    exitTransition = { fadeOut(animationSpec = tween(160)) },
-                                    popEnterTransition = {
-                                        slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()
-                                    },
+                                    enterTransition = { transparentDetailEnterTransition() },
+                                    exitTransition = { transparentDetailExitTransition() },
+                                    popEnterTransition = { transparentDetailPopEnterTransition() },
                                     popExitTransition = { transparentDetailPopExitTransition() }
                                 ) { backStackEntry ->
                                     val id = backStackEntry.arguments?.getLong("playlistId") ?: 0L
@@ -1997,7 +2078,7 @@ private fun NeriAppContent(
                                     route = Destinations.Recent.route,
                                     enterTransition = { transparentDetailEnterTransition() },
                                     exitTransition = { transparentDetailExitTransition() },
-                                    popEnterTransition = { slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn() },
+                                    popEnterTransition = { transparentDetailPopEnterTransition() },
                                     popExitTransition = { transparentDetailPopExitTransition() }
                                 ) {
                                     RecentScreen(
@@ -2011,7 +2092,7 @@ private fun NeriAppContent(
                                     route = Destinations.PlaybackStats.route,
                                     enterTransition = { transparentDetailEnterTransition() },
                                     exitTransition = { transparentDetailExitTransition() },
-                                    popEnterTransition = { slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn() },
+                                    popEnterTransition = { transparentDetailPopEnterTransition() },
                                     popExitTransition = { transparentDetailPopExitTransition() }
                                 ) {
                                     PlaybackStatsScreen(
@@ -2361,13 +2442,9 @@ private fun NeriAppContent(
 
                                 composable(
                                     route = Destinations.DownloadManager.route,
-                                    enterTransition = {
-                                        slideInVertically(animationSpec = tween(220)) { it } + fadeIn()
-                                    },
-                                    exitTransition = { fadeOut(animationSpec = tween(160)) },
-                                    popEnterTransition = {
-                                        slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()
-                                    },
+                                    enterTransition = { transparentDetailEnterTransition() },
+                                    exitTransition = { transparentDetailExitTransition() },
+                                    popEnterTransition = { transparentDetailPopEnterTransition() },
                                     popExitTransition = { transparentDetailPopExitTransition() }
                                 ) {
                                     DownloadManagerScreen(
@@ -2379,13 +2456,9 @@ private fun NeriAppContent(
 
                                 composable(
                                     route = Destinations.DownloadProgress.route,
-                                    enterTransition = {
-                                        slideInVertically(animationSpec = tween(220)) { it } + fadeIn()
-                                    },
-                                    exitTransition = { fadeOut(animationSpec = tween(160)) },
-                                    popEnterTransition = {
-                                        slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()
-                                    },
+                                    enterTransition = { transparentDetailEnterTransition() },
+                                    exitTransition = { transparentDetailExitTransition() },
+                                    popEnterTransition = { transparentDetailPopEnterTransition() },
                                     popExitTransition = { transparentDetailPopExitTransition() }
                                 ) {
                                     DownloadProgressScreen(onBack = { navController.popBackStack() })
@@ -2470,13 +2543,55 @@ private fun NeriAppContent(
                                         }
                                     )
                                 }
-                                composable(Destinations.DebugListenTogether.route) { ListenTogetherDebugScreen() }
-                                composable(Destinations.DebugUsbExclusive.route) { UsbExclusiveDebugScreen() }
-                                composable(Destinations.DebugYouTube.route) { YouTubeApiProbeScreen() }
-                                composable(Destinations.DebugBili.route) { BiliApiProbeScreen() }
-                                composable(Destinations.DebugNetease.route) { NeteaseApiProbeScreen() }
-                                composable(Destinations.DebugSearch.route) { SearchApiProbeScreen() }
-                                composable(Destinations.DebugLogsList.route) {
+                                composable(
+                                    route = Destinations.DebugListenTogether.route,
+                                    enterTransition = { debugNavigationEnterTransition() },
+                                    exitTransition = { debugNavigationExitTransition() },
+                                    popEnterTransition = { debugNavigationEnterTransition() },
+                                    popExitTransition = { debugNavigationExitTransition() }
+                                ) { ListenTogetherDebugScreen() }
+                                composable(
+                                    route = Destinations.DebugUsbExclusive.route,
+                                    enterTransition = { debugNavigationEnterTransition() },
+                                    exitTransition = { debugNavigationExitTransition() },
+                                    popEnterTransition = { debugNavigationEnterTransition() },
+                                    popExitTransition = { debugNavigationExitTransition() }
+                                ) { UsbExclusiveDebugScreen() }
+                                composable(
+                                    route = Destinations.DebugYouTube.route,
+                                    enterTransition = { debugNavigationEnterTransition() },
+                                    exitTransition = { debugNavigationExitTransition() },
+                                    popEnterTransition = { debugNavigationEnterTransition() },
+                                    popExitTransition = { debugNavigationExitTransition() }
+                                ) { YouTubeApiProbeScreen() }
+                                composable(
+                                    route = Destinations.DebugBili.route,
+                                    enterTransition = { debugNavigationEnterTransition() },
+                                    exitTransition = { debugNavigationExitTransition() },
+                                    popEnterTransition = { debugNavigationEnterTransition() },
+                                    popExitTransition = { debugNavigationExitTransition() }
+                                ) { BiliApiProbeScreen() }
+                                composable(
+                                    route = Destinations.DebugNetease.route,
+                                    enterTransition = { debugNavigationEnterTransition() },
+                                    exitTransition = { debugNavigationExitTransition() },
+                                    popEnterTransition = { debugNavigationEnterTransition() },
+                                    popExitTransition = { debugNavigationExitTransition() }
+                                ) { NeteaseApiProbeScreen() }
+                                composable(
+                                    route = Destinations.DebugSearch.route,
+                                    enterTransition = { debugNavigationEnterTransition() },
+                                    exitTransition = { debugNavigationExitTransition() },
+                                    popEnterTransition = { debugNavigationEnterTransition() },
+                                    popExitTransition = { debugNavigationExitTransition() }
+                                ) { SearchApiProbeScreen() }
+                                composable(
+                                    route = Destinations.DebugLogsList.route,
+                                    enterTransition = { debugNavigationEnterTransition() },
+                                    exitTransition = { debugNavigationExitTransition() },
+                                    popEnterTransition = { debugNavigationEnterTransition() },
+                                    popExitTransition = { debugNavigationExitTransition() }
+                                ) {
                                     LogListScreen(
                                         onBack = { navController.popBackStack() },
                                         onLogFileClick = { filePath ->
@@ -2487,7 +2602,13 @@ private fun NeriAppContent(
                                     )
                                 }
 
-                                composable(Destinations.DebugCrashLogsList.route) {
+                                composable(
+                                    route = Destinations.DebugCrashLogsList.route,
+                                    enterTransition = { debugNavigationEnterTransition() },
+                                    exitTransition = { debugNavigationExitTransition() },
+                                    popEnterTransition = { debugNavigationEnterTransition() },
+                                    popExitTransition = { debugNavigationExitTransition() }
+                                ) {
                                     CrashLogListScreen(
                                         onBack = { navController.popBackStack() },
                                         onLogFileClick = { filePath ->
@@ -2500,7 +2621,11 @@ private fun NeriAppContent(
 
                                 composable(
                                     route = Destinations.DebugLogViewer.route,
-                                    arguments = listOf(navArgument("filePath") { type = NavType.StringType })
+                                    arguments = listOf(navArgument("filePath") { type = NavType.StringType }),
+                                    enterTransition = { debugNavigationEnterTransition() },
+                                    exitTransition = { debugNavigationExitTransition() },
+                                    popEnterTransition = { debugNavigationEnterTransition() },
+                                    popExitTransition = { debugNavigationExitTransition() }
                                 ) { backStackEntry ->
                                     val filePath = backStackEntry.arguments?.getString("filePath") ?: ""
                                     LogViewerScreen(
