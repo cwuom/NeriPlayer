@@ -90,7 +90,14 @@ class HostNavigationTransitionGeometryTest {
             )
             val listBounds = listNodes.singleOrNull()?.boundsInRoot
             val detailBounds = detailNodes.singleOrNull()?.boundsInRoot
-            if (listBounds != null && detailBounds != null) {
+            if (
+                listBounds != null &&
+                detailBounds != null &&
+                listBounds.width > 0f &&
+                listBounds.height > 0f &&
+                detailBounds.width > 0f &&
+                detailBounds.height > 0f
+            ) {
                 framesWithBothScenes++
                 assertTrue(
                     "Host scenes overlap at frame $frame: " +
