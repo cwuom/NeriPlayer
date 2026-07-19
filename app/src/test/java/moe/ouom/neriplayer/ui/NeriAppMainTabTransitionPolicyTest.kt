@@ -61,10 +61,24 @@ class NeriAppMainTabTransitionPolicyTest {
             )
         )
         assertEquals(
+            MainTabDetailHandoff.OPEN_DETAIL,
+            resolveMainTabDetailHandoff(
+                initialRoute = Destinations.Home.route,
+                targetRoute = Destinations.NeteaseAlbumDetail.route
+            )
+        )
+        assertEquals(
             MainTabDetailHandoff.RETURN_TO_TAB,
             resolveMainTabDetailHandoff(
                 initialRoute = Destinations.PlaybackStats.route,
                 targetRoute = Destinations.Library.route
+            )
+        )
+        assertEquals(
+            MainTabDetailHandoff.RETURN_TO_TAB,
+            resolveMainTabDetailHandoff(
+                initialRoute = Destinations.NeteaseAlbumDetail.route,
+                targetRoute = Destinations.Home.route
             )
         )
     }

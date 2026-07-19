@@ -44,7 +44,18 @@ class NeriAppNavigationTransitionTest {
         assertTransparentDetailHandoff(Destinations.PlaybackStats.route)
     }
 
-    private fun assertTransparentDetailHandoff(detailRoute: String) {
+    @Test
+    fun neteaseAlbumScenesNeverOverlapDuringForwardAndBackTransitions() {
+        assertTransparentDetailHandoff(
+            detailRoute = Destinations.NeteaseAlbumDetail.route,
+            navigationRoute = "netease_album_detail/test"
+        )
+    }
+
+    private fun assertTransparentDetailHandoff(
+        detailRoute: String,
+        navigationRoute: String = detailRoute
+    ) {
         lateinit var navController: NavHostController
         composeRule.mainClock.autoAdvance = false
         composeRule.setContent {
@@ -77,7 +88,7 @@ class NeriAppNavigationTransitionTest {
                             route = detailRoute,
                             enterTransition = { transparentDetailEnterTransition() },
                             exitTransition = { transparentDetailExitTransition() },
-                            popExitTransition = { transparentDetailExitTransition() }
+                            popExitTransition = { transparentDetailPopExitTransition() }
                         ) {
                             Box(
                                 Modifier
@@ -91,7 +102,7 @@ class NeriAppNavigationTransitionTest {
         }
 
         composeRule.runOnIdle {
-            navController.navigate(detailRoute)
+            navController.navigate(navigationRoute)
         }
 
         assertNoSceneOverlapAcrossFrames(

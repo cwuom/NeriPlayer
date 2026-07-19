@@ -542,6 +542,7 @@ class NeteaseClient {
 
     @Throws(IOException::class)
     fun getAlbumDetail(albumId: Long, n: Int = 100000, s: Int = 8): String {
+        require(albumId > 0L) { "albumId must be positive" }
         val url = "https://interface.music.163.com/weapi/v1/album/$albumId"
         val params = mutableMapOf<String, Any>(
             "n" to n.toString(),

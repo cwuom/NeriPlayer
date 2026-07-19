@@ -49,7 +49,6 @@ import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistSummaries
 import org.json.JSONObject
 
 private const val TAG = "NERI-ExploreVM"
@@ -374,7 +373,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                         usePersistedCookies = false
                     )
                 }
-                val songs = parseSongs(raw)
+                val songs = parseNeteaseSearchSongs(raw)
                 NPLogger.d(
                     TAG,
                     "search Netease success: request=$requestVersion, keyword=$keyword, count=${songs.size}"
@@ -406,35 +405,6 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
         }
-    }
-
-    private fun parseSongs(raw: String): List<SongItem> {
-        val list = mutableListOf<SongItem>()
-        val root = JSONObject(raw)
-        val code = root.optInt("code", -1)
-        if (code != 200) {
-            NPLogger.w(TAG, "parseSongs unexpected code=$code")
-            return emptyList()
-        }
-        val songs = root.optJSONObject("result")?.optJSONArray("songs") ?: return emptyList()
-        for (i in 0 until songs.length()) {
-            val obj = songs.optJSONObject(i) ?: continue
-            val artistItems = parseNeteaseArtistSummaries(obj.optJSONArray("ar"))
-            val albumObj = obj.optJSONObject("al")
-            list.add(SongItem(
-                id = obj.optLong("id"),
-                name = obj.optString("name"),
-                artist = artistItems.joinToString(" / ") { it.name },
-                albumId = 0L,
-                album = albumObj?.optString("name").orEmpty(),
-                durationMs = obj.optLong("dt"),
-                coverUrl = albumObj?.optString("picUrl")?.replace("http://", "https://"),
-                channelId = "netease",
-                audioId = obj.optLong("id").toString(),
-                neteaseArtists = artistItems
-            ))
-        }
-        return list
     }
 
     suspend fun getVideoInfoByAvid(avid: Long): BiliClient.VideoBasicInfo {

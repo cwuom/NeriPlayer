@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
@@ -31,7 +33,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -43,9 +47,10 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
@@ -54,6 +59,7 @@ import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.isDownloadTaskCancellable
+import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
@@ -65,6 +71,9 @@ import moe.ouom.neriplayer.data.stats.TrackStat
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
+import moe.ouom.neriplayer.ui.viewmodel.album.isNeteaseAlbumNavigationSource
+import moe.ouom.neriplayer.ui.viewmodel.album.neteaseAlbumDisplayName
+import moe.ouom.neriplayer.ui.viewmodel.album.resolveNeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -118,7 +127,8 @@ internal fun MoreOptionsMainContent(
             lyricFontScale = lyricFontScale,
             onOpenLyricBehavior = onOpenLyricBehavior,
             onOpenFontSize = onOpenFontSize,
-            onEnterAlbum = onEnterAlbum
+            onEnterAlbum = onEnterAlbum,
+            snackbarHostState = snackbarHostState
         )
         ShareSongAction(
             song = originalSong,
@@ -285,7 +295,8 @@ private fun LyricsAndAlbumActions(
     lyricFontScale: Float,
     onOpenLyricBehavior: () -> Unit,
     onOpenFontSize: () -> Unit,
-    onEnterAlbum: (AlbumSummary) -> Unit
+    onEnterAlbum: (AlbumSummary) -> Unit,
+    snackbarHostState: SnackbarHostState
 ) {
     ListItem(
         headlineContent = { Text(stringResource(R.string.lyrics_adjust_behavior)) },
@@ -300,21 +311,47 @@ private fun LyricsAndAlbumActions(
         },
         modifier = Modifier.clickable(onClick = onOpenFontSize)
     )
-    if (!song.album.startsWith(PlayerManager.NETEASE_SOURCE_TAG)) return
+    if (!isNeteaseAlbumNavigationSource(song)) return
 
-    val albumName = song.album.removePrefix(PlayerManager.NETEASE_SOURCE_TAG)
-    val album = remember(song, albumName) {
-        AlbumSummary(
-            id = song.albumId,
-            name = albumName,
-            size = 0,
-            picUrl = song.coverUrl.orEmpty()
-        )
+    val albumName = neteaseAlbumDisplayName(song)
+    val context = LocalContext.current
+    var albumResolveRequest by remember(song) { mutableIntStateOf(0) }
+    var resolvingAlbum by remember(song) { mutableStateOf(false) }
+
+    LaunchedEffect(song, albumResolveRequest) {
+        if (albumResolveRequest == 0) return@LaunchedEffect
+        val album = try {
+            resolveNeteaseAlbum(song)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.e("MoreOptionsMainContent", "解析网易云专辑失败", error)
+            null
+        }
+        resolvingAlbum = false
+        if (album != null) {
+            onEnterAlbum(album)
+        } else {
+            snackbarHostState.showSnackbar(context.getString(R.string.music_get_detail_failed))
+        }
     }
+
     ListItem(
         headlineContent = { Text(stringResource(R.string.music_view_album, albumName)) },
-        leadingContent = { Icon(Icons.Outlined.LibraryMusic, null) },
-        modifier = Modifier.clickable { onEnterAlbum(album) }
+        leadingContent = {
+            if (resolvingAlbum) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Icon(Icons.Outlined.LibraryMusic, null)
+            }
+        },
+        modifier = Modifier.clickable(enabled = !resolvingAlbum) {
+            resolvingAlbum = true
+            albumResolveRequest++
+        }
     )
 }
 

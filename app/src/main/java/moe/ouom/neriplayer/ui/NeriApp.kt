@@ -248,6 +248,7 @@ private val MAIN_TAB_ROUTES = listOf(
     Destinations.Debug.route
 )
 private val TRANSPARENT_MAIN_TAB_DETAIL_ROUTES = setOf(
+    Destinations.NeteaseAlbumDetail.route,
     Destinations.Recent.route,
     Destinations.PlaybackStats.route
 )
@@ -375,6 +376,14 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetail
     } else {
         fadeOut(animationSpec = tween(TRANSPARENT_DETAIL_EXIT_FADE_DURATION_MS))
     }
+}
+
+internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailPopExitTransition(): ExitTransition {
+    return slideOutVertically(
+        animationSpec = tween(MAIN_TAB_DETAIL_CLOSE_DURATION_MS)
+    ) { fullHeight -> fullHeight } + fadeOut(
+        animationSpec = tween(MAIN_TAB_DETAIL_CLOSE_DURATION_MS)
+    )
 }
 
 private fun resolveMainStartDestination(
@@ -1842,9 +1851,7 @@ private fun NeriAppContent(
                                     popEnterTransition = {
                                         slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()
                                     },
-                                    popExitTransition = {
-                                        slideOutVertically(animationSpec = tween(240)) { it } + fadeOut()
-                                    }
+                                    popExitTransition = { transparentDetailPopExitTransition() }
                                 ) { backStackEntry ->
                                     val playlistJson = backStackEntry.arguments?.getString("playlistJson")
                                     val playlist = navigationGson.fromJson(playlistJson, PlaylistSummary::class.java)
@@ -1861,16 +1868,12 @@ private fun NeriAppContent(
                                     arguments = listOf(navArgument("playlistJson") {
                                         type = NavType.StringType
                                     }),
-                                    enterTransition = {
-                                        slideInVertically(animationSpec = tween(220)) { it } + fadeIn()
-                                    },
-                                    exitTransition = { fadeOut(animationSpec = tween(160)) },
+                                    enterTransition = { transparentDetailEnterTransition() },
+                                    exitTransition = { transparentDetailExitTransition() },
                                     popEnterTransition = {
                                         slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()
                                     },
-                                    popExitTransition = {
-                                        slideOutVertically(animationSpec = tween(240)) { it } + fadeOut()
-                                    }
+                                    popExitTransition = { transparentDetailPopExitTransition() }
                                 ) { backStackEntry ->
                                     val playlistJson = backStackEntry.arguments?.getString("playlistJson")
                                     val album = navigationGson.fromJson(playlistJson, AlbumSummary::class.java)
@@ -1894,9 +1897,7 @@ private fun NeriAppContent(
                                     popEnterTransition = {
                                         slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()
                                     },
-                                    popExitTransition = {
-                                        slideOutVertically(animationSpec = tween(240)) { it } + fadeOut()
-                                    }
+                                    popExitTransition = { transparentDetailPopExitTransition() }
                                 ) { backStackEntry ->
                                     val artistJson = backStackEntry.arguments?.getString("artistJson")
                                     val artist = navigationGson.fromJson(artistJson, NeteaseArtistSummary::class.java)
@@ -1924,9 +1925,7 @@ private fun NeriAppContent(
                                     popEnterTransition = {
                                         slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()
                                     },
-                                    popExitTransition = {
-                                        slideOutVertically(animationSpec = tween(240)) { it } + fadeOut()
-                                    }
+                                    popExitTransition = { transparentDetailPopExitTransition() }
                                 ) { backStackEntry ->
                                     val playlistJson = backStackEntry.arguments?.getString("playlistJson")
                                     val playlist = navigationGson.fromJson(playlistJson, BiliPlaylist::class.java)
@@ -1982,9 +1981,7 @@ private fun NeriAppContent(
                                     popEnterTransition = {
                                         slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()
                                     },
-                                    popExitTransition = {
-                                        slideOutVertically(animationSpec = tween(240)) { it } + fadeOut()
-                                    }
+                                    popExitTransition = { transparentDetailPopExitTransition() }
                                 ) { backStackEntry ->
                                     val id = backStackEntry.arguments?.getLong("playlistId") ?: 0L
                                     LocalPlaylistDetailScreen(
@@ -2001,7 +1998,7 @@ private fun NeriAppContent(
                                     enterTransition = { transparentDetailEnterTransition() },
                                     exitTransition = { transparentDetailExitTransition() },
                                     popEnterTransition = { slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn() },
-                                    popExitTransition = { transparentDetailExitTransition() }
+                                    popExitTransition = { transparentDetailPopExitTransition() }
                                 ) {
                                     RecentScreen(
                                         onBack = { navController.popBackStack() },
@@ -2015,7 +2012,7 @@ private fun NeriAppContent(
                                     enterTransition = { transparentDetailEnterTransition() },
                                     exitTransition = { transparentDetailExitTransition() },
                                     popEnterTransition = { slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn() },
-                                    popExitTransition = { transparentDetailExitTransition() }
+                                    popExitTransition = { transparentDetailPopExitTransition() }
                                 ) {
                                     PlaybackStatsScreen(
                                         onBack = { navController.popBackStack() },
@@ -2371,9 +2368,7 @@ private fun NeriAppContent(
                                     popEnterTransition = {
                                         slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()
                                     },
-                                    popExitTransition = {
-                                        slideOutVertically(animationSpec = tween(240)) { it } + fadeOut()
-                                    }
+                                    popExitTransition = { transparentDetailPopExitTransition() }
                                 ) {
                                     DownloadManagerScreen(
                                         onBack = { navController.popBackStack() },
@@ -2391,9 +2386,7 @@ private fun NeriAppContent(
                                     popEnterTransition = {
                                         slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()
                                     },
-                                    popExitTransition = {
-                                        slideOutVertically(animationSpec = tween(240)) { it } + fadeOut()
-                                    }
+                                    popExitTransition = { transparentDetailPopExitTransition() }
                                 ) {
                                     DownloadProgressScreen(onBack = { navController.popBackStack() })
                                 }
