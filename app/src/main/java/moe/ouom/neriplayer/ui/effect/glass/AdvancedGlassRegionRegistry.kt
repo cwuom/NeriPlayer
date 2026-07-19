@@ -7,7 +7,8 @@ import androidx.compose.ui.geometry.Rect
 internal data class AdvancedGlassRegion(
     val role: AdvancedGlassRole,
     val boundsInWindow: Rect,
-    val cornerRadiiPx: AdvancedGlassCornerRadii
+    val cornerRadiiPx: AdvancedGlassCornerRadii,
+    val navigationOwner: Any?
 )
 
 internal data class AdvancedGlassCornerRadii(

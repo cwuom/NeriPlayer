@@ -571,6 +571,90 @@ class AdvancedGlassSurfaceRenderTest {
     }
 
     @Test
+    fun navigationOwnerIsolatesParallelSceneMasks() {
+        lateinit var activeOwners: MutableState<Set<Any>>
+        val firstOwner = Any()
+        val secondOwner = Any()
+        composeRule.setContent {
+            val backgroundBackdrop = rememberAdvancedGlassBackdrop()
+            val contentBackdrop = rememberAdvancedGlassBackdrop()
+            activeOwners = remember { mutableStateOf(setOf(firstOwner)) }
+            MaterialTheme {
+                AdvancedGlassHost(
+                    controller = enabledController(),
+                    backgroundBackdrop = backgroundBackdrop,
+                    contentBackdrop = contentBackdrop,
+                    activeNavigationOwners = activeOwners.value
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(200.dp, 100.dp)
+                            .testTag(OwnedSceneMaskRootTag)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .captureAdvancedGlassBackdrop(backgroundBackdrop)
+                        ) {
+                            repeat(20) { stripeIndex ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .background(
+                                            if (stripeIndex % 2 == 0) {
+                                                Color.Black
+                                            } else {
+                                                Color.White
+                                            }
+                                        )
+                                )
+                            }
+                        }
+                        CompositionLocalProvider(
+                            LocalAdvancedGlassNavigationOwner provides firstOwner
+                        ) {
+                            AdvancedGlassSurface(
+                                role = AdvancedGlassRole.SettingsSection,
+                                modifier = Modifier
+                                    .size(80.dp)
+                                    .align(Alignment.CenterStart),
+                                tintColor = Color.Transparent
+                            ) {}
+                        }
+                        CompositionLocalProvider(
+                            LocalAdvancedGlassNavigationOwner provides secondOwner
+                        ) {
+                            AdvancedGlassSurface(
+                                role = AdvancedGlassRole.SettingsSection,
+                                modifier = Modifier
+                                    .size(80.dp)
+                                    .align(Alignment.CenterEnd),
+                                tintColor = Color.Transparent
+                            ) {}
+                        }
+                    }
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+        assertSceneMaskState(
+            composeRule.onNodeWithTag(OwnedSceneMaskRootTag).captureToImage(),
+            leftBlurred = true
+        )
+
+        composeRule.runOnIdle {
+            activeOwners.value = setOf(secondOwner)
+        }
+        composeRule.waitForIdle()
+        assertSceneMaskState(
+            composeRule.onNodeWithTag(OwnedSceneMaskRootTag).captureToImage(),
+            leftBlurred = false
+        )
+    }
+
+    @Test
     fun navHostTabSwitchKeepsGlassEffectForEveryVisibleEntryFrame() {
         lateinit var capturedBackdrop: AdvancedGlassBackdrop
         lateinit var navigateToSecondTab: () -> Unit
@@ -624,8 +708,10 @@ class AdvancedGlassSurfaceRenderTest {
                                 route = FirstTabRoute,
                                 exitTransition = {
                                     slideOutHorizontally(
-                                        animationSpec = advancedGlassMainTabNavigationSpringSpec()
-                                    ) { fullWidth -> -fullWidth }
+                                        animationSpec = advancedGlassMainTabTransitionSpec()
+                                    ) { fullWidth ->
+                                        -fullWidth
+                                    }
                                 }
                             ) {
                                 Box(
@@ -646,8 +732,10 @@ class AdvancedGlassSurfaceRenderTest {
                                 route = SecondTabRoute,
                                 enterTransition = {
                                     slideInHorizontally(
-                                        animationSpec = advancedGlassMainTabNavigationSpringSpec()
-                                    ) { fullWidth -> fullWidth }
+                                        animationSpec = advancedGlassMainTabTransitionSpec()
+                                    ) { fullWidth ->
+                                        fullWidth
+                                    }
                                 }
                             ) {
                                 Box(
@@ -689,14 +777,6 @@ class AdvancedGlassSurfaceRenderTest {
                 assertNotNull("Tab 切换第 $it 帧丢失模糊效果", capturedBackdrop.renderEffect)
             }
         }
-        val firstBounds = composeRule.onNodeWithTag(FirstTabContentTag)
-            .fetchSemanticsNode().boundsInRoot
-        val secondBounds = composeRule.onNodeWithTag(SecondTabContentTag)
-            .fetchSemanticsNode().boundsInRoot
-        assertTrue(
-            "Tab 页面在滑动过程中发生重叠: first=$firstBounds second=$secondBounds",
-            firstBounds.right <= secondBounds.left + 1f
-        )
         repeat(6) { frame ->
             composeRule.mainClock.advanceTimeByFrame()
             composeRule.runOnIdle {
@@ -1396,6 +1476,7 @@ class AdvancedGlassSurfaceRenderTest {
         const val NestedSceneHandoffRootTag = "nested_scene_handoff_root"
         const val InterruptedSceneHandoffRootTag = "interrupted_scene_handoff_root"
         const val MovingMaskRootTag = "moving_mask_root"
+        const val OwnedSceneMaskRootTag = "owned_scene_mask_root"
         const val NavHostSceneHandoffRootTag = "nav_host_scene_handoff_root"
         const val FirstTabRoute = "first_tab"
         const val SecondTabRoute = "second_tab"

@@ -43,6 +43,7 @@ internal fun AdvancedGlassSurface(
     val availableBackdrops = LocalAdvancedGlassBackdrops.current
     val glassDepth = LocalAdvancedGlassDepth.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val navigationOwner = LocalAdvancedGlassNavigationOwner.current ?: lifecycleOwner
     val activeNavigationOwners = LocalAdvancedGlassActiveNavigationOwners.current
     val sceneActive = LocalAdvancedGlassSceneActive.current
     val density = LocalDensity.current
@@ -64,10 +65,11 @@ internal fun AdvancedGlassSurface(
     } == true
     val belongsToActiveNavigationScreen = requiresContentBackdrop ||
         activeNavigationOwners == null ||
-        lifecycleOwner in activeNavigationOwners
-    val glassEnabled = enabled && sceneActive && belongsToActiveNavigationScreen && backdropsReady &&
+        navigationOwner in activeNavigationOwners
+    val canRenderGlass = enabled && sceneActive && backdropsReady &&
         canSampleAdvancedGlassBackdrop(controller, glassDepth, role)
-    val registersBackdrop = glassEnabled
+    val glassEnabled = canRenderGlass && belongsToActiveNavigationScreen
+    val registersBackdrop = canRenderGlass
     val regionKey = remember { Any() }
 
     DisposableEffect(availableBackdrops, regionKey, registersBackdrop) {
@@ -103,7 +105,8 @@ internal fun AdvancedGlassSurface(
                             size = bounds.size,
                             layoutDirection = layoutDirection,
                             density = density
-                        )
+                        ),
+                        navigationOwner = if (requiresContentBackdrop) null else navigationOwner
                     )
                 )
             }

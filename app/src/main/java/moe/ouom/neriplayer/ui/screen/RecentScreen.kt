@@ -179,207 +179,259 @@ fun RecentScreen(
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var pendingDeleteSongs by remember { mutableStateOf<List<SongItem>>(emptyList()) }
 
-    Scaffold(
-        containerColor = Color.Transparent,
-        topBar = {
-            if (!selectionMode) {
-                TopAppBar(
-                    title = { Text(stringResource(R.string.recent_title)) },
-                    navigationIcon = {
-                        HapticIconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
-                        }
-                    },
-                    actions = {
-                        HapticIconButton(onClick = {
-                            showSearch = !showSearch
-                            if (!showSearch) query = ""
-                        }) { Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.cd_search)) }
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                if (!selectionMode) {
+                    TopAppBar(
+                        title = { Text(stringResource(R.string.recent_title)) },
+                        navigationIcon = {
+                            HapticIconButton(onClick = onBack) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = stringResource(R.string.cd_back)
+                                )
+                            }
+                        },
+                        actions = {
+                            HapticIconButton(onClick = {
+                                showSearch = !showSearch
+                                if (!showSearch) query = ""
+                            }) {
+                                Icon(
+                                    Icons.Filled.Search,
+                                    contentDescription = stringResource(R.string.cd_search)
+                                )
+                            }
 
-                        // 全部播放
-                        HapticIconButton(
-                            onClick = {
-                                if (displayedSongs.isNotEmpty()) onSongClick(displayedSongs, 0)
-                            },
-                            enabled = displayedSongs.isNotEmpty()
-                        ) { Icon(Icons.Filled.PlayArrow, contentDescription = stringResource(R.string.cd_play_all)) }
+                            // 全部播放
+                            HapticIconButton(
+                                onClick = {
+                                    if (displayedSongs.isNotEmpty()) onSongClick(displayedSongs, 0)
+                                },
+                                enabled = displayedSongs.isNotEmpty()
+                            ) {
+                                Icon(
+                                    Icons.Filled.PlayArrow,
+                                    contentDescription = stringResource(R.string.cd_play_all)
+                                )
+                            }
 
-                        // 随机播放
-                        HapticIconButton(
-                            onClick = {
-                                if (displayedSongs.isNotEmpty()) {
-                                    val idx = Random.nextInt(displayedSongs.size)
-                                    onSongClick(displayedSongs, idx)
-                                }
-                            },
-                            enabled = displayedSongs.isNotEmpty()
-                        ) {
-                            Icon(Icons.AutoMirrored.Outlined.PlaylistPlay, contentDescription = stringResource(R.string.cd_shuffle))
-                        }
+                            // 随机播放
+                            HapticIconButton(
+                                onClick = {
+                                    if (displayedSongs.isNotEmpty()) {
+                                        val idx = Random.nextInt(displayedSongs.size)
+                                        onSongClick(displayedSongs, idx)
+                                    }
+                                },
+                                enabled = displayedSongs.isNotEmpty()
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Outlined.PlaylistPlay,
+                                    contentDescription = stringResource(R.string.cd_shuffle)
+                                )
+                            }
 
-                        // 清空
-                        HapticIconButton(
-                            onClick = { if (history.isNotEmpty()) showClearConfirm = true },
-                            enabled = history.isNotEmpty()
-                        ) { Icon(Icons.Filled.ClearAll, contentDescription = stringResource(R.string.cd_clear)) }
-                    },
-                    windowInsets = WindowInsets.statusBars,
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
-                        scrolledContainerColor = MaterialTheme.colorScheme.surface
-                    )
-                )
-            } else {
-                val allSelected = selectedKeys.size == displayedSongs.size && displayedSongs.isNotEmpty()
-                TopAppBar(
-                    title = {
-                        Text(
-                            pluralStringResource(
-                                R.plurals.common_selected_count,
-                                selectedKeys.size,
-                                selectedKeys.size
-                            )
+                            // 清空
+                            HapticIconButton(
+                                onClick = { if (history.isNotEmpty()) showClearConfirm = true },
+                                enabled = history.isNotEmpty()
+                            ) {
+                                Icon(
+                                    Icons.Filled.ClearAll,
+                                    contentDescription = stringResource(R.string.cd_clear)
+                                )
+                            }
+                        },
+                        windowInsets = WindowInsets.statusBars,
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = Color.Transparent,
+                            scrolledContainerColor = MaterialTheme.colorScheme.surface
                         )
-                    },
-                    navigationIcon = {
-                        HapticIconButton(onClick = { exitSelection() }) {
-                            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.cd_exit_select))
-                        }
-                    },
-                    actions = {
-                        // 全选/取消全选
-                        HapticTextButton(onClick = {
-                            selectedKeys = if (allSelected) emptySet()
-                            else displayedSongs.map { it.stableKey() }.toSet()
-                        }) { Text(if (allSelected) stringResource(R.string.action_deselect_all) else stringResource(R.string.action_select_all)) }
-
-                        Spacer(Modifier.width(8.dp))
-
-                        HapticIconButton(
-                            enabled = selectedKeys.isNotEmpty(),
-                            onClick = {
-                                val selectedSongs =
-                                    displayedSongs.filter { it.stableKey() in selectedKeys }
-                                if (selectedSongs.isNotEmpty()) {
-                                    pendingDeleteSongs = selectedSongs
-                                    showDeleteConfirm = true
-                                }
-                            }
-                        ) {
-                            Icon(
-                                Icons.Outlined.DeleteForever,
-                                contentDescription = stringResource(R.string.action_delete)
+                    )
+                } else {
+                    val allSelected =
+                        selectedKeys.size == displayedSongs.size && displayedSongs.isNotEmpty()
+                    TopAppBar(
+                        title = {
+                            Text(
+                                pluralStringResource(
+                                    R.plurals.common_selected_count,
+                                    selectedKeys.size,
+                                    selectedKeys.size
+                                )
                             )
-                        }
-
-                        Spacer(Modifier.width(8.dp))
-
-                        // 播放所选
-                        HapticTextButton(
-                            enabled = selectedKeys.isNotEmpty(),
-                            onClick = {
-                                val list = displayedSongs.filter { it.stableKey() in selectedKeys }
-                                if (list.isNotEmpty()) {
-                                    onSongClick(list, 0)
-                                    exitSelection()
-                                }
+                        },
+                        navigationIcon = {
+                            HapticIconButton(onClick = { exitSelection() }) {
+                                Icon(
+                                    Icons.Filled.Close,
+                                    contentDescription = stringResource(R.string.cd_exit_select)
+                                )
                             }
-                        ) { Text(stringResource(R.string.player_play_selected)) }
-                    },
-                    windowInsets = WindowInsets.statusBars,
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
-                        scrolledContainerColor = MaterialTheme.colorScheme.surface
+                        },
+                        actions = {
+                            // 全选/取消全选
+                            HapticTextButton(onClick = {
+                                selectedKeys = if (allSelected) {
+                                    emptySet()
+                                } else {
+                                    displayedSongs.map { it.stableKey() }.toSet()
+                                }
+                            }) {
+                                Text(
+                                    if (allSelected) {
+                                        stringResource(R.string.action_deselect_all)
+                                    } else {
+                                        stringResource(R.string.action_select_all)
+                                    }
+                                )
+                            }
+
+                            Spacer(Modifier.width(8.dp))
+
+                            HapticIconButton(
+                                enabled = selectedKeys.isNotEmpty(),
+                                onClick = {
+                                    val selectedSongs =
+                                        displayedSongs.filter { it.stableKey() in selectedKeys }
+                                    if (selectedSongs.isNotEmpty()) {
+                                        pendingDeleteSongs = selectedSongs
+                                        showDeleteConfirm = true
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    Icons.Outlined.DeleteForever,
+                                    contentDescription = stringResource(R.string.action_delete)
+                                )
+                            }
+
+                            Spacer(Modifier.width(8.dp))
+
+                            // 播放所选
+                            HapticTextButton(
+                                enabled = selectedKeys.isNotEmpty(),
+                                onClick = {
+                                    val list =
+                                        displayedSongs.filter { it.stableKey() in selectedKeys }
+                                    if (list.isNotEmpty()) {
+                                        onSongClick(list, 0)
+                                        exitSelection()
+                                    }
+                                }
+                            ) { Text(stringResource(R.string.player_play_selected)) }
+                        },
+                        windowInsets = WindowInsets.statusBars,
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = Color.Transparent,
+                            scrolledContainerColor = MaterialTheme.colorScheme.surface
+                        )
                     )
-                )
+                }
             }
-        }
-    ) { padding ->
-        if (history.isEmpty()) {
-            Box(
-                Modifier.fillMaxSize().padding(padding),
-                contentAlignment = Alignment.Center
-            ) { Text(stringResource(R.string.recent_no_history)) }
-            return@Scaffold
-        }
-
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            AnimatedVisibility(showSearch && !selectionMode) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    placeholder = { Text(stringResource(R.string.search_recent)) },
-                    singleLine = true
-                )
+        ) { padding ->
+            if (history.isEmpty()) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    contentAlignment = Alignment.Center
+                ) { Text(stringResource(R.string.recent_no_history)) }
+                return@Scaffold
             }
 
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 16.dp + mini)
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding)
             ) {
-                itemsIndexed(
-                    items = displayedSongs,
-                    key = { index, s -> s.id to index }
-                ) { index, song ->
-                    RecentRowRich(
-                        index = index + 1,
-                        song = song,
-                        downloadPresenceVersion = downloadPresenceVersion,
-                        selectionMode = selectionMode,
-                        selected = song.stableKey() in selectedKeys,
-                        isCurrentSong = currentSong?.sameIdentityAs(song) == true,
-                        isPlaying = currentSong?.sameIdentityAs(song) == true && isPlaying,
-                        onToggleSelect = { toggleSelect(song.stableKey()) },
-                        onLongPress = {
-                            if (!selectionMode) {
-                                selectionMode = true
-                                selectedKeys = setOf(song.stableKey())
-                            } else {
-                                toggleSelect(song.stableKey())
-                            }
-                        },
-                        onClick = {
-                            context.performHapticFeedback()
-                            if (selectionMode) {
-                                toggleSelect(song.stableKey())
-                            } else {
-                                val pos = displayedSongs.indexOfFirst { it.sameIdentityAs(song) }
-                                if (pos >= 0) onSongClick(displayedSongs, pos)
-                            }
-                        },
-                        moreMenu = {
-                            var showMenu by remember { mutableStateOf(false) }
-                            Box {
-                                IconButton(onClick = { showMenu = true }) {
-                                    Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.cd_more))
-                                }
-                                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.local_playlist_play_next)) },
-                                        onClick = {
-                                            PlayerManager.addToQueueNext(song)
-                                            showMenu = false
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.playlist_add_to_end)) },
-                                        onClick = {
-                                            PlayerManager.addToQueueEnd(song)
-                                            showMenu = false
-                                        }
-                                    )
-                                }
-                            }
-                        },
-                        offlineMode = offlineMode
+                AnimatedVisibility(showSearch && !selectionMode) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        placeholder = { Text(stringResource(R.string.search_recent)) },
+                        singleLine = true
                     )
+                }
+
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 16.dp + mini)
+                ) {
+                    itemsIndexed(
+                        items = displayedSongs,
+                        key = { index, s -> s.id to index }
+                    ) { index, song ->
+                        RecentRowRich(
+                            index = index + 1,
+                            song = song,
+                            downloadPresenceVersion = downloadPresenceVersion,
+                            selectionMode = selectionMode,
+                            selected = song.stableKey() in selectedKeys,
+                            isCurrentSong = currentSong?.sameIdentityAs(song) == true,
+                            isPlaying = currentSong?.sameIdentityAs(song) == true && isPlaying,
+                            onToggleSelect = { toggleSelect(song.stableKey()) },
+                            onLongPress = {
+                                if (!selectionMode) {
+                                    selectionMode = true
+                                    selectedKeys = setOf(song.stableKey())
+                                } else {
+                                    toggleSelect(song.stableKey())
+                                }
+                            },
+                            onClick = {
+                                context.performHapticFeedback()
+                                if (selectionMode) {
+                                    toggleSelect(song.stableKey())
+                                } else {
+                                    val pos =
+                                        displayedSongs.indexOfFirst { it.sameIdentityAs(song) }
+                                    if (pos >= 0) onSongClick(displayedSongs, pos)
+                                }
+                            },
+                            moreMenu = {
+                                var showMenu by remember { mutableStateOf(false) }
+                                Box {
+                                    IconButton(onClick = { showMenu = true }) {
+                                        Icon(
+                                            Icons.Filled.MoreVert,
+                                            contentDescription = stringResource(R.string.cd_more)
+                                        )
+                                    }
+                                    DropdownMenu(
+                                        expanded = showMenu,
+                                        onDismissRequest = { showMenu = false }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(stringResource(R.string.local_playlist_play_next))
+                                            },
+                                            onClick = {
+                                                PlayerManager.addToQueueNext(song)
+                                                showMenu = false
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(stringResource(R.string.playlist_add_to_end))
+                                            },
+                                            onClick = {
+                                                PlayerManager.addToQueueEnd(song)
+                                                showMenu = false
+                                            }
+                                        )
+                                    }
+                                }
+                            },
+                            offlineMode = offlineMode
+                        )
+                    }
                 }
             }
         }

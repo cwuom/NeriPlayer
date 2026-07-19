@@ -115,148 +115,150 @@ fun PlaybackStatsScreen(
         )
     }
 
-    Scaffold(
-        containerColor = Color.Transparent,
-        contentWindowInsets = WindowInsets.statusBars,
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.stats_title)) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent
-                ),
-                navigationIcon = {
-                    HapticIconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
-                    }
-                },
-                actions = {
-                    Box {
-                        HapticIconButton(onClick = { showSortMenu = true }) {
-                            Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null)
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = Color.Transparent,
+            contentWindowInsets = WindowInsets.statusBars,
+            topBar = {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.stats_title)) },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent
+                    ),
+                    navigationIcon = {
+                        HapticIconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                         }
-                        DropdownMenu(
-                            expanded = showSortMenu,
-                            onDismissRequest = { showSortMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.stats_sort_play_count)) },
-                                onClick = { sortMode = StatsSortMode.PLAY_COUNT; showSortMenu = false }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.stats_sort_listen_time)) },
-                                onClick = { sortMode = StatsSortMode.LISTEN_TIME; showSortMenu = false }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.stats_sort_recent)) },
-                                onClick = { sortMode = StatsSortMode.RECENT; showSortMenu = false }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.stats_sort_first_played)) },
-                                onClick = { sortMode = StatsSortMode.FIRST_PLAYED; showSortMenu = false }
-                            )
+                    },
+                    actions = {
+                        Box {
+                            HapticIconButton(onClick = { showSortMenu = true }) {
+                                Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null)
+                            }
+                            DropdownMenu(
+                                expanded = showSortMenu,
+                                onDismissRequest = { showSortMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.stats_sort_play_count)) },
+                                    onClick = { sortMode = StatsSortMode.PLAY_COUNT; showSortMenu = false }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.stats_sort_listen_time)) },
+                                    onClick = { sortMode = StatsSortMode.LISTEN_TIME; showSortMenu = false }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.stats_sort_recent)) },
+                                    onClick = { sortMode = StatsSortMode.RECENT; showSortMenu = false }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.stats_sort_first_played)) },
+                                    onClick = { sortMode = StatsSortMode.FIRST_PLAYED; showSortMenu = false }
+                                )
+                            }
+                        }
+                        HapticIconButton(onClick = { showClearDialog = true }) {
+                            Icon(Icons.Filled.ClearAll, contentDescription = null)
                         }
                     }
-                    HapticIconButton(onClick = { showClearDialog = true }) {
-                        Icon(Icons.Filled.ClearAll, contentDescription = null)
-                    }
-                }
-            )
-        }
-    ) { innerPadding ->
-        val hasAnyStats = stats.isNotEmpty() || dailyStats.isNotEmpty()
-        if (!hasAnyStats) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentAlignment = Alignment.Center
-            ) {
-                StatsEmptyContent(message = stringResource(R.string.stats_empty))
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentPadding = PaddingValues(
-                    start = 8.dp, end = 8.dp, top = 8.dp,
-                    bottom = 8.dp + mini
                 )
-            ) {
-                item {
-                    StatsPeriodSelector(
-                        selectedPeriod = selectedPeriod,
-                        onPeriodSelected = { selectedPeriod = it }
-                    )
-                    Spacer(Modifier.height(12.dp))
+            }
+        ) { innerPadding ->
+            val hasAnyStats = stats.isNotEmpty() || dailyStats.isNotEmpty()
+            if (!hasAnyStats) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    StatsEmptyContent(message = stringResource(R.string.stats_empty))
                 }
-
-                if (usesCompatPeriodStats) {
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentPadding = PaddingValues(
+                        start = 8.dp, end = 8.dp, top = 8.dp,
+                        bottom = 8.dp + mini
+                    )
+                ) {
                     item {
-                        Text(
-                            text = stringResource(R.string.stats_period_compat_notice),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 8.dp)
+                        StatsPeriodSelector(
+                            selectedPeriod = selectedPeriod,
+                            onPeriodSelected = { selectedPeriod = it }
                         )
                         Spacer(Modifier.height(12.dp))
                     }
-                }
 
-                if (periodStats.isEmpty()) {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(320.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            StatsEmptyContent(
-                                message = stringResource(
-                                    if (periodNeedsCompatBreakdown) {
-                                        R.string.stats_period_missing_breakdown
-                                    } else {
-                                        R.string.stats_period_empty
-                                    }
-                                )
+                    if (usesCompatPeriodStats) {
+                        item {
+                            Text(
+                                text = stringResource(R.string.stats_period_compat_notice),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp)
                             )
+                            Spacer(Modifier.height(12.dp))
                         }
                     }
-                } else {
-                    // 概览卡片
-                    item {
-                        StatsOverviewCard(
-                            totalPlayCount = totalPlayCount,
-                            totalListenMs = totalListenMs,
-                            trackCount = trackCount
-                        )
-                        Spacer(Modifier.height(16.dp))
-                    }
 
-                    // Top 5 条形图
-                    if (sortedStats.size >= 2) {
+                    if (periodStats.isEmpty()) {
                         item {
-                            TopTracksBarChart(
-                                tracks = sortedStats.take(5),
-                                sortMode = sortMode
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(320.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                StatsEmptyContent(
+                                    message = stringResource(
+                                        if (periodNeedsCompatBreakdown) {
+                                            R.string.stats_period_missing_breakdown
+                                        } else {
+                                            R.string.stats_period_empty
+                                        }
+                                    )
+                                )
+                            }
+                        }
+                    } else {
+                        // 概览卡片
+                        item {
+                            StatsOverviewCard(
+                                totalPlayCount = totalPlayCount,
+                                totalListenMs = totalListenMs,
+                                trackCount = trackCount
                             )
                             Spacer(Modifier.height(16.dp))
                         }
-                    }
 
-                    // 歌曲列表
-                    itemsIndexed(sortedStats, key = { _, stat -> stat.identityKey }) { index, stat ->
-                        StatTrackRow(
-                            rank = index + 1,
-                            stat = stat,
-                            offlineMode = offlineMode,
-                            onClick = {
-                                val songItem = stat.toSongItem()
-                                onSongClick(listOf(songItem), 0)
+                        // Top 5 条形图
+                        if (sortedStats.size >= 2) {
+                            item {
+                                TopTracksBarChart(
+                                    tracks = sortedStats.take(5),
+                                    sortMode = sortMode
+                                )
+                                Spacer(Modifier.height(16.dp))
                             }
-                        )
+                        }
+
+                        // 歌曲列表
+                        itemsIndexed(sortedStats, key = { _, stat -> stat.identityKey }) { index, stat ->
+                            StatTrackRow(
+                                rank = index + 1,
+                                stat = stat,
+                                offlineMode = offlineMode,
+                                onClick = {
+                                    val songItem = stat.toSongItem()
+                                    onSongClick(listOf(songItem), 0)
+                                }
+                            )
+                        }
                     }
                 }
             }

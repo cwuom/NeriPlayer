@@ -17,7 +17,6 @@ import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.LifecycleOwner
 
 internal val LocalAdvancedGlassController = staticCompositionLocalOf {
     AdvancedGlassController(
@@ -37,7 +36,9 @@ internal data class AdvancedGlassBackdrops(
 internal val LocalAdvancedGlassBackdrops = staticCompositionLocalOf<AdvancedGlassBackdrops?> { null }
 internal val LocalAdvancedGlassDepth = staticCompositionLocalOf { 0 }
 internal val LocalAdvancedGlassActiveNavigationOwners =
-    staticCompositionLocalOf<Set<LifecycleOwner>?> { null }
+    staticCompositionLocalOf<Set<Any>?> { null }
+internal val LocalAdvancedGlassNavigationOwner =
+    staticCompositionLocalOf<Any?> { null }
 internal val LocalAdvancedGlassSceneActive = staticCompositionLocalOf { true }
 
 @Composable
@@ -75,7 +76,7 @@ internal fun AdvancedGlassHost(
     controller: AdvancedGlassController,
     backgroundBackdrop: AdvancedGlassBackdrop,
     contentBackdrop: AdvancedGlassBackdrop,
-    activeNavigationOwners: Set<LifecycleOwner>? = null,
+    activeNavigationOwners: Set<Any>? = null,
     disableStretchOverscroll: Boolean = false,
     content: @Composable () -> Unit
 ) {
@@ -86,7 +87,11 @@ internal fun AdvancedGlassHost(
     val shaderSource = remember(assetManager) {
         AdvancedGlassShaderSource(assetManager)
     }
-    val renderedRegions = regionRegistry.regions.toList()
+    val renderedRegions = regionRegistry.regions.filter { region ->
+        region.navigationOwner == null ||
+            activeNavigationOwners == null ||
+            region.navigationOwner in activeNavigationOwners
+    }
     val contentRegions = renderedRegions.filter { region ->
         region.role == AdvancedGlassRole.MiniPlayer ||
             region.role == AdvancedGlassRole.BottomNavigation
@@ -168,7 +173,9 @@ internal fun AdvancedGlassHost(
             sessionController.isBaseBlurEnabled &&
             backgroundEffectResult.isSuccess &&
             backgroundBackdrop.positionInWindow.isSpecified,
-        allowOneFrameHandoff = false
+        allowOneFrameHandoff = sessionController.isBaseBlurEnabled &&
+            backgroundEffectResult.isSuccess &&
+            backgroundBackdrop.positionInWindow.isSpecified
     )
     ApplyBackdropEffect(
         backdrop = contentBackdrop,

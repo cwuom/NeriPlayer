@@ -1,8 +1,10 @@
 package moe.ouom.neriplayer.ui
 
+import androidx.compose.animation.core.FastOutSlowInEasing
 import moe.ouom.neriplayer.navigation.Destinations
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NeriAppMainTabTransitionPolicyTest {
@@ -108,6 +110,53 @@ class NeriAppMainTabTransitionPolicyTest {
                 initialRoute = Destinations.Library.route,
                 targetRoute = null
             )
+        )
+    }
+
+    @Test
+    fun `transparent details move main tab content out of the viewport`() {
+        assertEquals(
+            -1f,
+            resolveMainTabDetailContentOffsetTarget(Destinations.Recent.route),
+            0f
+        )
+        assertEquals(
+            -1f,
+            resolveMainTabDetailContentOffsetTarget(Destinations.PlaybackStats.route),
+            0f
+        )
+        assertEquals(
+            -1f,
+            resolveMainTabDetailContentOffsetTarget(Destinations.NeteaseAlbumDetail.route),
+            0f
+        )
+        assertEquals(
+            0f,
+            resolveMainTabDetailContentOffsetTarget(Destinations.Library.route),
+            0f
+        )
+        assertEquals(
+            MAIN_TAB_DETAIL_OPEN_DURATION_MS,
+            resolveMainTabDetailContentOffsetDurationMillis(-1f)
+        )
+        assertEquals(
+            MAIN_TAB_DETAIL_CLOSE_DURATION_MS,
+            resolveMainTabDetailContentOffsetDurationMillis(0f)
+        )
+    }
+
+    @Test
+    fun `detail handoff curve is nonlinear like playlist opening motion`() {
+        val midpoint = mainTabDetailContentOffsetEasing().transform(0.5f)
+
+        assertEquals(
+            FastOutSlowInEasing.transform(0.5f),
+            midpoint,
+            0f
+        )
+        assertTrue(
+            "Detail handoff easing must be nonlinear",
+            midpoint != 0.5f
         )
     }
 }

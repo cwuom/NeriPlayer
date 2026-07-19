@@ -42,6 +42,7 @@ import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -62,6 +63,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -112,6 +114,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.createBitmap
 import androidx.lifecycle.Lifecycle
@@ -180,7 +183,7 @@ import moe.ouom.neriplayer.ui.component.common.blockUnderlyingTouches
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassController
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassHost
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
-import moe.ouom.neriplayer.ui.effect.glass.advancedGlassMainTabNavigationSpringSpec
+import moe.ouom.neriplayer.ui.effect.glass.advancedGlassMainTabTransitionSpec
 import moe.ouom.neriplayer.ui.effect.glass.captureAdvancedGlassBackdrop
 import moe.ouom.neriplayer.ui.effect.glass.isAdvancedGlassBackendSupported
 import moe.ouom.neriplayer.ui.effect.glass.rememberAdvancedGlassBackdrop
@@ -341,6 +344,44 @@ internal fun resolveBottomBarLayoutInsets(
     )
 }
 
+internal fun resolveMainTabDetailContentOffsetTarget(route: String?): Float {
+    return if (route in TRANSPARENT_MAIN_TAB_DETAIL_ROUTES) {
+        -1f
+    } else {
+        0f
+    }
+}
+
+internal fun resolveMainTabDetailContentOffsetDurationMillis(targetOffset: Float): Int {
+    return if (targetOffset < 0f) {
+        MAIN_TAB_DETAIL_OPEN_DURATION_MS
+    } else {
+        MAIN_TAB_DETAIL_CLOSE_DURATION_MS
+    }
+}
+
+internal fun mainTabDetailContentOffsetEasing(): Easing = FastOutSlowInEasing
+
+internal fun shouldReleaseStartupGlassGate(
+    baseBlurEnabled: Boolean,
+    backgroundEffectReady: Boolean,
+    contentEffectReady: Boolean
+): Boolean {
+    return !baseBlurEnabled || backgroundEffectReady || contentEffectReady
+}
+
+internal fun shouldShowStartupGlassGate(
+    baseBlurEnabled: Boolean,
+    gateReleased: Boolean,
+    backgroundEffectReady: Boolean,
+    contentEffectReady: Boolean
+): Boolean {
+    return baseBlurEnabled &&
+        !gateReleased &&
+        !backgroundEffectReady &&
+        !contentEffectReady
+}
+
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabEnterTransition(): EnterTransition {
     val initialRoute = initialState.destination.route
     val targetRoute = targetState.destination.route
@@ -349,9 +390,14 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabEnterTrans
         targetRoute = targetRoute
     )
     if (direction != null) {
-        return slideInHorizontally(
-            animationSpec = advancedGlassMainTabNavigationSpringSpec()
-        ) { fullWidth -> direction * fullWidth }
+        return slideIntoContainer(
+            towards = if (direction > 0) {
+                AnimatedContentTransitionScope.SlideDirection.Left
+            } else {
+                AnimatedContentTransitionScope.SlideDirection.Right
+            },
+            animationSpec = advancedGlassMainTabTransitionSpec()
+        )
     }
     val debugDirection = resolveDebugNavigationTransitionDirection(
         initialRoute = initialRoute,
@@ -365,7 +411,10 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabEnterTrans
         MainTabDetailHandoff.RETURN_TO_TAB
     ) {
         slideInVertically(
-            animationSpec = tween(MAIN_TAB_DETAIL_CLOSE_DURATION_MS)
+            animationSpec = tween(
+                durationMillis = MAIN_TAB_DETAIL_CLOSE_DURATION_MS,
+                easing = mainTabDetailContentOffsetEasing()
+            )
         ) { fullHeight -> -fullHeight }
     } else {
         EnterTransition.None
@@ -380,9 +429,14 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabExitTransi
         targetRoute = targetRoute
     )
     if (direction != null) {
-        return slideOutHorizontally(
-            animationSpec = advancedGlassMainTabNavigationSpringSpec()
-        ) { fullWidth -> -direction * fullWidth }
+        return slideOutOfContainer(
+            towards = if (direction > 0) {
+                AnimatedContentTransitionScope.SlideDirection.Left
+            } else {
+                AnimatedContentTransitionScope.SlideDirection.Right
+            },
+            animationSpec = advancedGlassMainTabTransitionSpec()
+        )
     }
     val debugDirection = resolveDebugNavigationTransitionDirection(
         initialRoute = initialRoute,
@@ -396,7 +450,10 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabExitTransi
         MainTabDetailHandoff.OPEN_DETAIL
     ) {
         slideOutVertically(
-            animationSpec = tween(MAIN_TAB_DETAIL_OPEN_DURATION_MS)
+            animationSpec = tween(
+                durationMillis = MAIN_TAB_DETAIL_OPEN_DURATION_MS,
+                easing = mainTabDetailContentOffsetEasing()
+            )
         ) { fullHeight -> -fullHeight }
     } else {
         ExitTransition.None
@@ -405,10 +462,11 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabExitTransi
 
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailEnterTransition(): EnterTransition {
     return slideInVertically(
-        animationSpec = tween(MAIN_TAB_DETAIL_OPEN_DURATION_MS)
-    ) { fullHeight -> fullHeight } + fadeIn(
-        animationSpec = tween(MAIN_TAB_DETAIL_OPEN_DURATION_MS)
-    )
+        animationSpec = tween(
+            durationMillis = MAIN_TAB_DETAIL_OPEN_DURATION_MS,
+            easing = mainTabDetailContentOffsetEasing()
+        )
+    ) { fullHeight -> fullHeight }
 }
 
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailExitTransition(): ExitTransition {
@@ -418,33 +476,37 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetail
     )
     return if (handoff == MainTabDetailHandoff.RETURN_TO_TAB) {
         slideOutVertically(
-            animationSpec = tween(MAIN_TAB_DETAIL_CLOSE_DURATION_MS)
-        ) { fullHeight -> fullHeight } + fadeOut(
-            animationSpec = tween(MAIN_TAB_DETAIL_CLOSE_DURATION_MS)
-        )
+            animationSpec = tween(
+                durationMillis = MAIN_TAB_DETAIL_CLOSE_DURATION_MS,
+                easing = mainTabDetailContentOffsetEasing()
+            )
+        ) { fullHeight -> fullHeight }
     } else {
         slideOutVertically(
-            animationSpec = tween(MAIN_TAB_DETAIL_OPEN_DURATION_MS)
-        ) { fullHeight -> -fullHeight } + fadeOut(
-            animationSpec = tween(MAIN_TAB_DETAIL_OPEN_DURATION_MS)
-        )
+            animationSpec = tween(
+                durationMillis = MAIN_TAB_DETAIL_OPEN_DURATION_MS,
+                easing = mainTabDetailContentOffsetEasing()
+            )
+        ) { fullHeight -> -fullHeight }
     }
 }
 
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailPopEnterTransition(): EnterTransition {
     return slideInVertically(
-        animationSpec = tween(MAIN_TAB_DETAIL_CLOSE_DURATION_MS)
-    ) { fullHeight -> -fullHeight } + fadeIn(
-        animationSpec = tween(MAIN_TAB_DETAIL_CLOSE_DURATION_MS)
-    )
+        animationSpec = tween(
+            durationMillis = MAIN_TAB_DETAIL_CLOSE_DURATION_MS,
+            easing = mainTabDetailContentOffsetEasing()
+        )
+    ) { fullHeight -> -fullHeight }
 }
 
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailPopExitTransition(): ExitTransition {
     return slideOutVertically(
-        animationSpec = tween(MAIN_TAB_DETAIL_CLOSE_DURATION_MS)
-    ) { fullHeight -> fullHeight } + fadeOut(
-        animationSpec = tween(MAIN_TAB_DETAIL_CLOSE_DURATION_MS)
-    )
+        animationSpec = tween(
+            durationMillis = MAIN_TAB_DETAIL_CLOSE_DURATION_MS,
+            easing = mainTabDetailContentOffsetEasing()
+        )
+    ) { fullHeight -> fullHeight }
 }
 
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.debugNavigationEnterTransition(): EnterTransition {
@@ -1006,7 +1068,7 @@ fun NeriApp(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(if (bootstrapIsDark) Color(0xFF121212) else Color.White)
+                .background(if (bootstrapIsDark) Color(0xFF121212) else Color(0xFFF4EFE7))
         )
         return
     }
@@ -1014,6 +1076,29 @@ fun NeriApp(
     NeriAppContent(
         initialThemeSnapshot = initialThemeSnapshot,
         onIsDarkChanged = onIsDarkChanged
+    )
+}
+
+@Composable
+private fun StartupGlassGateOverlay(
+    isDark: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val baseColor = if (isDark) {
+        Color(0xFF101010)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant
+    }
+    val scrimColor = if (isDark) {
+        Color.Black.copy(alpha = 0.20f)
+    } else {
+        MaterialTheme.colorScheme.background.copy(alpha = 0.72f)
+    }
+    Box(
+        modifier = modifier
+            .background(baseColor)
+            .background(scrimColor)
+            .blockUnderlyingTouches()
     )
 }
 
@@ -1406,6 +1491,26 @@ private fun NeriAppContent(
             enhancedAdvancedBlurRadiusDp = enhancedAdvancedBlurRadiusDp
         )
     }
+    var startupGlassGateReleased by rememberSaveable {
+        mutableStateOf(!advancedGlassController.isBaseBlurEnabled)
+    }
+    val startupBackgroundGlassReady = backgroundGlassBackdrop.renderEffect != null
+    val startupContentGlassReady = contentGlassBackdrop.renderEffect != null
+    LaunchedEffect(
+        advancedGlassController.isBaseBlurEnabled,
+        startupBackgroundGlassReady,
+        startupContentGlassReady
+    ) {
+        if (
+            shouldReleaseStartupGlassGate(
+                baseBlurEnabled = advancedGlassController.isBaseBlurEnabled,
+                backgroundEffectReady = startupBackgroundGlassReady,
+                contentEffectReady = startupContentGlassReady
+            )
+        ) {
+            startupGlassGateReleased = true
+        }
+    }
     val preferredQuality by repo.audioQualityFlow.collectAsStateWithLifecycle(initialValue = "exhigh")
     val youtubePreferredQuality by repo.youtubeAudioQualityFlow.collectAsStateWithLifecycle(initialValue = "high")
     val biliPreferredQuality by repo.biliAudioQualityFlow.collectAsStateWithLifecycle(initialValue = "high")
@@ -1664,14 +1769,85 @@ private fun NeriAppContent(
             // Keep every NavHost entry that is still participating in the transition active
             val visibleNavigationEntries by navController.visibleEntries
                 .collectAsStateWithLifecycle()
-            val visibleNavigationOwners = remember(visibleNavigationEntries, backEntry) {
-                if (visibleNavigationEntries.isNotEmpty()) {
-                    visibleNavigationEntries.toSet()
-                } else {
-                    backEntry?.let { setOf(it) }.orEmpty()
+            val visibleNavigationOwners: Set<Any> = remember(
+                visibleNavigationEntries,
+                backEntry,
+                lifecycleOwner
+            ) {
+                buildSet {
+                    if (visibleNavigationEntries.isNotEmpty()) {
+                        addAll(visibleNavigationEntries)
+                    } else {
+                        backEntry?.let(::add)
+                    }
+                    add(lifecycleOwner)
                 }
             }
             val currentRoute = backEntry?.destination?.route
+            var mainTabDetailContentHeightPx by remember {
+                mutableIntStateOf(0)
+            }
+            val mainTabDetailContentOffsetTarget =
+                resolveMainTabDetailContentOffsetTarget(currentRoute)
+            val mainTabDetailContentOffsetFraction by animateFloatAsState(
+                targetValue = mainTabDetailContentOffsetTarget,
+                animationSpec = tween(
+                    durationMillis = resolveMainTabDetailContentOffsetDurationMillis(
+                        mainTabDetailContentOffsetTarget
+                    ),
+                    easing = mainTabDetailContentOffsetEasing()
+                ),
+                label = "main_tab_detail_content_handoff"
+            )
+            val showHomeTab =
+                (showHomeContinueCard && homeUsageEntries.isNotEmpty()) ||
+                    showHomeTrendingCard ||
+                    showHomeRadarCard ||
+                    showHomeRecommendedCard
+            val effectiveStartDestination = remember(
+                defaultStartDestination,
+                showHomeTab,
+                devModeEnabled
+            ) {
+                resolveMainStartDestination(
+                    preferredRoute = defaultStartDestination,
+                    showHomeTab = showHomeTab,
+                    devModeEnabled = devModeEnabled
+                )
+            }
+            // Changing NavHost's start destination rebuilds its graph and clears the live stack
+            val navHostStartDestination = remember { effectiveStartDestination }
+            var selectedMainTabRoute by rememberSaveable(navHostStartDestination) {
+                mutableStateOf(navHostStartDestination)
+            }
+            LaunchedEffect(currentRoute, navHostStartDestination) {
+                if (currentRoute in MAIN_TAB_ROUTES) {
+                    selectedMainTabRoute = currentRoute ?: navHostStartDestination
+                }
+            }
+            var visibleMainTabGlassOwners by remember(navHostStartDestination) {
+                mutableStateOf<Set<MainTabGlassOwner>>(
+                    setOf(MainTabGlassOwner(navHostStartDestination))
+                )
+            }
+            val activeAdvancedGlassOwners: Set<Any> = remember(
+                visibleNavigationOwners,
+                visibleMainTabGlassOwners,
+                selectedMainTabRoute
+            ) {
+                visibleNavigationOwners +
+                    visibleMainTabGlassOwners +
+                    MainTabGlassOwner(selectedMainTabRoute)
+            }
+            fun navigateToMainTab(route: String) {
+                navController.navigate(route) {
+                    popUpTo(navController.graph.startDestinationId) {
+                        saveState = true
+                    }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            }
             fun navigateToNeteaseArtist(artist: NeteaseArtistSummary) {
                 val json = Uri.encode(navigationGson.toJson(artist))
                 val currentEntry = navController.currentBackStackEntry
@@ -1711,18 +1887,6 @@ private fun NeriAppContent(
                     showNowPlaying = true
                 }
             }
-            val showHomeTab =
-                (showHomeContinueCard && homeUsageEntries.isNotEmpty()) ||
-                    showHomeTrendingCard ||
-                    showHomeRadarCard ||
-                    showHomeRecommendedCard
-            val effectiveStartDestination = remember(defaultStartDestination, showHomeTab, devModeEnabled) {
-                resolveMainStartDestination(
-                    preferredRoute = defaultStartDestination,
-                    showHomeTab = showHomeTab,
-                    devModeEnabled = devModeEnabled
-                )
-            }
             val bottomBarItems = remember(showHomeTab, devModeEnabled) {
                 buildList {
                     if (showHomeTab) add(Destinations.Home to Icons.Outlined.Home)
@@ -1734,6 +1898,459 @@ private fun NeriAppContent(
             }
 
             val snackbarHostState = remember { SnackbarHostState() }
+
+            @Composable
+            fun RenderMainTabRoute(route: String) {
+                when (route) {
+                    Destinations.Home.route -> HomeHostScreen(
+                        showContinueCard = showHomeContinueCard,
+                        showTrendingCard = showHomeTrendingCard,
+                        showRadarCard = showHomeRadarCard,
+                        showRecommendedCard = showHomeRecommendedCard,
+                        offlineMode = offlineMode,
+                        onSongClick = ::playSongsAndOpenNowPlaying
+                    )
+
+                    Destinations.Explore.route -> ExploreHostScreen(
+                        offlineMode = offlineMode,
+                        onSongClick = ::playSongsAndOpenNowPlaying,
+                        onSongPlayPreservingQueue =
+                            ::playSongPreservingQueueAndOpenNowPlaying,
+                        onSongPlayNext = ::addSongToQueueNextFromSearch,
+                        onSongAddToQueueEnd = ::addSongToQueueEndFromSearch,
+                        onPlayParts = ::playBiliPartsAndOpenNowPlaying
+                    )
+
+                    Destinations.Library.route -> LibraryHostScreen(
+                        onSongClick = ::playSongsAndOpenNowPlaying,
+                        onPlayParts = ::playBiliPartsAndOpenNowPlaying,
+                        onOpenRecent = {
+                            navController.navigate(Destinations.Recent.route)
+                        },
+                        onOpenStats = {
+                            navController.navigate(Destinations.PlaybackStats.route)
+                        },
+                        offlineMode = offlineMode
+                    )
+
+                    Destinations.Settings.route -> SettingsHostScreen(
+                        dynamicColor = dynamicColorEnabled,
+                        onDynamicColorChange = { scope.launch { repo.setDynamicColor(it) } },
+                        isDarkTheme = isDark,
+                        themeMode = themeMode,
+                        onThemeToggleRequest = ::requestThemeToggle,
+                        onThemeModeRequest = ::requestThemeModeChange,
+                        preferredQuality = preferredQuality,
+                        onQualityChange = { scope.launch { repo.setAudioQuality(it) } },
+                        youtubePreferredQuality = youtubePreferredQuality,
+                        onYouTubeQualityChange = {
+                            scope.launch { repo.setYouTubeAudioQuality(it) }
+                        },
+                        biliPreferredQuality = biliPreferredQuality,
+                        onBiliQualityChange = { scope.launch { repo.setBiliAudioQuality(it) } },
+                        mobileDataFollowDefaultAudioQuality =
+                            mobileDataFollowDefaultAudioQuality,
+                        onMobileDataFollowDefaultAudioQualityChange = { enabled ->
+                            scope.launch {
+                                repo.setMobileDataFollowDefaultAudioQuality(enabled)
+                            }
+                        },
+                        mobileDataNeteaseAudioQuality = mobileDataNeteaseAudioQuality,
+                        onMobileDataNeteaseAudioQualityChange = { quality ->
+                            scope.launch {
+                                repo.setMobileDataNeteaseAudioQuality(quality)
+                            }
+                        },
+                        mobileDataYouTubeAudioQuality = mobileDataYouTubeAudioQuality,
+                        onMobileDataYouTubeAudioQualityChange = { quality ->
+                            scope.launch {
+                                repo.setMobileDataYouTubeAudioQuality(quality)
+                            }
+                        },
+                        mobileDataBiliAudioQuality = mobileDataBiliAudioQuality,
+                        onMobileDataBiliAudioQualityChange = { quality ->
+                            scope.launch {
+                                repo.setMobileDataBiliAudioQuality(quality)
+                            }
+                        },
+                        seedColorHex = themeSeedColor,
+                        onSeedColorChange = { hex ->
+                            scope.launch { repo.setThemeSeedColor(hex) }
+                        },
+                        themeColorPalette = themeColorPalette,
+                        onAddColorToPalette = { hex ->
+                            scope.launch { repo.addThemePaletteColor(hex) }
+                        },
+                        onRemoveColorFromPalette = { hex ->
+                            scope.launch { repo.removeThemePaletteColor(hex) }
+                        },
+                        themePaletteStyle = themePaletteStyleValue,
+                        onThemePaletteStyleChange = { style ->
+                            scope.launch { repo.setThemePaletteStyle(style) }
+                        },
+                        themeColorSpec = themeColorSpecValue,
+                        onThemeColorSpecChange = { spec ->
+                            scope.launch { repo.setThemeColorSpec(spec) }
+                        },
+                        devModeEnabled = devModeEnabled,
+                        onDevModeChange = { enabled ->
+                            scope.launch { repo.setDevModeEnabled(enabled) }
+                        },
+                        lyricBlurEnabled = lyricBlurEnabled,
+                        onLyricBlurEnabledChange = { enabled ->
+                            scope.launch { repo.setLyricBlurEnabled(enabled) }
+                        },
+                        lyricBlurAmount = lyricBlurAmount,
+                        onLyricBlurAmountChange = { amount ->
+                            scope.launch { repo.setLyricBlurAmount(amount) }
+                        },
+                        cloudMusicLyricDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
+                        onCloudMusicLyricDefaultOffsetMsChange = { offsetMs ->
+                            scope.launch {
+                                val previousOffset = cloudMusicLyricDefaultOffsetMs
+                                if (previousOffset == offsetMs) {
+                                    return@launch
+                                }
+                                PlayerManager.rebaseUserLyricOffsetsForSource(
+                                    targetSource = MusicPlatform.CLOUD_MUSIC,
+                                    previousDefaultOffsetMs = previousOffset,
+                                    newDefaultOffsetMs = offsetMs
+                                )
+                                runCatching {
+                                    repo.setCloudMusicLyricDefaultOffsetMs(offsetMs)
+                                }.onFailure {
+                                    PlayerManager.rebaseUserLyricOffsetsForSource(
+                                        targetSource = MusicPlatform.CLOUD_MUSIC,
+                                        previousDefaultOffsetMs = offsetMs,
+                                        newDefaultOffsetMs = previousOffset
+                                    )
+                                }.getOrThrow()
+                            }
+                        },
+                        qqMusicLyricDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
+                        onQqMusicLyricDefaultOffsetMsChange = { offsetMs ->
+                            scope.launch {
+                                val previousOffset = qqMusicLyricDefaultOffsetMs
+                                if (previousOffset == offsetMs) {
+                                    return@launch
+                                }
+                                PlayerManager.rebaseUserLyricOffsetsForSource(
+                                    targetSource = MusicPlatform.QQ_MUSIC,
+                                    previousDefaultOffsetMs = previousOffset,
+                                    newDefaultOffsetMs = offsetMs
+                                )
+                                runCatching {
+                                    repo.setQqMusicLyricDefaultOffsetMs(offsetMs)
+                                }.onFailure {
+                                    PlayerManager.rebaseUserLyricOffsetsForSource(
+                                        targetSource = MusicPlatform.QQ_MUSIC,
+                                        previousDefaultOffsetMs = offsetMs,
+                                        newDefaultOffsetMs = previousOffset
+                                    )
+                                }.getOrThrow()
+                            }
+                        },
+                        floatingLyricsPreferences = floatingLyricsPreferences,
+                        onFloatingLyricsPreferencesChange = { preferences ->
+                            scope.launch { repo.setFloatingLyricsPreferences(preferences) }
+                        },
+                        advancedBlurEnabled = advancedBlurEnabled,
+                        onAdvancedBlurEnabledChange = { enabled ->
+                            scope.launch { repo.setAdvancedBlurEnabled(enabled) }
+                        },
+                        enhancedAdvancedBlurEnabled = enhancedAdvancedBlurEnabled,
+                        onEnhancedAdvancedBlurEnabledChange = { enabled ->
+                            scope.launch {
+                                repo.setEnhancedAdvancedBlurEnabled(enabled)
+                            }
+                        },
+                        enhancedAdvancedBlurRadiusDp = enhancedAdvancedBlurRadiusDp,
+                        onEnhancedAdvancedBlurRadiusDpChange = { radiusDp ->
+                            scope.launch {
+                                repo.setEnhancedAdvancedBlurRadiusDp(radiusDp)
+                            }
+                        },
+                        nowPlayingAudioReactiveEnabled = nowPlayingAudioReactiveEnabled,
+                        onNowPlayingAudioReactiveEnabledChange = { enabled ->
+                            scope.launch { repo.setNowPlayingAudioReactiveEnabled(enabled) }
+                        },
+                        nowPlayingDynamicBackgroundEnabled = nowPlayingDynamicBackgroundEnabled,
+                        onNowPlayingDynamicBackgroundEnabledChange = { enabled ->
+                            scope.launch { repo.setNowPlayingDynamicBackgroundEnabled(enabled) }
+                        },
+                        nowPlayingCoverBlurBackgroundEnabled =
+                            nowPlayingCoverBlurBackgroundEnabled,
+                        onNowPlayingCoverBlurBackgroundEnabledChange = { enabled ->
+                            scope.launch {
+                                repo.setNowPlayingCoverBlurBackgroundEnabled(enabled)
+                            }
+                        },
+                        nowPlayingCoverBlurAmount = nowPlayingCoverBlurAmount,
+                        onNowPlayingCoverBlurAmountChange = { amount ->
+                            scope.launch { repo.setNowPlayingCoverBlurAmount(amount) }
+                        },
+                        nowPlayingCoverBlurDarken = nowPlayingCoverBlurDarken,
+                        onNowPlayingCoverBlurDarkenChange = { amount ->
+                            scope.launch { repo.setNowPlayingCoverBlurDarken(amount) }
+                        },
+                        lyricFontScale = lyricFontScale,
+                        onLyricFontScaleChange = { scale ->
+                            scope.launch { repo.setLyricFontScale(scale) }
+                        },
+                        uiDensityScale = uiDensityScale,
+                        onUiDensityScaleChange = { scale ->
+                            scope.launch { repo.setUiDensityScale(scale) }
+                        },
+                        bypassProxy = bypassProxy,
+                        onBypassProxyChange = { enabled ->
+                            scope.launch { repo.setBypassProxy(enabled) }
+                        },
+                        backgroundImageUri = backgroundImageUri,
+                        onBackgroundImageChange = { uri ->
+                            scope.launch { repo.setBackgroundImageUri(uri?.toString()) }
+                        },
+                        downloadDirectoryUri = downloadDirectoryUri,
+                        downloadFileNameTemplate = downloadFileNameTemplate,
+                        onDownloadDirectoryUriChange = { uri, label ->
+                            scope.launch {
+                                repo.setDownloadDirectory(uri, label)
+                                ManagedDownloadStorage.updateConfiguredTreeUri(uri)
+                                ManagedDownloadStorage.updateCustomDirectoryLabel(label)
+                            }
+                        },
+                        onDownloadFileNameTemplateChange = { template ->
+                            scope.launch { repo.setDownloadFileNameTemplate(template) }
+                        },
+                        backgroundImageBlur = backgroundImageBlur,
+                        onBackgroundImageBlurChange = {},
+                        onBackgroundImageBlurChangeFinished = { blur ->
+                            scope.launch { repo.setBackgroundImageBlur(blur) }
+                        },
+                        backgroundImageAlpha = effectiveBackgroundImageAlpha,
+                        onBackgroundImageAlphaChange = { alpha ->
+                            pendingBackgroundImageAlpha = alpha
+                        },
+                        onBackgroundImageAlphaChangeFinished = { alpha ->
+                            pendingBackgroundImageAlpha = alpha
+                            scope.launch { repo.setBackgroundImageAlpha(alpha) }
+                        },
+                        defaultStartDestination = defaultStartDestination,
+                        onDefaultStartDestinationChange = { route ->
+                            scope.launch { repo.setDefaultStartDestination(route) }
+                        },
+                        showHomeContinueCard = showHomeContinueCard,
+                        onShowHomeContinueCardChange = { enabled ->
+                            scope.launch { repo.setHomeCardContinue(enabled) }
+                        },
+                        showHomeTrendingCard = showHomeTrendingCard,
+                        onShowHomeTrendingCardChange = { enabled ->
+                            scope.launch { repo.setHomeCardTrending(enabled) }
+                        },
+                        showHomeRadarCard = showHomeRadarCard,
+                        onShowHomeRadarCardChange = { enabled ->
+                            scope.launch { repo.setHomeCardRadar(enabled) }
+                        },
+                        showHomeRecommendedCard = showHomeRecommendedCard,
+                        onShowHomeRecommendedCardChange = { enabled ->
+                            scope.launch { repo.setHomeCardRecommended(enabled) }
+                        },
+                        homeHasRecentUsage = homeUsageEntries.isNotEmpty(),
+                        playbackFadeIn = playbackFadeIn,
+                        onPlaybackFadeInChange = { enabled ->
+                            scope.launch { repo.setPlaybackFadeIn(enabled) }
+                        },
+                        playbackCrossfadeNext = playbackCrossfadeNext,
+                        onPlaybackCrossfadeNextChange = { enabled ->
+                            scope.launch { repo.setPlaybackCrossfadeNext(enabled) }
+                        },
+                        sleepTimerFinishCurrentOnExpiry = sleepTimerFinishCurrentOnExpiry,
+                        onSleepTimerFinishCurrentOnExpiryChange = { enabled ->
+                            scope.launch {
+                                repo.setSleepTimerFinishCurrentOnExpiry(enabled)
+                            }
+                        },
+                        playbackFadeInDurationMs = playbackFadeInDurationMs,
+                        onPlaybackFadeInDurationMsChange = { duration ->
+                            scope.launch { repo.setPlaybackFadeInDurationMs(duration) }
+                        },
+                        playbackFadeOutDurationMs = playbackFadeOutDurationMs,
+                        onPlaybackFadeOutDurationMsChange = { duration ->
+                            scope.launch { repo.setPlaybackFadeOutDurationMs(duration) }
+                        },
+                        playbackCrossfadeInDurationMs = playbackCrossfadeInDurationMs,
+                        onPlaybackCrossfadeInDurationMsChange = { duration ->
+                            scope.launch { repo.setPlaybackCrossfadeInDurationMs(duration) }
+                        },
+                        playbackCrossfadeOutDurationMs = playbackCrossfadeOutDurationMs,
+                        onPlaybackCrossfadeOutDurationMsChange = { duration ->
+                            scope.launch { repo.setPlaybackCrossfadeOutDurationMs(duration) }
+                        },
+                        playbackVolumeNormalizationEnabled =
+                            playbackVolumeNormalizationEnabled,
+                        onPlaybackVolumeNormalizationEnabledChange = { enabled ->
+                            PlayerManager.setPlaybackVolumeNormalizationEnabled(enabled)
+                        },
+                        playbackHighResolutionOutputEnabled =
+                            playbackHighResolutionOutputEnabled,
+                        onPlaybackHighResolutionOutputEnabledChange = { enabled ->
+                            PlayerManager.setPlaybackHighResolutionOutputEnabled(enabled)
+                        },
+                        playbackVolumeBalance = playbackVolumeBalance,
+                        onPlaybackVolumeBalanceChange = { balance ->
+                            PlayerManager.setPlaybackVolumeBalance(balance)
+                        },
+                        keepLastPlaybackProgress = keepLastPlaybackProgress,
+                        onKeepLastPlaybackProgressChange = { enabled ->
+                            scope.launch { repo.setKeepLastPlaybackProgress(enabled) }
+                        },
+                        keepPlaybackModeState = keepPlaybackModeState,
+                        onKeepPlaybackModeStateChange = { enabled ->
+                            scope.launch { repo.setKeepPlaybackModeState(enabled) }
+                        },
+                        neteaseAutoSourceSwitch = neteaseAutoSourceSwitch,
+                        onNeteaseAutoSourceSwitchChange = { enabled ->
+                            scope.launch { repo.setNeteaseAutoSourceSwitch(enabled) }
+                        },
+                        stopOnBluetoothDisconnect = stopOnBluetoothDisconnect,
+                        onStopOnBluetoothDisconnectChange = { enabled ->
+                            scope.launch { repo.setStopOnBluetoothDisconnect(enabled) }
+                        },
+                        usbExclusivePlayback = usbExclusivePlayback,
+                        onUsbExclusivePlaybackChange = { enabled ->
+                            if (PlayerManager.beginUsbExclusiveToggleTransitionFromUi(enabled)) {
+                                scope.launch { repo.setUsbExclusivePlayback(enabled) }
+                                if (
+                                    enabled &&
+                                    !usbExclusivePlayback &&
+                                    !usbExclusiveBackgroundPermissionPromptSuppressed &&
+                                    !context.readBackgroundBehaviorAllowance().fullyAllowed
+                                ) {
+                                    showUsbExclusiveBackgroundPermissionDialog = true
+                                }
+                            }
+                        },
+                        allowMixedPlayback = allowMixedPlayback,
+                        onAllowMixedPlaybackChange = { enabled ->
+                            scope.launch { repo.setAllowMixedPlayback(enabled) }
+                        },
+                        preemptAudioFocus = preemptAudioFocus,
+                        onPreemptAudioFocusChange = { enabled ->
+                            scope.launch { repo.setPreemptAudioFocus(enabled) }
+                        },
+                        maxCacheSizeBytes = maxCacheSizeBytes,
+                        onMaxCacheSizeBytesChange = { size ->
+                            scope.launch { repo.setMaxCacheSizeBytes(size) }
+                        },
+                        onClearCacheClick = { options ->
+                            scope.launch {
+                                val messages = mutableListOf<String>()
+                                if (options.needsPlayerCacheClear) {
+                                    val (_, message) = PlayerManager.clearCache(
+                                        clearAudio = options.audioCache,
+                                        clearImage = options.imageCache
+                                    )
+                                    messages += message
+                                }
+                                if (options.needsExtraCacheClear) {
+                                    val result = clearExtraStorageCaches(context, options)
+                                    messages += if (result.success) {
+                                        context.getString(
+                                            R.string.storage_extra_cache_clear_complete,
+                                            formatFileSize(result.freedBytes)
+                                        )
+                                    } else {
+                                        context.getString(
+                                            R.string.storage_extra_cache_clear_partial
+                                        )
+                                    }
+                                }
+                                snackbarHostState.showSnackbar(messages.joinToString(" · "))
+                            }
+                        },
+                        onBeforeLanguageRestart = clearThemeRevealState
+                    )
+
+                    Destinations.Debug.route -> DebugHomeScreen(
+                        alwaysRecordLogsEnabled = alwaysRecordLogsEnabled,
+                        onAlwaysRecordLogsChange = { enabled ->
+                            scope.launch { repo.setAlwaysRecordLogsEnabled(enabled) }
+                        },
+                        onOpenListenTogetherDebug = {
+                            navController.navigate(Destinations.DebugListenTogether.route)
+                        },
+                        onOpenUsbExclusiveDebug = {
+                            navController.navigate(Destinations.DebugUsbExclusive.route)
+                        },
+                        onOpenYouTubeDebug = {
+                            navController.navigate(Destinations.DebugYouTube.route)
+                        },
+                        onOpenBiliDebug = {
+                            navController.navigate(Destinations.DebugBili.route)
+                        },
+                        onOpenNeteaseDebug = {
+                            navController.navigate(Destinations.DebugNetease.route)
+                        },
+                        onOpenSearchDebug = {
+                            navController.navigate(Destinations.DebugSearch.route)
+                        },
+                        onOpenLogs = { navController.navigate(Destinations.DebugLogsList.route) },
+                        onOpenCrashLogs = {
+                            navController.navigate(Destinations.DebugCrashLogsList.route)
+                        },
+                        onTestExceptionHandler = { crashType ->
+                            val crashMessage = context.getString(R.string.test_exception_message)
+                            when (crashType) {
+                                DebugCrashTestType.JvmHandled -> {
+                                    ExceptionHandler.safeExecute("DebugTestHandled") {
+                                        throw RuntimeException(crashMessage)
+                                    }
+                                }
+
+                                DebugCrashTestType.JvmUncaughtMain -> {
+                                    Handler(Looper.getMainLooper()).post {
+                                        throw RuntimeException(crashMessage)
+                                    }
+                                }
+
+                                DebugCrashTestType.JvmUncaughtWorker -> {
+                                    Thread {
+                                        throw RuntimeException(crashMessage)
+                                    }.start()
+                                }
+
+                                DebugCrashTestType.MainThreadAnr -> {
+                                    AnrWatchdog.triggerTestAnr(context)
+                                }
+
+                                DebugCrashTestType.NativeSigSegv -> {
+                                    Handler(Looper.getMainLooper()).post {
+                                        NativeCrashHandler.triggerTestCrash(
+                                            context = context,
+                                            crashType = NativeCrashHandler.TestCrashType.SigSegv
+                                        )
+                                    }
+                                }
+
+                                DebugCrashTestType.NativeSigAbrt -> {
+                                    Handler(Looper.getMainLooper()).post {
+                                        NativeCrashHandler.triggerTestCrash(
+                                            context = context,
+                                            crashType = NativeCrashHandler.TestCrashType.SigAbrt
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        onHideDebugMode = {
+                            scope.launch { repo.setDevModeEnabled(false) }
+                            navController.navigate(Destinations.Settings.route) {
+                                popUpTo(Destinations.Debug.route) { inclusive = true }
+                                launchSingleTop = true
+                            }
+                        }
+                    )
+                }
+            }
 
             val effectiveDynamicBackgroundEnabled =
                 nowPlayingDynamicBackgroundEnabled && !nowPlayingCoverBlurBackgroundEnabled
@@ -1770,7 +2387,7 @@ private fun NeriAppContent(
                 controller = advancedGlassController,
                 backgroundBackdrop = backgroundGlassBackdrop,
                 contentBackdrop = contentGlassBackdrop,
-                activeNavigationOwners = visibleNavigationOwners,
+                activeNavigationOwners = activeAdvancedGlassOwners,
                 disableStretchOverscroll = backgroundImageUri != null
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
@@ -1873,13 +2490,7 @@ private fun NeriAppContent(
                                         currentDestination = backEntry?.destination,
                                         onItemSelected = { dest ->
                                             if (currentRoute != dest.route) {
-                                                navController.navigate(dest.route) {
-                                                    popUpTo(navController.graph.startDestinationId) {
-                                                        saveState = true
-                                                    }
-                                                    launchSingleTop = true
-                                                    restoreState = true
-                                                }
+                                                navigateToMainTab(dest.route)
                                             }
                                         }
                                     )
@@ -1911,12 +2522,35 @@ private fun NeriAppContent(
                                         .fillMaxSize()
                                         .captureAdvancedGlassBackdrop(contentGlassBackdrop)
                                 ) {
+                                    MainTabLayerHost(
+                                        selectedRoute = selectedMainTabRoute,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .onSizeChanged { size ->
+                                                if (size.height > 0) {
+                                                    mainTabDetailContentHeightPx = size.height
+                                                }
+                                            }
+                                            .offset {
+                                                IntOffset(
+                                                    x = 0,
+                                                    y = (
+                                                        mainTabDetailContentOffsetFraction *
+                                                            mainTabDetailContentHeightPx
+                                                    ).roundToInt()
+                                                )
+                                            },
+                                        onVisibleGlassOwnersChanged = {
+                                            visibleMainTabGlassOwners = it
+                                        },
+                                        content = { route -> RenderMainTabRoute(route) }
+                                    )
                                     AdvancedGlassNavigationHandoff(
                                         enabled = visibleNavigationEntries.size > 1
                                     ) {
                                         NavHost(
                                             navController = navController,
-                                            startDestination = effectiveStartDestination,
+                                            startDestination = navHostStartDestination,
                                             modifier = Modifier.fillMaxSize()
                                         ) {
                                 composable(
@@ -1925,16 +2559,7 @@ private fun NeriAppContent(
                                     exitTransition = { mainTabExitTransition() },
                                     popEnterTransition = { mainTabEnterTransition() },
                                     popExitTransition = { mainTabExitTransition() }
-                                ) {
-                                    HomeHostScreen(
-                                        showContinueCard = showHomeContinueCard,
-                                        showTrendingCard = showHomeTrendingCard,
-                                        showRadarCard = showHomeRadarCard,
-                                        showRecommendedCard = showHomeRecommendedCard,
-                                        offlineMode = offlineMode,
-                                        onSongClick = ::playSongsAndOpenNowPlaying
-                                    )
-                                }
+                                ) {}
 
                                 composable(
                                     route = Destinations.PlaylistDetail.route,
@@ -1943,9 +2568,7 @@ private fun NeriAppContent(
                                     }),
                                     enterTransition = { transparentDetailEnterTransition() },
                                     exitTransition = { transparentDetailExitTransition() },
-                                    popEnterTransition = {
-                                        slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()
-                                    },
+                                    popEnterTransition = { transparentDetailPopEnterTransition() },
                                     popExitTransition = { transparentDetailPopExitTransition() }
                                 ) { backStackEntry ->
                                     val playlistJson = backStackEntry.arguments?.getString("playlistJson")
@@ -2029,16 +2652,7 @@ private fun NeriAppContent(
                                     exitTransition = { mainTabExitTransition() },
                                     popEnterTransition = { mainTabEnterTransition() },
                                     popExitTransition = { mainTabExitTransition() }
-                                ) {
-                                    ExploreHostScreen(
-                                        offlineMode = offlineMode,
-                                        onSongClick = ::playSongsAndOpenNowPlaying,
-                                        onSongPlayPreservingQueue = ::playSongPreservingQueueAndOpenNowPlaying,
-                                        onSongPlayNext = ::addSongToQueueNextFromSearch,
-                                        onSongAddToQueueEnd = ::addSongToQueueEndFromSearch,
-                                        onPlayParts = ::playBiliPartsAndOpenNowPlaying
-                                    )
-                                }
+                                ) {}
 
                                 composable(
                                     Destinations.Library.route,
@@ -2046,15 +2660,7 @@ private fun NeriAppContent(
                                     exitTransition = { mainTabExitTransition() },
                                     popEnterTransition = { mainTabEnterTransition() },
                                     popExitTransition = { mainTabExitTransition() }
-                                ) {
-                                    LibraryHostScreen(
-                                        onSongClick = ::playSongsAndOpenNowPlaying,
-                                        onPlayParts = ::playBiliPartsAndOpenNowPlaying,
-                                        onOpenRecent = { navController.navigate(Destinations.Recent.route) },
-                                        onOpenStats = { navController.navigate(Destinations.PlaybackStats.route) },
-                                        offlineMode = offlineMode
-                                    )
-                                }
+                                ) {}
 
                                 composable(
                                     route = Destinations.LocalPlaylistDetail.route,
@@ -2108,337 +2714,7 @@ private fun NeriAppContent(
                                     exitTransition = { mainTabExitTransition() },
                                     popEnterTransition = { mainTabEnterTransition() },
                                     popExitTransition = { mainTabExitTransition() }
-                                ) {
-                                    SettingsHostScreen(
-                                        dynamicColor = dynamicColorEnabled,
-                                        onDynamicColorChange = { scope.launch { repo.setDynamicColor(it) } },
-                                        isDarkTheme = isDark,
-                                        themeMode = themeMode,
-                                        onThemeToggleRequest = ::requestThemeToggle,
-                                        onThemeModeRequest = ::requestThemeModeChange,
-                                        preferredQuality = preferredQuality,
-                                        onQualityChange = { scope.launch { repo.setAudioQuality(it) } },
-                                        youtubePreferredQuality = youtubePreferredQuality,
-                                        onYouTubeQualityChange = {
-                                            scope.launch { repo.setYouTubeAudioQuality(it) }
-                                        },
-                                        biliPreferredQuality = biliPreferredQuality,
-                                        onBiliQualityChange = { scope.launch { repo.setBiliAudioQuality(it) } },
-                                        mobileDataFollowDefaultAudioQuality =
-                                            mobileDataFollowDefaultAudioQuality,
-                                        onMobileDataFollowDefaultAudioQualityChange = { enabled ->
-                                            scope.launch {
-                                                repo.setMobileDataFollowDefaultAudioQuality(enabled)
-                                            }
-                                        },
-                                        mobileDataNeteaseAudioQuality =
-                                            mobileDataNeteaseAudioQuality,
-                                        onMobileDataNeteaseAudioQualityChange = { quality ->
-                                            scope.launch {
-                                                repo.setMobileDataNeteaseAudioQuality(quality)
-                                            }
-                                        },
-                                        mobileDataYouTubeAudioQuality =
-                                            mobileDataYouTubeAudioQuality,
-                                        onMobileDataYouTubeAudioQualityChange = { quality ->
-                                            scope.launch {
-                                                repo.setMobileDataYouTubeAudioQuality(quality)
-                                            }
-                                        },
-                                        mobileDataBiliAudioQuality = mobileDataBiliAudioQuality,
-                                        onMobileDataBiliAudioQualityChange = { quality ->
-                                            scope.launch {
-                                                repo.setMobileDataBiliAudioQuality(quality)
-                                            }
-                                        },
-                                        seedColorHex = themeSeedColor,
-                                        onSeedColorChange = { hex -> scope.launch { repo.setThemeSeedColor(hex) } },
-                                        themeColorPalette = themeColorPalette,
-                                        onAddColorToPalette = { hex -> scope.launch { repo.addThemePaletteColor(hex) } },
-                                        onRemoveColorFromPalette = { hex -> scope.launch { repo.removeThemePaletteColor(hex) } },
-                                        themePaletteStyle = themePaletteStyleValue,
-                                        onThemePaletteStyleChange = { style ->
-                                            scope.launch { repo.setThemePaletteStyle(style) }
-                                        },
-                                        themeColorSpec = themeColorSpecValue,
-                                        onThemeColorSpecChange = { spec ->
-                                            scope.launch { repo.setThemeColorSpec(spec) }
-                                        },
-                                        devModeEnabled = devModeEnabled,
-                                        onDevModeChange = { enabled -> scope.launch { repo.setDevModeEnabled(enabled) } },
-                                        lyricBlurEnabled = lyricBlurEnabled,
-                                        onLyricBlurEnabledChange = { enabled ->
-                                            scope.launch { repo.setLyricBlurEnabled(enabled) }
-                                        },
-                                        lyricBlurAmount = lyricBlurAmount,
-                                        onLyricBlurAmountChange = { amount ->
-                                            scope.launch { repo.setLyricBlurAmount(amount) }
-                                        },
-                                        cloudMusicLyricDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
-                                        onCloudMusicLyricDefaultOffsetMsChange = { offsetMs ->
-                                            scope.launch {
-                                                val previousOffset = cloudMusicLyricDefaultOffsetMs
-                                                if (previousOffset == offsetMs) {
-                                                    return@launch
-                                                }
-                                                PlayerManager.rebaseUserLyricOffsetsForSource(
-                                                    targetSource = MusicPlatform.CLOUD_MUSIC,
-                                                    previousDefaultOffsetMs = previousOffset,
-                                                    newDefaultOffsetMs = offsetMs
-                                                )
-                                                runCatching {
-                                                    repo.setCloudMusicLyricDefaultOffsetMs(offsetMs)
-                                                }.onFailure {
-                                                    PlayerManager.rebaseUserLyricOffsetsForSource(
-                                                        targetSource = MusicPlatform.CLOUD_MUSIC,
-                                                        previousDefaultOffsetMs = offsetMs,
-                                                        newDefaultOffsetMs = previousOffset
-                                                    )
-                                                }.getOrThrow()
-                                            }
-                                        },
-                                        qqMusicLyricDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
-                                        onQqMusicLyricDefaultOffsetMsChange = { offsetMs ->
-                                            scope.launch {
-                                                val previousOffset = qqMusicLyricDefaultOffsetMs
-                                                if (previousOffset == offsetMs) {
-                                                    return@launch
-                                                }
-                                                PlayerManager.rebaseUserLyricOffsetsForSource(
-                                                    targetSource = MusicPlatform.QQ_MUSIC,
-                                                    previousDefaultOffsetMs = previousOffset,
-                                                    newDefaultOffsetMs = offsetMs
-                                                )
-                                                runCatching {
-                                                    repo.setQqMusicLyricDefaultOffsetMs(offsetMs)
-                                                }.onFailure {
-                                                    PlayerManager.rebaseUserLyricOffsetsForSource(
-                                                        targetSource = MusicPlatform.QQ_MUSIC,
-                                                        previousDefaultOffsetMs = offsetMs,
-                                                        newDefaultOffsetMs = previousOffset
-                                                    )
-                                                }.getOrThrow()
-                                            }
-                                        },
-                                        floatingLyricsPreferences = floatingLyricsPreferences,
-                                        onFloatingLyricsPreferencesChange = { preferences ->
-                                            scope.launch { repo.setFloatingLyricsPreferences(preferences) }
-                                        },
-                                        advancedBlurEnabled = advancedBlurEnabled,
-                                        onAdvancedBlurEnabledChange = { enabled ->
-                                            scope.launch { repo.setAdvancedBlurEnabled(enabled) }
-                                        },
-                                        enhancedAdvancedBlurEnabled = enhancedAdvancedBlurEnabled,
-                                        onEnhancedAdvancedBlurEnabledChange = { enabled ->
-                                            scope.launch {
-                                                repo.setEnhancedAdvancedBlurEnabled(enabled)
-                                            }
-                                        },
-                                        enhancedAdvancedBlurRadiusDp =
-                                            enhancedAdvancedBlurRadiusDp,
-                                        onEnhancedAdvancedBlurRadiusDpChange = { radiusDp ->
-                                            scope.launch {
-                                                repo.setEnhancedAdvancedBlurRadiusDp(radiusDp)
-                                            }
-                                        },
-                                        nowPlayingAudioReactiveEnabled = nowPlayingAudioReactiveEnabled,
-                                        onNowPlayingAudioReactiveEnabledChange = { enabled ->
-                                            scope.launch { repo.setNowPlayingAudioReactiveEnabled(enabled) }
-                                        },
-                                        nowPlayingDynamicBackgroundEnabled = nowPlayingDynamicBackgroundEnabled,
-                                        onNowPlayingDynamicBackgroundEnabledChange = { enabled ->
-                                            scope.launch { repo.setNowPlayingDynamicBackgroundEnabled(enabled) }
-                                        },
-                                        nowPlayingCoverBlurBackgroundEnabled = nowPlayingCoverBlurBackgroundEnabled,
-                                        onNowPlayingCoverBlurBackgroundEnabledChange = { enabled ->
-                                            scope.launch { repo.setNowPlayingCoverBlurBackgroundEnabled(enabled) }
-                                        },
-                                        nowPlayingCoverBlurAmount = nowPlayingCoverBlurAmount,
-                                        onNowPlayingCoverBlurAmountChange = { amount ->
-                                            scope.launch { repo.setNowPlayingCoverBlurAmount(amount) }
-                                        },
-                                        nowPlayingCoverBlurDarken = nowPlayingCoverBlurDarken,
-                                        onNowPlayingCoverBlurDarkenChange = { amount ->
-                                            scope.launch { repo.setNowPlayingCoverBlurDarken(amount) }
-                                        },
-                                        lyricFontScale = lyricFontScale,
-                                        onLyricFontScaleChange = { scale ->
-                                            scope.launch { repo.setLyricFontScale(scale) }
-                                        },
-                                        uiDensityScale = uiDensityScale,
-                                        onUiDensityScaleChange = { scale ->
-                                            scope.launch { repo.setUiDensityScale(scale) }
-                                        },
-                                        bypassProxy = bypassProxy,
-                                        onBypassProxyChange = { enabled ->
-                                            scope.launch { repo.setBypassProxy(enabled) }
-                                        },
-                                        backgroundImageUri = backgroundImageUri,
-                                        onBackgroundImageChange = { uri ->
-                                            scope.launch { repo.setBackgroundImageUri(uri?.toString()) }
-                                        },
-                                        downloadDirectoryUri = downloadDirectoryUri,
-                                        downloadFileNameTemplate = downloadFileNameTemplate,
-                                        onDownloadDirectoryUriChange = { uri, label ->
-                                            scope.launch {
-                                                repo.setDownloadDirectory(uri, label)
-                                                ManagedDownloadStorage.updateConfiguredTreeUri(uri)
-                                                ManagedDownloadStorage.updateCustomDirectoryLabel(label)
-                                            }
-                                        },
-                                        onDownloadFileNameTemplateChange = { template ->
-                                            scope.launch { repo.setDownloadFileNameTemplate(template) }
-                                        },
-                                        backgroundImageBlur = backgroundImageBlur,
-                                        onBackgroundImageBlurChange = {},
-                                        onBackgroundImageBlurChangeFinished = { blur ->
-                                            scope.launch { repo.setBackgroundImageBlur(blur) }
-                                        },
-                                        backgroundImageAlpha = effectiveBackgroundImageAlpha,
-                                        onBackgroundImageAlphaChange = { alpha ->
-                                            pendingBackgroundImageAlpha = alpha
-                                        },
-                                        onBackgroundImageAlphaChangeFinished = { alpha ->
-                                            pendingBackgroundImageAlpha = alpha
-                                            scope.launch { repo.setBackgroundImageAlpha(alpha) }
-                                        },
-                                        defaultStartDestination = defaultStartDestination,
-                                        onDefaultStartDestinationChange = { route ->
-                                            scope.launch { repo.setDefaultStartDestination(route) }
-                                        },
-                                        showHomeContinueCard = showHomeContinueCard,
-                                        onShowHomeContinueCardChange = { enabled ->
-                                            scope.launch { repo.setHomeCardContinue(enabled) }
-                                        },
-                                        showHomeTrendingCard = showHomeTrendingCard,
-                                        onShowHomeTrendingCardChange = { enabled ->
-                                            scope.launch { repo.setHomeCardTrending(enabled) }
-                                        },
-                                        showHomeRadarCard = showHomeRadarCard,
-                                        onShowHomeRadarCardChange = { enabled ->
-                                            scope.launch { repo.setHomeCardRadar(enabled) }
-                                        },
-                                        showHomeRecommendedCard = showHomeRecommendedCard,
-                                        onShowHomeRecommendedCardChange = { enabled ->
-                                            scope.launch { repo.setHomeCardRecommended(enabled) }
-                                        },
-                                        homeHasRecentUsage = homeUsageEntries.isNotEmpty(),
-                                        playbackFadeIn = playbackFadeIn,
-                                        onPlaybackFadeInChange = { enabled ->
-                                            scope.launch { repo.setPlaybackFadeIn(enabled) }
-                                        },
-                                        playbackCrossfadeNext = playbackCrossfadeNext,
-                                        onPlaybackCrossfadeNextChange = { enabled ->
-                                            scope.launch { repo.setPlaybackCrossfadeNext(enabled) }
-                                        },
-                                        sleepTimerFinishCurrentOnExpiry =
-                                            sleepTimerFinishCurrentOnExpiry,
-                                        onSleepTimerFinishCurrentOnExpiryChange = { enabled ->
-                                            scope.launch {
-                                                repo.setSleepTimerFinishCurrentOnExpiry(enabled)
-                                            }
-                                        },
-                                        playbackFadeInDurationMs = playbackFadeInDurationMs,
-                                        onPlaybackFadeInDurationMsChange = { duration ->
-                                            scope.launch { repo.setPlaybackFadeInDurationMs(duration) }
-                                        },
-                                        playbackFadeOutDurationMs = playbackFadeOutDurationMs,
-                                        onPlaybackFadeOutDurationMsChange = { duration ->
-                                            scope.launch { repo.setPlaybackFadeOutDurationMs(duration) }
-                                        },
-                                        playbackCrossfadeInDurationMs = playbackCrossfadeInDurationMs,
-                                        onPlaybackCrossfadeInDurationMsChange = { duration ->
-                                            scope.launch { repo.setPlaybackCrossfadeInDurationMs(duration) }
-                                        },
-                                        playbackCrossfadeOutDurationMs = playbackCrossfadeOutDurationMs,
-                                        onPlaybackCrossfadeOutDurationMsChange = { duration ->
-                                            scope.launch { repo.setPlaybackCrossfadeOutDurationMs(duration) }
-                                        },
-                                        playbackVolumeNormalizationEnabled =
-                                            playbackVolumeNormalizationEnabled,
-                                        onPlaybackVolumeNormalizationEnabledChange = { enabled ->
-                                            PlayerManager.setPlaybackVolumeNormalizationEnabled(enabled)
-                                        },
-                                        playbackHighResolutionOutputEnabled =
-                                            playbackHighResolutionOutputEnabled,
-                                        onPlaybackHighResolutionOutputEnabledChange = { enabled ->
-                                            PlayerManager.setPlaybackHighResolutionOutputEnabled(
-                                                enabled
-                                            )
-                                        },
-                                        playbackVolumeBalance = playbackVolumeBalance,
-                                        onPlaybackVolumeBalanceChange = { balance ->
-                                            PlayerManager.setPlaybackVolumeBalance(balance)
-                                        },
-                                        keepLastPlaybackProgress = keepLastPlaybackProgress,
-                                        onKeepLastPlaybackProgressChange = { enabled ->
-                                            scope.launch { repo.setKeepLastPlaybackProgress(enabled) }
-                                        },
-                                        keepPlaybackModeState = keepPlaybackModeState,
-                                        onKeepPlaybackModeStateChange = { enabled ->
-                                            scope.launch { repo.setKeepPlaybackModeState(enabled) }
-                                        },
-                                        neteaseAutoSourceSwitch = neteaseAutoSourceSwitch,
-                                        onNeteaseAutoSourceSwitchChange = { enabled ->
-                                            scope.launch { repo.setNeteaseAutoSourceSwitch(enabled) }
-                                        },
-                                        stopOnBluetoothDisconnect = stopOnBluetoothDisconnect,
-                                        onStopOnBluetoothDisconnectChange = { enabled ->
-                                            scope.launch { repo.setStopOnBluetoothDisconnect(enabled) }
-                                        },
-                                        usbExclusivePlayback = usbExclusivePlayback,
-                                        onUsbExclusivePlaybackChange = { enabled ->
-                                            if (PlayerManager.beginUsbExclusiveToggleTransitionFromUi(enabled)) {
-                                                scope.launch { repo.setUsbExclusivePlayback(enabled) }
-                                                if (
-                                                    enabled &&
-                                                    !usbExclusivePlayback &&
-                                                    !usbExclusiveBackgroundPermissionPromptSuppressed &&
-                                                    !context.readBackgroundBehaviorAllowance().fullyAllowed
-                                                ) {
-                                                    showUsbExclusiveBackgroundPermissionDialog = true
-                                                }
-                                            }
-                                        },
-                                        allowMixedPlayback = allowMixedPlayback,
-                                        onAllowMixedPlaybackChange = { enabled ->
-                                            scope.launch { repo.setAllowMixedPlayback(enabled) }
-                                        },
-                                        preemptAudioFocus = preemptAudioFocus,
-                                        onPreemptAudioFocusChange = { enabled ->
-                                            scope.launch { repo.setPreemptAudioFocus(enabled) }
-                                        },
-                                        maxCacheSizeBytes = maxCacheSizeBytes,
-                                        onMaxCacheSizeBytesChange = { size ->
-                                            scope.launch { repo.setMaxCacheSizeBytes(size) }
-                                        },
-                                        onClearCacheClick = { options ->
-                                            scope.launch {
-                                                val messages = mutableListOf<String>()
-                                                if (options.needsPlayerCacheClear) {
-                                                    val (_, message) = PlayerManager.clearCache(
-                                                        clearAudio = options.audioCache,
-                                                        clearImage = options.imageCache
-                                                    )
-                                                    messages += message
-                                                }
-                                                if (options.needsExtraCacheClear) {
-                                                    val result = clearExtraStorageCaches(context, options)
-                                                    messages += if (result.success) {
-                                                        context.getString(
-                                                            R.string.storage_extra_cache_clear_complete,
-                                                            formatFileSize(result.freedBytes)
-                                                        )
-                                                    } else {
-                                                        context.getString(R.string.storage_extra_cache_clear_partial)
-                                                    }
-                                                }
-                                                snackbarHostState.showSnackbar(messages.joinToString(" · "))
-                                            }
-                                        },
-                                        onBeforeLanguageRestart = clearThemeRevealState
-                                    )
-                                }
+                                ) {}
 
                                 composable(
                                     route = Destinations.DownloadManager.route,
@@ -2470,79 +2746,7 @@ private fun NeriAppContent(
                                     exitTransition = { mainTabExitTransition() },
                                     popEnterTransition = { mainTabEnterTransition() },
                                     popExitTransition = { mainTabExitTransition() }
-                                ) {
-                                    DebugHomeScreen(
-                                        alwaysRecordLogsEnabled = alwaysRecordLogsEnabled,
-                                        onAlwaysRecordLogsChange = { enabled ->
-                                            scope.launch { repo.setAlwaysRecordLogsEnabled(enabled) }
-                                        },
-                                        onOpenListenTogetherDebug = {
-                                            navController.navigate(Destinations.DebugListenTogether.route)
-                                        },
-                                        onOpenUsbExclusiveDebug = {
-                                            navController.navigate(Destinations.DebugUsbExclusive.route)
-                                        },
-                                        onOpenYouTubeDebug = {
-                                            navController.navigate(Destinations.DebugYouTube.route)
-                                        },
-                                        onOpenBiliDebug = { navController.navigate(Destinations.DebugBili.route) },
-                                        onOpenNeteaseDebug = { navController.navigate(Destinations.DebugNetease.route) },
-                                        onOpenSearchDebug = { navController.navigate(Destinations.DebugSearch.route) },
-                                        onOpenLogs = { navController.navigate(Destinations.DebugLogsList.route) },
-                                        onOpenCrashLogs = { navController.navigate(Destinations.DebugCrashLogsList.route) },
-                                        onTestExceptionHandler = { crashType ->
-                                            val crashMessage = context.getString(R.string.test_exception_message)
-                                            when (crashType) {
-                                                DebugCrashTestType.JvmHandled -> {
-                                                    ExceptionHandler.safeExecute("DebugTestHandled") {
-                                                        throw RuntimeException(crashMessage)
-                                                    }
-                                                }
-
-                                                DebugCrashTestType.JvmUncaughtMain -> {
-                                                    Handler(Looper.getMainLooper()).post {
-                                                        throw RuntimeException(crashMessage)
-                                                    }
-                                                }
-
-                                                DebugCrashTestType.JvmUncaughtWorker -> {
-                                                    Thread {
-                                                        throw RuntimeException(crashMessage)
-                                                    }.start()
-                                                }
-
-                                                DebugCrashTestType.MainThreadAnr -> {
-                                                    AnrWatchdog.triggerTestAnr(context)
-                                                }
-
-                                                DebugCrashTestType.NativeSigSegv -> {
-                                                    Handler(Looper.getMainLooper()).post {
-                                                        NativeCrashHandler.triggerTestCrash(
-                                                            context = context,
-                                                            crashType = NativeCrashHandler.TestCrashType.SigSegv
-                                                        )
-                                                    }
-                                                }
-
-                                                DebugCrashTestType.NativeSigAbrt -> {
-                                                    Handler(Looper.getMainLooper()).post {
-                                                        NativeCrashHandler.triggerTestCrash(
-                                                            context = context,
-                                                            crashType = NativeCrashHandler.TestCrashType.SigAbrt
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        onHideDebugMode = {
-                                            scope.launch { repo.setDevModeEnabled(false) }
-                                            navController.navigate(Destinations.Settings.route) {
-                                                popUpTo(Destinations.Debug.route) { inclusive = true }
-                                                launchSingleTop = true
-                                            }
-                                        }
-                                    )
-                                }
+                                ) {}
                                 composable(
                                     route = Destinations.DebugListenTogether.route,
                                     enterTransition = { debugNavigationEnterTransition() },
@@ -3013,6 +3217,20 @@ private fun NeriAppContent(
                         onDismiss = {
                             showUsbExclusiveBackgroundPermissionDialog = false
                         }
+                    )
+                }
+
+                if (
+                    shouldShowStartupGlassGate(
+                        baseBlurEnabled = advancedGlassController.isBaseBlurEnabled,
+                        gateReleased = startupGlassGateReleased,
+                        backgroundEffectReady = startupBackgroundGlassReady,
+                        contentEffectReady = startupContentGlassReady
+                    )
+                ) {
+                    StartupGlassGateOverlay(
+                        isDark = isDark,
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
 
