@@ -134,7 +134,8 @@ Current positioning:
   falling back to skip/stop behavior.
 - **High-performance GLSL/AGSL fluid background**:
   the Now Playing dynamic background is rendered frame-by-frame by
-  `BgEffectPainter`, `RuntimeShader`, and `assets/hyper_background_effect.glsl`.
+  `BgEffectPainter`, `RuntimeShader`, and
+  `assets/shaders/hyper_background_effect.glsl`.
   The shader combines cover-derived colors, animated color blobs, and lightweight
   grain while reacting to `uMusicLevel / uBeat`; it is not just a Gaussian-blurred
   cover. The RuntimeShader/audio-reactive path requires Android 13+. Cover blur

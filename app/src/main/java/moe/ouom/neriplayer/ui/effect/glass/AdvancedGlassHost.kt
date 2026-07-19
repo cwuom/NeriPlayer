@@ -14,6 +14,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.isSpecified
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.LifecycleOwner
@@ -78,9 +79,13 @@ internal fun AdvancedGlassHost(
     disableStretchOverscroll: Boolean = false,
     content: @Composable () -> Unit
 ) {
+    val assetManager = LocalContext.current.applicationContext.assets
     val density = LocalDensity.current
     val parentOverscrollFactory = LocalOverscrollFactory.current
     val regionRegistry = remember { AdvancedGlassRegionRegistry() }
+    val shaderSource = remember(assetManager) {
+        AdvancedGlassShaderSource(assetManager)
+    }
     val renderedRegions = regionRegistry.regions.toList()
     val contentRegions = renderedRegions.filter { region ->
         region.role == AdvancedGlassRole.MiniPlayer ||
@@ -103,15 +108,23 @@ internal fun AdvancedGlassHost(
     val blurRadiusPx = with(density) { blurRadiusDp.dp.toPx() }
     val backgroundRenderEffectSession = remember(
         sessionController.sdkInt,
-        sessionController.backendReady
+        sessionController.backendReady,
+        shaderSource
     ) {
-        createAdvancedGlassRenderEffectSession(sessionController.sdkInt)
+        createAdvancedGlassRenderEffectSession(
+            shaderSource = shaderSource,
+            sdkInt = sessionController.sdkInt
+        )
     }
     val contentRenderEffectSession = remember(
         sessionController.sdkInt,
-        sessionController.backendReady
+        sessionController.backendReady,
+        shaderSource
     ) {
-        createAdvancedGlassRenderEffectSession(sessionController.sdkInt)
+        createAdvancedGlassRenderEffectSession(
+            shaderSource = shaderSource,
+            sdkInt = sessionController.sdkInt
+        )
     }
 
     val backgroundEffectResult = remember(

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.effect.glass
 
+import android.graphics.RuntimeShader
 import android.os.Build
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
@@ -33,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.captureToImage
@@ -42,6 +44,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -69,6 +72,33 @@ class AdvancedGlassSurfaceRenderTest {
     @Before
     fun assumeDeviceUnlocked() {
         assumeComposeHostAvailable()
+    }
+
+    @Test
+    fun regionMaskShaderAssetMatchesBackendContract() {
+        val assetManager = InstrumentationRegistry.getInstrumentation()
+            .targetContext
+            .assets
+        val source = AdvancedGlassShaderSource(assetManager).load()
+
+        assertTrue(source.contains("uniform shader child;"))
+        assertTrue(
+            source.contains(
+                "uniform float4 regionBounds[$ADVANCED_GLASS_MAX_REGIONS];"
+            )
+        )
+        assertTrue(
+            source.contains(
+                "uniform float4 cornerRadii[$ADVANCED_GLASS_MAX_REGIONS];"
+            )
+        )
+        assertTrue(
+            source.contains(
+                "for (int index = 0; index < $ADVANCED_GLASS_MAX_REGIONS; index++)"
+            )
+        )
+        assertTrue(source.contains("child.eval(position)"))
+        assertNotNull(RuntimeShader(source))
     }
 
     @Test
@@ -297,12 +327,17 @@ class AdvancedGlassSurfaceRenderTest {
     @Test
     fun selectiveRenderEffectMixesDirectContent() {
         composeRule.setContent {
+            val assetManager = LocalContext.current.applicationContext.assets
+            val shaderSource = remember(assetManager) {
+                AdvancedGlassShaderSource(assetManager)
+            }
             val density = LocalDensity.current
             val widthPx = with(density) { 160.dp.toPx() }
             val heightPx = with(density) { 80.dp.toPx() }
             val radiusPx = with(density) { 36.dp.toPx() }
-            val effect = remember(widthPx, heightPx, radiusPx) {
+            val effect = remember(shaderSource, widthPx, heightPx, radiusPx) {
                 createAdvancedGlassRenderEffect(
+                    shaderSource = shaderSource,
                     sdkInt = Build.VERSION.SDK_INT,
                     radiusPx = radiusPx,
                     regions = listOf(
@@ -350,13 +385,24 @@ class AdvancedGlassSurfaceRenderTest {
     @Test
     fun topOnlyCornerRadiiKeepTopCornerOutsideBlurMask() {
         composeRule.setContent {
+            val assetManager = LocalContext.current.applicationContext.assets
+            val shaderSource = remember(assetManager) {
+                AdvancedGlassShaderSource(assetManager)
+            }
             val density = LocalDensity.current
             val widthPx = with(density) { 160.dp.toPx() }
             val heightPx = with(density) { 80.dp.toPx() }
             val blurRadiusPx = with(density) { 20.dp.toPx() }
             val cornerRadiusPx = with(density) { 40.dp.toPx() }
-            val effect = remember(widthPx, heightPx, blurRadiusPx, cornerRadiusPx) {
+            val effect = remember(
+                shaderSource,
+                widthPx,
+                heightPx,
+                blurRadiusPx,
+                cornerRadiusPx
+            ) {
                 createAdvancedGlassRenderEffect(
+                    shaderSource = shaderSource,
                     sdkInt = Build.VERSION.SDK_INT,
                     radiusPx = blurRadiusPx,
                     regions = listOf(

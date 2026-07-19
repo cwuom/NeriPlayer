@@ -24,6 +24,7 @@ internal fun isAdvancedGlassBackendSupported(sdkInt: Int): Boolean =
     sdkInt >= ADVANCED_GLASS_BACKEND_MIN_SDK
 
 internal fun createAdvancedGlassRenderEffect(
+    shaderSource: AdvancedGlassShaderSource,
     sdkInt: Int,
     radiusPx: Float,
     regions: List<AdvancedGlassRenderRegion>
@@ -39,7 +40,8 @@ internal fun createAdvancedGlassRenderEffect(
     require(regions.size <= ADVANCED_GLASS_MAX_REGIONS) {
         "Advanced glass supports at most $ADVANCED_GLASS_MAX_REGIONS visible regions"
     }
-    return createAdvancedGlassRenderEffectSession(sdkInt).update(radiusPx, regions)
+    return createAdvancedGlassRenderEffectSession(shaderSource, sdkInt)
+        .update(radiusPx, regions)
 }
 
 internal interface AdvancedGlassRenderEffectSession {
@@ -50,6 +52,7 @@ internal interface AdvancedGlassRenderEffectSession {
 }
 
 internal fun createAdvancedGlassRenderEffectSession(
+    shaderSource: AdvancedGlassShaderSource,
     sdkInt: Int
 ): AdvancedGlassRenderEffectSession {
     if (Build.VERSION.SDK_INT < ADVANCED_GLASS_BACKEND_MIN_SDK ||
@@ -57,7 +60,7 @@ internal fun createAdvancedGlassRenderEffectSession(
     ) {
         return UnsupportedAdvancedGlassRenderEffectSession
     }
-    return AdvancedGlassRuntimeShaderSession()
+    return AdvancedGlassRuntimeShaderSession(shaderSource)
 }
 
 private object UnsupportedAdvancedGlassRenderEffectSession : AdvancedGlassRenderEffectSession {
@@ -68,7 +71,9 @@ private object UnsupportedAdvancedGlassRenderEffectSession : AdvancedGlassRender
 }
 
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-private class AdvancedGlassRuntimeShaderSession : AdvancedGlassRenderEffectSession {
+private class AdvancedGlassRuntimeShaderSession(
+    private val shaderSource: AdvancedGlassShaderSource
+) : AdvancedGlassRenderEffectSession {
     private var backend: AdvancedGlassRuntimeShaderBackend.Session? = null
 
     override fun update(
@@ -81,24 +86,24 @@ private class AdvancedGlassRuntimeShaderSession : AdvancedGlassRenderEffectSessi
         require(regions.size <= ADVANCED_GLASS_MAX_REGIONS) {
             "Advanced glass supports at most $ADVANCED_GLASS_MAX_REGIONS visible regions"
         }
-        val activeBackend = backend ?: AdvancedGlassRuntimeShaderBackend.Session().also {
-            backend = it
-        }
+        val activeBackend = backend ?: AdvancedGlassRuntimeShaderBackend.Session(
+            shaderSource.load()
+        ).also { backend = it }
         return activeBackend.update(radiusPx, regions)
     }
 }
 
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
 private object AdvancedGlassRuntimeShaderBackend {
-    class Session {
+    class Session(shaderSource: String) {
         private val regionBounds = FloatArray(
             ADVANCED_GLASS_MAX_REGIONS * RegionComponentCount
         )
         private val cornerRadii = FloatArray(
             ADVANCED_GLASS_MAX_REGIONS * RegionComponentCount
         )
-        private val maskShader = createMaskShader(invertMask = false)
-        private val outsideShader = createMaskShader(invertMask = true)
+        private val maskShader = createMaskShader(shaderSource, invertMask = false)
+        private val outsideShader = createMaskShader(shaderSource, invertMask = true)
         private var cachedRadiusPx = Float.NaN
         private var cachedBlurEffect: AndroidRenderEffect? = null
 
@@ -151,7 +156,10 @@ private object AdvancedGlassRuntimeShaderBackend {
             updateShaderUniforms(outsideShader, regions.size)
         }
 
-        private fun createMaskShader(invertMask: Boolean) = RuntimeShader(RegionMaskShader).apply {
+        private fun createMaskShader(
+            shaderSource: String,
+            invertMask: Boolean
+        ) = RuntimeShader(shaderSource).apply {
             setFloatUniform(RegionCountUniform, 0f)
             setFloatUniform(RegionBoundsUniform, regionBounds)
             setFloatUniform(CornerRadiiUniform, cornerRadii)
@@ -171,41 +179,4 @@ private object AdvancedGlassRuntimeShaderBackend {
     private const val RegionBoundsUniform = "regionBounds"
     private const val CornerRadiiUniform = "cornerRadii"
     private const val InvertMaskUniform = "invertMask"
-
-    private const val RegionMaskShader = """
-        uniform shader child;
-        uniform float regionCount;
-        uniform float4 regionBounds[32];
-        uniform float4 cornerRadii[32];
-        uniform float invertMask;
-
-        float roundedRectDistance(float2 position, float4 bounds, float4 radii) {
-            float2 center = (bounds.xy + bounds.zw) * 0.5;
-            float2 halfSize = max((bounds.zw - bounds.xy) * 0.5, float2(0.0));
-            float radius = position.y < center.y
-                ? (position.x < center.x ? radii.x : radii.y)
-                : (position.x < center.x ? radii.w : radii.z);
-            float safeRadius = clamp(radius, 0.0, min(halfSize.x, halfSize.y));
-            float2 offset = abs(position - center) - halfSize + safeRadius;
-            return length(max(offset, float2(0.0))) +
-                min(max(offset.x, offset.y), 0.0) - safeRadius;
-        }
-
-        half4 main(float2 position) {
-            float coverage = 0.0;
-            for (int index = 0; index < 32; index++) {
-                if (float(index) >= regionCount) {
-                    break;
-                }
-                float distance = roundedRectDistance(
-                    position,
-                    regionBounds[index],
-                    cornerRadii[index]
-                );
-                coverage = max(coverage, clamp(0.5 - distance, 0.0, 1.0));
-            }
-            float resolvedCoverage = mix(coverage, 1.0 - coverage, invertMask);
-            return child.eval(position) * half(resolvedCoverage);
-        }
-    """
 }

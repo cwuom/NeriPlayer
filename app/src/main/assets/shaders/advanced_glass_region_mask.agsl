@@ -1,0 +1,34 @@
+uniform shader child;
+uniform float regionCount;
+uniform float4 regionBounds[32];
+uniform float4 cornerRadii[32];
+uniform float invertMask;
+
+float roundedRectDistance(float2 position, float4 bounds, float4 radii) {
+    float2 center = (bounds.xy + bounds.zw) * 0.5;
+    float2 halfSize = max((bounds.zw - bounds.xy) * 0.5, float2(0.0));
+    float radius = position.y < center.y
+        ? (position.x < center.x ? radii.x : radii.y)
+        : (position.x < center.x ? radii.w : radii.z);
+    float safeRadius = clamp(radius, 0.0, min(halfSize.x, halfSize.y));
+    float2 offset = abs(position - center) - halfSize + safeRadius;
+    return length(max(offset, float2(0.0))) +
+        min(max(offset.x, offset.y), 0.0) - safeRadius;
+}
+
+half4 main(float2 position) {
+    float coverage = 0.0;
+    for (int index = 0; index < 32; index++) {
+        if (float(index) >= regionCount) {
+            break;
+        }
+        float distance = roundedRectDistance(
+            position,
+            regionBounds[index],
+            cornerRadii[index]
+        );
+        coverage = max(coverage, clamp(0.5 - distance, 0.0, 1.0));
+    }
+    float resolvedCoverage = mix(coverage, 1.0 - coverage, invertMask);
+    return child.eval(position) * half(resolvedCoverage);
+}
