@@ -247,6 +247,19 @@ private val MAIN_TAB_ROUTES = listOf(
     Destinations.Settings.route,
     Destinations.Debug.route
 )
+private val TRANSPARENT_MAIN_TAB_DETAIL_ROUTES = setOf(
+    Destinations.Recent.route,
+    Destinations.PlaybackStats.route
+)
+
+internal const val MAIN_TAB_DETAIL_OPEN_DURATION_MS = 220
+internal const val MAIN_TAB_DETAIL_CLOSE_DURATION_MS = 240
+internal const val TRANSPARENT_DETAIL_EXIT_FADE_DURATION_MS = 160
+
+internal enum class MainTabDetailHandoff {
+    OPEN_DETAIL,
+    RETURN_TO_TAB
+}
 
 internal fun resolveMainTabTransitionDirection(
     initialRoute: String?,
@@ -256,6 +269,22 @@ internal fun resolveMainTabTransitionDirection(
     val targetIndex = MAIN_TAB_ROUTES.indexOf(targetRoute).takeIf { it >= 0 } ?: return null
     if (initialIndex == targetIndex) return null
     return if (targetIndex > initialIndex) 1 else -1
+}
+
+internal fun resolveMainTabDetailHandoff(
+    initialRoute: String?,
+    targetRoute: String?
+): MainTabDetailHandoff? {
+    if (initialRoute == null || targetRoute == null) return null
+    val initialIsMainTab = initialRoute in MAIN_TAB_ROUTES
+    val targetIsMainTab = targetRoute in MAIN_TAB_ROUTES
+    return when {
+        initialIsMainTab && targetRoute in TRANSPARENT_MAIN_TAB_DETAIL_ROUTES ->
+            MainTabDetailHandoff.OPEN_DETAIL
+        initialRoute in TRANSPARENT_MAIN_TAB_DETAIL_ROUTES && targetIsMainTab ->
+            MainTabDetailHandoff.RETURN_TO_TAB
+        else -> null
+    }
 }
 
 internal data class BottomBarLayoutInsets(
@@ -282,24 +311,70 @@ internal fun resolveBottomBarLayoutInsets(
     )
 }
 
-private fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabEnterTransition(): EnterTransition {
+internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabEnterTransition(): EnterTransition {
+    val initialRoute = initialState.destination.route
+    val targetRoute = targetState.destination.route
     val direction = resolveMainTabTransitionDirection(
-        initialRoute = initialState.destination.route,
-        targetRoute = targetState.destination.route
-    ) ?: return EnterTransition.None
+        initialRoute = initialRoute,
+        targetRoute = targetRoute
+    ) ?: return if (
+        resolveMainTabDetailHandoff(initialRoute, targetRoute) ==
+        MainTabDetailHandoff.RETURN_TO_TAB
+    ) {
+        slideInVertically(
+            animationSpec = tween(MAIN_TAB_DETAIL_CLOSE_DURATION_MS)
+        ) { fullHeight -> -fullHeight }
+    } else {
+        EnterTransition.None
+    }
     return slideInHorizontally(
         animationSpec = advancedGlassMainTabNavigationSpringSpec()
     ) { fullWidth -> direction * fullWidth }
 }
 
-private fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabExitTransition(): ExitTransition {
+internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabExitTransition(): ExitTransition {
+    val initialRoute = initialState.destination.route
+    val targetRoute = targetState.destination.route
     val direction = resolveMainTabTransitionDirection(
-        initialRoute = initialState.destination.route,
-        targetRoute = targetState.destination.route
-    ) ?: return ExitTransition.None
+        initialRoute = initialRoute,
+        targetRoute = targetRoute
+    ) ?: return if (
+        resolveMainTabDetailHandoff(initialRoute, targetRoute) ==
+        MainTabDetailHandoff.OPEN_DETAIL
+    ) {
+        slideOutVertically(
+            animationSpec = tween(MAIN_TAB_DETAIL_OPEN_DURATION_MS)
+        ) { fullHeight -> -fullHeight }
+    } else {
+        ExitTransition.None
+    }
     return slideOutHorizontally(
         animationSpec = advancedGlassMainTabNavigationSpringSpec()
     ) { fullWidth -> -direction * fullWidth }
+}
+
+internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailEnterTransition(): EnterTransition {
+    return slideInVertically(
+        animationSpec = tween(MAIN_TAB_DETAIL_OPEN_DURATION_MS)
+    ) { fullHeight -> fullHeight } + fadeIn(
+        animationSpec = tween(MAIN_TAB_DETAIL_OPEN_DURATION_MS)
+    )
+}
+
+internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailExitTransition(): ExitTransition {
+    val handoff = resolveMainTabDetailHandoff(
+        initialRoute = initialState.destination.route,
+        targetRoute = targetState.destination.route
+    )
+    return if (handoff == MainTabDetailHandoff.RETURN_TO_TAB) {
+        slideOutVertically(
+            animationSpec = tween(MAIN_TAB_DETAIL_CLOSE_DURATION_MS)
+        ) { fullHeight -> fullHeight } + fadeOut(
+            animationSpec = tween(MAIN_TAB_DETAIL_CLOSE_DURATION_MS)
+        )
+    } else {
+        fadeOut(animationSpec = tween(TRANSPARENT_DETAIL_EXIT_FADE_DURATION_MS))
+    }
 }
 
 private fun resolveMainStartDestination(
@@ -1923,10 +1998,10 @@ private fun NeriAppContent(
 
                                 composable(
                                     route = Destinations.Recent.route,
-                                    enterTransition = { slideInVertically(animationSpec = tween(220)) { it } + fadeIn() },
-                                    exitTransition = { fadeOut(animationSpec = tween(160)) },
+                                    enterTransition = { transparentDetailEnterTransition() },
+                                    exitTransition = { transparentDetailExitTransition() },
                                     popEnterTransition = { slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn() },
-                                    popExitTransition = { slideOutVertically(animationSpec = tween(240)) { it } + fadeOut() }
+                                    popExitTransition = { transparentDetailExitTransition() }
                                 ) {
                                     RecentScreen(
                                         onBack = { navController.popBackStack() },
@@ -1937,10 +2012,10 @@ private fun NeriAppContent(
 
                                 composable(
                                     route = Destinations.PlaybackStats.route,
-                                    enterTransition = { slideInVertically(animationSpec = tween(220)) { it } + fadeIn() },
-                                    exitTransition = { fadeOut(animationSpec = tween(160)) },
+                                    enterTransition = { transparentDetailEnterTransition() },
+                                    exitTransition = { transparentDetailExitTransition() },
                                     popEnterTransition = { slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn() },
-                                    popExitTransition = { slideOutVertically(animationSpec = tween(240)) { it } + fadeOut() }
+                                    popExitTransition = { transparentDetailExitTransition() }
                                 ) {
                                     PlaybackStatsScreen(
                                         onBack = { navController.popBackStack() },

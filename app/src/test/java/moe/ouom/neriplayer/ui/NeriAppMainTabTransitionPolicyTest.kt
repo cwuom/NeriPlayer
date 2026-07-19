@@ -43,4 +43,57 @@ class NeriAppMainTabTransitionPolicyTest {
             )
         )
     }
+
+    @Test
+    fun `main tab and transparent detail use paired vertical handoff`() {
+        assertEquals(
+            MainTabDetailHandoff.OPEN_DETAIL,
+            resolveMainTabDetailHandoff(
+                initialRoute = Destinations.Library.route,
+                targetRoute = Destinations.Recent.route
+            )
+        )
+        assertEquals(
+            MainTabDetailHandoff.OPEN_DETAIL,
+            resolveMainTabDetailHandoff(
+                initialRoute = Destinations.Library.route,
+                targetRoute = Destinations.PlaybackStats.route
+            )
+        )
+        assertEquals(
+            MainTabDetailHandoff.RETURN_TO_TAB,
+            resolveMainTabDetailHandoff(
+                initialRoute = Destinations.PlaybackStats.route,
+                targetRoute = Destinations.Library.route
+            )
+        )
+    }
+
+    @Test
+    fun `tab slide and incomplete routes do not use detail handoff`() {
+        assertNull(
+            resolveMainTabDetailHandoff(
+                initialRoute = Destinations.Library.route,
+                targetRoute = Destinations.Settings.route
+            )
+        )
+        assertNull(
+            resolveMainTabDetailHandoff(
+                initialRoute = Destinations.Library.route,
+                targetRoute = Destinations.Library.route
+            )
+        )
+        assertNull(
+            resolveMainTabDetailHandoff(
+                initialRoute = Destinations.Library.route,
+                targetRoute = Destinations.LocalPlaylistDetail.route
+            )
+        )
+        assertNull(
+            resolveMainTabDetailHandoff(
+                initialRoute = Destinations.Library.route,
+                targetRoute = null
+            )
+        )
+    }
 }
