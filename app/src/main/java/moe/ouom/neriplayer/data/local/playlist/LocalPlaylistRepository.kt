@@ -53,10 +53,10 @@ import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.settings.rebaseLyricUserOffsetMs
 import moe.ouom.neriplayer.data.settings.shouldRebaseLyricOffsetForSource
-import moe.ouom.neriplayer.data.sync.github.CoverUrlMapper
+import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
-import moe.ouom.neriplayer.data.sync.github.SyncPlaylistSongDeletion
+import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.sync.model.normalizedSyncCausalTokens
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.data.model.SongItem

@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.data.sync.github
 
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
+import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
+import moe.ouom.neriplayer.data.sync.model.SyncSong
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

@@ -3,6 +3,9 @@ package moe.ouom.neriplayer.data.sync.github
 import com.google.gson.Gson
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
+import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
+import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
+import moe.ouom.neriplayer.data.sync.model.SyncSong
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

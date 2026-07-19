@@ -1,6 +1,6 @@
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 
-package moe.ouom.neriplayer.data.sync.github
+package moe.ouom.neriplayer.data.sync.model
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -21,7 +21,7 @@ package moe.ouom.neriplayer.data.sync.github
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.data.sync.github/SyncDataModels
+ * File: moe.ouom.neriplayer.data.sync.model/SyncDataModels
  * Created: 2025/1/7
  */
 
@@ -38,8 +38,7 @@ import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
-import moe.ouom.neriplayer.data.sync.model.normalizedSyncCausalTokens
+import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 
 internal const val LEGACY_SYNC_METADATA_VERSION = 0
 internal const val CURRENT_SYNC_METADATA_VERSION = 1

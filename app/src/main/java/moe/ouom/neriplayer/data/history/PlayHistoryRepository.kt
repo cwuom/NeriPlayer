@@ -44,7 +44,7 @@ import moe.ouom.neriplayer.data.sync.SyncPreferences
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.util.io.writeTextAtomically
-import moe.ouom.neriplayer.data.sync.github.SyncRecentPlayDeletion
+import moe.ouom.neriplayer.data.sync.model.SyncRecentPlayDeletion
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger

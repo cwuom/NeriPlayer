@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.data.sync.github
 
+import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.sync.model.SyncPlaybackStatBucket
+import moe.ouom.neriplayer.data.sync.model.SyncTrackStat
+
 internal object SyncPlaybackStatsMergePolicy {
     private data class CounterMergeResult(
         val totalListenMs: Long,

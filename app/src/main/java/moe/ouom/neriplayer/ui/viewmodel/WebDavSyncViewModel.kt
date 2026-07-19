@@ -15,7 +15,7 @@ import moe.ouom.neriplayer.data.sync.webdav.WebDavStorage
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncInProgressException
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncManager
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
-import moe.ouom.neriplayer.data.sync.github.SyncResult
+import moe.ouom.neriplayer.data.sync.model.SyncResult
 
 class WebDavSyncViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(WebDavSyncUiState())

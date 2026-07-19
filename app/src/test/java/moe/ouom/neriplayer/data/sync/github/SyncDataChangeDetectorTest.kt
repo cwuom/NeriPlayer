@@ -1,6 +1,14 @@
 package moe.ouom.neriplayer.data.sync.github
 
+import moe.ouom.neriplayer.data.sync.model.CURRENT_SYNC_METADATA_VERSION
+import moe.ouom.neriplayer.data.sync.model.LEGACY_SYNC_METADATA_VERSION
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
+import moe.ouom.neriplayer.data.sync.model.SyncData
+import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
+import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
+import moe.ouom.neriplayer.data.sync.model.SyncRecentPlay
+import moe.ouom.neriplayer.data.sync.model.SyncRecentPlayDeletion
+import moe.ouom.neriplayer.data.sync.model.SyncSong
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

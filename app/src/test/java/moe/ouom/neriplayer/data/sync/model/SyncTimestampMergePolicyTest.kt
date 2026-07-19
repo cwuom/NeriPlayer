@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.data.sync.github
+package moe.ouom.neriplayer.data.sync.model
 
 import org.junit.Assert.assertEquals
 import org.junit.Test

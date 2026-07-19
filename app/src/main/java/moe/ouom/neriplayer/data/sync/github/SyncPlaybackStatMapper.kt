@@ -4,6 +4,9 @@ import android.content.Context
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.stats.PlaybackStatBucket
 import moe.ouom.neriplayer.data.stats.TrackStat
+import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.sync.model.SyncPlaybackStatBucket
+import moe.ouom.neriplayer.data.sync.model.SyncTrackStat
 
 internal object SyncPlaybackStatMapper {
     fun shouldSync(stat: TrackStat, context: Context): Boolean {

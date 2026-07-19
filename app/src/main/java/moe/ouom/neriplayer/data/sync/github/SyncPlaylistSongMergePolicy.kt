@@ -2,7 +2,10 @@ package moe.ouom.neriplayer.data.sync.github
 
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.identity
+import moe.ouom.neriplayer.data.sync.model.CURRENT_SYNC_METADATA_VERSION
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
+import moe.ouom.neriplayer.data.sync.model.SyncSong
+import moe.ouom.neriplayer.data.sync.model.copyWithNormalizedMembershipTokens
 import moe.ouom.neriplayer.data.sync.model.normalizedSyncCausalTokens
 
 internal object SyncPlaylistSongMergePolicy {

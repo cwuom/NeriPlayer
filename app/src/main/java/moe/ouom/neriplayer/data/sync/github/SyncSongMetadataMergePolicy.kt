@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.data.sync.github
 
+import moe.ouom.neriplayer.data.sync.model.CURRENT_SYNC_METADATA_VERSION
+import moe.ouom.neriplayer.data.sync.model.SyncSong
+
 internal object SyncSongMetadataMergePolicy {
     fun selectDeterministicPayload(candidates: List<SyncSong>): SyncSong {
         return candidates.maxWith(

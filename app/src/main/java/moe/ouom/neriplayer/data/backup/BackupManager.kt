@@ -38,10 +38,10 @@ import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.sync.SyncCoordinator
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
-import moe.ouom.neriplayer.data.sync.github.SyncPlaylist
-import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatBucket
-import moe.ouom.neriplayer.data.sync.github.SyncRecentPlay
-import moe.ouom.neriplayer.data.sync.github.SyncTrackStat
+import moe.ouom.neriplayer.data.sync.model.SyncPlaybackStatBucket
+import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
+import moe.ouom.neriplayer.data.sync.model.SyncRecentPlay
+import moe.ouom.neriplayer.data.sync.model.SyncTrackStat
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.IOException

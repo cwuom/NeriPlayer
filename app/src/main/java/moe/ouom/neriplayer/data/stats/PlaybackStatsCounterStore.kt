@@ -3,10 +3,10 @@ package moe.ouom.neriplayer.data.stats
 import android.content.Context
 import com.google.gson.Gson
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
-import moe.ouom.neriplayer.data.sync.github.SyncPlaybackCounterShard
-import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatBucket
+import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.sync.model.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
-import moe.ouom.neriplayer.data.sync.github.SyncTrackStat
+import moe.ouom.neriplayer.data.sync.model.SyncTrackStat
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.io.writeTextAtomically
 import java.io.File

@@ -3,7 +3,7 @@ package moe.ouom.neriplayer.data.local.playlist
 import androidx.annotation.Keep
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
-import moe.ouom.neriplayer.data.sync.github.SyncPlaylistSongDeletion
+import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import java.util.concurrent.atomic.AtomicLong
 

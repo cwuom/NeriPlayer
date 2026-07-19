@@ -3,7 +3,10 @@ package moe.ouom.neriplayer.data.sync.github
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.sync.model.CURRENT_SYNC_METADATA_VERSION
+import moe.ouom.neriplayer.data.sync.model.LEGACY_SYNC_METADATA_VERSION
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
+import moe.ouom.neriplayer.data.sync.model.SyncSong
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue

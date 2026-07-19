@@ -37,6 +37,8 @@ import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.sync.PlayHistoryUpdateMode
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
+import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
+import moe.ouom.neriplayer.data.sync.model.SyncRecentPlayDeletion
 import java.util.UUID
 
 /**

@@ -30,6 +30,13 @@ import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.protobuf.ProtoBuf
 import kotlinx.serialization.protobuf.ProtoNumber
+import moe.ouom.neriplayer.data.sync.model.SyncAction
+import moe.ouom.neriplayer.data.sync.model.SyncData
+import moe.ouom.neriplayer.data.sync.model.SyncFavoritePlaylist
+import moe.ouom.neriplayer.data.sync.model.SyncLogEntry
+import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
+import moe.ouom.neriplayer.data.sync.model.SyncRecentPlay
+import moe.ouom.neriplayer.data.sync.model.SyncSong
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.zip.GZIPInputStream

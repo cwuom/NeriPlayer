@@ -4,8 +4,8 @@ import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VE
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.identity
-import moe.ouom.neriplayer.data.sync.github.SyncPlaylist
-import moe.ouom.neriplayer.data.sync.github.SyncSong
+import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
+import moe.ouom.neriplayer.data.sync.model.SyncSong
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 
 internal data class BackupPlaylistRestoreResult(

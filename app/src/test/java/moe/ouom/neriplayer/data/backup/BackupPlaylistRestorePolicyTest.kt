@@ -3,8 +3,8 @@ package moe.ouom.neriplayer.data.backup
 import com.google.gson.Gson
 import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
-import moe.ouom.neriplayer.data.sync.github.SyncPlaylist
-import moe.ouom.neriplayer.data.sync.github.SyncSong
+import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
+import moe.ouom.neriplayer.data.sync.model.SyncSong
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
