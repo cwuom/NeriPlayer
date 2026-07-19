@@ -164,6 +164,17 @@ object AutoSettingsSchema {
             descriptionRes = R.string.settings_internationalization_desc,
             iconRes = R.drawable.ic_i18n
         )
+
+        @AutoSetting(
+            order = 100
+        )
+        val youtubeEnabled = autoSwitchSetting(
+            key = "youtube_enabled",
+            defaultValue = true,
+            titleRes = R.string.settings_youtube_enabled,
+            descriptionRes = R.string.settings_youtube_enabled_desc,
+            iconRes = R.drawable.ic_youtube
+        )
     }
 
     /*

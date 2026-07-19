@@ -20,6 +20,7 @@ import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedResource
 import moe.ouom.neriplayer.core.player.policy.command.resolveYouTubeImmediatePlaybackWarmupTargets
 import moe.ouom.neriplayer.core.player.policy.command.resolveYouTubeWarmupTargets
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 
@@ -224,6 +225,10 @@ internal fun PlayerManager.cancelYouTubePrefetchForPlaybackDemand(
 }
 
 private fun PlayerManager.canRunYouTubePrefetch(source: String): Boolean {
+    if (!YouTubeFeatureGate.isEnabled()) {
+        NPLogger.d("NERI-PlayerManager", "skip disabled YouTube prefetch: source=$source")
+        return false
+    }
     if (isApplicationInitialized()) {
         return true
     }

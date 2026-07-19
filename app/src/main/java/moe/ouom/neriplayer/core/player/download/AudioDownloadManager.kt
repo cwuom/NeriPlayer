@@ -72,6 +72,7 @@ import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeHost
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
@@ -882,6 +883,18 @@ object AudioDownloadManager {
         } else {
             activeCallsBySongKey[songKey]?.toList().orEmpty()
         }
+    }
+
+    internal fun cancelYouTubeCalls(calls: Iterable<okhttp3.Call>): Int {
+        val youtubeCalls = calls.filter { call ->
+            isTrustedYouTubeHost(call.request().url.host)
+        }
+        youtubeCalls.forEach(okhttp3.Call::cancel)
+        return youtubeCalls.size
+    }
+
+    fun cancelActiveYouTubeDownloads() {
+        cancelYouTubeCalls(snapshotActiveCalls())
     }
 
     private inline fun <T> executeTrackedCall(

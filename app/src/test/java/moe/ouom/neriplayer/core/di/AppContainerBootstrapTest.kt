@@ -153,4 +153,33 @@ class AppContainerBootstrapTest {
 
         assertEquals(0, warmCalls)
     }
+
+    @Test
+    fun `warmYouTubePlaybackIfAuthorized skips warm bootstrap when YouTube is disabled`() {
+        var warmCalls = 0
+
+        warmYouTubePlaybackIfAuthorized(
+            bundle = YouTubeAuthBundle(cookies = mapOf("SAPISID" to "cookie")),
+            youtubeEnabled = false,
+            warmBootstrapAsync = { warmCalls += 1 }
+        )
+
+        assertEquals(0, warmCalls)
+    }
+
+    @Test
+    fun `handleYouTubeAuthStateChanged does nothing when YouTube is disabled`() {
+        val steps = mutableListOf<String>()
+
+        handleYouTubeAuthStateChanged(
+            bundle = YouTubeAuthBundle(cookies = mapOf("SAPISID" to "cookie")),
+            clearBootstrapCache = { steps += "client" },
+            clearPlaybackAuthBoundCaches = { steps += "playback" },
+            evictConnections = { steps += "connections" },
+            youtubeEnabled = false,
+            warmBootstrapAsync = { steps += "warm" }
+        )
+
+        assertTrue(steps.isEmpty())
+    }
 }

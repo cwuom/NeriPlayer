@@ -170,7 +170,7 @@ class YouTubeAuthAutoRefreshManagerTest {
     }
 
     @Test
-    fun shouldAttemptRefresh_allowsStaleValidAuth() {
+    fun shouldAttemptRefresh_skipsStaleValidAuthWithoutForce() {
         val decision = invokeShouldAttemptRefresh(
             auth = sampleAuth(savedAt = 0L),
             health = YouTubeAuthHealth(
@@ -182,8 +182,19 @@ class YouTubeAuthAutoRefreshManagerTest {
             force = false
         )
 
-        assertTrue(decision.allowed)
-        assertEquals("allowed", decision.reason)
+        assertFalse(decision.allowed)
+        assertEquals("auth_valid", decision.reason)
+    }
+
+    @Test
+    fun webAuthRecoveryAcceptsUnauthorizedOnly() {
+        assertTrue(isYouTubeAuthRecoverableFailure(Exception("request failed: 401")))
+        assertTrue(isYouTubeAuthRecoverableFailure(Exception("request failed: 403")))
+        assertTrue(isYouTubeAuthRecoverableFailure(Exception("request failed: 429")))
+        assertTrue(shouldStartYouTubeWebAuthRecovery(Exception("request failed: 401")))
+        assertFalse(shouldStartYouTubeWebAuthRecovery(Exception("request failed: 403")))
+        assertFalse(shouldStartYouTubeWebAuthRecovery(Exception("request failed: 429")))
+        assertFalse(shouldStartYouTubeWebAuthRecovery(Exception("blocked response")))
     }
 
     private data class GateDecisionSnapshot(

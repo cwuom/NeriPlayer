@@ -112,6 +112,7 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
 import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_NETEASE_ARTIST
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylist
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
@@ -172,8 +173,11 @@ private enum class LocalArtistSortMode {
     NAME
 }
 
-private fun libraryTabDisplayOrder(isInternational: Boolean): List<LibraryTab> {
-    return if (isInternational) {
+internal fun libraryTabDisplayOrder(
+    isInternational: Boolean,
+    youtubeEnabled: Boolean = true
+): List<LibraryTab> {
+    val orderedTabs = if (isInternational && youtubeEnabled) {
         listOf(
             LibraryTab.LOCAL,
             LibraryTab.FAVORITE,
@@ -192,6 +196,7 @@ private fun libraryTabDisplayOrder(isInternational: Boolean): List<LibraryTab> {
             LibraryTab.QQMUSIC
         )
     }
+    return if (youtubeEnabled) orderedTabs else orderedTabs - LibraryTab.YTMUSIC
 }
 
 private fun LibraryTab.asVisibleLibraryTab(): LibraryTab {
@@ -237,7 +242,11 @@ fun LibraryScreen(
     val defaultPlaylistName = stringResource(R.string.library_create_playlist_default)
     val isInternational by AppContainer.settingsRepo.internationalizationEnabledFlow
         .collectAsStateWithLifecycle(initialValue = false)
-    val orderedTabs = remember(isInternational) { libraryTabDisplayOrder(isInternational) }
+    val youtubeEnabled by AppContainer.settingsRepo.youtubeEnabledFlow
+        .collectAsStateWithLifecycle(initialValue = YouTubeFeatureGate.isEnabled())
+    val orderedTabs = remember(isInternational, youtubeEnabled) {
+        libraryTabDisplayOrder(isInternational, youtubeEnabled)
+    }
     val initialPage = remember(orderedTabs, initialTab) {
         orderedTabs.indexOf(initialTab.asVisibleLibraryTab()).takeIf { it >= 0 } ?: 0
     }

@@ -495,6 +495,9 @@ class SettingsRepository(private val context: Context) {
     val internationalizationEnabledFlow: Flow<Boolean> =
         dataStoreSettingFlow { it[SettingsKeys.INTERNATIONALIZATION_ENABLED] ?: defaultInternationalization }
 
+    val youtubeEnabledFlow: Flow<Boolean> =
+        settingFlow(AutoSettingsSchema.general.youtubeEnabled)
+
     suspend fun setDynamicColor(value: Boolean) {
         context.dataStore.edit { it[SettingsKeys.DYNAMIC_COLOR] = value }
         persistThemeDynamicColor(context, value)
@@ -1159,6 +1162,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setInternationalizationEnabled(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.INTERNATIONALIZATION_ENABLED] = enabled }
+    }
+
+    suspend fun setYouTubeEnabled(enabled: Boolean) {
+        setSetting(AutoSettingsSchema.general.youtubeEnabled, enabled)
     }
 }
 

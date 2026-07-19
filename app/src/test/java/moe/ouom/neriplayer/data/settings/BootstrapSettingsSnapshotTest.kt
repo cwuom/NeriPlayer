@@ -16,8 +16,16 @@ class BootstrapSettingsSnapshotTest {
         ).sanitized()
 
         assertEquals(false, snapshot.bypassProxy)
+        assertEquals(true, snapshot.youtubeEnabled)
         assertNull(snapshot.downloadDirectoryUri)
         assertNull(snapshot.downloadDirectoryLabel)
         assertNull(snapshot.downloadFileNameTemplate)
+    }
+
+    @Test
+    fun `bootstrap snapshot preserves disabled YouTube state`() {
+        val snapshot = BootstrapSettingsSnapshot(youtubeEnabled = false).sanitized()
+
+        assertEquals(false, snapshot.youtubeEnabled)
     }
 }

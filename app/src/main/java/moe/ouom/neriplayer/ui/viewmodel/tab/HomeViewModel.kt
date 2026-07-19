@@ -33,6 +33,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
@@ -113,12 +114,29 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         // 观察国际化设置变化，切换推荐源
         viewModelScope.launch {
-            AppContainer.settingsRepo.internationalizationEnabledFlow.collect { enabled ->
-                NPLogger.d(TAG, "internationalizationEnabled updated: $enabled")
-                _uiState.value = _uiState.value.copy(internationalizationEnabled = enabled)
-                if (enabled) {
+            combine(
+                AppContainer.settingsRepo.internationalizationEnabledFlow,
+                AppContainer.settingsRepo.youtubeEnabledFlow
+            ) { internationalizationEnabled, youtubeEnabled ->
+                internationalizationEnabled to youtubeEnabled
+            }.collect { (internationalizationEnabled, youtubeEnabled) ->
+                val useYouTubeHome = internationalizationEnabled && youtubeEnabled
+                NPLogger.d(
+                    TAG,
+                    "home source updated: international=$internationalizationEnabled, youtube=$youtubeEnabled"
+                )
+                _uiState.value = _uiState.value.copy(
+                    internationalizationEnabled = useYouTubeHome
+                )
+                if (useYouTubeHome) {
                     refreshYtMusicPlaylists()
                     refreshYtMusicHomeFeed()
+                } else {
+                    cancelYouTubeHomeJobs()
+                    _uiState.value = _uiState.value.copy(
+                        ytMusicPlaylists = HomeSectionState(),
+                        ytMusicHomeShelves = HomeSectionState()
+                    )
                 }
             }
         }
@@ -202,6 +220,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         radarSongsJob?.cancel()
         ytMusicPlaylistJob?.cancel()
         ytMusicHomeFeedJob?.cancel()
+        ytMusicPlaylistRefreshPending = false
+        ytMusicHomeFeedRefreshPending = false
+    }
+
+    private fun cancelYouTubeHomeJobs() {
+        ytMusicPlaylistJob?.cancel()
+        ytMusicHomeFeedJob?.cancel()
+        ytMusicPlaylistJob = null
+        ytMusicHomeFeedJob = null
         ytMusicPlaylistRefreshPending = false
         ytMusicHomeFeedRefreshPending = false
     }
@@ -370,7 +397,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 拉取 YouTube Music 歌单 */
     fun refreshYtMusicPlaylists() {
-        if (offlineMode) return
+        if (offlineMode || !_uiState.value.internationalizationEnabled) return
 
         if (ytMusicPlaylistJob?.isActive == true) {
             ytMusicPlaylistRefreshPending = true
@@ -416,10 +443,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             } finally {
-                ytMusicPlaylistJob = null
-                if (ytMusicPlaylistRefreshPending && !offlineMode) {
-                    ytMusicPlaylistRefreshPending = false
-                    refreshYtMusicPlaylists()
+                val completedJob = coroutineContext[Job]
+                if (ytMusicPlaylistJob === completedJob) {
+                    ytMusicPlaylistJob = null
+                    if (
+                        ytMusicPlaylistRefreshPending &&
+                        !offlineMode &&
+                        _uiState.value.internationalizationEnabled
+                    ) {
+                        ytMusicPlaylistRefreshPending = false
+                        refreshYtMusicPlaylists()
+                    }
                 }
             }
         }
@@ -428,7 +462,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 拉取 YouTube Music 首页推荐 */
     fun refreshYtMusicHomeFeed() {
-        if (offlineMode) return
+        if (offlineMode || !_uiState.value.internationalizationEnabled) return
 
         if (ytMusicHomeFeedJob?.isActive == true) {
             ytMusicHomeFeedRefreshPending = true
@@ -467,10 +501,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             } finally {
-                ytMusicHomeFeedJob = null
-                if (ytMusicHomeFeedRefreshPending && !offlineMode) {
-                    ytMusicHomeFeedRefreshPending = false
-                    refreshYtMusicHomeFeed()
+                val completedJob = coroutineContext[Job]
+                if (ytMusicHomeFeedJob === completedJob) {
+                    ytMusicHomeFeedJob = null
+                    if (
+                        ytMusicHomeFeedRefreshPending &&
+                        !offlineMode &&
+                        _uiState.value.internationalizationEnabled
+                    ) {
+                        ytMusicHomeFeedRefreshPending = false
+                        refreshYtMusicHomeFeed()
+                    }
                 }
             }
         }

@@ -31,7 +31,7 @@ import java.util.Locale
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.data.auth.youtube.isYouTubeAuthRecoverableFailure
+import moe.ouom.neriplayer.data.auth.youtube.shouldStartYouTubeWebAuthRecovery
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthAutoRefreshManager
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
@@ -188,6 +188,20 @@ internal data class YouTubeMusicBootstrapConfig(
 
 internal fun YouTubeMusicBootstrapConfig.hasEffectiveLogin(auth: YouTubeAuthBundle): Boolean {
     return loggedIn || auth.normalized().hasEffectiveAuth()
+}
+
+internal fun shouldRefreshYouTubeAuthAfterEmptyResponse(
+    bootstrapLoggedIn: Boolean,
+    hasLoginCookies: Boolean
+): Boolean {
+    return !bootstrapLoggedIn && hasLoginCookies
+}
+
+internal fun shouldRefreshYouTubeAuthAfterBootstrapFailure(
+    error: Throwable,
+    hasCookieHeader: Boolean
+): Boolean {
+    return hasCookieHeader && shouldStartYouTubeWebAuthRecovery(error)
 }
 
 internal data class YouTubeMusicRequestLocale(
@@ -1930,7 +1944,6 @@ class YouTubeMusicClient(
             return@withContext emptyList()
         }
         NPLogger.d(TAG, "search start: query=$query, limit=$limit")
-        authAutoRefreshManager?.refreshIfNeeded(reason = "search", force = false)
         val requestedLimit = limit.coerceAtLeast(1)
         var bootstrap = bootstrap()
         var requestLocale = YouTubeMusicLocaleResolver.preferred()
@@ -1991,7 +2004,6 @@ class YouTubeMusicClient(
         resolveMissingTrackCounts: Boolean = true
     ): List<YouTubeMusicLibraryPlaylist> = withContext(Dispatchers.IO) {
         NPLogger.d(TAG, "getLibraryPlaylists start")
-        authAutoRefreshManager?.refreshIfNeeded(reason = "library_playlists", force = false)
         var bootstrap = authenticatedBootstrap(reason = "library_playlists")
         var requestLocale = YouTubeMusicLocaleResolver.preferred()
         val items = mutableListOf<YouTubeMusicLibraryPlaylist>()
@@ -2058,7 +2070,12 @@ class YouTubeMusicClient(
                 )
             }
         }
-        if (playlists.isEmpty() && authRepo.getAuthOnce().hasLoginCookies()) {
+        val auth = authRepo.getAuthOnce()
+        if (playlists.isEmpty() && shouldRefreshYouTubeAuthAfterEmptyResponse(
+                bootstrapLoggedIn = bootstrap.loggedIn,
+                hasLoginCookies = auth.hasLoginCookies()
+            )
+        ) {
             val refreshResult = authAutoRefreshManager?.refreshIfNeeded(
                 reason = "library_playlists_empty",
                 force = true
@@ -2129,7 +2146,6 @@ class YouTubeMusicClient(
         if (requireLogin) {
             warnIfMissingYouTubeMusicCookieContext(reason = "home_feed")
         }
-        authAutoRefreshManager?.refreshIfNeeded(reason = "home_feed", force = false)
         var bootstrap = if (requireLogin) {
             authenticatedBootstrap(reason = "home_feed")
         } else {
@@ -2212,7 +2228,12 @@ class YouTubeMusicClient(
             page++
         }
 
-        if (result.isEmpty() && authRepo.getAuthOnce().hasLoginCookies()) {
+        val auth = authRepo.getAuthOnce()
+        if (result.isEmpty() && shouldRefreshYouTubeAuthAfterEmptyResponse(
+                bootstrapLoggedIn = bootstrap.loggedIn,
+                hasLoginCookies = auth.hasLoginCookies()
+            )
+        ) {
             val refreshResult = authAutoRefreshManager?.refreshIfNeeded(
                 reason = "home_feed_empty",
                 force = true
@@ -2499,16 +2520,7 @@ class YouTubeMusicClient(
     }
 
     private suspend fun bootstrap(forceRefresh: Boolean = false): YouTubeMusicBootstrapConfig {
-        var auth = authRepo.getAuthOnce().normalized()
-        var authHealth = authRepo.getAuthHealthOnce()
-        if (forceRefresh && authHealth.activeCookieKeys.isEmpty()) {
-            authAutoRefreshManager?.refreshIfNeeded(
-                reason = "music_bootstrap_missing_active_session",
-                force = true
-            )
-            auth = authRepo.getAuthOnce().normalized()
-            authHealth = authRepo.getAuthHealthOnce()
-        }
+        val auth = authRepo.getAuthOnce().normalized()
         val cookieHeader = auth.effectiveCookieHeader().trim()
         val cacheUserAgent = auth.resolveBootstrapUserAgent()
         val authFingerprint = auth.buildBootstrapAuthFingerprint(
@@ -2584,16 +2596,15 @@ class YouTubeMusicClient(
         val parsedConfig = try {
             fetchBootstrapConfig()
         } catch (error: IOException) {
-            val recoverableFailure = isYouTubeAuthRecoverableFailure(error)
-            if (workingCookieHeader.isBlank() && !recoverableFailure) {
+            if (!shouldRefreshYouTubeAuthAfterBootstrapFailure(
+                    error = error,
+                    hasCookieHeader = workingCookieHeader.isNotBlank()
+                )
+            ) {
                 NPLogger.e(TAG, "bootstrap failed without recoverable auth context", error)
                 throw error
             }
-            val refreshReason = if (recoverableFailure) {
-                "music_bootstrap_http_recoverable"
-            } else {
-                "music_bootstrap_parse_recoverable"
-            }
+            val refreshReason = "music_bootstrap_http_recoverable"
             NPLogger.w(
                 TAG,
                 "bootstrap retry after auth refresh: reason=$refreshReason, message=${error.message}"
@@ -2821,7 +2832,7 @@ class YouTubeMusicClient(
                     if (attempt == YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS - 1) {
                         break
                     }
-                    if (isYouTubeAuthRecoverableFailure(error)) {
+                    if (shouldStartYouTubeWebAuthRecovery(error)) {
                         authAutoRefreshManager?.refreshIfNeeded(
                             reason = "browse_http_recoverable",
                             force = true
@@ -2885,7 +2896,7 @@ class YouTubeMusicClient(
                     if (attempt == YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS - 1) {
                         break
                     }
-                    if (isYouTubeAuthRecoverableFailure(error)) {
+                    if (shouldStartYouTubeWebAuthRecovery(error)) {
                         authAutoRefreshManager?.refreshIfNeeded(
                             reason = "search_http_recoverable",
                             force = true
@@ -2939,11 +2950,15 @@ class YouTubeMusicClient(
 
     private fun executeText(request: Request): String {
         okHttpClient.newCall(request).execute().use { response ->
-            val body = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
-                throw IOException("YouTube Music request failed: ${response.code} ${body.take(160)}")
+                val preview = response.body
+                    ?.readErrorPreviewWithLimit(YOUTUBE_ERROR_RESPONSE_MAX_BYTES)
+                    .orEmpty()
+                throw IOException("YouTube Music request failed: ${response.code} $preview")
             }
-            return body
+            return response.body
+                ?.readTextWithLimit(YOUTUBE_TEXT_RESPONSE_MAX_BYTES)
+                .orEmpty()
         }
     }
 

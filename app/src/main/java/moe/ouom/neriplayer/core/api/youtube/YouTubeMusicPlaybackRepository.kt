@@ -55,12 +55,14 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.selects.select
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.youtube.isYouTubeAuthRecoverableFailure
+import moe.ouom.neriplayer.data.auth.youtube.shouldStartYouTubeWebAuthRecovery
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthAutoRefreshManager
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.data.auth.youtube.evaluateYouTubeAuthHealth
 import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_WEB_ORIGIN
+import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
+import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureDisabledException
 import moe.ouom.neriplayer.data.platform.youtube.appendYouTubeConsentCookie
 import moe.ouom.neriplayer.data.platform.youtube.buildBootstrapAuthFingerprint
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubePageRequestHeaders
@@ -130,7 +132,6 @@ private const val YOUTUBE_PLAYER_WEB_REMIX_HISTORY_LENGTH = 5
 private const val YOUTUBE_PLAYER_PLAYBACK_LACT_MILLISECONDS = "9"
 // 首播更看重尽快落到可播链路，别在 fallback 前白等太久的 PO token
 private const val WEB_REMIX_PO_TOKEN_PREFETCH_JOIN_TIMEOUT_MS = 150L
-private const val PLAYBACK_WARM_AUTH_REFRESH_AGE_MS = 12L * 60L * 60L * 1000L
 private const val PLAYABLE_URL_EXPIRY_SAFETY_MARGIN_MS = 90L * 1000L
 private const val EJS_FALLBACK_START_DELAY_MS = 40L
 private const val CIPHER_RESOLVE_TIMEOUT_MS = 12_000L
@@ -925,6 +926,9 @@ class YouTubeMusicPlaybackRepository(
         preferM4a: Boolean = false,
         shareInFlight: Boolean = true
     ): YouTubePlayableAudio? = withContext(Dispatchers.IO) {
+        if (!YouTubeFeatureGate.isEnabled()) {
+            throw YouTubeFeatureDisabledException()
+        }
         val resolveStartedAtMs = System.currentTimeMillis()
         syncAuthBoundCachesIfNeeded(authProvider().normalized())
         val preferredQualityKey = resolvePreferredQualityKey(preferredQualityOverride)
@@ -975,6 +979,9 @@ class YouTubeMusicPlaybackRepository(
         requireDirect: Boolean = false,
         preferM4a: Boolean = false
     ) = withContext(Dispatchers.IO) {
+        if (!YouTubeFeatureGate.isEnabled()) {
+            return@withContext
+        }
         syncAuthBoundCachesIfNeeded(authProvider().normalized())
         val preferredQualityKey = resolvePreferredQualityKey(preferredQualityOverride)
         val cacheKey = if (preferM4a) "${preferredQualityKey}_m4a" else preferredQualityKey
@@ -1004,6 +1011,7 @@ class YouTubeMusicPlaybackRepository(
         requireDirect: Boolean = false,
         preferM4a: Boolean = false
     ) {
+        if (!YouTubeFeatureGate.isEnabled()) return
         syncAuthBoundCachesIfNeeded(authProvider().normalized())
         val preferredQualityKey = preferredQualityOverride.ifBlank { "high" }
         val cacheKey = if (preferM4a) "${preferredQualityKey}_m4a" else preferredQualityKey
@@ -1028,6 +1036,9 @@ class YouTubeMusicPlaybackRepository(
     }
 
     suspend fun warmBootstrap() = withContext(Dispatchers.IO) {
+        if (!YouTubeFeatureGate.isEnabled()) {
+            return@withContext
+        }
         if (ForegroundWebLoginGuard.isActive) {
             NPLogger.d(
                 "YouTubeMusicPlayback",
@@ -1035,15 +1046,6 @@ class YouTubeMusicPlaybackRepository(
             )
             return@withContext
         }
-        val initialAuth = authProvider().normalized()
-        val shouldForceWarmRefresh = evaluateYouTubeAuthHealth(initialAuth).let { health ->
-            health.activeCookieKeys.isNotEmpty() &&
-                health.ageMs >= PLAYBACK_WARM_AUTH_REFRESH_AGE_MS
-        }
-        authAutoRefreshManager?.refreshIfNeeded(
-            reason = "playback_warm_bootstrap",
-            force = shouldForceWarmRefresh
-        )
         val auth = authProvider().normalized()
         syncAuthBoundCachesIfNeeded(auth)
         if (!auth.hasLoginCookies()) {
@@ -1076,6 +1078,7 @@ class YouTubeMusicPlaybackRepository(
     }
 
     private fun warmWebPoTokenSessionAsync(reason: String) {
+        if (!YouTubeFeatureGate.isEnabled()) return
         val provider = poTokenProvider ?: return
         inFlightPlayableAudioScope.launch {
             val startedAtMs = System.currentTimeMillis()
@@ -1100,6 +1103,7 @@ class YouTubeMusicPlaybackRepository(
     }
 
     fun warmBootstrapAsync() {
+        if (!YouTubeFeatureGate.isEnabled()) return
         val warmTask = synchronized(warmBootstrapLock) {
             inFlightWarmBootstrap
                 ?.takeUnless { it.isCompleted || it.isCancelled }
@@ -2686,10 +2690,12 @@ class YouTubeMusicPlaybackRepository(
             )
         } catch (error: IOException) {
             if (isYouTubeAuthRecoverableFailure(error)) {
-                authAutoRefreshManager?.refreshIfNeeded(
-                    reason = "playback_bootstrap_http_recoverable",
-                    force = true
-                )
+                if (shouldStartYouTubeWebAuthRecovery(error)) {
+                    authAutoRefreshManager?.refreshIfNeeded(
+                        reason = "playback_bootstrap_http_recoverable",
+                        force = true
+                    )
+                }
                 workingAuth = authProvider().normalized()
                 cookieHeader = appendYouTubeConsentCookie(workingAuth.effectiveCookieHeader())
                 if (cookieHeader.isBlank()) {
@@ -2849,11 +2855,12 @@ class YouTubeMusicPlaybackRepository(
 
     private fun executeText(request: Request): String {
         okHttpClient.newCall(request).execute().use { response ->
-            val body = response.body.string()
             if (!response.isSuccessful) {
-                throw IOException("YouTube Music request failed: ${response.code} ${body.take(160)}")
+                val preview = response.body
+                    .readErrorPreviewWithLimit(YOUTUBE_ERROR_RESPONSE_MAX_BYTES)
+                throw IOException("YouTube Music request failed: ${response.code} $preview")
             }
-            return body
+            return response.body.readTextWithLimit(YOUTUBE_TEXT_RESPONSE_MAX_BYTES)
         }
     }
 

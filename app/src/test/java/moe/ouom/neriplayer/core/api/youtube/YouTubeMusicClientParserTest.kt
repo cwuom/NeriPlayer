@@ -11,6 +11,56 @@ import org.junit.Test
 class YouTubeMusicClientParserTest {
 
     @Test
+    fun emptyResponseRefreshesWhenBootstrapRejectsExistingSessionCookies() {
+        assertTrue(
+            shouldRefreshYouTubeAuthAfterEmptyResponse(
+                bootstrapLoggedIn = false,
+                hasLoginCookies = true
+            )
+        )
+    }
+
+    @Test
+    fun emptyResponseDoesNotRefreshWithoutSavedLoginCookies() {
+        assertFalse(
+            shouldRefreshYouTubeAuthAfterEmptyResponse(
+                bootstrapLoggedIn = false,
+                hasLoginCookies = false
+            )
+        )
+    }
+
+    @Test
+    fun emptyResponseDoesNotRefreshForLoggedInBootstrap() {
+        assertFalse(
+            shouldRefreshYouTubeAuthAfterEmptyResponse(
+                bootstrapLoggedIn = true,
+                hasLoginCookies = true
+            )
+        )
+    }
+
+    @Test
+    fun bootstrapParseFailureDoesNotTriggerWebAuthRefresh() {
+        assertFalse(
+            shouldRefreshYouTubeAuthAfterBootstrapFailure(
+                error = java.io.IOException("YouTube Music bootstrap parse failed"),
+                hasCookieHeader = true
+            )
+        )
+    }
+
+    @Test
+    fun unauthorizedBootstrapTriggersWebAuthRefreshWithCookies() {
+        assertTrue(
+            shouldRefreshYouTubeAuthAfterBootstrapFailure(
+                error = java.io.IOException("YouTube Music request failed: 401"),
+                hasCookieHeader = true
+            )
+        )
+    }
+
+    @Test
     fun parseLibraryPlaylists_shouldExtractTrackCountFromBulletSubtitle() {
         val root = JSONObject(
             """

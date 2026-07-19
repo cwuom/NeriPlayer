@@ -33,12 +33,14 @@ import moe.ouom.neriplayer.core.download.normalizeDownloadFileNameTemplate
 private const val BOOTSTRAP_SNAPSHOT_PREFS = "bootstrap_settings_snapshot"
 private const val BOOTSTRAP_SNAPSHOT_READY_KEY = "ready"
 private const val BOOTSTRAP_BYPASS_PROXY_KEY = "bypass_proxy"
+private const val BOOTSTRAP_YOUTUBE_ENABLED_KEY = "youtube_enabled"
 private const val BOOTSTRAP_DOWNLOAD_DIRECTORY_URI_KEY = "download_directory_uri"
 private const val BOOTSTRAP_DOWNLOAD_DIRECTORY_LABEL_KEY = "download_directory_label"
 private const val BOOTSTRAP_DOWNLOAD_FILE_NAME_TEMPLATE_KEY = "download_file_name_template"
 
 data class BootstrapSettingsSnapshot(
     val bypassProxy: Boolean = true,
+    val youtubeEnabled: Boolean = true,
     val downloadDirectoryUri: String? = null,
     val downloadDirectoryLabel: String? = null,
     val downloadFileNameTemplate: String? = null
@@ -84,6 +86,7 @@ internal fun persistBootstrapSettingsSnapshot(
         .edit {
             putBoolean(BOOTSTRAP_SNAPSHOT_READY_KEY, true)
                 .putBoolean(BOOTSTRAP_BYPASS_PROXY_KEY, normalizedSnapshot.bypassProxy)
+                .putBoolean(BOOTSTRAP_YOUTUBE_ENABLED_KEY, normalizedSnapshot.youtubeEnabled)
                 .putString(
                     BOOTSTRAP_DOWNLOAD_DIRECTORY_URI_KEY,
                     normalizedSnapshot.downloadDirectoryUri
@@ -102,6 +105,7 @@ internal fun persistBootstrapSettingsSnapshot(
 internal fun Preferences.toBootstrapSettingsSnapshot(): BootstrapSettingsSnapshot {
     return BootstrapSettingsSnapshot(
         bypassProxy = this[SettingsKeys.BYPASS_PROXY] ?: true,
+        youtubeEnabled = this[SettingsKeys.YOUTUBE_ENABLED] ?: true,
         downloadDirectoryUri = this[SettingsKeys.DOWNLOAD_DIRECTORY_URI],
         downloadDirectoryLabel = this[SettingsKeys.DOWNLOAD_DIRECTORY_LABEL],
         downloadFileNameTemplate = this[SettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE]
@@ -115,6 +119,7 @@ private fun readCachedBootstrapSettingsSnapshot(context: Context): BootstrapSett
     }
     return BootstrapSettingsSnapshot(
         bypassProxy = prefs.getBoolean(BOOTSTRAP_BYPASS_PROXY_KEY, true),
+        youtubeEnabled = prefs.getBoolean(BOOTSTRAP_YOUTUBE_ENABLED_KEY, true),
         downloadDirectoryUri = prefs.getString(BOOTSTRAP_DOWNLOAD_DIRECTORY_URI_KEY, null),
         downloadDirectoryLabel = prefs.getString(BOOTSTRAP_DOWNLOAD_DIRECTORY_LABEL_KEY, null),
         downloadFileNameTemplate = prefs.getString(BOOTSTRAP_DOWNLOAD_FILE_NAME_TEMPLATE_KEY, null)

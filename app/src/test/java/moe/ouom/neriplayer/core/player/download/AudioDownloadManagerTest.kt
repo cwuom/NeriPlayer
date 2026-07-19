@@ -8,11 +8,32 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import okhttp3.Request
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
+import okio.Timeout
 import java.io.IOException
 import java.net.SocketException
 import java.net.UnknownHostException
+import java.util.concurrent.atomic.AtomicBoolean
 
 class AudioDownloadManagerTest {
+
+    @Test
+    fun `cancelYouTubeCalls cancels only trusted YouTube hosts`() {
+        val youtubeCall = FakeCall("https://rr1---sn.example.googlevideo.com/audio")
+        val innertubeCall = FakeCall("https://youtubei.googleapis.com/youtubei/v1/player")
+        val unrelatedCall = FakeCall("https://example.com/audio")
+
+        val canceled = AudioDownloadManager.cancelYouTubeCalls(
+            listOf(youtubeCall, innertubeCall, unrelatedCall)
+        )
+
+        assertEquals(2, canceled)
+        assertTrue(youtubeCall.isCanceled())
+        assertTrue(innertubeCall.isCanceled())
+        assertFalse(unrelatedCall.isCanceled())
+    }
 
     @Test
     fun `batch download parallelism keeps default six and caps at eight workers`() {
@@ -379,5 +400,32 @@ class AudioDownloadManagerTest {
     fun `retry wake signal version advances and wraps safely`() {
         assertEquals(2L, AudioDownloadManager.advanceRetryWakeSignalVersion(1L))
         assertEquals(0L, AudioDownloadManager.advanceRetryWakeSignalVersion(Long.MAX_VALUE))
+    }
+
+    private class FakeCall(url: String) : Call {
+        private val request = Request.Builder().url(url).build()
+        private val canceled = AtomicBoolean(false)
+
+        override fun request(): Request = request
+
+        override fun execute(): Response {
+            throw UnsupportedOperationException("execution is not used")
+        }
+
+        override fun enqueue(responseCallback: Callback) {
+            throw UnsupportedOperationException("enqueue is not used")
+        }
+
+        override fun cancel() {
+            canceled.set(true)
+        }
+
+        override fun isExecuted(): Boolean = false
+
+        override fun isCanceled(): Boolean = canceled.get()
+
+        override fun timeout(): Timeout = Timeout.NONE
+
+        override fun clone(): Call = FakeCall(request.url.toString())
     }
 }

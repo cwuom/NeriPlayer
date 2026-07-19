@@ -118,6 +118,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -150,6 +151,27 @@ import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 private const val SEARCH_INPUT_DEBOUNCE_MS = 300L
 private val ExplorePrimaryTabShape = RoundedCornerShape(20.dp)
 private val ExploreSearchFieldShape = RoundedCornerShape(16.dp)
+
+internal fun exploreSearchSourceDisplayOrder(
+    isInternational: Boolean,
+    youtubeEnabled: Boolean
+): List<SearchSource> {
+    return if (!youtubeEnabled) {
+        listOf(SearchSource.NETEASE, SearchSource.BILIBILI)
+    } else if (isInternational) {
+        listOf(
+            SearchSource.YOUTUBE_MUSIC,
+            SearchSource.NETEASE,
+            SearchSource.BILIBILI
+        )
+    } else {
+        listOf(
+            SearchSource.NETEASE,
+            SearchSource.BILIBILI,
+            SearchSource.YOUTUBE_MUSIC
+        )
+    }
+}
 
 @Composable
 private fun searchSourceLabel(source: SearchSource): String {
@@ -219,20 +241,10 @@ fun ExploreScreen(
 
     val isInternational by AppContainer.settingsRepo.internationalizationEnabledFlow
         .collectAsStateWithLifecycle(initialValue = false)
-    val orderedSearchSources = remember(isInternational) {
-        if (isInternational) {
-            listOf(
-                SearchSource.YOUTUBE_MUSIC,
-                SearchSource.NETEASE,
-                SearchSource.BILIBILI
-            )
-        } else {
-            listOf(
-                SearchSource.NETEASE,
-                SearchSource.BILIBILI,
-                SearchSource.YOUTUBE_MUSIC
-            )
-        }
+    val youtubeEnabled by AppContainer.settingsRepo.youtubeEnabledFlow
+        .collectAsStateWithLifecycle(initialValue = YouTubeFeatureGate.isEnabled())
+    val orderedSearchSources = remember(isInternational, youtubeEnabled) {
+        exploreSearchSourceDisplayOrder(isInternational, youtubeEnabled)
     }
     val initialSearchPage = remember(orderedSearchSources, ui.selectedSearchSource) {
         orderedSearchSources.indexOf(ui.selectedSearchSource).takeIf { it >= 0 } ?: 0
@@ -280,8 +292,8 @@ fun ExploreScreen(
     }
 
     // 国际化模式默认跳到 YouTube Music 标签
-    LaunchedEffect(isInternational) {
-        if (isInternational) {
+    LaunchedEffect(isInternational, youtubeEnabled) {
+        if (isInternational && youtubeEnabled) {
             if (ui.selectedSearchSource != SearchSource.YOUTUBE_MUSIC) {
                 vm.setSearchSource(SearchSource.YOUTUBE_MUSIC)
             }

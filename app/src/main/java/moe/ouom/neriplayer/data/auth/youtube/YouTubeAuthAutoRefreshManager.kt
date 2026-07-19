@@ -19,6 +19,7 @@ import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.platform.youtube.installYouTubeBackgroundWebViewGuard
 import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeLoginHost
 import moe.ouom.neriplayer.data.platform.youtube.removeYouTubeBackgroundWebViewGuard
+import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
 import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -43,6 +44,10 @@ internal fun extractYouTubeRequestFailureCode(error: Throwable): Int? {
 
 internal fun isYouTubeAuthRecoverableFailure(error: Throwable): Boolean {
     return extractYouTubeRequestFailureCode(error) in setOf(401, 403, 429)
+}
+
+internal fun shouldStartYouTubeWebAuthRecovery(error: Throwable): Boolean {
+    return extractYouTubeRequestFailureCode(error) == 401
 }
 
 internal fun isYouTubeRefreshPageSettled(readyState: String): Boolean {
@@ -139,7 +144,6 @@ class YouTubeAuthAutoRefreshManager(
         private const val PAGE_SETTLE_DELAY_MS = 800L
         private const val REFRESH_COOLDOWN_MS = 15L * 60L * 1000L
         private const val FORCE_REFRESH_BACKOFF_MS = 90_000L
-        private const val STALE_VALID_AUTH_REFRESH_AGE_MS = 12L * 60L * 60L * 1000L
         private const val MAX_CONSECUTIVE_FAILURES = 2
         private const val CIRCUIT_BREAK_MS = 30L * 60L * 1000L
     }
@@ -200,6 +204,9 @@ class YouTubeAuthAutoRefreshManager(
         reason: String,
         force: Boolean = false
     ): YouTubeAuthAutoRefreshResult {
+        if (!YouTubeFeatureGate.isEnabled()) {
+            return YouTubeAuthAutoRefreshResult(reason = "youtube_disabled")
+        }
         val auth = authProvider().normalized()
         val health = authHealthProvider()
         if (!auth.hasLoginCookies()) {
@@ -371,8 +378,7 @@ class YouTubeAuthAutoRefreshManager(
         }
         val hasActiveValidSession = health.state == YouTubeAuthState.Valid &&
             health.activeCookieKeys.isNotEmpty()
-        val isFreshEnoughToSkipRefresh = health.ageMs in 0 until STALE_VALID_AUTH_REFRESH_AGE_MS
-        if (!force && hasActiveValidSession && isFreshEnoughToSkipRefresh) {
+        if (!force && hasActiveValidSession) {
             return RefreshGateDecision(allowed = false, reason = "auth_valid")
         }
         if (health.state == YouTubeAuthState.Missing) {

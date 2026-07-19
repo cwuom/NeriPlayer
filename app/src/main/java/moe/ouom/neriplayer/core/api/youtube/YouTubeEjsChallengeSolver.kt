@@ -417,7 +417,7 @@ internal class YouTubeEjsChallengeSolver(
             if (!response.isSuccessful) {
                 throw IOException("Failed to fetch player JS: ${response.code}")
             }
-            response.body.string()
+            response.body.readTextWithLimit(YOUTUBE_TEXT_RESPONSE_MAX_BYTES)
         }
         putCached(playerScriptCache, playerJsUrl, script)
         return script

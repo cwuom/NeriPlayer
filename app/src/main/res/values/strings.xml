@@ -609,6 +609,8 @@
     <string name="recommend_radar">私人雷达</string>
     <string name="settings_internationalization">国际化</string>
     <string name="settings_internationalization_desc">开启后首页推荐和探索页将切换为 YouTube Music</string>
+    <string name="settings_youtube_enabled">启用 YouTube</string>
+    <string name="settings_youtube_enabled_desc">关闭后隐藏 YouTube 入口并停止相关网络请求与后台预热</string>
     <string name="home_ytmusic_playlists">YouTube 歌单</string>
     <string name="home_ytmusic_guess_you_like">猜你喜欢</string>
     <string name="home_ytmusic_daily_discover">每日发现</string>

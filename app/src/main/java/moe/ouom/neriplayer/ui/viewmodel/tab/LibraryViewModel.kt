@@ -34,6 +34,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
@@ -41,6 +42,7 @@ import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicLibraryPlaylist
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.youtube.buildRefreshObserverFingerprint
+import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
@@ -74,7 +76,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val biliCookieRepo = AppContainer.biliCookieRepo
     private val biliClient = AppContainer.biliClient
     private val youtubeAuthRepo = AppContainer.youtubeAuthRepo
-    private val youtubeMusicClient = AppContainer.youtubeMusicClient
 
 
     private val _uiState = MutableStateFlow(
@@ -84,6 +85,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private var lastYouTubeAuthFingerprint: String? = null
     private var youtubeMusicPlaylistsJob: Job? = null
     private var youtubeMusicPlaylistsPending = false
+    private var youtubeEnabled = YouTubeFeatureGate.isEnabled()
+    private var lastObservedYouTubeEnabled: Boolean? = null
 
     init {
         // 本地歌单
@@ -126,13 +129,25 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
         // YouTube Music
         viewModelScope.launch {
-            youtubeAuthRepo.authFlow.collect { bundle ->
+            combine(
+                youtubeAuthRepo.authFlow,
+                AppContainer.settingsRepo.youtubeEnabledFlow
+            ) { bundle, enabled ->
+                bundle to enabled
+            }.collect { (bundle, enabled) ->
+                youtubeEnabled = enabled
                 val nextFingerprint = bundle.buildRefreshObserverFingerprint()
-                if (nextFingerprint == lastYouTubeAuthFingerprint) {
+                val authChanged = nextFingerprint != lastYouTubeAuthFingerprint
+                val enabledChanged = enabled != lastObservedYouTubeEnabled
+                if (!authChanged && !enabledChanged) {
                     return@collect
                 }
                 lastYouTubeAuthFingerprint = nextFingerprint
-                if (!bundle.hasYouTubeMusicCookieContext()) {
+                lastObservedYouTubeEnabled = enabled
+                if (!enabled || !bundle.hasYouTubeMusicCookieContext()) {
+                    youtubeMusicPlaylistsJob?.cancel()
+                    youtubeMusicPlaylistsJob = null
+                    youtubeMusicPlaylistsPending = false
                     _uiState.value = _uiState.value.copy(
                         youtubeMusicPlaylists = emptyList(),
                         youtubeMusicError = null
@@ -303,6 +318,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun refreshYouTubeMusicPlaylists() {
+        if (!youtubeEnabled) return
         val runningJob = youtubeMusicPlaylistsJob
         if (runningJob?.isActive == true) {
             youtubeMusicPlaylistsPending = true
@@ -313,7 +329,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         youtubeMusicPlaylistsJob = viewModelScope.launch {
             try {
                 val playlists = withContext(Dispatchers.IO) {
-                    youtubeMusicClient.getLibraryPlaylists(
+                    AppContainer.youtubeMusicClient.getLibraryPlaylists(
                         resolveMissingTrackCounts = false
                     )
                 }
@@ -334,10 +350,13 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     youtubeMusicError = e.message
                 )
             } finally {
-                youtubeMusicPlaylistsJob = null
-                if (youtubeMusicPlaylistsPending) {
-                    youtubeMusicPlaylistsPending = false
-                    refreshYouTubeMusicPlaylists()
+                val completedJob = coroutineContext[Job]
+                if (youtubeMusicPlaylistsJob === completedJob) {
+                    youtubeMusicPlaylistsJob = null
+                    if (youtubeMusicPlaylistsPending && youtubeEnabled) {
+                        youtubeMusicPlaylistsPending = false
+                        refreshYouTubeMusicPlaylists()
+                    }
                 }
             }
         }

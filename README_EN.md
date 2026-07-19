@@ -295,6 +295,8 @@ For release build and signing details, see
   International mode prioritizes YouTube Music home shelves.
 - 🗂️ **Categorized Library browsing**:
   `Library` includes Local, Favorites, NetEase, YouTube Music, and Bilibili areas.
+  YouTube can be fully disabled under Settings > General, which hides its entry
+  points and stops related background warmups.
   Local content can switch between playlists/artists with search and artist
   sorting; Favorites can switch between playlists/artists; NetEase can switch
   between playlists/albums; Bilibili separates created favorites, subscribed

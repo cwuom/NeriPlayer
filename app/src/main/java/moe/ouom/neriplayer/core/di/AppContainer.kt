@@ -72,6 +72,8 @@ import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeader
 import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeHost
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeInnertubeHost
+import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureDisabledException
+import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.network.DynamicProxySelector
 import okhttp3.ConnectionPool
@@ -148,20 +150,29 @@ internal fun handleYouTubeAuthStateChanged(
     clearBootstrapCache: () -> Unit,
     clearPlaybackAuthBoundCaches: (Boolean) -> Unit,
     evictConnections: () -> Unit,
+    youtubeEnabled: Boolean = true,
     warmBootstrapAsync: () -> Unit
 ) {
+    if (!youtubeEnabled) {
+        return
+    }
     clearBootstrapCache()
     // 只移除旧请求引用，避免 auth 恢复成功时把当前播放请求自己取消掉
     clearPlaybackAuthBoundCaches(false)
     evictConnections()
-    warmYouTubePlaybackIfAuthorized(bundle, warmBootstrapAsync)
+    warmYouTubePlaybackIfAuthorized(
+        bundle = bundle,
+        youtubeEnabled = youtubeEnabled,
+        warmBootstrapAsync = warmBootstrapAsync
+    )
 }
 
 internal fun warmYouTubePlaybackIfAuthorized(
     bundle: moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle,
+    youtubeEnabled: Boolean = true,
     warmBootstrapAsync: () -> Unit
 ) {
-    if (bundle.hasEffectiveAuth() && !ForegroundWebLoginGuard.isActive) {
+    if (youtubeEnabled && bundle.hasEffectiveAuth() && !ForegroundWebLoginGuard.isActive) {
         warmBootstrapAsync()
     }
 }
@@ -246,6 +257,9 @@ object AppContainer {
                 if (!isYouTubeHost(host)) {
                     return@addInterceptor chain.proceed(request)
                 }
+                if (!YouTubeFeatureGate.isEnabled()) {
+                    throw YouTubeFeatureDisabledException()
+                }
 
                 val auth = youtubeAuthRepo.getAuthOnce().normalized()
                 val originalHeaders = linkedMapOf<String, String>().apply {
@@ -307,20 +321,22 @@ object AppContainer {
     }
 
     val biliClient by lazy { BiliClient(biliCookieRepo, client = sharedOkHttpClient) }
-    val youtubeMusicClient by lazy {
+    private val youtubeMusicClientDelegate = lazy {
         YouTubeMusicClient(
             authRepo = youtubeAuthRepo,
             okHttpClient = sharedOkHttpClient,
             authAutoRefreshManager = youtubeAuthAutoRefreshManager
         )
     }
+    val youtubeMusicClient: YouTubeMusicClient
+        get() = youtubeMusicClientDelegate.value
 
     // 功能 Repo 和 API
     val biliPlaybackRepository by lazy {
         val dataSource = BiliClientAudioDataSource(biliClient)
         BiliPlaybackRepository(dataSource, settingsRepo)
     }
-    val youtubeMusicPlaybackRepository by lazy {
+    private val youtubeMusicPlaybackRepositoryDelegate = lazy {
         YouTubeMusicPlaybackRepository(
             okHttpClient = sharedOkHttpClient,
             settings = settingsRepo,
@@ -329,7 +345,9 @@ object AppContainer {
             applicationContext = application
         )
     }
-    val youtubeMusicDownloadPlaybackRepository by lazy {
+    val youtubeMusicPlaybackRepository: YouTubeMusicPlaybackRepository
+        get() = youtubeMusicPlaybackRepositoryDelegate.value
+    private val youtubeMusicDownloadPlaybackRepositoryDelegate = lazy {
         YouTubeMusicPlaybackRepository(
             okHttpClient = sharedOkHttpClient.newBuilder()
                 .callTimeout(YOUTUBE_DOWNLOAD_PLAYBACK_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
@@ -340,6 +358,8 @@ object AppContainer {
             applicationContext = application
         )
     }
+    val youtubeMusicDownloadPlaybackRepository: YouTubeMusicPlaybackRepository
+        get() = youtubeMusicDownloadPlaybackRepositoryDelegate.value
 
     val cloudMusicSearchApi by lazy { CloudMusicSearchApi(neteaseClient) }
     val qqMusicSearchApi by lazy { QQMusicSearchApi() }
@@ -365,8 +385,16 @@ object AppContainer {
         if (!::application.isInitialized) {
             return
         }
-        youtubeMusicPlaybackRepository.clearAuthBoundCaches(cancelInFlightPlayableAudio = false)
-        youtubeMusicDownloadPlaybackRepository.clearAuthBoundCaches(cancelInFlightPlayableAudio = false)
+        if (youtubeMusicPlaybackRepositoryDelegate.isInitialized()) {
+            youtubeMusicPlaybackRepositoryDelegate.value.clearAuthBoundCaches(
+                cancelInFlightPlayableAudio = false
+            )
+        }
+        if (youtubeMusicDownloadPlaybackRepositoryDelegate.isInitialized()) {
+            youtubeMusicDownloadPlaybackRepositoryDelegate.value.clearAuthBoundCaches(
+                cancelInFlightPlayableAudio = false
+            )
+        }
     }
 
     fun initialize(app: Application) {
@@ -382,6 +410,7 @@ object AppContainer {
     private fun primeProxySetting() {
         val initialBootstrapSettings = readBootstrapSettingsSnapshotSync(application)
         DynamicProxySelector.bypassProxy = initialBootstrapSettings.bypassProxy
+        YouTubeFeatureGate.update(initialBootstrapSettings.youtubeEnabled)
         ManagedDownloadStorage.primeSettings(
             directoryUri = initialBootstrapSettings.downloadDirectoryUri,
             directoryLabel = initialBootstrapSettings.downloadDirectoryLabel,
@@ -405,6 +434,9 @@ object AppContainer {
             .drop(1)
             .distinctUntilChangedBy { bundle -> bundle.toWarmBootstrapKey() }
             .onEach { bundle ->
+                if (!YouTubeFeatureGate.isEnabled()) {
+                    return@onEach
+                }
                 handleYouTubeAuthStateChanged(
                     bundle = bundle,
                     clearBootstrapCache = youtubeMusicClient::clearBootstrapCache,
@@ -413,6 +445,7 @@ object AppContainer {
                         youtubeMusicDownloadPlaybackRepository.clearAuthBoundCaches(cancelInFlight)
                     },
                     evictConnections = sharedOkHttpClient.connectionPool::evictAll,
+                    youtubeEnabled = YouTubeFeatureGate.isEnabled(),
                     warmBootstrapAsync = youtubeMusicPlaybackRepository::warmBootstrapAsync
                 )
             }
@@ -459,13 +492,46 @@ object AppContainer {
                 ManagedDownloadStorage.updateDownloadFileNameTemplate(template)
             }
             .launchIn(scope)
+
+        settingsRepo.youtubeEnabledFlow
+            .onEach { enabled ->
+                val wasEnabled = YouTubeFeatureGate.isEnabled()
+                YouTubeFeatureGate.update(enabled)
+                if (wasEnabled && !enabled) {
+                    if (youtubeMusicClientDelegate.isInitialized()) {
+                        youtubeMusicClientDelegate.value.clearBootstrapCache()
+                    }
+                    if (youtubeMusicPlaybackRepositoryDelegate.isInitialized()) {
+                        youtubeMusicPlaybackRepositoryDelegate.value.clearAuthBoundCaches()
+                    }
+                    if (youtubeMusicDownloadPlaybackRepositoryDelegate.isInitialized()) {
+                        youtubeMusicDownloadPlaybackRepositoryDelegate.value.clearAuthBoundCaches()
+                    }
+                    AudioDownloadManager.cancelActiveYouTubeDownloads()
+                    cancelYouTubeCalls()
+                } else if (!wasEnabled && enabled) {
+                    warmYouTubePlaybackOnAppStart()
+                }
+            }
+            .launchIn(scope)
     }
 
     private fun warmYouTubePlaybackOnAppStart() {
+        if (!YouTubeFeatureGate.isEnabled()) {
+            return
+        }
         warmYouTubePlaybackIfAuthorized(
             bundle = youtubeAuthRepo.getAuthOnce().normalized(),
+            youtubeEnabled = YouTubeFeatureGate.isEnabled(),
             warmBootstrapAsync = youtubeMusicPlaybackRepository::warmBootstrapAsync
         )
+    }
+
+    private fun cancelYouTubeCalls() {
+        val calls = sharedOkHttpClient.dispatcher.queuedCalls() +
+            sharedOkHttpClient.dispatcher.runningCalls()
+        calls.filter { call -> isYouTubeHost(call.request().url.host) }
+            .forEach { call -> call.cancel() }
     }
 
     private fun isYouTubeHost(host: String): Boolean {

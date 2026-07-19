@@ -329,5 +329,17 @@ class AutoSettingsGeneratedTest {
             R.drawable.ic_i18n,
             AutoSettingsSchema.general.internationalizationEnabled.iconRes
         )
+        assertEquals(
+            R.drawable.ic_youtube,
+            AutoSettingsSchema.general.youtubeEnabled.iconRes
+        )
+    }
+
+    @Test
+    fun youtubeFeatureSwitchDefaultsToEnabled() {
+        val setting = AutoSettingsSchema.general.youtubeEnabled
+
+        assertEquals("youtube_enabled", setting.key)
+        assertEquals(true, setting.defaultValue)
     }
 }

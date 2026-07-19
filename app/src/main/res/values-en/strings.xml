@@ -609,6 +609,8 @@
     <string name="recommend_radar">Personal Radar</string>
     <string name="settings_internationalization">Internationalization</string>
     <string name="settings_internationalization_desc">Switch home recommendations and explore to YouTube Music</string>
+    <string name="settings_youtube_enabled">Enable YouTube</string>
+    <string name="settings_youtube_enabled_desc">Hide YouTube entry points and stop related requests and background warmups when disabled</string>
     <string name="home_ytmusic_playlists">YouTube Music Playlists</string>
     <string name="home_ytmusic_guess_you_like">Guess You Like</string>
     <string name="home_ytmusic_daily_discover">Daily Discover</string>

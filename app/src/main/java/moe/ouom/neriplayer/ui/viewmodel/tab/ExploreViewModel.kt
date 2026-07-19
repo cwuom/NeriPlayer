@@ -46,6 +46,7 @@ import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
+import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistSummaries
@@ -108,6 +109,19 @@ data class ExploreUiState(
     val ytMusicPlaylistsError: String? = null
 )
 
+internal fun ExploreUiState.withYouTubeDisabled(): ExploreUiState {
+    val youtubeWasSelected = selectedSearchSource == SearchSource.YOUTUBE_MUSIC
+    return copy(
+        selectedSearchSource = if (youtubeWasSelected) SearchSource.NETEASE else selectedSearchSource,
+        searching = if (youtubeWasSelected) false else searching,
+        searchResults = if (youtubeWasSelected) emptyList() else searchResults,
+        searchError = if (youtubeWasSelected) null else searchError,
+        ytMusicPlaylists = emptyList(),
+        ytMusicPlaylistsLoading = false,
+        ytMusicPlaylistsError = null
+    )
+}
+
 class ExploreViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application
     private val neteaseRepo = NeteaseCookieRepository(application)
@@ -116,6 +130,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     private var ytMusicPlaylistsJob: Job? = null
     private var ytMusicPlaylistsPending = false
     private var searchRequestVersion = 0L
+    private var youtubeEnabled = YouTubeFeatureGate.isEnabled()
 
     private val _uiState = MutableStateFlow(ExploreUiState())
     val uiState: StateFlow<ExploreUiState> = _uiState
@@ -133,10 +148,19 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 loadHighQuality()
             }
         }
+        viewModelScope.launch {
+            AppContainer.settingsRepo.youtubeEnabledFlow.collect { enabled ->
+                youtubeEnabled = enabled
+                if (!enabled) {
+                    disableYouTubeSource()
+                }
+            }
+        }
     }
 
     /** 设置当前搜索源 */
     fun setSearchSource(source: SearchSource) {
+        if (source == SearchSource.YOUTUBE_MUSIC && !youtubeEnabled) return
         if (source == _uiState.value.selectedSearchSource) return
         NPLogger.d(TAG, "setSearchSource: ${_uiState.value.selectedSearchSource} -> $source")
         searchJob?.cancel()
@@ -432,6 +456,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
 
     /** 搜索 YouTube Music：只返回歌曲结果 */
     private fun searchYouTubeMusic(keyword: String, requestVersion: Long) {
+        if (!youtubeEnabled) return
         searchJob = viewModelScope.launch {
             try {
                 val songs = withContext(Dispatchers.IO) {
@@ -476,6 +501,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
 
     /** 加载 YouTube Music 歌单列表 */
     fun loadYtMusicPlaylists() {
+        if (!youtubeEnabled) return
         if (ytMusicPlaylistsJob?.isActive == true) {
             ytMusicPlaylistsPending = true
             NPLogger.d(TAG, "loadYtMusicPlaylists coalesced while loading")
@@ -515,13 +541,27 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     ytMusicPlaylistsError = "YouTube Music: ${e.message ?: "unknown error"}"
                 )
             } finally {
-                ytMusicPlaylistsJob = null
-                if (ytMusicPlaylistsPending) {
-                    ytMusicPlaylistsPending = false
-                    loadYtMusicPlaylists()
+                val completedJob = coroutineContext[Job]
+                if (ytMusicPlaylistsJob === completedJob) {
+                    ytMusicPlaylistsJob = null
+                    if (ytMusicPlaylistsPending && youtubeEnabled) {
+                        ytMusicPlaylistsPending = false
+                        loadYtMusicPlaylists()
+                    }
                 }
             }
         }
+    }
+
+    private fun disableYouTubeSource() {
+        if (_uiState.value.selectedSearchSource == SearchSource.YOUTUBE_MUSIC) {
+            searchJob?.cancel()
+            invalidateSearchRequest()
+        }
+        ytMusicPlaylistsJob?.cancel()
+        ytMusicPlaylistsJob = null
+        ytMusicPlaylistsPending = false
+        _uiState.value = _uiState.value.withYouTubeDisabled()
     }
 }
 
