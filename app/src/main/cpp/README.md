@@ -1,5 +1,7 @@
 # NeriPlayer Native Source License / Native 源码授权说明
 
+Last updated / 最后更新：2026-07-21
+
 This directory contains NeriPlayer native source code, and also includes
 third-party native source code used by the build.
 
@@ -8,18 +10,33 @@ native 源码。
 
 ## Scope / 授权范围
 
-This extra license only applies to native source code that is owned by,
-or can be relicensed by, the NeriPlayer project author.
+This extra license applies only to NeriPlayer-owned portions of the current
+native source and native-test paths listed below. Future files under these
+paths are covered only when the NeriPlayer project author owns the copyright
+or otherwise has the right to offer this alternative license.
 
-下面的额外授权仅适用于 NeriPlayer 项目作者拥有版权或有权再授权的
-native 源码，包括但不限于：
+下面的额外授权仅适用于下列路径中由 NeriPlayer 项目拥有版权的 native
+源码和 native 测试文件。以后新增到这些路径的文件，也只有在 NeriPlayer
+项目作者拥有版权或有权提供本替代授权时，才会被纳入：
 
 - `crash/`
 - `usb/exclusive/`
+- `usb/feedback/`
 - `usb/iso/`
 - `usb/pcm/`
 - `usb/uac1/`
 - `usb/uac2/`
+- `tests/usb/`, for NeriPlayer-owned host tests and supporting test files
+- `tests/usb/`，仅限 NeriPlayer 自有的 host 测试及其配套测试文件
+- NeriPlayer-owned portions of `CMakeLists.txt` and `tests/usb/CMakeLists.txt`
+- `CMakeLists.txt` 和 `tests/usb/CMakeLists.txt` 中由 NeriPlayer 自有的部分
+
+This alternative license does not automatically apply to Kotlin, Java,
+Android resources, scripts or tools outside this directory, generated build
+outputs, or any other repository content not included in the scope above.
+
+本替代授权不会自动扩展到本目录之外的 Kotlin、Java、Android 资源、脚本、
+工具、生成的构建产物，或其他未列入上述范围的仓库内容。
 
 This license does not apply to third-party source code with its own
 copyright or license notice.
@@ -28,20 +45,23 @@ copyright or license notice.
 
 - `libusb/` keeps following `LGPL-2.1-or-later` as declared in its file headers
 - `libusb/` 源码继续遵循文件头中声明的 `LGPL-2.1-or-later`
+- Imported test fixtures, traces, corpora, or specifications with their own notices
+- 带有独立声明的外部测试夹具、反馈轨迹、语料或规范资料
 - Any other file with an explicit third-party copyright or license notice
 - 其他明确标注了独立许可证或第三方版权信息的文件
 
 If a file contains both NeriPlayer-owned code and third-party code, the
-third-party parts still follow their original licenses.
+third-party parts still follow their original licenses. A file-specific
+copyright or license notice takes precedence over the path list above.
 
 如果某个文件同时包含 NeriPlayer 自有代码和第三方代码，第三方代码仍按其
-原许可证处理。
+原许可证处理。文件自身明确标注的版权或许可证声明优先于上述路径列表。
 
 ## External Contributions / 外部贡献
 
-Native contributions from other developers can only be covered by this
-alternative license if the contributor explicitly agrees to license that
-contribution under both:
+Native contributions from other developers are covered by this alternative
+license only when the contributor explicitly grants both licenses for that
+contribution:
 
 其他开发者贡献的 native 源码，只有在贡献者明确同意时，才会被纳入本
 替代授权。贡献者需要同意其贡献同时按以下两种方式授权：
@@ -51,13 +71,24 @@ contribution under both:
 - The NeriPlayer Native Attribution License described in this README
 - 本 README 中描述的 NeriPlayer Native Attribution License / 署名授权
 
-By submitting a pull request or patch that modifies the NeriPlayer-owned
-native source areas listed above, the contributor is expected to grant this
-dual license for their contribution. If a contributor does not agree, they
-must clearly say so before the contribution is merged.
+Submitting a pull request, patch, or commit by itself does not create this
+alternative-license grant. The dual-license agreement must be recorded in the
+pull request, commit, signed agreement, or another form accepted by the
+copyright holder.
 
-当贡献者提交修改上述 NeriPlayer 自有 native 源码区域的 pull request 或
-patch 时，默认应明确接受这种双授权。如果贡献者不同意，必须在合并前清楚说明。
+仅提交 pull request、patch 或 commit，本身不代表已经授予本替代授权。
+双授权同意必须记录在 pull request、commit、签署的协议，或版权持有人接受的
+其他可审计形式中。
+
+Suggested contribution statement / 建议的贡献声明：
+
+```text
+I license my contribution under both GPL-3.0 and the NeriPlayer Native
+Attribution License in app/src/main/cpp/README.md.
+
+我同意将本次贡献同时按 GPL-3.0 和 app/src/main/cpp/README.md 中的
+NeriPlayer Native Attribution License 授权。
+```
 
 If a native contribution is accepted without this dual-license grant, that
 specific contribution is not covered by the attribution-based closed-source
@@ -75,12 +106,14 @@ that permission.
 
 ## Attribution License / 署名授权
 
-For the NeriPlayer-owned native source code listed above, the copyright
-holder grants the following alternative license in addition to the GPL-3.0
-license in the repository root `LICENSE` file.
+For NeriPlayer-owned native source code included in the Scope above and not
+excluded by a file-specific or third-party notice, the copyright holder grants
+the following alternative license in addition to the GPL-3.0 license in the
+repository root `LICENSE` file.
 
-对于上述 NeriPlayer 自有 native 源码，除了根目录 `LICENSE` 中的
-GPL-3.0 授权外，版权持有人额外授予以下替代授权：
+对于纳入上述授权范围、且未被文件自身声明或第三方声明排除的 NeriPlayer
+自有 native 源码，除了根目录 `LICENSE` 中的 GPL-3.0 授权外，版权持有人
+额外授予以下替代授权：
 
 You may copy, reference, modify, merge, compile, link, publish, and
 redistribute this native source code, including use in closed-source or
@@ -95,13 +128,13 @@ native source code, as long as all conditions below are met.
 Required conditions / 必须满足的条件：
 
 1. Show NeriPlayer project information in a place that end users can easily see
-2. 在最终产品中用户容易看到的位置展示 NeriPlayer 项目信息
-3. The information must include the project name, project link, and original author
-4. 项目信息至少包含项目名称、项目链接和原作者信息
-5. Do not imply that NeriPlayer or the original author endorses or certifies your project
-6. 不得暗示 NeriPlayer 或原作者为你的项目提供背书、认证或担保
-7. Do not remove existing copyright, license, or third-party notices from the source code
-8. 不得移除源码中已有的版权、许可证或第三方声明
+   在最终产品中用户容易看到的位置展示 NeriPlayer 项目信息
+2. The information must include the project name, project link, and original author
+   项目信息至少包含项目名称、项目链接和原作者信息
+3. Do not imply that NeriPlayer or the original author endorses or certifies your project
+   不得暗示 NeriPlayer 或原作者为你的项目提供背书、认证或担保
+4. Do not remove existing copyright, license, or third-party notices from the source code
+   不得移除源码中已有的版权、许可证或第三方声明
 
 Recommended notice / 推荐展示格式：
 
