@@ -28,6 +28,7 @@ struct FeedbackClockSnapshot {
     uint64_t lockCount = 0;
     uint64_t relockCount = 0;
     uint64_t holdoverCount = 0;
+    uint64_t holdoverTotalNs = 0;
     uint64_t rejectedSamples = 0;
     uint64_t nonMonotonicEvents = 0;
 };
@@ -60,8 +61,10 @@ private:
     void enterHoldover(int64_t transitionAtNs);
     void updateRelocking(
         FeedbackRateQ32 targetRateQ32,
-        bool estimatorStable
+        bool estimatorStable,
+        int64_t receivedAtNs
     );
+    void finishHoldover(int64_t endedAtNs);
     FeedbackMathStatus recordRejected(int64_t receivedAtNs);
     void clearRuntimeState();
     void fail(FeedbackClockFailureReason reason);
@@ -84,6 +87,7 @@ private:
     uint64_t lockCount_ = 0;
     uint64_t relockCount_ = 0;
     uint64_t holdoverCount_ = 0;
+    uint64_t holdoverTotalNs_ = 0;
     uint64_t rejectedSamples_ = 0;
     uint64_t nonMonotonicEvents_ = 0;
 };

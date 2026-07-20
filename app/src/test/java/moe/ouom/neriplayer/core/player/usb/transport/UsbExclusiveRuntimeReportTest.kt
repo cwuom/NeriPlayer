@@ -139,6 +139,7 @@ class UsbExclusiveRuntimeReportTest {
         val metrics = buildString {
             append("reportVersion=2 source=player_pcm syncType=async ")
             append("feedbackMode=explicit feedbackEndpoint=0x84 feedbackState=Locked ")
+            append("feedbackClockFailure=holdover_timeout ")
             append("transportRunning=true feedbackReady=true realPcmReleased=true ")
             append("canAcceptPcm=true playbackReady=true feedbackReusable=true ")
             append("terminalFailure=false nativeStreamGeneration=9 candidateId=cs43131 ")
@@ -152,6 +153,10 @@ class UsbExclusiveRuntimeReportTest {
         assertEquals(UsbExclusiveFeedbackMode.Explicit, metrics.feedbackMode)
         assertEquals(0x84, metrics.feedbackEndpointAddress)
         assertEquals(UsbExclusiveFeedbackState.Locked, metrics.feedbackState)
+        assertEquals(
+            UsbExclusiveFeedbackClockFailure.HoldoverTimeout,
+            metrics.feedbackClockFailure
+        )
         assertEquals(UsbExclusiveRecoveryAction.Holdover, metrics.recommendedAction)
         assertEquals(UsbExclusiveRecoveryActionOwner.Native, metrics.actionOwner)
         assertTrue(metrics.playbackReady == true)

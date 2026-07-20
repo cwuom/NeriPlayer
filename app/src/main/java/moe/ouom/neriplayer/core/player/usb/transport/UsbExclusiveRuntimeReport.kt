@@ -50,6 +50,13 @@ enum class UsbExclusiveFeedbackState {
     Failed
 }
 
+enum class UsbExclusiveFeedbackClockFailure {
+    None,
+    AcquireTimeout,
+    HoldoverTimeout,
+    NonMonotonicTime
+}
+
 enum class UsbExclusiveRecoveryAction {
     None,
     Holdover,
@@ -100,6 +107,8 @@ data class UsbExclusiveRuntimeMetrics(
     val feedbackHoldoverCount: Long? = null,
     val feedbackHoldoverTotalMs: Long? = null,
     val feedbackLastAgeMs: Long? = null,
+    val feedbackClockFailure: UsbExclusiveFeedbackClockFailure =
+        UsbExclusiveFeedbackClockFailure.None,
     val feedbackInFlight: Int? = null,
     val feedbackTransferErrors: Long? = null,
     val feedbackPacketErrors: Long? = null,
@@ -443,6 +452,13 @@ internal fun String.usbRuntimeMetrics(): UsbExclusiveRuntimeMetrics {
     val feedbackHoldoverCount = longField("feedbackHoldoverCount")
     val feedbackHoldoverTotalMs = longField("feedbackHoldoverTotalMs")
     val feedbackLastAgeMs = longField("feedbackLastAgeMs")
+    val feedbackClockFailure = field("feedbackClockFailure")?.let { raw ->
+        raw.toUsbExclusiveFeedbackClockFailureOrNull().also { parsed ->
+            if (parsed == null && reportVersion >= 2) {
+                failClosed("invalid_feedbackClockFailure")
+            }
+        }
+    } ?: UsbExclusiveFeedbackClockFailure.None
     val feedbackInFlight = intField("feedbackInFlight")
     val feedbackTransferErrors = longField("feedbackTransferErrors")
     val feedbackPacketErrors = longField("feedbackPacketErrors")
@@ -628,6 +644,7 @@ internal fun String.usbRuntimeMetrics(): UsbExclusiveRuntimeMetrics {
         feedbackHoldoverCount = feedbackHoldoverCount,
         feedbackHoldoverTotalMs = feedbackHoldoverTotalMs,
         feedbackLastAgeMs = feedbackLastAgeMs,
+        feedbackClockFailure = feedbackClockFailure,
         feedbackInFlight = feedbackInFlight,
         feedbackTransferErrors = feedbackTransferErrors,
         feedbackPacketErrors = feedbackPacketErrors,
@@ -752,6 +769,17 @@ private fun String.toEndpointAddressOrNull(): Int? {
         toIntOrNull()
     }
     return parsed?.takeIf { it in 0x01..0xFF }
+}
+
+private fun String.toUsbExclusiveFeedbackClockFailureOrNull():
+    UsbExclusiveFeedbackClockFailure? {
+    return when (toReportEnumToken()) {
+        "none" -> UsbExclusiveFeedbackClockFailure.None
+        "acquiretimeout" -> UsbExclusiveFeedbackClockFailure.AcquireTimeout
+        "holdovertimeout" -> UsbExclusiveFeedbackClockFailure.HoldoverTimeout
+        "nonmonotonictime" -> UsbExclusiveFeedbackClockFailure.NonMonotonicTime
+        else -> null
+    }
 }
 
 private fun String.isUnsignedReportNumber(): Boolean {

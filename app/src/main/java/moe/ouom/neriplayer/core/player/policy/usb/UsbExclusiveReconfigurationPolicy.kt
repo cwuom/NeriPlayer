@@ -11,3 +11,14 @@ internal fun shouldSkipRedundantUsbExclusiveReconfiguration(
     return reason.contains("permission", ignoreCase = true) ||
         reason.contains("open_gate_retry", ignoreCase = true)
 }
+
+internal fun shouldDeferUsbExclusiveRecoveryForPendingReconfiguration(
+    reconfigurationActive: Boolean,
+    reconfigurationReason: String?
+): Boolean {
+    if (!reconfigurationActive) return false
+    return reconfigurationReason?.contains(
+        "immediate_native_recovery",
+        ignoreCase = true
+    ) == true
+}

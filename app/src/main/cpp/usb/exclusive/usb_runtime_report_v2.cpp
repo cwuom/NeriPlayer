@@ -141,6 +141,7 @@ bool validateSnapshot(
 ) {
     if (!isReportToken(snapshot.candidateId) ||
         !isReportToken(snapshot.feedbackRawValue) ||
+        !isReportToken(snapshot.feedbackClockFailure) ||
         !isReportToken(snapshot.errorCode)) {
         assignError(error, "invalid_report_token");
         return false;
@@ -253,6 +254,7 @@ bool buildUsbRuntimeReportV2Fields(
         << " feedbackHoldoverCount=" << snapshot.feedbackHoldoverCount
         << " feedbackHoldoverTotalMs=" << snapshot.feedbackHoldoverTotalMs
         << " feedbackLastAgeMs=" << snapshot.feedbackLastAgeMs
+        << " feedbackClockFailure=" << snapshot.feedbackClockFailure
         << " feedbackInFlight=" << snapshot.feedbackInFlight
         << " feedbackTransferErrors=" << snapshot.feedbackTransferErrors
         << " feedbackPacketErrors=" << snapshot.feedbackPacketErrors

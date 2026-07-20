@@ -25,6 +25,17 @@ void incrementSaturated(uint64_t* value) {
     }
 }
 
+void addSaturated(uint64_t* value, uint64_t amount) {
+    if (value == nullptr) {
+        return;
+    }
+    if (amount > std::numeric_limits<uint64_t>::max() - *value) {
+        *value = std::numeric_limits<uint64_t>::max();
+        return;
+    }
+    *value += amount;
+}
+
 FeedbackRateQ32 slewStep(
     FeedbackRateQ32 current,
     FeedbackRateQ32 target,
@@ -108,6 +119,7 @@ FeedbackMathStatus FeedbackClock::start(int64_t startedAtNs) {
     lockCount_ = 0;
     relockCount_ = 0;
     holdoverCount_ = 0;
+    holdoverTotalNs_ = 0;
     rejectedSamples_ = 0;
     nonMonotonicEvents_ = 0;
     failureReason_ = FeedbackClockFailureReason::None;
@@ -153,10 +165,18 @@ FeedbackMathStatus FeedbackClock::onEstimate(
         case FeedbackClockState::Holdover:
             state_ = FeedbackClockState::Relocking;
             consecutiveRelockStable_ = 0;
-            updateRelocking(estimate.trustedRateQ32, estimate.stable);
+            updateRelocking(
+                estimate.trustedRateQ32,
+                estimate.stable,
+                receivedAtNs
+            );
             break;
         case FeedbackClockState::Relocking:
-            updateRelocking(estimate.trustedRateQ32, estimate.stable);
+            updateRelocking(
+                estimate.trustedRateQ32,
+                estimate.stable,
+                receivedAtNs
+            );
             break;
         case FeedbackClockState::Disabled:
         case FeedbackClockState::Failed:
@@ -204,6 +224,7 @@ void FeedbackClock::clearRuntimeState() {
     lockCount_ = 0;
     relockCount_ = 0;
     holdoverCount_ = 0;
+    holdoverTotalNs_ = 0;
     rejectedSamples_ = 0;
     nonMonotonicEvents_ = 0;
 }
@@ -220,6 +241,7 @@ FeedbackClockSnapshot FeedbackClock::snapshot() const {
         lockCount_,
         relockCount_,
         holdoverCount_,
+        holdoverTotalNs_,
         rejectedSamples_,
         nonMonotonicEvents_
     };
@@ -249,6 +271,7 @@ FeedbackMathStatus FeedbackClock::evaluateDeadlines(int64_t nowNs) {
          state_ == FeedbackClockState::Relocking) &&
         holdoverStartedNs_ >= 0 &&
         nowNs - holdoverStartedNs_ >= hardHoldoverNs_) {
+        finishHoldover(nowNs);
         fail(FeedbackClockFailureReason::HoldoverTimeout);
         return FeedbackMathStatus::NotReady;
     }
@@ -264,7 +287,8 @@ void FeedbackClock::enterHoldover(int64_t transitionAtNs) {
 
 void FeedbackClock::updateRelocking(
     FeedbackRateQ32 targetRateQ32,
-    bool estimatorStable
+    bool estimatorStable,
+    int64_t receivedAtNs
 ) {
     trustedRateQ32_ = slewStep(
         trustedRateQ32_,
@@ -285,11 +309,22 @@ void FeedbackClock::updateRelocking(
         : 0;
     if (consecutiveRelockStable_ >= config_.relockStableSamples) {
         state_ = FeedbackClockState::Locked;
-        holdoverStartedNs_ = -1;
+        finishHoldover(receivedAtNs);
         consecutiveRelockStable_ = 0;
         incrementSaturated(&lockCount_);
         incrementSaturated(&relockCount_);
     }
+}
+
+void FeedbackClock::finishHoldover(int64_t endedAtNs) {
+    if (holdoverStartedNs_ < 0 || endedAtNs < holdoverStartedNs_) {
+        return;
+    }
+    addSaturated(
+        &holdoverTotalNs_,
+        static_cast<uint64_t>(endedAtNs - holdoverStartedNs_)
+    );
+    holdoverStartedNs_ = -1;
 }
 
 FeedbackMathStatus FeedbackClock::recordRejected(int64_t receivedAtNs) {

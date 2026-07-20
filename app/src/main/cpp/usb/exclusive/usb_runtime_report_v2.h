@@ -56,6 +56,7 @@ struct UsbRuntimeReportV2Snapshot {
     int64_t feedbackHoldoverCount = 0;
     int64_t feedbackHoldoverTotalMs = 0;
     int64_t feedbackLastAgeMs = 0;
+    std::string feedbackClockFailure = "none";
     int feedbackInFlight = 0;
     int64_t feedbackTransferErrors = 0;
     int64_t feedbackPacketErrors = 0;

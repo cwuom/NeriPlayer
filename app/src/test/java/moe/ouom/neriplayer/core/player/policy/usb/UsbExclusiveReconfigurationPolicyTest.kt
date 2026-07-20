@@ -56,4 +56,31 @@ class UsbExclusiveReconfigurationPolicyTest {
             )
         )
     }
+
+    @Test
+    fun `defers duplicate recovery while immediate native recovery is active`() {
+        assertTrue(
+            shouldDeferUsbExclusiveRecoveryForPendingReconfiguration(
+                reconfigurationActive = true,
+                reconfigurationReason =
+                    "usb_exclusive_immediate_native_recovery:fresh_open"
+            )
+        )
+    }
+
+    @Test
+    fun `does not defer unrelated or completed reconfiguration`() {
+        assertFalse(
+            shouldDeferUsbExclusiveRecoveryForPendingReconfiguration(
+                reconfigurationActive = false,
+                reconfigurationReason = "usb_exclusive_immediate_native_recovery:fresh_open"
+            )
+        )
+        assertFalse(
+            shouldDeferUsbExclusiveRecoveryForPendingReconfiguration(
+                reconfigurationActive = true,
+                reconfigurationReason = "usb_output_preferences_changed"
+            )
+        )
+    }
 }

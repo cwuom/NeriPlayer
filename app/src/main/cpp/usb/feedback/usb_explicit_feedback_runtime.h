@@ -99,6 +99,8 @@ private:
     uint32_t consecutiveTransferErrors_ = 0;
     uint64_t lastRawValue_ = 0;
     uint32_t lastPayloadBytes_ = 0;
+    bool hasTerminalGateSnapshot_ = false;
+    FeedbackStreamGateSnapshot terminalGateSnapshot_;
 };
 
 const char* explicitFeedbackRuntimeStateName(ExplicitFeedbackRuntimeState state);

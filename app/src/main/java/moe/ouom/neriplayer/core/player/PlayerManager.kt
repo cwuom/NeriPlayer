@@ -104,6 +104,9 @@ import moe.ouom.neriplayer.core.player.policy.refresh.RefreshInFlightController
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshRequestSemantics
 import moe.ouom.neriplayer.core.player.policy.storage.RestorableLocalMediaState
 import moe.ouom.neriplayer.core.player.policy.storage.resolveRestorableLocalMediaState
+import moe.ouom.neriplayer.core.player.policy.usb.UsbAudioSinkReconfigurationCoordinator
+import moe.ouom.neriplayer.core.player.policy.usb.UsbAudioSinkReconfigurationSnapshot
+import moe.ouom.neriplayer.core.player.policy.usb.UsbAudioSinkReconfigurationToken
 import moe.ouom.neriplayer.core.player.prefetch.GenericUrlPrefetchCache
 import moe.ouom.neriplayer.core.player.prefetch.PlaybackDemandArbiter
 import moe.ouom.neriplayer.core.player.prefetch.clearPlaybackDemandCacheKey
@@ -272,7 +275,8 @@ object PlayerManager {
     internal var playbackSoundPersistJob: Job? = null
     internal var playbackSoundApplyJob: Job? = null
     internal var lastRequiresPcmAudioProcessing: Boolean? = null
-    internal var usbAudioSinkReconfigureJob: Job? = null
+    internal val usbAudioSinkReconfigurationCoordinator =
+        UsbAudioSinkReconfigurationCoordinator()
     internal var usbExclusiveSystemAudioReleaseJob: Job? = null
     internal var usbExclusiveSystemAudioResumeJob: Job? = null
     internal var usbExclusiveSystemAudioWatchdogJob: Job? = null
@@ -1344,6 +1348,49 @@ object PlayerManager {
             "NERI-UsbExclusive",
             "playback preparing=$preparing reason=$reason"
         )
+    }
+
+    internal fun beginUsbAudioSinkReconfiguration(
+        reason: String
+    ): UsbAudioSinkReconfigurationToken {
+        val start = usbAudioSinkReconfigurationCoordinator.begin(reason)
+        start.supersededJob?.cancel()
+        return start.token
+    }
+
+    internal fun installUsbAudioSinkReconfiguration(
+        requestToken: UsbAudioSinkReconfigurationToken,
+        job: Job
+    ): Boolean {
+        return usbAudioSinkReconfigurationCoordinator.install(requestToken, job)
+    }
+
+    internal fun finishUsbAudioSinkReconfiguration(
+        requestToken: UsbAudioSinkReconfigurationToken,
+        job: Job
+    ) {
+        usbAudioSinkReconfigurationCoordinator.complete(requestToken, job)
+    }
+
+    internal fun isLatestUsbAudioSinkReconfiguration(
+        requestToken: UsbAudioSinkReconfigurationToken
+    ): Boolean {
+        return usbAudioSinkReconfigurationCoordinator.isLatest(requestToken)
+    }
+
+    internal fun abandonUsbAudioSinkReconfiguration(
+        requestToken: UsbAudioSinkReconfigurationToken
+    ) {
+        usbAudioSinkReconfigurationCoordinator.abandonIfUninstalled(requestToken)
+    }
+
+    internal fun usbAudioSinkReconfigurationSnapshot():
+        UsbAudioSinkReconfigurationSnapshot {
+        return usbAudioSinkReconfigurationCoordinator.snapshot()
+    }
+
+    internal fun cancelUsbAudioSinkReconfiguration() {
+        usbAudioSinkReconfigurationCoordinator.invalidate()?.cancel()
     }
 
     fun changeCurrentPlaybackQuality(optionKey: String) {

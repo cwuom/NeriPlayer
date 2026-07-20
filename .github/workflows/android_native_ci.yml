@@ -1,0 +1,167 @@
+name: NeriPlayer Android Native CI
+
+on:
+  push:
+    paths:
+      - '.github/workflows/android_native_ci.yml'
+      - 'app/src/main/cpp/**'
+      - 'app/src/main/jniLibs/**'
+      - 'app/build.gradle*'
+      - 'build.gradle*'
+      - 'settings.gradle*'
+      - 'build-logic/**'
+      - 'buildSrc/**'
+      - 'gradle/**'
+      - 'gradle.properties'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'tools_pub/usb-async-lab'
+  pull_request:
+    paths:
+      - '.github/workflows/android_native_ci.yml'
+      - 'app/src/main/cpp/**'
+      - 'app/src/main/jniLibs/**'
+      - 'app/build.gradle*'
+      - 'build.gradle*'
+      - 'settings.gradle*'
+      - 'build-logic/**'
+      - 'buildSrc/**'
+      - 'gradle/**'
+      - 'gradle.properties'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'tools_pub/usb-async-lab'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host-tests:
+    name: Host tests (${{ matrix.profile }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, '[skip ci]') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        profile:
+          - release-werror-asserts
+          - asan-ubsan
+          - tsan
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Verify host toolchain
+        run: |
+          cmake --version
+          ninja --version
+
+      - name: Grant execute permission
+        run: chmod +x tools_pub/usb-async-lab
+
+      - name: Run Native USB host gate
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:strict_string_checks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        run: |
+          tools_pub/usb-async-lab host-test \
+            --manifest \
+              app/src/main/cpp/tests/usb/config/run-manifest.example.yaml \
+            --profile "${{ matrix.profile }}"
+
+      - name: Upload Native host reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-host-${{ matrix.profile }}-reports
+          path: |
+            .report/usb/execution/**/host-${{ matrix.profile }}/**/ctest.xml
+            .report/usb/execution/**/host-${{ matrix.profile }}/**/host-test.log
+            .report/usb/execution/**/host-${{ matrix.profile }}/**/manifest.md
+            .report/usb/execution/**/host-${{ matrix.profile }}/**/resource-audit.txt
+            .report/usb/execution/**/host-${{ matrix.profile }}/**/source-context.txt
+            .report/usb/execution/**/host-${{ matrix.profile }}/**/warnings*.txt
+            .report/usb/execution/**/host-${{ matrix.profile }}/**/build/Testing/Temporary/**
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+  android-native-build:
+    name: Android Native build (Debug, all ABIs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, '[skip ci]') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      - name: Build Android Native Debug libraries
+        run: |
+          ./gradlew :app:externalNativeBuildDebug \
+            --no-daemon \
+            --warning-mode all \
+            --stacktrace
+
+      - name: Verify Android Native ABI outputs
+        run: |
+          set -euo pipefail
+          readonly output_root="app/build/intermediates/cxx/Debug"
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            output="$(
+              find "${output_root}" \
+                -path "*/obj/${abi}/lib_neri.so" \
+                -type f \
+                -size +0c \
+                -print \
+                -quit
+            )"
+            if [[ -z "${output}" ]]; then
+              echo "Missing non-empty lib_neri.so for ${abi}" >&2
+              exit 1
+            fi
+            echo "${abi}: ${output}"
+          done
+
+      - name: Upload Android Native build logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-native-build-logs
+          path: |
+            app/build/intermediates/cxx/**/logs/**
+            app/.cxx/**/CMakeFiles/CMakeError.log
+            app/.cxx/**/CMakeFiles/CMakeOutput.log
+            app/.cxx/**/metadata_generation_command.txt
+            build/reports/problems/**
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14

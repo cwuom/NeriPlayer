@@ -5691,9 +5691,38 @@ Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nati
         v2Snapshot.feedbackHoldoverCount = explicitFeedback
             ? reportCounter(feedbackRuntime.gate.clock.holdoverCount)
             : 0;
+        uint64_t feedbackHoldoverTotalNs = explicitFeedback
+            ? feedbackRuntime.gate.clock.holdoverTotalNs
+            : 0;
+        const bool feedbackHoldoverActive = explicitFeedback &&
+            feedbackRuntime.running &&
+            !feedbackRuntime.terminalFailure &&
+            (feedbackRuntime.gate.clock.state ==
+                neri::usb::feedback::FeedbackClockState::Holdover ||
+             feedbackRuntime.gate.clock.state ==
+                neri::usb::feedback::FeedbackClockState::Relocking) &&
+            feedbackRuntime.gate.clock.holdoverStartedNs >= 0 &&
+            feedbackNowNs >= feedbackRuntime.gate.clock.holdoverStartedNs;
+        if (feedbackHoldoverActive) {
+            feedbackHoldoverTotalNs = saturatedCounterSum(
+                feedbackHoldoverTotalNs,
+                static_cast<uint64_t>(
+                    feedbackNowNs -
+                        feedbackRuntime.gate.clock.holdoverStartedNs
+                )
+            );
+        }
+        v2Snapshot.feedbackHoldoverTotalMs = explicitFeedback
+            ? reportCounter(feedbackHoldoverTotalNs / UINT64_C(1000000))
+            : 0;
         v2Snapshot.feedbackLastAgeMs = explicitFeedback
             ? feedbackLastAgeMs
             : 0;
+        v2Snapshot.feedbackClockFailure = explicitFeedback
+            ? neri::usb::feedback::feedbackClockFailureReasonName(
+                feedbackRuntime.gate.clock.failureReason
+            )
+            : "none";
         v2Snapshot.feedbackInFlight = explicitFeedback
             ? static_cast<int>(feedbackTransfers.inFlight)
             : 0;

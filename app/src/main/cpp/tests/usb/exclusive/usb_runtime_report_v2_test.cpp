@@ -107,6 +107,7 @@ void verifiesExplicitFeedbackReport() {
     snapshot.feedbackState = neri::usb::UsbRuntimeFeedbackState::Locked;
     snapshot.feedbackPayloadBytes = 4;
     snapshot.feedbackExpectedPeriodUs = 1000;
+    snapshot.feedbackClockFailure = "holdover_timeout";
     snapshot.feedbackRawValue = "1572864";
     snapshot.feedbackRateQ32 = UINT64_C(103079215104);
     snapshot.feedbackRateHz = 24.0;
@@ -123,6 +124,7 @@ void verifiesExplicitFeedbackReport() {
     assert(report.find("feedbackEndpoint=0x84") != std::string::npos);
     assert(report.find("feedbackState=Locked") != std::string::npos);
     assert(report.find("feedbackValidSamples=32") != std::string::npos);
+    assert(report.find("feedbackClockFailure=holdover_timeout") != std::string::npos);
     assert(report.find("feedbackInFlight=4") != std::string::npos);
 }
 

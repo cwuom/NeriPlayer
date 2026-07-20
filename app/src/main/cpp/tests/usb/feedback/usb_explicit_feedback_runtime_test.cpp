@@ -6,12 +6,17 @@
 
 namespace {
 
+constexpr int64_t kExpectedReportPeriodNs = 500'000;
+constexpr int64_t kSoftMissPeriods = 8;
+
 using neri::usb::feedback::ExplicitFeedbackRuntime;
 using neri::usb::feedback::ExplicitFeedbackRuntimeConfig;
 using neri::usb::feedback::ExplicitFeedbackRuntimeFailure;
 using neri::usb::feedback::ExplicitFeedbackRuntimeState;
 using neri::usb::feedback::FeedbackInCompletion;
 using neri::usb::feedback::FeedbackInCompletionStatus;
+using neri::usb::feedback::FeedbackClockFailureReason;
+using neri::usb::feedback::FeedbackClockState;
 using neri::usb::feedback::FeedbackRawUnit;
 using neri::usb::feedback::StreamGatePacketStatus;
 
@@ -37,7 +42,7 @@ void configureRuntime(
             UINT64_C(0xF0000000)
         },
         q32(12),
-        500'000,
+        kExpectedReportPeriodNs,
         8,
         128,
         1024,
@@ -179,6 +184,52 @@ void acquireTimeoutFailsClosed() {
     const auto snapshot = runtime.snapshot();
     assert(snapshot.terminalFailure);
     assert(snapshot.failure == ExplicitFeedbackRuntimeFailure::FeedbackClock);
+    assert(snapshot.gate.clock.state == FeedbackClockState::Failed);
+    assert(snapshot.gate.clock.failureReason == FeedbackClockFailureReason::AcquireTimeout);
+}
+
+void toleratesAndroidSchedulingGapAndRelocks() {
+    ExplicitFeedbackRuntime runtime;
+    configureRuntime(&runtime);
+    assert(runtime.start(0));
+
+    constexpr std::array<uint8_t, 4> twelveFrames { 0x00, 0x00, 0x0C, 0x00 };
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 1, 500'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 2, 1'000'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 3, 1'500'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    assert(runtime.nextPacket(true).status == StreamGatePacketStatus::PlayerPacket);
+
+    assert(runtime.tick(125'000'000));
+    auto snapshot = runtime.snapshot();
+    assert(!snapshot.terminalFailure);
+    assert(snapshot.gate.clock.state == FeedbackClockState::Holdover);
+
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 4, 125'500'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 5, 126'000'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 6, 126'500'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    snapshot = runtime.snapshot();
+    assert(!snapshot.terminalFailure);
+    assert(snapshot.gate.clock.state == FeedbackClockState::Locked);
+    assert(snapshot.gate.clock.relockCount == 1U);
+    constexpr int64_t lastLockedSampleNs = 1'500'000;
+    constexpr int64_t relockedAtNs = 126'500'000;
+    const uint64_t expectedHoldoverNs = static_cast<uint64_t>(
+        relockedAtNs -
+            (lastLockedSampleNs + kSoftMissPeriods * kExpectedReportPeriodNs)
+    );
+    assert(snapshot.gate.clock.holdoverTotalNs == expectedHoldoverNs);
 }
 
 } // namespace
@@ -189,5 +240,6 @@ int main() {
     toleratesShortErrorsThenFailsClosed();
     ignoresStaleGenerationWithoutPoisoningCurrentStream();
     acquireTimeoutFailsClosed();
+    toleratesAndroidSchedulingGapAndRelocks();
     return 0;
 }

@@ -1,11 +1,30 @@
 #include "usb/feedback/usb_explicit_feedback_runtime.h"
 
+#include <algorithm>
 #include <limits>
 
 namespace neri::usb::feedback {
 namespace {
 
 constexpr uint32_t kMaximumConsecutiveTransferErrors = 8;
+constexpr int64_t kMinimumHardHoldoverNs = 500'000'000;
+constexpr uint16_t kMinimumHardHoldoverPeriods = 64;
+
+uint16_t hardHoldoverPeriods(int64_t expectedReportPeriodNs) {
+    if (expectedReportPeriodNs <= 0) {
+        return kMinimumHardHoldoverPeriods;
+    }
+    const uint64_t expectedPeriod = static_cast<uint64_t>(expectedReportPeriodNs);
+    const uint64_t durationPeriods =
+        (static_cast<uint64_t>(kMinimumHardHoldoverNs) + expectedPeriod - 1U) /
+        expectedPeriod;
+    const uint64_t boundedPeriods = std::clamp<uint64_t>(
+        std::max<uint64_t>(durationPeriods, kMinimumHardHoldoverPeriods),
+        kMinimumHardHoldoverPeriods,
+        std::numeric_limits<uint16_t>::max()
+    );
+    return static_cast<uint16_t>(boundedPeriods);
+}
 
 FeedbackEstimatorConfig estimatorConfig() {
     return FeedbackEstimatorConfig {
@@ -23,7 +42,7 @@ FeedbackClockConfig clockConfig(int64_t expectedReportPeriodNs) {
         expectedReportPeriodNs,
         64,
         8,
-        64,
+        hardHoldoverPeriods(expectedReportPeriodNs),
         3,
         2'000,
         1'000
@@ -60,6 +79,8 @@ bool ExplicitFeedbackRuntime::configure(
     consecutiveTransferErrors_ = 0;
     lastRawValue_ = 0;
     lastPayloadBytes_ = 0;
+    hasTerminalGateSnapshot_ = false;
+    terminalGateSnapshot_ = {};
 
     if (!configurationValid(config) ||
         !estimator_.configure(estimatorConfig(), config.nominalRateQ32) ||
@@ -89,6 +110,8 @@ bool ExplicitFeedbackRuntime::start(int64_t startedAtNs) {
     }
     running_ = true;
     reusableAfterStop_ = false;
+    hasTerminalGateSnapshot_ = false;
+    terminalGateSnapshot_ = {};
     state_ = ExplicitFeedbackRuntimeState::Acquiring;
     return true;
 }
@@ -236,7 +259,9 @@ bool ExplicitFeedbackRuntime::onFeedbackInCompletion(
 
 ExplicitFeedbackRuntimeSnapshot ExplicitFeedbackRuntime::snapshot() const {
     std::lock_guard<std::mutex> guard(mutex_);
-    const FeedbackStreamGateSnapshot gate = gate_.snapshot();
+    const FeedbackStreamGateSnapshot gate = hasTerminalGateSnapshot_
+        ? terminalGateSnapshot_
+        : gate_.snapshot();
     return ExplicitFeedbackRuntimeSnapshot {
         state_,
         failure_,
@@ -265,6 +290,10 @@ bool ExplicitFeedbackRuntime::failLocked(
 ) {
     if (failure_ == ExplicitFeedbackRuntimeFailure::None) {
         failure_ = failure;
+    }
+    if (!hasTerminalGateSnapshot_) {
+        terminalGateSnapshot_ = gate_.snapshot();
+        hasTerminalGateSnapshot_ = true;
     }
     running_ = false;
     reusableAfterStop_ = false;

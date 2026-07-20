@@ -9,5 +9,6 @@ feature-off USB host models:
   entry is documented
 - Release, ASan+UBSan, and TSan execute the same CTest inventory
 - the runner verifies the source fingerprint is stable for the whole attempt
-- public Android CI remains unchanged and does not execute this local gate
+- dedicated Android Native CI executes all three host profiles on native changes
+- Android ABI compilation remains a separate job from the host model tests
 - real-device qualification remains blocked outside the private evidence tree

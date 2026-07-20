@@ -84,6 +84,7 @@ void locksHoldsOverAndRelocksWithBoundedSlew() {
     assert(snapshot.state == FeedbackClockState::Locked);
     assert(snapshot.lockCount == 2);
     assert(snapshot.holdoverCount == 1);
+    assert(snapshot.holdoverTotalNs == 3 * kPeriodNs);
     assert(snapshot.relockCount == 1);
     assert(std::string(neri::usb::feedback::feedbackClockStateName(
         snapshot.state
@@ -112,6 +113,7 @@ void failsAtAcquireAndHoldoverDeadlines() {
     assert(holdoverClock.snapshot().state == FeedbackClockState::Failed);
     assert(holdoverClock.snapshot().failureReason ==
         FeedbackClockFailureReason::HoldoverTimeout);
+    assert(holdoverClock.snapshot().holdoverTotalNs == 20 * kPeriodNs);
 }
 
 void failsClosedForNonMonotonicClockInput() {
