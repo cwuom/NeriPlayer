@@ -165,9 +165,11 @@ Current positioning:
 - **Large screens and daily controls are getting real polish**:
   tablet/landscape Now Playing, Lyrics, Settings, and artist pages use steadier
   width constraints and bottom control layouts. The `Mini Player` supports
-  horizontal swipe for previous/next without expanding the full player. Long-
-  pressing the Now Playing artwork opens an immersive preview with pinch-to-zoom,
-  panning, and a download action.
+  horizontal swipe for previous/next without expanding the full player. Main
+  bottom tabs use interruptible directional page transitions that retain both
+  outgoing and incoming scenes, avoiding glass, scroll-state, and page-state
+  discontinuities during rapid switching. Long-pressing the Now Playing artwork
+  opens an immersive preview with pinch-to-zoom, panning, and a download action.
 - **Sound controls are tied to the active audio session**:
   `PlaybackEffectsController` applies speed, pitch, Android `Equalizer`, and
   `LoudnessEnhancer` to the current Media3 audio session. Presets, manual bands,
@@ -178,8 +180,11 @@ Current positioning:
   **UAC2.0 Type I PCM** audio devices, so system sounds and other apps cannot
   share the USB transport on that path. Device selection, sample-rate/bit-depth/
   buffer policies, 32-bit PCM, software PCM-float conversion, background-playback
-  guidance, startup watchdogs, foreground/background health audits, dynamic
-  transfer scaling, and automatic stall recovery are now part of the path.
+  guidance, UAC2 clock-topology and explicit-feedback endpoint resolution,
+  startup watchdogs, foreground/background health audits, dynamic transfer
+  scaling, and automatic stall recovery are now part of the path. After a long
+  scheduling gap, the runtime reacquires the feedback clock instead of continuing
+  with a stale rate estimate.
 - **Downloads have moved from "can save" to "can recover"**:
   downloads do not use the system `DownloadManager`. They use the shared
   `OkHttpClient`, configurable concurrency, staging files, and sidecar metadata.
@@ -339,9 +344,12 @@ For release build and signing details, see
   conversion from PCM float into the selected device format. When following the
   track sample rate, native exclusive output tries the exact source rate against
   USB descriptors first, then tries a reported compatible rate when the exact
-  format is unavailable and compatibility fallback is enabled. If playback startup,
-  native transfer backpressure, or foreground/background transitions become
-  unhealthy, the app tries in-place reconfiguration, dynamic transfer scaling,
+  format is unavailable and compatibility fallback is enabled. Compatible UAC2
+  asynchronous topologies resolve a clock chain and explicit feedback endpoint,
+  schedule packets from device feedback, and reacquire the feedback clock after
+  long scheduling gaps. If playback startup, native transfer backpressure, or
+  foreground/background transitions become unhealthy, the app tries in-place
+  reconfiguration, coordinated AudioSink recreation, dynamic transfer scaling,
   and soft recovery before falling back to Android system output.
 - 💾 **Configurable streaming cache**:
   audio cache uses `SimpleCache + LRU`, defaults to **1 GB**, and supports
@@ -481,6 +489,9 @@ For release build and signing details, see
 - Release APK filename: `NeriPlayer-<versionName>[-abi].apk`
 - Release builds are `arm64-v8a` by default. Use `-PbuildAllReleaseAbis=true`
   for multi-ABI output.
+- `.github/workflows/android_native_ci.yml` runs Release + `-Werror`,
+  ASan+UBSan, and TSan host CTest profiles for native changes, then separately
+  compiles `arm64-v8a`, `armeabi-v7a`, `x86`, and `x86_64` Android ABIs.
 
 ### Module layout
 
@@ -502,6 +513,13 @@ For release build and signing details, see
   `Home / Explore / Library / Settings` are the primary tabs.
 - `Home` is displayed dynamically based on available Home cards. `Debug` appears
   only after enabling developer mode.
+- `MainTabLayerHost` retains outgoing and incoming main-tab scenes and moves them
+  horizontally according to tab order. Each scene owns saved state and its own
+  advanced-glass owner, and interrupted reverse switches continue from the
+  current transition progress.
+- Detail pages use a drawer-style rise over a slightly recessed background by
+  default. Enabling Coherent feedback switches to a coupled background/detail
+  handoff.
 - `Now Playing` is a full-screen layer above main navigation, with a persistent
   bottom `Mini Player`. The Mini Player supports horizontal swipe for previous/next.
 - `Library` uses paged navigation for Local, Favorites, NetEase, YouTube Music,
@@ -544,9 +562,13 @@ For release build and signing details, see
   It can use 32-bit PCM and software PCM-float conversion. Native exclusive
   output tries the exact source rate first and only tries a reported compatible
   rate when the exact format is unavailable and compatibility fallback is enabled.
-  To reduce stuck states, the player layer also includes startup watchdogs,
-  foreground/background health audits, keep-alive checks, in-place reconfiguration,
-  dynamic transfer scaling, native-transfer backpressure recovery, and system-output fallback.
+  Compatible UAC2 asynchronous explicit-feedback topologies resolve the clock
+  chain, feedback endpoint, and report period. Runtime Report v2 exposes feedback
+  state, endpoint, rate, holdover, and long-gap reacquisition counters. To reduce
+  stuck states, the player layer also includes startup watchdogs,
+  foreground/background health audits, keep-alive checks, generation-coordinated
+  AudioSink reconfiguration, dynamic transfer scaling, native-transfer
+  backpressure recovery, and system-output fallback.
 
 ### Search and data sources
 
@@ -583,6 +605,10 @@ For release build and signing details, see
 - Play history, playback stats, playlists, favorite snapshots, and mappings are
   persisted through local files.
 - Local playlists are stored as JSON with atomic temp-file writes.
+- Sync payload models shared by GitHub and WebDAV live under `data/sync/model/`,
+  while cover mapping lives under `data/sync/`. GitHub/WebDAV managers and
+  transports remain in their provider packages; compatibility serialization and
+  most merge policies currently remain under `sync/github/`.
 - GitHub/WebDAV sync uses a locally generated UUID as the device identifier,
   not `ANDROID_ID`.
 
@@ -738,9 +764,14 @@ and community feedback. They are not fixed-date commitments.
 
 ### Shipped recently
 
+- [x] Dual-scene main-tab transitions, interruptible reverse switching,
+  advanced-glass owner handoff, and drawer-style detail feedback by default
 - [x] Listen Together repeat/shuffle sync, stable-track-key target validation,
   server clock-offset estimation, and authoritative stream recovery
 - [x] 32-bit high-resolution system output, PCM-float channel balance, and thread-safe loudness-normalization state
+- [x] UAC2 explicit feedback, long-gap clock reacquisition, coordinated AudioSink
+  reconfiguration, and Runtime Report v2 for USB exclusive playback
+- [x] Three native USB host warning/sanitizer gates plus four-ABI Android native CI
 - [x] USB exclusive 32-bit PCM, in-place reconfiguration, dynamic transfer scaling, and backpressure stall recovery
 - [x] GitHub/WebDAV cleanup for malformed sync snapshots, missing-field songs, and deletion records
 - [x] Responsibility-based package splits for player, download storage, startup,
@@ -831,6 +862,11 @@ We will keep improving the project over time.
   **UAC2.0 Type I PCM** USB DAC, the foreground service, and the system's
   background/battery policy. If playback is limited after the screen turns off,
   follow the in-app guidance to allow unrestricted background behavior.
+- UAC2 asynchronous paths currently require a uniquely resolved explicit-feedback
+  endpoint and a supported clock topology. Implicit feedback or unverified
+  topologies are rejected as native candidates and use the compatibility fallback.
+- The explicit-feedback path is covered by host-model tests and four-ABI Android
+  compilation, but those results do not prove stability for a specific phone/DAC pair.
 - 32-bit high-resolution system output only targets high-precision sources on
   regular Android system output and bypasses parts of the in-app audio processing
   chain. Keep it disabled when loudness normalization, channel balance, audio
@@ -926,7 +962,14 @@ NeriPlayer is released under **GPL-3.0**.
 This means:
 
 - ✅ You can freely use, modify, and distribute this software.
-- ⚠️ Modified distributions must remain open source under GPL-3.0.
+- ⚠️ Modified distributions using the repository-root GPL-3.0 grant must keep
+  complying with GPL-3.0.
+- 🧩 `app/src/main/cpp/README.md` provides a conditional attribution-based
+  alternative license only for the listed NeriPlayer-owned native source.
+  Third-party code and repository content outside that scope are excluded.
+- ✍️ An external native contribution is not added to the alternative-license
+  scope merely by submitting a PR; the contributor must explicitly record a
+  dual-license grant.
 - 📚 See [LICENSE](./LICENSE) for details.
 
 ---

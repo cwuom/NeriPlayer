@@ -29,6 +29,11 @@
   - 面向用户和新贡献者，说明项目定位、能力边界、安装构建、同步与隐私。
 - `CONTRIBUTING.md` / `CONTRIBUTING_EN.md`
   - 面向开发者，说明真实模块边界、扩展路径、测试和提交要求。
+- `app/src/main/cpp/README.md`
+  - 说明 NeriPlayer 自有 Native 源码的替代授权范围、第三方排除项和
+    外部贡献所需的显式双授权声明。
+- `app/src/main/cpp/tests/usb/config/host-gate-contract.md`
+  - 说明公开 Native USB host 门禁、CI 覆盖与真实设备验证边界。
 - `np-submodule/NeriPlayer-LTW/README.md`
   - 面向一起听服务端部署者，说明 Worker API、事件模型、部署和本地检查。
 
@@ -76,6 +81,8 @@
   授权加密存储和 DataStore 设置。
 - **歌词与播放页 UI**：`AdvancedLyricsView`、`SyncedLyricsView`、
   `LyricShareSheet`、歌词音译显示、歌词长按分享和 Lyrics 全屏页。
+- **导航与玻璃 UI**：`MainTabLayerHost`、详情页抽屉/连贯反馈、
+  可打断主标签切换、页面状态保留和 Advanced Glass owner 接力。
 - **存储与缓存 UI**：`StorageUsageAnalyzer`、缓存清理选项、下载目录索引和 SAF 快照。
 - **一起听**：Android 客户端、Worker 协议字段、角色权限、队列、
   版本门控更新、直链共享开关和房主离线恢复。
@@ -187,6 +194,8 @@
 - `app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt`
   - 顶层 Compose 应用骨架，负责 `NavHost`、动态底栏、
     `MiniPlayer`、`Now Playing` 覆盖层、Debug 路由、主题、缓存清理和播放服务同步。
+  - 主标签页面由 `MainTabLayerHost.kt` 保留出场/入场双场景，
+    按标签顺序执行可打断横向转场，并为各场景保留 saveable state 和玻璃 owner。
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/component/lyrics/`
   - `AdvancedLyricsView.kt` 与 `SyncedLyricsView.kt` 负责高级歌词排版、
@@ -252,7 +261,8 @@
   - `usb/`：按 `device/`、`path/`、`session/`、`sink/`、`system/` 与
     `transport/` 拆分 USB 独占会话、Native 桥、运行态快照和恢复控制，
     当前实现覆盖 **UAC1.0** 和兼容 **UAC2.0 Type I PCM** 设备，
-    并已经包含 32-bit PCM、PCM float 软件转换、原地重配置、动态传输缩放和背压卡顿恢复。
+    并已经包含 32-bit PCM、PCM float 软件转换、UAC2 显式反馈、
+    协调式 AudioSink 重配置、动态传输缩放和背压卡顿恢复。
 
 - `app/src/main/java/moe/ouom/neriplayer/core/download/`
   - `GlobalDownloadManager.kt` 维护全局下载任务与本地已下载列表。
@@ -284,7 +294,9 @@
   - `history/`、`stats/`：最近播放、播放统计和日/周/月/年/总计周期聚合。
   - `backup/`：本地歌单 JSON 备份、导入与差异分析。
   - `config/`：完整配置导入/导出。
-  - `sync/github/`：GitHub 同步、三路合并、序列化、省流模式和安全存储。
+  - `sync/model/`：GitHub 与 WebDAV 共用的同步载荷和冲突模型。
+  - `sync/`：provider 无关的协调、偏好和封面映射。
+  - `sync/github/`：GitHub 传输、三路合并、序列化、省流模式和安全存储。
   - `sync/webdav/`：WebDAV 同步、远端配置、Worker 和 WebDAV API。
 
 - `app/src/main/java/moe/ouom/neriplayer/listentogether/`
@@ -295,8 +307,9 @@
     不应继续堆入根包。
 
 - `app/src/main/cpp/`
-  - Native 崩溃处理位于 `crash/`；USB 实现按 `usb/exclusive/`、`iso/`、
-    `pcm/`、`uac1/` 拆分，对应 Native 测试位于 `tests/usb/`。
+  - Native 崩溃处理位于 `crash/`；USB 实现按 `usb/exclusive/`、
+    `usb/feedback/`、`usb/iso/`、`usb/pcm/`、`usb/uac1/`、`usb/uac2/`
+    拆分，对应 host 测试位于 `tests/usb/`。
 
 - `app/src/main/java/moe/ouom/neriplayer/core/lyricon/`
   - 词幕适配（Lyricon Provider）与 SuperLyric 输出，
@@ -428,23 +441,33 @@
 
 1. 先阅读 `core/player/usb/sink/UsbExclusiveAudioSink.kt`、
    `core/player/usb/transport/`、`core/player/usb/session/`、
+   `core/player/policy/usb/UsbAudioSinkReconfigurationCoordinator.kt`、
    `core/player/watchdog/PlayerManagerStartupWatchdogExtensions.kt`、
    `core/player/lifecycle/PlayerManagerLifecycleExtensions.kt` 和相关测试。
 2. 当前 USB 独占实现覆盖 **UAC1.0** 和兼容 **UAC2.0 Type I PCM** 设备；
    如要扩到更复杂的 UAC2.0 拓扑或非 Type I PCM 设备，需要把文档、能力边界、
    诊断和兼容性假设一起更新。
 3. 同时考虑设备选择、采样率/位深策略、32-bit PCM、PCM float 软件转换、
-   前后台缓冲区、唤醒锁、后台权限提示和系统回退链路。
+   UAC2 时钟拓扑、显式反馈端点、前后台缓冲区、唤醒锁、后台权限提示
+   和系统回退链路；隐式反馈目前仍不是可用候选。
 4. 修改自动恢复、keep-alive 或后台审计时，要验证前台播放、息屏后台、
    USB 拔插和 system fallback 四条路径。
-5. 改动原地重配置、动态传输缩放、背压恢复或候选位深回退时，要同步检查
+5. 改动反馈时钟、长调度间隙重捕获、协调式重配置、动态传输缩放、
+   背压恢复或候选位深回退时，要同步检查
    `UsbExclusiveOutputFormatResolverTest`、`UsbExclusivePcmWritePlannerTest`、
-   `UsbExclusiveSessionControllerReusePolicyTest` 和 native USB PCM/UAC 测试。
-6. 错误语义或恢复策略变化时，要同步更新设置页 / Debug 页诊断展示和对应测试。
+   `UsbExclusiveSessionControllerReusePolicyTest`、
+   `UsbAudioSinkReconfigurationCoordinatorTest` 和 native USB feedback/PCM/UAC 测试。
+6. Runtime Report v2 字段必须保持 fail-closed 解析；修改反馈端点、状态、
+   holdover、恢复 action 或代次字段时，要同步更新 Kotlin parser 和边界测试。
+7. 错误语义或恢复策略变化时，要同步更新设置页 / Debug 页诊断展示和对应测试。
+8. Native 变更至少运行三组 host gate 和四 ABI Android 编译；
+   host 模型、ABI 编译和真实 DAC 验证是三个不同的通过条件。
 
 #### 7. 修改 GitHub / WebDAV 同步
 
-1. 先理解 `SyncDataModels.kt` 与 `SyncDataSerializer.kt` 的兼容策略。
+1. 先理解 `data/sync/model/SyncDataModels.kt` 与
+   `data/sync/github/SyncDataSerializer.kt` 的兼容策略；共享载荷模型不得
+   重新放回 GitHub provider 包。
 2. 同步对象包含歌单、收藏歌单、最近播放、删除记录和播放统计。
 3. `songOrderVersion=0` 表示旧版顺序，`songOrderVersion=1` 表示当前展示顺序；
    序列化、合并和落回本地歌单时必须保留旧数据迁移。
@@ -453,7 +476,8 @@
    带 token 的成员不能退回只比较 `addedAt/deletedAt` 的删除裁决。
 5. 缺字段或畸形快照必须先清洗再合并；`SyncSong` 至少要有 id、audioId 或 mediaUri
    之一，删除记录还需要有效删除时间，缺失 `addedAt` 的歌曲只能作为低优先级展示项。
-6. 合并策略主要在 `GitHubSyncManager.kt`，WebDAV 复用同一套数据模型和多数合并逻辑。
+6. `CoverUrlMapper.kt` 位于 provider 无关的 `data/sync/`；
+   合并策略主要在 `GitHubSyncManager.kt`，WebDAV 复用同一套数据模型和多数合并逻辑。
 7. 不要破坏 `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt` 的延迟同步、
    周期同步、validated network 检查和失败重试行为。
 8. 涉及敏感信息时统一走 `SecureTokenStorage.kt` 或 `WebDavStorage.kt`，
@@ -529,6 +553,22 @@
    不要只改 UI 校验而忘记服务端约束。
 8. 设置页支持自定义服务端地址和可用性测试，不要硬编码单一地址。
 
+#### 14. 修改主导航与玻璃转场
+
+1. 主标签生产路径由 `NeriApp.kt` 与 `MainTabLayerHost.kt` 共同承载；
+   标签顺序与方向统一通过 `resolveMainTabTransitionDirection` 决定。
+2. 转场期间必须同时保留出场和入场 scene，并通过
+   `SaveableStateHolder` 保留各标签状态；快速反向或连续点击不能先清空旧 scene。
+3. 每个 scene 都有独立 `MainTabGlassOwner`。修改 Advanced Glass 时，
+   要保证只有当前可见 owner 参与合成，详情页 handoff 仍由导航层接管。
+4. `coherent_feedback_enabled` 默认关闭：详情页使用抽屉式前景上升和背景轻微下沉；
+   开启后才使用背景与详情页同步接力的连贯反馈。
+5. 修改动效时要覆盖正向、反向、中断、重复请求、状态恢复和启动首帧；
+   几何测试不得把尚未布局的 `Rect(0, 0, 0, 0)` scene 当成真实重叠。
+6. 至少同步检查 `NeriAppMainTabTransitionPolicyTest`、
+   `AdvancedGlassNavigationTransitionTest`、`NeriAppNavigationTransitionTest`
+   和 `HostNavigationTransitionGeometryTest`。
+
 ---
 
 ### 调试与日志 / Debugging & Logs
@@ -583,23 +623,41 @@ adb logcat | grep NeriPlayer
    ```bash
    ./gradlew :app:connectedDebugAndroidTest
    ```
-6. 如修改一起听 Worker：
+6. 如修改 Native USB，实现需对齐独立 Android Native CI：
+   ```bash
+   for profile in release-werror-asserts asan-ubsan tsan; do
+     tools_pub/usb-async-lab host-test \
+       --manifest app/src/main/cpp/tests/usb/config/run-manifest.example.yaml \
+       --profile "$profile"
+   done
+
+   ./gradlew :app:externalNativeBuildDebug \
+     --no-daemon \
+     --warning-mode all \
+     --stacktrace
+   ```
+   host gate 会固定执行同一组 CTest；Android 编译还要确认
+   `arm64-v8a`、`armeabi-v7a`、`x86`、`x86_64` 均生成非空 `lib_neri.so`。
+7. 如修改一起听 Worker：
    ```bash
    npm ci --prefix np-submodule/NeriPlayer-LTW
    npm run check --prefix np-submodule/NeriPlayer-LTW
    ```
    这里的 `npm run check` 只做 `node --check` 语法检查；
    协议或房间状态改动还需要实际验证 create/join/ws 流程。
-7. 新增单元测试放到 `app/src/test/`；
+8. 新增单元测试放到 `app/src/test/`；
    新增设备或 Compose UI 测试放到 `app/src/androidTest/`。
-8. 行为变更涉及 README、设置文案、用户流程或同步格式时，请同步更新文档。
+9. 行为变更涉及 README、设置文案、用户流程或同步格式时，请同步更新文档。
 
 当前已有测试覆盖的重点包括：
 
 - YouTube 登录、挑战解析、PoToken、取流、Range/Seek 策略与预取
 - 网易云歌词、本地 smoke test、自动换源和播放响应解析
 - USB 独占 keep-alive、启动看门狗、前后台恢复、32-bit/float 输出、
-  原地重配置、背压恢复和音频焦点策略
+  UAC2 显式反馈、长调度间隙重捕获、协调式重配置、Runtime Report v2、
+  背压恢复和音频焦点策略
+- 主标签双 scene 转场、快速反向切换、抽屉/连贯详情反馈、玻璃 owner 隔离
+  和未布局 scene 几何过滤
 - 下载元数据、命名、目录迁移、快照缓存、`.nomedia`、删除语义和启动恢复
 - 启动阶段、通知权限、播放服务启动、历史记录与安全模式恢复规划
 - 本地扫描、元信息补全、封面回退、系统歌单去重和歌单顺序稳定性
@@ -633,7 +691,13 @@ Commit 信息建议遵循 Conventional Commits，
 
 - 项目仅供学习与研究使用，请勿用于非法用途。
 - 本项目使用 **GPL-3.0** 协议。
-- 提交贡献即表示你同意以 GPL-3.0 分发你的修改。
+- 提交贡献即表示你同意至少以 GPL-3.0 分发你的修改。
+- `app/src/main/cpp/README.md` 中的替代授权只覆盖明确列出的
+  NeriPlayer 自有 Native 源码，不覆盖第三方代码或其他仓库内容。
+- Native PR 本身不代表授予替代授权；若贡献者同意双授权，必须在 PR、
+  commit 或版权持有人接受的其他可审计记录中加入该 README 提供的声明。
+- 未提供显式双授权的外部 Native 贡献仍可按 GPL-3.0 接受，
+  但不进入“满足署名条件即可闭源使用”的例外范围。
 
 ---
 

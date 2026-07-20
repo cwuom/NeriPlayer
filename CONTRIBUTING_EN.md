@@ -32,6 +32,12 @@ When maintaining docs, split them by audience:
     installation/builds, sync, and privacy.
 - `CONTRIBUTING.md` / `CONTRIBUTING_EN.md`
   - For developers: module boundaries, extension paths, tests, and PR expectations.
+- `app/src/main/cpp/README.md`
+  - Defines the alternative-license scope for NeriPlayer-owned native source,
+    third-party exclusions, and the explicit dual-license statement required
+    for external contributions to enter that scope.
+- `app/src/main/cpp/tests/usb/config/host-gate-contract.md`
+  - Defines the public native USB host gate, CI coverage, and real-device boundary.
 - `np-submodule/NeriPlayer-LTW/README.md`
   - For Listen Together server deployers: Worker API, event model, deployment,
     and local checks.
@@ -84,6 +90,9 @@ NeriPlayer covers a broad product surface. Protect these paths first:
 - **Lyrics and Now Playing UI**: `AdvancedLyricsView`, `SyncedLyricsView`,
   `LyricShareSheet`, phonetic lyric display, long-press lyric sharing, and the
   full-screen Lyrics page.
+- **Navigation and glass UI**: `MainTabLayerHost`, drawer/coherent detail feedback,
+  interruptible main-tab switching, page-state retention, and Advanced Glass
+  owner handoff.
 - **Storage and cache UI**: `StorageUsageAnalyzer`, cache cleanup options,
   download directory indexes, and SAF snapshots.
 - **Listen Together**: Android client, Worker protocol fields, roles, queues,
@@ -203,6 +212,9 @@ Security reminders:
 - `app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt`
   - Top-level Compose app shell. Handles `NavHost`, dynamic bottom bar, `MiniPlayer`,
     `Now Playing` overlay, Debug routes, themes, cache cleanup, and playback service sync.
+  - `MainTabLayerHost.kt` retains outgoing and incoming main-tab scenes,
+    performs interruptible directional transitions, and preserves saveable state
+    plus a glass owner for each scene.
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/component/lyrics/`
   - `AdvancedLyricsView.kt` and `SyncedLyricsView.kt`: advanced lyric layout,
@@ -276,8 +288,8 @@ Security reminders:
     `transport/` for USB-exclusive sessions, the native bridge, runtime snapshots,
     and recovery controls. The current implementation covers **UAC1.0** and
     compatible **UAC2.0 Type I PCM** devices, with 32-bit PCM, software
-    PCM-float conversion, in-place reconfiguration, dynamic transfer scaling,
-    and backpressure stall recovery.
+    PCM-float conversion, UAC2 explicit feedback, coordinated AudioSink
+    reconfiguration, dynamic transfer scaling, and backpressure stall recovery.
 
 - `app/src/main/java/moe/ouom/neriplayer/core/download/`
   - `GlobalDownloadManager.kt`: global download tasks and downloaded song list.
@@ -312,7 +324,10 @@ Security reminders:
   - `history/`, `stats/`: recent plays, playback stats, and day/week/month/year/all-time aggregation.
   - `backup/`: playlist JSON backup/import and diff analysis.
   - `config/`: full app config import/export.
-  - `sync/github/`: GitHub sync, three-way merge, serialization, Data Saver, and secure storage.
+  - `sync/model/`: payload and conflict models shared by GitHub and WebDAV.
+  - `sync/`: provider-neutral coordination, preferences, and cover mapping.
+  - `sync/github/`: GitHub transport, three-way merge, serialization, Data Saver,
+    and secure storage.
   - `sync/webdav/`: WebDAV sync, remote config, Worker, and WebDAV API.
 
 - `app/src/main/java/moe/ouom/neriplayer/listentogether/`
@@ -325,8 +340,8 @@ Security reminders:
 
 - `app/src/main/cpp/`
   - Native crash handling lives under `crash/`. USB code is split across
-    `usb/exclusive/`, `iso/`, `pcm/`, and `uac1/`, with matching native tests
-    under `tests/usb/`.
+    `usb/exclusive/`, `usb/feedback/`, `usb/iso/`, `usb/pcm/`, `usb/uac1/`,
+    and `usb/uac2/`, with matching host tests under `tests/usb/`.
 
 - `app/src/main/java/moe/ouom/neriplayer/core/lyricon/`
   - Lyricon integration and SuperLyric output for current song, playback state, position,
@@ -481,6 +496,7 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 
 1. Read `core/player/usb/sink/UsbExclusiveAudioSink.kt`,
    `core/player/usb/transport/`, `core/player/usb/session/`,
+   `core/player/policy/usb/UsbAudioSinkReconfigurationCoordinator.kt`,
    `core/player/watchdog/PlayerManagerStartupWatchdogExtensions.kt`,
    `core/player/lifecycle/PlayerManagerLifecycleExtensions.kt`, and related tests first.
 2. The current USB-exclusive implementation supports **UAC1.0** and compatible
@@ -488,21 +504,32 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    topologies or non-Type-I PCM devices, update the docs, boundaries,
    diagnostics, and compatibility assumptions together.
 3. Consider device selection, sample-rate/bit-depth policies, 32-bit PCM,
-   software PCM-float conversion, foreground/background buffers, wake locks,
-   background-permission prompts, and the system-fallback path together.
+   software PCM-float conversion, UAC2 clock topology, explicit-feedback
+   endpoints, foreground/background buffers, wake locks, background-permission
+   prompts, and the system-fallback path together. Implicit feedback is not a
+   supported candidate yet.
 4. When changing automatic recovery, keep-alive logic, or background audits,
    validate foreground playback, screen-off background playback, USB attach/detach,
    and Android system fallback paths.
-5. When changing in-place reconfiguration, dynamic transfer scaling, backpressure
-   recovery, or candidate bit-depth fallback, also check
+5. When changing feedback clocks, long-gap reacquisition, coordinated
+   reconfiguration, dynamic transfer scaling, backpressure recovery, or candidate
+   bit-depth fallback, also check
    `UsbExclusiveOutputFormatResolverTest`, `UsbExclusivePcmWritePlannerTest`,
-   `UsbExclusiveSessionControllerReusePolicyTest`, and native USB PCM/UAC tests.
-6. If error semantics or recovery behavior changes, update the Settings / Debug
+   `UsbExclusiveSessionControllerReusePolicyTest`,
+   `UsbAudioSinkReconfigurationCoordinatorTest`, and native USB feedback/PCM/UAC tests.
+6. Runtime Report v2 parsing must remain fail-closed. When changing feedback
+   endpoint, state, holdover, recovery-action, or generation fields, update the
+   Kotlin parser and boundary tests together.
+7. If error semantics or recovery behavior changes, update the Settings / Debug
    diagnostics surfaces and the matching tests.
+8. Native changes should run all three host gates plus the four-ABI Android
+   compile. Host models, ABI compilation, and real-DAC validation are separate gates.
 
 #### 7. Modify GitHub / WebDAV sync
 
-1. Understand `SyncDataModels.kt` and `SyncDataSerializer.kt` compatibility first.
+1. Understand `data/sync/model/SyncDataModels.kt` and
+   `data/sync/github/SyncDataSerializer.kt` compatibility first. Shared payload
+   models must not move back into the GitHub provider package.
 2. Sync data includes playlists, favorite playlists, recent plays, deletion records,
    and playback stats.
 3. `songOrderVersion=0` represents legacy order, while `songOrderVersion=1`
@@ -515,8 +542,9 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 5. Missing-field or malformed snapshots must be cleaned before merging. `SyncSong`
    needs at least one of id, audioId, or mediaUri; deletion records also need a
    valid deletion time; songs with missing `addedAt` are low-priority display items.
-6. Most merge logic lives in `GitHubSyncManager.kt`; WebDAV reuses the same data
-   model and much of the merge behavior.
+6. `CoverUrlMapper.kt` lives in provider-neutral `data/sync/`. Most merge logic
+   lives in `GitHubSyncManager.kt`; WebDAV reuses the same data model and much of
+   the merge behavior.
 7. Do not break the delayed sync, periodic sync, validated-network checks, or retry
    behavior in `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt`.
 8. Sensitive data must go through `SecureTokenStorage.kt` or `WebDavStorage.kt`.
@@ -602,6 +630,27 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    and request de-duplication as protocol boundaries, not just UI validation details.
 8. Settings support custom server URLs and availability tests. Do not hard-code a single server.
 
+#### 14. Modify main navigation and glass transitions
+
+1. The production main-tab path is shared by `NeriApp.kt` and
+   `MainTabLayerHost.kt`; tab order and direction come from
+   `resolveMainTabTransitionDirection`.
+2. Keep both outgoing and incoming scenes alive during transitions and preserve
+   per-tab state with `SaveableStateHolder`. Rapid reverse or repeated requests
+   must not clear the old scene before settlement.
+3. Each scene owns a separate `MainTabGlassOwner`. Advanced Glass changes must
+   keep only visible owners in composition while detail-page handoff remains
+   owned by the navigation layer.
+4. `coherent_feedback_enabled` defaults to off. Detail pages use a drawer-style
+   foreground rise over a slightly recessed background until coherent feedback
+   is explicitly enabled.
+5. Cover forward, reverse, interrupted, repeated-request, state-restoration, and
+   startup-first-frame behavior. Geometry tests must not treat an unlaid-out
+   `Rect(0, 0, 0, 0)` scene as a real overlap.
+6. At minimum, check `NeriAppMainTabTransitionPolicyTest`,
+   `AdvancedGlassNavigationTransitionTest`, `NeriAppNavigationTransitionTest`,
+   and `HostNavigationTransitionGeometryTest`.
+
 ---
 
 ### Debugging & Logs
@@ -657,16 +706,32 @@ Before submitting, consider at least these checks:
    ```bash
    ./gradlew :app:connectedDebugAndroidTest
    ```
-6. If you changed the Listen Together Worker:
+6. If you changed native USB code, match the dedicated Android Native CI gates:
+   ```bash
+   for profile in release-werror-asserts asan-ubsan tsan; do
+     tools_pub/usb-async-lab host-test \
+       --manifest app/src/main/cpp/tests/usb/config/run-manifest.example.yaml \
+       --profile "$profile"
+   done
+
+   ./gradlew :app:externalNativeBuildDebug \
+     --no-daemon \
+     --warning-mode all \
+     --stacktrace
+   ```
+   The host gate runs one fixed CTest inventory. The Android build must also
+   produce non-empty `lib_neri.so` outputs for `arm64-v8a`, `armeabi-v7a`,
+   `x86`, and `x86_64`.
+7. If you changed the Listen Together Worker:
    ```bash
    npm ci --prefix np-submodule/NeriPlayer-LTW
    npm run check --prefix np-submodule/NeriPlayer-LTW
    ```
    `npm run check` only runs `node --check` syntax validation. Protocol or room-state
    changes still need real create/join/WebSocket flow verification.
-7. Add unit tests under `app/src/test/`.
+8. Add unit tests under `app/src/test/`.
    Add device or Compose UI tests under `app/src/androidTest/`.
-8. If behavior changes affect README, settings copy, user flows, or sync formats,
+9. If behavior changes affect README, settings copy, user flows, or sync formats,
    update documentation in the same PR.
 
 Existing focused tests cover areas such as:
@@ -674,7 +739,11 @@ Existing focused tests cover areas such as:
 - YouTube login, challenge parsing, PoToken, playback, Range/Seek policy, and prefetching
 - NetEase lyrics, local smoke tests, auto source switching, and playback response parsing
 - USB-exclusive keep-alive, startup watchdogs, foreground/background recovery,
-  32-bit/float output, in-place reconfiguration, backpressure recovery, and audio-focus policies
+  32-bit/float output, UAC2 explicit feedback, long-gap clock reacquisition,
+  coordinated reconfiguration, Runtime Report v2, backpressure recovery, and
+  audio-focus policies
+- Dual-scene main-tab transitions, rapid reverse switching, drawer/coherent
+  detail feedback, glass-owner isolation, and unlaid-out scene geometry filtering
 - Download metadata, naming, directory migration, snapshot caches, `.nomedia`, delete semantics, and startup recovery
 - Startup stages, notification permission, playback-service startup, history recording, and safe-mode recovery planning
 - Local scanning, metadata hydration, cover fallback resolution, system-playlist de-duplication, and stable playlist order
@@ -708,7 +777,16 @@ Commit messages should follow Conventional Commits when possible, for example:
 
 - This project is for learning and research purposes only. Do not use it for illegal purposes.
 - This project is licensed under **GPL-3.0**.
-- By submitting contributions, you agree to distribute your changes under GPL-3.0.
+- By submitting contributions, you agree to distribute your changes at least
+  under GPL-3.0.
+- The alternative license in `app/src/main/cpp/README.md` covers only the listed
+  NeriPlayer-owned native source, not third-party code or other repository content.
+- A native PR does not itself grant the alternative license. Contributors who
+  agree to dual licensing must record the README's statement in the PR, commit,
+  or another auditable form accepted by the copyright holder.
+- An external native contribution without that explicit dual-license grant can
+  still be accepted under GPL-3.0, but it is excluded from the attribution-based
+  closed-source exception.
 
 ---
 
