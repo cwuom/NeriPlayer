@@ -663,6 +663,20 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
+            key = "coherent_feedback_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = false,
+            order = 15
+        )
+        val coherentFeedbackEnabled = autoSwitchSetting(
+            key = "coherent_feedback_enabled",
+            defaultValue = false,
+            titleRes = R.string.settings_coherent_feedback,
+            descriptionRes = R.string.settings_coherent_feedback_desc,
+            icon = AutoSettingIcon.AdsClick
+        )
+
+        @AutoSetting(
             key = "advanced_blur_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = true,

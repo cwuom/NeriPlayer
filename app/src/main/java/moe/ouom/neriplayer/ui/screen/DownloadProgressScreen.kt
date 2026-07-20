@@ -28,6 +28,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -66,7 +67,8 @@ import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 @Composable
 @Suppress("AssignedValueIsNeverRead")
 fun DownloadProgressScreen(
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    listState: LazyListState
 ) {
     val context = LocalContext.current
     val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsStateWithLifecycle()
@@ -187,6 +189,7 @@ fun DownloadProgressScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
+                state = listState,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(
                     start = 16.dp,

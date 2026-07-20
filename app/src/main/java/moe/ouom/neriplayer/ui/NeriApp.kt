@@ -39,6 +39,7 @@ import android.view.ViewTreeObserver
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -53,6 +54,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -103,6 +106,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
@@ -116,6 +120,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.core.graphics.createBitmap
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -183,7 +188,12 @@ import moe.ouom.neriplayer.ui.component.common.blockUnderlyingTouches
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassController
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassHost
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneMotion
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneLayer
+import moe.ouom.neriplayer.ui.effect.glass.DRAWER_BACKGROUND_SINK_FRACTION
+import moe.ouom.neriplayer.ui.effect.glass.DRAWER_RECESSED_CONTENT_SCALE
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassMainTabTransitionSpec
+import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassVisibilitySceneMotion
 import moe.ouom.neriplayer.ui.effect.glass.captureAdvancedGlassBackdrop
 import moe.ouom.neriplayer.ui.effect.glass.isAdvancedGlassBackendSupported
 import moe.ouom.neriplayer.ui.effect.glass.rememberAdvancedGlassBackdrop
@@ -273,9 +283,26 @@ private val DEBUG_NAVIGATION_DEPTH_BY_ROUTE = mapOf(
     Destinations.DebugCrashLogsList.route to 1,
     Destinations.DebugLogViewer.route to 2
 )
+private val DEBUG_MAIN_TAB_CHILD_ROUTES = DEBUG_NAVIGATION_DEPTH_BY_ROUTE
+    .filterValues { depth -> depth > 0 }
+    .keys
+
+private fun transparentNavigationDepth(route: String?): Int {
+    val debugDepth = DEBUG_NAVIGATION_DEPTH_BY_ROUTE[route]
+    if (debugDepth != null) return debugDepth
+    return when {
+        route == Destinations.NeteaseAlbumDetail.route ||
+            route == Destinations.DownloadProgress.route -> 2
+        route in TRANSPARENT_MAIN_TAB_DETAIL_ROUTES -> 1
+        else -> 0
+    }
+}
 
 internal const val MAIN_TAB_DETAIL_OPEN_DURATION_MS = 220
 internal const val MAIN_TAB_DETAIL_CLOSE_DURATION_MS = 240
+internal const val DRAWER_DETAIL_OPEN_DURATION_MS = 300
+internal const val DRAWER_DETAIL_CLOSE_DURATION_MS = 280
+private const val DRAWER_ROOT_RETAIN_ALPHA = 0.999f
 internal const val DEBUG_NAVIGATION_OPEN_DURATION_MS = 220
 internal const val DEBUG_NAVIGATION_CLOSE_DURATION_MS = 240
 
@@ -283,6 +310,18 @@ internal enum class MainTabDetailHandoff {
     OPEN_DETAIL,
     RETURN_TO_TAB
 }
+
+internal enum class MainTabBackgroundMotion {
+    NONE,
+    COHERENT_EXIT,
+    DRAWER_SINK
+}
+
+internal data class MainTabBackgroundTransform(
+    val translationYFraction: Float,
+    val scale: Float,
+    val alpha: Float
+)
 
 internal fun resolveMainTabTransitionDirection(
     initialRoute: String?,
@@ -344,20 +383,55 @@ internal fun resolveBottomBarLayoutInsets(
     )
 }
 
-internal fun resolveMainTabDetailContentOffsetTarget(route: String?): Float {
-    return if (route in TRANSPARENT_MAIN_TAB_DETAIL_ROUTES) {
-        -1f
-    } else {
-        0f
+internal fun resolveMainTabBackgroundMotion(
+    route: String?,
+    coherentFeedbackEnabled: Boolean
+): MainTabBackgroundMotion = when {
+    route in DEBUG_MAIN_TAB_CHILD_ROUTES && coherentFeedbackEnabled ->
+        MainTabBackgroundMotion.COHERENT_EXIT
+    route in DEBUG_MAIN_TAB_CHILD_ROUTES -> MainTabBackgroundMotion.DRAWER_SINK
+    route in TRANSPARENT_MAIN_TAB_DETAIL_ROUTES && coherentFeedbackEnabled ->
+        MainTabBackgroundMotion.COHERENT_EXIT
+    route in TRANSPARENT_MAIN_TAB_DETAIL_ROUTES -> MainTabBackgroundMotion.DRAWER_SINK
+    else -> MainTabBackgroundMotion.NONE
+}
+
+internal fun resolveMainTabBackgroundTransform(
+    motion: MainTabBackgroundMotion,
+    progress: Float
+): MainTabBackgroundTransform {
+    val normalizedProgress = progress.coerceIn(0f, 1f)
+    return when (motion) {
+        MainTabBackgroundMotion.NONE -> MainTabBackgroundTransform(
+            translationYFraction = 0f,
+            scale = 1f,
+            alpha = 1f
+        )
+        MainTabBackgroundMotion.COHERENT_EXIT -> MainTabBackgroundTransform(
+            translationYFraction = -normalizedProgress,
+            scale = 1f,
+            alpha = 1f
+        )
+        MainTabBackgroundMotion.DRAWER_SINK -> MainTabBackgroundTransform(
+            translationYFraction = DRAWER_BACKGROUND_SINK_FRACTION * normalizedProgress,
+            scale = 1f - (1f - DRAWER_RECESSED_CONTENT_SCALE) * normalizedProgress,
+            alpha = 1f
+        )
     }
 }
 
-internal fun resolveMainTabDetailContentOffsetDurationMillis(targetOffset: Float): Int {
-    return if (targetOffset < 0f) {
-        MAIN_TAB_DETAIL_OPEN_DURATION_MS
-    } else {
-        MAIN_TAB_DETAIL_CLOSE_DURATION_MS
-    }
+internal fun resolveMainTabBackgroundMotionDurationMillis(
+    targetProgress: Float,
+    coherentFeedbackEnabled: Boolean,
+    debugSceneVisible: Boolean
+): Int = when {
+    debugSceneVisible && coherentFeedbackEnabled && targetProgress > 0f ->
+        DEBUG_NAVIGATION_OPEN_DURATION_MS
+    debugSceneVisible && coherentFeedbackEnabled -> DEBUG_NAVIGATION_CLOSE_DURATION_MS
+    coherentFeedbackEnabled && targetProgress > 0f -> MAIN_TAB_DETAIL_OPEN_DURATION_MS
+    coherentFeedbackEnabled -> MAIN_TAB_DETAIL_CLOSE_DURATION_MS
+    targetProgress > 0f -> DRAWER_DETAIL_OPEN_DURATION_MS
+    else -> DRAWER_DETAIL_CLOSE_DURATION_MS
 }
 
 internal fun mainTabDetailContentOffsetEasing(): Easing = FastOutSlowInEasing
@@ -382,7 +456,9 @@ internal fun shouldShowStartupGlassGate(
         !contentEffectReady
 }
 
-internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabEnterTransition(): EnterTransition {
+internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabEnterTransition(
+    coherentFeedbackEnabled: Boolean = true
+): EnterTransition {
     val initialRoute = initialState.destination.route
     val targetRoute = targetState.destination.route
     val direction = resolveMainTabTransitionDirection(
@@ -404,11 +480,25 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabEnterTrans
         targetRoute = targetRoute
     )
     if (debugDirection != null) {
-        return debugNavigationEnterTransition(debugDirection)
+        return if (coherentFeedbackEnabled) {
+            debugNavigationEnterTransition(debugDirection)
+        } else {
+            fadeIn(
+                initialAlpha = DRAWER_ROOT_RETAIN_ALPHA,
+                animationSpec = tween(
+                    durationMillis = if (debugDirection > 0) {
+                        DRAWER_DETAIL_OPEN_DURATION_MS
+                    } else {
+                        DRAWER_DETAIL_CLOSE_DURATION_MS
+                    },
+                    easing = mainTabDetailContentOffsetEasing()
+                )
+            )
+        }
     }
     return if (
         resolveMainTabDetailHandoff(initialRoute, targetRoute) ==
-        MainTabDetailHandoff.RETURN_TO_TAB
+        MainTabDetailHandoff.RETURN_TO_TAB && coherentFeedbackEnabled
     ) {
         slideInVertically(
             animationSpec = tween(
@@ -421,7 +511,9 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabEnterTrans
     }
 }
 
-internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabExitTransition(): ExitTransition {
+internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabExitTransition(
+    coherentFeedbackEnabled: Boolean = true
+): ExitTransition {
     val initialRoute = initialState.destination.route
     val targetRoute = targetState.destination.route
     val direction = resolveMainTabTransitionDirection(
@@ -443,11 +535,15 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabExitTransi
         targetRoute = targetRoute
     )
     if (debugDirection != null) {
-        return debugNavigationExitTransition(debugDirection)
+        return if (coherentFeedbackEnabled) {
+            debugNavigationExitTransition(debugDirection)
+        } else {
+            ExitTransition.KeepUntilTransitionsFinished
+        }
     }
     return if (
         resolveMainTabDetailHandoff(initialRoute, targetRoute) ==
-        MainTabDetailHandoff.OPEN_DETAIL
+        MainTabDetailHandoff.OPEN_DETAIL && coherentFeedbackEnabled
     ) {
         slideOutVertically(
             animationSpec = tween(
@@ -460,24 +556,50 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabExitTransi
     }
 }
 
-internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailEnterTransition(): EnterTransition {
-    return slideInVertically(
-        animationSpec = tween(
-            durationMillis = MAIN_TAB_DETAIL_OPEN_DURATION_MS,
-            easing = mainTabDetailContentOffsetEasing()
+internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailEnterTransition(
+    coherentFeedbackEnabled: Boolean = true
+): EnterTransition {
+    val durationMillis = if (coherentFeedbackEnabled) {
+        MAIN_TAB_DETAIL_OPEN_DURATION_MS
+    } else {
+        DRAWER_DETAIL_OPEN_DURATION_MS
+    }
+    return if (coherentFeedbackEnabled) {
+        slideInVertically(
+            animationSpec = tween(
+                durationMillis = durationMillis,
+                easing = mainTabDetailContentOffsetEasing()
+            )
+        ) { fullHeight -> fullHeight }
+    } else {
+        fadeIn(
+            initialAlpha = DRAWER_ROOT_RETAIN_ALPHA,
+            animationSpec = tween(
+                durationMillis = durationMillis,
+                easing = mainTabDetailContentOffsetEasing()
+            )
         )
-    ) { fullHeight -> fullHeight }
+    }
 }
 
-internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailExitTransition(): ExitTransition {
+internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailExitTransition(
+    coherentFeedbackEnabled: Boolean = true
+): ExitTransition {
     val handoff = resolveMainTabDetailHandoff(
         initialRoute = initialState.destination.route,
         targetRoute = targetState.destination.route
     )
-    return if (handoff == MainTabDetailHandoff.RETURN_TO_TAB) {
+    return if (!coherentFeedbackEnabled) {
+        ExitTransition.KeepUntilTransitionsFinished
+    } else if (handoff == MainTabDetailHandoff.RETURN_TO_TAB) {
+        val durationMillis = if (coherentFeedbackEnabled) {
+            MAIN_TAB_DETAIL_CLOSE_DURATION_MS
+        } else {
+            DRAWER_DETAIL_CLOSE_DURATION_MS
+        }
         slideOutVertically(
             animationSpec = tween(
-                durationMillis = MAIN_TAB_DETAIL_CLOSE_DURATION_MS,
+                durationMillis = durationMillis,
                 easing = mainTabDetailContentOffsetEasing()
             )
         ) { fullHeight -> fullHeight }
@@ -491,38 +613,78 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetail
     }
 }
 
-internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailPopEnterTransition(): EnterTransition {
-    return slideInVertically(
-        animationSpec = tween(
-            durationMillis = MAIN_TAB_DETAIL_CLOSE_DURATION_MS,
-            easing = mainTabDetailContentOffsetEasing()
+internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailPopEnterTransition(
+    coherentFeedbackEnabled: Boolean = true
+): EnterTransition {
+    return if (coherentFeedbackEnabled) {
+        slideInVertically(
+            animationSpec = tween(
+                durationMillis = MAIN_TAB_DETAIL_CLOSE_DURATION_MS,
+                easing = mainTabDetailContentOffsetEasing()
+            )
+        ) { fullHeight -> -fullHeight }
+    } else {
+        fadeIn(
+            initialAlpha = DRAWER_ROOT_RETAIN_ALPHA,
+            animationSpec = tween(
+                durationMillis = DRAWER_DETAIL_CLOSE_DURATION_MS,
+                easing = mainTabDetailContentOffsetEasing()
+            )
         )
-    ) { fullHeight -> -fullHeight }
+    }
 }
 
-internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailPopExitTransition(): ExitTransition {
-    return slideOutVertically(
-        animationSpec = tween(
-            durationMillis = MAIN_TAB_DETAIL_CLOSE_DURATION_MS,
-            easing = mainTabDetailContentOffsetEasing()
-        )
-    ) { fullHeight -> fullHeight }
+internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailPopExitTransition(
+    coherentFeedbackEnabled: Boolean = true
+): ExitTransition {
+    return if (coherentFeedbackEnabled) {
+        slideOutVertically(
+            animationSpec = tween(
+                durationMillis = MAIN_TAB_DETAIL_CLOSE_DURATION_MS,
+                easing = mainTabDetailContentOffsetEasing()
+            )
+        ) { fullHeight -> fullHeight }
+    } else {
+        ExitTransition.KeepUntilTransitionsFinished
+    }
 }
 
-internal fun AnimatedContentTransitionScope<NavBackStackEntry>.debugNavigationEnterTransition(): EnterTransition {
+internal fun AnimatedContentTransitionScope<NavBackStackEntry>.debugNavigationEnterTransition(
+    coherentFeedbackEnabled: Boolean = true
+): EnterTransition {
     val direction = resolveDebugNavigationTransitionDirection(
         initialRoute = initialState.destination.route,
         targetRoute = targetState.destination.route
     ) ?: return EnterTransition.None
-    return debugNavigationEnterTransition(direction)
+    return if (coherentFeedbackEnabled) {
+        debugNavigationEnterTransition(direction)
+    } else {
+        fadeIn(
+            initialAlpha = DRAWER_ROOT_RETAIN_ALPHA,
+            animationSpec = tween(
+                durationMillis = if (direction > 0) {
+                    DRAWER_DETAIL_OPEN_DURATION_MS
+                } else {
+                    DRAWER_DETAIL_CLOSE_DURATION_MS
+                },
+                easing = mainTabDetailContentOffsetEasing()
+            )
+        )
+    }
 }
 
-internal fun AnimatedContentTransitionScope<NavBackStackEntry>.debugNavigationExitTransition(): ExitTransition {
+internal fun AnimatedContentTransitionScope<NavBackStackEntry>.debugNavigationExitTransition(
+    coherentFeedbackEnabled: Boolean = true
+): ExitTransition {
     val direction = resolveDebugNavigationTransitionDirection(
         initialRoute = initialState.destination.route,
         targetRoute = targetState.destination.route
     ) ?: return ExitTransition.None
-    return debugNavigationExitTransition(direction)
+    return if (coherentFeedbackEnabled) {
+        debugNavigationExitTransition(direction)
+    } else {
+        ExitTransition.KeepUntilTransitionsFinished
+    }
 }
 
 private fun debugNavigationEnterTransition(direction: Int): EnterTransition {
@@ -1161,6 +1323,8 @@ private fun NeriAppContent(
         initialValue = FloatingLyricsPreferences()
     )
     val advancedLyricsEnabled by repo.advancedLyricsEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
+    val coherentFeedbackEnabled by repo.coherentFeedbackEnabledFlow
+        .collectAsStateWithLifecycle(initialValue = false)
     val advancedBlurEnabled by repo.advancedBlurEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
     val enhancedAdvancedBlurEnabled by repo.enhancedAdvancedBlurEnabledFlow
         .collectAsStateWithLifecycle(initialValue = false)
@@ -1784,21 +1948,70 @@ private fun NeriAppContent(
                 }
             }
             val currentRoute = backEntry?.destination?.route
+            val visibleNavigationRoutes = remember(visibleNavigationEntries, currentRoute) {
+                buildSet<String?> {
+                    visibleNavigationEntries.forEach { entry ->
+                        add(entry.destination.route)
+                    }
+                    add(currentRoute)
+                }
+            }
+            val currentBackgroundMotion = resolveMainTabBackgroundMotion(
+                route = currentRoute,
+                coherentFeedbackEnabled = coherentFeedbackEnabled
+            )
+            val mainTabBackgroundMotion = if (
+                currentBackgroundMotion != MainTabBackgroundMotion.NONE
+            ) {
+                currentBackgroundMotion
+            } else {
+                visibleNavigationRoutes.firstNotNullOfOrNull { route ->
+                    resolveMainTabBackgroundMotion(
+                        route = route,
+                        coherentFeedbackEnabled = coherentFeedbackEnabled
+                    ).takeUnless { it == MainTabBackgroundMotion.NONE }
+                } ?: MainTabBackgroundMotion.NONE
+            }
             var mainTabDetailContentHeightPx by remember {
                 mutableIntStateOf(0)
             }
-            val mainTabDetailContentOffsetTarget =
-                resolveMainTabDetailContentOffsetTarget(currentRoute)
-            val mainTabDetailContentOffsetFraction by animateFloatAsState(
-                targetValue = mainTabDetailContentOffsetTarget,
+            val mainTabBackgroundTargetProgress = if (
+                currentBackgroundMotion == MainTabBackgroundMotion.NONE
+            ) {
+                0f
+            } else {
+                1f
+            }
+            val debugSceneVisible = visibleNavigationRoutes.any { route ->
+                route in DEBUG_MAIN_TAB_CHILD_ROUTES
+            }
+            val mainTabBackgroundProgress by animateFloatAsState(
+                targetValue = mainTabBackgroundTargetProgress,
                 animationSpec = tween(
-                    durationMillis = resolveMainTabDetailContentOffsetDurationMillis(
-                        mainTabDetailContentOffsetTarget
+                    durationMillis = resolveMainTabBackgroundMotionDurationMillis(
+                        targetProgress = mainTabBackgroundTargetProgress,
+                        coherentFeedbackEnabled = coherentFeedbackEnabled,
+                        debugSceneVisible = debugSceneVisible
                     ),
                     easing = mainTabDetailContentOffsetEasing()
                 ),
                 label = "main_tab_detail_content_handoff"
             )
+            val mainTabBackgroundTransform = resolveMainTabBackgroundTransform(
+                motion = mainTabBackgroundMotion,
+                progress = mainTabBackgroundProgress
+            )
+            val mainTabLayerTransform = if (
+                mainTabBackgroundMotion == MainTabBackgroundMotion.COHERENT_EXIT
+            ) {
+                mainTabBackgroundTransform
+            } else {
+                MainTabBackgroundTransform(
+                    translationYFraction = 0f,
+                    scale = 1f,
+                    alpha = 1f
+                )
+            }
             val showHomeTab =
                 (showHomeContinueCard && homeUsageEntries.isNotEmpty()) ||
                     showHomeTrendingCard ||
@@ -1900,6 +2113,91 @@ private fun NeriAppContent(
             val snackbarHostState = remember { SnackbarHostState() }
 
             @Composable
+            fun RenderNavigationScene(
+                revealTopFraction: Float = 0f,
+                contentTranslationYFraction: Float = 0f,
+                contentScale: Float = 1f,
+                content: @Composable () -> Unit
+            ) {
+                AdvancedGlassSceneLayer(
+                    controller = advancedGlassController,
+                    motion = AdvancedGlassSceneMotion(
+                        revealTopFraction = revealTopFraction,
+                        contentTranslationYFraction = contentTranslationYFraction,
+                        contentScale = contentScale
+                    ),
+                    disableStretchOverscroll = backgroundImageUri != null,
+                    background = {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.background)
+                        ) {
+                            CustomBackground(
+                                imageUri = backgroundImageUri,
+                                blur = backgroundImageBlur,
+                                alpha = effectiveBackgroundImageAlpha
+                            )
+                        }
+                    },
+                    content = { content() }
+                )
+            }
+
+            @Composable
+            fun AnimatedContentScope.RenderNavHostScene(
+                sceneRoute: String?,
+                content: @Composable () -> Unit
+            ) {
+                val sceneDepth = transparentNavigationDepth(sceneRoute)
+                val currentDepth = transparentNavigationDepth(currentRoute)
+                val enteringFromDeeperScene = sceneRoute == currentRoute &&
+                    visibleNavigationRoutes.any { route ->
+                        transparentNavigationDepth(route) > sceneDepth
+                    }
+                val exitingToDeeperScene = sceneRoute != currentRoute &&
+                    currentDepth > sceneDepth
+                val motion = transition.animateAdvancedGlassVisibilitySceneMotion(
+                    coherentFeedbackEnabled = coherentFeedbackEnabled,
+                    enteringFromDeeperScene = enteringFromDeeperScene,
+                    exitingToDeeperScene = exitingToDeeperScene,
+                    label = "nav_scene_${sceneRoute.orEmpty()}"
+                )
+                RenderNavigationScene(
+                    revealTopFraction = motion.revealTopFraction,
+                    contentTranslationYFraction = motion.contentTranslationYFraction,
+                    contentScale = motion.contentScale,
+                    content = content
+                )
+            }
+
+            @Composable
+            fun RenderMainTabNavigationScene(
+                revealTopFraction: Float,
+                contentTranslationYFraction: Float,
+                contentScale: Float,
+                content: @Composable () -> Unit
+            ) {
+                val applyExternalDrawerMotion =
+                    mainTabBackgroundMotion == MainTabBackgroundMotion.DRAWER_SINK
+                RenderNavigationScene(
+                    revealTopFraction = revealTopFraction,
+                    contentTranslationYFraction = contentTranslationYFraction +
+                        if (applyExternalDrawerMotion) {
+                            mainTabBackgroundTransform.translationYFraction
+                        } else {
+                            0f
+                        },
+                    contentScale = contentScale * if (applyExternalDrawerMotion) {
+                        mainTabBackgroundTransform.scale
+                    } else {
+                        1f
+                    },
+                    content = content
+                )
+            }
+
+            @Composable
             fun RenderMainTabRoute(route: String) {
                 when (route) {
                     Destinations.Home.route -> HomeHostScreen(
@@ -1908,7 +2206,16 @@ private fun NeriAppContent(
                         showRadarCard = showHomeRadarCard,
                         showRecommendedCard = showHomeRecommendedCard,
                         offlineMode = offlineMode,
-                        onSongClick = ::playSongsAndOpenNowPlaying
+                        onSongClick = ::playSongsAndOpenNowPlaying,
+                        coherentFeedbackEnabled = coherentFeedbackEnabled,
+                        renderScene = { revealTop, translationY, scale, sceneContent ->
+                            RenderMainTabNavigationScene(
+                                revealTop,
+                                translationY,
+                                scale,
+                                content = sceneContent
+                            )
+                        }
                     )
 
                     Destinations.Explore.route -> ExploreHostScreen(
@@ -1918,7 +2225,16 @@ private fun NeriAppContent(
                             ::playSongPreservingQueueAndOpenNowPlaying,
                         onSongPlayNext = ::addSongToQueueNextFromSearch,
                         onSongAddToQueueEnd = ::addSongToQueueEndFromSearch,
-                        onPlayParts = ::playBiliPartsAndOpenNowPlaying
+                        onPlayParts = ::playBiliPartsAndOpenNowPlaying,
+                        coherentFeedbackEnabled = coherentFeedbackEnabled,
+                        renderScene = { revealTop, translationY, scale, sceneContent ->
+                            RenderMainTabNavigationScene(
+                                revealTop,
+                                translationY,
+                                scale,
+                                content = sceneContent
+                            )
+                        }
                     )
 
                     Destinations.Library.route -> LibraryHostScreen(
@@ -1930,7 +2246,16 @@ private fun NeriAppContent(
                         onOpenStats = {
                             navController.navigate(Destinations.PlaybackStats.route)
                         },
-                        offlineMode = offlineMode
+                        offlineMode = offlineMode,
+                        coherentFeedbackEnabled = coherentFeedbackEnabled,
+                        renderScene = { revealTop, translationY, scale, sceneContent ->
+                            RenderMainTabNavigationScene(
+                                revealTop,
+                                translationY,
+                                scale,
+                                content = sceneContent
+                            )
+                        }
                     )
 
                     Destinations.Settings.route -> SettingsHostScreen(
@@ -2267,37 +2592,56 @@ private fun NeriAppContent(
                                 snackbarHostState.showSnackbar(messages.joinToString(" · "))
                             }
                         },
-                        onBeforeLanguageRestart = clearThemeRevealState
+                        onBeforeLanguageRestart = clearThemeRevealState,
+                        coherentFeedbackEnabled = coherentFeedbackEnabled,
+                        renderScene = { revealTop, translationY, scale, sceneContent ->
+                            RenderMainTabNavigationScene(
+                                revealTop,
+                                translationY,
+                                scale,
+                                content = sceneContent
+                            )
+                        }
                     )
 
-                    Destinations.Debug.route -> DebugHomeScreen(
-                        alwaysRecordLogsEnabled = alwaysRecordLogsEnabled,
-                        onAlwaysRecordLogsChange = { enabled ->
-                            scope.launch { repo.setAlwaysRecordLogsEnabled(enabled) }
-                        },
-                        onOpenListenTogetherDebug = {
-                            navController.navigate(Destinations.DebugListenTogether.route)
-                        },
-                        onOpenUsbExclusiveDebug = {
-                            navController.navigate(Destinations.DebugUsbExclusive.route)
-                        },
-                        onOpenYouTubeDebug = {
-                            navController.navigate(Destinations.DebugYouTube.route)
-                        },
-                        onOpenBiliDebug = {
-                            navController.navigate(Destinations.DebugBili.route)
-                        },
-                        onOpenNeteaseDebug = {
-                            navController.navigate(Destinations.DebugNetease.route)
-                        },
-                        onOpenSearchDebug = {
-                            navController.navigate(Destinations.DebugSearch.route)
-                        },
-                        onOpenLogs = { navController.navigate(Destinations.DebugLogsList.route) },
-                        onOpenCrashLogs = {
-                            navController.navigate(Destinations.DebugCrashLogsList.route)
-                        },
-                        onTestExceptionHandler = { crashType ->
+                    Destinations.Debug.route -> {
+                        val debugHomeScrollState = rememberScrollState()
+                        RenderMainTabNavigationScene(
+                            revealTopFraction = 0f,
+                            contentTranslationYFraction = 0f,
+                            contentScale = 1f
+                        ) {
+                            DebugHomeScreen(
+                            scrollState = debugHomeScrollState,
+                            alwaysRecordLogsEnabled = alwaysRecordLogsEnabled,
+                            onAlwaysRecordLogsChange = { enabled ->
+                                scope.launch { repo.setAlwaysRecordLogsEnabled(enabled) }
+                            },
+                            onOpenListenTogetherDebug = {
+                                navController.navigate(Destinations.DebugListenTogether.route)
+                            },
+                            onOpenUsbExclusiveDebug = {
+                                navController.navigate(Destinations.DebugUsbExclusive.route)
+                            },
+                            onOpenYouTubeDebug = {
+                                navController.navigate(Destinations.DebugYouTube.route)
+                            },
+                            onOpenBiliDebug = {
+                                navController.navigate(Destinations.DebugBili.route)
+                            },
+                            onOpenNeteaseDebug = {
+                                navController.navigate(Destinations.DebugNetease.route)
+                            },
+                            onOpenSearchDebug = {
+                                navController.navigate(Destinations.DebugSearch.route)
+                            },
+                            onOpenLogs = {
+                                navController.navigate(Destinations.DebugLogsList.route)
+                            },
+                            onOpenCrashLogs = {
+                                navController.navigate(Destinations.DebugCrashLogsList.route)
+                            },
+                            onTestExceptionHandler = { crashType ->
                             val crashMessage = context.getString(R.string.test_exception_message)
                             when (crashType) {
                                 DebugCrashTestType.JvmHandled -> {
@@ -2340,15 +2684,17 @@ private fun NeriAppContent(
                                     }
                                 }
                             }
-                        },
-                        onHideDebugMode = {
-                            scope.launch { repo.setDevModeEnabled(false) }
-                            navController.navigate(Destinations.Settings.route) {
-                                popUpTo(Destinations.Debug.route) { inclusive = true }
-                                launchSingleTop = true
+                            },
+                            onHideDebugMode = {
+                                scope.launch { repo.setDevModeEnabled(false) }
+                                navController.navigate(Destinations.Settings.route) {
+                                    popUpTo(Destinations.Debug.route) { inclusive = true }
+                                    launchSingleTop = true
+                                }
                             }
+                            )
                         }
-                    )
+                    }
                 }
             }
 
@@ -2535,15 +2881,25 @@ private fun NeriAppContent(
                                                 IntOffset(
                                                     x = 0,
                                                     y = (
-                                                        mainTabDetailContentOffsetFraction *
+                                                        mainTabLayerTransform
+                                                            .translationYFraction *
                                                             mainTabDetailContentHeightPx
                                                     ).roundToInt()
                                                 )
-                                            },
+                                            }
+                                            .graphicsLayer {
+                                                scaleX = mainTabLayerTransform.scale
+                                                scaleY = mainTabLayerTransform.scale
+                                                alpha = mainTabLayerTransform.alpha
+                                                transformOrigin = TransformOrigin.Center
+                                            }
+                                            .zIndex(0f),
                                         onVisibleGlassOwnersChanged = {
                                             visibleMainTabGlassOwners = it
                                         },
-                                        content = { route -> RenderMainTabRoute(route) }
+                                        content = { route ->
+                                            RenderMainTabRoute(route)
+                                        }
                                     )
                                     AdvancedGlassNavigationHandoff(
                                         enabled = visibleNavigationEntries.size > 1
@@ -2551,14 +2907,24 @@ private fun NeriAppContent(
                                         NavHost(
                                             navController = navController,
                                             startDestination = navHostStartDestination,
-                                            modifier = Modifier.fillMaxSize()
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .zIndex(1f)
                                         ) {
                                 composable(
                                     Destinations.Home.route,
-                                    enterTransition = { mainTabEnterTransition() },
-                                    exitTransition = { mainTabExitTransition() },
-                                    popEnterTransition = { mainTabEnterTransition() },
-                                    popExitTransition = { mainTabExitTransition() }
+                                    enterTransition = {
+                                        mainTabEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        mainTabExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        mainTabEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        mainTabExitTransition(coherentFeedbackEnabled)
+                                    }
                                 ) {}
 
                                 composable(
@@ -2566,19 +2932,31 @@ private fun NeriAppContent(
                                     arguments = listOf(navArgument("playlistJson") {
                                         type = NavType.StringType
                                     }),
-                                    enterTransition = { transparentDetailEnterTransition() },
-                                    exitTransition = { transparentDetailExitTransition() },
-                                    popEnterTransition = { transparentDetailPopEnterTransition() },
-                                    popExitTransition = { transparentDetailPopExitTransition() }
+                                    enterTransition = {
+                                        transparentDetailEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        transparentDetailExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        transparentDetailPopEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        transparentDetailPopExitTransition(coherentFeedbackEnabled)
+                                    }
                                 ) { backStackEntry ->
                                     val playlistJson = backStackEntry.arguments?.getString("playlistJson")
                                     val playlist = navigationGson.fromJson(playlistJson, PlaylistSummary::class.java)
-                                    NeteasePlaylistDetailScreen(
-                                        playlist = playlist,
-                                        onBack = { navController.popBackStack() },
-                                        onSongClick = ::playSongsAndOpenNowPlaying,
-                                        offlineMode = offlineMode
-                                    )
+                                    RenderNavHostScene(
+                                        Destinations.PlaylistDetail.route
+                                    ) {
+                                        NeteasePlaylistDetailScreen(
+                                            playlist = playlist,
+                                            onBack = { navController.popBackStack() },
+                                            onSongClick = ::playSongsAndOpenNowPlaying,
+                                            offlineMode = offlineMode
+                                        )
+                                    }
                                 }
 
                                 composable(
@@ -2586,19 +2964,31 @@ private fun NeriAppContent(
                                     arguments = listOf(navArgument("playlistJson") {
                                         type = NavType.StringType
                                     }),
-                                    enterTransition = { transparentDetailEnterTransition() },
-                                    exitTransition = { transparentDetailExitTransition() },
-                                    popEnterTransition = { transparentDetailPopEnterTransition() },
-                                    popExitTransition = { transparentDetailPopExitTransition() }
+                                    enterTransition = {
+                                        transparentDetailEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        transparentDetailExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        transparentDetailPopEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        transparentDetailPopExitTransition(coherentFeedbackEnabled)
+                                    }
                                 ) { backStackEntry ->
                                     val playlistJson = backStackEntry.arguments?.getString("playlistJson")
                                     val album = navigationGson.fromJson(playlistJson, AlbumSummary::class.java)
-                                    NeteaseAlbumDetailScreen(
-                                        album = album,
-                                        onBack = { navController.popBackStack() },
-                                        onSongClick = ::playSongsAndOpenNowPlaying,
-                                        offlineMode = offlineMode
-                                    )
+                                    RenderNavHostScene(
+                                        Destinations.NeteaseAlbumDetail.route
+                                    ) {
+                                        NeteaseAlbumDetailScreen(
+                                            album = album,
+                                            onBack = { navController.popBackStack() },
+                                            onSongClick = ::playSongsAndOpenNowPlaying,
+                                            offlineMode = offlineMode
+                                        )
+                                    }
                                 }
 
                                 composable(
@@ -2606,23 +2996,35 @@ private fun NeriAppContent(
                                     arguments = listOf(navArgument("artistJson") {
                                         type = NavType.StringType
                                     }),
-                                    enterTransition = { transparentDetailEnterTransition() },
-                                    exitTransition = { transparentDetailExitTransition() },
-                                    popEnterTransition = { transparentDetailPopEnterTransition() },
-                                    popExitTransition = { transparentDetailPopExitTransition() }
+                                    enterTransition = {
+                                        transparentDetailEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        transparentDetailExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        transparentDetailPopEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        transparentDetailPopExitTransition(coherentFeedbackEnabled)
+                                    }
                                 ) { backStackEntry ->
                                     val artistJson = backStackEntry.arguments?.getString("artistJson")
                                     val artist = navigationGson.fromJson(artistJson, NeteaseArtistSummary::class.java)
-                                    NeteaseArtistDetailScreen(
-                                        artist = artist,
-                                        onBack = { navController.popBackStack() },
-                                        onSongClick = ::playSongsAndOpenNowPlaying,
-                                        offlineMode = offlineMode,
-                                        onAlbumClick = { album ->
-                                            val json = Uri.encode(navigationGson.toJson(album))
-                                            navController.navigate("netease_album_detail/$json")
-                                        }
-                                    )
+                                    RenderNavHostScene(
+                                        Destinations.NeteaseArtistDetail.route
+                                    ) {
+                                        NeteaseArtistDetailScreen(
+                                            artist = artist,
+                                            onBack = { navController.popBackStack() },
+                                            onSongClick = ::playSongsAndOpenNowPlaying,
+                                            offlineMode = offlineMode,
+                                            onAlbumClick = { album ->
+                                                val json = Uri.encode(navigationGson.toJson(album))
+                                                navController.navigate("netease_album_detail/$json")
+                                            }
+                                        )
+                                    }
                                 }
                                 
                                 composable(
@@ -2630,212 +3032,424 @@ private fun NeriAppContent(
                                     arguments = listOf(navArgument("playlistJson") {
                                         type = NavType.StringType
                                     }),
-                                    enterTransition = { transparentDetailEnterTransition() },
-                                    exitTransition = { transparentDetailExitTransition() },
-                                    popEnterTransition = { transparentDetailPopEnterTransition() },
-                                    popExitTransition = { transparentDetailPopExitTransition() }
+                                    enterTransition = {
+                                        transparentDetailEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        transparentDetailExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        transparentDetailPopEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        transparentDetailPopExitTransition(coherentFeedbackEnabled)
+                                    }
                                 ) { backStackEntry ->
                                     val playlistJson = backStackEntry.arguments?.getString("playlistJson")
                                     val playlist = navigationGson.fromJson(playlistJson, BiliPlaylist::class.java)
-                                    BiliPlaylistDetailScreen(
-                                        playlist = playlist,
-                                        onBack = { navController.popBackStack() },
-                                        onPlayAudio = ::playBiliAudioAndOpenNowPlaying,
-                                        onPlayParts = ::playBiliPartsAndOpenNowPlaying,
-                                        offlineMode = offlineMode
-                                    )
+                                    RenderNavHostScene(
+                                        Destinations.BiliPlaylistDetail.route
+                                    ) {
+                                        BiliPlaylistDetailScreen(
+                                            playlist = playlist,
+                                            onBack = { navController.popBackStack() },
+                                            onPlayAudio = ::playBiliAudioAndOpenNowPlaying,
+                                            onPlayParts = ::playBiliPartsAndOpenNowPlaying,
+                                            offlineMode = offlineMode
+                                        )
+                                    }
                                 }
 
                                 composable(
                                     Destinations.Explore.route,
-                                    enterTransition = { mainTabEnterTransition() },
-                                    exitTransition = { mainTabExitTransition() },
-                                    popEnterTransition = { mainTabEnterTransition() },
-                                    popExitTransition = { mainTabExitTransition() }
+                                    enterTransition = {
+                                        mainTabEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        mainTabExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        mainTabEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        mainTabExitTransition(coherentFeedbackEnabled)
+                                    }
                                 ) {}
 
                                 composable(
                                     Destinations.Library.route,
-                                    enterTransition = { mainTabEnterTransition() },
-                                    exitTransition = { mainTabExitTransition() },
-                                    popEnterTransition = { mainTabEnterTransition() },
-                                    popExitTransition = { mainTabExitTransition() }
+                                    enterTransition = {
+                                        mainTabEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        mainTabExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        mainTabEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        mainTabExitTransition(coherentFeedbackEnabled)
+                                    }
                                 ) {}
 
                                 composable(
                                     route = Destinations.LocalPlaylistDetail.route,
                                     arguments = listOf(navArgument("playlistId") { type = NavType.LongType }),
-                                    enterTransition = { transparentDetailEnterTransition() },
-                                    exitTransition = { transparentDetailExitTransition() },
-                                    popEnterTransition = { transparentDetailPopEnterTransition() },
-                                    popExitTransition = { transparentDetailPopExitTransition() }
+                                    enterTransition = {
+                                        transparentDetailEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        transparentDetailExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        transparentDetailPopEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        transparentDetailPopExitTransition(coherentFeedbackEnabled)
+                                    }
                                 ) { backStackEntry ->
                                     val id = backStackEntry.arguments?.getLong("playlistId") ?: 0L
-                                    LocalPlaylistDetailScreen(
-                                        playlistId = id,
-                                        onBack = { navController.popBackStack() },
-                                        onDeleted = { navController.popBackStack() },
-                                        onSongClick = ::playSongsAndOpenNowPlaying,
-                                        offlineMode = offlineMode
-                                    )
+                                    RenderNavHostScene(
+                                        Destinations.LocalPlaylistDetail.route
+                                    ) {
+                                        LocalPlaylistDetailScreen(
+                                            playlistId = id,
+                                            onBack = { navController.popBackStack() },
+                                            onDeleted = { navController.popBackStack() },
+                                            onSongClick = ::playSongsAndOpenNowPlaying,
+                                            offlineMode = offlineMode
+                                        )
+                                    }
                                 }
 
                                 composable(
                                     route = Destinations.Recent.route,
-                                    enterTransition = { transparentDetailEnterTransition() },
-                                    exitTransition = { transparentDetailExitTransition() },
-                                    popEnterTransition = { transparentDetailPopEnterTransition() },
-                                    popExitTransition = { transparentDetailPopExitTransition() }
+                                    enterTransition = {
+                                        transparentDetailEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        transparentDetailExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        transparentDetailPopEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        transparentDetailPopExitTransition(coherentFeedbackEnabled)
+                                    }
                                 ) {
-                                    RecentScreen(
-                                        onBack = { navController.popBackStack() },
-                                        onSongClick = ::playSongsAndOpenNowPlaying,
-                                        offlineMode = offlineMode
-                                    )
+                                    RenderNavHostScene(Destinations.Recent.route) {
+                                        RecentScreen(
+                                            onBack = { navController.popBackStack() },
+                                            onSongClick = ::playSongsAndOpenNowPlaying,
+                                            offlineMode = offlineMode
+                                        )
+                                    }
                                 }
 
                                 composable(
                                     route = Destinations.PlaybackStats.route,
-                                    enterTransition = { transparentDetailEnterTransition() },
-                                    exitTransition = { transparentDetailExitTransition() },
-                                    popEnterTransition = { transparentDetailPopEnterTransition() },
-                                    popExitTransition = { transparentDetailPopExitTransition() }
+                                    enterTransition = {
+                                        transparentDetailEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        transparentDetailExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        transparentDetailPopEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        transparentDetailPopExitTransition(coherentFeedbackEnabled)
+                                    }
                                 ) {
-                                    PlaybackStatsScreen(
-                                        onBack = { navController.popBackStack() },
-                                        onSongClick = ::playSongsAndOpenNowPlaying,
-                                        offlineMode = offlineMode
-                                    )
+                                    RenderNavHostScene(Destinations.PlaybackStats.route) {
+                                        PlaybackStatsScreen(
+                                            onBack = { navController.popBackStack() },
+                                            onSongClick = ::playSongsAndOpenNowPlaying,
+                                            offlineMode = offlineMode
+                                        )
+                                    }
                                 }
 
                                 composable(
                                     Destinations.Settings.route,
-                                    enterTransition = { mainTabEnterTransition() },
-                                    exitTransition = { mainTabExitTransition() },
-                                    popEnterTransition = { mainTabEnterTransition() },
-                                    popExitTransition = { mainTabExitTransition() }
+                                    enterTransition = {
+                                        mainTabEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        mainTabExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        mainTabEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        mainTabExitTransition(coherentFeedbackEnabled)
+                                    }
                                 ) {}
 
                                 composable(
                                     route = Destinations.DownloadManager.route,
-                                    enterTransition = { transparentDetailEnterTransition() },
-                                    exitTransition = { transparentDetailExitTransition() },
-                                    popEnterTransition = { transparentDetailPopEnterTransition() },
-                                    popExitTransition = { transparentDetailPopExitTransition() }
+                                    enterTransition = {
+                                        transparentDetailEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        transparentDetailExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        transparentDetailPopEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        transparentDetailPopExitTransition(coherentFeedbackEnabled)
+                                    }
                                 ) {
-                                    DownloadManagerScreen(
-                                        onBack = { navController.popBackStack() },
-                                        onOpenDownloadProgress = { navController.navigate(Destinations.DownloadProgress.route) },
-                                        offlineMode = offlineMode
-                                    )
+                                    val downloadManagerListState = rememberSaveable(
+                                        saver = LazyListState.Saver
+                                    ) { LazyListState() }
+                                    RenderNavHostScene(Destinations.DownloadManager.route) {
+                                        DownloadManagerScreen(
+                                            onBack = { navController.popBackStack() },
+                                            onOpenDownloadProgress = {
+                                                navController.navigate(
+                                                    Destinations.DownloadProgress.route
+                                                )
+                                            },
+                                            listState = downloadManagerListState,
+                                            offlineMode = offlineMode
+                                        )
+                                    }
                                 }
 
                                 composable(
                                     route = Destinations.DownloadProgress.route,
-                                    enterTransition = { transparentDetailEnterTransition() },
-                                    exitTransition = { transparentDetailExitTransition() },
-                                    popEnterTransition = { transparentDetailPopEnterTransition() },
-                                    popExitTransition = { transparentDetailPopExitTransition() }
+                                    enterTransition = {
+                                        transparentDetailEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        transparentDetailExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        transparentDetailPopEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        transparentDetailPopExitTransition(coherentFeedbackEnabled)
+                                    }
                                 ) {
-                                    DownloadProgressScreen(onBack = { navController.popBackStack() })
+                                    val downloadProgressListState = rememberSaveable(
+                                        saver = LazyListState.Saver
+                                    ) { LazyListState() }
+                                    RenderNavHostScene(Destinations.DownloadProgress.route) {
+                                        DownloadProgressScreen(
+                                            onBack = { navController.popBackStack() },
+                                            listState = downloadProgressListState
+                                        )
+                                    }
                                 }
 
                                 composable(
                                     Destinations.Debug.route,
-                                    enterTransition = { mainTabEnterTransition() },
-                                    exitTransition = { mainTabExitTransition() },
-                                    popEnterTransition = { mainTabEnterTransition() },
-                                    popExitTransition = { mainTabExitTransition() }
+                                    enterTransition = {
+                                        mainTabEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        mainTabExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        mainTabEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        mainTabExitTransition(coherentFeedbackEnabled)
+                                    }
                                 ) {}
                                 composable(
                                     route = Destinations.DebugListenTogether.route,
-                                    enterTransition = { debugNavigationEnterTransition() },
-                                    exitTransition = { debugNavigationExitTransition() },
-                                    popEnterTransition = { debugNavigationEnterTransition() },
-                                    popExitTransition = { debugNavigationExitTransition() }
-                                ) { ListenTogetherDebugScreen() }
+                                    enterTransition = {
+                                        debugNavigationEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        debugNavigationExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        debugNavigationEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        debugNavigationExitTransition(coherentFeedbackEnabled)
+                                    }
+                                ) {
+                                    RenderNavHostScene(Destinations.DebugListenTogether.route) {
+                                        ListenTogetherDebugScreen()
+                                    }
+                                }
                                 composable(
                                     route = Destinations.DebugUsbExclusive.route,
-                                    enterTransition = { debugNavigationEnterTransition() },
-                                    exitTransition = { debugNavigationExitTransition() },
-                                    popEnterTransition = { debugNavigationEnterTransition() },
-                                    popExitTransition = { debugNavigationExitTransition() }
-                                ) { UsbExclusiveDebugScreen() }
+                                    enterTransition = {
+                                        debugNavigationEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        debugNavigationExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        debugNavigationEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        debugNavigationExitTransition(coherentFeedbackEnabled)
+                                    }
+                                ) {
+                                    RenderNavHostScene(Destinations.DebugUsbExclusive.route) {
+                                        UsbExclusiveDebugScreen()
+                                    }
+                                }
                                 composable(
                                     route = Destinations.DebugYouTube.route,
-                                    enterTransition = { debugNavigationEnterTransition() },
-                                    exitTransition = { debugNavigationExitTransition() },
-                                    popEnterTransition = { debugNavigationEnterTransition() },
-                                    popExitTransition = { debugNavigationExitTransition() }
-                                ) { YouTubeApiProbeScreen() }
+                                    enterTransition = {
+                                        debugNavigationEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        debugNavigationExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        debugNavigationEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        debugNavigationExitTransition(coherentFeedbackEnabled)
+                                    }
+                                ) {
+                                    RenderNavHostScene(Destinations.DebugYouTube.route) {
+                                        YouTubeApiProbeScreen()
+                                    }
+                                }
                                 composable(
                                     route = Destinations.DebugBili.route,
-                                    enterTransition = { debugNavigationEnterTransition() },
-                                    exitTransition = { debugNavigationExitTransition() },
-                                    popEnterTransition = { debugNavigationEnterTransition() },
-                                    popExitTransition = { debugNavigationExitTransition() }
-                                ) { BiliApiProbeScreen() }
+                                    enterTransition = {
+                                        debugNavigationEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        debugNavigationExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        debugNavigationEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        debugNavigationExitTransition(coherentFeedbackEnabled)
+                                    }
+                                ) {
+                                    RenderNavHostScene(Destinations.DebugBili.route) {
+                                        BiliApiProbeScreen()
+                                    }
+                                }
                                 composable(
                                     route = Destinations.DebugNetease.route,
-                                    enterTransition = { debugNavigationEnterTransition() },
-                                    exitTransition = { debugNavigationExitTransition() },
-                                    popEnterTransition = { debugNavigationEnterTransition() },
-                                    popExitTransition = { debugNavigationExitTransition() }
-                                ) { NeteaseApiProbeScreen() }
+                                    enterTransition = {
+                                        debugNavigationEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        debugNavigationExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        debugNavigationEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        debugNavigationExitTransition(coherentFeedbackEnabled)
+                                    }
+                                ) {
+                                    RenderNavHostScene(Destinations.DebugNetease.route) {
+                                        NeteaseApiProbeScreen()
+                                    }
+                                }
                                 composable(
                                     route = Destinations.DebugSearch.route,
-                                    enterTransition = { debugNavigationEnterTransition() },
-                                    exitTransition = { debugNavigationExitTransition() },
-                                    popEnterTransition = { debugNavigationEnterTransition() },
-                                    popExitTransition = { debugNavigationExitTransition() }
-                                ) { SearchApiProbeScreen() }
+                                    enterTransition = {
+                                        debugNavigationEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        debugNavigationExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        debugNavigationEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        debugNavigationExitTransition(coherentFeedbackEnabled)
+                                    }
+                                ) {
+                                    RenderNavHostScene(Destinations.DebugSearch.route) {
+                                        SearchApiProbeScreen()
+                                    }
+                                }
                                 composable(
                                     route = Destinations.DebugLogsList.route,
-                                    enterTransition = { debugNavigationEnterTransition() },
-                                    exitTransition = { debugNavigationExitTransition() },
-                                    popEnterTransition = { debugNavigationEnterTransition() },
-                                    popExitTransition = { debugNavigationExitTransition() }
+                                    enterTransition = {
+                                        debugNavigationEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        debugNavigationExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        debugNavigationEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        debugNavigationExitTransition(coherentFeedbackEnabled)
+                                    }
                                 ) {
-                                    LogListScreen(
-                                        onBack = { navController.popBackStack() },
-                                        onLogFileClick = { filePath ->
-                                            navController.navigate(
-                                                Destinations.DebugLogViewer.createRoute(filePath)
-                                            )
-                                        }
-                                    )
+                                    RenderNavHostScene(Destinations.DebugLogsList.route) {
+                                        LogListScreen(
+                                            onBack = { navController.popBackStack() },
+                                            onLogFileClick = { filePath ->
+                                                navController.navigate(
+                                                    Destinations.DebugLogViewer.createRoute(filePath)
+                                                )
+                                            }
+                                        )
+                                    }
                                 }
 
                                 composable(
                                     route = Destinations.DebugCrashLogsList.route,
-                                    enterTransition = { debugNavigationEnterTransition() },
-                                    exitTransition = { debugNavigationExitTransition() },
-                                    popEnterTransition = { debugNavigationEnterTransition() },
-                                    popExitTransition = { debugNavigationExitTransition() }
+                                    enterTransition = {
+                                        debugNavigationEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        debugNavigationExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        debugNavigationEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        debugNavigationExitTransition(coherentFeedbackEnabled)
+                                    }
                                 ) {
-                                    CrashLogListScreen(
-                                        onBack = { navController.popBackStack() },
-                                        onLogFileClick = { filePath ->
-                                            navController.navigate(
-                                                Destinations.DebugLogViewer.createRoute(filePath)
-                                            )
-                                        }
-                                    )
+                                    RenderNavHostScene(Destinations.DebugCrashLogsList.route) {
+                                        CrashLogListScreen(
+                                            onBack = { navController.popBackStack() },
+                                            onLogFileClick = { filePath ->
+                                                navController.navigate(
+                                                    Destinations.DebugLogViewer.createRoute(filePath)
+                                                )
+                                            }
+                                        )
+                                    }
                                 }
 
                                 composable(
                                     route = Destinations.DebugLogViewer.route,
                                     arguments = listOf(navArgument("filePath") { type = NavType.StringType }),
-                                    enterTransition = { debugNavigationEnterTransition() },
-                                    exitTransition = { debugNavigationExitTransition() },
-                                    popEnterTransition = { debugNavigationEnterTransition() },
-                                    popExitTransition = { debugNavigationExitTransition() }
+                                    enterTransition = {
+                                        debugNavigationEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        debugNavigationExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        debugNavigationEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        debugNavigationExitTransition(coherentFeedbackEnabled)
+                                    }
                                 ) { backStackEntry ->
                                     val filePath = backStackEntry.arguments?.getString("filePath") ?: ""
-                                    LogViewerScreen(
-                                        filePath = filePath,
-                                        onBack = { navController.popBackStack() }
-                                    )
+                                    RenderNavHostScene(Destinations.DebugLogViewer.route) {
+                                        LogViewerScreen(
+                                            filePath = filePath,
+                                            onBack = { navController.popBackStack() }
+                                        )
+                                    }
                                 }
                                         }
                                     }

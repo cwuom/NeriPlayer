@@ -30,6 +30,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -73,6 +74,7 @@ import java.io.File
 fun DownloadManagerScreen(
     onBack: () -> Unit,
     onOpenDownloadProgress: () -> Unit,
+    listState: LazyListState,
     offlineMode: Boolean = false
 ) {
     val context = LocalContext.current
@@ -326,6 +328,7 @@ fun DownloadManagerScreen(
         DownloadedSongsList(
             viewModel = viewModel,
             searchQuery = searchQuery,
+            listState = listState,
             selectionMode = selectionMode,
             selectedSongKeys = selectedSongKeys,
             onSelectionChanged = { selectedSongKeys = it },
@@ -426,6 +429,7 @@ fun DownloadManagerScreen(
 private fun DownloadedSongsList(
     viewModel: DownloadManagerViewModel,
     searchQuery: String,
+    listState: LazyListState,
     selectionMode: Boolean,
     selectedSongKeys: Set<String>,
     onSelectionChanged: (Set<String>) -> Unit,
@@ -484,6 +488,7 @@ private fun DownloadedSongsList(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
+                state = listState,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(
                     start = 16.dp,

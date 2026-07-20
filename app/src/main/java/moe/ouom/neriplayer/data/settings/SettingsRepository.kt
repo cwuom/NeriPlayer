@@ -208,6 +208,9 @@ class SettingsRepository(private val context: Context) {
     val advancedLyricsEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.advancedLyricsEnabledFlow
 
+    val coherentFeedbackEnabledFlow: Flow<Boolean> =
+        autoSettingsRepository.coherentFeedbackEnabledFlow
+
     val lyriconEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.lyriconEnabledFlow
 
@@ -722,6 +725,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setAdvancedLyricsEnabled(enabled: Boolean) {
         autoSettingsRepository.setAdvancedLyricsEnabled(enabled)
+    }
+
+    suspend fun setCoherentFeedbackEnabled(enabled: Boolean) {
+        autoSettingsRepository.setCoherentFeedbackEnabled(enabled)
     }
 
     suspend fun setLyriconEnabled(enabled: Boolean) {

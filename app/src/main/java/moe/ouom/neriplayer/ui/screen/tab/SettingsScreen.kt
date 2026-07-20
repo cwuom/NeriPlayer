@@ -921,8 +921,8 @@ fun SettingsScreen(
     }
     val homeTopAppBarState = rememberTopAppBarState()
     val detailTopAppBarStates = SettingsPage.entries.associateWith { rememberTopAppBarState() }
-    val detailListStates = remember {
-        SettingsPage.entries.associateWith { LazyListState() }
+    val detailListStates = SettingsPage.entries.associateWith {
+        rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     }
 
     LaunchedEffect(isSettingsSplitLayout) {

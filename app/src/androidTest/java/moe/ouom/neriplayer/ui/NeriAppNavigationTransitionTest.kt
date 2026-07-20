@@ -18,6 +18,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
@@ -27,6 +29,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -247,16 +250,26 @@ class NeriAppNavigationTransitionTest {
             navController = rememberNavController()
             val backEntry by navController.currentBackStackEntryAsState()
             var layerHeightPx by remember { mutableIntStateOf(0) }
-            val offsetTarget = resolveMainTabDetailContentOffsetTarget(
-                backEntry?.destination?.route
+            val motion = resolveMainTabBackgroundMotion(
+                route = backEntry?.destination?.route,
+                coherentFeedbackEnabled = true
             )
-            val offsetFraction by animateFloatAsState(
-                targetValue = offsetTarget,
+            val targetProgress = if (motion == MainTabBackgroundMotion.NONE) 0f else 1f
+            val backgroundProgress by animateFloatAsState(
+                targetValue = targetProgress,
                 animationSpec = tween(
-                    durationMillis = resolveMainTabDetailContentOffsetDurationMillis(offsetTarget),
+                    durationMillis = resolveMainTabBackgroundMotionDurationMillis(
+                        targetProgress = targetProgress,
+                        coherentFeedbackEnabled = true,
+                        debugSceneVisible = false
+                    ),
                     easing = mainTabDetailContentOffsetEasing()
                 ),
                 label = "test_main_tab_detail_handoff"
+            )
+            val backgroundTransform = resolveMainTabBackgroundTransform(
+                motion = motion,
+                progress = backgroundProgress
             )
             Box(
                 modifier = Modifier
@@ -272,7 +285,9 @@ class NeriAppNavigationTransitionTest {
                         .offset {
                             IntOffset(
                                 x = 0,
-                                y = (offsetFraction * layerHeightPx).roundToInt()
+                                y = (
+                                    backgroundTransform.translationYFraction * layerHeightPx
+                                    ).roundToInt()
                             )
                         }
                 ) {
@@ -335,6 +350,30 @@ class NeriAppNavigationTransitionTest {
             "Main Tab layer remained visible behind detail: $settledLibraryBounds",
             settledLibraryBounds == null ||
                 settledLibraryBounds.bottom <= POSITION_TOLERANCE_PX
+        )
+    }
+
+    @Test
+    fun drawerDetailKeepsTheSinkingMainTabLayerVisibleWhileOpening() {
+        assertExternalBackgroundLayerBehavior(
+            mainRoute = Destinations.Library.route,
+            childRoute = Destinations.PlaybackStats.route,
+            coherentFeedbackEnabled = false,
+            debugRoute = false,
+            durationMillis = DRAWER_DETAIL_OPEN_DURATION_MS,
+            backgroundShouldRemain = true
+        )
+    }
+
+    @Test
+    fun drawerDebugChildKeepsTheSinkingDebugHomeLayerVisibleWhileOpening() {
+        assertExternalBackgroundLayerBehavior(
+            mainRoute = Destinations.Debug.route,
+            childRoute = Destinations.DebugListenTogether.route,
+            coherentFeedbackEnabled = false,
+            debugRoute = true,
+            durationMillis = DRAWER_DETAIL_OPEN_DURATION_MS,
+            backgroundShouldRemain = true
         )
     }
 
@@ -483,6 +522,162 @@ class NeriAppNavigationTransitionTest {
         )
         composeRule.mainClock.autoAdvance = true
         composeRule.waitForIdle()
+    }
+
+    private fun assertExternalBackgroundLayerBehavior(
+        mainRoute: String,
+        childRoute: String,
+        coherentFeedbackEnabled: Boolean,
+        debugRoute: Boolean,
+        durationMillis: Int,
+        backgroundShouldRemain: Boolean
+    ) {
+        lateinit var navController: NavHostController
+        composeRule.mainClock.autoAdvance = false
+        composeRule.setContent {
+            navController = rememberNavController()
+            val backEntry by navController.currentBackStackEntryAsState()
+            var layerHeightPx by remember { mutableIntStateOf(0) }
+            val motion = resolveMainTabBackgroundMotion(
+                route = backEntry?.destination?.route,
+                coherentFeedbackEnabled = coherentFeedbackEnabled
+            )
+            val targetProgress = if (motion == MainTabBackgroundMotion.NONE) 0f else 1f
+            val progress by animateFloatAsState(
+                targetValue = targetProgress,
+                animationSpec = tween(
+                    durationMillis = resolveMainTabBackgroundMotionDurationMillis(
+                        targetProgress = targetProgress,
+                        coherentFeedbackEnabled = coherentFeedbackEnabled,
+                        debugSceneVisible = debugRoute && targetProgress > 0f
+                    ),
+                    easing = mainTabDetailContentOffsetEasing()
+                ),
+                label = "external_background_layer_handoff"
+            )
+            val transform = resolveMainTabBackgroundTransform(motion, progress)
+            Box(
+                modifier = Modifier
+                    .size(240.dp, 320.dp)
+                    .background(Color.Black)
+                    .testTag(ExternalBackgroundRootTag)
+            ) {
+                MainTabLayerHost(
+                    selectedRoute = mainRoute,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .onSizeChanged { size -> layerHeightPx = size.height }
+                        .offset {
+                            IntOffset(
+                                x = 0,
+                                y = (
+                                    transform.translationYFraction * layerHeightPx
+                                    ).roundToInt()
+                            )
+                        }
+                        .graphicsLayer {
+                            scaleX = transform.scale
+                            scaleY = transform.scale
+                            alpha = transform.alpha
+                            transformOrigin = TransformOrigin.Center
+                        }
+                        .zIndex(0f)
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(FirstTabColor)
+                            .testTag(ExternalBackgroundSceneTag)
+                    )
+                }
+                NavHost(
+                    navController = navController,
+                    startDestination = mainRoute,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(1f)
+                ) {
+                    composable(
+                        route = mainRoute,
+                        enterTransition = {
+                            mainTabEnterTransition(coherentFeedbackEnabled)
+                        },
+                        exitTransition = {
+                            mainTabExitTransition(coherentFeedbackEnabled)
+                        }
+                    ) {}
+                    if (debugRoute) {
+                        composable(
+                            route = childRoute,
+                            enterTransition = {
+                                debugNavigationEnterTransition(coherentFeedbackEnabled)
+                            },
+                            exitTransition = {
+                                debugNavigationExitTransition(coherentFeedbackEnabled)
+                            }
+                        ) {
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .testTag(ExternalForegroundSceneTag)
+                            )
+                        }
+                    } else {
+                        composable(
+                            route = childRoute,
+                            enterTransition = {
+                                transparentDetailEnterTransition(coherentFeedbackEnabled)
+                            },
+                            exitTransition = {
+                                transparentDetailExitTransition(coherentFeedbackEnabled)
+                            }
+                        ) {
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .testTag(ExternalForegroundSceneTag)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        composeRule.runOnIdle { navController.navigate(childRoute) }
+        composeRule.mainClock.advanceTimeBy((durationMillis / 2).toLong())
+        composeRule.waitForIdle()
+        val midpoint = composeRule
+            .onNodeWithTag(ExternalBackgroundRootTag)
+            .captureToImage()
+            .toPixelMap()
+        assertTrue(
+            "Background layer disappeared before the foreground reached it",
+            countDominantPixels(midpoint, dominantRed = true) > 0
+        )
+
+        composeRule.mainClock.advanceTimeBy((durationMillis + FRAME_MS * 2).toLong())
+        composeRule.waitForIdle()
+        val settled = composeRule
+            .onNodeWithTag(ExternalBackgroundRootTag)
+            .captureToImage()
+            .toPixelMap()
+        val settledBackgroundPixels = countDominantPixels(settled, dominantRed = true)
+        assertTrue(
+            if (backgroundShouldRemain) {
+                "Drawer hid the sinking background scene before it was covered"
+            } else {
+                "Debug home scene remained visible through the settled foreground"
+            },
+            if (backgroundShouldRemain) {
+                settledBackgroundPixels > settled.width * settled.height / 2
+            } else {
+                settledBackgroundPixels == 0
+            }
+        )
+        assertTrue(
+            "Foreground scene disappeared after navigation",
+            nodeCount(ExternalForegroundSceneTag) == 1
+        )
     }
 
     private fun assertNoSceneOverlapAcrossFrames(
@@ -680,6 +875,9 @@ class NeriAppNavigationTransitionTest {
         const val LayeredRootTag = "layered_transition_root"
         const val LayeredLibrarySceneTag = "layered_library_scene"
         const val LayeredDetailSceneTag = "layered_detail_scene"
+        const val ExternalBackgroundRootTag = "external_background_root"
+        const val ExternalBackgroundSceneTag = "external_background_scene"
+        const val ExternalForegroundSceneTag = "external_foreground_scene"
         const val LibrarySceneTag = "library_scene"
         const val DetailSceneTag = "detail_scene"
         const val PreviousDetailSceneTag = "previous_detail_scene"

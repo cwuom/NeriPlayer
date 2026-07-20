@@ -27,10 +27,13 @@ import android.net.Uri
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -42,10 +45,8 @@ import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.ThemeMode
 import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
-import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
-import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassScene
-import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassController
-import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassVerticalTransition
+import moe.ouom.neriplayer.ui.effect.glass.advancedGlassHostNavigationTransition
+import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassSceneMotion
 import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
 import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
 import moe.ouom.neriplayer.ui.screen.tab.SettingsScreen
@@ -191,45 +192,123 @@ fun SettingsHostScreen(
     onMaxCacheSizeBytesChange: (Long) -> Unit,
     onClearCacheClick: (StorageCacheClearOptions) -> Unit,
     onBeforeLanguageRestart: () -> Unit = {},
+    coherentFeedbackEnabled: Boolean = false,
+    renderScene: @Composable (
+        revealTopFraction: Float,
+        contentTranslationYFraction: Float,
+        contentScale: Float,
+        content: @Composable () -> Unit
+    ) -> Unit = { _, _, _, content ->
+        content()
+    },
 ) {
     var screenState by rememberSaveable { mutableStateOf(SettingsScreenState.Settings) }
+    var requestedScreenState by rememberSaveable { mutableStateOf(SettingsScreenState.Settings) }
     val saveableStateHolder = rememberSaveableStateHolder()
-    val isolateAdvancedGlassTransitions = LocalAdvancedGlassController.current.isEnabled
 
     // 保存设置页面的滚动状态，使用正确的Saver
-    val settingsListSaver: Saver<LazyListState, *> = LazyListState.Saver
-    val settingsListState = rememberSaveable(saver = settingsListSaver) {
+    val listStateSaver: Saver<LazyListState, *> = LazyListState.Saver
+    val settingsListState = rememberSaveable(saver = listStateSaver) {
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
+    val downloadManagerListState = rememberSaveable(saver = listStateSaver) {
+        LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
+    val downloadProgressListState = rememberSaveable(saver = listStateSaver) {
+        LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
+    var pendingSettingsListRestoreIndex by rememberSaveable { mutableStateOf<Int?>(null) }
+    var pendingSettingsListRestoreOffset by rememberSaveable { mutableIntStateOf(0) }
+    val navigationTransition = updateTransition(
+        targetState = screenState,
+        label = "settings_screen_switch"
+    )
 
-    PredictiveBackHandler(enabled = screenState != SettingsScreenState.Settings) { progress ->
+    fun captureSettingsListPosition() {
+        val position = settingsListState.captureHostScrollPosition()
+        pendingSettingsListRestoreIndex = position.index
+        pendingSettingsListRestoreOffset = position.offset
+    }
+
+    fun requestScreen(target: SettingsScreenState) {
+        if (
+            requestedScreenState == SettingsScreenState.Settings &&
+            target != SettingsScreenState.Settings
+        ) {
+            captureSettingsListPosition()
+        }
+        requestedScreenState = target
+        if (!navigationTransition.isRunning && target != screenState) {
+            screenState = target
+        }
+    }
+
+    LaunchedEffect(
+        navigationTransition.isRunning,
+        requestedScreenState,
+        screenState
+    ) {
+        if (!navigationTransition.isRunning && requestedScreenState != screenState) {
+            screenState = requestedScreenState
+        }
+    }
+
+    LaunchedEffect(
+        screenState,
+        navigationTransition.isRunning,
+        pendingSettingsListRestoreIndex
+    ) {
+        val restoreIndex = pendingSettingsListRestoreIndex ?: return@LaunchedEffect
+        if (
+            screenState != SettingsScreenState.Settings ||
+            navigationTransition.isRunning
+        ) {
+            return@LaunchedEffect
+        }
+        settingsListState.restoreHostScrollPosition(
+            HostScrollPosition(
+                index = restoreIndex,
+                offset = pendingSettingsListRestoreOffset
+            )
+        )
+        pendingSettingsListRestoreIndex = null
+        pendingSettingsListRestoreOffset = 0
+    }
+
+    PredictiveBackHandler(enabled = requestedScreenState != SettingsScreenState.Settings) { progress ->
         try {
             progress.collect { }
-            screenState = when (screenState) {
+            requestScreen(
+                when (requestedScreenState) {
                 SettingsScreenState.DownloadProgress -> SettingsScreenState.DownloadManager
                 SettingsScreenState.DownloadManager -> SettingsScreenState.Settings
                 SettingsScreenState.Settings -> SettingsScreenState.Settings
-            }
+                }
+            )
         } catch (_: CancellationException) {
         }
     }
 
     Surface(color = Color.Transparent) {
-        AnimatedContent(
-            targetState = screenState,
-            label = "settings_screen_switch",
+        navigationTransition.AnimatedContent(
             transitionSpec = {
-                isolatedAdvancedGlassVerticalTransition(
-                    forward = targetState.navigationDepth > initialState.navigationDepth
+                advancedGlassHostNavigationTransition(
+                    forward = targetState.navigationDepth > initialState.navigationDepth,
+                    coherentFeedbackEnabled = coherentFeedbackEnabled
                 ).using(SizeTransform(clip = true))
             }
         ) { state ->
-            AdvancedGlassNavigationHandoff(
-                enabled = isolateAdvancedGlassTransitions && transition.isRunning
+            val sceneMotion = navigationTransition.animateAdvancedGlassSceneMotion(
+                sceneState = state,
+                coherentFeedbackEnabled = coherentFeedbackEnabled,
+                navigationDepth = { item -> item.navigationDepth },
+                label = "settings_host_scene"
+            )
+            renderScene(
+                sceneMotion.revealTopFraction,
+                sceneMotion.contentTranslationYFraction,
+                sceneMotion.contentScale
             ) {
-                AdvancedGlassScene(
-                    active = isolateAdvancedGlassTransitions || state == screenState
-                ) {
                     saveableStateHolder.SaveableStateProvider(state.saveableKey()) {
                         when (state) {
                             SettingsScreenState.Settings -> {
@@ -366,7 +445,9 @@ fun SettingsHostScreen(
                             onAllowMixedPlaybackChange = onAllowMixedPlaybackChange,
                             preemptAudioFocus = preemptAudioFocus,
                             onPreemptAudioFocusChange = onPreemptAudioFocusChange,
-                            onNavigateToDownloadManager = { screenState = SettingsScreenState.DownloadManager },
+                            onNavigateToDownloadManager = {
+                                requestScreen(SettingsScreenState.DownloadManager)
+                            },
                             maxCacheSizeBytes = maxCacheSizeBytes,
                             onMaxCacheSizeBytesChange = onMaxCacheSizeBytesChange,
                             onClearCacheClick = onClearCacheClick,
@@ -376,21 +457,24 @@ fun SettingsHostScreen(
 
                             SettingsScreenState.DownloadManager -> {
                                 DownloadManagerScreen(
-                                    onBack = { screenState = SettingsScreenState.Settings },
+                                    onBack = { requestScreen(SettingsScreenState.Settings) },
                                     onOpenDownloadProgress = {
-                                        screenState = SettingsScreenState.DownloadProgress
-                                    }
+                                        requestScreen(SettingsScreenState.DownloadProgress)
+                                    },
+                                    listState = downloadManagerListState
                                 )
                             }
 
                             SettingsScreenState.DownloadProgress -> {
                                 DownloadProgressScreen(
-                                    onBack = { screenState = SettingsScreenState.DownloadManager }
+                                    onBack = {
+                                        requestScreen(SettingsScreenState.DownloadManager)
+                                    },
+                                    listState = downloadProgressListState
                                 )
                             }
                         }
                     }
-                }
             }
         }
     }

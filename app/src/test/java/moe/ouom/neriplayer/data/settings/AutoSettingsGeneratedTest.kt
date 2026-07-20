@@ -39,6 +39,10 @@ class AutoSettingsGeneratedTest {
             "advanced_lyrics_enabled" in booleanKeyNames
         )
         assertTrue(
+            "coherent feedback choice should be exportable",
+            "coherent_feedback_enabled" in booleanKeyNames
+        )
+        assertTrue(
             "enhanced advanced blur choice should be exportable",
             "enhanced_advanced_blur_enabled" in booleanKeyNames
         )
@@ -281,6 +285,26 @@ class AutoSettingsGeneratedTest {
         assertEquals(DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP, radiusSetting.defaultValue)
         assertEquals(SettingValueType.Float, radiusMetadata?.valueType)
         assertEquals(SettingUiType.Custom, radiusMetadata?.ui)
+    }
+
+    @Test
+    fun coherentFeedbackDefaultsOffAndUsesGeneratedMotionSwitch() {
+        val setting = AutoSettingsSchema.motion.coherentFeedbackEnabled
+        val metadata = AutoSettingsMetadata.setting("coherent_feedback_enabled")
+
+        assertEquals(false, setting.defaultValue)
+        assertEquals(SettingValueType.Boolean, metadata?.valueType)
+        assertEquals(SettingUiType.Switch, metadata?.ui)
+        assertEquals(AutoSettingsSections.motion, metadata?.section)
+        assertEquals(AutoSettingIcon.AdsClick, metadata?.icon)
+        val otherMotionIcons = AutoSettingsMetadata.settingsIn(AutoSettingsSections.motion)
+            .filter { it.keyName != "coherent_feedback_enabled" }
+            .map { it.icon }
+            .filter { it != AutoSettingIcon.None }
+        assertTrue(
+            "coherent feedback icon must be unique within motion settings",
+            metadata?.icon !in otherMotionIcons
+        )
     }
 
     @Test

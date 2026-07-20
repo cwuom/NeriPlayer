@@ -1167,6 +1167,8 @@
     <string name="settings_show_lyric_translation_desc">Show translated lyrics</string>
     <string name="settings_advanced_lyrics">Advanced Lyrics</string>
     <string name="settings_advanced_lyrics_desc">Enable a more modern lyrics layout and motion, and prefer word-level lyrics when available</string>
+    <string name="settings_coherent_feedback">Coherent feedback</string>
+    <string name="settings_coherent_feedback_desc">Move detail and background pages together; turn this off for a drawer-style rise with a gently receding background</string>
     <string name="settings_advanced_blur">Advanced Blur Effects</string>
     <string name="settings_advanced_blur_desc">Enable live background blur for the mini player and bottom bar on Android 13+</string>
     <string name="settings_enhanced_advanced_blur">Enhanced Advanced Blur</string>

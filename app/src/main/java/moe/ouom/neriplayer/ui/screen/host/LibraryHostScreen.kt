@@ -31,6 +31,7 @@ import androidx.compose.animation.ExitTransition
 import kotlinx.parcelize.Parcelize
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyListState
@@ -40,6 +41,7 @@ import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.Saver
@@ -47,7 +49,6 @@ import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -73,7 +74,8 @@ import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassVerticalTransition
+import moe.ouom.neriplayer.ui.effect.glass.advancedGlassHostNavigationTransition
+import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassSceneMotion
 import moe.ouom.neriplayer.ui.util.toSaveMap
 import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
 import moe.ouom.neriplayer.ui.util.restoreAlbumSummary
@@ -110,6 +112,15 @@ private val LibrarySelectedItem?.navigationDepth: Int
         else -> 1
     }
 
+private enum class LibraryScrollSource {
+    Local,
+    Favorite,
+    NeteasePlaylist,
+    NeteaseAlbum,
+    YouTubeMusic,
+    Bili
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryHostScreen(
@@ -117,14 +128,28 @@ fun LibraryHostScreen(
     onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> },
     onOpenRecent: () -> Unit,
     onOpenStats: () -> Unit = {},
-    offlineMode: Boolean = false
+    offlineMode: Boolean = false,
+    coherentFeedbackEnabled: Boolean = false,
+    renderScene: @Composable (
+        revealTopFraction: Float,
+        contentTranslationYFraction: Float,
+        contentScale: Float,
+        content: @Composable () -> Unit
+    ) -> Unit = { _, _, _, content ->
+        content()
+    }
 ) {
     var selected by rememberSaveable(stateSaver = librarySelectedItemSaver) {
         mutableStateOf(null)
     }
     var skipDetailCloseAnimation by rememberSaveable { mutableStateOf(false) }
-    var pendingLocalListRestoreIndex by rememberSaveable { mutableStateOf<Int?>(null) }
-    var pendingLocalListRestoreOffset by rememberSaveable { mutableIntStateOf(0) }
+    var pendingScrollSource by rememberSaveable {
+        mutableStateOf<LibraryScrollSource?>(null)
+    }
+    var pendingListRestoreIndex by rememberSaveable { mutableStateOf<Int?>(null) }
+    var pendingListRestoreOffset by rememberSaveable { mutableIntStateOf(0) }
+    var pendingTopAppBarHeightOffset by rememberSaveable { mutableFloatStateOf(Float.NaN) }
+    var pendingTopAppBarContentOffset by rememberSaveable { mutableFloatStateOf(Float.NaN) }
     // 保存当前选中的标签页类型，避免国际化切换后索引错位
     var selectedTab by rememberSaveable { mutableStateOf(LibraryTab.LOCAL) }
     val libraryStateHolder = rememberSaveableStateHolder()
@@ -196,43 +221,87 @@ fun LibraryHostScreen(
     val topAppBarState = rememberTopAppBarState()
     val context = LocalContext.current
 
-    LaunchedEffect(selected, selectedTab, pendingLocalListRestoreIndex) {
-        val restoreIndex = pendingLocalListRestoreIndex ?: return@LaunchedEffect
-        if (selected != null || selectedTab != LibraryTab.LOCAL) return@LaunchedEffect
-
-        var attempts = 0
-        while (localListState.layoutInfo.totalItemsCount == 0 && attempts < 4) {
-            withFrameNanos { }
-            attempts++
-        }
-
-        val itemCount = localListState.layoutInfo.totalItemsCount
-        if (itemCount > 0) {
-            val safeIndex = restoreIndex.coerceAtMost(itemCount - 1)
-            localListState.scrollToItem(safeIndex, pendingLocalListRestoreOffset)
-        }
-        pendingLocalListRestoreIndex = null
-        pendingLocalListRestoreOffset = 0
+    fun listStateFor(source: LibraryScrollSource): LazyListState = when (source) {
+        LibraryScrollSource.Local -> localListState
+        LibraryScrollSource.Favorite -> favoriteListState
+        LibraryScrollSource.NeteasePlaylist -> neteaseListState
+        LibraryScrollSource.NeteaseAlbum -> neteaseAlbumState
+        LibraryScrollSource.YouTubeMusic -> youtubeMusicListState
+        LibraryScrollSource.Bili -> biliListState
     }
 
+    fun captureLibraryScrollPosition(source: LibraryScrollSource) {
+        val position = listStateFor(source).captureHostScrollPosition()
+        pendingScrollSource = source
+        pendingListRestoreIndex = position.index
+        pendingListRestoreOffset = position.offset
+        pendingTopAppBarHeightOffset = topAppBarState.heightOffset
+        pendingTopAppBarContentOffset = topAppBarState.contentOffset
+    }
+
+    fun sourceForFavoriteAwareDestination(
+        regularSource: LibraryScrollSource
+    ): LibraryScrollSource = if (selectedTab == LibraryTab.FAVORITE) {
+        LibraryScrollSource.Favorite
+    } else {
+        regularSource
+    }
+
+    LaunchedEffect(selected, pendingScrollSource, pendingListRestoreIndex) {
+        val source = pendingScrollSource ?: return@LaunchedEffect
+        val restoreIndex = pendingListRestoreIndex ?: return@LaunchedEffect
+        if (selected != null) return@LaunchedEffect
+        listStateFor(source).restoreHostScrollPosition(
+            HostScrollPosition(
+                index = restoreIndex,
+                offset = pendingListRestoreOffset
+            )
+        )
+        if (!pendingTopAppBarHeightOffset.isNaN()) {
+            topAppBarState.heightOffset = pendingTopAppBarHeightOffset
+        }
+        if (!pendingTopAppBarContentOffset.isNaN()) {
+            topAppBarState.contentOffset = pendingTopAppBarContentOffset
+        }
+        pendingScrollSource = null
+        pendingListRestoreIndex = null
+        pendingListRestoreOffset = 0
+        pendingTopAppBarHeightOffset = Float.NaN
+        pendingTopAppBarContentOffset = Float.NaN
+    }
+    val navigationTransition = updateTransition(
+        targetState = selected,
+        label = "library_host_switch"
+    )
+
     Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
-        AnimatedContent(
-            targetState = selected,
+        navigationTransition.AnimatedContent(
             modifier = Modifier.fillMaxSize(),
-            label = "library_host_switch",
             transitionSpec = {
                 if (targetState == null && skipDetailCloseAnimation) {
                     EnterTransition.None togetherWith ExitTransition.None
                 } else {
-                    isolatedAdvancedGlassVerticalTransition(
-                        forward = targetState.navigationDepth > initialState.navigationDepth
+                    advancedGlassHostNavigationTransition(
+                        forward = targetState.navigationDepth > initialState.navigationDepth,
+                        coherentFeedbackEnabled = coherentFeedbackEnabled
                     )
                 }.using(SizeTransform(clip = true))
             }
         ) { current ->
-            Box(modifier = Modifier.fillMaxSize()) {
-                if (current == null) {
-                    libraryStateHolder.SaveableStateProvider("library_screen") {
+            val sceneMotion = navigationTransition.animateAdvancedGlassSceneMotion(
+                sceneState = current,
+                coherentFeedbackEnabled = coherentFeedbackEnabled,
+                navigationDepth = { item -> item.navigationDepth },
+                label = "library_host_scene"
+            )
+            renderScene(
+                sceneMotion.revealTopFraction,
+                sceneMotion.contentTranslationYFraction,
+                sceneMotion.contentScale
+            ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    if (current == null) {
+                        libraryStateHolder.SaveableStateProvider("library_screen") {
                         LibraryScreen(
                             initialTab = selectedTab,
                             onTabChange = { selectedTab = it },
@@ -247,8 +316,7 @@ fun LibraryHostScreen(
                             offlineMode = offlineMode,
                             onLocalPlaylistClick = { playlist ->
                                 skipDetailCloseAnimation = false
-                                pendingLocalListRestoreIndex = localListState.firstVisibleItemIndex
-                                pendingLocalListRestoreOffset = localListState.firstVisibleItemScrollOffset
+                                captureLibraryScrollPosition(LibraryScrollSource.Local)
                                 selected = LibrarySelectedItem.Local(playlist.id)
                                 AppContainer.playlistUsageRepo.recordOpen(
                                     id = playlist.id,
@@ -260,8 +328,7 @@ fun LibraryHostScreen(
                             },
                             onLocalArtistClick = { artist ->
                                 skipDetailCloseAnimation = false
-                                pendingLocalListRestoreIndex = localListState.firstVisibleItemIndex
-                                pendingLocalListRestoreOffset = localListState.firstVisibleItemScrollOffset
+                                captureLibraryScrollPosition(LibraryScrollSource.Local)
                                 selected = LibrarySelectedItem.LocalArtist(artist.name)
                                 AppContainer.playlistUsageRepo.recordOpen(
                                     id = artist.id,
@@ -273,6 +340,11 @@ fun LibraryHostScreen(
                             },
                             onNeteasePlaylistClick = { playlist ->
                                 skipDetailCloseAnimation = false
+                                captureLibraryScrollPosition(
+                                    sourceForFavoriteAwareDestination(
+                                        LibraryScrollSource.NeteasePlaylist
+                                    )
+                                )
                                 selected = LibrarySelectedItem.Netease(playlist)
                                 AppContainer.playlistUsageRepo.recordOpen(
                                     id = playlist.id,
@@ -284,6 +356,11 @@ fun LibraryHostScreen(
                             },
                             onNeteaseAlbumClick = { album ->
                                 skipDetailCloseAnimation = false
+                                captureLibraryScrollPosition(
+                                    sourceForFavoriteAwareDestination(
+                                        LibraryScrollSource.NeteaseAlbum
+                                    )
+                                )
                                 selected = LibrarySelectedItem.NeteaseAlbum(album)
                                 AppContainer.playlistUsageRepo.recordOpen(
                                     id = album.id,
@@ -294,10 +371,16 @@ fun LibraryHostScreen(
                                 )
                             },
                             onNeteaseArtistClick = { artist ->
+                                captureLibraryScrollPosition(LibraryScrollSource.Favorite)
                                 openNeteaseArtist(artist)
                             },
                             onYouTubeMusicPlaylistClick = { playlist ->
                                 skipDetailCloseAnimation = false
+                                captureLibraryScrollPosition(
+                                    sourceForFavoriteAwareDestination(
+                                        LibraryScrollSource.YouTubeMusic
+                                    )
+                                )
                                 selected = LibrarySelectedItem.YouTubeMusic(playlist)
                                 AppContainer.playlistUsageRepo.recordOpen(
                                     id = stableYouTubeMusicId(
@@ -313,6 +396,9 @@ fun LibraryHostScreen(
                             },
                             onBiliPlaylistClick = { playlist ->
                                 skipDetailCloseAnimation = false
+                                captureLibraryScrollPosition(
+                                    sourceForFavoriteAwareDestination(LibraryScrollSource.Bili)
+                                )
                                 selected = LibrarySelectedItem.Bili(playlist)
                                 AppContainer.playlistUsageRepo.recordOpen(
                                     id = playlist.mediaId,
@@ -328,9 +414,9 @@ fun LibraryHostScreen(
                             onOpenRecent = onOpenRecent,
                             onOpenStats = onOpenStats
                         )
-                    }
-                } else {
-                    when (current) {
+                        }
+                    } else {
+                        when (current) {
                         is LibrarySelectedItem.Local -> {
                             LocalPlaylistDetailScreen(
                                 playlistId = current.playlistId,
@@ -417,6 +503,7 @@ fun LibraryHostScreen(
                                 onPlayParts = onPlayParts,
                                 offlineMode = offlineMode
                             )
+                        }
                         }
                     }
                 }

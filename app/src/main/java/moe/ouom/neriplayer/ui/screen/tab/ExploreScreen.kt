@@ -84,6 +84,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBarState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -187,6 +188,7 @@ private fun searchSourceLabel(source: SearchSource): String {
 @Suppress("AssignedValueIsNeverRead")
 fun ExploreScreen(
     gridState: LazyGridState,
+    topAppBarState: TopAppBarState,
     offlineMode: Boolean = false,
     onPlay: (PlaylistSummary) -> Unit,
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
@@ -198,7 +200,7 @@ fun ExploreScreen(
 ) {
     val context = LocalContext.current
     if (offlineMode) {
-        ExploreOfflineContent()
+        ExploreOfflineContent(topAppBarState)
         return
     }
 
@@ -331,7 +333,7 @@ fun ExploreScreen(
         vm.search(searchQuery)
     }
 
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
 
     Scaffold(
         modifier = Modifier
@@ -730,9 +732,9 @@ fun ExploreScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ExploreOfflineContent() {
+private fun ExploreOfflineContent(topAppBarState: TopAppBarState) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
 
     Scaffold(
         modifier = Modifier

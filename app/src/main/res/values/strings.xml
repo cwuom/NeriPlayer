@@ -1167,6 +1167,8 @@
     <string name="settings_show_lyric_translation_desc">开启后将显示歌词的翻译内容</string>
     <string name="settings_advanced_lyrics">高级歌词</string>
     <string name="settings_advanced_lyrics_desc">启用更现代的歌词排版与动效，并优先使用逐字歌词</string>
+    <string name="settings_coherent_feedback">连贯反馈</string>
+    <string name="settings_coherent_feedback_desc">让详情页与背景页面同步接力移动；关闭后使用背景轻微后退、前景自下而上展开的抽屉式动效</string>
     <string name="settings_advanced_blur">高级模糊效果</string>
     <string name="settings_advanced_blur_desc">在 Android 13 及以上启用小播放器和底部栏的实时背景模糊</string>
     <string name="settings_enhanced_advanced_blur">进阶高级模糊</string>

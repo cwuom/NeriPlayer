@@ -73,7 +73,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberTopAppBarState
+import androidx.compose.material3.TopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -150,6 +150,7 @@ fun HomeScreen(
     onItemClick: (PlaylistSummary) -> Unit = {},
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     gridState: LazyGridState,
+    topAppBarState: TopAppBarState,
     onOpenRecent: (UsageEntry) -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
 ) {
@@ -208,7 +209,7 @@ fun HomeScreen(
     ).distinct()
     val titleSeed = rememberSaveable { (0..Int.MAX_VALUE).random() }
     val appBarTitle = titleOptions[titleSeed % titleOptions.size]
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
 
     val snackbarHostState = remember { SnackbarHostState() }
     val guessYouLikeTitle = stringResource(R.string.home_ytmusic_guess_you_like)

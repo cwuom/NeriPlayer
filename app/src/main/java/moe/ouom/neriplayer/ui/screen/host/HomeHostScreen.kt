@@ -29,13 +29,18 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Surface
+import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -55,7 +60,8 @@ import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.HomeScreen
-import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassVerticalTransition
+import moe.ouom.neriplayer.ui.effect.glass.advancedGlassHostNavigationTransition
+import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassSceneMotion
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
@@ -81,6 +87,7 @@ private sealed class HomeSelectedItem {
 private val HomeSelectedItem?.navigationDepth: Int
     get() = if (this == null) 0 else 1
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeHostScreen(
     showContinueCard: Boolean = true,
@@ -88,7 +95,16 @@ fun HomeHostScreen(
     showRadarCard: Boolean = true,
     showRecommendedCard: Boolean = true,
     offlineMode: Boolean = false,
-    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
+    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
+    coherentFeedbackEnabled: Boolean = false,
+    renderScene: @Composable (
+        revealTopFraction: Float,
+        contentTranslationYFraction: Float,
+        contentScale: Float,
+        content: @Composable () -> Unit
+    ) -> Unit = { _, _, _, content ->
+        content()
+    }
 ) {
     var selected by rememberSaveable(stateSaver = homeSelectedItemSaver) {
         mutableStateOf(null)
@@ -122,113 +138,180 @@ fun HomeHostScreen(
     val gridState = rememberSaveable(saver = LazyGridState.Saver) {
         LazyGridState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
+    val topAppBarState = rememberTopAppBarState()
+    var pendingGridRestoreIndex by rememberSaveable { mutableStateOf<Int?>(null) }
+    var pendingGridRestoreOffset by rememberSaveable { mutableIntStateOf(0) }
+    var pendingTopAppBarHeightOffset by rememberSaveable { mutableFloatStateOf(Float.NaN) }
+    var pendingTopAppBarContentOffset by rememberSaveable { mutableFloatStateOf(Float.NaN) }
+
+    fun captureHomeScrollPosition() {
+        val position = gridState.captureHostScrollPosition()
+        pendingGridRestoreIndex = position.index
+        pendingGridRestoreOffset = position.offset
+        pendingTopAppBarHeightOffset = topAppBarState.heightOffset
+        pendingTopAppBarContentOffset = topAppBarState.contentOffset
+    }
+
+    LaunchedEffect(selected, pendingGridRestoreIndex) {
+        val restoreIndex = pendingGridRestoreIndex ?: return@LaunchedEffect
+        if (selected != null) return@LaunchedEffect
+        gridState.restoreHostScrollPosition(
+            HostScrollPosition(
+                index = restoreIndex,
+                offset = pendingGridRestoreOffset
+            )
+        )
+        if (!pendingTopAppBarHeightOffset.isNaN()) {
+            topAppBarState.heightOffset = pendingTopAppBarHeightOffset
+        }
+        if (!pendingTopAppBarContentOffset.isNaN()) {
+            topAppBarState.contentOffset = pendingTopAppBarContentOffset
+        }
+        pendingGridRestoreIndex = null
+        pendingGridRestoreOffset = 0
+        pendingTopAppBarHeightOffset = Float.NaN
+        pendingTopAppBarContentOffset = Float.NaN
+    }
+    val navigationTransition = updateTransition(
+        targetState = selected,
+        label = "home_host_switch"
+    )
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
-        AnimatedContent(
-            targetState = selected,
+        navigationTransition.AnimatedContent(
             modifier = Modifier.fillMaxSize(),
-            label = "home_host_switch",
             transitionSpec = {
                 if (targetState == null && skipDetailCloseAnimation) {
                     EnterTransition.None togetherWith ExitTransition.None
                 } else {
-                    isolatedAdvancedGlassVerticalTransition(
-                        forward = targetState.navigationDepth > initialState.navigationDepth
+                    advancedGlassHostNavigationTransition(
+                        forward = targetState.navigationDepth > initialState.navigationDepth,
+                        coherentFeedbackEnabled = coherentFeedbackEnabled
                     )
                 }.using(SizeTransform(clip = true))
             }
         ) { current ->
-            Box(modifier = Modifier.fillMaxSize()) {
-                if (current == null) {
-                    HomeScreen(
-                        showContinueCard = showContinueCard,
-                        showTrendingCard = showTrendingCard,
-                        showRadarCard = showRadarCard,
-                        showRecommendedCard = showRecommendedCard,
-                        offlineMode = offlineMode,
-                        gridState = gridState,
-                        onItemClick = { pl ->
-                            skipDetailCloseAnimation = false
-                            AppContainer.playlistUsageRepo.recordOpen(
-                                id = pl.id, name = pl.name, picUrl = pl.picUrl,
-                                trackCount = pl.trackCount, source = "netease"
-                            )
-                            selected = HomeSelectedItem.Netease(pl)
-                        },
-                        onYouTubeMusicPlaylistClick = { pl ->
-                            skipDetailCloseAnimation = false
-                            AppContainer.playlistUsageRepo.recordOpen(
-                                id = stableYouTubeMusicId(pl.playlistId.ifBlank { pl.browseId }),
-                                name = pl.title,
-                                picUrl = pl.coverUrl,
-                                trackCount = pl.trackCount,
-                                source = "youtubeMusic",
-                                browseId = pl.browseId,
-                                playlistId = pl.playlistId
-                            )
-                            selected = HomeSelectedItem.YouTubeMusic(pl)
-                        },
-                        onOpenRecent = { entry ->
-                            skipDetailCloseAnimation = false
-                            openRecent(entry) { next -> selected = next }
-                        },
-                        onSongClick = onSongClick
-                    )
-                } else {
-                    when (current) {
-                        is HomeSelectedItem.NeteaseAlbumList -> {
-                            NeteaseAlbumDetailScreen(
-                                album = current.album,
-                                onBack = { selected = null },
-                                onSongClick = onSongClick,
-                                offlineMode = offlineMode
-                            )
-                        }
-                        is HomeSelectedItem.Netease -> {
-                            NeteasePlaylistDetailScreen(
-                                playlist = current.playlist,
-                                onBack = { selected = null },
-                                onSongClick = onSongClick,
-                                offlineMode = offlineMode
-                            )
-                        }
-                        is HomeSelectedItem.Local -> {
-                            LocalPlaylistDetailScreen(
-                                playlistId = current.playlistId,
-                                onBack = { closeSelectedDetail() },
-                                onDeleted = { closeDeletedLocalPlaylist() },
-                                onSongClick = onSongClick,
-                                offlineMode = offlineMode
-                            )
-                        }
-                        is HomeSelectedItem.LocalArtist -> {
-                            LocalArtistDetailScreen(
-                                artistName = current.artistName,
-                                onBack = { closeSelectedDetail() },
-                                onSongClick = onSongClick,
-                                offlineMode = offlineMode
-                            )
-                        }
-                        is HomeSelectedItem.Bili -> {
-                            BiliPlaylistDetailScreen(
-                                playlist = current.playlist,
-                                onBack = { selected = null },
-                                onPlayAudio = { videos, index ->
-                                    PlayerManager.playBiliVideoAsAudio(videos, index)
-                                },
-                                onPlayParts = { videoInfo, index, coverUrl ->
-                                    PlayerManager.playBiliVideoParts(videoInfo, index, coverUrl)
-                                },
-                                offlineMode = offlineMode
-                            )
-                        }
-                        is HomeSelectedItem.YouTubeMusic -> {
-                            YouTubeMusicPlaylistDetailScreen(
-                                playlist = current.playlist,
-                                onBack = { selected = null },
-                                onSongClick = onSongClick,
-                                offlineMode = offlineMode
-                            )
+            val sceneMotion = navigationTransition.animateAdvancedGlassSceneMotion(
+                sceneState = current,
+                coherentFeedbackEnabled = coherentFeedbackEnabled,
+                navigationDepth = { item -> item.navigationDepth },
+                label = "home_host_scene"
+            )
+            renderScene(
+                sceneMotion.revealTopFraction,
+                sceneMotion.contentTranslationYFraction,
+                sceneMotion.contentScale
+            ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    if (current == null) {
+                        HomeScreen(
+                            showContinueCard = showContinueCard,
+                            showTrendingCard = showTrendingCard,
+                            showRadarCard = showRadarCard,
+                            showRecommendedCard = showRecommendedCard,
+                            offlineMode = offlineMode,
+                            gridState = gridState,
+                            topAppBarState = topAppBarState,
+                            onItemClick = { pl ->
+                                skipDetailCloseAnimation = false
+                                captureHomeScrollPosition()
+                                AppContainer.playlistUsageRepo.recordOpen(
+                                    id = pl.id,
+                                    name = pl.name,
+                                    picUrl = pl.picUrl,
+                                    trackCount = pl.trackCount,
+                                    source = "netease"
+                                )
+                                selected = HomeSelectedItem.Netease(pl)
+                            },
+                            onYouTubeMusicPlaylistClick = { pl ->
+                                skipDetailCloseAnimation = false
+                                captureHomeScrollPosition()
+                                AppContainer.playlistUsageRepo.recordOpen(
+                                    id = stableYouTubeMusicId(
+                                        pl.playlistId.ifBlank { pl.browseId }
+                                    ),
+                                    name = pl.title,
+                                    picUrl = pl.coverUrl,
+                                    trackCount = pl.trackCount,
+                                    source = "youtubeMusic",
+                                    browseId = pl.browseId,
+                                    playlistId = pl.playlistId
+                                )
+                                selected = HomeSelectedItem.YouTubeMusic(pl)
+                            },
+                            onOpenRecent = { entry ->
+                                skipDetailCloseAnimation = false
+                                captureHomeScrollPosition()
+                                openRecent(entry) { next -> selected = next }
+                            },
+                            onSongClick = onSongClick
+                        )
+                    } else {
+                        when (current) {
+                            is HomeSelectedItem.NeteaseAlbumList -> {
+                                NeteaseAlbumDetailScreen(
+                                    album = current.album,
+                                    onBack = { selected = null },
+                                    onSongClick = onSongClick,
+                                    offlineMode = offlineMode
+                                )
+                            }
+
+                            is HomeSelectedItem.Netease -> {
+                                NeteasePlaylistDetailScreen(
+                                    playlist = current.playlist,
+                                    onBack = { selected = null },
+                                    onSongClick = onSongClick,
+                                    offlineMode = offlineMode
+                                )
+                            }
+
+                            is HomeSelectedItem.Local -> {
+                                LocalPlaylistDetailScreen(
+                                    playlistId = current.playlistId,
+                                    onBack = ::closeSelectedDetail,
+                                    onDeleted = ::closeDeletedLocalPlaylist,
+                                    onSongClick = onSongClick,
+                                    offlineMode = offlineMode
+                                )
+                            }
+
+                            is HomeSelectedItem.LocalArtist -> {
+                                LocalArtistDetailScreen(
+                                    artistName = current.artistName,
+                                    onBack = ::closeSelectedDetail,
+                                    onSongClick = onSongClick,
+                                    offlineMode = offlineMode
+                                )
+                            }
+
+                            is HomeSelectedItem.Bili -> {
+                                BiliPlaylistDetailScreen(
+                                    playlist = current.playlist,
+                                    onBack = { selected = null },
+                                    onPlayAudio = { videos, index ->
+                                        PlayerManager.playBiliVideoAsAudio(videos, index)
+                                    },
+                                    onPlayParts = { videoInfo, index, coverUrl ->
+                                        PlayerManager.playBiliVideoParts(
+                                            videoInfo,
+                                            index,
+                                            coverUrl
+                                        )
+                                    },
+                                    offlineMode = offlineMode
+                                )
+                            }
+
+                            is HomeSelectedItem.YouTubeMusic -> {
+                                YouTubeMusicPlaylistDetailScreen(
+                                    playlist = current.playlist,
+                                    onBack = { selected = null },
+                                    onSongClick = onSongClick,
+                                    offlineMode = offlineMode
+                                )
+                            }
                         }
                     }
                 }

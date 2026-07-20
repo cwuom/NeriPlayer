@@ -37,7 +37,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
@@ -105,6 +105,7 @@ enum class DebugCrashTestType(
 
 @Composable
 fun DebugHomeScreen(
+    scrollState: ScrollState,
     alwaysRecordLogsEnabled: Boolean,
     onAlwaysRecordLogsChange: (Boolean) -> Unit,
     onOpenListenTogetherDebug: () -> Unit,
@@ -168,7 +169,7 @@ fun DebugHomeScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState)
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .imePadding()
             .padding(horizontal = 16.dp)

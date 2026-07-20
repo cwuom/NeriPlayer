@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.ui
 
 import androidx.compose.animation.core.FastOutSlowInEasing
 import moe.ouom.neriplayer.navigation.Destinations
+import moe.ouom.neriplayer.ui.effect.glass.DRAWER_BACKGROUND_SINK_FRACTION
+import moe.ouom.neriplayer.ui.effect.glass.DRAWER_RECESSED_CONTENT_SCALE
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -114,34 +116,97 @@ class NeriAppMainTabTransitionPolicyTest {
     }
 
     @Test
-    fun `transparent details move main tab content out of the viewport`() {
-        assertEquals(
-            -1f,
-            resolveMainTabDetailContentOffsetTarget(Destinations.Recent.route),
-            0f
+    fun `coherent feedback keeps the existing full height handoff`() {
+        val motion = resolveMainTabBackgroundMotion(
+            route = Destinations.Recent.route,
+            coherentFeedbackEnabled = true
         )
-        assertEquals(
-            -1f,
-            resolveMainTabDetailContentOffsetTarget(Destinations.PlaybackStats.route),
-            0f
-        )
-        assertEquals(
-            -1f,
-            resolveMainTabDetailContentOffsetTarget(Destinations.NeteaseAlbumDetail.route),
-            0f
-        )
-        assertEquals(
-            0f,
-            resolveMainTabDetailContentOffsetTarget(Destinations.Library.route),
-            0f
-        )
+        val transform = resolveMainTabBackgroundTransform(motion, progress = 1f)
+
+        assertEquals(MainTabBackgroundMotion.COHERENT_EXIT, motion)
+        assertEquals(-1f, transform.translationYFraction, 0f)
+        assertEquals(1f, transform.scale, 0f)
+        assertEquals(1f, transform.alpha, 0f)
         assertEquals(
             MAIN_TAB_DETAIL_OPEN_DURATION_MS,
-            resolveMainTabDetailContentOffsetDurationMillis(-1f)
+            resolveMainTabBackgroundMotionDurationMillis(
+                targetProgress = 1f,
+                coherentFeedbackEnabled = true,
+                debugSceneVisible = false
+            )
         )
+    }
+
+    @Test
+    fun `default detail motion keeps the page position and scales only its content`() {
+        val drawerRoutes = listOf(
+            Destinations.PlaylistDetail.route,
+            Destinations.BiliPlaylistDetail.route,
+            Destinations.LocalPlaylistDetail.route,
+            Destinations.Recent.route,
+            Destinations.PlaybackStats.route,
+            Destinations.DownloadManager.route,
+            Destinations.DownloadProgress.route
+        )
+
+        drawerRoutes.forEach { route ->
+            assertEquals(
+                route,
+                MainTabBackgroundMotion.DRAWER_SINK,
+                resolveMainTabBackgroundMotion(
+                    route = route,
+                    coherentFeedbackEnabled = false
+                )
+            )
+        }
+
+        val midpoint = resolveMainTabBackgroundTransform(
+            motion = MainTabBackgroundMotion.DRAWER_SINK,
+            progress = 0.5f
+        )
+        val settled = resolveMainTabBackgroundTransform(
+            motion = MainTabBackgroundMotion.DRAWER_SINK,
+            progress = 1f
+        )
+        assertEquals(DRAWER_BACKGROUND_SINK_FRACTION / 2f, midpoint.translationYFraction, 0f)
         assertEquals(
-            MAIN_TAB_DETAIL_CLOSE_DURATION_MS,
-            resolveMainTabDetailContentOffsetDurationMillis(0f)
+            1f - (1f - DRAWER_RECESSED_CONTENT_SCALE) / 2f,
+            midpoint.scale,
+            0f
+        )
+        assertEquals(1f, midpoint.alpha, 0f)
+        assertEquals(DRAWER_BACKGROUND_SINK_FRACTION, settled.translationYFraction, 0f)
+        assertEquals(DRAWER_RECESSED_CONTENT_SCALE, settled.scale, 0f)
+        assertEquals(1f, settled.alpha, 0f)
+        assertEquals(
+            DRAWER_DETAIL_OPEN_DURATION_MS,
+            resolveMainTabBackgroundMotionDurationMillis(
+                targetProgress = 1f,
+                coherentFeedbackEnabled = false,
+                debugSceneVisible = false
+            )
+        )
+    }
+
+    @Test
+    fun `default debug child keeps the debug home content in the drawer background`() {
+        val motion = resolveMainTabBackgroundMotion(
+            route = Destinations.DebugListenTogether.route,
+            coherentFeedbackEnabled = false
+        )
+        val transform = resolveMainTabBackgroundTransform(motion, progress = 1f)
+
+        assertEquals(MainTabBackgroundMotion.DRAWER_SINK, motion)
+        assertEquals(DRAWER_BACKGROUND_SINK_FRACTION, transform.translationYFraction, 0f)
+        assertEquals(DRAWER_RECESSED_CONTENT_SCALE, transform.scale, 0f)
+        assertEquals(1f, transform.alpha, 0f)
+        assertEquals(
+            DRAWER_DETAIL_OPEN_DURATION_MS,
+            resolveMainTabBackgroundMotionDurationMillis(
+                targetProgress = 1f,
+                coherentFeedbackEnabled = false,
+                debugSceneVisible = true
+            )
         )
     }
 
