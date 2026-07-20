@@ -128,6 +128,34 @@ void verifiesExplicitFeedbackReport() {
     assert(report.find("feedbackInFlight=4") != std::string::npos);
 }
 
+void verifiesMaximumFeedbackEndpointAddress() {
+    auto snapshot = validDisabledSnapshot();
+    snapshot.feedbackMode = neri::usb::UsbRuntimeFeedbackMode::Explicit;
+    snapshot.feedbackEndpointAddress = 0xFF;
+    snapshot.feedbackState = neri::usb::UsbRuntimeFeedbackState::Locked;
+    snapshot.feedbackPayloadBytes = 4;
+    snapshot.feedbackExpectedPeriodUs = 1000;
+    std::string report;
+    std::string error;
+    assert(neri::usb::buildUsbRuntimeReportV2Fields(snapshot, &report, &error));
+    assert(error.empty());
+    assert(report.find("feedbackEndpoint=0xFF") != std::string::npos);
+}
+
+void rejectsOutOfRangeFeedbackEndpointAddress() {
+    auto snapshot = validDisabledSnapshot();
+    snapshot.feedbackMode = neri::usb::UsbRuntimeFeedbackMode::Explicit;
+    snapshot.feedbackEndpointAddress = 0x100;
+    snapshot.feedbackState = neri::usb::UsbRuntimeFeedbackState::Locked;
+    snapshot.feedbackPayloadBytes = 4;
+    snapshot.feedbackExpectedPeriodUs = 1000;
+    std::string report;
+    std::string error;
+    assert(!neri::usb::buildUsbRuntimeReportV2Fields(snapshot, &report, &error));
+    assert(report.empty());
+    assert(error == "invalid_active_feedback");
+}
+
 } // namespace
 
 int main() {
@@ -139,5 +167,7 @@ int main() {
     rejectsInvalidActionIdentity();
     verifiesSignedFeedbackPpm();
     verifiesExplicitFeedbackReport();
+    verifiesMaximumFeedbackEndpointAddress();
+    rejectsOutOfRangeFeedbackEndpointAddress();
     return 0;
 }

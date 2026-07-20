@@ -121,11 +121,11 @@ bool isNativeAction(UsbRuntimeRecoveryAction action) {
         !isKotlinTerminalAction(action);
 }
 
-std::string endpointToken(int endpointAddress) {
-    if (endpointAddress <= 0) {
+std::string endpointToken(uint8_t endpointAddress) {
+    if (endpointAddress == 0) {
         return "none";
     }
-    char buffer[8] = {};
+    char buffer[5] = {};
     std::snprintf(
         buffer,
         sizeof(buffer),
@@ -236,7 +236,9 @@ bool buildUsbRuntimeReportV2Fields(
     std::ostringstream report;
     report << "reportVersion=2"
         << " feedbackMode=" << feedbackModeToken(snapshot.feedbackMode)
-        << " feedbackEndpoint=" << endpointToken(snapshot.feedbackEndpointAddress)
+        << " feedbackEndpoint=" << endpointToken(
+            static_cast<uint8_t>(snapshot.feedbackEndpointAddress)
+        )
         << " feedbackState=" << feedbackStateToken(snapshot.feedbackState)
         << " feedbackPayloadBytes=" << snapshot.feedbackPayloadBytes
         << " feedbackExpectedPeriodUs=" << snapshot.feedbackExpectedPeriodUs
