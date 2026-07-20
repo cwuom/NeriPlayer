@@ -187,9 +187,10 @@ private const val NOTIFICATION_ARTWORK_SIZE_PX = 256
 private const val MEDIA_ARTWORK_MAX_RETRY_ATTEMPTS = 2
 private const val MEDIA_ARTWORK_RETRY_COOLDOWN_MS = 3_000L
 private const val SERVICE_FLOW_COLLECTOR_RESTART_DELAY_MS = 1_000L
-private const val USB_EXCLUSIVE_KEEPALIVE_INTERVAL_MS = 15_000L
+private const val USB_EXCLUSIVE_KEEPALIVE_INTERVAL_MS = 5_000L
 private const val USB_EXCLUSIVE_KEEPALIVE_STALL_WARN_MS = 25_000L
 private const val USB_EXCLUSIVE_KEEPALIVE_STALL_RECOVERY_TICKS = 1
+private const val USB_EXCLUSIVE_KEEPALIVE_LOG_INTERVAL_TICKS = 3L
 
 internal fun isLocalPlaybackCommandSyncSource(
     source: String,
@@ -703,7 +704,7 @@ class AudioPlayerService : Service() {
             "$levelLine $signalLine"
         if (gapMs > USB_EXCLUSIVE_KEEPALIVE_STALL_WARN_MS) {
             NPLogger.w("NERI-APS", "$message possible_background_freeze=true")
-        } else {
+        } else if (usbExclusiveKeepAliveTick % USB_EXCLUSIVE_KEEPALIVE_LOG_INTERVAL_TICKS == 0L) {
             NPLogger.i("NERI-APS", message)
         }
         recoverUsbExclusivePlaybackIfKeepAliveStalled(
@@ -720,6 +721,7 @@ class AudioPlayerService : Service() {
     ) {
         val pathState = UsbExclusiveAudioPathTracker.state.value
         val nativeState = UsbExclusiveSessionController.state.value
+        val metrics = nativeState.runtimeReport.usbRuntimeMetrics()
         val nativePlaybackExpected = PlayerManager.usbExclusivePlaybackEnabled &&
             PlayerManager.isTransportActiveWithoutInitialization() &&
             pathState.effectivePath == UsbExclusiveAudioPathState.EFFECTIVE_NATIVE_USB &&
@@ -730,7 +732,7 @@ class AudioPlayerService : Service() {
             !nativeState.streaming &&
             !nativeState.paused &&
             !nativeState.transitioning &&
-            nativeState.runtimeReport.usbRuntimeMetrics().transportFailed == true
+            metrics.transportFailed == true
         if (transportStoppedUnexpectedly) {
             usbExclusiveKeepAliveStallTicks = 0
             NPLogger.w(
@@ -765,6 +767,9 @@ class AudioPlayerService : Service() {
             currentZeroFillBytes = nativeState.playerZeroFillBytes,
             previousOutputPeak = lastUsbExclusiveOutputPeak,
             currentOutputPeak = nativeState.lastOutputPeak,
+            outputSampleRate = metrics.sampleRate ?: 0,
+            outputFrameBytes = metrics.outputFrameBytes ?: 0,
+            currentPcmLevelBytes = metrics.pcmLevelBytes ?: -1L,
             previousStallTicks = usbExclusiveKeepAliveStallTicks,
             recoveryTicks = USB_EXCLUSIVE_KEEPALIVE_STALL_RECOVERY_TICKS
         )

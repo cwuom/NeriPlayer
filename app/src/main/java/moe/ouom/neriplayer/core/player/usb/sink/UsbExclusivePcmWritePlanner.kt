@@ -6,13 +6,13 @@ import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveRuntimeMetrics
 
 internal object UsbExclusivePcmWritePlanner {
     private const val DEFAULT_MAX_WRITE_CHUNK_BYTES = 12 * 1024
-    private const val HARD_MAX_WRITE_CHUNK_BYTES = 16 * 1024
+    private const val HIGH_RES_MAX_WRITE_CHUNK_BYTES = 64 * 1024
+    private const val RENDERER_CALLBACK_COVERAGE_MS = 20L
     private const val TRANSFERS_PER_WRITE = 4L
     private const val RECOVERY_TRANSFERS_PER_WRITE = 10L
-    private const val RUNNING_TARGET_QUEUE_MS = 120L
-    private const val RUNNING_TARGET_QUEUE_MAX_MS = 180L
-    private const val HIGH_BANDWIDTH_TARGET_QUEUE_MS = 80L
-    private const val HIGH_BANDWIDTH_TARGET_QUEUE_MAX_MS = 120L
+    private const val RUNNING_TARGET_QUEUE_MIN_MS = 120L
+    private const val RUNNING_TARGET_QUEUE_MAX_MS = 1_000L
+    private const val RUNNING_TARGET_QUEUE_CAPACITY_DIVISOR = 2L
     private const val RUNNING_LOW_WATERMARK_QUEUE_MS = 40L
     private const val RUNNING_TARGET_TRANSFERS = 6L
 
@@ -93,10 +93,17 @@ internal object UsbExclusivePcmWritePlanner {
         }
         val rawLimit = transferBytes
             ?.times(transfersPerWrite)
-            ?.coerceAtMost(HARD_MAX_WRITE_CHUNK_BYTES.toLong())
-            ?.toInt()
-            ?: DEFAULT_MAX_WRITE_CHUNK_BYTES
-        return alignDown(rawLimit.coerceAtLeast(frameBytes), frameBytes)
+            ?: DEFAULT_MAX_WRITE_CHUNK_BYTES.toLong()
+        val rendererCoverageBytes = inputSampleRate
+            .takeIf { it > 0 }
+            ?.toLong()
+            ?.times(frameBytes)
+            ?.times(RENDERER_CALLBACK_COVERAGE_MS)
+            ?.div(1_000L)
+            ?: 0L
+        val boundedLimit = max(rawLimit, rendererCoverageBytes)
+            .coerceAtMost(HIGH_RES_MAX_WRITE_CHUNK_BYTES.toLong())
+        return alignDown(boundedLimit.coerceAtLeast(frameBytes.toLong()).toInt(), frameBytes)
     }
 
     private fun runningQueueNeedsRecovery(
@@ -186,27 +193,16 @@ internal object UsbExclusivePcmWritePlanner {
         inputSampleRate: Int
     ): Long {
         val outputSampleRate = metrics.sampleRate?.takeIf { it > 0 } ?: inputSampleRate
-        val highBandwidthPcm = outputFrameBytes >= 6
-        val targetQueueMs = if (highBandwidthPcm) {
-            HIGH_BANDWIDTH_TARGET_QUEUE_MS
+        val bytesPerSecond = outputSampleRate.toLong() * outputFrameBytes
+        // A large background ring must retain a PCM reserve, not only a few USB transfers.
+        val targetQueueMs = if (bytesPerSecond > 0L) {
+            (capacity * 1_000L / bytesPerSecond / RUNNING_TARGET_QUEUE_CAPACITY_DIVISOR)
+                .coerceIn(RUNNING_TARGET_QUEUE_MIN_MS, RUNNING_TARGET_QUEUE_MAX_MS)
         } else {
-            RUNNING_TARGET_QUEUE_MS
-        }
-        val targetQueueMaxMs = if (highBandwidthPcm) {
-            HIGH_BANDWIDTH_TARGET_QUEUE_MAX_MS
-        } else {
-            RUNNING_TARGET_QUEUE_MAX_MS
+            RUNNING_TARGET_QUEUE_MIN_MS
         }
         val timedBytes = if (outputSampleRate > 0) {
             outputSampleRate.toLong() * outputFrameBytes * targetQueueMs / 1_000L
-        } else {
-            0L
-        }
-        val stabilizedBytes = if (outputSampleRate > 0) {
-            val boundedCapacityBytes = capacity - capacity / 4L
-            val boundedSteadyBytes =
-                outputSampleRate.toLong() * outputFrameBytes * targetQueueMaxMs / 1_000L
-            min(boundedCapacityBytes, boundedSteadyBytes)
         } else {
             0L
         }
@@ -215,11 +211,11 @@ internal object UsbExclusivePcmWritePlanner {
             ?: metrics.lastTransferBytes?.takeIf { it > 0L }
             ?: 0L
         val transferFloor = transferBytes * RUNNING_TARGET_TRANSFERS
-        val target = max(
-            max(max(timedBytes, stabilizedBytes), transferFloor),
-            outputFrameBytes.toLong()
-        )
-        return target.coerceAtMost(capacity - capacity % outputFrameBytes)
+        val boundedCapacityBytes = capacity - capacity / 4L
+        val target = max(max(timedBytes, transferFloor), outputFrameBytes.toLong())
+        return target
+            .coerceAtMost(boundedCapacityBytes)
+            .coerceAtMost(capacity - capacity % outputFrameBytes)
     }
 
     private fun explicitFreeBytes(metrics: UsbExclusiveRuntimeMetrics): Long? {

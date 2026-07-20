@@ -100,6 +100,13 @@ bool parseSampleRateRanges(
     std::string* error
 );
 
+bool decodeCurrentSampleRate(
+    const uint8_t* data,
+    int dataLength,
+    int* output,
+    std::string* error
+);
+
 const char* controlCapabilityName(ControlCapability capability);
 
 const char* syncTypeName(uint8_t endpointAttributes);

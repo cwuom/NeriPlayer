@@ -10,6 +10,7 @@ set(LIBUSB_DIR ${CMAKE_SOURCE_DIR}/libusb)
 set(NERI_CRASH_DIR ${CMAKE_SOURCE_DIR}/crash)
 set(NERI_USB_DIR ${CMAKE_SOURCE_DIR}/usb)
 set(NERI_USB_EXCLUSIVE_DIR ${NERI_USB_DIR}/exclusive)
+set(NERI_USB_FEEDBACK_DIR ${NERI_USB_DIR}/feedback)
 set(NERI_USB_ISO_DIR ${NERI_USB_DIR}/iso)
 set(NERI_USB_PCM_DIR ${NERI_USB_DIR}/pcm)
 set(NERI_USB_UAC1_DIR ${NERI_USB_DIR}/uac1)
@@ -63,9 +64,29 @@ add_library(
     SHARED
     ${NERI_CRASH_DIR}/native_crash_handler.cpp
     ${NERI_USB_EXCLUSIVE_DIR}/usb_exclusive_bridge.cpp
+    ${NERI_USB_EXCLUSIVE_DIR}/usb_recovery_action_latch.cpp
+    ${NERI_USB_EXCLUSIVE_DIR}/usb_runtime_report_v2.cpp
+    ${NERI_USB_FEEDBACK_DIR}/usb_explicit_feedback_engine.cpp
+    ${NERI_USB_FEEDBACK_DIR}/usb_explicit_feedback_engine_state.cpp
+    ${NERI_USB_FEEDBACK_DIR}/usb_explicit_feedback_runtime.cpp
+    ${NERI_USB_FEEDBACK_DIR}/usb_feedback_clock.cpp
+    ${NERI_USB_FEEDBACK_DIR}/usb_feedback_decoder.cpp
+    ${NERI_USB_FEEDBACK_DIR}/usb_feedback_estimator.cpp
+    ${NERI_USB_FEEDBACK_DIR}/usb_feedback_in_transfer_set.cpp
+    ${NERI_USB_FEEDBACK_DIR}/usb_feedback_packet_scheduler.cpp
+    ${NERI_USB_FEEDBACK_DIR}/usb_feedback_rate_math.cpp
+    ${NERI_USB_FEEDBACK_DIR}/usb_feedback_stream_gate.cpp
+    ${NERI_USB_FEEDBACK_DIR}/usb_feedback_transfer_lifecycle.cpp
+    ${NERI_USB_FEEDBACK_DIR}/usb_feedback_types.cpp
+    ${NERI_USB_FEEDBACK_DIR}/usb_libusb_feedback_backend.cpp
     ${NERI_USB_PCM_DIR}/usb_pcm_codec.cpp
     ${NERI_USB_PCM_DIR}/usb_pcm_pipeline.cpp
     ${NERI_USB_UAC1_DIR}/usb_uac1_format.cpp
+    ${NERI_USB_UAC2_DIR}/usb_uac2_candidate_model.cpp
+    ${NERI_USB_UAC2_DIR}/usb_uac2_clock_graph.cpp
+    ${NERI_USB_UAC2_DIR}/usb_uac2_descriptor_snapshot.cpp
+    ${NERI_USB_UAC2_DIR}/usb_uac2_feedback_model.cpp
+    ${NERI_USB_UAC2_DIR}/usb_uac2_feedback_profile.cpp
     ${NERI_USB_UAC2_DIR}/usb_uac2_format.cpp
 )
 
@@ -94,6 +115,7 @@ target_include_directories(
     ${CMAKE_SOURCE_DIR}/libusb
     ${CMAKE_SOURCE_DIR}/libusb/os
     ${NERI_USB_EXCLUSIVE_DIR}
+    ${NERI_USB_FEEDBACK_DIR}
     ${NERI_USB_ISO_DIR}
     ${NERI_USB_PCM_DIR}
     ${NERI_USB_UAC1_DIR}

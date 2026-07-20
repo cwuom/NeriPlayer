@@ -1,0 +1,2 @@
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+[CXX5304] This version only understands SDK XML versions up to 3 but an SDK XML file of version 4 was encountered.

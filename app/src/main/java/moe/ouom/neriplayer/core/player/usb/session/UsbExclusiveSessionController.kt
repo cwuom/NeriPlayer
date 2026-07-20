@@ -27,6 +27,7 @@ import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveIoGate
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeBridge
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveNativeState
+import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveRecoveryActionAckStatus
 import moe.ouom.neriplayer.core.player.usb.transport.allowsAlternativeOutputRetry
 import moe.ouom.neriplayer.core.player.usb.transport.booleanField
 import moe.ouom.neriplayer.core.player.usb.transport.requiresFreshNativeOpen
@@ -141,15 +142,32 @@ object UsbExclusiveSessionController {
         )
     }
 
+    internal fun canReuseResolvedPlayerPcmOutput(
+        currentOutputFormat: String,
+        currentRequestedOutputFormat: String,
+        preferredOutputFormat: String,
+        candidateDescriptions: Set<String>
+    ): Boolean {
+        if (currentOutputFormat !in candidateDescriptions) return false
+        if (currentRequestedOutputFormat == preferredOutputFormat) return true
+        return canReusePlayerPcmOutput(
+            currentOutputFormat = currentOutputFormat,
+            preferredOutputFormat = preferredOutputFormat
+        )
+    }
+
     internal fun canReconfigurePlayerPcmOutputInPlace(
         state: UsbExclusiveNativeState
     ): Boolean {
+        if (!canReusePlayerPcmSession(state)) return false
+        return state.runtimeReport.usbRuntimeMetrics().running != true
+    }
+
+    internal fun canReusePlayerPcmSession(state: UsbExclusiveNativeState): Boolean {
         if (state.handle == 0L || state.source != "player_pcm" || !state.opened) return false
         if (state.outputFormat.isBlank() || state.outputFormat == "none") return false
-        val runtimeReport = state.runtimeReport
-        if (runtimeReport.booleanField("running") == true) return false
-        if (runtimeReport.booleanField("deviceOnline") == false) return false
-        if (runtimeReport.booleanField("transportFailed") == true) return false
+        val metrics = state.runtimeReport.usbRuntimeMetrics()
+        if (!metrics.canReuseNativePlayerSession) return false
         val lastError = state.lastError.orEmpty()
         return lastError.isBlank() || lastError == "none"
     }
@@ -177,6 +195,7 @@ object UsbExclusiveSessionController {
         return metrics.deviceOnline != false &&
             metrics.transportFailed != true &&
             metrics.errorCode.requiresFreshNativeOpen.not() &&
+            metrics.hasHealthyTransport &&
             current.lastError.isNullOrBlank()
     }
 
@@ -567,8 +586,7 @@ object UsbExclusiveSessionController {
                 return 0L
             }
             val outputCandidates = UsbExclusiveOutputFormatResolver.openCandidates(
-                preferred = preferredOutput,
-                inputEncoding = inputEncoding
+                preferred = preferredOutput
             )
             val candidateDescriptions = outputCandidates
                 .map(ResolvedUsbOutputFormat::description)
@@ -594,7 +612,13 @@ object UsbExclusiveSessionController {
                     current.source == "player_pcm" &&
                     current.opened &&
                     ioGate.isOpen() &&
-                    candidateDescriptions.contains(current.outputFormat) &&
+                    canReusePlayerPcmSession(current) &&
+                    canReuseResolvedPlayerPcmOutput(
+                        currentOutputFormat = current.outputFormat,
+                        currentRequestedOutputFormat = current.requestedOutputFormat,
+                        preferredOutputFormat = preferredOutput.description,
+                        candidateDescriptions = candidateDescriptions
+                    ) &&
                     UsbExclusiveNativeBridge.configurePlayerBufferDuration(
                         current.handle,
                         preferredOutput.bufferDurationMs
@@ -1509,6 +1533,28 @@ object UsbExclusiveSessionController {
         return UsbExclusiveNativeBridge.playerPcmFreeBytes(handle)
     }
 
+    fun acknowledgeRecoveryAction(
+        handle: Long,
+        actionGeneration: Long,
+        actionId: Long
+    ): UsbExclusiveRecoveryActionAckStatus {
+        val current = _state.value
+        if (current.handle != handle || current.source != "player_pcm" || !current.opened) {
+            return UsbExclusiveRecoveryActionAckStatus.NoPending
+        }
+        val status = UsbExclusiveNativeBridge.acknowledgeRecoveryAction(
+            handle = handle,
+            actionGeneration = actionGeneration,
+            actionId = actionId
+        )
+        NPLogger.d(
+            TAG,
+            "acknowledgeRecoveryAction(): handle=$handle generation=$actionGeneration " +
+                "actionId=$actionId status=$status"
+        )
+        return status
+    }
+
     internal fun maintainWakeLock(context: Context, reason: String) {
         val current = _state.value
         if (
@@ -2098,6 +2144,22 @@ object UsbExclusiveSessionController {
         val metrics = runtimeReport.usbRuntimeMetrics()
         return copy(
             runtimeReport = runtimeReport,
+            runtimeReportVersion = metrics.reportVersion,
+            runtimeReportValid = metrics.reportValid,
+            runtimeReportInvalidReason = metrics.reportInvalidReason,
+            feedbackMode = metrics.feedbackMode,
+            feedbackState = metrics.feedbackState,
+            playbackReady = metrics.playbackReady,
+            feedbackReusable = metrics.feedbackReusable,
+            terminalFailure = metrics.terminalFailure,
+            recommendedAction = metrics.recommendedAction,
+            actionId = metrics.actionId,
+            actionGeneration = metrics.actionGeneration,
+            actionOwner = metrics.actionOwner,
+            actionLatched = metrics.actionLatched,
+            nativeStreamGeneration = metrics.nativeStreamGeneration,
+            recoveryEpoch = metrics.recoveryEpoch,
+            candidateId = metrics.candidateId,
             pcmLevelBytes = metrics.pcmLevelBytes ?: pcmLevelBytes,
             pcmCapacityBytes = metrics.pcmCapacityBytes ?: pcmCapacityBytes,
             pcmFreeBytes = metrics.pcmFreeBytes ?: pcmFreeBytes,

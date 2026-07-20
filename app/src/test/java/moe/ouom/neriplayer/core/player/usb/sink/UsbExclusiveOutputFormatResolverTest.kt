@@ -3,8 +3,10 @@ package moe.ouom.neriplayer.core.player.usb.sink
 import androidx.media3.common.C
 import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.settings.UsbExclusiveSampleRateMode
+import moe.ouom.neriplayer.data.settings.UsbExclusiveUnsupportedFormatPolicy
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -23,8 +25,7 @@ class UsbExclusiveOutputFormatResolverTest {
         )
 
         val candidates = UsbExclusiveOutputFormatResolver.openCandidates(
-            preferred = preferred,
-            inputEncoding = C.ENCODING_PCM_FLOAT
+            preferred = preferred
         )
 
         assertEquals(
@@ -56,8 +57,7 @@ class UsbExclusiveOutputFormatResolverTest {
         )
 
         val candidates = UsbExclusiveOutputFormatResolver.openCandidates(
-            preferred = preferred,
-            inputEncoding = C.ENCODING_PCM_24BIT
+            preferred = preferred
         )
 
         assertEquals(
@@ -65,6 +65,8 @@ class UsbExclusiveOutputFormatResolverTest {
                 "rate=48000 channels=2 bits=24 subslot=3 " +
                     "rateMode=follow_source bitMode=auto policy=closest_supported",
                 "rate=48000 channels=2 bits=24 subslot=4 " +
+                    "rateMode=follow_source bitMode=auto policy=closest_supported",
+                "rate=48000 channels=2 bits=32 subslot=4 " +
                     "rateMode=follow_source bitMode=auto policy=closest_supported",
                 "rate=48000 channels=2 bits=16 subslot=2 " +
                     "rateMode=follow_source bitMode=auto policy=closest_supported"
@@ -95,21 +97,99 @@ class UsbExclusiveOutputFormatResolverTest {
     }
 
     @Test
-    fun `follow source blocks implicit native sample rate conversion`() {
-        assertTrue(
-            UsbExclusiveOutputFormatResolver.shouldBlockImplicitNativeSampleRateConversion(
+    fun `native bit depth keeps the exact source before compatibility fallbacks`() {
+        assertEquals(
+            32,
+            UsbExclusiveOutputFormatResolver.preferredNativeBitDepth(
                 preferences = UsbExclusivePreferences(),
-                inputSampleRate = 96_000,
-                resolvedSampleRate = 48_000
+                sourceBitDepth = 32
             )
         )
-        assertFalse(
-            UsbExclusiveOutputFormatResolver.shouldBlockImplicitNativeSampleRateConversion(
+        assertEquals(
+            16,
+            UsbExclusiveOutputFormatResolver.preferredNativeBitDepth(
+                preferences = UsbExclusivePreferences(),
+                sourceBitDepth = 8
+            )
+        )
+        assertNull(
+            UsbExclusiveOutputFormatResolver.preferredNativeBitDepth(
                 preferences = UsbExclusivePreferences(
-                    sampleRateMode = UsbExclusiveSampleRateMode.RATE_48000
+                    bitDepthCompatibilityEnabled = false
+                ),
+                sourceBitDepth = 8
+            )
+        )
+    }
+
+    @Test
+    fun `native rate candidates retain exact source before compatible fallbacks`() {
+        assertEquals(
+            listOf(96_000, 48_000),
+            UsbExclusiveOutputFormatResolver.nativeSampleRateCandidates(
+                preferences = UsbExclusivePreferences(),
+                inputSampleRate = 96_000,
+                reportedSampleRates = listOf(48_000)
+            )
+        )
+        assertEquals(
+            listOf(44_100, 48_000),
+            UsbExclusiveOutputFormatResolver.nativeSampleRateCandidates(
+                preferences = UsbExclusivePreferences(),
+                inputSampleRate = 44_100,
+                reportedSampleRates = listOf(44_100, 48_000)
+            )
+        )
+        assertEquals(
+            listOf(96_000),
+            UsbExclusiveOutputFormatResolver.nativeSampleRateCandidates(
+                preferences = UsbExclusivePreferences(
+                    unsupportedFormatPolicy =
+                    UsbExclusiveUnsupportedFormatPolicy.SYSTEM_FALLBACK
                 ),
                 inputSampleRate = 96_000,
-                resolvedSampleRate = 48_000
+                reportedSampleRates = listOf(48_000)
+            )
+        )
+    }
+
+    @Test
+    fun `native rate candidates retain all reported CS43131 rates`() {
+        assertEquals(
+            listOf(192_000, 96_000, 48_000, 384_000, 176_400, 88_200, 352_800),
+            UsbExclusiveOutputFormatResolver.nativeSampleRateCandidates(
+                preferences = UsbExclusivePreferences(),
+                inputSampleRate = 192_000,
+                reportedSampleRates = listOf(
+                    48_000,
+                    96_000,
+                    176_400,
+                    192_000,
+                    352_800,
+                    384_000,
+                    88_200
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `fixed 384 kHz request prefers the nearest reported rate fallback`() {
+        assertEquals(
+            listOf(384_000, 352_800, 192_000, 176_400, 96_000, 88_200, 48_000),
+            UsbExclusiveOutputFormatResolver.nativeSampleRateCandidates(
+                preferences = UsbExclusivePreferences(
+                    sampleRateMode = UsbExclusiveSampleRateMode.RATE_384000
+                ),
+                inputSampleRate = 48_000,
+                reportedSampleRates = listOf(
+                    48_000,
+                    96_000,
+                    176_400,
+                    192_000,
+                    352_800,
+                    88_200
+                )
             )
         )
     }
@@ -126,8 +206,7 @@ class UsbExclusiveOutputFormatResolverTest {
         )
 
         val candidates = UsbExclusiveOutputFormatResolver.openCandidates(
-            preferred = preferred,
-            inputEncoding = C.ENCODING_PCM_FLOAT
+            preferred = preferred
         )
 
         assertEquals(32, candidates.first().bitDepth)
@@ -186,8 +265,7 @@ class UsbExclusiveOutputFormatResolverTest {
         )
 
         val candidates = UsbExclusiveOutputFormatResolver.openCandidates(
-            preferred = preferred,
-            inputEncoding = C.ENCODING_PCM_24BIT
+            preferred = preferred
         )
 
         assertEquals(24, candidates.first().bitDepth)
@@ -208,8 +286,7 @@ class UsbExclusiveOutputFormatResolverTest {
         )
 
         val candidates = UsbExclusiveOutputFormatResolver.openCandidates(
-            preferred = preferred,
-            inputEncoding = C.ENCODING_PCM_FLOAT
+            preferred = preferred
         )
 
         assertTrue(candidates.all { it.bitDepth == 32 })
@@ -229,13 +306,75 @@ class UsbExclusiveOutputFormatResolverTest {
         )
 
         val candidates = UsbExclusiveOutputFormatResolver.openCandidates(
-            preferred = preferred,
-            inputEncoding = C.ENCODING_PCM_FLOAT
+            preferred = preferred
         )
 
         assertEquals(192_000, candidates.first().sampleRate)
         assertTrue(candidates.all { it.sampleRate == 192_000 })
         assertTrue(candidates.any { it.bitDepth == 16 && it.subslotBytes == 2 })
+    }
+
+    @Test
+    fun `native exact source rate is tried before advisory system rate`() {
+        val preferred = ResolvedUsbOutputFormat(
+            sampleRate = 44_100,
+            channelCount = 2,
+            bitDepth = 16,
+            subslotBytes = 2,
+            bufferDurationMs = 250,
+            description = "rate=44100 channels=2 bits=16 subslot=2 " +
+                "rateMode=follow_source bitMode=auto policy=closest_supported",
+            alternativeSampleRates = listOf(48_000)
+        )
+
+        val candidates = UsbExclusiveOutputFormatResolver.openCandidates(
+            preferred = preferred
+        )
+
+        assertEquals(listOf(44_100, 48_000), candidates.map { it.sampleRate }.distinct())
+        assertEquals(44_100, candidates.first().sampleRate)
+    }
+
+    @Test
+    fun `bit depth compatibility widens 16 bit input when native descriptor requires it`() {
+        val preferred = ResolvedUsbOutputFormat(
+            sampleRate = 48_000,
+            channelCount = 2,
+            bitDepth = 16,
+            subslotBytes = 2,
+            bufferDurationMs = 250,
+            description = "rate=48000 channels=2 bits=16 subslot=2 " +
+                "rateMode=follow_source bitMode=auto policy=closest_supported"
+        )
+
+        val candidates = UsbExclusiveOutputFormatResolver.openCandidates(
+            preferred = preferred
+        )
+
+        assertEquals(16, candidates.first().bitDepth)
+        assertTrue(candidates.any { it.bitDepth == 24 && it.subslotBytes == 3 })
+        assertTrue(candidates.any { it.bitDepth == 24 && it.subslotBytes == 4 })
+        assertTrue(candidates.any { it.bitDepth == 32 && it.subslotBytes == 4 })
+    }
+
+    @Test
+    fun `disabled bit depth compatibility keeps only the exact native depth`() {
+        val preferred = ResolvedUsbOutputFormat(
+            sampleRate = 48_000,
+            channelCount = 2,
+            bitDepth = 32,
+            subslotBytes = 4,
+            bufferDurationMs = 250,
+            description = "rate=48000 channels=2 bits=32 subslot=4 " +
+                "rateMode=follow_source bitMode=auto policy=closest_supported",
+            allowBitDepthFallback = false
+        )
+
+        val candidates = UsbExclusiveOutputFormatResolver.openCandidates(
+            preferred = preferred
+        )
+
+        assertTrue(candidates.all { it.bitDepth == 32 && it.subslotBytes == 4 })
     }
 
     @Test

@@ -72,6 +72,47 @@ class PlayerManagerPlaybackStartPlanTest {
     }
 
     @Test
+    fun `usb track transition protection uses short fade when user fade is disabled`() {
+        val plan = resolveManagedPlaybackStartPlan(
+            playbackFadeInEnabled = false,
+            playbackFadeInDurationMs = 0L,
+            playbackCrossfadeInDurationMs = 500L,
+            useUsbTransitionProtection = true
+        )
+
+        assertTrue(plan.useFadeIn)
+        assertTrue(plan.allowUsbExclusiveFade)
+        assertEquals(USB_TRACK_TRANSITION_PROTECTION_FADE_DURATION_MS, plan.fadeDurationMs)
+        assertEquals(0f, plan.initialVolume, 0.0001f)
+    }
+
+    @Test
+    fun `usb exclusive keeps transition protection but bypasses ordinary fade`() {
+        val protectedPlan = resolveEffectivePlaybackStartPlan(
+            plan = resolveManagedPlaybackStartPlan(
+                playbackFadeInEnabled = false,
+                playbackFadeInDurationMs = 0L,
+                playbackCrossfadeInDurationMs = 500L,
+                useUsbTransitionProtection = true
+            ),
+            usbExclusivePlaybackEnabled = true
+        )
+        val ordinaryPlan = resolveEffectivePlaybackStartPlan(
+            plan = resolvePlaybackStartPlan(
+                shouldFadeIn = true,
+                fadeDurationMs = 500L
+            ),
+            usbExclusivePlaybackEnabled = true
+        )
+
+        assertTrue(protectedPlan.useFadeIn)
+        assertEquals(USB_TRACK_TRANSITION_PROTECTION_FADE_DURATION_MS, protectedPlan.fadeDurationMs)
+        assertFalse(ordinaryPlan.useFadeIn)
+        assertEquals(0L, ordinaryPlan.fadeDurationMs)
+        assertEquals(1f, ordinaryPlan.initialVolume, 0.0001f)
+    }
+
+    @Test
     fun `continuation plan resumes fade in from current volume during fade out cancel`() {
         val plan = resolvePlaybackContinuationStartPlan(
             plan = PlaybackStartPlan(

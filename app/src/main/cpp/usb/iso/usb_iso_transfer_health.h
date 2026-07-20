@@ -23,4 +23,15 @@ inline bool shouldFailForIsoPacketErrors(int errorScore) {
     return errorScore >= kIsoPacketErrorFailureScore;
 }
 
+inline int completedIsoPacketBytes(
+    bool packetCompleted,
+    int requestedLength,
+    int actualLength
+) {
+    if (!packetCompleted || requestedLength <= 0 || actualLength <= 0) {
+        return 0;
+    }
+    return std::min(requestedLength, actualLength);
+}
+
 } // namespace neri::usb

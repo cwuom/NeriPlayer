@@ -1,6 +1,7 @@
 #include "usb_uac2_format.h"
 
 #include <algorithm>
+#include <limits>
 #include <utility>
 
 namespace neri::usb::uac2 {
@@ -394,6 +395,28 @@ bool parseSampleRateRanges(
         parsed.push_back(range);
     }
     *output = std::move(parsed);
+    if (error != nullptr) {
+        error->clear();
+    }
+    return true;
+}
+
+bool decodeCurrentSampleRate(
+    const uint8_t* data,
+    int dataLength,
+    int* output,
+    std::string* error
+) {
+    if (data == nullptr || dataLength != 4 || output == nullptr) {
+        assignError(error, "invalid_current_sample_rate_input");
+        return false;
+    }
+    const uint32_t decoded = readLe32(data);
+    if (decoded == 0U || decoded > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
+        assignError(error, "current_sample_rate_out_of_range");
+        return false;
+    }
+    *output = static_cast<int>(decoded);
     if (error != nullptr) {
         error->clear();
     }

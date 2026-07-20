@@ -197,12 +197,21 @@ internal object UsbExclusiveAudioQualityRecoveryPolicy {
                     "ticks=$nextTicks threshold=$largeGapBytes"
             )
         }
-        if (nextTicks >= PCM_STARVATION_RECOVERY_TICKS || largeGap) {
-            return recover(
+        if (largeGap) {
+            return ignore(
                 snapshot = armedSnapshot,
-                reason = "player_pcm_starvation",
+                reason = "large_pcm_starvation",
                 debug = "underrunDelta=$underrunDelta zeroFillDelta=$zeroFillDelta " +
-                    "ticks=$nextTicks largeGap=$largeGap threshold=$largeGapBytes"
+                    "ticks=$nextTicks largeGap=$largeGap threshold=$largeGapBytes " +
+                    "reopenSuppressed=true"
+            )
+        }
+        if (nextTicks >= PCM_STARVATION_RECOVERY_TICKS) {
+            return ignore(
+                snapshot = armedSnapshot,
+                reason = "persistent_pcm_starvation",
+                debug = "underrunDelta=$underrunDelta zeroFillDelta=$zeroFillDelta " +
+                    "ticks=$nextTicks threshold=$largeGapBytes reopenSuppressed=true"
             )
         }
         return ignore(
@@ -294,6 +303,7 @@ internal object UsbExclusiveAudioQualityRecoveryPolicy {
         val retainedSnapshot = if (
             reason == "armed_pcm_starvation" ||
             reason == "minor_pcm_starvation_with_signal" ||
+            reason == "persistent_pcm_starvation" ||
             reason == "awaiting_pcm_starvation_sample" ||
             reason == "armed_player_drop" ||
             reason == "minor_player_drop_with_signal" ||

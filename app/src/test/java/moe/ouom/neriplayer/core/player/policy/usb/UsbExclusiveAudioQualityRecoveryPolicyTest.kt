@@ -65,7 +65,7 @@ class UsbExclusiveAudioQualityRecoveryPolicyTest {
     }
 
     @Test
-    fun `consecutive stable zero fill increments recover native playback`() {
+    fun `consecutive small zero fill increments do not reopen healthy transport`() {
         val baseline = evaluate(
             previous = UsbExclusiveAudioQualityRecoveryPolicy.reset(),
             nowMs = 2_100L,
@@ -94,12 +94,12 @@ class UsbExclusiveAudioQualityRecoveryPolicyTest {
             )
         )
 
-        assertTrue("reason=${decision.reason} debug=${decision.debug}", decision.shouldRecover)
-        assertEquals("player_pcm_starvation", decision.reason)
+        assertFalse("reason=${decision.reason} debug=${decision.debug}", decision.shouldRecover)
+        assertEquals("persistent_pcm_starvation", decision.reason)
     }
 
     @Test
-    fun `minor background starvation with audible signal arms before reopening native playback`() {
+    fun `minor background starvation with audible signal never reopens healthy transport`() {
         val baseline = evaluate(
             previous = UsbExclusiveAudioQualityRecoveryPolicy.reset(),
             nowMs = 30_000L,
@@ -146,8 +146,8 @@ class UsbExclusiveAudioQualityRecoveryPolicyTest {
         assertFalse(firstTick.shouldRecover)
         assertEquals("minor_pcm_starvation_with_signal", firstTick.reason)
         assertEquals(1, firstTick.state.consecutivePcmStarvationTicks)
-        assertTrue(secondTick.shouldRecover)
-        assertEquals("player_pcm_starvation", secondTick.reason)
+        assertFalse(secondTick.shouldRecover)
+        assertEquals("persistent_pcm_starvation", secondTick.reason)
         assertEquals(2, secondTick.state.consecutivePcmStarvationTicks)
     }
 
@@ -196,8 +196,8 @@ class UsbExclusiveAudioQualityRecoveryPolicyTest {
             )
         )
 
-        assertTrue("reason=${decision.reason} debug=${decision.debug}", decision.shouldRecover)
-        assertEquals("player_pcm_starvation", decision.reason)
+        assertFalse("reason=${decision.reason} debug=${decision.debug}", decision.shouldRecover)
+        assertEquals("persistent_pcm_starvation", decision.reason)
     }
 
     @Test
@@ -236,12 +236,17 @@ class UsbExclusiveAudioQualityRecoveryPolicyTest {
     }
 
     @Test
-    fun `large stable zero fill gap recovers without waiting another tick`() {
+    fun `large stable zero fill gap does not reopen a healthy native transport`() {
         val baseline = evaluate(
             previous = UsbExclusiveAudioQualityRecoveryPolicy.reset(),
             nowMs = 2_100L,
             transportStartedAtMs = 1_000L,
-            metrics = metrics(completedTransfers = 24L)
+            metrics = metrics(
+                completedTransfers = 24L,
+                sampleRate = 192_000,
+                playerSignalBytes = 2_503_168L,
+                lastOutputPeak = 0.06f
+            )
         )
 
         val decision = evaluate(
@@ -250,13 +255,17 @@ class UsbExclusiveAudioQualityRecoveryPolicyTest {
             transportStartedAtMs = 1_000L,
             metrics = metrics(
                 completedTransfers = 25L,
-                playerUnderrunBytes = 80_000L,
-                playerZeroFillBytes = 80_000L
+                sampleRate = 192_000,
+                playerSignalBytes = 3_054_592L,
+                playerUnderrunBytes = 565_808L,
+                playerZeroFillBytes = 565_808L,
+                lastOutputPeak = 0.06f
             )
         )
 
-        assertTrue(decision.shouldRecover)
-        assertEquals("player_pcm_starvation", decision.reason)
+        assertFalse(decision.shouldRecover)
+        assertEquals("large_pcm_starvation", decision.reason)
+        assertTrue(decision.debug.contains("reopenSuppressed=true"))
     }
 
     @Test

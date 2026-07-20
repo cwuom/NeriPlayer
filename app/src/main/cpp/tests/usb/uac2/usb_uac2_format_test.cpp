@@ -211,6 +211,43 @@ void verifiesSampleRateRanges() {
     assert(!ranges[0].supports(48000));
 }
 
+void verifiesCurrentSampleRateDecoding() {
+    constexpr uint8_t rate48000[] = { 0x80, 0xBB, 0x00, 0x00 };
+    constexpr uint8_t zeroRate[] = { 0x00, 0x00, 0x00, 0x00 };
+    constexpr uint8_t signedOverflow[] = { 0x00, 0x00, 0x00, 0x80 };
+    int sampleRate = 0;
+    std::string error;
+
+    assert(neri::usb::uac2::decodeCurrentSampleRate(
+        rate48000,
+        sizeof(rate48000),
+        &sampleRate,
+        &error
+    ));
+    assert(sampleRate == 48000);
+    assert(!neri::usb::uac2::decodeCurrentSampleRate(
+        zeroRate,
+        sizeof(zeroRate),
+        &sampleRate,
+        &error
+    ));
+    assert(error == "current_sample_rate_out_of_range");
+    assert(!neri::usb::uac2::decodeCurrentSampleRate(
+        signedOverflow,
+        sizeof(signedOverflow),
+        &sampleRate,
+        &error
+    ));
+    assert(error == "current_sample_rate_out_of_range");
+    assert(!neri::usb::uac2::decodeCurrentSampleRate(
+        rate48000,
+        3,
+        &sampleRate,
+        &error
+    ));
+    assert(error == "invalid_current_sample_rate_input");
+}
+
 } // namespace
 
 int main() {
@@ -222,5 +259,6 @@ int main() {
     verifiesTerminalClockSourceMapping();
     rejectsFormatsThatNeedFeedbackScheduling();
     verifiesSampleRateRanges();
+    verifiesCurrentSampleRateDecoding();
     return 0;
 }

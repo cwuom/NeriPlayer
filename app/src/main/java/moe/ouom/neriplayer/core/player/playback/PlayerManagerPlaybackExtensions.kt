@@ -29,12 +29,14 @@ import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.policy.failure.PlaybackFailureAdvanceAction
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackStartPlan
+import moe.ouom.neriplayer.core.player.policy.command.USB_TRACK_TRANSITION_PROTECTION_FADE_DURATION_MS
 import moe.ouom.neriplayer.core.player.policy.pending.resolvePendingMediaLoadEntryAction
 import moe.ouom.neriplayer.core.player.policy.pending.resolvePendingPauseAction
 import moe.ouom.neriplayer.core.player.policy.pending.resolvePendingPlayAction
 import moe.ouom.neriplayer.core.player.policy.command.resolvePauseVolumePlan
 import moe.ouom.neriplayer.core.player.policy.pending.resolvePendingSeekAction
 import moe.ouom.neriplayer.core.player.policy.command.resolvePlaybackContinuationStartPlan
+import moe.ouom.neriplayer.core.player.policy.command.resolveEffectivePlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.failure.resolvePlaybackFailureAdvanceAction
 import moe.ouom.neriplayer.core.player.policy.command.resolveManagedPlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.command.resolveManualResumePlaybackDecision
@@ -176,11 +178,10 @@ internal fun PlayerManager.pauseForAudioRouteLoss(reason: String) {
 internal fun PlayerManager.preparePlayerForManagedStart(plan: PlaybackStartPlan) {
     if (!isPlayerInitialized()) return
     cancelVolumeFade()
-    val effectivePlan = if (usbExclusivePlaybackEnabled) {
-        plan.copy(useFadeIn = false, fadeDurationMs = 0L, initialVolume = 1f)
-    } else {
-        plan
-    }
+    val effectivePlan = resolveEffectivePlaybackStartPlan(
+        plan = plan,
+        usbExclusivePlaybackEnabled = usbExclusivePlaybackEnabled
+    )
     NPLogger.d(
         "NERI-PlayerManager",
         "preparePlayerForManagedStart: useFadeIn=${effectivePlan.useFadeIn}, fadeDurationMs=${effectivePlan.fadeDurationMs}, initialVolume=${effectivePlan.initialVolume}, currentSong=${_currentSongFlow.value?.name}"
@@ -245,11 +246,10 @@ internal suspend fun PlayerManager.fadeOutCurrentPlaybackIfNeeded(
 internal fun PlayerManager.startPlayerPlaybackWithFade(plan: PlaybackStartPlan) {
     cancelVolumeFade()
     StartupAudioFocusController.release("playback_start")
-    val effectivePlan = if (usbExclusivePlaybackEnabled) {
-        plan.copy(useFadeIn = false, fadeDurationMs = 0L, initialVolume = 1f)
-    } else {
-        plan
-    }
+    val effectivePlan = resolveEffectivePlaybackStartPlan(
+        plan = plan,
+        usbExclusivePlaybackEnabled = usbExclusivePlaybackEnabled
+    )
     NPLogger.d(
         "NERI-PlayerManager",
         "startPlayerPlaybackWithFade: useFadeIn=${effectivePlan.useFadeIn}, fadeDurationMs=${effectivePlan.fadeDurationMs}, initialVolume=${effectivePlan.initialVolume}, currentSong=${_currentSongFlow.value?.name}"
@@ -289,6 +289,7 @@ internal fun PlayerManager.startPlayerPlaybackWithFade(plan: PlaybackStartPlan) 
 
 internal fun PlayerManager.resolveCurrentPlaybackStartPlan(
     useTrackTransitionFade: Boolean = false,
+    useUsbTransitionProtection: Boolean = false,
     forceStartupProtectionFade: Boolean = false
 ): PlaybackStartPlan {
     return resolveManagedPlaybackStartPlan(
@@ -296,6 +297,7 @@ internal fun PlayerManager.resolveCurrentPlaybackStartPlan(
         playbackFadeInDurationMs = playbackFadeInDurationMs,
         playbackCrossfadeInDurationMs = playbackCrossfadeInDurationMs,
         useTrackTransitionFade = useTrackTransitionFade,
+        useUsbTransitionProtection = useUsbTransitionProtection,
         forceStartupProtectionFade = forceStartupProtectionFade
     )
 }
@@ -541,9 +543,15 @@ internal fun PlayerManager.playAtIndex(
     }
 
     val song = currentPlaylist[index]
+    val useUsbTransitionProtection = usbExclusivePlaybackEnabled &&
+        (player.isPlaying || player.playWhenReady)
     NPLogger.d(
         "NERI-PlayerManager",
-        "playAtIndex: index=$index, song=${song.name}, resumePositionMs=$resumePositionMs, transitionFade=$useTrackTransitionFade, source=$commandSource, forceStartupProtectionFade=$forceStartupProtectionFade, nextToken=${playbackRequestToken + 1}, stack=[${debugStackHint()}]"
+        "playAtIndex: index=$index, song=${song.name}, resumePositionMs=$resumePositionMs, " +
+            "transitionFade=$useTrackTransitionFade, usbTransitionProtection=" +
+            "$useUsbTransitionProtection, source=$commandSource, " +
+            "forceStartupProtectionFade=$forceStartupProtectionFade, " +
+            "nextToken=${playbackRequestToken + 1}, stack=[${debugStackHint()}]"
     )
     replacePlaybackDemandCacheKey(
         cacheKey = if (isYouTubeMusicTrack(song)) computeCacheKey(song) else null,
@@ -609,8 +617,12 @@ internal fun PlayerManager.playAtIndex(
                 }
 
                 fadeOutCurrentPlaybackIfNeeded(
-                    enabled = useTrackTransitionFade,
-                    fadeOutDurationMs = playbackCrossfadeOutDurationMs
+                    enabled = useTrackTransitionFade || useUsbTransitionProtection,
+                    fadeOutDurationMs = if (useUsbTransitionProtection) {
+                        USB_TRACK_TRANSITION_PROTECTION_FADE_DURATION_MS
+                    } else {
+                        playbackCrossfadeOutDurationMs
+                    }
                 )
                 if (!shouldApplyResolvedMedia(requestToken, playbackRequestToken) || !isActive) {
                     return@launch
@@ -663,6 +675,7 @@ internal fun PlayerManager.playAtIndex(
                     )
                     val startPlan = resolveCurrentPlaybackStartPlan(
                         useTrackTransitionFade = useTrackTransitionFade,
+                        useUsbTransitionProtection = useUsbTransitionProtection,
                         forceStartupProtectionFade = forceStartupProtectionFade &&
                             resumePositionMs > 0L
                     )

@@ -332,6 +332,26 @@ internal object UsbExclusiveNativeBridge {
         } ?: BRIDGE_FAILURE_FALLBACK_REPORT
     }
 
+    fun acknowledgeRecoveryAction(
+        handle: Long,
+        actionGeneration: Long,
+        actionId: Long
+    ): UsbExclusiveRecoveryActionAckStatus {
+        if (handle == 0L || actionGeneration < 0L || actionId < 0L || !ensureLoaded()) {
+            return UsbExclusiveRecoveryActionAckStatus.NoPending
+        }
+        val rawStatus = callNative(
+            operation = "nativeAcknowledgeRecoveryAction",
+            context = {
+                "handle=$handle actionGeneration=$actionGeneration actionId=$actionId"
+            }
+        ) {
+            nativeAcknowledgeRecoveryAction(handle, actionGeneration, actionId)
+        } ?: return UsbExclusiveRecoveryActionAckStatus.NoPending
+        return rawStatus.toUsbExclusiveRecoveryActionAckStatusOrNull()
+            ?: UsbExclusiveRecoveryActionAckStatus.NoPending
+    }
+
     @JvmStatic
     private external fun nativeOpen(
         fd: Int,
@@ -414,4 +434,11 @@ internal object UsbExclusiveNativeBridge {
 
     @JvmStatic
     private external fun nativeLastOpenError(): String
+
+    @JvmStatic
+    private external fun nativeAcknowledgeRecoveryAction(
+        handle: Long,
+        actionGeneration: Long,
+        actionId: Long
+    ): String
 }

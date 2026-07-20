@@ -4,6 +4,7 @@ internal enum class UsbExclusiveKeepAliveProgress {
     BASELINE,
     ADVANCED,
     COUNTER_RESET,
+    PCM_STARVATION,
     FAKE_PROGRESS,
     STALLED
 }
@@ -25,6 +26,9 @@ internal fun evaluateUsbExclusiveKeepAliveProgress(
     currentZeroFillBytes: Long = -1L,
     previousOutputPeak: Float = Float.NaN,
     currentOutputPeak: Float = Float.NaN,
+    outputSampleRate: Int = 0,
+    outputFrameBytes: Int = 0,
+    currentPcmLevelBytes: Long = -1L,
     previousStallTicks: Int,
     recoveryTicks: Int
 ): UsbExclusiveKeepAliveDecision {
@@ -54,6 +58,24 @@ internal fun evaluateUsbExclusiveKeepAliveProgress(
             previousZeroFillBytes >= 0L && currentZeroFillBytes >= previousZeroFillBytes
         val signalAdvanced = signalKnown && currentSignalBytes > previousSignalBytes
         val zeroFillAdvanced = zeroFillKnown && currentZeroFillBytes > previousZeroFillBytes
+        if (
+            hasSeverePcmStarvation(
+                zeroFillAdvanced = zeroFillAdvanced,
+                previousZeroFillBytes = previousZeroFillBytes,
+                currentZeroFillBytes = currentZeroFillBytes,
+                outputSampleRate = outputSampleRate,
+                outputFrameBytes = outputFrameBytes,
+                currentPcmLevelBytes = currentPcmLevelBytes
+            )
+        ) {
+            val requiredTicks = recoveryTicks.coerceAtLeast(1)
+            val stallTicks = (previousStallTicks + 1).coerceAtMost(requiredTicks)
+            return UsbExclusiveKeepAliveDecision(
+                progress = UsbExclusiveKeepAliveProgress.PCM_STARVATION,
+                stallTicks = stallTicks,
+                shouldRecover = stallTicks >= requiredTicks
+            )
+        }
         val peakKnown = !previousOutputPeak.isNaN() && !currentOutputPeak.isNaN()
         val outputAudible = !peakKnown || currentOutputPeak > USB_EXCLUSIVE_SILENT_OUTPUT_PEAK_MAX
         if (!signalAdvanced && zeroFillAdvanced && !outputAudible) {
@@ -81,4 +103,31 @@ internal fun evaluateUsbExclusiveKeepAliveProgress(
     )
 }
 
+private fun hasSeverePcmStarvation(
+    zeroFillAdvanced: Boolean,
+    previousZeroFillBytes: Long,
+    currentZeroFillBytes: Long,
+    outputSampleRate: Int,
+    outputFrameBytes: Int,
+    currentPcmLevelBytes: Long
+): Boolean {
+    if (!zeroFillAdvanced || outputSampleRate <= 0 || outputFrameBytes <= 0) return false
+    if (currentPcmLevelBytes < 0L) return false
+    val bytesPerSecond = outputSampleRate.toLong() * outputFrameBytes
+    if (bytesPerSecond <= 0L) return false
+    val zeroFillDeltaBytes = currentZeroFillBytes - previousZeroFillBytes
+    val zeroFillMs = bytesToDurationMs(zeroFillDeltaBytes, bytesPerSecond)
+    if (zeroFillMs < USB_EXCLUSIVE_SEVERE_ZERO_FILL_MS) return false
+    val queueMs = bytesToDurationMs(currentPcmLevelBytes, bytesPerSecond)
+    return queueMs <= USB_EXCLUSIVE_RECOVERY_QUEUE_MAX_MS
+}
+
+private fun bytesToDurationMs(bytes: Long, bytesPerSecond: Long): Long {
+    if (bytes <= 0L || bytesPerSecond <= 0L) return 0L
+    return bytes / bytesPerSecond * 1_000L +
+        (bytes % bytesPerSecond) * 1_000L / bytesPerSecond
+}
+
 private const val USB_EXCLUSIVE_SILENT_OUTPUT_PEAK_MAX = 0.0001f
+private const val USB_EXCLUSIVE_SEVERE_ZERO_FILL_MS = 750L
+private const val USB_EXCLUSIVE_RECOVERY_QUEUE_MAX_MS = 100L

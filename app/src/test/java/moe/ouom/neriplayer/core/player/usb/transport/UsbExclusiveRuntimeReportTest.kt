@@ -135,6 +135,80 @@ class UsbExclusiveRuntimeReportTest {
     }
 
     @Test
+    fun `v2 explicit feedback report exposes typed readiness and reuse gate`() {
+        val metrics = buildString {
+            append("reportVersion=2 source=player_pcm syncType=async ")
+            append("feedbackMode=explicit feedbackEndpoint=0x84 feedbackState=Locked ")
+            append("transportRunning=true feedbackReady=true realPcmReleased=true ")
+            append("canAcceptPcm=true playbackReady=true feedbackReusable=true ")
+            append("terminalFailure=false nativeStreamGeneration=9 candidateId=cs43131 ")
+            append("recoveryEpoch=4 recommendedAction=Holdover actionId=7 ")
+            append("actionGeneration=9 actionOwner=native actionLatched=false ")
+            append("lastError=none")
+        }.usbRuntimeMetrics()
+
+        assertEquals(2, metrics.reportVersion)
+        assertTrue(metrics.reportValid)
+        assertEquals(UsbExclusiveFeedbackMode.Explicit, metrics.feedbackMode)
+        assertEquals(0x84, metrics.feedbackEndpointAddress)
+        assertEquals(UsbExclusiveFeedbackState.Locked, metrics.feedbackState)
+        assertEquals(UsbExclusiveRecoveryAction.Holdover, metrics.recommendedAction)
+        assertEquals(UsbExclusiveRecoveryActionOwner.Native, metrics.actionOwner)
+        assertTrue(metrics.playbackReady == true)
+        assertTrue(metrics.hasHealthyTransport)
+        assertTrue(metrics.canReuseNativePlayerSession)
+    }
+
+    @Test
+    fun `v2 acquiring report stays nonfatal but not yet reusable`() {
+        val metrics = buildString {
+            append("reportVersion=2 source=player_pcm syncType=async ")
+            append("feedbackMode=explicit feedbackEndpoint=0x84 feedbackState=Acquiring ")
+            append("transportRunning=true feedbackReady=false realPcmReleased=false ")
+            append("canAcceptPcm=false playbackReady=false feedbackReusable=false ")
+            append("terminalFailure=false nativeStreamGeneration=9 candidateId=cs43131 ")
+            append("recoveryEpoch=4 recommendedAction=Holdover actionId=7 ")
+            append("actionGeneration=9 actionOwner=native actionLatched=false ")
+            append("lastError=none")
+        }.usbRuntimeMetrics()
+
+        assertEquals(UsbExclusiveFeedbackState.Acquiring, metrics.feedbackState)
+        assertFalse(metrics.hasHealthyTransport)
+        assertFalse(metrics.canReuseNativePlayerSession)
+        assertEquals(UsbExclusiveErrorCode.None, metrics.errorCode)
+    }
+
+    @Test
+    fun `v2 duplicate or unknown typed fields fail closed`() {
+        val duplicateMetrics = buildString {
+            append("reportVersion=2 source=player_pcm ")
+            append("feedbackMode=explicit feedbackMode=locked feedbackState=Locked ")
+            append("transportRunning=true feedbackReady=true realPcmReleased=true ")
+            append("canAcceptPcm=true playbackReady=true feedbackReusable=true ")
+            append("terminalFailure=false nativeStreamGeneration=1 candidateId=cs43131 ")
+            append("recoveryEpoch=2 recommendedAction=Holdover actionId=1 ")
+            append("actionGeneration=1 actionOwner=native actionLatched=false lastError=none")
+        }.usbRuntimeMetrics()
+
+        assertFalse(duplicateMetrics.reportValid)
+        assertEquals(UsbExclusiveErrorCode.NativeInternalError, duplicateMetrics.errorCode)
+
+        val unknownMetrics = buildString {
+            append("reportVersion=2 source=player_pcm ")
+            append("feedbackMode=explicit feedbackState=Locked ")
+            append("transportRunning=true feedbackReady=true realPcmReleased=true ")
+            append("canAcceptPcm=true playbackReady=true feedbackReusable=true ")
+            append("terminalFailure=false nativeStreamGeneration=1 candidateId=cs43131 ")
+            append("recoveryEpoch=2 recommendedAction=Holdover actionId=1 ")
+            append("actionGeneration=1 actionOwner=native actionLatched=false ")
+            append("errorCode=not_a_real_error")
+        }.usbRuntimeMetrics()
+
+        assertFalse(unknownMetrics.reportValid)
+        assertEquals(UsbExclusiveErrorCode.NativeInternalError, unknownMetrics.errorCode)
+    }
+
+    @Test
     fun `runtime metrics expose structured native fields`() {
         val metrics = buildString {
             append("source=player_pcm uacVersion=UAC2 syncType=adaptive feedback=none ")
@@ -153,6 +227,19 @@ class UsbExclusiveRuntimeReportTest {
         assertEquals(false, metrics.paused)
         assertEquals(UsbExclusiveErrorCode.None, metrics.errorCode)
         assertTrue(metrics.hasHealthyTransport)
+    }
+
+    @Test
+    fun `recovery action ack status parser accepts native tokens`() {
+        assertEquals(
+            UsbExclusiveRecoveryActionAckStatus.Acked,
+            "ACKED".toUsbExclusiveRecoveryActionAckStatusOrNull()
+        )
+        assertEquals(
+            UsbExclusiveRecoveryActionAckStatus.GenerationMismatch,
+            "generation_mismatch".toUsbExclusiveRecoveryActionAckStatusOrNull()
+        )
+        assertEquals(null, "unexpected".toUsbExclusiveRecoveryActionAckStatusOrNull())
     }
 
     @Test
@@ -177,6 +264,115 @@ class UsbExclusiveRuntimeReportTest {
     }
 
     @Test
+    fun `legacy async reports cannot reuse the native session`() {
+        val metrics = buildString {
+            append("source=player_pcm syncType=async feedback=explicit:0x84 ")
+            append("running=true transportFailed=false lastError=none")
+        }.usbRuntimeMetrics()
+
+        assertFalse(metrics.canReuseNativePlayerSession)
+        assertEquals(UsbExclusiveErrorCode.None, metrics.errorCode)
+    }
+
+    @Test
+    fun `legacy asynchronous token also fails closed for session reuse`() {
+        val metrics = buildString {
+            append("source=player_pcm syncType=asynchronous feedback=none ")
+            append("running=true transportFailed=false lastError=none")
+        }.usbRuntimeMetrics()
+
+        assertFalse(metrics.canReuseNativePlayerSession)
+        assertEquals(UsbExclusiveErrorCode.None, metrics.errorCode)
+    }
+
+    @Test
+    fun `v2 readiness must match the contract formula`() {
+        val metrics = validDisabledV2Report()
+            .replace("transportRunning=true", "transportRunning=false")
+            .usbRuntimeMetrics()
+
+        assertFalse(metrics.reportValid)
+        assertEquals("inconsistent_playbackReady", metrics.reportInvalidReason)
+        assertEquals(UsbExclusiveErrorCode.NativeInternalError, metrics.errorCode)
+    }
+
+    @Test
+    fun `v2 queue and peak fields reject impossible values`() {
+        val negativeLevel = validDisabledV2Report()
+            .replace("pcmLevel=0/1024", "pcmLevel=-1/1024")
+            .usbRuntimeMetrics()
+        val inconsistentFree = validDisabledV2Report()
+            .replace("pcmFreeBytes=1024", "pcmFreeBytes=512")
+            .usbRuntimeMetrics()
+        val nonFinitePeak = validDisabledV2Report()
+            .replace("outputPeak=0.0", "outputPeak=NaN")
+            .usbRuntimeMetrics()
+
+        assertFalse(negativeLevel.reportValid)
+        assertEquals("invalid_pcmLevel", negativeLevel.reportInvalidReason)
+        assertFalse(inconsistentFree.reportValid)
+        assertEquals("inconsistent_pcmFreeBytes", inconsistentFree.reportInvalidReason)
+        assertFalse(nonFinitePeak.reportValid)
+        assertEquals("invalid_outputPeak", nonFinitePeak.reportInvalidReason)
+    }
+
+    @Test
+    fun `v2 feedback ppm accepts signed drift`() {
+        val metrics = buildString {
+            append("reportVersion=2 source=player_pcm syncType=asynchronous ")
+            append("deviceOnline=true transportFailed=false feedbackMode=explicit ")
+            append("feedbackEndpoint=0x84 feedbackState=Locked feedbackRatePpm=-37 ")
+            append("transportRunning=true feedbackReady=true realPcmReleased=true ")
+            append("canAcceptPcm=true playbackReady=true feedbackReusable=true ")
+            append("terminalFailure=false nativeStreamGeneration=9 candidateId=cs43131 ")
+            append("recoveryEpoch=4 recommendedAction=NONE actionId=0 ")
+            append("actionGeneration=9 actionOwner=none actionLatched=false lastError=none")
+        }.usbRuntimeMetrics()
+
+        assertTrue(metrics.reportValid)
+        assertEquals(-37L, metrics.feedbackRatePpm)
+    }
+
+    @Test
+    fun `v2 action identity and terminal state must stay symmetric`() {
+        val noneWithActionId = validDisabledV2Report()
+            .replace("actionId=0", "actionId=1")
+            .usbRuntimeMetrics()
+        val terminalWithoutFailure = terminalV2Report()
+            .replace("terminalFailure=true", "terminalFailure=false")
+            .usbRuntimeMetrics()
+        val nativeActionLatched = validDisabledV2Report()
+            .replace("recommendedAction=NONE", "recommendedAction=HOLDOVER")
+            .replace("actionId=0", "actionId=1")
+            .replace("actionOwner=none", "actionOwner=native")
+            .replace("actionLatched=false", "actionLatched=true")
+            .usbRuntimeMetrics()
+
+        assertFalse(noneWithActionId.reportValid)
+        assertEquals("invalid_none_action_state", noneWithActionId.reportInvalidReason)
+        assertFalse(terminalWithoutFailure.reportValid)
+        assertEquals("invalid_kotlin_action_state", terminalWithoutFailure.reportInvalidReason)
+        assertFalse(nativeActionLatched.reportValid)
+        assertEquals("invalid_native_action_state", nativeActionLatched.reportInvalidReason)
+    }
+
+    @Test
+    fun `v2 generation identity must select the current native stream`() {
+        val zeroGeneration = validDisabledV2Report()
+            .replace("nativeStreamGeneration=9", "nativeStreamGeneration=0")
+            .replace("actionGeneration=9", "actionGeneration=0")
+            .usbRuntimeMetrics()
+        val staleActionGeneration = validDisabledV2Report()
+            .replace("actionGeneration=9", "actionGeneration=8")
+            .usbRuntimeMetrics()
+
+        assertFalse(zeroGeneration.reportValid)
+        assertEquals("invalid_nativeStreamGeneration", zeroGeneration.reportInvalidReason)
+        assertFalse(staleActionGeneration.reportValid)
+        assertEquals("action_generation_mismatch", staleActionGeneration.reportInvalidReason)
+    }
+
+    @Test
     fun `live free bytes replace stale queue level for write planning`() {
         val metrics = UsbExclusiveRuntimeMetrics(
             pcmLevelBytes = 149_504L,
@@ -198,5 +394,33 @@ class UsbExclusiveRuntimeReportTest {
 
         assertEquals(0L, metrics.pcmLevelBytes)
         assertEquals(192_000L, metrics.pcmFreeBytes)
+    }
+
+    private fun validDisabledV2Report(): String {
+        return buildString {
+            append("reportVersion=2 source=player_pcm syncType=adaptive running=true ")
+            append("deviceOnline=true transportFailed=false feedbackMode=disabled ")
+            append("feedbackState=disabled transportRunning=true feedbackReady=true ")
+            append("realPcmReleased=true canAcceptPcm=true playbackReady=true ")
+            append("feedbackReusable=true terminalFailure=false ")
+            append("nativeStreamGeneration=9 candidateId=uac1-adaptive recoveryEpoch=4 ")
+            append("recommendedAction=NONE actionId=0 actionGeneration=9 ")
+            append("actionOwner=none actionLatched=false pcmLevel=0/1024 ")
+            append("pcmFreeBytes=1024 pcmMaxLevelBytes=0 outputPeak=0.0 ")
+            append("lastOutputPeak=0.0 lastError=none")
+        }
+    }
+
+    private fun terminalV2Report(): String {
+        return validDisabledV2Report()
+            .replace("running=true", "running=false")
+            .replace("transportRunning=true", "transportRunning=false")
+            .replace("canAcceptPcm=true", "canAcceptPcm=false")
+            .replace("playbackReady=true", "playbackReady=false")
+            .replace("terminalFailure=false", "terminalFailure=true")
+            .replace("recommendedAction=NONE", "recommendedAction=FRESH_OPEN")
+            .replace("actionId=0", "actionId=17")
+            .replace("actionOwner=none", "actionOwner=kotlin")
+            .replace("actionLatched=false", "actionLatched=true")
     }
 }

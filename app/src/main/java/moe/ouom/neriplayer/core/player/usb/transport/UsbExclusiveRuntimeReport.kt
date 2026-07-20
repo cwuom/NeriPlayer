@@ -14,6 +14,15 @@ enum class UsbExclusiveErrorCode {
     SetAltFailed,
     SampleRateNegotiationFailed,
     AsyncFeedbackUnsupported,
+    FeedbackEndpointInvalid,
+    FeedbackInitialLockTimeout,
+    FeedbackPayloadInvalid,
+    FeedbackTransferFailed,
+    FeedbackLost,
+    FeedbackPacketCapacityExceeded,
+    ImplicitFeedbackTopologyUnsupported,
+    ImplicitFeedbackTransferFailed,
+    FeedbackQuirkRequired,
     TransferFirstCompletionTimeout,
     TransferCompletionStalled,
     IsoPacketErrorBurst,
@@ -25,11 +34,76 @@ enum class UsbExclusiveErrorCode {
     NativeInternalError
 }
 
+enum class UsbExclusiveFeedbackMode {
+    Disabled,
+    Explicit,
+    Implicit
+}
+
+enum class UsbExclusiveFeedbackState {
+    Disabled,
+    Priming,
+    Acquiring,
+    Locked,
+    Holdover,
+    Relocking,
+    Failed
+}
+
+enum class UsbExclusiveRecoveryAction {
+    None,
+    Holdover,
+    Relock,
+    SameHandleRearm,
+    SwitchNativeCandidate,
+    FreshOpen,
+    StopPreserveIntent
+}
+
+enum class UsbExclusiveRecoveryActionOwner {
+    None,
+    Native,
+    Kotlin
+}
+
+enum class UsbExclusiveRecoveryActionAckStatus {
+    Acked,
+    AlreadyAcked,
+    GenerationMismatch,
+    HandleClosing,
+    NoPending
+}
+
 data class UsbExclusiveRuntimeMetrics(
+    val reportVersion: Int = 1,
+    val reportValid: Boolean = true,
+    val reportInvalidReason: String? = null,
     val source: String? = null,
     val uacVersion: String? = null,
     val syncType: String? = null,
     val feedback: String? = null,
+    val feedbackMode: UsbExclusiveFeedbackMode = UsbExclusiveFeedbackMode.Disabled,
+    val feedbackEndpointAddress: Int? = null,
+    val feedbackState: UsbExclusiveFeedbackState = UsbExclusiveFeedbackState.Disabled,
+    val feedbackPayloadBytes: Int? = null,
+    val feedbackExpectedPeriodUs: Long? = null,
+    val feedbackRawValue: String? = null,
+    val feedbackRateQ32: String? = null,
+    val feedbackRateHz: Double? = null,
+    val feedbackRatePpm: Long? = null,
+    val feedbackValidSamples: Long? = null,
+    val feedbackInvalidSamples: Long? = null,
+    val feedbackOutliers: Long? = null,
+    val feedbackTimeouts: Long? = null,
+    val feedbackLockCount: Long? = null,
+    val feedbackRelockCount: Long? = null,
+    val feedbackHoldoverCount: Long? = null,
+    val feedbackHoldoverTotalMs: Long? = null,
+    val feedbackLastAgeMs: Long? = null,
+    val feedbackInFlight: Int? = null,
+    val feedbackTransferErrors: Long? = null,
+    val feedbackPacketErrors: Long? = null,
+    val packetLengthClampCount: Long? = null,
     val sampleRate: Int? = null,
     val channelCount: Int? = null,
     val subslotBytes: Int? = null,
@@ -61,6 +135,21 @@ data class UsbExclusiveRuntimeMetrics(
     val deviceOnline: Boolean? = null,
     val running: Boolean? = null,
     val paused: Boolean? = null,
+    val transportRunning: Boolean? = null,
+    val feedbackReady: Boolean? = null,
+    val realPcmReleased: Boolean? = null,
+    val canAcceptPcm: Boolean? = null,
+    val playbackReady: Boolean? = null,
+    val feedbackReusable: Boolean? = null,
+    val terminalFailure: Boolean? = null,
+    val nativeStreamGeneration: Long? = null,
+    val candidateId: String? = null,
+    val recoveryEpoch: Long? = null,
+    val recommendedAction: UsbExclusiveRecoveryAction = UsbExclusiveRecoveryAction.None,
+    val actionId: Long? = null,
+    val actionGeneration: Long? = null,
+    val actionOwner: UsbExclusiveRecoveryActionOwner = UsbExclusiveRecoveryActionOwner.None,
+    val actionLatched: Boolean? = null,
     val errorCode: UsbExclusiveErrorCode = UsbExclusiveErrorCode.None,
     val lastError: String = "none"
 ) {
@@ -76,9 +165,19 @@ data class UsbExclusiveRuntimeMetrics(
         get() = (pcmCapacityBytes ?: 0L) > 0L
 
     val hasHealthyTransport: Boolean
-        get() = transportFailed != true &&
-            errorCode == UsbExclusiveErrorCode.None &&
-            lastError == "none"
+        get() {
+            if (!reportValid) return false
+            if (reportVersion >= 2) {
+                return transportFailed != true &&
+                    terminalFailure != true &&
+                    errorCode == UsbExclusiveErrorCode.None &&
+                    lastError == "none" &&
+                    playbackReady == true
+            }
+            return transportFailed != true &&
+                errorCode == UsbExclusiveErrorCode.None &&
+                lastError == "none"
+        }
 
     val isQueueFull: Boolean
         get() {
@@ -106,51 +205,483 @@ data class UsbExclusiveRuntimeMetrics(
             if ((playerUnderrunBytes ?: 0L) > 0L) return true
             return (playerZeroFillBytes ?: 0L) > 0L
         }
+
+    val hasKotlinTerminalRecoveryAction: Boolean
+        get() = actionOwner == UsbExclusiveRecoveryActionOwner.Kotlin &&
+            recommendedAction.isKotlinTerminalAction
+
+    val canReuseNativePlayerSession: Boolean
+        get() {
+            if (!reportValid) return false
+            if (deviceOnline == false) return false
+            if (transportFailed == true) return false
+            if (terminalFailure == true) return false
+            if (errorCode != UsbExclusiveErrorCode.None) return false
+            if (lastError != "none") return false
+            if (hasKotlinTerminalRecoveryAction) return false
+            if (actionOwner == UsbExclusiveRecoveryActionOwner.Kotlin &&
+                actionLatched == true
+            ) {
+                return false
+            }
+            if (reportVersion < 2) {
+                return !isLegacyAsyncFeedbackReport
+            }
+            if (feedbackMode == UsbExclusiveFeedbackMode.Disabled) return true
+            val reusableState = feedbackState == UsbExclusiveFeedbackState.Locked ||
+                feedbackState == UsbExclusiveFeedbackState.Holdover
+            return reusableState &&
+                canAcceptPcm == true &&
+                feedbackReusable == true
+        }
+
+    private val isLegacyAsyncFeedbackReport: Boolean
+        get() = syncType.isAsynchronousUsbSyncType() ||
+            feedback?.let { value ->
+                !value.equals("none", ignoreCase = true) &&
+                    !value.equals("disabled", ignoreCase = true)
+            } == true
 }
 
 internal fun String.usbRuntimeMetrics(): UsbExclusiveRuntimeMetrics {
-    val levelPart = valueAfter("pcmLevel")
-    val errorCode = usbExclusiveErrorCode()
+    val fields = runtimeReportFields()
+    val explicitReportVersion = fields.valueAfter("reportVersion")
+    val parsedReportVersion = explicitReportVersion?.toIntOrNull()
+    val reportVersion = parsedReportVersion ?: 1
+    var reportValid = true
+    var reportInvalidReason: String? = null
+
+    fun failClosed(reason: String) {
+        if (reportValid) {
+            reportValid = false
+            reportInvalidReason = reason
+        }
+    }
+
+    if (explicitReportVersion != null && parsedReportVersion == null) {
+        failClosed("malformed_report_version")
+    }
+    if (parsedReportVersion != null && parsedReportVersion !in 1..2) {
+        failClosed("unsupported_report_version")
+    }
+    if (reportVersion >= 2 && fields.duplicateKey != null) {
+        failClosed("duplicate_key:${fields.duplicateKey}")
+    }
+
+    fun field(key: String): String? = fields.valueAfter(key) ?: valueAfter(key)
+
+    fun intField(key: String, required: Boolean = false): Int? {
+        val raw = field(key)
+        if (raw == null) {
+            if (required) failClosed("missing_$key")
+            return null
+        }
+        val parsed = raw.toIntOrNull()
+        if (parsed == null || parsed < 0) failClosed("invalid_$key")
+        return parsed
+    }
+
+    fun longField(key: String, required: Boolean = false): Long? {
+        val raw = field(key)
+        if (raw == null) {
+            if (required) failClosed("missing_$key")
+            return null
+        }
+        val parsed = raw.toLongOrNull()
+        if (parsed == null || parsed < 0L) failClosed("invalid_$key")
+        return parsed
+    }
+
+    fun signedLongField(key: String, required: Boolean = false): Long? {
+        val raw = field(key)
+        if (raw == null) {
+            if (required) failClosed("missing_$key")
+            return null
+        }
+        val parsed = raw.toLongOrNull()
+        if (parsed == null) failClosed("invalid_$key")
+        return parsed
+    }
+
+    fun doubleField(key: String): Double? {
+        val raw = field(key) ?: return null
+        return raw.toDoubleOrNull().also { parsed ->
+            if (parsed == null || !parsed.isFinite()) failClosed("invalid_$key")
+        }
+    }
+
+    fun floatField(key: String, nonNegative: Boolean = false): Float? {
+        val raw = field(key) ?: return null
+        return raw.toFloatOrNull().also { parsed ->
+            if (
+                parsed == null ||
+                !parsed.isFinite() ||
+                (nonNegative && parsed < 0.0f)
+            ) {
+                failClosed("invalid_$key")
+            }
+        }
+    }
+
+    fun booleanV2Field(key: String, required: Boolean = false): Boolean? {
+        val raw = field(key)
+        if (raw == null) {
+            if (required) failClosed("missing_$key")
+            return null
+        }
+        val parsed = raw.toReportBooleanOrNull()
+        if (parsed == null) failClosed("invalid_$key")
+        return parsed
+    }
+
+    fun stringField(key: String, required: Boolean = false): String? {
+        val raw = field(key)
+        if (raw == null && required) failClosed("missing_$key")
+        return raw
+    }
+
+    fun <T : Enum<T>> enumField(
+        key: String,
+        values: Array<T>,
+        default: T,
+        required: Boolean = false
+    ): T {
+        val raw = field(key)
+        if (raw == null) {
+            if (required) failClosed("missing_$key")
+            return default
+        }
+        val parsed = values.firstOrNull { it.reportEnumEquals(raw) }
+        if (parsed == null) failClosed("invalid_$key")
+        return parsed ?: default
+    }
+
+    val feedbackMode = enumField(
+        key = "feedbackMode",
+        values = UsbExclusiveFeedbackMode.values(),
+        default = UsbExclusiveFeedbackMode.Disabled,
+        required = reportVersion >= 2
+    )
+    val asyncFeedbackReport = feedbackMode != UsbExclusiveFeedbackMode.Disabled ||
+        field("syncType").isAsynchronousUsbSyncType()
+    val feedbackState = enumField(
+        key = "feedbackState",
+        values = UsbExclusiveFeedbackState.values(),
+        default = UsbExclusiveFeedbackState.Disabled,
+        required = reportVersion >= 2 && asyncFeedbackReport
+    )
+    val recommendedAction = enumField(
+        key = "recommendedAction",
+        values = UsbExclusiveRecoveryAction.values(),
+        default = UsbExclusiveRecoveryAction.None,
+        required = reportVersion >= 2
+    )
+    val actionOwner = enumField(
+        key = "actionOwner",
+        values = UsbExclusiveRecoveryActionOwner.values(),
+        default = UsbExclusiveRecoveryActionOwner.None,
+        required = reportVersion >= 2
+    )
+
+    val feedbackEndpointAddress = stringField(
+        "feedbackEndpoint",
+        required = reportVersion >= 2 && asyncFeedbackReport
+    )?.toEndpointAddressOrNull().also { endpoint ->
+        if (reportVersion >= 2 && asyncFeedbackReport && endpoint == null) {
+            failClosed("invalid_feedbackEndpoint")
+        }
+    }
+
+    val transportRunning = booleanV2Field(
+        "transportRunning",
+        required = reportVersion >= 2
+    )
+    val feedbackReady = booleanV2Field(
+        "feedbackReady",
+        required = reportVersion >= 2
+    )
+    val realPcmReleased = booleanV2Field(
+        "realPcmReleased",
+        required = reportVersion >= 2
+    )
+    val canAcceptPcm = booleanV2Field(
+        "canAcceptPcm",
+        required = reportVersion >= 2
+    )
+    val playbackReady = booleanV2Field(
+        "playbackReady",
+        required = reportVersion >= 2
+    )
+    val feedbackReusable = booleanV2Field(
+        "feedbackReusable",
+        required = reportVersion >= 2
+    )
+    val terminalFailure = booleanV2Field(
+        "terminalFailure",
+        required = reportVersion >= 2
+    )
+    val actionLatched = booleanV2Field(
+        "actionLatched",
+        required = reportVersion >= 2
+    )
+
+    val feedbackPayloadBytes = intField("feedbackPayloadBytes")
+    val feedbackExpectedPeriodUs = longField("feedbackExpectedPeriodUs")
+    val feedbackRateQ32 = field("feedbackRateQ32")?.takeIf { raw ->
+        raw.isUnsignedReportNumber().also { valid ->
+            if (!valid && reportVersion >= 2) failClosed("invalid_feedbackRateQ32")
+        }
+    }
+    val feedbackRateHz = doubleField("feedbackRateHz")
+    val feedbackRatePpm = signedLongField("feedbackRatePpm")
+    val feedbackValidSamples = longField("feedbackValidSamples")
+    val feedbackInvalidSamples = longField("feedbackInvalidSamples")
+    val feedbackOutliers = longField("feedbackOutliers")
+    val feedbackTimeouts = longField("feedbackTimeouts")
+    val feedbackLockCount = longField("feedbackLockCount")
+    val feedbackRelockCount = longField("feedbackRelockCount")
+    val feedbackHoldoverCount = longField("feedbackHoldoverCount")
+    val feedbackHoldoverTotalMs = longField("feedbackHoldoverTotalMs")
+    val feedbackLastAgeMs = longField("feedbackLastAgeMs")
+    val feedbackInFlight = intField("feedbackInFlight")
+    val feedbackTransferErrors = longField("feedbackTransferErrors")
+    val feedbackPacketErrors = longField("feedbackPacketErrors")
+    val packetLengthClampCount = longField("packetLengthClampCount")
+    val nativeStreamGeneration = longField(
+        "nativeStreamGeneration",
+        required = reportVersion >= 2
+    )
+    val candidateId = stringField("candidateId", required = reportVersion >= 2)
+    val recoveryEpoch = longField("recoveryEpoch", required = reportVersion >= 2)
+    val actionId = longField("actionId", required = reportVersion >= 2)
+    val actionGeneration = longField("actionGeneration", required = reportVersion >= 2)
+    val sampleRate = intField("sampleRate")
+    val channelCount = intField("channels")
+    val subslotBytes = intField("subslotBytes")
+    val transferBytes = longField("transferBytes")
+    val lastTransferBytes = longField("lastTransferBytes")
+    val completedTransfers = longField("completedTransfers")
+    val inFlightTransfers = intField("inFlight")
+    val isoPacketErrors = longField("isoPacketErrors")
+    val isoPacketErrorTransfers = longField("isoPacketErrorTransfers")
+    val isoPacketErrorScore = intField("isoPacketErrorScore")
+    val pcmFreeBytes = longField("pcmFreeBytes")
+    val pcmMaxLevelBytes = longField("pcmMaxLevelBytes")
+    val pcmBackpressureEvents = longField("pcmBackpressureEvents")
+    val pcmBackpressureTotalMs = longField("pcmBackpressureTotalMs")
+    val pcmBackpressureCurrentMs = longField("pcmBackpressureCurrentMs")
+    val pcmBackpressureMaxMs = longField("pcmBackpressureMaxMs")
+    val playerSignalFrames = longField("playerSignalFrames")
+    val playerSilentFrames = longField("playerSilentFrames")
+    val playerSignalBytes = longField("playerSignalBytes")
+    val playerDroppedBytes = longField("playerDroppedBytes")
+    val playerUnderrunBytes = longField("playerUnderrunBytes")
+    val playerZeroFillBytes = longField("playerZeroFillBytes")
+    val playerPausedZeroFillBytes = longField("playerPausedZeroFillBytes")
+    val outputPeak = floatField("outputPeak", nonNegative = true)
+    val lastOutputPeak = floatField("lastOutputPeak", nonNegative = true)
+    val transportFailed = booleanV2Field("transportFailed")
+    val deviceOnline = booleanV2Field("deviceOnline")
+    val running = booleanV2Field("running")
+    val paused = booleanV2Field("paused")
+    val terminalErrorRaw = field("terminalError")
+    if (reportVersion >= 2 &&
+        terminalErrorRaw != null &&
+        terminalErrorRaw.toUsbExclusiveErrorCodeOrNull() == null
+    ) {
+        failClosed("invalid_terminalError")
+    }
+    val explicitErrorRaw = field("errorCode")
+    if (reportVersion >= 2 &&
+        explicitErrorRaw != null &&
+        explicitErrorRaw.toUsbExclusiveErrorCodeOrNull() == null
+    ) {
+        failClosed("invalid_errorCode")
+    }
+    val pcmLevel = field("pcmLevel")?.let { raw ->
+        val separator = raw.indexOf('/')
+        val hasSingleSeparator = separator > 0 && separator == raw.lastIndexOf('/')
+        val level = if (hasSingleSeparator) raw.substring(0, separator).toLongOrNull() else null
+        val capacity = if (hasSingleSeparator) {
+            raw.substring(separator + 1).toLongOrNull()
+        } else {
+            null
+        }
+        if (
+            level == null ||
+            capacity == null ||
+            level < 0L ||
+            capacity < 0L ||
+            level > capacity
+        ) {
+            if (reportVersion >= 2) failClosed("invalid_pcmLevel")
+            null
+        } else {
+            level to capacity
+        }
+    }
+    if (reportVersion >= 2) {
+        val expectedPlaybackReady = transportRunning == true &&
+            feedbackReady == true &&
+            realPcmReleased == true &&
+            canAcceptPcm == true &&
+            terminalFailure == false
+        if (playbackReady != expectedPlaybackReady) {
+            failClosed("inconsistent_playbackReady")
+        }
+        if (terminalFailure == true && canAcceptPcm == true) {
+            failClosed("terminal_accepts_pcm")
+        }
+        if (transportFailed == true && terminalFailure != true) {
+            failClosed("transport_failure_not_terminal")
+        }
+        if (feedbackMode == UsbExclusiveFeedbackMode.Disabled) {
+            if (feedbackState != UsbExclusiveFeedbackState.Disabled) {
+                failClosed("disabled_feedback_state")
+            }
+            if (feedbackReady != true || feedbackReusable != true) {
+                failClosed("disabled_feedback_not_ready")
+            }
+        }
+        if (nativeStreamGeneration == 0L) {
+            failClosed("invalid_nativeStreamGeneration")
+        }
+        if (actionGeneration != nativeStreamGeneration) {
+            failClosed("action_generation_mismatch")
+        }
+        when (recommendedAction) {
+            UsbExclusiveRecoveryAction.None -> {
+                if (
+                    actionId != 0L ||
+                    actionOwner != UsbExclusiveRecoveryActionOwner.None ||
+                    actionLatched != false ||
+                    terminalFailure != false
+                ) {
+                    failClosed("invalid_none_action_state")
+                }
+            }
+            UsbExclusiveRecoveryAction.FreshOpen,
+            UsbExclusiveRecoveryAction.StopPreserveIntent -> {
+                if (
+                    actionId == null || actionId <= 0L ||
+                    actionOwner != UsbExclusiveRecoveryActionOwner.Kotlin ||
+                    actionLatched != true ||
+                    terminalFailure != true
+                ) {
+                    failClosed("invalid_kotlin_action_state")
+                }
+            }
+            else -> {
+                if (
+                    actionId == null || actionId <= 0L ||
+                    actionOwner != UsbExclusiveRecoveryActionOwner.Native ||
+                    actionLatched != false ||
+                    terminalFailure != false
+                ) {
+                    failClosed("invalid_native_action_state")
+                }
+            }
+        }
+        if (pcmLevel != null && pcmFreeBytes != null) {
+            val (level, capacity) = pcmLevel
+            if (pcmFreeBytes != capacity - level) {
+                failClosed("inconsistent_pcmFreeBytes")
+            }
+        }
+        if (
+            pcmLevel != null &&
+            pcmMaxLevelBytes != null &&
+            pcmMaxLevelBytes > pcmLevel.second
+        ) {
+            failClosed("invalid_pcmMaxLevelBytes")
+        }
+    }
+    val baseErrorCode = usbExclusiveErrorCode()
+    val errorCode = if (reportValid) {
+        baseErrorCode
+    } else {
+        UsbExclusiveErrorCode.NativeInternalError
+    }
     return UsbExclusiveRuntimeMetrics(
-        source = valueAfter("source"),
-        uacVersion = valueAfter("uacVersion"),
-        syncType = valueAfter("syncType"),
-        feedback = valueAfter("feedback"),
-        sampleRate = valueAfter("sampleRate")?.toIntOrNull(),
-        channelCount = valueAfter("channels")?.toIntOrNull(),
-        subslotBytes = valueAfter("subslotBytes")?.toIntOrNull(),
-        transferBytes = valueAfter("transferBytes")?.toLongOrNull(),
-        lastTransferBytes = valueAfter("lastTransferBytes")?.toLongOrNull(),
-        completedTransfers = valueAfter("completedTransfers")?.toLongOrNull(),
-        inFlightTransfers = valueAfter("inFlight")?.toIntOrNull(),
-        isoPacketErrors = valueAfter("isoPacketErrors")?.toLongOrNull(),
-        isoPacketErrorTransfers = valueAfter("isoPacketErrorTransfers")?.toLongOrNull(),
-        isoPacketErrorScore = valueAfter("isoPacketErrorScore")?.toIntOrNull(),
-        pcmLevelBytes = levelPart?.substringBefore('/')?.toLongOrNull(),
-        pcmCapacityBytes = levelPart
-            ?.substringAfter('/', missingDelimiterValue = "")
-            ?.toLongOrNull(),
-        pcmFreeBytes = valueAfter("pcmFreeBytes")?.toLongOrNull(),
-        pcmMaxLevelBytes = valueAfter("pcmMaxLevelBytes")?.toLongOrNull(),
-        pcmBackpressureEvents = valueAfter("pcmBackpressureEvents")?.toLongOrNull(),
-        pcmBackpressureTotalMs = valueAfter("pcmBackpressureTotalMs")?.toLongOrNull(),
-        pcmBackpressureCurrentMs = valueAfter("pcmBackpressureCurrentMs")?.toLongOrNull(),
-        pcmBackpressureMaxMs = valueAfter("pcmBackpressureMaxMs")?.toLongOrNull(),
-        playerSignalFrames = valueAfter("playerSignalFrames")?.toLongOrNull(),
-        playerSilentFrames = valueAfter("playerSilentFrames")?.toLongOrNull(),
-        playerSignalBytes = valueAfter("playerSignalBytes")?.toLongOrNull(),
-        playerDroppedBytes = valueAfter("playerDroppedBytes")?.toLongOrNull(),
-        playerUnderrunBytes = valueAfter("playerUnderrunBytes")?.toLongOrNull(),
-        playerZeroFillBytes = valueAfter("playerZeroFillBytes")?.toLongOrNull(),
-        playerPausedZeroFillBytes = valueAfter("playerPausedZeroFillBytes")?.toLongOrNull(),
-        outputPeak = valueAfter("outputPeak")?.toFloatOrNull(),
-        lastOutputPeak = valueAfter("lastOutputPeak")?.toFloatOrNull(),
-        transportFailed = booleanField("transportFailed"),
-        deviceOnline = booleanField("deviceOnline"),
-        running = booleanField("running"),
-        paused = booleanField("paused"),
+        reportVersion = reportVersion,
+        reportValid = reportValid,
+        reportInvalidReason = reportInvalidReason,
+        source = field("source"),
+        uacVersion = field("uacVersion"),
+        syncType = field("syncType"),
+        feedback = field("feedback"),
+        feedbackMode = feedbackMode,
+        feedbackEndpointAddress = feedbackEndpointAddress,
+        feedbackState = feedbackState,
+        feedbackPayloadBytes = feedbackPayloadBytes,
+        feedbackExpectedPeriodUs = feedbackExpectedPeriodUs,
+        feedbackRawValue = field("feedbackRawValue"),
+        feedbackRateQ32 = feedbackRateQ32,
+        feedbackRateHz = feedbackRateHz,
+        feedbackRatePpm = feedbackRatePpm,
+        feedbackValidSamples = feedbackValidSamples,
+        feedbackInvalidSamples = feedbackInvalidSamples,
+        feedbackOutliers = feedbackOutliers,
+        feedbackTimeouts = feedbackTimeouts,
+        feedbackLockCount = feedbackLockCount,
+        feedbackRelockCount = feedbackRelockCount,
+        feedbackHoldoverCount = feedbackHoldoverCount,
+        feedbackHoldoverTotalMs = feedbackHoldoverTotalMs,
+        feedbackLastAgeMs = feedbackLastAgeMs,
+        feedbackInFlight = feedbackInFlight,
+        feedbackTransferErrors = feedbackTransferErrors,
+        feedbackPacketErrors = feedbackPacketErrors,
+        packetLengthClampCount = packetLengthClampCount,
+        sampleRate = sampleRate,
+        channelCount = channelCount,
+        subslotBytes = subslotBytes,
+        transferBytes = transferBytes,
+        lastTransferBytes = lastTransferBytes,
+        completedTransfers = completedTransfers,
+        inFlightTransfers = inFlightTransfers,
+        isoPacketErrors = isoPacketErrors,
+        isoPacketErrorTransfers = isoPacketErrorTransfers,
+        isoPacketErrorScore = isoPacketErrorScore,
+        pcmLevelBytes = pcmLevel?.first,
+        pcmCapacityBytes = pcmLevel?.second,
+        pcmFreeBytes = pcmFreeBytes,
+        pcmMaxLevelBytes = pcmMaxLevelBytes,
+        pcmBackpressureEvents = pcmBackpressureEvents,
+        pcmBackpressureTotalMs = pcmBackpressureTotalMs,
+        pcmBackpressureCurrentMs = pcmBackpressureCurrentMs,
+        pcmBackpressureMaxMs = pcmBackpressureMaxMs,
+        playerSignalFrames = playerSignalFrames,
+        playerSilentFrames = playerSilentFrames,
+        playerSignalBytes = playerSignalBytes,
+        playerDroppedBytes = playerDroppedBytes,
+        playerUnderrunBytes = playerUnderrunBytes,
+        playerZeroFillBytes = playerZeroFillBytes,
+        playerPausedZeroFillBytes = playerPausedZeroFillBytes,
+        outputPeak = outputPeak,
+        lastOutputPeak = lastOutputPeak,
+        transportFailed = transportFailed,
+        deviceOnline = deviceOnline,
+        running = running,
+        paused = paused,
+        transportRunning = transportRunning,
+        feedbackReady = feedbackReady,
+        realPcmReleased = realPcmReleased,
+        canAcceptPcm = canAcceptPcm,
+        playbackReady = playbackReady,
+        feedbackReusable = feedbackReusable,
+        terminalFailure = terminalFailure,
+        nativeStreamGeneration = nativeStreamGeneration,
+        candidateId = candidateId,
+        recoveryEpoch = recoveryEpoch,
+        recommendedAction = recommendedAction,
+        actionId = actionId,
+        actionGeneration = actionGeneration,
+        actionOwner = actionOwner,
+        actionLatched = actionLatched,
         errorCode = errorCode,
-        lastError = valueAfter("lastError") ?: "none"
+        lastError = if (reportValid) field("lastError") ?: "none" else {
+            "runtime_report_v2_invalid"
+        }
     )
 }
 
@@ -174,6 +705,81 @@ internal fun String.valueAfter(key: String): String? {
     return regex.find(this)?.groupValues?.getOrNull(1)
 }
 
+private data class RuntimeReportFields(
+    val values: Map<String, String>,
+    val duplicateKey: String?
+) {
+    fun valueAfter(key: String): String? = values[key]
+}
+
+private val runtimeReportFieldRegex = Regex("(?:^|\\s)([^\\s=]+)=([^\\s]+)")
+
+private fun String.runtimeReportFields(): RuntimeReportFields {
+    val values = linkedMapOf<String, String>()
+    var duplicateKey: String? = null
+    runtimeReportFieldRegex.findAll(this).forEach { match ->
+        val key = match.groupValues[1]
+        val value = match.groupValues[2]
+        if (values.containsKey(key) && duplicateKey == null) {
+            duplicateKey = key
+        } else {
+            values[key] = value
+        }
+    }
+    return RuntimeReportFields(values = values, duplicateKey = duplicateKey)
+}
+
+private fun String.toReportBooleanOrNull(): Boolean? {
+    return when (this) {
+        "true", "1" -> true
+        "false", "0" -> false
+        else -> null
+    }
+}
+
+private fun Enum<*>.reportEnumEquals(raw: String): Boolean {
+    return name.toReportEnumToken() == raw.toReportEnumToken()
+}
+
+private fun String.toReportEnumToken(): String {
+    return filter { it.isLetterOrDigit() }.lowercase()
+}
+
+private fun String.toEndpointAddressOrNull(): Int? {
+    val parsed = if (startsWith("0x", ignoreCase = true)) {
+        substring(2).toIntOrNull(radix = 16)
+    } else {
+        toIntOrNull()
+    }
+    return parsed?.takeIf { it in 0x01..0xFF }
+}
+
+private fun String.isUnsignedReportNumber(): Boolean {
+    if (isBlank()) return false
+    return all { it.isDigit() }
+}
+
+private fun String?.isAsynchronousUsbSyncType(): Boolean {
+    return equals("async", ignoreCase = true) ||
+        equals("asynchronous", ignoreCase = true)
+}
+
+private fun String.toUsbExclusiveErrorCodeOrNull(): UsbExclusiveErrorCode? {
+    return UsbExclusiveErrorCode.values().firstOrNull { it.reportEnumEquals(this) }
+}
+
+internal fun String.toUsbExclusiveRecoveryActionAckStatusOrNull(): UsbExclusiveRecoveryActionAckStatus? {
+    return UsbExclusiveRecoveryActionAckStatus.values()
+        .firstOrNull { it.reportEnumEquals(this) }
+}
+
+internal val UsbExclusiveRecoveryAction.isKotlinTerminalAction: Boolean
+    get() = when (this) {
+        UsbExclusiveRecoveryAction.FreshOpen,
+        UsbExclusiveRecoveryAction.StopPreserveIntent -> true
+        else -> false
+    }
+
 internal fun String.booleanField(name: String): Boolean? {
     return when (valueAfter(name)) {
         "true", "1" -> true
@@ -188,6 +794,27 @@ internal fun String.usbExclusiveErrorCode(): UsbExclusiveErrorCode {
         return UsbExclusiveErrorCode.None
     }
     if (normalized.startsWith("native_idle")) return UsbExclusiveErrorCode.None
+
+    val fields = runtimeReportFields()
+    val reportVersion = fields.valueAfter("reportVersion")
+    if (reportVersion != null && reportVersion != "1" && reportVersion != "2") {
+        return UsbExclusiveErrorCode.NativeInternalError
+    }
+    if (reportVersion == "2" && fields.duplicateKey != null) {
+        return UsbExclusiveErrorCode.NativeInternalError
+    }
+    val terminalError = fields.valueAfter("terminalError")
+    val explicitErrorCode = fields.valueAfter("errorCode")
+    terminalError?.let { raw ->
+        val typedCode = raw.toUsbExclusiveErrorCodeOrNull()
+            ?: UsbExclusiveErrorCode.NativeInternalError
+        if (typedCode != UsbExclusiveErrorCode.None) return typedCode
+    }
+    explicitErrorCode?.let { raw ->
+        val typedCode = raw.toUsbExclusiveErrorCodeOrNull()
+            ?: return UsbExclusiveErrorCode.NativeInternalError
+        if (typedCode != UsbExclusiveErrorCode.None) return typedCode
+    }
 
     val lastError = valueAfter("lastError")
     val lower = normalized.lowercase()
@@ -215,6 +842,24 @@ internal fun String.usbExclusiveErrorCode(): UsbExclusiveErrorCode {
         errorProbe.contains("async_feedback_scheduler_unavailable") ||
             errorProbe.contains("feedback_scheduler_unavailable") ->
             UsbExclusiveErrorCode.AsyncFeedbackUnsupported
+        errorProbe.contains("feedback_endpoint_invalid") ->
+            UsbExclusiveErrorCode.FeedbackEndpointInvalid
+        errorProbe.contains("feedback_initial_lock_timeout") ->
+            UsbExclusiveErrorCode.FeedbackInitialLockTimeout
+        errorProbe.contains("feedback_payload_invalid") ->
+            UsbExclusiveErrorCode.FeedbackPayloadInvalid
+        errorProbe.contains("feedback_transfer_failed") ->
+            UsbExclusiveErrorCode.FeedbackTransferFailed
+        errorProbe.contains("feedback_lost") ->
+            UsbExclusiveErrorCode.FeedbackLost
+        errorProbe.contains("feedback_packet_capacity_exceeded") ->
+            UsbExclusiveErrorCode.FeedbackPacketCapacityExceeded
+        errorProbe.contains("implicit_feedback_topology_unsupported") ->
+            UsbExclusiveErrorCode.ImplicitFeedbackTopologyUnsupported
+        errorProbe.contains("implicit_feedback_transfer_failed") ->
+            UsbExclusiveErrorCode.ImplicitFeedbackTransferFailed
+        errorProbe.contains("feedback_quirk_required") ->
+            UsbExclusiveErrorCode.FeedbackQuirkRequired
         errorProbe.contains("sample_rate_negotiation_failed") ->
             UsbExclusiveErrorCode.SampleRateNegotiationFailed
         errorProbe.contains("sample_rate_unsupported") ->
@@ -272,7 +917,11 @@ internal val UsbExclusiveErrorCode.isRecoverableTransportFailure: Boolean
         UsbExclusiveErrorCode.TransferFirstCompletionTimeout,
         UsbExclusiveErrorCode.TransferCompletionStalled,
         UsbExclusiveErrorCode.IsoPacketErrorBurst,
-        UsbExclusiveErrorCode.TransportFailed -> true
+        UsbExclusiveErrorCode.TransportFailed,
+        UsbExclusiveErrorCode.FeedbackInitialLockTimeout,
+        UsbExclusiveErrorCode.FeedbackTransferFailed,
+        UsbExclusiveErrorCode.FeedbackLost,
+        UsbExclusiveErrorCode.ImplicitFeedbackTransferFailed -> true
         else -> false
     }
 
@@ -285,6 +934,10 @@ internal val UsbExclusiveErrorCode.requiresFreshNativeOpen: Boolean
         UsbExclusiveErrorCode.TransferCompletionStalled,
         UsbExclusiveErrorCode.IsoPacketErrorBurst,
         UsbExclusiveErrorCode.TransportFailed,
+        UsbExclusiveErrorCode.FeedbackInitialLockTimeout,
+        UsbExclusiveErrorCode.FeedbackTransferFailed,
+        UsbExclusiveErrorCode.FeedbackLost,
+        UsbExclusiveErrorCode.ImplicitFeedbackTransferFailed,
         UsbExclusiveErrorCode.CancelDrainTimeout,
         UsbExclusiveErrorCode.Quarantined,
         UsbExclusiveErrorCode.NativeInternalError -> true
@@ -307,6 +960,15 @@ internal val UsbExclusiveErrorCode.suppressesSystemFallbackPlayback: Boolean
         UsbExclusiveErrorCode.ClaimInterfaceFailed,
         UsbExclusiveErrorCode.SetAltFailed,
         UsbExclusiveErrorCode.AsyncFeedbackUnsupported,
+        UsbExclusiveErrorCode.FeedbackEndpointInvalid,
+        UsbExclusiveErrorCode.FeedbackInitialLockTimeout,
+        UsbExclusiveErrorCode.FeedbackPayloadInvalid,
+        UsbExclusiveErrorCode.FeedbackTransferFailed,
+        UsbExclusiveErrorCode.FeedbackLost,
+        UsbExclusiveErrorCode.FeedbackPacketCapacityExceeded,
+        UsbExclusiveErrorCode.ImplicitFeedbackTopologyUnsupported,
+        UsbExclusiveErrorCode.ImplicitFeedbackTransferFailed,
+        UsbExclusiveErrorCode.FeedbackQuirkRequired,
         UsbExclusiveErrorCode.TransferFirstCompletionTimeout,
         UsbExclusiveErrorCode.TransferCompletionStalled,
         UsbExclusiveErrorCode.IsoPacketErrorBurst,

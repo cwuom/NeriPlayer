@@ -89,4 +89,48 @@ class UsbExclusiveKeepAlivePolicyTest {
         assertEquals(UsbExclusiveKeepAliveProgress.FAKE_PROGRESS, decision.progress)
         assertTrue(decision.shouldRecover)
     }
+
+    @Test
+    fun `drained queue with severe zero fill recovers despite partial signal progress`() {
+        val decision = evaluateUsbExclusiveKeepAliveProgress(
+            previousHandle = 7L,
+            currentHandle = 7L,
+            previousCompletedFrames = 500_000L,
+            currentCompletedFrames = 1_460_000L,
+            previousSignalBytes = 2_048L,
+            currentSignalBytes = 8_192L,
+            previousZeroFillBytes = 0L,
+            currentZeroFillBytes = 1_152_000L,
+            outputSampleRate = 192_000,
+            outputFrameBytes = 8,
+            currentPcmLevelBytes = 153_600L,
+            previousStallTicks = 0,
+            recoveryTicks = 1
+        )
+
+        assertEquals(UsbExclusiveKeepAliveProgress.PCM_STARVATION, decision.progress)
+        assertTrue(decision.shouldRecover)
+    }
+
+    @Test
+    fun `severe historical zero fill does not recover after queue refills`() {
+        val decision = evaluateUsbExclusiveKeepAliveProgress(
+            previousHandle = 7L,
+            currentHandle = 7L,
+            previousCompletedFrames = 500_000L,
+            currentCompletedFrames = 1_460_000L,
+            previousSignalBytes = 2_048L,
+            currentSignalBytes = 8_192L,
+            previousZeroFillBytes = 0L,
+            currentZeroFillBytes = 1_152_000L,
+            outputSampleRate = 192_000,
+            outputFrameBytes = 8,
+            currentPcmLevelBytes = 1_152_000L,
+            previousStallTicks = 0,
+            recoveryTicks = 1
+        )
+
+        assertEquals(UsbExclusiveKeepAliveProgress.ADVANCED, decision.progress)
+        assertFalse(decision.shouldRecover)
+    }
 }

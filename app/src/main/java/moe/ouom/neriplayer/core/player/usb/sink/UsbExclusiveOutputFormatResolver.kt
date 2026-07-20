@@ -4,12 +4,12 @@ package moe.ouom.neriplayer.core.player.usb.sink
 
 import android.content.Context
 import android.media.AudioDeviceInfo
-import android.media.AudioFormat
 import android.media.AudioManager
 import androidx.media3.common.C
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.settings.UsbExclusiveSampleRateMode
+import moe.ouom.neriplayer.data.settings.UsbExclusiveUnsupportedFormatPolicy
 
 internal data class ResolvedUsbOutputFormat(
     val sampleRate: Int,
@@ -17,7 +17,9 @@ internal data class ResolvedUsbOutputFormat(
     val bitDepth: Int,
     val subslotBytes: Int,
     val bufferDurationMs: Int,
-    val description: String
+    val description: String,
+    val alternativeSampleRates: List<Int> = emptyList(),
+    val allowBitDepthFallback: Boolean = true
 )
 
 internal data class UsbOutputFormatResolution(
@@ -38,6 +40,7 @@ internal fun describeUsbInputFormat(
 
 internal object UsbExclusiveOutputFormatResolver {
     private const val DEFAULT_USB_EXCLUSIVE_DEVICE_KEY = "auto"
+    private const val MAX_COMPATIBLE_FALLBACK_SAMPLE_RATES = 12
     private data class OutputDescription(
         val sampleRate: Int,
         val channelCount: Int,
@@ -100,33 +103,20 @@ internal object UsbExclusiveOutputFormatResolver {
             ?: usbOutputs.singleOrNull()
             ?: return failure("no_selected_system_usb_audio_output")
 
-        val requestedRate = preferences.sampleRateMode.requestedSampleRateHz(inputSampleRate)
-            ?: return failure("invalid_source_sample_rate")
         val reportedRates = output.sampleRates.filter { it > 0 }
-        val supportedRates = reportedRates.ifEmpty { listOf(requestedRate) }
-        val resolvedRate = preferences.resolveSampleRateHz(inputSampleRate, supportedRates)
-            ?: return failure(
-                "sample_rate_unsupported:requested=$requestedRate supported=$reportedRates"
-            )
-        if (shouldBlockImplicitNativeSampleRateConversion(preferences, inputSampleRate, resolvedRate)) {
-            return failure(
-                "sample_rate_unsupported:requested=$inputSampleRate " +
-                    "resolved=$resolvedRate native_resample_blocked"
-            )
-        }
+        val sampleRateCandidates = nativeSampleRateCandidates(
+            preferences = preferences,
+            inputSampleRate = inputSampleRate,
+            reportedSampleRates = reportedRates
+        )
+        val resolvedRate = sampleRateCandidates.firstOrNull()
+            ?: return failure("invalid_source_sample_rate")
 
         val sourceBitDepth = sourceBitDepthForEncoding(inputEncoding)
             ?: return failure("unsupported_input_encoding:$inputEncoding")
-        val reportedBitDepths = output.encodings
-            .map(::bitDepthForAudioFormatEncoding)
-            .filterNotNull()
-            .distinct()
-        val supportedBitDepths = reportedBitDepths.ifEmpty {
-            optimisticBitDepthsForSource(sourceBitDepth)
-        }
-        val resolvedBitDepth = preferences.resolveBitDepth(sourceBitDepth, supportedBitDepths)
+        val resolvedBitDepth = preferredNativeBitDepth(preferences, sourceBitDepth)
             ?: return failure(
-                "bit_depth_unsupported:requested=$sourceBitDepth supported=$reportedBitDepths"
+                "bit_depth_unsupported:requested=$sourceBitDepth native=16,24,32"
             )
 
         val reportedChannels = output.channelCounts.filter { it > 0 }
@@ -159,7 +149,11 @@ internal object UsbExclusiveOutputFormatResolver {
                     rateMode = preferences.sampleRateMode.storageValue,
                     bitMode = preferences.bitDepthMode.storageValue,
                     policy = preferences.unsupportedFormatPolicy.storageValue
-                )
+                ),
+                alternativeSampleRates = sampleRateCandidates.drop(1),
+                allowBitDepthFallback = preferences.bitDepthCompatibilityEnabled &&
+                    preferences.unsupportedFormatPolicy ==
+                    UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED
             )
         )
     }
@@ -183,15 +177,80 @@ internal object UsbExclusiveOutputFormatResolver {
         }
     }
 
-    internal fun shouldBlockImplicitNativeSampleRateConversion(
+    internal fun nativeSampleRateCandidates(
         preferences: UsbExclusivePreferences,
         inputSampleRate: Int,
-        resolvedSampleRate: Int
-    ): Boolean {
-        return preferences.sampleRateMode == UsbExclusiveSampleRateMode.FOLLOW_SOURCE &&
-            inputSampleRate > 0 &&
-            resolvedSampleRate > 0 &&
-            resolvedSampleRate != inputSampleRate
+        reportedSampleRates: Collection<Int>
+    ): List<Int> {
+        val requested = preferences.sampleRateMode.requestedSampleRateHz(inputSampleRate)
+            ?: return emptyList()
+        val normalizedReported = reportedSampleRates
+            .asSequence()
+            .filter { it > 0 }
+            .distinct()
+            .toList()
+        if (!preferences.canTryCompatibleSampleRateFallbacks()) {
+            return listOf(requested)
+        }
+        return buildList {
+            add(requested)
+            addAll(
+                normalizedReported
+                    .asSequence()
+                    .filterNot { it == requested }
+                    .sortedWith(sampleRateFallbackComparator(requested, preferences))
+                    .take(MAX_COMPATIBLE_FALLBACK_SAMPLE_RATES)
+                    .toList()
+            )
+        }.distinct()
+    }
+
+    private fun UsbExclusivePreferences.canTryCompatibleSampleRateFallbacks(): Boolean {
+        return sampleRateCompatibilityEnabled &&
+            unsupportedFormatPolicy == UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED
+    }
+
+    private fun sampleRateFallbackComparator(
+        requestedRate: Int,
+        preferences: UsbExclusivePreferences
+    ): Comparator<Int> {
+        val requestedFamily = if (
+            preferences.sampleRateMode == UsbExclusiveSampleRateMode.FOLLOW_SOURCE
+        ) {
+            sampleRateFamily(requestedRate)
+        } else {
+            null
+        }
+        return compareBy<Int> {
+            if (requestedFamily != null && sampleRateFamily(it) != requestedFamily) 1 else 0
+        }.thenBy { kotlin.math.abs(it.toLong() - requestedRate.toLong()) }
+            .thenByDescending { it }
+    }
+
+    private fun sampleRateFamily(sampleRateHz: Int): Int? {
+        return when {
+            sampleRateHz > 0 && sampleRateHz % 44_100 == 0 -> 44_100
+            sampleRateHz > 0 && sampleRateHz % 48_000 == 0 -> 48_000
+            else -> null
+        }
+    }
+
+    internal fun preferredNativeBitDepth(
+        preferences: UsbExclusivePreferences,
+        sourceBitDepth: Int
+    ): Int? {
+        val requested = preferences.bitDepthMode.requestedBitDepth(sourceBitDepth) ?: return null
+        if (requested in nativePcmBitDepths) return requested
+        if (
+            preferences.bitDepthCompatibilityEnabled &&
+            preferences.unsupportedFormatPolicy ==
+            UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED
+        ) {
+            return nativePcmBitDepths.minByOrNull { bitDepth ->
+                kotlin.math.abs(bitDepth - requested)
+            }
+        }
+        return null
     }
 
     internal fun pcmBytesPerSampleForEncoding(encoding: Int): Int? {
@@ -255,16 +314,18 @@ internal object UsbExclusiveOutputFormatResolver {
     }
 
     internal fun openCandidates(
-        preferred: ResolvedUsbOutputFormat,
-        inputEncoding: Int
+        preferred: ResolvedUsbOutputFormat
     ): List<ResolvedUsbOutputFormat> {
-        val sourceBitDepth = sourceBitDepthForEncoding(inputEncoding) ?: preferred.bitDepth
         val candidates = LinkedHashMap<String, ResolvedUsbOutputFormat>()
         val rateMode = candidateRateMode(preferred.description)
         val bitMode = candidateBitMode(preferred.description)
         val policy = candidatePolicy(preferred.description)
-        val allowLowerBitDepthFallback = policy != "system_fallback"
-        val candidateRates = listOf(preferred.sampleRate).filter { it > 0 }
+        val allowBitDepthFallback = preferred.allowBitDepthFallback &&
+            policy != "system_fallback"
+        val candidateRates = buildList {
+            add(preferred.sampleRate)
+            addAll(preferred.alternativeSampleRates)
+        }.filter { it > 0 }.distinct()
 
         fun addCandidate(sampleRate: Int, bitDepth: Int, subslotBytes: Int) {
             val normalizedSubslotBytes = subslotBytes.coerceAtLeast((bitDepth + 7) / 8)
@@ -295,43 +356,32 @@ internal object UsbExclusiveOutputFormatResolver {
                     )
                     addCandidate(sampleRate = sampleRate, bitDepth = 24, subslotBytes = 4)
                     addCandidate(sampleRate = sampleRate, bitDepth = 24, subslotBytes = 3)
-                    if (allowLowerBitDepthFallback) {
+                    if (allowBitDepthFallback) {
+                        addCandidate(sampleRate = sampleRate, bitDepth = 32, subslotBytes = 4)
                         addCandidate(sampleRate = sampleRate, bitDepth = 16, subslotBytes = 2)
                     }
                 }
                 32 -> {
                     addCandidate(sampleRate = sampleRate, bitDepth = 32, subslotBytes = 4)
-                    if (allowLowerBitDepthFallback && sourceBitDepth >= 24) {
+                    if (allowBitDepthFallback) {
                         addCandidate(sampleRate = sampleRate, bitDepth = 24, subslotBytes = 3)
                         addCandidate(sampleRate = sampleRate, bitDepth = 24, subslotBytes = 4)
                     }
-                    if (allowLowerBitDepthFallback) {
+                    if (allowBitDepthFallback) {
                         addCandidate(sampleRate = sampleRate, bitDepth = 16, subslotBytes = 2)
                     }
                 }
-                16 -> addCandidate(sampleRate = sampleRate, bitDepth = 16, subslotBytes = 2)
+                16 -> {
+                    addCandidate(sampleRate = sampleRate, bitDepth = 16, subslotBytes = 2)
+                    if (allowBitDepthFallback) {
+                        addCandidate(sampleRate = sampleRate, bitDepth = 24, subslotBytes = 3)
+                        addCandidate(sampleRate = sampleRate, bitDepth = 24, subslotBytes = 4)
+                        addCandidate(sampleRate = sampleRate, bitDepth = 32, subslotBytes = 4)
+                    }
+                }
             }
         }
         return candidates.values.toList()
-    }
-
-    private fun bitDepthForAudioFormatEncoding(encoding: Int): Int? {
-        return when (encoding) {
-            AudioFormat.ENCODING_PCM_16BIT -> 16
-            AudioFormat.ENCODING_PCM_24BIT_PACKED -> 24
-            AudioFormat.ENCODING_PCM_32BIT -> 32
-            AudioFormat.ENCODING_PCM_FLOAT -> 32
-            else -> null
-        }
-    }
-
-    private fun optimisticBitDepthsForSource(sourceBitDepth: Int): List<Int> {
-        return when {
-            sourceBitDepth >= 32 -> listOf(32, 24, 16)
-            sourceBitDepth >= 24 -> listOf(24, 32, 16)
-            sourceBitDepth >= 16 -> listOf(16)
-            else -> listOf(sourceBitDepth)
-        }
     }
 
     private fun candidateRateMode(description: String): String {
@@ -413,4 +463,6 @@ internal object UsbExclusiveOutputFormatResolver {
         return "rate=$sampleRate channels=$channelCount bits=$bitDepth subslot=$subslotBytes " +
             "rateMode=$rateMode bitMode=$bitMode policy=$policy"
     }
+
+    private val nativePcmBitDepths = listOf(16, 24, 32)
 }

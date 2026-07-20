@@ -51,7 +51,7 @@ import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
 import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
 import moe.ouom.neriplayer.ui.screen.tab.SettingsScreen
 
-private enum class SettingsScreenState {
+internal enum class SettingsScreenState {
     Settings,
     DownloadManager,
     DownloadProgress
@@ -65,6 +65,29 @@ private val SettingsScreenState.navigationDepth: Int
         SettingsScreenState.DownloadManager -> 1
         SettingsScreenState.DownloadProgress -> 2
     }
+
+internal fun SettingsScreenState.nextTowards(
+    requestedState: SettingsScreenState
+): SettingsScreenState = when {
+    navigationDepth < requestedState.navigationDepth -> when (this) {
+        SettingsScreenState.Settings -> SettingsScreenState.DownloadManager
+        SettingsScreenState.DownloadManager -> SettingsScreenState.DownloadProgress
+        SettingsScreenState.DownloadProgress -> SettingsScreenState.DownloadProgress
+    }
+    navigationDepth > requestedState.navigationDepth -> when (this) {
+        SettingsScreenState.Settings -> SettingsScreenState.Settings
+        SettingsScreenState.DownloadManager -> SettingsScreenState.Settings
+        SettingsScreenState.DownloadProgress -> SettingsScreenState.DownloadManager
+    }
+    else -> this
+}
+
+internal fun shouldAdvanceSettingsScreenTransition(
+    targetState: SettingsScreenState,
+    currentState: SettingsScreenState,
+    isRunning: Boolean,
+    requestedState: SettingsScreenState
+): Boolean = !isRunning && currentState == targetState && targetState != requestedState
 
 @Composable
 fun SettingsHostScreen(
@@ -238,18 +261,33 @@ fun SettingsHostScreen(
             captureSettingsListPosition()
         }
         requestedScreenState = target
-        if (!navigationTransition.isRunning && target != screenState) {
-            screenState = target
+        if (
+            shouldAdvanceSettingsScreenTransition(
+                targetState = screenState,
+                currentState = navigationTransition.currentState,
+                isRunning = navigationTransition.isRunning,
+                requestedState = requestedScreenState
+            )
+        ) {
+            screenState = screenState.nextTowards(requestedScreenState)
         }
     }
 
     LaunchedEffect(
+        navigationTransition.currentState,
         navigationTransition.isRunning,
         requestedScreenState,
         screenState
     ) {
-        if (!navigationTransition.isRunning && requestedScreenState != screenState) {
-            screenState = requestedScreenState
+        if (
+            shouldAdvanceSettingsScreenTransition(
+                targetState = screenState,
+                currentState = navigationTransition.currentState,
+                isRunning = navigationTransition.isRunning,
+                requestedState = requestedScreenState
+            )
+        ) {
+            screenState = screenState.nextTowards(requestedScreenState)
         }
     }
 

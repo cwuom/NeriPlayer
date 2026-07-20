@@ -1,0 +1,1052 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+readonly HOST_TEST_SOURCE="${REPO_ROOT}/app/src/main/cpp/tests/usb"
+readonly WARNING_BASELINE="${HOST_TEST_SOURCE}/config/warning-baseline.txt"
+
+usage() {
+    cat <<'EOF'
+Usage:
+  usb-async-lab host-test --manifest <path> --profile <profile>
+  usb-async-lab gradle-gate --manifest <path> --task <task>
+  usb-async-lab resource-audit --manifest <path> [--cleanup-owned]
+  usb-async-lab self-check --manifest <path>
+  usb-async-lab qualify-explicit --manifest <path> [options]
+  usb-async-lab qualify-implicit --manifest <path> [options]
+  usb-async-lab canary --manifest <path> [options]
+  usb-async-lab coverage-audit --manifest <path> [options]
+  usb-async-lab rollback-drill --manifest <path> [options]
+
+Host profiles:
+  asan-ubsan
+  tsan
+  release-werror-asserts
+EOF
+}
+
+die() {
+    printf 'usb-async-lab: %s\n' "$*" >&2
+    exit 2
+}
+
+resolve_path() {
+    local path="$1"
+    if [[ "${path}" = /* ]]; then
+        printf '%s\n' "${path}"
+    else
+        printf '%s\n' "${REPO_ROOT}/${path}"
+    fi
+}
+
+manifest_value() {
+    local manifest="$1"
+    local key="$2"
+    awk -F ': *' -v wanted="${key}" '
+        $1 == wanted {
+            value = substr($0, index($0, ":") + 1)
+            sub(/^[[:space:]]+/, "", value)
+            sub(/[[:space:]]+$/, "", value)
+            print value
+            exit
+        }
+    ' "${manifest}"
+}
+
+sha256_file() {
+    local path="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "${path}" | awk '{print $1}'
+    else
+        shasum -a 256 "${path}" | awk '{print $1}'
+    fi
+}
+
+sha256_stream() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum | awk '{print $1}'
+    else
+        shasum -a 256 | awk '{print $1}'
+    fi
+}
+
+validate_manifest_file() {
+    local manifest="$1"
+    local path_key="$2"
+    local hash_key="$3"
+    local required="$4"
+    local configured_path
+    configured_path="$(manifest_value "${manifest}" "${path_key}")"
+    if [[ -z "${configured_path}" ]]; then
+        [[ "${required}" == false ]] || die "manifest ${path_key} is required"
+        return
+    fi
+    local resolved
+    resolved="$(resolve_path "${configured_path}")"
+    [[ -f "${resolved}" ]] || die "manifest ${path_key} not found: ${resolved}"
+    if [[ -n "${hash_key}" ]]; then
+        local expected_hash
+        expected_hash="$(manifest_value "${manifest}" "${hash_key}")"
+        [[ "${expected_hash}" =~ ^[0-9a-f]{64}$ ]] ||
+            die "manifest ${hash_key} must be a lowercase SHA-256"
+        local actual_hash
+        actual_hash="$(sha256_file "${resolved}")"
+        [[ "${actual_hash}" == "${expected_hash}" ]] ||
+            die "manifest ${path_key} SHA-256 mismatch"
+    fi
+}
+
+validate_manifest() {
+    local manifest="$1"
+    [[ -f "${manifest}" ]] || die "manifest not found: ${manifest}"
+    local allowed_keys
+    allowed_keys="schemaVersion status runId artifactRoot batch baselineCommit "
+    allowed_keys+="planPath planSha256 logPath logSha256 issue247SnapshotPath "
+    allowed_keys+="descriptorPath feedbackTracePath hostMetadataPath "
+    allowed_keys+="uac2SpecReference usb20SpecReference dri nativeReviewer "
+    allowed_keys+="kotlinReviewer approver"
+    local invalid_keys
+    invalid_keys="$(awk -F ': *' -v allowed="${allowed_keys}" '
+        BEGIN {
+            count = split(allowed, entries, " ")
+            for (entry_index = 1; entry_index <= count; ++entry_index) {
+                valid[entries[entry_index]] = 1
+            }
+        }
+        /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+        /^[A-Za-z][A-Za-z0-9]*:/ {
+            if (!valid[$1]) print $1
+            next
+        }
+        { print "invalid_yaml_line" }
+    ' "${manifest}")"
+    [[ -z "${invalid_keys}" ]] ||
+        die "manifest contains unsupported keys or syntax: ${invalid_keys}"
+    local duplicate_keys
+    duplicate_keys="$(awk -F ': *' '
+        /^[A-Za-z][A-Za-z0-9]*:/ { occurrences[$1] += 1 }
+        END {
+            for (key in occurrences) {
+                if (occurrences[key] > 1) print key
+            }
+        }
+    ' "${manifest}")"
+    [[ -z "${duplicate_keys}" ]] ||
+        die "manifest contains duplicate keys: ${duplicate_keys}"
+    [[ "$(manifest_value "${manifest}" schemaVersion)" == "1" ]] ||
+        die "manifest schemaVersion must be 1"
+    [[ -n "$(manifest_value "${manifest}" status)" ]] ||
+        die "manifest status is required"
+    [[ "$(manifest_value "${manifest}" runId)" != "" ]] ||
+        die "manifest runId is required"
+    [[ "$(manifest_value "${manifest}" artifactRoot)" == \
+        ".report/usb/execution" ]] ||
+        die "manifest artifactRoot must be .report/usb/execution"
+    [[ "$(manifest_value "${manifest}" batch)" == "B0" ]] ||
+        die "B0-prep runner only accepts batch B0"
+    local configured_baseline
+    configured_baseline="$(manifest_value "${manifest}" baselineCommit)"
+    local current_head
+    current_head="$(git -C "${REPO_ROOT}" rev-parse HEAD)"
+    if [[ "${configured_baseline}" != "HEAD" ]]; then
+        [[ "${configured_baseline}" =~ ^[0-9a-f]{40}$ ]] ||
+            die "manifest baselineCommit must be HEAD or a full commit SHA"
+        [[ "${configured_baseline}" == "${current_head}" ]] ||
+            die "manifest baselineCommit does not match current HEAD"
+    fi
+    validate_manifest_file "${manifest}" planPath planSha256 true
+    validate_manifest_file "${manifest}" logPath logSha256 false
+    validate_manifest_file "${manifest}" issue247SnapshotPath "" false
+    validate_manifest_file "${manifest}" descriptorPath "" false
+    validate_manifest_file "${manifest}" feedbackTracePath "" false
+    validate_manifest_file "${manifest}" hostMetadataPath "" false
+}
+
+valid_run_id() {
+    local value="$1"
+    [[ "${value}" != "." && "${value}" != ".." && \
+        "${value}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+}
+
+run_id_for() {
+    local manifest="$1"
+    local configured
+    configured="$(manifest_value "${manifest}" runId)"
+    if [[ -n "${configured}" && "${configured}" != "auto" ]]; then
+        valid_run_id "${configured}" ||
+            die "manifest runId contains unsupported characters"
+        printf '%s\n' "${configured}"
+        return
+    fi
+    printf 'usb-b0-%s\n' "$(sha256_file "${manifest}" | cut -c1-12)"
+}
+
+artifact_root_for() {
+    local manifest="$1"
+    local configured
+    configured="$(manifest_value "${manifest}" artifactRoot)"
+    resolve_path "${configured}"
+}
+
+run_logged() {
+    local log_file="$1"
+    shift
+    mkdir -p "$(dirname "${log_file}")"
+    "$@" 2>&1 | tee -a "${log_file}"
+}
+
+extract_warning_lines() {
+    if [[ "${NERI_USB_SELF_CHECK_FORCE_WARNING_FAILURE:-0}" == 1 ]]; then
+        return 7
+    fi
+    LC_ALL=C grep -E -i \
+        'warning([ :]|$)|(^|[[:space:]])w: |^\[CXX[0-9]+\]|deprecated|deprecation'
+}
+
+scan_first_party_warnings() {
+    local log_file="$1"
+    local output_file="$2"
+    local all_warnings="${output_file%.txt}-all.txt"
+    local allowed_warnings="${output_file%.txt}-allowed.txt"
+    local extract_status=0
+    if extract_warning_lines <"${log_file}" >"${all_warnings}"; then
+        extract_status=0
+    else
+        extract_status=$?
+    fi
+    if [[ "${extract_status}" -gt 1 ]]; then
+        printf 'warning extraction failed for %s\n' "${log_file}" >&2
+        return 1
+    fi
+    if [[ -s "${all_warnings}" && -f "${WARNING_BASELINE}" ]]; then
+        if grep -n '^$' "${WARNING_BASELINE}" >/dev/null 2>&1; then
+            printf 'warning baseline contains an empty match-all entry\n' >&2
+            return 1
+        fi
+        local allow_status=0
+        if grep -F -x -f "${WARNING_BASELINE}" \
+            "${all_warnings}" >"${allowed_warnings}"; then
+            allow_status=0
+        else
+            allow_status=$?
+        fi
+        [[ "${allow_status}" -le 1 ]] || return 1
+        local reject_status=0
+        if grep -F -x -v -f "${WARNING_BASELINE}" \
+            "${all_warnings}" >"${output_file}"; then
+            reject_status=0
+        else
+            reject_status=$?
+        fi
+        [[ "${reject_status}" -le 1 ]] || return 1
+    else
+        : >"${allowed_warnings}"
+        cp "${all_warnings}" "${output_file}"
+    fi
+    if [[ -s "${output_file}" ]]; then
+        printf 'first-party warning scan failed; see %s\n' \
+            "${output_file}" >&2
+        return 1
+    fi
+}
+
+scan_lint_report() {
+    local output_file="$1"
+    local report="${REPO_ROOT}/app/build/reports/lint-results-debug.xml"
+    [[ -f "${report}" ]] || {
+        printf 'lint XML report missing: %s\n' "${report}" >&2
+        return 1
+    }
+    command -v ruby >/dev/null 2>&1 || {
+        printf 'ruby is required for structured lint XML validation\n' >&2
+        return 1
+    }
+    if ! ruby -r rexml/document - "${report}" >"${output_file}" <<'RUBY'
+report = ARGV.fetch(0)
+document = REXML::Document.new(File.read(report, encoding: "UTF-8"))
+counts = Hash.new(0)
+total = 0
+document.elements.each("issues/issue") do |issue|
+  severity = issue.attributes["severity"].to_s
+  identifier = issue.attributes["id"].to_s
+  raise "lint issue is missing severity or id" if severity.empty? || identifier.empty?
+  counts[[severity, identifier]] += 1
+  total += 1
+end
+puts "Meta\tTotal\t#{total}"
+counts.sort.each do |(severity, identifier), count|
+  puts "#{severity}\t#{identifier}\t#{count}"
+end
+RUBY
+    then
+        printf 'structured lint XML parsing failed: %s\n' "${report}" >&2
+        return 1
+    fi
+    local total_count
+    total_count="$(awk -F '\t' '$1 == "Meta" && $2 == "Total" { print $3 }' \
+        "${output_file}")"
+    [[ "${total_count}" =~ ^[0-9]+$ ]] || {
+        printf 'structured lint XML output is invalid: %s\n' "${output_file}" >&2
+        return 1
+    }
+    local blocking_count
+    blocking_count="$(awk -F '\t' \
+        '$1 == "Warning" || $1 == "Error" || $1 == "Fatal" { total += $3 } \
+         END { print total + 0 }' "${output_file}")"
+    if [[ "${blocking_count}" != 0 ]]; then
+        printf 'lint warning gate failed with %s blocking issues; see %s\n' \
+            "${blocking_count}" "${output_file}" >&2
+        return 1
+    fi
+}
+
+working_tree_fingerprint_material() {
+    local head tree status_output diff_output untracked_paths untracked_hashes
+    head="$(git -C "${REPO_ROOT}" rev-parse HEAD)" || return 1
+    if [[ "${NERI_USB_SELF_CHECK_FORCE_FINGERPRINT_FAILURE:-0}" == 1 ]]; then
+        return 7
+    fi
+    tree="$(git -C "${REPO_ROOT}" rev-parse 'HEAD^{tree}')" || return 1
+    status_output="$(
+        git -C "${REPO_ROOT}" status --porcelain=v1 --untracked-files=all
+    )" || return 1
+    diff_output="$(
+        git -C "${REPO_ROOT}" diff --no-ext-diff --no-textconv --binary HEAD --
+    )" || return 1
+    untracked_paths="$(
+        git -C "${REPO_ROOT}" ls-files --others --exclude-standard
+    )" || return 1
+    untracked_hashes="$(
+        if [[ -n "${untracked_paths}" ]]; then
+            while IFS= read -r path; do
+                local file_hash
+                file_hash="$(sha256_file "${REPO_ROOT}/${path}")" || exit 1
+                printf '%s=%s\n' "${path}" "${file_hash}"
+            done <<<"${untracked_paths}"
+        fi
+    )" || return 1
+
+    local submodule_output
+    submodule_output="$(
+        git -C "${REPO_ROOT}" submodule foreach --recursive --quiet '
+            head="$(git rev-parse HEAD)" || exit 1
+            status_output="$(git status --porcelain=v1 --untracked-files=all)" || exit 1
+            diff_output="$(
+                git diff --no-ext-diff --no-textconv --binary HEAD --
+            )" || exit 1
+            untracked_paths="$(git ls-files --others --exclude-standard)" || exit 1
+            untracked_hashes="$(
+                if [ -n "${untracked_paths}" ]; then
+                    printf "%s\n" "${untracked_paths}" |
+                        while IFS= read -r path; do
+                            file_hash="$(git hash-object -- "${path}")" || exit 1
+                            printf "%s=%s\n" "${path}" "${file_hash}"
+                        done
+                fi
+            )" || exit 1
+            printf "submodulePath=%s\n" "${displaypath}"
+            printf "submoduleHead=%s\n" "${head}"
+            printf "%s\n" "${status_output}"
+            printf "%s\n" "${diff_output}"
+            printf "%s\n" "${untracked_hashes}"
+        '
+    )" || return 1
+
+    printf 'head=%s\n' "${head}"
+    printf 'tree=%s\n' "${tree}"
+    printf '%s\n' "${status_output}"
+    printf '%s\n' "${diff_output}"
+    printf '%s\n' "${untracked_hashes}"
+    printf '%s\n' "${submodule_output}"
+}
+
+working_tree_fingerprint() {
+    local material fingerprint
+    material="$(working_tree_fingerprint_material)" || return 1
+    fingerprint="$(printf '%s\n' "${material}" | sha256_stream)" || return 1
+    [[ "${fingerprint}" =~ ^[0-9a-f]{64}$ ]] || return 1
+    printf '%s\n' "${fingerprint}"
+}
+
+prepare_attempt_context() {
+    local attempt_dir="$1"
+    local manifest="$2"
+    mkdir -p "${attempt_dir}"
+    local status_output
+    status_output="$(git -C "${REPO_ROOT}" status --porcelain=v1)" || return 1
+    local head
+    head="$(git -C "${REPO_ROOT}" rev-parse HEAD)" || return 1
+    local fingerprint
+    fingerprint="$(working_tree_fingerprint)" || return 1
+    local manifest_hash
+    manifest_hash="$(sha256_file "${manifest}")" || return 1
+    local dirty=false
+    if [[ -n "${status_output}" ]]; then
+        dirty=true
+    fi
+    {
+        printf 'head=%s\n' "${head}"
+        printf 'sourceFingerprint=%s\n' "${fingerprint}"
+        printf 'manifestSha256=%s\n' "${manifest_hash}"
+        printf 'dirty=%s\n' "${dirty}"
+        printf 'startedAtUtc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    } >"${attempt_dir}/source-context.txt"
+    prepare_resource_audit "${attempt_dir}"
+}
+
+source_context_value() {
+    local attempt_dir="$1"
+    local key="$2"
+    awk -F= -v wanted="${key}" '$1 == wanted { print substr($0, index($0, "=") + 1); exit }' \
+        "${attempt_dir}/source-context.txt"
+}
+
+source_context_unchanged() {
+    local attempt_dir="$1"
+    local before after
+    before="$(source_context_value "${attempt_dir}" sourceFingerprint)" || return 1
+    after="$(working_tree_fingerprint)" || return 1
+    [[ "${before}" == "${after}" ]]
+}
+
+snapshot_repo_processes() {
+    local ancestors=" "
+    local current_pid="$$"
+    while [[ "${current_pid}" =~ ^[0-9]+$ && "${current_pid}" -gt 1 ]]; do
+        ancestors+="${current_pid} "
+        current_pid="$(ps -o ppid= -p "${current_pid}" 2>/dev/null | tr -d ' ')"
+    done
+    ps -axo pid=,ppid=,ucomm=,command= 2>/dev/null |
+        awk -v repo="${REPO_ROOT}" -v self="$$" -v ancestors="${ancestors}" '
+            function descendsFromRunner(pid, current, depth) {
+                current = parent[pid]
+                for (depth = 0; current > 1 && depth < 256; ++depth) {
+                    if (current == self) return 1
+                    current = parent[current]
+                }
+                return 0
+            }
+            {
+                pid = $1
+                order[++count] = pid
+                parent[pid] = $2
+                command[pid] = $3
+                line[pid] = $0
+            }
+            END {
+                for (loopIndex = 1; loopIndex <= count; ++loopIndex) {
+                    pid = order[loopIndex]
+                    if (index(ancestors, " " pid " ") != 0) continue
+                    if (parent[pid] == self &&
+                        (command[pid] == "ps" || command[pid] == "awk" ||
+                         command[pid] == "sort")) continue
+                    if (index(line[pid], repo) > 0 || descendsFromRunner(pid)) {
+                        print pid " " parent[pid] " " command[pid]
+                    }
+                }
+            }
+        ' | LC_ALL=C sort
+}
+
+parse_ss_listening_ports() {
+    awk '
+        {
+            endpoint = $4
+            process_name = "unknown"
+            pid = ""
+            for (field_index = 1; field_index <= NF; ++field_index) {
+                field = $field_index
+                if (field ~ /pid=[0-9]+/) {
+                    sub(/^.*pid=/, "", field)
+                    sub(/[^0-9].*$/, "", field)
+                    pid = field
+                }
+                field = $field_index
+                if (field ~ /users:\(\("[^"]+"/) {
+                    sub(/^.*users:\(\("/, "", field)
+                    sub(/".*$/, "", field)
+                    process_name = field
+                }
+            }
+            if (pid != "") {
+                print pid " " process_name " " endpoint
+            }
+        }
+    ' | LC_ALL=C sort -u
+}
+
+snapshot_listening_ports() {
+    if [[ "${NERI_USB_SELF_CHECK_FORCE_PORT_FAILURE:-0}" == 1 ]]; then
+        return 7
+    fi
+    if command -v lsof >/dev/null 2>&1; then
+        local output=""
+        local status=0
+        if output="$(lsof -nP -iTCP -sTCP:LISTEN 2>&1)"; then
+            status=0
+        else
+            status=$?
+        fi
+        if [[ "${status}" -gt 1 || ("${status}" == 1 && -n "${output}") ]]; then
+            return 1
+        fi
+        printf '%s\n' "${output}" |
+            awk 'NR > 1 { print $2 " " $1 " " $9 }' | LC_ALL=C sort -u
+        return 0
+    fi
+    if command -v ss >/dev/null 2>&1; then
+        local output=""
+        if ! output="$(ss -H -ltnp 2>&1)"; then
+            return 1
+        fi
+        local parsed=""
+        parsed="$(printf '%s\n' "${output}" | parse_ss_listening_ports)"
+        [[ -z "${output}" || -n "${parsed}" ]] || return 1
+        printf '%s\n' "${parsed}"
+        return 0
+    fi
+    return 1
+}
+
+filter_listening_ports_for_new_processes() {
+    local new_processes_file="$1"
+    awk '
+        FILENAME == ARGV[1] { new_process[$1] = 1; next }
+        $1 in new_process { print }
+    ' "${new_processes_file}" -
+}
+
+snapshot_build_daemons() {
+    if [[ "${NERI_USB_SELF_CHECK_FORCE_DAEMON_FAILURE:-0}" == 1 ]]; then
+        return 7
+    fi
+    command -v jps >/dev/null 2>&1 || return 1
+    local output=""
+    if ! output="$(jps -l 2>&1)"; then
+        return 1
+    fi
+    printf '%s\n' "${output}" |
+        awk '$2 ~ /(GradleDaemon|KotlinCompileDaemon)/ { print $1 " " $2 }' |
+        LC_ALL=C sort
+}
+
+prepare_resource_audit() {
+    local attempt_dir="$1"
+    snapshot_repo_processes >"${attempt_dir}/repo-processes-before.txt" || return 1
+    if snapshot_listening_ports >"${attempt_dir}/listening-ports-before.txt"; then
+        printf 'available\n' >"${attempt_dir}/port-audit-capability.txt"
+    else
+        : >"${attempt_dir}/listening-ports-before.txt"
+        printf 'unavailable\n' >"${attempt_dir}/port-audit-capability.txt"
+    fi
+    if snapshot_build_daemons >"${attempt_dir}/build-daemons-before.txt"; then
+        printf 'available\n' >"${attempt_dir}/daemon-audit-capability.txt"
+    else
+        : >"${attempt_dir}/build-daemons-before.txt"
+        printf 'unavailable\n' >"${attempt_dir}/daemon-audit-capability.txt"
+    fi
+}
+
+write_resource_snapshot() {
+    local attempt_dir="$1"
+    local reject_preexisting="${2:-false}"
+    local require_daemon_audit="${3:-false}"
+    local jobs_file="${attempt_dir}/owned-processes-after.txt"
+    local new_processes="${attempt_dir}/new-repo-processes.txt"
+    local new_ports="${attempt_dir}/new-listening-ports.txt"
+    local new_daemons="${attempt_dir}/new-build-daemons.txt"
+    jobs -pr >"${jobs_file}" || true
+    snapshot_repo_processes >"${attempt_dir}/repo-processes-after.txt" || return 1
+    if ! snapshot_listening_ports >"${attempt_dir}/listening-ports-after.txt"; then
+        printf 'unavailable\n' >"${attempt_dir}/port-audit-capability.txt"
+        : >"${attempt_dir}/listening-ports-after.txt"
+    fi
+    if ! snapshot_build_daemons >"${attempt_dir}/build-daemons-after.txt"; then
+        printf 'unavailable\n' >"${attempt_dir}/daemon-audit-capability.txt"
+        : >"${attempt_dir}/build-daemons-after.txt"
+    fi
+    if ! LC_ALL=C comm -13 \
+        "${attempt_dir}/repo-processes-before.txt" \
+        "${attempt_dir}/repo-processes-after.txt" >"${new_processes}"; then
+        return 1
+    fi
+    if ! LC_ALL=C comm -13 \
+        "${attempt_dir}/listening-ports-before.txt" \
+        "${attempt_dir}/listening-ports-after.txt" |
+        filter_listening_ports_for_new_processes \
+            "${new_processes}" >"${new_ports}"; then
+        return 1
+    fi
+    if ! LC_ALL=C comm -13 \
+        "${attempt_dir}/build-daemons-before.txt" \
+        "${attempt_dir}/build-daemons-after.txt" >"${new_daemons}"; then
+        return 1
+    fi
+
+    local jobs_count preexisting_count new_process_count new_port_count new_daemon_count
+    jobs_count="$(wc -l <"${jobs_file}" | tr -d ' ')"
+    preexisting_count="$(wc -l <"${attempt_dir}/repo-processes-before.txt" | tr -d ' ')"
+    new_process_count="$(wc -l <"${new_processes}" | tr -d ' ')"
+    new_port_count="$(wc -l <"${new_ports}" | tr -d ' ')"
+    new_daemon_count="$(wc -l <"${new_daemons}" | tr -d ' ')"
+    local port_capability daemon_capability
+    port_capability="$(tr -d '\n' <"${attempt_dir}/port-audit-capability.txt")"
+    daemon_capability="$(tr -d '\n' <"${attempt_dir}/daemon-audit-capability.txt")"
+    local before_ports_hash after_ports_hash
+    before_ports_hash="$(sha256_file "${attempt_dir}/listening-ports-before.txt")" ||
+        return 1
+    after_ports_hash="$(sha256_file "${attempt_dir}/listening-ports-after.txt")" ||
+        return 1
+    printf 'sha256=%s\n' "${before_ports_hash}" \
+        >"${attempt_dir}/listening-ports-before.txt"
+    printf 'sha256=%s\n' "${after_ports_hash}" \
+        >"${attempt_dir}/listening-ports-after.txt"
+
+    {
+        printf 'checkedAtUtc: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        printf 'auditMethod: bash-jobs+repo-or-descendant-process-delta+' \
+            'scoped-listening-port-delta\n'
+        printf 'listeningPortScope: new-repo-or-runner-descendant-processes\n'
+        printf 'portAuditCapability: %s\n' "${port_capability}"
+        printf 'buildDaemonAuditCapability: %s\n' "${daemon_capability}"
+        printf 'runnerJobsRemaining: %s\n' "${jobs_count}"
+        printf 'preexistingRepoScopedProcesses: %s\n' "${preexisting_count}"
+        printf 'newRepoScopedProcesses: %s\n' "${new_process_count}"
+        printf 'newListeningPorts: %s\n' "${new_port_count}"
+        printf 'newBuildDaemons: %s\n' "${new_daemon_count}"
+        printf 'preexistingProcessesRejected: %s\n' "${reject_preexisting}"
+    } >"${attempt_dir}/resource-audit.txt"
+
+    [[ "${port_capability}" == available && "${jobs_count}" == 0 && \
+        "${new_process_count}" == 0 && "${new_port_count}" == 0 && \
+        "${new_daemon_count}" == 0 ]] || return 1
+    [[ "${require_daemon_audit}" == false || "${daemon_capability}" == available ]] ||
+        return 1
+    [[ "${reject_preexisting}" == false || "${preexisting_count}" == 0 ]]
+}
+
+write_attempt_manifest() {
+    local path="$1"
+    local manifest="$2"
+    local command_name="$3"
+    local status="$4"
+    local detail="$5"
+    local attempt_dir
+    attempt_dir="$(dirname "${path}")"
+    local fingerprint_before fingerprint_after source_stable
+    fingerprint_before="$(source_context_value "${attempt_dir}" sourceFingerprint)" ||
+        return 1
+    fingerprint_after="$(working_tree_fingerprint)" || return 1
+    source_stable=false
+    if [[ "${fingerprint_before}" == "${fingerprint_after}" ]]; then
+        source_stable=true
+    fi
+    {
+        printf '# USB Async Lab Attempt\n\n'
+        printf -- '- command: `%s`\n' "${command_name}"
+        printf -- '- status: `%s`\n' "${status}"
+        printf -- '- detail: `%s`\n' "${detail}"
+        printf -- '- baseline: `%s`\n' \
+            "$(source_context_value "${attempt_dir}" head)"
+        printf -- '- dirtyWorktree: `%s`\n' \
+            "$(source_context_value "${attempt_dir}" dirty)"
+        printf -- '- sourceFingerprintBefore: `%s`\n' "${fingerprint_before}"
+        printf -- '- sourceFingerprintAfter: `%s`\n' "${fingerprint_after}"
+        printf -- '- sourceStable: `%s`\n' "${source_stable}"
+        printf -- '- manifestSha256: `%s`\n' "$(sha256_file "${manifest}")"
+        printf -- '- planSha256: `%s`\n' \
+            "$(manifest_value "${manifest}" planSha256)"
+        printf -- '- completedAtUtc: `%s`\n' \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    } >"${path}"
+}
+
+host_test() {
+    local manifest=""
+    local profile=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --manifest)
+                [[ $# -ge 2 ]] || die "--manifest requires a path"
+                manifest="$(resolve_path "$2")"
+                shift 2
+                ;;
+            --profile)
+                [[ $# -ge 2 ]] || die "--profile requires a value"
+                profile="$2"
+                shift 2
+                ;;
+            *)
+                die "unknown host-test option: $1"
+                ;;
+        esac
+    done
+    [[ -n "${manifest}" ]] || die "host-test requires --manifest"
+    validate_manifest "${manifest}"
+
+    local sanitizer="none"
+    local build_type="Debug"
+    case "${profile}" in
+        asan-ubsan)
+            sanitizer="asan-ubsan"
+            ;;
+        tsan)
+            sanitizer="tsan"
+            ;;
+        release-werror-asserts)
+            build_type="Release"
+            ;;
+        *)
+            die "unsupported host-test profile: ${profile}"
+            ;;
+    esac
+
+    local run_id
+    run_id="$(run_id_for "${manifest}")"
+    local artifact_root
+    artifact_root="$(artifact_root_for "${manifest}")"
+    local attempt
+    attempt="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    local attempt_dir
+    attempt_dir="${artifact_root}/${run_id}/B0/host-${profile}/${attempt}"
+    local build_dir="${attempt_dir}/build"
+    local combined_log="${attempt_dir}/host-test.log"
+    mkdir -p "${attempt_dir}"
+    prepare_attempt_context "${attempt_dir}" "${manifest}"
+
+    local configure_command=(
+        cmake
+        -S "${HOST_TEST_SOURCE}"
+        -B "${build_dir}"
+        -G Ninja
+        "-DCMAKE_BUILD_TYPE=${build_type}"
+        "-DUSB_TEST_SANITIZER=${sanitizer}"
+        -DUSB_TEST_FORCE_ASSERTS=ON
+    )
+    if ! run_logged "${combined_log}" "${configure_command[@]}"; then
+        write_resource_snapshot "${attempt_dir}" false false || true
+        write_attempt_manifest \
+            "${attempt_dir}/manifest.md" "${manifest}" \
+            "host-test ${profile}" failed configure
+        return 1
+    fi
+    if ! run_logged "${combined_log}" \
+        cmake --build "${build_dir}" --parallel; then
+        write_resource_snapshot "${attempt_dir}" false false || true
+        write_attempt_manifest \
+            "${attempt_dir}/manifest.md" "${manifest}" \
+            "host-test ${profile}" failed build
+        return 1
+    fi
+    if ! run_logged "${combined_log}" \
+        ctest --test-dir "${build_dir}" --output-on-failure \
+        --output-junit "${attempt_dir}/ctest.xml"; then
+        write_resource_snapshot "${attempt_dir}" false false || true
+        write_attempt_manifest \
+            "${attempt_dir}/manifest.md" "${manifest}" \
+            "host-test ${profile}" failed ctest
+        return 1
+    fi
+    if ! scan_first_party_warnings \
+        "${combined_log}" "${attempt_dir}/warnings.txt"; then
+        write_resource_snapshot "${attempt_dir}" false false || true
+        write_attempt_manifest \
+            "${attempt_dir}/manifest.md" "${manifest}" \
+            "host-test ${profile}" failed warning-scan
+        return 1
+    fi
+    if ! source_context_unchanged "${attempt_dir}"; then
+        write_resource_snapshot "${attempt_dir}" false false || true
+        write_attempt_manifest \
+            "${attempt_dir}/manifest.md" "${manifest}" \
+            "host-test ${profile}" failed source-changed-during-attempt
+        return 1
+    fi
+    if ! write_resource_snapshot "${attempt_dir}" false false; then
+        write_attempt_manifest \
+            "${attempt_dir}/manifest.md" "${manifest}" \
+            "host-test ${profile}" failed resource-audit
+        return 1
+    fi
+    write_attempt_manifest \
+        "${attempt_dir}/manifest.md" "${manifest}" \
+        "host-test ${profile}" passed all-gates
+}
+
+gradle_gate() {
+    local manifest=""
+    local task=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --manifest)
+                [[ $# -ge 2 ]] || die "--manifest requires a path"
+                manifest="$(resolve_path "$2")"
+                shift 2
+                ;;
+            --task)
+                [[ $# -ge 2 ]] || die "--task requires a value"
+                task="$2"
+                shift 2
+                ;;
+            *)
+                die "unknown gradle-gate option: $1"
+                ;;
+        esac
+    done
+    [[ -n "${manifest}" ]] || die "gradle-gate requires --manifest"
+    validate_manifest "${manifest}"
+    case "${task}" in
+        :app:tasks|:app:externalNativeBuildDebug|:app:testDebugUnitTest|\
+        :app:lintDebug|:app:assembleDebug)
+            ;;
+        *)
+            die "gradle task is outside the B0 gate allowlist: ${task}"
+            ;;
+    esac
+
+    local run_id
+    run_id="$(run_id_for "${manifest}")"
+    local artifact_root
+    artifact_root="$(artifact_root_for "${manifest}")"
+    local attempt
+    attempt="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    local task_slug="${task//:/_}"
+    local attempt_dir
+    attempt_dir="${artifact_root}/${run_id}/B0/gradle-${task_slug}/${attempt}"
+    local combined_log="${attempt_dir}/gradle.log"
+    local gradle_home
+    gradle_home="${GRADLE_USER_HOME:-${HOME}/.gradle}"
+    mkdir -p "${attempt_dir}" "${gradle_home}"
+    prepare_attempt_context "${attempt_dir}" "${manifest}"
+
+    if ! run_logged "${combined_log}" env GRADLE_USER_HOME="${gradle_home}" \
+        "${REPO_ROOT}/gradlew" "${task}" --no-daemon --console=plain \
+        --warning-mode all --stacktrace; then
+        write_resource_snapshot "${attempt_dir}" false true || true
+        write_attempt_manifest \
+            "${attempt_dir}/manifest.md" "${manifest}" \
+            "gradle-gate ${task}" failed gradle
+        return 1
+    fi
+    if ! scan_first_party_warnings \
+        "${combined_log}" "${attempt_dir}/warnings.txt"; then
+        write_resource_snapshot "${attempt_dir}" false true || true
+        write_attempt_manifest \
+            "${attempt_dir}/manifest.md" "${manifest}" \
+            "gradle-gate ${task}" failed warning-scan
+        return 1
+    fi
+    if [[ "${task}" == ":app:lintDebug" ]] &&
+        ! scan_lint_report "${attempt_dir}/lint-issues.txt"; then
+        write_resource_snapshot "${attempt_dir}" false true || true
+        write_attempt_manifest \
+            "${attempt_dir}/manifest.md" "${manifest}" \
+            "gradle-gate ${task}" failed lint-warning-scan
+        return 1
+    fi
+    if ! source_context_unchanged "${attempt_dir}"; then
+        write_resource_snapshot "${attempt_dir}" false true || true
+        write_attempt_manifest \
+            "${attempt_dir}/manifest.md" "${manifest}" \
+            "gradle-gate ${task}" failed source-changed-during-attempt
+        return 1
+    fi
+    if ! write_resource_snapshot "${attempt_dir}" false true; then
+        write_attempt_manifest \
+            "${attempt_dir}/manifest.md" "${manifest}" \
+            "gradle-gate ${task}" failed resource-audit
+        return 1
+    fi
+    write_attempt_manifest \
+        "${attempt_dir}/manifest.md" "${manifest}" \
+        "gradle-gate ${task}" passed all-gates
+}
+
+resource_audit() {
+    local manifest=""
+    local cleanup_owned=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --manifest)
+                [[ $# -ge 2 ]] || die "--manifest requires a path"
+                manifest="$(resolve_path "$2")"
+                shift 2
+                ;;
+            --cleanup-owned)
+                cleanup_owned=true
+                shift
+                ;;
+            *)
+                die "unknown resource-audit option: $1"
+                ;;
+        esac
+    done
+    [[ -n "${manifest}" ]] || die "resource-audit requires --manifest"
+    validate_manifest "${manifest}"
+
+    local run_id
+    run_id="$(run_id_for "${manifest}")"
+    local artifact_root
+    artifact_root="$(artifact_root_for "${manifest}")"
+    local run_root="${artifact_root}/${run_id}"
+    local attempt_dir
+    attempt_dir="${run_root}/resource-audit/$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    mkdir -p "${attempt_dir}"
+    prepare_attempt_context "${attempt_dir}" "${manifest}"
+    if [[ "${cleanup_owned}" == true ]]; then
+        printf 'cleanupMode: detect-and-report-only\n' \
+            >>"${attempt_dir}/source-context.txt"
+    fi
+    if ! write_resource_snapshot "${attempt_dir}" true true; then
+        write_attempt_manifest \
+            "${attempt_dir}/manifest.md" "${manifest}" \
+            resource-audit failed owned-process-remains
+        return 1
+    fi
+    write_attempt_manifest \
+        "${attempt_dir}/manifest.md" "${manifest}" \
+        resource-audit passed no-owned-resource-remains
+}
+
+self_check() {
+    local manifest=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --manifest)
+                [[ $# -ge 2 ]] || die "--manifest requires a path"
+                manifest="$(resolve_path "$2")"
+                shift 2
+                ;;
+            *)
+                die "unknown self-check option: $1"
+                ;;
+        esac
+    done
+    [[ -n "${manifest}" ]] || die "self-check requires --manifest"
+    validate_manifest "${manifest}"
+    local warning_lines
+    if ! warning_lines="$({
+        printf 'CMake Warning at fixture.cmake:1\n'
+        printf 'WARNING: uppercase fixture\n'
+        printf 'source.cpp:1:2: warning: fixture\n'
+        printf 'w: Kotlin fixture\n'
+        printf 'Deprecated Gradle feature fixture\n'
+        printf 'clean output\n'
+    } | extract_warning_lines)"; then
+        die "warning classifier execution failed"
+    fi
+    local warning_count
+    warning_count="$(printf '%s\n' "${warning_lines}" | wc -l | tr -d ' ')"
+    [[ "${warning_count}" == 5 ]] || die "warning classifier self-check failed"
+    local baseline_entry
+    baseline_entry="$(awk 'NF { print; exit }' "${WARNING_BASELINE}")"
+    [[ -n "${baseline_entry}" ]] || die "warning baseline self-check fixture missing"
+    printf '%s\n' "${baseline_entry}" | grep -F -x -f "${WARNING_BASELINE}" \
+        >/dev/null || die "exact warning baseline self-check failed"
+    if printf 'prefix %s\n' "${baseline_entry}" |
+        grep -F -x -f "${WARNING_BASELINE}" >/dev/null; then
+        die "warning baseline substring self-check failed"
+    fi
+    valid_run_id "gate-1.0" || die "valid runId self-check failed"
+    if valid_run_id "." || valid_run_id ".." || valid_run_id "../escape"; then
+        die "runId traversal self-check failed"
+    fi
+    local source_fingerprint
+    source_fingerprint="$(working_tree_fingerprint)" ||
+        die "source fingerprint execution failed"
+    [[ "${source_fingerprint}" =~ ^[0-9a-f]{64}$ ]] ||
+        die "source fingerprint self-check failed"
+    local external_diff_fingerprint
+    external_diff_fingerprint="$(
+        GIT_EXTERNAL_DIFF=true working_tree_fingerprint
+    )" || die "external diff isolation self-check execution failed"
+    [[ "${external_diff_fingerprint}" == "${source_fingerprint}" ]] ||
+        die "external diff isolation self-check failed"
+    snapshot_repo_processes >/dev/null
+    snapshot_listening_ports >/dev/null ||
+        die "listening port audit is unavailable"
+    local scoped_ports
+    if ! scoped_ports="$(
+        printf '100 test 127.0.0.1:4100\n200 external 127.0.0.1:4200\n' |
+            filter_listening_ports_for_new_processes \
+                <(printf '100 1 test\n')
+    )"; then
+        die "listening port scope self-check execution failed"
+    fi
+    [[ "${scoped_ports}" == '100 test 127.0.0.1:4100' ]] ||
+        die "listening port scope self-check failed"
+    local ss_ports
+    ss_ports="$(
+        printf '%s\n' \
+            'LISTEN 0 128 127.0.0.1:4100 0.0.0.0:* users:(("test",pid=100,fd=3))' |
+            parse_ss_listening_ports
+    )"
+    [[ "${ss_ports}" == '100 test 127.0.0.1:4100' ]] ||
+        die "ss listening port parser self-check failed"
+    snapshot_build_daemons >/dev/null ||
+        die "build daemon audit is unavailable"
+    printf 'usb-async-lab self-check: PASS\n'
+}
+
+blocked_lab_command() {
+    local command_name="$1"
+    shift
+    local manifest=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --manifest)
+                [[ $# -ge 2 ]] || die "--manifest requires a path"
+                manifest="$(resolve_path "$2")"
+                shift 2
+                ;;
+            *)
+                shift
+                if [[ $# -gt 0 && "$1" != --* ]]; then
+                    shift
+                fi
+                ;;
+        esac
+    done
+    [[ -n "${manifest}" ]] || die "${command_name} requires --manifest"
+    validate_manifest "${manifest}"
+    printf '%s is blocked until B0-B4 are signed and real-device ' \
+        "${command_name}" >&2
+    printf 'operation is explicitly confirmed.\n' >&2
+    return 78
+}
+
+main() {
+    [[ $# -gt 0 ]] || {
+        usage
+        exit 2
+    }
+    local command_name="$1"
+    shift
+    case "${command_name}" in
+        host-test)
+            host_test "$@"
+            ;;
+        gradle-gate)
+            gradle_gate "$@"
+            ;;
+        resource-audit)
+            resource_audit "$@"
+            ;;
+        self-check)
+            self_check "$@"
+            ;;
+        qualify-explicit|qualify-implicit|canary|coverage-audit|rollback-drill)
+            blocked_lab_command "${command_name}" "$@"
+            ;;
+        -h|--help|help)
+            usage
+            ;;
+        *)
+            die "unknown command: ${command_name}"
+            ;;
+    esac
+}
+
+main "$@"

@@ -22,7 +22,7 @@ class UsbExclusivePcmWritePlannerTest {
     }
 
     @Test
-    fun `uses stabilized queue headroom when it is smaller than transfer window`() {
+    fun `uses capacity aware queue headroom when it is smaller than transfer window`() {
         val writeSize = UsbExclusivePcmWritePlanner.chooseWriteSize(
             remainingBytes = 65_536,
             inputSampleRate = 48_000,
@@ -30,7 +30,7 @@ class UsbExclusivePcmWritePlannerTest {
             nativeTransportStarted = true,
             playing = true,
             prerollMs = 300L,
-            metrics = metrics(pcmFreeBytes = 265_200L)
+            metrics = metrics(pcmFreeBytes = 155_760L)
         )
 
         assertEquals(11_760, writeSize)
@@ -60,7 +60,7 @@ class UsbExclusivePcmWritePlannerTest {
             nativeTransportStarted = true,
             playing = true,
             prerollMs = 300L,
-            metrics = metrics(pcmFreeBytes = 177_408L)
+            metrics = metrics(pcmFreeBytes = 140_000L)
         )
 
         assertEquals(0, writeSize)
@@ -90,7 +90,7 @@ class UsbExclusivePcmWritePlannerTest {
             )
         )
 
-        assertEquals(3_072, writeSize)
+        assertEquals(7_680, writeSize)
     }
 
     @Test
@@ -108,9 +108,9 @@ class UsbExclusivePcmWritePlannerTest {
                 subslotBytes = 2,
                 transferBytes = 768,
                 lastTransferBytes = 768,
-                pcmLevelBytes = 69_504,
+                pcmLevelBytes = 288_000,
                 pcmCapacityBytes = 576_000,
-                pcmFreeBytes = 506_496,
+                pcmFreeBytes = 288_000,
                 transportFailed = false,
                 running = true,
                 lastError = "none"
@@ -146,6 +146,88 @@ class UsbExclusivePcmWritePlannerTest {
         )
 
         assertEquals(15_360, writeSize)
+    }
+
+    @Test
+    fun `192 kHz 32 bit path reserves enough write budget for renderer cadence`() {
+        val writeSize = UsbExclusivePcmWritePlanner.chooseWriteSize(
+            remainingBytes = 65_536,
+            inputSampleRate = 192_000,
+            inputFrameBytes = 8,
+            nativeTransportStarted = true,
+            playing = true,
+            prerollMs = 80L,
+            metrics = UsbExclusiveRuntimeMetrics(
+                sampleRate = 192_000,
+                channelCount = 2,
+                subslotBytes = 4,
+                transferBytes = 3_200,
+                lastTransferBytes = 1_536,
+                pcmLevelBytes = 12_800L,
+                pcmCapacityBytes = 384_000L,
+                pcmFreeBytes = 371_200L,
+                playerZeroFillBytes = 1_536L,
+                transportFailed = false,
+                running = true,
+                lastError = "none"
+            )
+        )
+
+        assertEquals(32_000, writeSize)
+    }
+
+    @Test
+    fun `background high resolution queue keeps accepting writes below its reserve`() {
+        val writeSize = UsbExclusivePcmWritePlanner.chooseWriteSize(
+            remainingBytes = 65_536,
+            inputSampleRate = 192_000,
+            inputFrameBytes = 8,
+            nativeTransportStarted = true,
+            playing = true,
+            prerollMs = 80L,
+            metrics = UsbExclusiveRuntimeMetrics(
+                sampleRate = 192_000,
+                channelCount = 2,
+                subslotBytes = 4,
+                transferBytes = 3_200,
+                lastTransferBytes = 1_536,
+                pcmLevelBytes = 181_248L,
+                pcmCapacityBytes = 2_304_000L,
+                pcmFreeBytes = 2_122_752L,
+                transportFailed = false,
+                running = true,
+                lastError = "none"
+            )
+        )
+
+        assertEquals(30_720, writeSize)
+    }
+
+    @Test
+    fun `background high resolution queue stops at its 750 ms reserve`() {
+        val writeSize = UsbExclusivePcmWritePlanner.chooseWriteSize(
+            remainingBytes = 65_536,
+            inputSampleRate = 192_000,
+            inputFrameBytes = 8,
+            nativeTransportStarted = true,
+            playing = true,
+            prerollMs = 80L,
+            metrics = UsbExclusiveRuntimeMetrics(
+                sampleRate = 192_000,
+                channelCount = 2,
+                subslotBytes = 4,
+                transferBytes = 3_200,
+                lastTransferBytes = 1_536,
+                pcmLevelBytes = 1_152_000L,
+                pcmCapacityBytes = 2_304_000L,
+                pcmFreeBytes = 1_152_000L,
+                transportFailed = false,
+                running = true,
+                lastError = "none"
+            )
+        )
+
+        assertEquals(0, writeSize)
     }
 
     @Test

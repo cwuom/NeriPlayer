@@ -103,6 +103,7 @@ import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveWakeLock
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveErrorCode
 import moe.ouom.neriplayer.core.player.usb.transport.isRecoverableTransportFailure
 import moe.ouom.neriplayer.core.player.usb.transport.usbExclusiveErrorCode
+import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
 import moe.ouom.neriplayer.core.player.watchdog.cancelPlaybackStartupWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.clearActivePlaybackCandidates
 import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackStartupWatchdog
@@ -2233,6 +2234,7 @@ private fun PlayerManager.scheduleUsbExclusiveBackgroundAudit(reason: String) {
                     nativeState.streaming &&
                     !nativeState.transitioning
             if (shouldCheckFakeProgress) {
+                val metrics = nativeState.runtimeReport.usbRuntimeMetrics()
                 val decision = evaluateUsbExclusiveKeepAliveProgress(
                     previousHandle = lastAuditHandle,
                     currentHandle = nativeState.handle,
@@ -2244,6 +2246,9 @@ private fun PlayerManager.scheduleUsbExclusiveBackgroundAudit(reason: String) {
                     currentZeroFillBytes = nativeState.playerZeroFillBytes,
                     previousOutputPeak = lastAuditOutputPeak,
                     currentOutputPeak = nativeState.lastOutputPeak,
+                    outputSampleRate = metrics.sampleRate ?: 0,
+                    outputFrameBytes = metrics.outputFrameBytes ?: 0,
+                    currentPcmLevelBytes = metrics.pcmLevelBytes ?: -1L,
                     previousStallTicks = auditStallTicks,
                     recoveryTicks = 1
                 )

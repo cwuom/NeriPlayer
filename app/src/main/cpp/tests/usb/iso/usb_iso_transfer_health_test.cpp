@@ -4,6 +4,7 @@
 
 int main() {
     using neri::usb::kIsoPacketErrorFailureScore;
+    using neri::usb::completedIsoPacketBytes;
     using neri::usb::shouldFailForIsoPacketErrors;
     using neri::usb::updateIsoPacketErrorScore;
 
@@ -22,6 +23,12 @@ int main() {
 
     score = updateIsoPacketErrorScore(kIsoPacketErrorFailureScore, 0);
     assert(score == kIsoPacketErrorFailureScore - 1);
+
+    assert(completedIsoPacketBytes(true, 192, 192) == 192);
+    assert(completedIsoPacketBytes(true, 192, 96) == 96);
+    assert(completedIsoPacketBytes(true, 192, 384) == 192);
+    assert(completedIsoPacketBytes(true, 192, 0) == 0);
+    assert(completedIsoPacketBytes(false, 192, 192) == 0);
 
     return 0;
 }

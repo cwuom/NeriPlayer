@@ -208,11 +208,13 @@ Current positioning:
 - **Highly personalized, beyond theme colors**:
   `AutoSettingsSchema` covers dynamic colors, seed colors, palette style,
   auto/light/dark mode, UI scaling, custom backgrounds, lyric font size,
-  lyric blur, two-level advanced blur, the fluid Now Playing background,
+  lyric blur, two-level advanced blur, Coherent Feedback, the fluid Now Playing background,
   Home card toggles, default start
   destination, haptic feedback, and custom song title/artist/cover metadata.
-  Enhanced Advanced Blur is off by default and is available only on Android 13+
-  while its parent blur setting is enabled. It adds shared live-glass material to
+  Enhanced Advanced Blur and Coherent Feedback are off by default. With Coherent
+  Feedback off, playlist and related detail pages use a drawer-style transition.
+  Enhanced Advanced Blur is available only on Android 13+ while its parent blur
+  setting is enabled. It adds shared live-glass material to
   screen-level top tabs, the bottom tab bar, and structural settings cards without
   changing foreground content, layout, or touch targets. Its blur radius is adjustable
   from `12-64 dp`.
@@ -335,9 +337,9 @@ For release build and signing details, see
   device selection, sample-rate/bit-depth/buffer policies, compatibility toggles,
   and background-playback guidance. It also handles 32-bit PCM and software
   conversion from PCM float into the selected device format. When following the
-  track sample rate, native exclusive output does not change sample rate
-  implicitly; unsupported rates fall back to Android system output to avoid
-  low-quality resampling fatigue. If playback startup,
+  track sample rate, native exclusive output tries the exact source rate against
+  USB descriptors first, then tries a reported compatible rate when the exact
+  format is unavailable and compatibility fallback is enabled. If playback startup,
   native transfer backpressure, or foreground/background transitions become
   unhealthy, the app tries in-place reconfiguration, dynamic transfer scaling,
   and soft recovery before falling back to Android system output.
@@ -540,8 +542,8 @@ For release build and signing details, see
   **UAC2.0 Type I PCM** devices, with device selection, sample-rate/bit-depth/
   buffer policies, compatibility toggles, and background buffer tuning.
   It can use 32-bit PCM and software PCM-float conversion. Native exclusive
-  output does not change sample rate implicitly, so unsupported source rates
-  fall back to Android system output when following the track rate.
+  output tries the exact source rate first and only tries a reported compatible
+  rate when the exact format is unavailable and compatibility fallback is enabled.
   To reduce stuck states, the player layer also includes startup watchdogs,
   foreground/background health audits, keep-alive checks, in-place reconfiguration,
   dynamic transfer scaling, native-transfer backpressure recovery, and system-output fallback.

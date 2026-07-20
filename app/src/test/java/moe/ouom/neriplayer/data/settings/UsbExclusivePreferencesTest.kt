@@ -8,6 +8,18 @@ import org.junit.Test
 class UsbExclusivePreferencesTest {
 
     @Test
+    fun `high resolution usb sample rate modes round trip from storage`() {
+        assertEquals(
+            UsbExclusiveSampleRateMode.RATE_352800,
+            UsbExclusiveSampleRateMode.fromStorageValue("352800")
+        )
+        assertEquals(
+            UsbExclusiveSampleRateMode.RATE_384000,
+            UsbExclusiveSampleRateMode.fromStorageValue("384000")
+        )
+    }
+
+    @Test
     fun `defaults follow source and keep native path when conversion is needed`() {
         val preferences = UsbExclusivePreferences()
 
@@ -19,7 +31,7 @@ class UsbExclusivePreferencesTest {
             preferences.unsupportedFormatPolicy
         )
         assertEquals(
-            listOf(44_100, 48_000, 88_200, 96_000, 176_400, 192_000),
+            listOf(44_100, 48_000, 88_200, 96_000, 176_400, 192_000, 352_800, 384_000),
             UsbExclusiveSampleRateMode.entries.mapNotNull { it.sampleRateHz }
         )
         assertEquals(
@@ -141,13 +153,13 @@ class UsbExclusivePreferencesTest {
     }
 
     @Test
-    fun `default policy rejects implicit follow source sample rate conversion`() {
+    fun `default policy resolves a compatible follow source sample rate`() {
         val resolved = UsbExclusivePreferences().resolveSampleRateHz(
             sourceSampleRateHz = 96_000,
             supportedSampleRatesHz = listOf(48_000)
         )
 
-        assertNull(resolved)
+        assertEquals(48_000, resolved)
     }
 
     @Test
@@ -233,31 +245,31 @@ class UsbExclusivePreferencesTest {
     }
 
     @Test
-    fun `follow source closest rejects 44100 family sample rate conversion`() {
+    fun `follow source closest prefers the 44100 sample rate family`() {
         val preferences = UsbExclusivePreferences(
             unsupportedFormatPolicy = UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED
         )
 
-        assertNull(preferences.resolveSampleRateHz(44_100, listOf(48_000, 88_200)))
+        assertEquals(88_200, preferences.resolveSampleRateHz(44_100, listOf(48_000, 88_200)))
     }
 
     @Test
-    fun `follow source closest rejects 48000 family sample rate conversion`() {
+    fun `follow source closest prefers the 48000 sample rate family`() {
         val preferences = UsbExclusivePreferences(
             unsupportedFormatPolicy = UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED
         )
 
-        assertNull(preferences.resolveSampleRateHz(48_000, listOf(44_100, 96_000)))
+        assertEquals(96_000, preferences.resolveSampleRateHz(48_000, listOf(44_100, 96_000)))
     }
 
     @Test
-    fun `follow source closest rejects cross family sample rate fallback`() {
+    fun `follow source closest uses numeric fallback across sample rate families`() {
         val preferences = UsbExclusivePreferences(
             unsupportedFormatPolicy = UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED
         )
 
-        assertNull(preferences.resolveSampleRateHz(44_100, listOf(48_000, 96_000)))
-        assertNull(preferences.resolveSampleRateHz(48_000, listOf(44_100, 88_200)))
+        assertEquals(48_000, preferences.resolveSampleRateHz(44_100, listOf(48_000, 96_000)))
+        assertEquals(44_100, preferences.resolveSampleRateHz(48_000, listOf(44_100, 88_200)))
     }
 
     @Test
@@ -274,12 +286,12 @@ class UsbExclusivePreferencesTest {
     }
 
     @Test
-    fun `follow source rejects unknown sample rate family`() {
+    fun `unknown sample rate family uses deterministic numeric fallback`() {
         val preferences = UsbExclusivePreferences(
             unsupportedFormatPolicy = UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED
         )
 
-        assertNull(preferences.resolveSampleRateHz(46_050, listOf(44_100, 48_000)))
+        assertEquals(48_000, preferences.resolveSampleRateHz(46_050, listOf(44_100, 48_000)))
     }
 
     @Test

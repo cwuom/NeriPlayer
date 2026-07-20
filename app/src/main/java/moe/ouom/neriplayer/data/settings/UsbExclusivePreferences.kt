@@ -30,7 +30,9 @@ enum class UsbExclusiveSampleRateMode(
     RATE_88200("88200", 88_200),
     RATE_96000("96000", 96_000),
     RATE_176400("176400", 176_400),
-    RATE_192000("192000", 192_000);
+    RATE_192000("192000", 192_000),
+    RATE_352800("352800", 352_800),
+    RATE_384000("384000", 384_000);
 
     fun requestedSampleRateHz(sourceSampleRateHz: Int): Int? {
         return sampleRateHz ?: sourceSampleRateHz.takeIf { it > 0 }
@@ -125,9 +127,16 @@ data class UsbExclusivePreferences(
         }
         if (
             sampleRateMode == UsbExclusiveSampleRateMode.FOLLOW_SOURCE &&
+            unsupportedFormatPolicy == UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED &&
             requested !in normalizedSupported
         ) {
-            return null
+            val sourceFamily = sampleRateFamily(requested)
+            if (sourceFamily != null) {
+                normalizedSupported
+                    .filter { sampleRateFamily(it) == sourceFamily }
+                    .nearestTo(requested)
+                    ?.let { return it }
+            }
         }
         return resolveSupportedValue(
             requested = requested,
@@ -335,6 +344,14 @@ private fun Collection<Int>.nearestTo(requested: Int): Int? {
         compareBy<Int> { abs(it.toLong() - requested.toLong()) }
             .thenByDescending { it }
     )
+}
+
+private fun sampleRateFamily(sampleRateHz: Int): Int? {
+    return when {
+        sampleRateHz > 0 && sampleRateHz % 44_100 == 0 -> 44_100
+        sampleRateHz > 0 && sampleRateHz % 48_000 == 0 -> 48_000
+        else -> null
+    }
 }
 
 private fun <T : Enum<T>> Iterable<T>.findStoredValue(

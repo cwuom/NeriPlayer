@@ -30,7 +30,8 @@ data class PlaybackCommand(
 internal data class PlaybackStartPlan(
     val useFadeIn: Boolean,
     val fadeDurationMs: Long,
-    val initialVolume: Float
+    val initialVolume: Float,
+    val allowUsbExclusiveFade: Boolean = false
 )
 
 internal data class PauseVolumePlan(
@@ -55,17 +56,20 @@ internal data class YouTubeWarmupTargets(
 }
 
 internal const val RESTORED_PLAYBACK_PROTECTION_FADE_DURATION_MS = 1000L
+internal const val USB_TRACK_TRANSITION_PROTECTION_FADE_DURATION_MS = 20L
 
 internal fun resolvePlaybackStartPlan(
     shouldFadeIn: Boolean,
-    fadeDurationMs: Long
+    fadeDurationMs: Long,
+    allowUsbExclusiveFade: Boolean = false
 ): PlaybackStartPlan {
     val normalizedDurationMs = fadeDurationMs.coerceAtLeast(0L)
     val useFadeIn = shouldFadeIn && normalizedDurationMs > 0L
     return PlaybackStartPlan(
         useFadeIn = useFadeIn,
         fadeDurationMs = normalizedDurationMs,
-        initialVolume = if (useFadeIn) 0f else 1f
+        initialVolume = if (useFadeIn) 0f else 1f,
+        allowUsbExclusiveFade = allowUsbExclusiveFade
     )
 }
 
@@ -74,9 +78,11 @@ internal fun resolveManagedPlaybackStartPlan(
     playbackFadeInDurationMs: Long,
     playbackCrossfadeInDurationMs: Long,
     useTrackTransitionFade: Boolean = false,
+    useUsbTransitionProtection: Boolean = false,
     forceStartupProtectionFade: Boolean = false
 ): PlaybackStartPlan {
     val targetDurationMs = when {
+        useUsbTransitionProtection -> USB_TRACK_TRANSITION_PROTECTION_FADE_DURATION_MS
         useTrackTransitionFade -> playbackCrossfadeInDurationMs
         forceStartupProtectionFade && playbackFadeInEnabled ->
             maxOf(
@@ -87,11 +93,24 @@ internal fun resolveManagedPlaybackStartPlan(
         else -> playbackFadeInDurationMs
     }
     return resolvePlaybackStartPlan(
-        shouldFadeIn = useTrackTransitionFade ||
+        shouldFadeIn = useUsbTransitionProtection ||
+            useTrackTransitionFade ||
             playbackFadeInEnabled ||
             forceStartupProtectionFade,
-        fadeDurationMs = targetDurationMs
+        fadeDurationMs = targetDurationMs,
+        allowUsbExclusiveFade = useUsbTransitionProtection
     )
+}
+
+internal fun resolveEffectivePlaybackStartPlan(
+    plan: PlaybackStartPlan,
+    usbExclusivePlaybackEnabled: Boolean
+): PlaybackStartPlan {
+    return if (usbExclusivePlaybackEnabled && !plan.allowUsbExclusiveFade) {
+        plan.copy(useFadeIn = false, fadeDurationMs = 0L, initialVolume = 1f)
+    } else {
+        plan
+    }
 }
 
 internal fun resolvePlaybackContinuationStartPlan(
