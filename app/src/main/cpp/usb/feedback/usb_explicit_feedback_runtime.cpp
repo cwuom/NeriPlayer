@@ -49,6 +49,21 @@ FeedbackClockConfig clockConfig(int64_t expectedReportPeriodNs) {
     };
 }
 
+int64_t longGapReacquisitionThresholdNs(int64_t expectedReportPeriodNs) {
+    if (expectedReportPeriodNs <= 0) {
+        return std::numeric_limits<int64_t>::max();
+    }
+    const FeedbackClockConfig config = clockConfig(expectedReportPeriodNs);
+    const uint64_t periods = static_cast<uint64_t>(config.softMissPeriods) +
+        static_cast<uint64_t>(config.hardHoldoverPeriods);
+    const uint64_t expectedPeriod = static_cast<uint64_t>(expectedReportPeriodNs);
+    const uint64_t maximum = static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
+    if (periods == 0 || expectedPeriod > maximum / periods) {
+        return std::numeric_limits<int64_t>::max();
+    }
+    return static_cast<int64_t>(expectedPeriod * periods);
+}
+
 bool configurationValid(const ExplicitFeedbackRuntimeConfig& config) {
     return config.generation > 0 &&
         isFeedbackDecodeProfileSupported(config.decodeProfile) &&
@@ -77,6 +92,7 @@ bool ExplicitFeedbackRuntime::configure(
     transferErrors_ = 0;
     staleCallbacks_ = 0;
     consecutiveTransferErrors_ = 0;
+    longGapReacquisitions_ = 0;
     lastRawValue_ = 0;
     lastPayloadBytes_ = 0;
     hasTerminalGateSnapshot_ = false;
@@ -216,6 +232,11 @@ bool ExplicitFeedbackRuntime::onFeedbackInCompletion(
                 decoded.sample.payloadBytesActual
             );
 
+            if (shouldReacquireAfterLongGapLocked(completion.receivedAtNs) &&
+                !restartAcquisitionLocked(completion.receivedAtNs)) {
+                return failLocked(ExplicitFeedbackRuntimeFailure::InternalInvariant);
+            }
+
             const FeedbackEstimateResult estimate = estimator_.ingest(
                 decoded.sample.normalized
             );
@@ -278,6 +299,7 @@ ExplicitFeedbackRuntimeSnapshot ExplicitFeedbackRuntime::snapshot() const {
         transferErrors_,
         staleCallbacks_,
         consecutiveTransferErrors_,
+        longGapReacquisitions_,
         lastRawValue_,
         lastPayloadBytes_,
         estimator_.snapshot(),
@@ -300,6 +322,42 @@ bool ExplicitFeedbackRuntime::failLocked(
     state_ = ExplicitFeedbackRuntimeState::Failed;
     gate_.stop();
     return false;
+}
+
+bool ExplicitFeedbackRuntime::shouldReacquireAfterLongGapLocked(
+    int64_t receivedAtNs
+) const {
+    const FeedbackStreamGateSnapshot snapshot = gate_.snapshot();
+    const int64_t lastValidSampleNs = snapshot.clock.lastValidSampleNs;
+    if (!snapshot.running || !snapshot.realPcmReleased || receivedAtNs < 0 ||
+        lastValidSampleNs < 0 || receivedAtNs < lastValidSampleNs) {
+        return false;
+    }
+    const int64_t thresholdNs = longGapReacquisitionThresholdNs(
+        config_.expectedReportPeriodNs
+    );
+    return receivedAtNs - lastValidSampleNs >= thresholdNs;
+}
+
+bool ExplicitFeedbackRuntime::restartAcquisitionLocked(int64_t startedAtNs) {
+    estimator_.reset();
+    gate_.stop();
+    if (!gate_.configure(
+            clockConfig(config_.expectedReportPeriodNs),
+            config_.nominalRateQ32,
+            config_.frameBytes,
+            config_.endpointCapacityBytes,
+            config_.bootstrapPacketLimit
+        ) || gate_.start(startedAtNs) != FeedbackMathStatus::Ok) {
+        return false;
+    }
+    incrementSaturated(&longGapReacquisitions_);
+    consecutiveTransferErrors_ = 0;
+    reusableAfterStop_ = false;
+    hasTerminalGateSnapshot_ = false;
+    terminalGateSnapshot_ = {};
+    state_ = ExplicitFeedbackRuntimeState::Acquiring;
+    return true;
 }
 
 void ExplicitFeedbackRuntime::updateStateLocked() {

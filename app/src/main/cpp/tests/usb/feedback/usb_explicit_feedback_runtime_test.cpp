@@ -232,6 +232,74 @@ void toleratesAndroidSchedulingGapAndRelocks() {
     assert(snapshot.gate.clock.holdoverTotalNs == expectedHoldoverNs);
 }
 
+void reacquiresAfterLongSchedulingGapWithValidFeedback() {
+    ExplicitFeedbackRuntime runtime;
+    configureRuntime(&runtime);
+    assert(runtime.start(0));
+
+    constexpr std::array<uint8_t, 4> twelveFrames { 0x00, 0x00, 0x0C, 0x00 };
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 1, 500'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 2, 1'000'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 3, 1'500'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    assert(runtime.nextPacket(true).status == StreamGatePacketStatus::PlayerPacket);
+
+    constexpr int64_t resumedAtNs = 2'000'000'000;
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 4, resumedAtNs, twelveFrames.data(), twelveFrames.size()
+    )));
+    auto snapshot = runtime.snapshot();
+    assert(!snapshot.terminalFailure);
+    assert(snapshot.state == ExplicitFeedbackRuntimeState::Acquiring);
+    assert(!snapshot.realPcmReleased);
+    assert(snapshot.longGapReacquisitions == 1U);
+    const auto bootstrap = runtime.nextPacket(true);
+    assert(bootstrap.status == StreamGatePacketStatus::ZeroBootstrap);
+    assert(bootstrap.allZero);
+
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 5, resumedAtNs + 500'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 6, resumedAtNs + 1'000'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    snapshot = runtime.snapshot();
+    assert(!snapshot.terminalFailure);
+    assert(snapshot.gate.clock.state == FeedbackClockState::Locked);
+    assert(snapshot.longGapReacquisitions == 1U);
+    assert(runtime.nextPacket(true).status == StreamGatePacketStatus::PlayerPacket);
+}
+
+void longSchedulingGapWithoutValidFeedbackStillFailsClosed() {
+    ExplicitFeedbackRuntime runtime;
+    configureRuntime(&runtime);
+    assert(runtime.start(0));
+
+    constexpr std::array<uint8_t, 4> twelveFrames { 0x00, 0x00, 0x0C, 0x00 };
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 1, 500'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 2, 1'000'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 3, 1'500'000, twelveFrames.data(), twelveFrames.size()
+    )));
+
+    assert(!runtime.onFeedbackInCompletion(completion(
+        7, 4, 2'000'000'000, nullptr, 0
+    )));
+    const auto snapshot = runtime.snapshot();
+    assert(snapshot.terminalFailure);
+    assert(snapshot.failure == ExplicitFeedbackRuntimeFailure::FeedbackClock);
+    assert(snapshot.longGapReacquisitions == 0U);
+}
+
 } // namespace
 
 int main() {
@@ -241,5 +309,7 @@ int main() {
     ignoresStaleGenerationWithoutPoisoningCurrentStream();
     acquireTimeoutFailsClosed();
     toleratesAndroidSchedulingGapAndRelocks();
+    reacquiresAfterLongSchedulingGapWithValidFeedback();
+    longSchedulingGapWithoutValidFeedbackStillFailsClosed();
     return 0;
 }

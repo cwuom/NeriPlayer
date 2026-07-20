@@ -64,6 +64,26 @@ import moe.ouom.neriplayer.core.player.usb.transport.valueAfter
 import moe.ouom.neriplayer.core.player.usb.transport.withLivePcmFreeBytes
 import moe.ouom.neriplayer.core.logging.NPLogger
 
+internal enum class UsbExclusivePreWriteResult {
+    Ready,
+    RecoveryScheduled,
+    TransportFailed
+}
+
+internal fun prepareUsbExclusiveNativeWrite(
+    executePendingRecovery: () -> Boolean,
+    resumeTransport: () -> Boolean
+): UsbExclusivePreWriteResult {
+    if (executePendingRecovery()) {
+        return UsbExclusivePreWriteResult.RecoveryScheduled
+    }
+    return if (resumeTransport()) {
+        UsbExclusivePreWriteResult.Ready
+    } else {
+        UsbExclusivePreWriteResult.TransportFailed
+    }
+}
+
 @UnstableApi
 internal class UsbExclusiveAudioSink(
     private val context: Context,
@@ -311,9 +331,18 @@ internal class UsbExclusiveAudioSink(
             UsbExclusiveAudioPathTracker.updatePlaying(playing = true, usingNative = true)
         }
         ensureUrgentAudioThreadPriority()
-        if (!resumeQueuedNativeTransportBeforeWrite()) {
-            requestSystemFailover("native_resume_before_write_failed")
-            return false
+        when (
+            prepareUsbExclusiveNativeWrite(
+                executePendingRecovery = ::executeNativeRecoveryActionIfNeeded,
+                resumeTransport = ::resumeQueuedNativeTransportBeforeWrite
+            )
+        ) {
+            UsbExclusivePreWriteResult.Ready -> Unit
+            UsbExclusivePreWriteResult.RecoveryScheduled -> return false
+            UsbExclusivePreWriteResult.TransportFailed -> {
+                requestSystemFailover("native_resume_before_write_failed")
+                return false
+            }
         }
 
         if (startMediaTimeUs == C.TIME_UNSET || discontinuityExpected) {
@@ -440,9 +469,6 @@ internal class UsbExclusiveAudioSink(
         lastShortFocusNativeRestartAtMs = 0L
         nativeHasQueuedPcm = true
 
-        if (executeNativeRecoveryActionIfNeeded()) {
-            return false
-        }
         if (recoverNativePlaybackAfterAudioQualityDegradationIfNeeded()) {
             return false
         }
@@ -1708,8 +1734,20 @@ internal class UsbExclusiveAudioSink(
 
     private fun requestSystemFailover(reason: String) {
         if (failoverRequested) return
-        val runtimeReport = UsbExclusiveSessionController.state.value.runtimeReport
+        val runtimeReport = if (usingNative && nativeHandle != 0L) {
+            UsbExclusiveSessionController.runtimeReportForWritePlanning(nativeHandle)
+        } else {
+            UsbExclusiveSessionController.state.value.runtimeReport
+        }
         if (reason.isHighRiskUsbTransferFailure() || runtimeReport.requiresNativeCloseForTransferFailure()) {
+            if (
+                executeNativeRecoveryActionIfNeeded(
+                    runtimeReport = runtimeReport,
+                    metrics = runtimeReport.usbRuntimeMetrics()
+                )
+            ) {
+                return
+            }
             requestNativeFailureStop(reason, runtimeReport)
             return
         }

@@ -5715,6 +5715,9 @@ Java_moe_ouom_neriplayer_core_player_usb_transport_UsbExclusiveNativeBridge_nati
         v2Snapshot.feedbackHoldoverTotalMs = explicitFeedback
             ? reportCounter(feedbackHoldoverTotalNs / UINT64_C(1000000))
             : 0;
+        v2Snapshot.feedbackLongGapReacquisitions = explicitFeedback
+            ? reportCounter(feedbackRuntime.longGapReacquisitions)
+            : 0;
         v2Snapshot.feedbackLastAgeMs = explicitFeedback
             ? feedbackLastAgeMs
             : 0;

@@ -9,6 +9,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.exoplayer.audio.AudioSink
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.After
 import org.junit.Test
@@ -71,6 +72,63 @@ class UsbExclusiveAudioSinkTest {
         )
 
         assertTrue(sink.supportsFormat(rawFloatPcmFormat()))
+    }
+
+    @Test
+    fun `pending native recovery runs before old transport resume`() {
+        val calls = mutableListOf<String>()
+
+        val result = prepareUsbExclusiveNativeWrite(
+            executePendingRecovery = {
+                calls += "recovery"
+                true
+            },
+            resumeTransport = {
+                calls += "resume"
+                true
+            }
+        )
+
+        assertEquals(UsbExclusivePreWriteResult.RecoveryScheduled, result)
+        assertEquals(listOf("recovery"), calls)
+    }
+
+    @Test
+    fun `old transport resumes only when no recovery action is pending`() {
+        val calls = mutableListOf<String>()
+
+        val result = prepareUsbExclusiveNativeWrite(
+            executePendingRecovery = {
+                calls += "recovery"
+                false
+            },
+            resumeTransport = {
+                calls += "resume"
+                true
+            }
+        )
+
+        assertEquals(UsbExclusivePreWriteResult.Ready, result)
+        assertEquals(listOf("recovery", "resume"), calls)
+    }
+
+    @Test
+    fun `failed old transport resume is reported after recovery check`() {
+        val calls = mutableListOf<String>()
+
+        val result = prepareUsbExclusiveNativeWrite(
+            executePendingRecovery = {
+                calls += "recovery"
+                false
+            },
+            resumeTransport = {
+                calls += "resume"
+                false
+            }
+        )
+
+        assertEquals(UsbExclusivePreWriteResult.TransportFailed, result)
+        assertEquals(listOf("recovery", "resume"), calls)
     }
 
     private fun rawPcmFormat(): Format = Format.Builder()

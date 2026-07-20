@@ -56,6 +56,7 @@ struct ExplicitFeedbackRuntimeSnapshot {
     uint64_t transferErrors = 0;
     uint64_t staleCallbacks = 0;
     uint32_t consecutiveTransferErrors = 0;
+    uint64_t longGapReacquisitions = 0;
     uint64_t lastRawValue = 0;
     uint32_t lastPayloadBytes = 0;
     FeedbackEstimatorSnapshot estimator;
@@ -78,6 +79,8 @@ public:
 
 private:
     bool failLocked(ExplicitFeedbackRuntimeFailure failure);
+    bool shouldReacquireAfterLongGapLocked(int64_t receivedAtNs) const;
+    bool restartAcquisitionLocked(int64_t startedAtNs);
     void updateStateLocked();
     bool handleRejectedSampleLocked(int64_t receivedAtNs);
     static void incrementSaturated(uint64_t* value);
@@ -97,6 +100,7 @@ private:
     uint64_t transferErrors_ = 0;
     uint64_t staleCallbacks_ = 0;
     uint32_t consecutiveTransferErrors_ = 0;
+    uint64_t longGapReacquisitions_ = 0;
     uint64_t lastRawValue_ = 0;
     uint32_t lastPayloadBytes_ = 0;
     bool hasTerminalGateSnapshot_ = false;

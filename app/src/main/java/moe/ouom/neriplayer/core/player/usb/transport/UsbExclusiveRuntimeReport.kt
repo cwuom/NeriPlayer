@@ -106,6 +106,7 @@ data class UsbExclusiveRuntimeMetrics(
     val feedbackRelockCount: Long? = null,
     val feedbackHoldoverCount: Long? = null,
     val feedbackHoldoverTotalMs: Long? = null,
+    val feedbackLongGapReacquisitions: Long? = null,
     val feedbackLastAgeMs: Long? = null,
     val feedbackClockFailure: UsbExclusiveFeedbackClockFailure =
         UsbExclusiveFeedbackClockFailure.None,
@@ -451,6 +452,7 @@ internal fun String.usbRuntimeMetrics(): UsbExclusiveRuntimeMetrics {
     val feedbackRelockCount = longField("feedbackRelockCount")
     val feedbackHoldoverCount = longField("feedbackHoldoverCount")
     val feedbackHoldoverTotalMs = longField("feedbackHoldoverTotalMs")
+    val feedbackLongGapReacquisitions = longField("feedbackLongGapReacquisitions")
     val feedbackLastAgeMs = longField("feedbackLastAgeMs")
     val feedbackClockFailure = field("feedbackClockFailure")?.let { raw ->
         raw.toUsbExclusiveFeedbackClockFailureOrNull().also { parsed ->
@@ -643,6 +645,7 @@ internal fun String.usbRuntimeMetrics(): UsbExclusiveRuntimeMetrics {
         feedbackRelockCount = feedbackRelockCount,
         feedbackHoldoverCount = feedbackHoldoverCount,
         feedbackHoldoverTotalMs = feedbackHoldoverTotalMs,
+        feedbackLongGapReacquisitions = feedbackLongGapReacquisitions,
         feedbackLastAgeMs = feedbackLastAgeMs,
         feedbackClockFailure = feedbackClockFailure,
         feedbackInFlight = feedbackInFlight,

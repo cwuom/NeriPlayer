@@ -36,6 +36,7 @@ bool countersAreValid(const UsbRuntimeReportV2Snapshot& snapshot) {
         snapshot.feedbackRelockCount >= 0 &&
         snapshot.feedbackHoldoverCount >= 0 &&
         snapshot.feedbackHoldoverTotalMs >= 0 &&
+        snapshot.feedbackLongGapReacquisitions >= 0 &&
         snapshot.feedbackLastAgeMs >= 0 &&
         snapshot.feedbackInFlight >= 0 &&
         snapshot.feedbackTransferErrors >= 0 &&
@@ -255,6 +256,8 @@ bool buildUsbRuntimeReportV2Fields(
         << " feedbackRelockCount=" << snapshot.feedbackRelockCount
         << " feedbackHoldoverCount=" << snapshot.feedbackHoldoverCount
         << " feedbackHoldoverTotalMs=" << snapshot.feedbackHoldoverTotalMs
+        << " feedbackLongGapReacquisitions="
+        << snapshot.feedbackLongGapReacquisitions
         << " feedbackLastAgeMs=" << snapshot.feedbackLastAgeMs
         << " feedbackClockFailure=" << snapshot.feedbackClockFailure
         << " feedbackInFlight=" << snapshot.feedbackInFlight

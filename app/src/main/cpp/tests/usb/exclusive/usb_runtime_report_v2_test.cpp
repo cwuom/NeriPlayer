@@ -113,6 +113,7 @@ void verifiesExplicitFeedbackReport() {
     snapshot.feedbackRateHz = 24.0;
     snapshot.feedbackValidSamples = 32;
     snapshot.feedbackLockCount = 1;
+    snapshot.feedbackLongGapReacquisitions = 2;
     snapshot.feedbackInFlight = 4;
     snapshot.feedbackReady = true;
     snapshot.feedbackReusable = true;
@@ -124,6 +125,7 @@ void verifiesExplicitFeedbackReport() {
     assert(report.find("feedbackEndpoint=0x84") != std::string::npos);
     assert(report.find("feedbackState=Locked") != std::string::npos);
     assert(report.find("feedbackValidSamples=32") != std::string::npos);
+    assert(report.find("feedbackLongGapReacquisitions=2") != std::string::npos);
     assert(report.find("feedbackClockFailure=holdover_timeout") != std::string::npos);
     assert(report.find("feedbackInFlight=4") != std::string::npos);
 }
