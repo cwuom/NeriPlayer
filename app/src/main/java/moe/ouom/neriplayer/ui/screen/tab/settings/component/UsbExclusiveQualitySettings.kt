@@ -32,11 +32,14 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.debug.UsbExclusiveDiagnosticsSnapshot
+import moe.ouom.neriplayer.data.settings.MAX_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS
 import moe.ouom.neriplayer.data.settings.MAX_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
 import moe.ouom.neriplayer.data.settings.MAX_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS
+import moe.ouom.neriplayer.data.settings.MIN_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS
 import moe.ouom.neriplayer.data.settings.MIN_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
 import moe.ouom.neriplayer.data.settings.MIN_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS
 import moe.ouom.neriplayer.data.settings.USB_EXCLUSIVE_BUFFER_STEP_MS
+import moe.ouom.neriplayer.data.settings.USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_STEP_DB
 import moe.ouom.neriplayer.data.settings.UsbExclusiveBitDepthMode
 import moe.ouom.neriplayer.data.settings.UsbExclusiveBufferProfile
 import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
@@ -44,6 +47,7 @@ import moe.ouom.neriplayer.data.settings.UsbExclusiveSampleRateMode
 import moe.ouom.neriplayer.data.settings.UsbExclusiveUnsupportedFormatPolicy
 import moe.ouom.neriplayer.data.settings.normalizeUsbExclusiveBackgroundBufferMs
 import moe.ouom.neriplayer.data.settings.normalizeUsbExclusiveForegroundBufferMs
+import moe.ouom.neriplayer.data.settings.normalizeUsbExclusiveVolumeRiskThresholdDbfs
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
@@ -62,7 +66,8 @@ internal fun UsbExclusiveQualityContent(
     onBitDepthCompatibilityChange: (Boolean) -> Unit,
     onChannelCompatibilityChange: (Boolean) -> Unit,
     onForegroundBufferMsChange: (Int) -> Unit,
-    onBackgroundBufferMsChange: (Int) -> Unit
+    onBackgroundBufferMsChange: (Int) -> Unit,
+    onVolumeRiskThresholdDbfsChange: (Int) -> Unit
 ) {
     val context = LocalContext.current
     var activeDialog by remember { mutableStateOf<UsbQualityDialog?>(null) }
@@ -120,22 +125,44 @@ internal fun UsbExclusiveQualityContent(
         onCheckedChange = onChannelCompatibilityChange
     )
     SettingsDivider()
-    UsbBufferSliderItem(
+    UsbNumericSliderItem(
         title = stringResource(R.string.settings_usb_exclusive_foreground_buffer),
-        bufferMs = preferences.foregroundBufferMs,
-        minBufferMs = MIN_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS,
-        maxBufferMs = MAX_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS,
-        normalizeBufferMs = ::normalizeUsbExclusiveForegroundBufferMs,
-        onBufferChange = onForegroundBufferMsChange
+        value = preferences.foregroundBufferMs,
+        minValue = MIN_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS,
+        maxValue = MAX_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS,
+        step = USB_EXCLUSIVE_BUFFER_STEP_MS,
+        normalizeValue = ::normalizeUsbExclusiveForegroundBufferMs,
+        valueLabel = { value ->
+            stringResource(R.string.settings_usb_exclusive_buffer_ms, value)
+        },
+        onValueChange = onForegroundBufferMsChange
     )
     SettingsDivider()
-    UsbBufferSliderItem(
+    UsbNumericSliderItem(
         title = stringResource(R.string.settings_usb_exclusive_background_buffer),
-        bufferMs = preferences.backgroundBufferMs,
-        minBufferMs = MIN_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
-        maxBufferMs = MAX_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
-        normalizeBufferMs = ::normalizeUsbExclusiveBackgroundBufferMs,
-        onBufferChange = onBackgroundBufferMsChange
+        value = preferences.backgroundBufferMs,
+        minValue = MIN_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
+        maxValue = MAX_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
+        step = USB_EXCLUSIVE_BUFFER_STEP_MS,
+        normalizeValue = ::normalizeUsbExclusiveBackgroundBufferMs,
+        valueLabel = { value ->
+            stringResource(R.string.settings_usb_exclusive_buffer_ms, value)
+        },
+        onValueChange = onBackgroundBufferMsChange
+    )
+    SettingsDivider()
+    UsbNumericSliderItem(
+        title = stringResource(R.string.settings_usb_exclusive_volume_risk_threshold),
+        value = preferences.volumeRiskThresholdDbfs,
+        minValue = MIN_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS,
+        maxValue = MAX_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS,
+        step = USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_STEP_DB,
+        normalizeValue = ::normalizeUsbExclusiveVolumeRiskThresholdDbfs,
+        valueLabel = { value ->
+            stringResource(R.string.settings_usb_exclusive_volume_risk_threshold_dbfs, value)
+        },
+        detail = stringResource(R.string.settings_usb_exclusive_volume_risk_threshold_desc),
+        onValueChange = onVolumeRiskThresholdDbfsChange
     )
     UsbDeviceCapabilities(snapshot)
 
@@ -222,21 +249,24 @@ private fun UsbCompatibilitySwitchItem(
 }
 
 @Composable
-private fun UsbBufferSliderItem(
+private fun UsbNumericSliderItem(
     title: String,
-    bufferMs: Int,
-    minBufferMs: Int,
-    maxBufferMs: Int,
-    normalizeBufferMs: (Int) -> Int,
-    onBufferChange: (Int) -> Unit
+    value: Int,
+    minValue: Int,
+    maxValue: Int,
+    step: Int,
+    normalizeValue: (Int) -> Int,
+    valueLabel: @Composable (Int) -> String,
+    detail: String? = null,
+    onValueChange: (Int) -> Unit
 ) {
-    var sliderValue by remember { mutableFloatStateOf(bufferMs.toFloat()) }
-    LaunchedEffect(bufferMs) {
-        if (sliderValue.roundToInt() != bufferMs) {
-            sliderValue = bufferMs.toFloat()
+    var sliderValue by remember { mutableFloatStateOf(value.toFloat()) }
+    LaunchedEffect(value) {
+        if (sliderValue.roundToInt() != value) {
+            sliderValue = value.toFloat()
         }
     }
-    val displayValue = normalizeBufferMs(sliderValue.roundToInt())
+    val displayValue = normalizeValue(sliderValue.roundToInt())
     ListItem(
         headlineContent = {
             Text(title)
@@ -244,24 +274,26 @@ private fun UsbBufferSliderItem(
         supportingContent = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    text = stringResource(
-                        R.string.settings_usb_exclusive_buffer_ms,
-                        displayValue
-                    ),
+                    text = valueLabel(displayValue),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
+                detail?.let { detailText ->
+                    Text(
+                        text = detailText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 MiuixSettingsSlider(
                     value = sliderValue,
                     onValueChange = { value ->
-                        sliderValue = normalizeBufferMs(value.roundToInt()).toFloat()
+                        sliderValue = normalizeValue(value.roundToInt()).toFloat()
                     },
-                    valueRange = minBufferMs.toFloat()..
-                        maxBufferMs.toFloat(),
-                    steps = ((maxBufferMs - minBufferMs) /
-                        USB_EXCLUSIVE_BUFFER_STEP_MS - 1).coerceAtLeast(0),
+                    valueRange = minValue.toFloat()..maxValue.toFloat(),
+                    steps = ((maxValue - minValue) / step - 1).coerceAtLeast(0),
                     onValueChangeFinished = {
-                        onBufferChange(normalizeBufferMs(sliderValue.roundToInt()))
+                        onValueChange(normalizeValue(sliderValue.roundToInt()))
                     }
                 )
             }

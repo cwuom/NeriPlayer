@@ -30,19 +30,16 @@ internal object StartupAudioFocusController {
             val focusGranted = request(
                 context = context,
                 reason = "usb_exclusive_guard:$reason",
-                focusGain = AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,
+                focusGain = AudioManager.AUDIOFOCUS_GAIN,
                 usbExclusiveGuard = true
             )
             UsbExclusiveSessionController.setPlayerFocusSuppressed(
-                suppressed = !focusGranted,
+                suppressed = false,
                 reason = "usb_exclusive_guard:$reason"
             )
-            if (!focusGranted) {
-                PlayerManager.pauseForUsbExclusiveFocusLoss(AudioManager.AUDIOFOCUS_LOSS)
-            }
             NPLogger.d(
                 TAG,
-                "USB exclusive holds transient exclusive audio focus granted=$focusGranted reason=$reason " +
+                "USB exclusive holds media audio focus granted=$focusGranted reason=$reason " +
                     "package=${context.applicationContext.packageName}"
             )
         } else if (hadGuard) {
@@ -106,17 +103,20 @@ internal object StartupAudioFocusController {
         val focusGranted = request(
             context = context,
             reason = "usb_exclusive_transport:$reason",
-            focusGain = AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE,
+            focusGain = AudioManager.AUDIOFOCUS_GAIN,
             usbExclusiveGuard = true
         )
         if (!focusGranted) {
             UsbExclusiveSessionController.setPlayerFocusSuppressed(
-                suppressed = true,
+                suppressed = false,
                 reason = "usb_exclusive_transport_denied:$reason"
             )
-            PlayerManager.pauseForUsbExclusiveFocusLoss(AudioManager.AUDIOFOCUS_LOSS)
+            NPLogger.w(
+                TAG,
+                "USB exclusive transport continues without Android audio focus reason=$reason"
+            )
         }
-        return focusGranted
+        return true
     }
 
     private fun request(
@@ -216,10 +216,10 @@ internal object StartupAudioFocusController {
                 hasFocus
             }
             if (usbExclusiveGuard) {
-                val suppressPlayerPcm = shouldSuppressUsbExclusiveForFocusChange(change)
-                if (suppressPlayerPcm) {
+                if (change != AudioManager.AUDIOFOCUS_GAIN) {
                     PlayerManager.markUsbExclusiveFocusDisrupted(change)
                 }
+                val suppressPlayerPcm = shouldSuppressUsbExclusiveForFocusChange(change)
                 if (shouldPauseUsbExclusiveForFocusChange(change)) {
                     PlayerManager.pauseForUsbExclusiveFocusLoss(change)
                 }
@@ -250,19 +250,9 @@ internal object StartupAudioFocusController {
 }
 
 internal fun shouldSuppressUsbExclusiveForFocusChange(change: Int): Boolean {
-    // USB DAC 是独立于系统音频路径的物理设备，瞬态焦点变化（通知、导航等）不应静音
-    return when (change) {
-        AudioManager.AUDIOFOCUS_GAIN -> false
-        AudioManager.AUDIOFOCUS_LOSS -> true
-        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> false
-        else -> false
-    }
+    return false
 }
 
 internal fun shouldPauseUsbExclusiveForFocusChange(change: Int): Boolean {
-    return when (change) {
-        AudioManager.AUDIOFOCUS_LOSS -> true
-        else -> false
-    }
+    return false
 }

@@ -35,6 +35,30 @@ class UsbExclusiveTransportStartPolicyTest {
     }
 
     @Test
+    fun `192 kHz fresh transport waits for stable startup waterline`() {
+        assertFalse(
+            shouldStartUsbExclusiveNativeTransport(
+                hasQueuedPcm = true,
+                queuedFrames = 15_360L,
+                requiredPrerollFrames = 57_600L,
+                pcmCapacityFrames = 76_800L,
+                allowShortPreroll = false,
+                resumingPausedTransport = false
+            )
+        )
+        assertTrue(
+            shouldStartUsbExclusiveNativeTransport(
+                hasQueuedPcm = true,
+                queuedFrames = 57_600L,
+                requiredPrerollFrames = 57_600L,
+                pcmCapacityFrames = 76_800L,
+                allowShortPreroll = false,
+                resumingPausedTransport = false
+            )
+        )
+    }
+
+    @Test
     fun `resume waits until at least one audio frame is queued`() {
         assertFalse(
             shouldStartUsbExclusiveNativeTransport(

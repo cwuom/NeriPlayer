@@ -74,6 +74,7 @@ internal fun UsbExclusiveSettingsSection(
     onChannelCompatibilityChange: (Boolean) -> Unit,
     onForegroundBufferMsChange: (Int) -> Unit,
     onBackgroundBufferMsChange: (Int) -> Unit,
+    onVolumeRiskThresholdDbfsChange: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current.applicationContext
@@ -139,7 +140,8 @@ internal fun UsbExclusiveSettingsSection(
                 onBitDepthCompatibilityChange = onBitDepthCompatibilityChange,
                 onChannelCompatibilityChange = onChannelCompatibilityChange,
                 onForegroundBufferMsChange = onForegroundBufferMsChange,
-                onBackgroundBufferMsChange = onBackgroundBufferMsChange
+                onBackgroundBufferMsChange = onBackgroundBufferMsChange,
+                onVolumeRiskThresholdDbfsChange = onVolumeRiskThresholdDbfsChange
             )
         }
 

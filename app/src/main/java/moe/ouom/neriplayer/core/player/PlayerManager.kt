@@ -31,6 +31,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioDeviceCallback
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Looper
 import android.os.Process
@@ -107,6 +108,12 @@ import moe.ouom.neriplayer.core.player.policy.storage.resolveRestorableLocalMedi
 import moe.ouom.neriplayer.core.player.policy.usb.UsbAudioSinkReconfigurationCoordinator
 import moe.ouom.neriplayer.core.player.policy.usb.UsbAudioSinkReconfigurationSnapshot
 import moe.ouom.neriplayer.core.player.policy.usb.UsbAudioSinkReconfigurationToken
+import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveLoudnessPeakSource
+import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveLoudPlaybackRisk
+import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveOutputDeviceClass
+import moe.ouom.neriplayer.core.player.policy.usb.estimateUsbExclusiveLoudness
+import moe.ouom.neriplayer.core.player.policy.usb.predictedUsbExclusivePlaybackGain
+import moe.ouom.neriplayer.core.player.policy.usb.shouldRequestUsbExclusiveLoudPlaybackWarning
 import moe.ouom.neriplayer.core.player.prefetch.GenericUrlPrefetchCache
 import moe.ouom.neriplayer.core.player.prefetch.PlaybackDemandArbiter
 import moe.ouom.neriplayer.core.player.prefetch.clearPlaybackDemandCacheKey
@@ -218,6 +225,23 @@ object PlayerManager {
     const val BILI_SOURCE_TAG = "Bilibili"
     const val NETEASE_SOURCE_TAG = "Netease"
 
+    internal data class UsbExclusiveLoudPlaybackConfirmation(
+        val id: Long,
+        val systemVolumePercent: Int,
+        val deviceClass: UsbExclusiveOutputDeviceClass,
+        val deviceName: String,
+        val estimatedPeakDbfs: Double,
+        val peakSource: UsbExclusiveLoudnessPeakSource,
+        val riskThresholdDbfs: Int,
+        val risk: UsbExclusiveLoudPlaybackRisk
+    )
+
+    private data class PendingUsbExclusiveLoudPlaybackConfirmation(
+        val confirmation: UsbExclusiveLoudPlaybackConfirmation,
+        val continuePlayback: () -> Unit,
+        val cancelPlayback: (() -> Unit)?
+    )
+
     @Volatile
     internal var initialized = false
 
@@ -291,6 +315,7 @@ object PlayerManager {
     internal var usbExclusiveOpenGatePlaybackJob: Job? = null
     internal var usbExclusiveForegroundRecoveryJob: Job? = null
     internal var usbExclusiveBackgroundAuditJob: Job? = null
+    internal var usbExclusiveDeviceReattachRecoveryJob: Job? = null
     internal var usbExclusiveRecoveryAttempts = 0
     internal var usbExclusiveInterruptedPlaybackIntent: UsbExclusiveInterruptedPlaybackIntent? = null
     @Volatile
@@ -349,7 +374,7 @@ object PlayerManager {
     internal var allowMixedPlaybackEnabled = false
 
     internal data class UsbExclusiveInterruptedPlaybackIntent(
-        val mediaItemIndex: Int,
+        val queueIndex: Int,
         val positionMs: Long,
         val requestToken: Long,
         val reason: String,
@@ -478,6 +503,15 @@ object PlayerManager {
 
     internal val _playerEventFlow = MutableSharedFlow<PlayerEvent>()
     val playerEventFlow: SharedFlow<PlayerEvent> = _playerEventFlow.asSharedFlow()
+
+    private val _usbExclusiveLoudPlaybackConfirmationFlow =
+        MutableStateFlow<UsbExclusiveLoudPlaybackConfirmation?>(null)
+    internal val usbExclusiveLoudPlaybackConfirmationFlow:
+        StateFlow<UsbExclusiveLoudPlaybackConfirmation?> =
+        _usbExclusiveLoudPlaybackConfirmationFlow
+    private var pendingUsbExclusiveLoudPlaybackConfirmation:
+        PendingUsbExclusiveLoudPlaybackConfirmation? = null
+    private var nextUsbExclusiveLoudPlaybackConfirmationId = 0L
 
     internal val _playbackCommandFlow = MutableSharedFlow<PlaybackCommand>(
         extraBufferCapacity = 32
@@ -1649,6 +1683,149 @@ object PlayerManager {
 
     internal fun postPlayerEvent(event: PlayerEvent) {
         ioScope.launch { _playerEventFlow.emit(event) }
+    }
+
+    internal fun requestUsbExclusiveLoudPlaybackConfirmation(
+        commandSource: PlaybackCommandSource,
+        bypassWarning: Boolean = false,
+        continuePlayback: () -> Unit,
+        cancelPlayback: (() -> Unit)? = null
+    ): Boolean {
+        if (bypassWarning) return false
+        val systemVolumePercent = currentSystemMediaVolumePercent() ?: run {
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "cannot read system media volume for USB loudness warning; use conservative full scale"
+            )
+            100
+        }
+        val playbackAlreadyAudible = isPlaybackAudibleForLoudnessWarning()
+        val loudnessEstimate = currentUsbExclusiveLoudnessEstimate(
+            systemVolumePercent = systemVolumePercent,
+            playbackAlreadyAudible = playbackAlreadyAudible
+        )
+        val outputRouteKey = currentAudioOutputRouteKey()
+        if (!shouldRequestUsbExclusiveLoudPlaybackWarning(
+                usbExclusiveEnabled = usbExclusivePlaybackEnabled,
+                appInForeground = usbExclusiveAppInForeground,
+                commandSource = commandSource,
+                playbackAlreadyAudible = playbackAlreadyAudible,
+                loudnessEstimate = loudnessEstimate
+            )
+        ) {
+            return false
+        }
+        val confirmation = UsbExclusiveLoudPlaybackConfirmation(
+            id = ++nextUsbExclusiveLoudPlaybackConfirmationId,
+            systemVolumePercent = systemVolumePercent,
+            deviceClass = loudnessEstimate.deviceClass,
+            deviceName = _currentAudioDevice.value?.name.orEmpty(),
+            estimatedPeakDbfs = loudnessEstimate.estimatedPeakDbfs,
+            peakSource = loudnessEstimate.peakSource,
+            riskThresholdDbfs = loudnessEstimate.riskThresholdDbfs,
+            risk = loudnessEstimate.risk
+        )
+        pendingUsbExclusiveLoudPlaybackConfirmation =
+            PendingUsbExclusiveLoudPlaybackConfirmation(
+                confirmation = confirmation,
+                continuePlayback = continuePlayback,
+                cancelPlayback = cancelPlayback
+            )
+        _usbExclusiveLoudPlaybackConfirmationFlow.value = confirmation
+        NPLogger.i(
+            "NERI-PlayerManager",
+            "defer manual USB playback for loud-volume confirmation: " +
+                "volumePercent=$systemVolumePercent peakDbfs=${loudnessEstimate.estimatedPeakDbfs} " +
+                "source=${loudnessEstimate.peakSource} " +
+                "thresholdDbfs=${loudnessEstimate.riskThresholdDbfs} " +
+                "risk=${loudnessEstimate.risk} route=$outputRouteKey"
+        )
+        return true
+    }
+
+    internal fun confirmUsbExclusiveLoudPlayback(confirmationId: Long) {
+        val pending = pendingUsbExclusiveLoudPlaybackConfirmation ?: return
+        if (pending.confirmation.id != confirmationId) return
+        pendingUsbExclusiveLoudPlaybackConfirmation = null
+        _usbExclusiveLoudPlaybackConfirmationFlow.value = null
+        NPLogger.i(
+            "NERI-PlayerManager",
+            "confirmed manual USB playback at peakDbfs=" +
+                pending.confirmation.estimatedPeakDbfs
+        )
+        pending.continuePlayback()
+    }
+
+    internal fun cancelUsbExclusiveLoudPlayback(confirmationId: Long) {
+        val pending = pendingUsbExclusiveLoudPlaybackConfirmation ?: return
+        if (pending.confirmation.id != confirmationId) return
+        pendingUsbExclusiveLoudPlaybackConfirmation = null
+        _usbExclusiveLoudPlaybackConfirmationFlow.value = null
+        pending.cancelPlayback?.invoke()
+        NPLogger.i(
+            "NERI-PlayerManager",
+            "cancelled manual USB playback loud-volume confirmation"
+        )
+    }
+
+    private fun currentSystemMediaVolumePercent(): Int? {
+        val audioManager = application.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            ?: return null
+        return runCatching {
+            val minVolume = audioManager.getStreamMinVolume(AudioManager.STREAM_MUSIC)
+            val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val range = maxVolume - minVolume
+            if (range <= 0) {
+                100
+            } else {
+                ((currentVolume - minVolume) * 100 / range).coerceIn(0, 100)
+            }
+        }.getOrNull()
+    }
+
+    private fun currentAudioOutputRouteKey(): String {
+        val device = _currentAudioDevice.value
+        val metrics = UsbExclusiveSessionController.state.value.runtimeReport.usbRuntimeMetrics()
+        val route = if (device == null) "unknown" else "${device.type}:${device.name}"
+        return "$route:${metrics.uacVersion ?: "uac_unknown"}:${metrics.candidateId ?: "candidate_unknown"}"
+    }
+
+    private fun currentUsbExclusiveLoudnessEstimate(
+        systemVolumePercent: Int,
+        playbackAlreadyAudible: Boolean
+    ) = run {
+        val nativeState = UsbExclusiveSessionController.state.value
+        val metrics = nativeState.runtimeReport.usbRuntimeMetrics()
+        val currentPlayerVolume = if (isPlayerInitialized()) {
+            runCatching { player.volume.coerceIn(0f, 1f) }
+                .getOrElse { UsbExclusiveAudioPathTracker.state.value.requestedVolume }
+        } else {
+            UsbExclusiveAudioPathTracker.state.value.requestedVolume
+        }
+        val playerVolume = predictedUsbExclusivePlaybackGain(
+            currentPlayerVolume = currentPlayerVolume,
+            playbackAlreadyAudible = playbackAlreadyAudible
+        )
+        val observedOutputPeak = if (playbackAlreadyAudible) {
+            metrics.lastOutputPeak?.takeIf { it.isFinite() && it > 0f }
+        } else {
+            null
+        }
+        estimateUsbExclusiveLoudness(
+            systemVolumePercent = systemVolumePercent,
+            playerVolume = playerVolume,
+            uacVersion = metrics.uacVersion,
+            outputSampleRate = metrics.sampleRate ?: nativeState.outputSampleRate,
+            outputBitDepth = metrics.subslotBytes?.times(8),
+            observedOutputPeak = observedOutputPeak,
+            riskThresholdDbfs = usbExclusivePreferences.volumeRiskThresholdDbfs
+        )
+    }
+
+    private fun isPlaybackAudibleForLoudnessWarning(): Boolean {
+        return _isPlayingFlow.value ||
+            (isPlayerInitialized() && runCatching { player.isPlaying }.getOrDefault(false))
     }
 
     internal fun emitPlaybackCommand(

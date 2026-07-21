@@ -1390,6 +1390,12 @@ fun SettingsScreen(
                                         .setUsbExclusiveBackgroundBufferMs(bufferMs)
                                 }
                             },
+                            onVolumeRiskThresholdDbfsChange = { thresholdDbfs ->
+                                scope.launch {
+                                    AppContainer.settingsRepo
+                                        .setUsbExclusiveVolumeRiskThresholdDbfs(thresholdDbfs)
+                                }
+                            },
                             modifier = Modifier.animateItem()
                         )
                     }

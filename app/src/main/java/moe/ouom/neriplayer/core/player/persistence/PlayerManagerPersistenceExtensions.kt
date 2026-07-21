@@ -582,7 +582,8 @@ internal suspend fun PlayerManager.getLyricsImpl(song: SongItem): List<LyricEntr
 
 internal fun PlayerManager.playFromQueueImpl(
     index: Int,
-    commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
+    commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL,
+    bypassLoudVolumeWarning: Boolean = false
 ) {
     ensureInitialized()
     if (!initialized) return
@@ -595,6 +596,20 @@ internal fun PlayerManager.playFromQueueImpl(
     )
     if (shouldBlockLocalRoomControl(commandSource) ||
         shouldBlockLocalSongSwitch(targetSong, commandSource)
+    ) {
+        return
+    }
+    if (requestUsbExclusiveLoudPlaybackConfirmation(
+            commandSource = commandSource,
+            bypassWarning = bypassLoudVolumeWarning,
+            continuePlayback = {
+                playFromQueueImpl(
+                    index = index,
+                    commandSource = commandSource,
+                    bypassLoudVolumeWarning = true
+                )
+            }
+        )
     ) {
         return
     }
@@ -616,7 +631,8 @@ internal fun PlayerManager.playFromQueueImpl(
 
 internal fun PlayerManager.replaceCurrentInQueueAndPlayImpl(
     song: SongItem,
-    commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
+    commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL,
+    bypassLoudVolumeWarning: Boolean = false
 ) {
     ensureInitialized()
     if (!initialized) return
@@ -632,6 +648,20 @@ internal fun PlayerManager.replaceCurrentInQueueAndPlayImpl(
 
     if (shouldBlockLocalRoomControl(commandSource) ||
         shouldBlockLocalSongSwitch(song, commandSource)
+    ) {
+        return
+    }
+    if (requestUsbExclusiveLoudPlaybackConfirmation(
+            commandSource = commandSource,
+            bypassWarning = bypassLoudVolumeWarning,
+            continuePlayback = {
+                replaceCurrentInQueueAndPlayImpl(
+                    song = song,
+                    commandSource = commandSource,
+                    bypassLoudVolumeWarning = true
+                )
+            }
+        )
     ) {
         return
     }

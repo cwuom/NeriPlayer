@@ -73,6 +73,10 @@ data class UsbExclusiveDiagnosticsSnapshot(
     val nativePlayerSignalBytes: Long,
     val nativeOutputPeak: Float,
     val nativeLastOutputPeak: Float,
+    val nativeChannel0OutputPeak: Float,
+    val nativeChannel1OutputPeak: Float,
+    val nativeLastChannel0OutputPeak: Float,
+    val nativeLastChannel1OutputPeak: Float,
     val requestedPath: String,
     val effectivePath: String,
     val fallbackReason: String?,
@@ -110,7 +114,9 @@ data class UsbExclusiveDiagnosticsSnapshot(
         appendLine(
             "nativeSignal: signalFrames=$nativePlayerSignalFrames " +
                 "silentFrames=$nativePlayerSilentFrames signalBytes=$nativePlayerSignalBytes " +
-                "outputPeak=$nativeOutputPeak lastOutputPeak=$nativeLastOutputPeak"
+                "outputPeak=$nativeOutputPeak lastOutputPeak=$nativeLastOutputPeak " +
+                "channelPeaks=$nativeChannel0OutputPeak/$nativeChannel1OutputPeak " +
+                "lastChannelPeaks=$nativeLastChannel0OutputPeak/$nativeLastChannel1OutputPeak"
         )
         appendLine("requestedPath=$requestedPath")
         appendLine("effectivePath=$effectivePath")
@@ -329,6 +335,10 @@ object UsbExclusiveDiagnostics {
             nativePlayerSignalBytes = nativeState.playerSignalBytes,
             nativeOutputPeak = nativeState.outputPeak,
             nativeLastOutputPeak = nativeState.lastOutputPeak,
+            nativeChannel0OutputPeak = nativeState.channel0OutputPeak,
+            nativeChannel1OutputPeak = nativeState.channel1OutputPeak,
+            nativeLastChannel0OutputPeak = nativeState.lastChannel0OutputPeak,
+            nativeLastChannel1OutputPeak = nativeState.lastChannel1OutputPeak,
             requestedPath = pathState.requestedPath,
             effectivePath = pathState.effectivePath,
             fallbackReason = pathState.fallbackReason,

@@ -114,6 +114,9 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
+import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveLoudPlaybackRisk
+import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveLoudnessPeakSource
+import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveOutputDeviceClass
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.service.canUseDirectPlaybackServiceStart
 import moe.ouom.neriplayer.core.startup.StartupStageFlow
@@ -459,6 +462,9 @@ class MainActivity : ComponentActivity() {
                             var errorMessage by remember { mutableStateOf("") }
                             val lifecycleOwner = LocalLifecycleOwner.current
                             val scope = rememberCoroutineScope()
+                            val loudPlaybackConfirmation by PlayerManager
+                                .usbExclusiveLoudPlaybackConfirmationFlow
+                                .collectAsStateWithLifecycle()
                             var joiningInvite by remember { mutableStateOf(false) }
                             val pendingInvite by listenTogetherInviteFlow.collectAsStateWithLifecycle()
                             val listenTogetherStatus by listenTogetherStatusFlow.collectAsStateWithLifecycle()
@@ -553,6 +559,107 @@ class MainActivity : ComponentActivity() {
                                 showListenTogetherStatusToast(
                                     message = displayNotice,
                                     atBottom = true
+                                )
+                            }
+
+                            loudPlaybackConfirmation?.let { confirmation ->
+                                val rawDeviceName = confirmation.deviceName
+                                    .takeIf(String::isNotBlank)
+                                    ?: stringResource(R.string.player_loud_volume_device_unknown)
+                                val deviceLabel = when (confirmation.deviceClass) {
+                                    UsbExclusiveOutputDeviceClass.Uac1 -> stringResource(
+                                        R.string.player_loud_volume_device_uac1,
+                                        rawDeviceName
+                                    )
+                                    UsbExclusiveOutputDeviceClass.Uac2 -> stringResource(
+                                        R.string.player_loud_volume_device_uac2,
+                                        rawDeviceName
+                                    )
+                                    UsbExclusiveOutputDeviceClass.Unknown -> stringResource(
+                                        R.string.player_loud_volume_device_unknown_usb,
+                                        rawDeviceName
+                                    )
+                                }
+                                val riskLabel = when (confirmation.risk) {
+                                    UsbExclusiveLoudPlaybackRisk.Elevated -> stringResource(
+                                        R.string.player_loud_volume_risk_elevated
+                                    )
+                                    UsbExclusiveLoudPlaybackRisk.High -> stringResource(
+                                        R.string.player_loud_volume_risk_high
+                                    )
+                                    UsbExclusiveLoudPlaybackRisk.Critical -> stringResource(
+                                        R.string.player_loud_volume_risk_critical
+                                    )
+                                    UsbExclusiveLoudPlaybackRisk.None -> stringResource(
+                                        R.string.player_loud_volume_risk_elevated
+                                    )
+                                }
+                                val warningMessage = when (confirmation.peakSource) {
+                                    UsbExclusiveLoudnessPeakSource.RecentSample -> stringResource(
+                                        R.string.player_loud_volume_warning_message_observed,
+                                        deviceLabel,
+                                        confirmation.systemVolumePercent,
+                                        confirmation.estimatedPeakDbfs,
+                                        confirmation.riskThresholdDbfs,
+                                        riskLabel
+                                    )
+                                    UsbExclusiveLoudnessPeakSource.VolumeCeiling -> stringResource(
+                                        R.string.player_loud_volume_warning_message_ceiling,
+                                        deviceLabel,
+                                        confirmation.systemVolumePercent,
+                                        confirmation.estimatedPeakDbfs,
+                                        confirmation.riskThresholdDbfs,
+                                        riskLabel
+                                    )
+                                }
+                                AlertDialog(
+                                    onDismissRequest = {
+                                        PlayerManager.cancelUsbExclusiveLoudPlayback(
+                                            confirmation.id
+                                        )
+                                    },
+                                    title = {
+                                        Text(
+                                            stringResource(
+                                                R.string.player_loud_volume_warning_title
+                                            )
+                                        )
+                                    },
+                                    text = {
+                                        Column(
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text(warningMessage)
+                                            Text(
+                                                stringResource(
+                                                    R.string.player_loud_volume_warning_calibration
+                                                ),
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        }
+                                    },
+                                    confirmButton = {
+                                        HapticTextButton(
+                                            onClick = {
+                                                PlayerManager.confirmUsbExclusiveLoudPlayback(
+                                                    confirmation.id
+                                                )
+                                            }
+                                        ) {
+                                            Text(stringResource(R.string.player_continue))
+                                        }
+                                    },
+                                    dismissButton = {
+                                        HapticTextButton(
+                                            onClick = {
+                                                PlayerManager.cancelUsbExclusiveLoudPlayback(
+                                                    confirmation.id
+                                                )
+                                            }
+                                        ) {
+                                            Text(stringResource(R.string.action_cancel))
+                                        }
+                                    }
                                 )
                             }
 

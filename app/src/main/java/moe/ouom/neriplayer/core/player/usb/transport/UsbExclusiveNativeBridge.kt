@@ -261,6 +261,16 @@ internal object UsbExclusiveNativeBridge {
         }
     }
 
+    fun configurePlayerTransferWindow(handle: Long, durationMs: Int): Boolean {
+        if (handle == 0L || !ensureLoaded()) return false
+        return callNativeBoolean(
+            operation = "nativeConfigurePlayerTransferWindow",
+            context = { "handle=$handle durationMs=$durationMs" }
+        ) {
+            nativeConfigurePlayerTransferWindow(handle, durationMs)
+        }
+    }
+
     fun completedAudioFrames(handle: Long): Long {
         if (handle == 0L || !ensureLoaded()) return 0L
         return callNative("nativeGetCompletedAudioFrames", context = { "handle=$handle" }) {
@@ -410,6 +420,9 @@ internal object UsbExclusiveNativeBridge {
 
     @JvmStatic
     private external fun nativeConfigurePlayerBufferDuration(handle: Long, durationMs: Int): Boolean
+
+    @JvmStatic
+    private external fun nativeConfigurePlayerTransferWindow(handle: Long, durationMs: Int): Boolean
 
     @JvmStatic
     private external fun nativeGetCompletedAudioFrames(handle: Long): Long

@@ -8,6 +8,7 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
 import android.os.Process
 import android.os.SystemClock
@@ -37,6 +38,7 @@ import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveAudioQualityRecove
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveAudioQualityRecoveryState
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveRecoveryActionPolicy
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveRecoveryRouteAction
+import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveSameHandleRecoveryPolicy
 import moe.ouom.neriplayer.core.player.policy.usb.isTransientUsbExclusiveOpenGate
 import moe.ouom.neriplayer.core.player.policy.command.resolvePlaybackSoundConfigForEngine
 import moe.ouom.neriplayer.core.player.policy.usb.resolveUsbExclusiveCompletedPositionUs
@@ -52,6 +54,7 @@ import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
 import moe.ouom.neriplayer.core.player.usb.system.usbExclusiveEffectiveNativeVolume
+import moe.ouom.neriplayer.core.player.usb.system.usbExclusiveFloatSampleForNativePipeline
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveErrorCode
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveRecoveryActionAckStatus
 import moe.ouom.neriplayer.core.player.usb.transport.UsbExclusiveRuntimeMetrics
@@ -102,27 +105,49 @@ internal class UsbExclusiveAudioSink(
         const val NATIVE_OPEN_GATE_RETRY_MAX_ATTEMPTS = 3
         const val FIRST_COMPLETION_STALL_RECOVERY_MIN_MS = 220L
         const val FIRST_COMPLETION_STALL_RECOVERY_MAX_ATTEMPTS = 1
-        const val NATIVE_START_PREROLL_MS = 80L
+        const val NATIVE_START_PREROLL_MS = 300L
         const val DIRECT_SCRATCH_CAPACITY_BYTES = 256 * 1024
         const val NATIVE_BACKPRESSURE_REFRESH_INTERVAL_MS = 250L
         const val NATIVE_BACKPRESSURE_LOG_INTERVAL_MS = 2_000L
         const val NATIVE_BACKPRESSURE_STALL_RECOVERY_MS = 3_000L
         const val NATIVE_BACKPRESSURE_PARK_MAX_US = 4_000L
         const val NATIVE_POSITION_EXTRAPOLATION_US = 250_000L
+        const val SYSTEM_VOLUME_POLL_INTERVAL_ACTIVE_MS = 100L
+        const val SYSTEM_VOLUME_POLL_INTERVAL_IDLE_MS = 1_000L
         val audioThreadPriorityConfigured = ThreadLocal<Boolean>()
     }
 
     private val appContext = context.applicationContext
     private val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    private val systemVolumeThread = if (observeSystemVolume) {
+        HandlerThread("NeriUsbVolume").apply { start() }
+    } else {
+        null
+    }
+    private val systemVolumeHandler = Handler(systemVolumeThread?.looper ?: Looper.getMainLooper())
     @Volatile
     private var cachedMusicVolumeFraction = 1f
-    private val systemVolumeObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+    private val systemVolumeObserver = object : ContentObserver(systemVolumeHandler) {
         override fun onChange(selfChange: Boolean, uri: Uri?) {
             applySystemVolumeChange()
         }
     }
+    private val systemVolumePoll = object : Runnable {
+        override fun run() {
+            if (!systemVolumeObserverRegistered) return
+            applySystemVolumeChange()
+            val intervalMs = if (usingNative && nativeHandle != 0L) {
+                SYSTEM_VOLUME_POLL_INTERVAL_ACTIVE_MS
+            } else {
+                SYSTEM_VOLUME_POLL_INTERVAL_IDLE_MS
+            }
+            systemVolumeHandler.postDelayed(this, intervalMs)
+        }
+    }
     private var listener: AudioSink.Listener? = null
+    @Volatile
     private var nativeHandle: Long = 0L
+    @Volatile
     private var usingNative = false
     private var softwareFloatInputFormat: PreparedUsbInputPcmFormat? = null
     private var softwareFloatConversionLogged = false
@@ -134,6 +159,7 @@ internal class UsbExclusiveAudioSink(
     private var channelCount = 0
     private var pcmEncoding = C.ENCODING_PCM_16BIT
     private var frameBytes = 0
+    @Volatile
     private var volume = 1f
     private var playing = false
     private var nativeTransportStarted = false
@@ -178,6 +204,7 @@ internal class UsbExclusiveAudioSink(
     private var nativeQualityRecoveryState: UsbExclusiveAudioQualityRecoveryState =
         UsbExclusiveAudioQualityRecoveryPolicy.reset()
     private val nativeRecoveryActionPolicy = UsbExclusiveRecoveryActionPolicy()
+    private val sameHandleRecoveryPolicy = UsbExclusiveSameHandleRecoveryPolicy()
     private var lastReleaseBarrierHoldLogAtMs = 0L
     private var systemVolumeObserverRegistered = false
     private var lastReportedNativeVolume = Float.NaN
@@ -411,6 +438,18 @@ internal class UsbExclusiveAudioSink(
             }
             if (shouldRecoverNativeTransportBeforeFirstCompletion(runtimeReport, nowMs)) {
                 firstCompletionStallRecoveryAttempts += 1
+                val restarted = restartNativeTransportForShortDisruption(
+                    reason = "sink_first_completion_stalled",
+                    runtimeReport = runtimeReport
+                )
+                if (restarted) {
+                    NPLogger.w(
+                        "NERI-UsbExclusive",
+                        "same handle restart before first USB completion: " +
+                            "attempt=$firstCompletionStallRecoveryAttempts runtime=$runtimeReport"
+                    )
+                    return false
+                }
                 requestNativeFailureStop(
                     reason = "native_transport_failed",
                     runtimeReport = "$runtimeReport earlyFirstCompletionRecovery=event_loop_first_completion_timeout"
@@ -746,6 +785,7 @@ internal class UsbExclusiveAudioSink(
     override fun release() {
         clearSystemFallbackPlaybackSuppression()
         unregisterSystemVolumeObserver()
+        systemVolumeThread?.quitSafely()
         closeNative()
         directScratch = null
         fallbackConfigured = false
@@ -1029,7 +1069,7 @@ internal class UsbExclusiveAudioSink(
             var firstSample: Float? = null
             repeat(sourceFrames) {
                 repeat(channelCount) {
-                    val scaled = (duplicate.float * nativeVolume).coerceIn(-1f, 1f)
+                    val scaled = usbExclusiveFloatSampleForNativePipeline(duplicate.float)
                     if (firstSample == null) {
                         firstSample = scaled
                     }
@@ -1071,7 +1111,7 @@ internal class UsbExclusiveAudioSink(
                 buffer = scratch,
                 offset = 0,
                 size = convertedSize,
-                volume = 1f
+                volume = nativeVolume
             )
             if (writtenConverted <= 0) return 0
             val writtenFrames = writtenConverted / targetFrameBytes
@@ -1312,6 +1352,25 @@ internal class UsbExclusiveAudioSink(
         nowMs: Long = SystemClock.elapsedRealtime()
     ): Boolean {
         if (!usingNative || nativeHandle == 0L || failoverRequested) return false
+        val sameHandleDecision = sameHandleRecoveryPolicy.evaluate(
+            handle = nativeHandle,
+            metrics = metrics,
+            nowMs = nowMs
+        )
+        if (sameHandleDecision.shouldAttempt) {
+            val restarted = restartNativeTransportForShortDisruption(
+                reason = "native_recovery_same_handle:${metrics.errorCode.name.lowercase()}",
+                allowRearmableTransferStall = true,
+                runtimeReport = runtimeReport
+            )
+            NPLogger.w(
+                "NERI-UsbExclusive",
+                "same handle recovery before terminal route: restarted=$restarted " +
+                    "attempt=${sameHandleDecision.attempt}/${sameHandleDecision.limit} " +
+                    "error=${metrics.errorCode} runtime=$runtimeReport"
+            )
+            if (restarted) return true
+        }
         val activeStreamGeneration = metrics.nativeStreamGeneration
             ?: UsbExclusiveSessionController.state.value.nativeStreamGeneration
         val decision = nativeRecoveryActionPolicy.evaluate(
@@ -1408,7 +1467,7 @@ internal class UsbExclusiveAudioSink(
         if (usingNative && nativeHandle != 0L) {
             UsbExclusiveSessionController.setPlayerVolume(
                 nativeHandle,
-                if (shouldScaleFloatInputInSoftware()) 1f else effectiveVolume
+                effectiveVolume
             )
         }
         return effectiveVolume
@@ -1468,12 +1527,15 @@ internal class UsbExclusiveAudioSink(
                 systemVolumeObserver
             )
             systemVolumeObserverRegistered = true
+            systemVolumeHandler.removeCallbacks(systemVolumePoll)
+            systemVolumeHandler.post(systemVolumePoll)
         }.onFailure { error ->
             NPLogger.w("NERI-UsbExclusive", "system volume observer registration failed", error)
         }
     }
 
     private fun unregisterSystemVolumeObserver() {
+        systemVolumeHandler.removeCallbacks(systemVolumePoll)
         if (!systemVolumeObserverRegistered) return
         runCatching {
             appContext.contentResolver.unregisterContentObserver(systemVolumeObserver)
@@ -1484,7 +1546,9 @@ internal class UsbExclusiveAudioSink(
     }
 
     private fun applySystemVolumeChange() {
-        cachedMusicVolumeFraction = readMusicVolumeFractionFromSystem()
+        val nextVolumeFraction = readMusicVolumeFractionFromSystem()
+        if (abs(nextVolumeFraction - cachedMusicVolumeFraction) <= PARAMETER_EPSILON) return
+        cachedMusicVolumeFraction = nextVolumeFraction
         if (!usingNative || nativeHandle == 0L) return
         applyEffectiveNativeVolume()
     }
@@ -1829,10 +1893,22 @@ internal class UsbExclusiveAudioSink(
         return false
     }
 
-    private fun restartNativeTransportForShortDisruption(reason: String): Boolean {
+    private fun restartNativeTransportForShortDisruption(
+        reason: String,
+        allowRearmableTransferStall: Boolean = false,
+        runtimeReport: String = UsbExclusiveSessionController.state.value.runtimeReport
+    ): Boolean {
         if (nativeHandle == 0L || !usingNative) return false
-        val runtimeReport = UsbExclusiveSessionController.state.value.runtimeReport
-        if (runtimeReport.requiresNativeReopenForShortDisruption()) {
+        val runtimeMetrics = runtimeReport.usbRuntimeMetrics()
+        val rearmableTransferStall = allowRearmableTransferStall &&
+            when (runtimeMetrics.errorCode) {
+                UsbExclusiveErrorCode.TransferFirstCompletionTimeout,
+                UsbExclusiveErrorCode.TransferCompletionStalled -> true
+                else -> false
+            } &&
+            runtimeMetrics.deviceOnline != false &&
+            (runtimeMetrics.inFlightTransfers ?: 0) > 0
+        if (runtimeReport.requiresNativeReopenForShortDisruption() && !rearmableTransferStall) {
             NPLogger.w(
                 "NERI-UsbExclusive",
                 "native USB reopen suppressed during short disruption: reason=$reason " +
@@ -1840,25 +1916,42 @@ internal class UsbExclusiveAudioSink(
             )
             return false
         }
+        val restartPositionUs = currentNativePositionUs()
         val paused = UsbExclusiveSessionController.pausePlayerPcm(nativeHandle)
         if (!paused) return false
-        val rearmed = UsbExclusiveSessionController.rearmPlayerPcmOutput(
-            handle = nativeHandle,
-            inputSampleRate = sampleRate,
-            inputChannelCount = channelCount,
-            inputEncoding = pcmEncoding
-        )
-        if (!rearmed) return false
-        nativeTransportStarted = false
-        nativeHasQueuedPcm = false
-        nativeTransportStartedAtMs = 0L
-        resetPlaybackCounters(keepPlayState = true, resetShortFocusState = false)
+        nativeHasQueuedPcm = UsbExclusiveSessionController.queuedPlayerFrames(nativeHandle) > 0L
+        if (!nativeHasQueuedPcm && !allowRearmableTransferStall) {
+            nativeTransportStarted = false
+            nativeTransportStartedAtMs = 0L
+            playAnchorPositionUs = restartPositionUs
+            playAnchorElapsedNs = 0L
+            UsbExclusiveAudioPathTracker.updateNativePaused(
+                paused = true,
+                sinkPlaying = playing
+            )
+            NPLogger.d(
+                "NERI-UsbExclusive",
+                "native transport parked after short disruption without queued PCM: $reason"
+            )
+            return true
+        }
+        val restarted = UsbExclusiveSessionController.playPlayerPcm(nativeHandle)
+        if (!restarted) return false
+        nativeTransportStarted = true
+        nativeTransportStartedAtMs = SystemClock.elapsedRealtime()
+        playAnchorPositionUs = restartPositionUs
+        playAnchorElapsedNs = SystemClock.elapsedRealtimeNanos()
+        resetNativeQualityRecoveryState(nativeHandle)
         UsbExclusiveAudioPathTracker.updateNativePaused(
             paused = false,
             sinkPlaying = playing
         )
         PlayerManager.applyAudioFocusPolicy()
-        NPLogger.d("NERI-UsbExclusive", "native transport rearm for short disruption: $reason")
+        NPLogger.d(
+            "NERI-UsbExclusive",
+            "native transport restarted on the same handle: reason=$reason " +
+                "queuedPcm=$nativeHasQueuedPcm"
+        )
         return true
     }
 

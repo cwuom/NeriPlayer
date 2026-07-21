@@ -156,7 +156,7 @@ class UsbExclusivePcmWritePlannerTest {
             inputFrameBytes = 8,
             nativeTransportStarted = true,
             playing = true,
-            prerollMs = 80L,
+            prerollMs = 300L,
             metrics = UsbExclusiveRuntimeMetrics(
                 sampleRate = 192_000,
                 channelCount = 2,

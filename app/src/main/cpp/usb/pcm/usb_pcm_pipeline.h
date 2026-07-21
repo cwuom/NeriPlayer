@@ -53,6 +53,10 @@ struct PcmPipelineSnapshot {
     int64_t backpressureMaxUs = 0;
     float outputPeak = 0.0f;
     float lastOutputPeak = 0.0f;
+    float channel0OutputPeak = 0.0f;
+    float channel1OutputPeak = 0.0f;
+    float lastChannel0OutputPeak = 0.0f;
+    float lastChannel1OutputPeak = 0.0f;
     float targetGain = 1.0f;
     float appliedGain = 1.0f;
 };
@@ -118,6 +122,10 @@ private:
     size_t maxLevelBytes_ = 0;
     float outputPeak_ = 0.0f;
     float lastOutputPeak_ = 0.0f;
+    float channel0OutputPeak_ = 0.0f;
+    float channel1OutputPeak_ = 0.0f;
+    float lastChannel0OutputPeak_ = 0.0f;
+    float lastChannel1OutputPeak_ = 0.0f;
     std::atomic<float> targetGain_ { 1.0f };
     std::atomic<float> appliedGain_ { 1.0f };
     float gainRampTarget_ = 1.0f;

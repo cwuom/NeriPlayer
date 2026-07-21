@@ -19,6 +19,10 @@ const val MAX_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS = 1000
 const val MAX_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS = 3000
 const val MAX_USB_EXCLUSIVE_BUFFER_MS = MAX_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
 const val USB_EXCLUSIVE_BUFFER_STEP_MS = 50
+const val DEFAULT_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS = -6
+const val MIN_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS = -24
+const val MAX_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS = -1
+const val USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_STEP_DB = 1
 
 enum class UsbExclusiveSampleRateMode(
     val storageValue: String,
@@ -110,7 +114,8 @@ data class UsbExclusivePreferences(
     val channelCompatibilityEnabled: Boolean =
         DEFAULT_USB_EXCLUSIVE_CHANNEL_COMPATIBILITY,
     val foregroundBufferMs: Int = DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS,
-    val backgroundBufferMs: Int = DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
+    val backgroundBufferMs: Int = DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
+    val volumeRiskThresholdDbfs: Int = DEFAULT_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS
 ) {
     fun resolveSampleRateHz(
         sourceSampleRateHz: Int,
@@ -203,6 +208,13 @@ data class UsbExclusivePreferences(
         }
     }
 
+    fun reservedBufferDurationMs(): Int {
+        return maxOf(
+            normalizeUsbExclusiveForegroundBufferMs(foregroundBufferMs),
+            normalizeUsbExclusiveBackgroundBufferMs(backgroundBufferMs)
+        )
+    }
+
     companion object {
         fun fromStorageValues(
             sampleRateMode: String?,
@@ -214,7 +226,8 @@ data class UsbExclusivePreferences(
             bitDepthCompatibilityEnabled: Boolean? = null,
             channelCompatibilityEnabled: Boolean? = null,
             foregroundBufferMs: Int? = null,
-            backgroundBufferMs: Int? = null
+            backgroundBufferMs: Int? = null,
+            volumeRiskThresholdDbfs: Int? = null
         ): UsbExclusivePreferences {
             val parsedBufferProfile = UsbExclusiveBufferProfile.fromStorageValue(bufferProfile)
             val hasValidStoredBufferProfile = bufferProfile
@@ -248,6 +261,9 @@ data class UsbExclusivePreferences(
                 ),
                 backgroundBufferMs = normalizeUsbExclusiveBackgroundBufferMs(
                     backgroundBufferMs ?: DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
+                ),
+                volumeRiskThresholdDbfs = normalizeUsbExclusiveVolumeRiskThresholdDbfs(
+                    volumeRiskThresholdDbfs ?: DEFAULT_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS
                 )
             )
             val legacyDefaultPolicy = unsupportedFormatPolicy == null &&
@@ -281,7 +297,8 @@ fun PlaybackPreferenceSnapshot.toUsbExclusivePreferences(): UsbExclusivePreferen
         channelCompatibilityEnabled =
             normalizedSnapshot.usbExclusiveChannelCompatibility,
         foregroundBufferMs = normalizedSnapshot.usbExclusiveForegroundBufferMs,
-        backgroundBufferMs = normalizedSnapshot.usbExclusiveBackgroundBufferMs
+        backgroundBufferMs = normalizedSnapshot.usbExclusiveBackgroundBufferMs,
+        volumeRiskThresholdDbfs = normalizedSnapshot.usbExclusiveVolumeRiskThresholdDbfs
     )
 }
 
@@ -309,6 +326,15 @@ fun normalizeUsbExclusiveBackgroundBufferMs(value: Int): Int {
 
 fun normalizeUsbExclusiveBufferMs(value: Int): Int {
     return normalizeUsbExclusiveForegroundBufferMs(value)
+}
+
+fun normalizeUsbExclusiveVolumeRiskThresholdDbfs(value: Int): Int {
+    val clamped = value.coerceIn(
+        MIN_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS,
+        MAX_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS
+    )
+    return (clamped / USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_STEP_DB) *
+        USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_STEP_DB
 }
 
 private fun normalizeUsbExclusiveBufferMs(

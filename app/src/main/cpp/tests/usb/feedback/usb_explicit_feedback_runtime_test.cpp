@@ -7,7 +7,7 @@
 namespace {
 
 constexpr int64_t kExpectedReportPeriodNs = 500'000;
-constexpr int64_t kSoftMissPeriods = 8;
+constexpr int64_t kSoftMissNs = 32'000'000;
 
 using neri::usb::feedback::ExplicitFeedbackRuntime;
 using neri::usb::feedback::ExplicitFeedbackRuntimeConfig;
@@ -180,12 +180,36 @@ void acquireTimeoutFailsClosed() {
     ExplicitFeedbackRuntime runtime;
     configureRuntime(&runtime);
     assert(runtime.start(0));
-    assert(!runtime.tick(32'000'000));
+    assert(runtime.tick(249'999'999));
+    assert(!runtime.tick(250'000'000));
     const auto snapshot = runtime.snapshot();
     assert(snapshot.terminalFailure);
     assert(snapshot.failure == ExplicitFeedbackRuntimeFailure::FeedbackClock);
     assert(snapshot.gate.clock.state == FeedbackClockState::Failed);
     assert(snapshot.gate.clock.failureReason == FeedbackClockFailureReason::AcquireTimeout);
+}
+
+void ignoresShortAndroidCallbackJitterWhileLocked() {
+    ExplicitFeedbackRuntime runtime;
+    configureRuntime(&runtime);
+    assert(runtime.start(0));
+
+    constexpr std::array<uint8_t, 4> twelveFrames { 0x00, 0x00, 0x0C, 0x00 };
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 1, 500'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 2, 1'000'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 3, 1'500'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    assert(runtime.snapshot().gate.clock.state == FeedbackClockState::Locked);
+
+    assert(runtime.tick(33'499'999));
+    assert(runtime.snapshot().gate.clock.state == FeedbackClockState::Locked);
+    assert(runtime.tick(33'500'000));
+    assert(runtime.snapshot().gate.clock.state == FeedbackClockState::Holdover);
 }
 
 void toleratesAndroidSchedulingGapAndRelocks() {
@@ -227,7 +251,7 @@ void toleratesAndroidSchedulingGapAndRelocks() {
     constexpr int64_t relockedAtNs = 126'500'000;
     const uint64_t expectedHoldoverNs = static_cast<uint64_t>(
         relockedAtNs -
-            (lastLockedSampleNs + kSoftMissPeriods * kExpectedReportPeriodNs)
+            (lastLockedSampleNs + kSoftMissNs)
     );
     assert(snapshot.gate.clock.holdoverTotalNs == expectedHoldoverNs);
 }
@@ -308,6 +332,7 @@ int main() {
     toleratesShortErrorsThenFailsClosed();
     ignoresStaleGenerationWithoutPoisoningCurrentStream();
     acquireTimeoutFailsClosed();
+    ignoresShortAndroidCallbackJitterWhileLocked();
     toleratesAndroidSchedulingGapAndRelocks();
     reacquiresAfterLongSchedulingGapWithValidFeedback();
     longSchedulingGapWithoutValidFeedbackStillFailsClosed();

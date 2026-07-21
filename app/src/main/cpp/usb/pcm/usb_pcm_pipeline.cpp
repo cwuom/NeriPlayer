@@ -155,6 +155,10 @@ bool PcmPipeline::configure(const PcmPipelineConfig& config, std::string* error)
     maxLevelBytes_ = 0;
     outputPeak_ = 0.0f;
     lastOutputPeak_ = 0.0f;
+    channel0OutputPeak_ = 0.0f;
+    channel1OutputPeak_ = 0.0f;
+    lastChannel0OutputPeak_ = 0.0f;
+    lastChannel1OutputPeak_ = 0.0f;
     const float target = std::clamp(targetGain_.load(), 0.0f, 1.0f);
     appliedGain_.store(target);
     gainRampTarget_ = target;
@@ -554,12 +558,16 @@ void PcmPipeline::updateOutputSignalStatsLocked(const uint8_t* output, size_t by
         : 0;
     if (output == nullptr || frames <= 0) {
         lastOutputPeak_ = 0.0f;
+        lastChannel0OutputPeak_ = 0.0f;
+        lastChannel1OutputPeak_ = 0.0f;
         return;
     }
 
     int64_t signalFrames = 0;
     int64_t signalBytes = 0;
     float peak = 0.0f;
+    float channel0Peak = 0.0f;
+    float channel1Peak = 0.0f;
     for (int frame = 0; frame < frames; ++frame) {
         bool frameHasSignal = false;
         const uint8_t* outputFrame = output + static_cast<size_t>(frame) * outputFormat_.frameBytes;
@@ -570,8 +578,14 @@ void PcmPipeline::updateOutputSignalStatsLocked(const uint8_t* output, size_t by
                 outputFormat_.subslotBytes,
                 outputFormat_.bitsPerSample
             );
-            peak = std::max(peak, std::abs(value));
-            if (std::abs(value) > 0.000001f) {
+            const float absoluteValue = std::abs(value);
+            peak = std::max(peak, absoluteValue);
+            if (channel == 0) {
+                channel0Peak = std::max(channel0Peak, absoluteValue);
+            } else if (channel == 1) {
+                channel1Peak = std::max(channel1Peak, absoluteValue);
+            }
+            if (absoluteValue > 0.000001f) {
                 frameHasSignal = true;
             }
         }
@@ -585,6 +599,10 @@ void PcmPipeline::updateOutputSignalStatsLocked(const uint8_t* output, size_t by
     signalOutputBytes_ += signalBytes;
     lastOutputPeak_ = peak;
     outputPeak_ = std::max(outputPeak_, peak);
+    lastChannel0OutputPeak_ = channel0Peak;
+    lastChannel1OutputPeak_ = channel1Peak;
+    channel0OutputPeak_ = std::max(channel0OutputPeak_, channel0Peak);
+    channel1OutputPeak_ = std::max(channel1OutputPeak_, channel1Peak);
 }
 
 size_t PcmPipeline::fill(uint8_t* output, size_t bytes, bool playbackEnabled) {
@@ -612,6 +630,8 @@ size_t PcmPipeline::fill(uint8_t* output, size_t bytes, bool playbackEnabled) {
             : 0;
         silentOutputFrames_ += silentFrames;
         lastOutputPeak_ = 0.0f;
+        lastChannel0OutputPeak_ = 0.0f;
+        lastChannel1OutputPeak_ = 0.0f;
     } else {
         applyGain(output, partialUnderrun ? read : bytes);
         if (partialUnderrun) {
@@ -653,6 +673,10 @@ void PcmPipeline::resetCounters() {
     maxLevelBytes_ = levelBytes_;
     outputPeak_ = 0.0f;
     lastOutputPeak_ = 0.0f;
+    channel0OutputPeak_ = 0.0f;
+    channel1OutputPeak_ = 0.0f;
+    lastChannel0OutputPeak_ = 0.0f;
+    lastChannel1OutputPeak_ = 0.0f;
 }
 
 void PcmPipeline::addDroppedFrames(int64_t frames) {
@@ -747,6 +771,10 @@ PcmPipelineSnapshot PcmPipeline::snapshot() const {
         maxBackpressureUs,
         outputPeak_,
         lastOutputPeak_,
+        channel0OutputPeak_,
+        channel1OutputPeak_,
+        lastChannel0OutputPeak_,
+        lastChannel1OutputPeak_,
         targetGain_.load(),
         appliedGain_.load()
     };

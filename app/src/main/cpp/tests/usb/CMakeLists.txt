@@ -92,6 +92,16 @@ add_neri_usb_host_test(
     exclusive/usb_player_startup_preroll_test.cpp
 )
 add_neri_usb_host_test(
+    usb_streaming_interface_lifecycle_test
+    exclusive/usb_streaming_interface_lifecycle_test.cpp
+)
+add_neri_usb_host_test(
+    usb_streaming_sync_policy_test
+    exclusive/usb_streaming_sync_policy_test.cpp
+    "${NERI_CPP_ROOT}/usb/uac1/usb_uac1_format.cpp"
+    "${NERI_CPP_ROOT}/usb/uac2/usb_uac2_format.cpp"
+)
+add_neri_usb_host_test(
     usb_runtime_report_v2_test
     exclusive/usb_runtime_report_v2_test.cpp
     "${NERI_CPP_ROOT}/usb/exclusive/usb_runtime_report_v2.cpp"
@@ -104,6 +114,10 @@ add_neri_usb_host_test(
 add_neri_usb_host_test(
     usb_iso_transfer_health_test
     iso/usb_iso_transfer_health_test.cpp
+)
+add_neri_usb_host_test(
+    usb_iso_transfer_window_test
+    iso/usb_iso_transfer_window_test.cpp
 )
 add_neri_usb_host_test(
     usb_iso_packet_scheduler_test

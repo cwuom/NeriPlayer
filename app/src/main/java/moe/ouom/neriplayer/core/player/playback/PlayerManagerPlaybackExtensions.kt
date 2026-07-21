@@ -402,20 +402,32 @@ internal fun PlayerManager.handleTrackEnded() {
         }
         Player.REPEAT_MODE_ALL -> {
             markAutoTrackAdvance()
-            next(force = true, commandSource = activePlaybackCommandSource)
+            nextImpl(
+                force = true,
+                commandSource = activePlaybackCommandSource,
+                bypassLoudVolumeWarning = true
+            )
         }
         else -> {
             if (player.shuffleModeEnabled) {
                 if (shuffleFuture.isNotEmpty() || shuffleBag.isNotEmpty()) {
                     markAutoTrackAdvance()
-                    next(force = false, commandSource = activePlaybackCommandSource)
+                    nextImpl(
+                        force = false,
+                        commandSource = activePlaybackCommandSource,
+                        bypassLoudVolumeWarning = true
+                    )
                 } else {
                     stopPlaybackPreservingQueue()
                 }
             } else {
                 if (currentIndex < currentPlaylist.lastIndex) {
                     markAutoTrackAdvance()
-                    next(force = false, commandSource = activePlaybackCommandSource)
+                    nextImpl(
+                        force = false,
+                        commandSource = activePlaybackCommandSource,
+                        bypassLoudVolumeWarning = true
+                    )
                 } else {
                     stopPlaybackPreservingQueue()
                 }
@@ -447,11 +459,19 @@ internal fun PlayerManager.advanceAfterPlaybackFailure(
     when (action) {
         PlaybackFailureAdvanceAction.NEXT -> {
             markAutoTrackAdvance()
-            next(force = false, commandSource = commandSource)
+            nextImpl(
+                force = false,
+                commandSource = commandSource,
+                bypassLoudVolumeWarning = true
+            )
         }
         PlaybackFailureAdvanceAction.WRAP -> {
             markAutoTrackAdvance()
-            next(force = true, commandSource = commandSource)
+            nextImpl(
+                force = true,
+                commandSource = commandSource,
+                bypassLoudVolumeWarning = true
+            )
         }
         PlaybackFailureAdvanceAction.STOP -> {
             stopPlaybackPreservingQueue(clearMediaUrl = true)
@@ -462,7 +482,8 @@ internal fun PlayerManager.advanceAfterPlaybackFailure(
 internal fun PlayerManager.playPlaylistImpl(
     songs: List<SongItem>,
     startIndex: Int,
-    commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
+    commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL,
+    bypassLoudVolumeWarning: Boolean = false
 ) {
     ensureInitialized()
     check(initialized) { "Call PlayerManager.initialize(application) first." }
@@ -473,6 +494,21 @@ internal fun PlayerManager.playPlaylistImpl(
     val targetSong = songs.getOrNull(startIndex.coerceIn(0, songs.lastIndex)) ?: songs.first()
     if (shouldBlockLocalRoomControl(commandSource) ||
         shouldBlockLocalSongSwitch(targetSong, commandSource)
+    ) {
+        return
+    }
+    if (requestUsbExclusiveLoudPlaybackConfirmation(
+            commandSource = commandSource,
+            bypassWarning = bypassLoudVolumeWarning,
+            continuePlayback = {
+                playPlaylistImpl(
+                    songs = songs,
+                    startIndex = startIndex,
+                    commandSource = commandSource,
+                    bypassLoudVolumeWarning = true
+                )
+            }
+        )
     ) {
         return
     }
@@ -733,7 +769,10 @@ internal fun PlayerManager.playAtIndex(
                     )
                 )
                 withContext(Dispatchers.Main) {
-                    next(commandSource = commandSource)
+                    nextImpl(
+                        commandSource = commandSource,
+                        bypassLoudVolumeWarning = true
+                    )
                 }
             }
             is SongUrlResult.Failure -> {
@@ -871,11 +910,25 @@ internal fun PlayerManager.playBiliVideoPartsImpl(
 }
 
 internal fun PlayerManager.playImpl(
-    commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
+    commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL,
+    bypassLoudVolumeWarning: Boolean = false
 ) {
     ensureInitialized()
     if (!initialized) return
     if (commandSource == PlaybackCommandSource.LOCAL && shouldBlockLocalRoomControl(commandSource)) return
+    if (requestUsbExclusiveLoudPlaybackConfirmation(
+            commandSource = commandSource,
+            bypassWarning = bypassLoudVolumeWarning,
+            continuePlayback = {
+                playImpl(
+                    commandSource = commandSource,
+                    bypassLoudVolumeWarning = true
+                )
+            }
+        )
+    ) {
+        return
+    }
     if (isPendingMediaLoadActive() && playJob?.isActive == true) {
         val action = resolvePendingPlayAction(pendingLoadActive = true)
         cancelPendingPauseRequest(resetVolumeToFull = true)
@@ -1284,7 +1337,8 @@ internal fun PlayerManager.seekToImpl(
 
 internal fun PlayerManager.nextImpl(
     force: Boolean = false,
-    commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
+    commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL,
+    bypassLoudVolumeWarning: Boolean = false
 ) {
     ensureInitialized()
     if (!initialized) return
@@ -1297,6 +1351,38 @@ internal fun PlayerManager.nextImpl(
         "NERI-PlayerManager",
         "next requested: force=$force, source=$commandSource, isShuffle=$isShuffle, currentIndex=$currentIndex, queueSize=${currentPlaylist.size}, transitionFade=$useTransitionFade, stack=[${debugStackHint()}]"
     )
+    val hasNextTrack = if (isShuffle) {
+        shuffleFuture.isNotEmpty() ||
+            shuffleBag.isNotEmpty() ||
+            force ||
+            repeatModeSetting == Player.REPEAT_MODE_ALL
+    } else {
+        currentIndex < currentPlaylist.lastIndex ||
+            force ||
+            repeatModeSetting == Player.REPEAT_MODE_ALL
+    }
+    if (!hasNextTrack) {
+        if (isShuffle) {
+            stopPlaybackPreservingQueue()
+        } else {
+            NPLogger.d("NERI-Player", "Already at the end of the playlist.")
+        }
+        return
+    }
+    if (requestUsbExclusiveLoudPlaybackConfirmation(
+            commandSource = commandSource,
+            bypassWarning = bypassLoudVolumeWarning,
+            continuePlayback = {
+                nextImpl(
+                    force = force,
+                    commandSource = commandSource,
+                    bypassLoudVolumeWarning = true
+                )
+            }
+        )
+    ) {
+        return
+    }
 
     if (isShuffle) {
         if (shuffleFuture.isNotEmpty()) {
@@ -1376,7 +1462,8 @@ internal fun PlayerManager.nextImpl(
 }
 
 internal fun PlayerManager.previousImpl(
-    commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
+    commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL,
+    bypassLoudVolumeWarning: Boolean = false
 ) {
     ensureInitialized()
     if (!initialized) return
@@ -1389,6 +1476,33 @@ internal fun PlayerManager.previousImpl(
         "NERI-PlayerManager",
         "previous requested: source=$commandSource, isShuffle=$isShuffle, currentIndex=$currentIndex, queueSize=${currentPlaylist.size}, transitionFade=$useTransitionFade, stack=[${debugStackHint()}]"
     )
+    val hasPreviousTrack = if (isShuffle) {
+        shuffleHistory.isNotEmpty()
+    } else {
+        currentIndex > 0 || repeatModeSetting == Player.REPEAT_MODE_ALL
+    }
+    if (!hasPreviousTrack) {
+        val message = if (isShuffle) {
+            "No previous track in shuffle history."
+        } else {
+            "Already at the start of the playlist."
+        }
+        NPLogger.d("NERI-Player", message)
+        return
+    }
+    if (requestUsbExclusiveLoudPlaybackConfirmation(
+            commandSource = commandSource,
+            bypassWarning = bypassLoudVolumeWarning,
+            continuePlayback = {
+                previousImpl(
+                    commandSource = commandSource,
+                    bypassLoudVolumeWarning = true
+                )
+            }
+        )
+    ) {
+        return
+    }
 
     if (isShuffle) {
         if (shuffleHistory.isNotEmpty()) {

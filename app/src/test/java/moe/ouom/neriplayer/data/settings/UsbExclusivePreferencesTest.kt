@@ -52,6 +52,14 @@ class UsbExclusivePreferencesTest {
         assertEquals(DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS, preferences.foregroundBufferMs)
         assertEquals(DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS, preferences.backgroundBufferMs)
         assertEquals(
+            DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
+            preferences.reservedBufferDurationMs()
+        )
+        assertEquals(
+            DEFAULT_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS,
+            preferences.volumeRiskThresholdDbfs
+        )
+        assertEquals(
             DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_MODE,
             preferences.sampleRateMode.storageValue
         )
@@ -195,6 +203,7 @@ class UsbExclusivePreferencesTest {
             MIN_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
             preferences.bufferDurationMs(appInForeground = false)
         )
+        assertEquals(200, preferences.reservedBufferDurationMs())
         assertEquals(250, normalizeUsbExclusiveForegroundBufferMs(260))
         assertEquals(1500, normalizeUsbExclusiveBackgroundBufferMs(1530))
         assertEquals(
@@ -204,6 +213,29 @@ class UsbExclusivePreferencesTest {
         assertEquals(
             MAX_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
             normalizeUsbExclusiveBackgroundBufferMs(12_000)
+        )
+    }
+
+    @Test
+    fun `volume risk threshold is normalized and survives snapshot conversion`() {
+        val low = UsbExclusivePreferences.fromStorageValues(
+            sampleRateMode = null,
+            bitDepthMode = null,
+            bufferProfile = null,
+            unsupportedFormatPolicy = null,
+            volumeRiskThresholdDbfs = -100
+        )
+        val high = PlaybackPreferenceSnapshot(
+            usbExclusiveVolumeRiskThresholdDbfs = 4
+        ).sanitized()
+
+        assertEquals(MIN_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS, low.volumeRiskThresholdDbfs)
+        assertEquals(MAX_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS, high.usbExclusiveVolumeRiskThresholdDbfs)
+        assertEquals(
+            -9,
+            PlaybackPreferenceSnapshot(
+                usbExclusiveVolumeRiskThresholdDbfs = -9
+            ).toUsbExclusivePreferences().volumeRiskThresholdDbfs
         )
     }
 
@@ -395,7 +427,8 @@ class UsbExclusivePreferencesTest {
             SettingsKeys.USB_EXCLUSIVE_SAMPLE_RATE_MODE to "176400",
             SettingsKeys.USB_EXCLUSIVE_BIT_DEPTH_MODE to "24",
             SettingsKeys.USB_EXCLUSIVE_BUFFER_PROFILE to "stable",
-            SettingsKeys.USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY to "closest_supported"
+            SettingsKeys.USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY to "closest_supported",
+            SettingsKeys.USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS to -9
         ).toPlaybackPreferenceSnapshot()
 
         assertEquals(
@@ -405,7 +438,8 @@ class UsbExclusivePreferencesTest {
                 bitDepthMode = UsbExclusiveBitDepthMode.BIT_24,
                 bufferProfile = UsbExclusiveBufferProfile.STABLE,
                 unsupportedFormatPolicy =
-                    UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED
+                    UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED,
+                volumeRiskThresholdDbfs = -9
             ),
             snapshot.toUsbExclusivePreferences()
         )

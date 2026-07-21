@@ -138,9 +138,7 @@ internal object UsbExclusiveOutputFormatResolver {
                 channelCount = resolvedChannels,
                 bitDepth = resolvedBitDepth,
                 subslotBytes = subslotBytes,
-                bufferDurationMs = preferences.bufferDurationMs(
-                    appInForeground = PlayerManager.usbExclusiveAppInForeground
-                ),
+                bufferDurationMs = preferences.reservedBufferDurationMs(),
                 description = buildDescription(
                     sampleRate = resolvedRate,
                     channelCount = resolvedChannels,

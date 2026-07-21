@@ -697,7 +697,9 @@ class AudioPlayerService : Service() {
         val signalLine = "signalFrames=${nativeState.playerSignalFrames} " +
             "silentFrames=${nativeState.playerSilentFrames} " +
             "zeroFillBytes=${nativeState.playerZeroFillBytes} " +
-            "peak=${nativeState.lastOutputPeak}"
+            "peak=${nativeState.lastOutputPeak} " +
+            "channelPeaks=${nativeState.lastChannel0OutputPeak}/" +
+            nativeState.lastChannel1OutputPeak
         val message = "USB exclusive keepalive tick=$usbExclusiveKeepAliveTick gapMs=$gapMs " +
             "path=${pathState.effectivePath} native=${nativeState.source}/${nativeState.streaming} " +
             "wakeLock=${UsbExclusiveWakeLock.isHeld()} completedFrames=${nativeState.completedAudioFrames} " +
@@ -1205,11 +1207,30 @@ class AudioPlayerService : Service() {
                         updatePlaybackState(force = true)
                         updateNotification()
                     }
+                    UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
+                        val attachedDevice = intent.usbDeviceExtra()
+                        if (
+                            !UsbExclusiveSessionController.handleUsbDeviceAttached(
+                                this@AudioPlayerService,
+                                attachedDevice
+                            )
+                        ) {
+                            return
+                        }
+                        NPLogger.i(
+                            "NERI-APS",
+                            "USB audio device attached after active route detach " +
+                                "id=${attachedDevice?.deviceId} name=${attachedDevice?.deviceName}"
+                        )
+                        updatePlaybackState(force = true)
+                        updateNotification()
+                    }
                 }
             }
         }
         val noisyIntentFilter = IntentFilter().apply {
             addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+            addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
             addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

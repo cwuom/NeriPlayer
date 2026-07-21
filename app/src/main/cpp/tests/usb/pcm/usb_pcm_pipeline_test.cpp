@@ -362,6 +362,41 @@ void verifiesFloatInputPassThroughProduces32BitUsbSignal() {
     assert(secondLeft < -0.49f && secondLeft >= -0.5f);
 }
 
+void verifiesStereoChannelPeaksPreserveChannelOrder() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    auto config = configFor(48000, 48000);
+    config.input.encoding = 4;
+    assert(pipeline.configure(config, &error));
+
+    constexpr int inputFrames = 32;
+    constexpr int inputChannels = 2;
+    constexpr int inputSampleBytes = 4;
+    std::vector<uint8_t> input(
+        static_cast<size_t>(inputFrames * inputChannels * inputSampleBytes),
+        0
+    );
+    for (int frame = 0; frame < inputFrames; ++frame) {
+        const size_t frameOffset = static_cast<size_t>(
+            frame * inputChannels * inputSampleBytes
+        );
+        writeFloatSample(input, frameOffset, 0.75f);
+        writeFloatSample(input, frameOffset + inputSampleBytes, 0.25f);
+    }
+
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+    std::vector<uint8_t> output(static_cast<size_t>(inputFrames) * 4U, 0);
+    assert(pipeline.fill(output.data(), output.size(), true) == output.size());
+
+    const auto snapshot = pipeline.snapshot();
+    assert(snapshot.channel0OutputPeak > 0.74f);
+    assert(snapshot.channel0OutputPeak <= 0.75f);
+    assert(snapshot.channel1OutputPeak > 0.24f);
+    assert(snapshot.channel1OutputPeak <= 0.25f);
+    assert(snapshot.lastChannel0OutputPeak == snapshot.channel0OutputPeak);
+    assert(snapshot.lastChannel1OutputPeak == snapshot.channel1OutputPeak);
+}
+
 void verifies32BitInputCanDrive24BitUsb32Container() {
     neri::usb::PcmPipeline pipeline;
     std::string error;
@@ -451,6 +486,7 @@ int main() {
     verifiesBackpressureSnapshotTracksFullRing();
     verifiesFloatInputResampleProducesUsbSignalStats();
     verifiesFloatInputPassThroughProduces32BitUsbSignal();
+    verifiesStereoChannelPeaksPreserveChannelOrder();
     verifies32BitInputCanDrive24BitUsb32Container();
     verifiesIntegerCodecDepthsAndEndianInputs();
     return 0;

@@ -20,3 +20,49 @@ internal fun shouldStopUsbExclusivePlaybackForNoisyRoute(
     if (!routeIsUsbOutput || !playbackActive) return false
     return true
 }
+
+internal fun shouldDeferUsbExclusiveNoisyRouteToNativePath(
+    usbExclusivePlaybackEnabled: Boolean,
+    allowMixedPlaybackEnabled: Boolean,
+    routeIsUsbOutput: Boolean,
+    nativePlayerPcmActive: Boolean
+): Boolean {
+    return usbExclusivePlaybackEnabled &&
+        !allowMixedPlaybackEnabled &&
+        routeIsUsbOutput &&
+        nativePlayerPcmActive
+}
+
+internal fun shouldResumeUsbExclusivePlaybackAfterDeviceAttach(
+    usbExclusivePlaybackEnabled: Boolean,
+    allowMixedPlaybackEnabled: Boolean,
+    hasInterruptedPlayback: Boolean,
+    resumePlaybackRequested: Boolean,
+    selectedUsbOutputAvailable: Boolean,
+    selectedUsbHostPermissionGranted: Boolean,
+    nativeOpenGateActive: Boolean
+): Boolean {
+    return usbExclusivePlaybackEnabled &&
+        !allowMixedPlaybackEnabled &&
+        hasInterruptedPlayback &&
+        resumePlaybackRequested &&
+        selectedUsbOutputAvailable &&
+        selectedUsbHostPermissionGranted &&
+        !nativeOpenGateActive
+}
+
+internal fun resolveUsbExclusiveInterruptedPlaybackQueueIndex(
+    currentQueueIndex: Int,
+    queueSize: Int,
+    currentQueueIndexMatchesCurrentSong: Boolean,
+    currentSongQueueIndex: Int
+): Int? {
+    val currentQueueIndexIsValid = currentQueueIndex in 0 until queueSize
+    if (currentQueueIndexIsValid && currentQueueIndexMatchesCurrentSong) {
+        return currentQueueIndex
+    }
+    if (currentSongQueueIndex in 0 until queueSize) {
+        return currentSongQueueIndex
+    }
+    return currentQueueIndex.takeIf { currentQueueIndexIsValid }
+}

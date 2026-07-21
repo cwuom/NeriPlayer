@@ -1149,6 +1149,10 @@ class SettingsRepository(private val context: Context) {
         usbExclusiveSettingsStore.setBackgroundBufferMs(bufferMs)
     }
 
+    suspend fun setUsbExclusiveVolumeRiskThresholdDbfs(thresholdDbfs: Int) {
+        usbExclusiveSettingsStore.setVolumeRiskThresholdDbfs(thresholdDbfs)
+    }
+
     suspend fun setUsbExclusivePreferences(preferences: UsbExclusivePreferences) {
         usbExclusiveSettingsStore.setPreferences(preferences)
     }

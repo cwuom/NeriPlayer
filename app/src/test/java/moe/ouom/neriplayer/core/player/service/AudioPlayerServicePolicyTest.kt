@@ -46,9 +46,9 @@ class AudioPlayerServicePolicyTest {
     }
 
     @Test
-    fun `usb exclusive audio focus loss suppresses player pcm`() {
+    fun `usb exclusive audio focus changes never mute the independent DAC path`() {
         assertFalse(shouldSuppressUsbExclusiveForFocusChange(AudioManager.AUDIOFOCUS_GAIN))
-        assertTrue(shouldSuppressUsbExclusiveForFocusChange(AudioManager.AUDIOFOCUS_LOSS))
+        assertFalse(shouldSuppressUsbExclusiveForFocusChange(AudioManager.AUDIOFOCUS_LOSS))
         assertFalse(shouldSuppressUsbExclusiveForFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT))
         assertFalse(
             shouldSuppressUsbExclusiveForFocusChange(
@@ -58,8 +58,8 @@ class AudioPlayerServicePolicyTest {
     }
 
     @Test
-    fun `permanent audio focus loss pauses usb exclusive playback`() {
-        assertTrue(shouldPauseUsbExclusiveForFocusChange(AudioManager.AUDIOFOCUS_LOSS))
+    fun `audio focus loss does not pause the independent DAC path`() {
+        assertFalse(shouldPauseUsbExclusiveForFocusChange(AudioManager.AUDIOFOCUS_LOSS))
         assertFalse(
             shouldPauseUsbExclusiveForFocusChange(
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT

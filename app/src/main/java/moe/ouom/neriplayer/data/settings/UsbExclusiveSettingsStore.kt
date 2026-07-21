@@ -26,7 +26,9 @@ internal class UsbExclusiveSettingsStore(private val context: Context) {
                 foregroundBufferMs =
                     preferences[SettingsKeys.USB_EXCLUSIVE_FOREGROUND_BUFFER_MS],
                 backgroundBufferMs =
-                    preferences[SettingsKeys.USB_EXCLUSIVE_BACKGROUND_BUFFER_MS]
+                    preferences[SettingsKeys.USB_EXCLUSIVE_BACKGROUND_BUFFER_MS],
+                volumeRiskThresholdDbfs =
+                    preferences[SettingsKeys.USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS]
             )
         }
         .distinctUntilChanged()
@@ -69,6 +71,10 @@ internal class UsbExclusiveSettingsStore(private val context: Context) {
 
     val backgroundBufferMsFlow: Flow<Int> = preferencesFlow
         .map { preferences -> preferences.backgroundBufferMs }
+        .distinctUntilChanged()
+
+    val volumeRiskThresholdDbfsFlow: Flow<Int> = preferencesFlow
+        .map { preferences -> preferences.volumeRiskThresholdDbfs }
         .distinctUntilChanged()
 
     suspend fun setSampleRateMode(mode: UsbExclusiveSampleRateMode) {
@@ -164,6 +170,16 @@ internal class UsbExclusiveSettingsStore(private val context: Context) {
         }
     }
 
+    suspend fun setVolumeRiskThresholdDbfs(thresholdDbfs: Int) {
+        val normalized = normalizeUsbExclusiveVolumeRiskThresholdDbfs(thresholdDbfs)
+        setStoredPreference(
+            key = SettingsKeys.USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS,
+            value = normalized
+        ) {
+            copy(usbExclusiveVolumeRiskThresholdDbfs = normalized)
+        }
+    }
+
     suspend fun setPreferences(preferences: UsbExclusivePreferences) {
         val normalizedPreferences = preferences.copy(
             foregroundBufferMs = normalizeUsbExclusiveForegroundBufferMs(
@@ -171,6 +187,9 @@ internal class UsbExclusiveSettingsStore(private val context: Context) {
             ),
             backgroundBufferMs = normalizeUsbExclusiveBackgroundBufferMs(
                 preferences.backgroundBufferMs
+            ),
+            volumeRiskThresholdDbfs = normalizeUsbExclusiveVolumeRiskThresholdDbfs(
+                preferences.volumeRiskThresholdDbfs
             )
         )
         context.dataStore.edit { mutablePreferences ->
@@ -194,6 +213,8 @@ internal class UsbExclusiveSettingsStore(private val context: Context) {
                 normalizedPreferences.foregroundBufferMs
             mutablePreferences[SettingsKeys.USB_EXCLUSIVE_BACKGROUND_BUFFER_MS] =
                 normalizedPreferences.backgroundBufferMs
+            mutablePreferences[SettingsKeys.USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS] =
+                normalizedPreferences.volumeRiskThresholdDbfs
         }
         updatePlaybackPreferenceSnapshot(context) {
             it.copy(
@@ -210,7 +231,9 @@ internal class UsbExclusiveSettingsStore(private val context: Context) {
                 usbExclusiveChannelCompatibility =
                     normalizedPreferences.channelCompatibilityEnabled,
                 usbExclusiveForegroundBufferMs = normalizedPreferences.foregroundBufferMs,
-                usbExclusiveBackgroundBufferMs = normalizedPreferences.backgroundBufferMs
+                usbExclusiveBackgroundBufferMs = normalizedPreferences.backgroundBufferMs,
+                usbExclusiveVolumeRiskThresholdDbfs =
+                    normalizedPreferences.volumeRiskThresholdDbfs
             )
         }
     }

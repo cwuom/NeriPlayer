@@ -117,6 +117,17 @@
     <string name="player_no_playback">No Playback</string>
     <string name="player_notification_preparing">Preparing playback service</string>
     <string name="player_continue">Continue</string>
+    <string name="player_loud_volume_warning_title">Volume may be too high</string>
+    <string name="player_loud_volume_warning_message_observed">%1$s is at %2$d%% media volume. Its most recent sampled digital peak is %3$.1f dBFS; the risk threshold is %4$d dBFS (%5$s). Continue playback?</string>
+    <string name="player_loud_volume_warning_message_ceiling">%1$s is at %2$d%% media volume. No current PCM peak sample is available; its digital output ceiling can reach %3$.1f dBFS, with a risk threshold of %4$d dBFS (%5$s). Continue playback?</string>
+    <string name="player_loud_volume_warning_calibration">This is a digital-output estimate, not an ear-level dB SPL measurement. The DAC output and headphone sensitivity are not calibrated.</string>
+    <string name="player_loud_volume_device_unknown">Unknown USB DAC</string>
+    <string name="player_loud_volume_device_uac1">UAC1 USB DAC (%1$s)</string>
+    <string name="player_loud_volume_device_uac2">UAC2 USB DAC (%1$s)</string>
+    <string name="player_loud_volume_device_unknown_usb">USB DAC (%1$s)</string>
+    <string name="player_loud_volume_risk_elevated">Caution</string>
+    <string name="player_loud_volume_risk_high">High risk</string>
+    <string name="player_loud_volume_risk_critical">Very high risk</string>
     <string name="player_locate_current">Locate Current</string>
     <string name="player_shuffle_play">Shuffle Play</string>
     <string name="player_play_all">Play All</string>
@@ -934,6 +945,9 @@
     <string name="settings_usb_exclusive_foreground_buffer">Foreground buffer</string>
     <string name="settings_usb_exclusive_background_buffer">Background buffer</string>
     <string name="settings_usb_exclusive_buffer_ms">%1$d ms</string>
+    <string name="settings_usb_exclusive_volume_risk_threshold">Volume risk threshold</string>
+    <string name="settings_usb_exclusive_volume_risk_threshold_dbfs">%1$d dBFS</string>
+    <string name="settings_usb_exclusive_volume_risk_threshold_desc">Ask before playback at or above this estimate. Lower values are more conservative; caution does not interrupt playback.</string>
     <string name="settings_usb_exclusive_sample_rate_not_supported">The capability list omits %1$s; playback will still try it</string>
     <string name="settings_usb_exclusive_bit_depth_not_supported">The capability list omits %1$d-bit PCM; playback will still try it</string>
     <string name="settings_usb_exclusive_choose_sample_rate">Choose USB Sample Rate</string>

@@ -85,6 +85,20 @@ class UsbExclusiveRuntimeReportTest {
     }
 
     @Test
+    fun `runtime metrics expose stereo channel peaks`() {
+        val metrics = buildString {
+            append("channel0OutputPeak=0.75 channel1OutputPeak=0.25 ")
+            append("lastChannel0OutputPeak=0.70 lastChannel1OutputPeak=0.20 ")
+            append("lastError=none")
+        }.usbRuntimeMetrics()
+
+        assertEquals(0.75f, metrics.channel0OutputPeak ?: -1f, 0.0001f)
+        assertEquals(0.25f, metrics.channel1OutputPeak ?: -1f, 0.0001f)
+        assertEquals(0.70f, metrics.lastChannel0OutputPeak ?: -1f, 0.0001f)
+        assertEquals(0.20f, metrics.lastChannel1OutputPeak ?: -1f, 0.0001f)
+    }
+
+    @Test
     fun `active zero fill counters need runtime policy before declaring degradation`() {
         val metrics = buildString {
             append("source=player_pcm running=true paused=false ")

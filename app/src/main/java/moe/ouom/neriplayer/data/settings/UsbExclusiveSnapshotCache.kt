@@ -12,6 +12,7 @@ private const val BIT_DEPTH_COMPATIBILITY_KEY = "usb_exclusive_bit_depth_compati
 private const val CHANNEL_COMPATIBILITY_KEY = "usb_exclusive_channel_compatibility"
 private const val FOREGROUND_BUFFER_MS_KEY = "usb_exclusive_foreground_buffer_ms"
 private const val BACKGROUND_BUFFER_MS_KEY = "usb_exclusive_background_buffer_ms"
+private const val VOLUME_RISK_THRESHOLD_DBFS_KEY = "usb_exclusive_volume_risk_threshold_dbfs"
 
 internal fun SharedPreferences.Editor.putUsbExclusivePreferences(
     preferences: UsbExclusivePreferences
@@ -32,6 +33,7 @@ internal fun SharedPreferences.Editor.putUsbExclusivePreferences(
         .putBoolean(CHANNEL_COMPATIBILITY_KEY, preferences.channelCompatibilityEnabled)
         .putInt(FOREGROUND_BUFFER_MS_KEY, preferences.foregroundBufferMs)
         .putInt(BACKGROUND_BUFFER_MS_KEY, preferences.backgroundBufferMs)
+        .putInt(VOLUME_RISK_THRESHOLD_DBFS_KEY, preferences.volumeRiskThresholdDbfs)
 }
 
 internal fun SharedPreferences.readUsbExclusivePreferences(): UsbExclusivePreferences {
@@ -75,6 +77,10 @@ internal fun SharedPreferences.readUsbExclusivePreferences(): UsbExclusivePrefer
         backgroundBufferMs = getInt(
             BACKGROUND_BUFFER_MS_KEY,
             DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS
+        ),
+        volumeRiskThresholdDbfs = getInt(
+            VOLUME_RISK_THRESHOLD_DBFS_KEY,
+            DEFAULT_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS
         )
     )
 }

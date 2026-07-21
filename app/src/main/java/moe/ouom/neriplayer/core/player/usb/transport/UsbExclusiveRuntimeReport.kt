@@ -141,6 +141,10 @@ data class UsbExclusiveRuntimeMetrics(
     val playerPausedZeroFillBytes: Long? = null,
     val outputPeak: Float? = null,
     val lastOutputPeak: Float? = null,
+    val channel0OutputPeak: Float? = null,
+    val channel1OutputPeak: Float? = null,
+    val lastChannel0OutputPeak: Float? = null,
+    val lastChannel1OutputPeak: Float? = null,
     val transportFailed: Boolean? = null,
     val deviceOnline: Boolean? = null,
     val running: Boolean? = null,
@@ -194,7 +198,7 @@ data class UsbExclusiveRuntimeMetrics(
             pcmFreeBytes?.let { return it <= 0L && (pcmCapacityBytes ?: 0L) > 0L }
             val level = pcmLevelBytes ?: return false
             val capacity = pcmCapacityBytes ?: return false
-            return capacity > 0L && level >= capacity
+            return capacity in 1..level
         }
 
     val isBenignBackpressure: Boolean
@@ -368,7 +372,7 @@ internal fun String.usbRuntimeMetrics(): UsbExclusiveRuntimeMetrics {
 
     val feedbackMode = enumField(
         key = "feedbackMode",
-        values = UsbExclusiveFeedbackMode.values(),
+        values = UsbExclusiveFeedbackMode.entries.toTypedArray(),
         default = UsbExclusiveFeedbackMode.Disabled,
         required = reportVersion >= 2
     )
@@ -376,19 +380,19 @@ internal fun String.usbRuntimeMetrics(): UsbExclusiveRuntimeMetrics {
         field("syncType").isAsynchronousUsbSyncType()
     val feedbackState = enumField(
         key = "feedbackState",
-        values = UsbExclusiveFeedbackState.values(),
+        values = UsbExclusiveFeedbackState.entries.toTypedArray(),
         default = UsbExclusiveFeedbackState.Disabled,
         required = reportVersion >= 2 && asyncFeedbackReport
     )
     val recommendedAction = enumField(
         key = "recommendedAction",
-        values = UsbExclusiveRecoveryAction.values(),
+        values = UsbExclusiveRecoveryAction.entries.toTypedArray(),
         default = UsbExclusiveRecoveryAction.None,
         required = reportVersion >= 2
     )
     val actionOwner = enumField(
         key = "actionOwner",
-        values = UsbExclusiveRecoveryActionOwner.values(),
+        values = UsbExclusiveRecoveryActionOwner.entries.toTypedArray(),
         default = UsbExclusiveRecoveryActionOwner.None,
         required = reportVersion >= 2
     )
@@ -498,6 +502,10 @@ internal fun String.usbRuntimeMetrics(): UsbExclusiveRuntimeMetrics {
     val playerPausedZeroFillBytes = longField("playerPausedZeroFillBytes")
     val outputPeak = floatField("outputPeak", nonNegative = true)
     val lastOutputPeak = floatField("lastOutputPeak", nonNegative = true)
+    val channel0OutputPeak = floatField("channel0OutputPeak", nonNegative = true)
+    val channel1OutputPeak = floatField("channel1OutputPeak", nonNegative = true)
+    val lastChannel0OutputPeak = floatField("lastChannel0OutputPeak", nonNegative = true)
+    val lastChannel1OutputPeak = floatField("lastChannel1OutputPeak", nonNegative = true)
     val transportFailed = booleanV2Field("transportFailed")
     val deviceOnline = booleanV2Field("deviceOnline")
     val running = booleanV2Field("running")
@@ -679,6 +687,10 @@ internal fun String.usbRuntimeMetrics(): UsbExclusiveRuntimeMetrics {
         playerPausedZeroFillBytes = playerPausedZeroFillBytes,
         outputPeak = outputPeak,
         lastOutputPeak = lastOutputPeak,
+        channel0OutputPeak = channel0OutputPeak,
+        channel1OutputPeak = channel1OutputPeak,
+        lastChannel0OutputPeak = lastChannel0OutputPeak,
+        lastChannel1OutputPeak = lastChannel1OutputPeak,
         transportFailed = transportFailed,
         deviceOnline = deviceOnline,
         running = running,
@@ -721,7 +733,7 @@ internal fun UsbExclusiveRuntimeMetrics.withLivePcmFreeBytes(
 }
 
 internal fun String.valueAfter(key: String): String? {
-    val regex = Regex("(?:^|\\s)${Regex.escape(key)}=([^\\s]+)")
+    val regex = Regex("(?:^|\\s)${Regex.escape(key)}=(\\S+)")
     return regex.find(this)?.groupValues?.getOrNull(1)
 }
 
@@ -732,7 +744,7 @@ private data class RuntimeReportFields(
     fun valueAfter(key: String): String? = values[key]
 }
 
-private val runtimeReportFieldRegex = Regex("(?:^|\\s)([^\\s=]+)=([^\\s]+)")
+private val runtimeReportFieldRegex = Regex("(?:^|\\s)([^\\s=]+)=(\\S+)")
 
 private fun String.runtimeReportFields(): RuntimeReportFields {
     val values = linkedMapOf<String, String>()
@@ -796,11 +808,11 @@ private fun String?.isAsynchronousUsbSyncType(): Boolean {
 }
 
 private fun String.toUsbExclusiveErrorCodeOrNull(): UsbExclusiveErrorCode? {
-    return UsbExclusiveErrorCode.values().firstOrNull { it.reportEnumEquals(this) }
+    return UsbExclusiveErrorCode.entries.firstOrNull { it.reportEnumEquals(this) }
 }
 
 internal fun String.toUsbExclusiveRecoveryActionAckStatusOrNull(): UsbExclusiveRecoveryActionAckStatus? {
-    return UsbExclusiveRecoveryActionAckStatus.values()
+    return UsbExclusiveRecoveryActionAckStatus.entries
         .firstOrNull { it.reportEnumEquals(this) }
 }
 

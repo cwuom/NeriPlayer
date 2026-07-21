@@ -141,6 +141,8 @@ data class PlaybackPreferenceSnapshot(
         DEFAULT_USB_EXCLUSIVE_CHANNEL_COMPATIBILITY,
     val usbExclusiveForegroundBufferMs: Int = DEFAULT_USB_EXCLUSIVE_FOREGROUND_BUFFER_MS,
     val usbExclusiveBackgroundBufferMs: Int = DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
+    val usbExclusiveVolumeRiskThresholdDbfs: Int =
+        DEFAULT_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS,
     val allowMixedPlayback: Boolean = false,
     val preemptAudioFocus: Boolean = false,
     val cloudMusicLyricDefaultOffsetMs: Long = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS,
@@ -188,6 +190,9 @@ data class PlaybackPreferenceSnapshot(
             ),
             usbExclusiveBackgroundBufferMs = normalizeUsbExclusiveBackgroundBufferMs(
                 usbExclusiveBackgroundBufferMs
+            ),
+            usbExclusiveVolumeRiskThresholdDbfs = normalizeUsbExclusiveVolumeRiskThresholdDbfs(
+                usbExclusiveVolumeRiskThresholdDbfs
             ),
             cloudMusicLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(cloudMusicLyricDefaultOffsetMs),
             qqMusicLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(qqMusicLyricDefaultOffsetMs),
@@ -462,6 +467,9 @@ internal fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnaps
         usbExclusiveBackgroundBufferMs =
             this[SettingsKeys.USB_EXCLUSIVE_BACKGROUND_BUFFER_MS]
                 ?: DEFAULT_USB_EXCLUSIVE_BACKGROUND_BUFFER_MS,
+        usbExclusiveVolumeRiskThresholdDbfs =
+            this[SettingsKeys.USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS]
+                ?: DEFAULT_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS,
         allowMixedPlayback = this[SettingsKeys.ALLOW_MIXED_PLAYBACK] ?: false,
         preemptAudioFocus = this[SettingsKeys.PREEMPT_AUDIO_FOCUS] ?: false,
         cloudMusicLyricDefaultOffsetMs =
@@ -596,6 +604,7 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
             usbExclusivePreferences.channelCompatibilityEnabled,
         usbExclusiveForegroundBufferMs = usbExclusivePreferences.foregroundBufferMs,
         usbExclusiveBackgroundBufferMs = usbExclusivePreferences.backgroundBufferMs,
+        usbExclusiveVolumeRiskThresholdDbfs = usbExclusivePreferences.volumeRiskThresholdDbfs,
         allowMixedPlayback = prefs.getBoolean(PLAYBACK_ALLOW_MIXED_KEY, false),
         preemptAudioFocus = prefs.getBoolean(PLAYBACK_PREEMPT_AUDIO_FOCUS_KEY, false),
         cloudMusicLyricDefaultOffsetMs = prefs.getLong(

@@ -1626,6 +1626,15 @@ object AutoSettingsSchema {
         val usbExclusiveBackgroundBufferMs = Unit
 
         @AutoSetting(
+            key = "usb_exclusive_volume_risk_threshold_dbfs",
+            type = SettingValueType.Int,
+            defaultInt = DEFAULT_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS,
+            order = 171,
+            access = SettingAccessMode.KeyOnly
+        )
+        val usbExclusiveVolumeRiskThresholdDbfs = Unit
+
+        @AutoSetting(
             key = "allow_mixed_playback",
             type = SettingValueType.Boolean,
             defaultBoolean = false,

@@ -7,20 +7,28 @@ namespace neri::usb::feedback {
 namespace {
 
 constexpr uint32_t kMaximumConsecutiveTransferErrors = 8;
+constexpr int64_t kMinimumAcquireTimeoutNs = 250'000'000;
+constexpr uint16_t kMinimumAcquireTimeoutPeriods = 64;
+constexpr int64_t kMinimumSoftMissNs = 32'000'000;
+constexpr uint16_t kMinimumSoftMissPeriods = 8;
 constexpr int64_t kMinimumHardHoldoverNs = 500'000'000;
 constexpr uint16_t kMinimumHardHoldoverPeriods = 64;
 
-uint16_t hardHoldoverPeriods(int64_t expectedReportPeriodNs) {
+uint16_t periodsForMinimumDuration(
+    int64_t expectedReportPeriodNs,
+    int64_t minimumDurationNs,
+    uint16_t minimumPeriods
+) {
     if (expectedReportPeriodNs <= 0) {
-        return kMinimumHardHoldoverPeriods;
+        return minimumPeriods;
     }
     const uint64_t expectedPeriod = static_cast<uint64_t>(expectedReportPeriodNs);
     const uint64_t durationPeriods =
-        (static_cast<uint64_t>(kMinimumHardHoldoverNs) + expectedPeriod - 1U) /
+        (static_cast<uint64_t>(minimumDurationNs) + expectedPeriod - 1U) /
         expectedPeriod;
     const uint64_t boundedPeriods = std::clamp<uint64_t>(
-        std::max<uint64_t>(durationPeriods, kMinimumHardHoldoverPeriods),
-        kMinimumHardHoldoverPeriods,
+        std::max<uint64_t>(durationPeriods, minimumPeriods),
+        minimumPeriods,
         std::numeric_limits<uint16_t>::max()
     );
     return static_cast<uint16_t>(boundedPeriods);
@@ -40,9 +48,21 @@ FeedbackEstimatorConfig estimatorConfig() {
 FeedbackClockConfig clockConfig(int64_t expectedReportPeriodNs) {
     return FeedbackClockConfig {
         expectedReportPeriodNs,
-        64,
-        8,
-        hardHoldoverPeriods(expectedReportPeriodNs),
+        periodsForMinimumDuration(
+            expectedReportPeriodNs,
+            kMinimumAcquireTimeoutNs,
+            kMinimumAcquireTimeoutPeriods
+        ),
+        periodsForMinimumDuration(
+            expectedReportPeriodNs,
+            kMinimumSoftMissNs,
+            kMinimumSoftMissPeriods
+        ),
+        periodsForMinimumDuration(
+            expectedReportPeriodNs,
+            kMinimumHardHoldoverNs,
+            kMinimumHardHoldoverPeriods
+        ),
         3,
         2'000,
         1'000
