@@ -117,8 +117,13 @@ void rejectsMalformedDescriptors() {
 void rejectsFormatsThatNeedFeedbackScheduling() {
     constexpr uint8_t isochronousAdaptive = 0x09;
     constexpr uint8_t isochronousAsynchronous = 0x05;
+    constexpr uint8_t isochronousSynchronous = 0x0D;
     constexpr uint8_t isochronousImplicitFeedback = 0x21;
+    assert(std::string(neri::usb::uac1::syncTypeName(isochronousAdaptive)) == "adaptive");
+    assert(std::string(neri::usb::uac1::syncTypeName(isochronousAsynchronous)) == "asynchronous");
+    assert(std::string(neri::usb::uac1::syncTypeName(isochronousSynchronous)) == "synchronous");
     assert(!neri::usb::uac1::requiresFeedbackScheduler(isochronousAdaptive));
+    assert(!neri::usb::uac1::requiresFeedbackScheduler(isochronousSynchronous));
     assert(neri::usb::uac1::requiresFeedbackScheduler(isochronousAsynchronous));
     assert(neri::usb::uac1::requiresFeedbackScheduler(isochronousImplicitFeedback));
 }

@@ -14,4 +14,8 @@ feature-off USB host models:
 - Android ABI compilation remains a separate job from the host model tests and
   verifies non-empty `lib_neri.so` outputs for `arm64-v8a`, `armeabi-v7a`,
   `x86`, and `x86_64`
+- the streaming synchronization regression matrix verifies UAC1 adaptive and
+  synchronous routes, UAC1 asynchronous and implicit fail-closed behavior,
+  UAC2 adaptive and synchronous routes, and UAC2 explicit asynchronous and
+  implicit-feedback behavior before transport setup
 - real-device qualification remains blocked outside the private evidence tree

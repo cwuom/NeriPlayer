@@ -177,8 +177,13 @@ void verifiesTerminalClockSourceMapping() {
 void rejectsFormatsThatNeedFeedbackScheduling() {
     constexpr uint8_t isochronousAdaptive = 0x09;
     constexpr uint8_t isochronousAsynchronous = 0x05;
+    constexpr uint8_t isochronousSynchronous = 0x0D;
     constexpr uint8_t isochronousImplicitFeedback = 0x21;
+    assert(std::string(neri::usb::uac2::syncTypeName(isochronousAdaptive)) == "adaptive");
+    assert(std::string(neri::usb::uac2::syncTypeName(isochronousAsynchronous)) == "asynchronous");
+    assert(std::string(neri::usb::uac2::syncTypeName(isochronousSynchronous)) == "synchronous");
     assert(!neri::usb::uac2::requiresFeedbackScheduler(isochronousAdaptive));
+    assert(!neri::usb::uac2::requiresFeedbackScheduler(isochronousSynchronous));
     assert(neri::usb::uac2::requiresFeedbackScheduler(isochronousAsynchronous));
     assert(neri::usb::uac2::requiresFeedbackScheduler(isochronousImplicitFeedback));
 }
