@@ -173,8 +173,10 @@ fun HomeScreen(
     LaunchedEffect(appContext) {
         localPlaylistsReady = false
         val localPlaylistRepo = withContext(Dispatchers.IO) {
-            LocalPlaylistRepository.getInstance(appContext)
+            val repository = LocalPlaylistRepository.getInstance(appContext)
+            if (repository.awaitInitialized()) repository else null
         }
+        if (localPlaylistRepo == null) return@LaunchedEffect
         localPlaylistRepo.playlists.collect { playlists ->
             localPlaylists = playlists
             localPlaylistsReady = true

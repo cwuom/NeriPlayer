@@ -64,13 +64,17 @@ object LocalFilesPlaylist {
     }
 
     fun merge(playlists: List<LocalPlaylist>, context: Context): LocalPlaylist {
+        val deduper = SystemPlaylistSongDeduper(
+            playlists.sumOf { playlist -> playlist.songs.size }
+        )
+        playlists.forEach { playlist ->
+            deduper.addAll(playlist.songs)
+        }
+
         return LocalPlaylist(
             id = SYSTEM_ID,
             name = currentName(context),
-            songs = playlists
-                .flatMap { it.songs }
-                .distinctSystemSongs()
-                .toMutableList(),
+            songs = deduper.takeSongs(),
             modifiedAt = playlists.maxOfOrNull { it.modifiedAt } ?: System.currentTimeMillis(),
             customCoverUrl = playlists.lastOrNull { !it.customCoverUrl.isNullOrBlank() }?.customCoverUrl,
             songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION

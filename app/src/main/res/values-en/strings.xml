@@ -371,6 +371,7 @@
     <string name="youtube_music_playlist_partial_loaded">Some playlist items are still missing. Showing the tracks loaded so far.</string>
     <string name="youtube_music_playlist_wait_full_load">The playlist is not fully loaded yet. Try again later or tap refresh.</string>
     <string name="playlist_load_failed_format">Load failed: %s</string>
+    <string name="local_playlist_initialization_failed">Local playlists could not be initialized. Restart the app and try again.</string>
 
     <!-- Library -->
     <string name="library_favorite_tab_playlists">Playlists</string>

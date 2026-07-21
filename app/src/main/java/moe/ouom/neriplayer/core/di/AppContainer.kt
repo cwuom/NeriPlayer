@@ -43,6 +43,7 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicPlaybackRepository
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
 import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
@@ -400,11 +401,25 @@ object AppContainer {
     fun initialize(app: Application) {
         this.application = app
         AudioDownloadManager.initialize(app)
+        warmLocalPlaylistRepository()
         primeProxySetting()
         startCookieObserver()
         startYouTubeAuthObserver()
         startSettingsObserver()
         warmYouTubePlaybackOnAppStart()
+    }
+
+    private fun warmLocalPlaylistRepository() {
+        scope.launch {
+            runCatching {
+                val repository = LocalPlaylistRepository.getInstance(application)
+                if (!repository.awaitInitialized()) {
+                    NPLogger.e("AppContainer", "Local playlist preload failed")
+                }
+            }.onFailure { error ->
+                NPLogger.e("AppContainer", "Failed to preload local playlists", error)
+            }
+        }
     }
 
     private fun primeProxySetting() {

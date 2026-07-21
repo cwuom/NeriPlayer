@@ -3,6 +3,8 @@ package moe.ouom.neriplayer.ui.screen.playlist
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailUiState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LocalPlaylistDetailHeaderCoverPolicyTest {
@@ -68,5 +70,21 @@ class LocalPlaylistDetailHeaderCoverPolicyTest {
                 requestedPlaylistId = 2L
             )
         )
+    }
+
+    @Test
+    fun `initialization failure is not treated as a deleted playlist`() {
+        val failedState = LocalPlaylistDetailUiState(
+            isResolved = true,
+            initializationFailed = true,
+            requestedPlaylistId = 2L
+        )
+        val deletedState = LocalPlaylistDetailUiState(
+            isResolved = true,
+            requestedPlaylistId = 2L
+        )
+
+        assertFalse(shouldHandleMissingLocalPlaylistAsDeleted(failedState))
+        assertTrue(shouldHandleMissingLocalPlaylistAsDeleted(deletedState))
     }
 }

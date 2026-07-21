@@ -441,6 +441,7 @@ fun LyricsScreen(
 
             // 收藏按钮（与 NowPlaying 保持一致的逻辑）
             val playlists by PlayerManager.playlistsFlow.collectAsState()
+            val localPlaylistsReady by PlayerManager.localPlaylistsReadyFlow.collectAsState()
             val isFavoriteComputed = remember(currentSong, playlists) {
                 val song = currentSong
                 if (song == null) {
@@ -460,21 +461,18 @@ fun LyricsScreen(
 
             HapticIconButton(
                 onClick = {
-                    if (currentSong == null) return@HapticIconButton
-                    val willFav = !isFavorite
+                    val song = currentSong ?: return@HapticIconButton
+                    val willFav = nextFavoriteStateAfterTap(isFavorite)
                     launchWithLocalSyncWarning(
-                        song = currentSong,
+                        song = song,
                         actionLabel = favoriteActionLabel,
                         warnForLocalSync = willFav
                     ) {
                         favOverride = willFav
-                        if (willFav) {
-                            PlayerManager.addCurrentToFavorites()
-                        } else {
-                            PlayerManager.removeCurrentFromFavorites()
-                        }
+                        PlayerManager.toggleCurrentFavorite()
                     }
                 },
+                enabled = localPlaylistsReady,
                 modifier = Modifier.size(48.dp)
                     .then(
                         if (sharedTransitionScope != null && animatedContentScope != null) {

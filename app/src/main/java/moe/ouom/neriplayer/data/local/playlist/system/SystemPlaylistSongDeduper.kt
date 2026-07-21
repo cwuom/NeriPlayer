@@ -31,13 +31,29 @@ import moe.ouom.neriplayer.data.model.SongItem
 internal fun List<SongItem>.distinctSystemSongs(): List<SongItem> {
     if (size < 2) return this
 
-    val distinct = ArrayList<SongItem>(size)
-    val seenIdentities = HashSet<SongIdentity>(size)
-    val seenLocalKeys = HashSet<String>()
-    for (song in this) {
+    return SystemPlaylistSongDeduper(size)
+        .apply { addAll(this@distinctSystemSongs) }
+        .songs()
+}
+
+internal class SystemPlaylistSongDeduper(expectedSongCount: Int) {
+    private val initialCapacity = expectedSongCount.coerceIn(0, MAX_INITIAL_CAPACITY)
+    private val distinct = ArrayList<SongItem>(initialCapacity)
+    private val seenIdentities = HashSet<SongIdentity>(initialCapacity)
+    private val seenLocalKeys = HashSet<String>()
+
+    fun addAll(songs: Iterable<SongItem>) {
+        songs.forEach(::add)
+    }
+
+    fun songs(): List<SongItem> = distinct
+
+    fun takeSongs(): MutableList<SongItem> = distinct
+
+    private fun add(song: SongItem) {
         val identity = song.identity()
         if (identity in seenIdentities) {
-            continue
+            return
         }
         val localKeys = LocalSongSupport.localDuplicateKeys(
             song = song,
@@ -49,5 +65,8 @@ internal fun List<SongItem>.distinctSystemSongs(): List<SongItem> {
             seenLocalKeys += localKeys
         }
     }
-    return distinct
+
+    private companion object {
+        const val MAX_INITIAL_CAPACITY = 4_096
+    }
 }

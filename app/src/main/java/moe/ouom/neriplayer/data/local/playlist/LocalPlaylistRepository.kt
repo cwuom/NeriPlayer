@@ -27,12 +27,16 @@ import android.annotation.SuppressLint
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -75,6 +79,7 @@ class LocalPlaylistRepository private constructor(
         SystemLocalPlaylists.normalize(playlists, context)
     },
     private val autoSyncEnabled: Boolean = true,
+    private val loadSynchronously: Boolean = false,
     private val storage: LocalPlaylistStorage = LocalPlaylistFileStorage(file, context.filesDir),
     private val providedSyncMutationStore: LocalPlaylistSyncMutationStore? = null,
     private val providedAutoSyncTrigger: (() -> Unit)? = null
@@ -135,9 +140,17 @@ class LocalPlaylistRepository private constructor(
     val playlistCount: StateFlow<Int> = _playlistCount
     private val _syncMutationPending = MutableStateFlow(false)
     val syncMutationPending: StateFlow<Boolean> = _syncMutationPending
+    private val _initializationReadyFlow = MutableStateFlow(false)
+    internal val initializationReadyFlow: StateFlow<Boolean> = _initializationReadyFlow
     private var preserveBackupOnNextWrite = false
     private var corruptPrimaryNeedsQuarantine = false
     private var replaceBackupOnNextWrite = false
+    private val initialLoad = CompletableDeferred<Unit>()
+    @Volatile
+    private var initialLoadFailure: Exception? = null
+    private val initializationScope by lazy {
+        CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    }
 
     private data class PlaylistLoadResult(
         val playlists: List<LocalPlaylist>,
@@ -152,7 +165,36 @@ class LocalPlaylistRepository private constructor(
     )
 
     init {
-        loadFromDisk()
+        if (loadSynchronously) {
+            completeInitialLoad()
+        } else {
+            initializationScope.launch {
+                completeInitialLoad()
+            }
+        }
+    }
+
+    internal suspend fun awaitInitialized(): Boolean {
+        initialLoad.await()
+        return initialLoadFailure == null
+    }
+
+    internal suspend fun requireInitialized() {
+        if (!awaitInitialized()) {
+            throw IOException("Local playlist initialization failed", initialLoadFailure)
+        }
+    }
+
+    private fun completeInitialLoad() {
+        try {
+            loadFromDisk()
+            _initializationReadyFlow.value = true
+            initialLoad.complete(Unit)
+        } catch (error: Exception) {
+            NPLogger.e("LocalPlaylistRepo", "Failed to load playlists", error)
+            initialLoadFailure = error
+            initialLoad.complete(Unit)
+        }
     }
 
     private fun loadFromDisk() {
@@ -384,8 +426,9 @@ class LocalPlaylistRepository private constructor(
     }
 
     private suspend fun <T> commitPlaylistMutation(block: () -> T): T {
-        return playlistCommitMutex.withLock {
-            block()
+        return withContext(Dispatchers.IO) {
+            requireInitialized()
+            playlistCommitMutex.withLock(action = block)
         }
     }
 
@@ -1785,10 +1828,12 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-    suspend fun syncFavoritesToNeteaseLiked(client: NeteaseClient): NeteaseLikeSyncResult {
-        val favorites = FavoritesPlaylist.firstOrNull(_playlists.value, context)
-        return syncSongsToNeteaseLiked(client, favorites?.songs.orEmpty())
-    }
+    suspend fun syncFavoritesToNeteaseLiked(client: NeteaseClient): NeteaseLikeSyncResult =
+        withContext(Dispatchers.IO) {
+            requireInitialized()
+            val favorites = FavoritesPlaylist.firstOrNull(_playlists.value, context)
+            syncSongsToNeteaseLiked(client, favorites?.songs.orEmpty())
+        }
 
     suspend fun syncSongsToNeteaseLiked(
         client: NeteaseClient,
@@ -2488,6 +2533,7 @@ class LocalPlaylistRepository private constructor(
             file: File,
             normalizePlaylists: (List<LocalPlaylist>) -> List<LocalPlaylist> = { it },
             autoSyncEnabled: Boolean = false,
+            loadSynchronously: Boolean = true,
             storage: LocalPlaylistStorage = LocalPlaylistFileStorage(file, context.filesDir),
             syncMutationStore: LocalPlaylistSyncMutationStore? = null,
             autoSyncTrigger: (() -> Unit)? = null
@@ -2497,6 +2543,7 @@ class LocalPlaylistRepository private constructor(
                 file = file,
                 normalizePlaylists = normalizePlaylists,
                 autoSyncEnabled = autoSyncEnabled,
+                loadSynchronously = loadSynchronously,
                 storage = storage,
                 providedSyncMutationStore =
                     syncMutationStore ?: InMemoryLocalPlaylistSyncMutationStore(),

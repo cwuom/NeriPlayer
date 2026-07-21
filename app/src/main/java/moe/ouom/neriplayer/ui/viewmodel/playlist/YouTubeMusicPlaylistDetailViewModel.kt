@@ -38,6 +38,7 @@ import moe.ouom.neriplayer.data.platform.youtube.CachedYouTubeMusicPlaylistTrack
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeMusicPlaylistCacheRepository
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
@@ -190,11 +191,12 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
         fallback: YouTubeMusicPlaylist,
         loading: Boolean = false
     ) {
+        val localPlaylists = localPlaylistsSnapshot()
         val cachedState = withContext(Dispatchers.Default) {
             val cachedPlaylist = cached.toPlaylist(fallback)
             val cachedTracks = cached.tracks
                 .map { it.toSongItem(cachedPlaylist) }
-                .map(::overlayUserEdits)
+                .map { overlayUserEdits(it, localPlaylists) }
             YouTubeMusicPlaylistDetailUiState(
                 loading = loading,
                 playlist = cachedPlaylist,
@@ -219,10 +221,11 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
         prefetchSource: String
     ) {
         val resolvedPlaylist = detail.toPlaylist(fallback = fallback)
+        val localPlaylists = localPlaylistsSnapshot()
         val resolvedTracks = withContext(Dispatchers.Default) {
             detail.tracks
                 .map { it.toSongItem(resolvedPlaylist) }
-                .map(::overlayUserEdits)
+                .map { overlayUserEdits(it, localPlaylists) }
         }
         if (detail.fullyLoaded) {
             withContext(Dispatchers.IO) {
@@ -388,14 +391,25 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
         }
     }
 
-    private fun overlayUserEdits(baseSong: SongItem): SongItem {
+    private suspend fun localPlaylistsSnapshot(): List<LocalPlaylist> {
+        return if (localPlaylistRepo.awaitInitialized()) {
+            localPlaylistRepo.playlists.value.toList()
+        } else {
+            emptyList()
+        }
+    }
+
+    private fun overlayUserEdits(
+        baseSong: SongItem,
+        localPlaylists: List<LocalPlaylist>
+    ): SongItem {
         val currentMatch = PlayerManager.currentSongFlow.value
             ?.takeIf { it.sameIdentityAs(baseSong) }
         if (currentMatch != null) {
             return mergeSongEdits(baseSong, currentMatch)
         }
 
-        val playlistMatch = localPlaylistRepo.playlists.value
+        val playlistMatch = localPlaylists
             .asSequence()
             .flatMap { it.songs.asSequence() }
             .firstOrNull { it.sameIdentityAs(baseSong) }

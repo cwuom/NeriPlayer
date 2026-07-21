@@ -93,6 +93,7 @@ class BackupManager(private val context: Context) {
     suspend fun exportPlaylists(uri: Uri): Result<String> = withContext(Dispatchers.IO) {
         try {
             val playlistRepo = LocalPlaylistRepository.getInstance(context)
+            playlistRepo.requireInitialized()
             val historyRepo = PlayHistoryRepository.getInstance(context)
             val playbackStatsRepo = PlaybackStatsRepository.getInstance(context)
             val playlists = playlistRepo.playlists.value
@@ -153,6 +154,7 @@ class BackupManager(private val context: Context) {
 
             SyncCoordinator.withExclusive {
                 val playlistRepo = LocalPlaylistRepository.getInstance(context)
+                playlistRepo.requireInitialized()
                 val historyRepo = PlayHistoryRepository.getInstance(context)
                 val playbackStatsRepo = PlaybackStatsRepository.getInstance(context)
                 val currentPlaylists = playlistRepo.playlists.value.toMutableList()
@@ -398,6 +400,7 @@ class BackupManager(private val context: Context) {
             val backupPlaylists = backupData.playlists.orEmpty()
 
             val playlistRepo = LocalPlaylistRepository.getInstance(context)
+            playlistRepo.requireInitialized()
             val currentPlaylists = playlistRepo.playlists.value
             val playlistLookup = buildPlaylistLookup(currentPlaylists)
 

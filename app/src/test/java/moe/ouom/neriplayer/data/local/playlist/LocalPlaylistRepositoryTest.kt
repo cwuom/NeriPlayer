@@ -17,6 +17,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -25,11 +26,82 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 class LocalPlaylistRepositoryTest {
 
     @get:Rule
     val tempFolder = TemporaryFolder()
+
+    @Test
+    fun `async initial load does not publish or overwrite before persisted state is ready`() = runTest {
+        val storage = BlockingReadStorage(
+            primary = playlistJson(id = 201L, name = "persisted")
+        )
+        val normalizationThread = AtomicReference<Thread>()
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "async_initial_load.json"),
+            normalizePlaylists = {
+                normalizationThread.set(Thread.currentThread())
+                it
+            },
+            autoSyncEnabled = false,
+            loadSynchronously = false,
+            storage = storage
+        )
+        assertTrue(storage.primaryReadStarted.await(5, TimeUnit.SECONDS))
+        assertNotSame(Thread.currentThread(), storage.primaryReadThread.get())
+        assertTrue(repository.playlists.value.isEmpty())
+        assertFalse(repository.initializationReadyFlow.value)
+
+        val createPlaylist = async(Dispatchers.Default) {
+            repository.createPlaylist("new")
+        }
+        try {
+            assertFalse(createPlaylist.isCompleted)
+        } finally {
+            storage.allowPrimaryRead.countDown()
+        }
+        createPlaylist.await()
+
+        assertNotSame(Thread.currentThread(), normalizationThread.get())
+        assertTrue(repository.initializationReadyFlow.value)
+        assertEquals(
+            setOf("persisted", "new"),
+            repository.playlists.value.mapTo(mutableSetOf(), LocalPlaylist::name)
+        )
+    }
+
+    @Test
+    fun `failed async initial load remains read only`() = runTest {
+        val storage = RecordingStorage(
+            primary = playlistJson(id = 202L, name = "persisted")
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "failed_async_initial_load.json"),
+            normalizePlaylists = { throw IOException("simulated normalization failure") },
+            autoSyncEnabled = false,
+            loadSynchronously = false,
+            storage = storage
+        )
+
+        assertFalse(repository.awaitInitialized())
+        var mutationRejected = false
+        try {
+            repository.createPlaylist("new")
+        } catch (_: IOException) {
+            mutationRejected = true
+        }
+
+        assertTrue(mutationRejected)
+        assertEquals(0, storage.commitCount)
+        assertTrue(repository.playlists.value.isEmpty())
+        assertFalse(repository.initializationReadyFlow.value)
+    }
 
     @Test
     fun `concurrent prepared adds keep every distinct song`() = runTest {
@@ -1093,12 +1165,42 @@ class LocalPlaylistRepositoryTest {
         override fun quarantinePrimary(): File? = null
     }
 
+    private class BlockingReadStorage(
+        private var primary: String?
+    ) : LocalPlaylistStorage {
+        val primaryReadStarted = CountDownLatch(1)
+        val allowPrimaryRead = CountDownLatch(1)
+        val primaryReadThread = AtomicReference<Thread>()
+
+        override fun readPrimary(): String? {
+            primaryReadThread.set(Thread.currentThread())
+            primaryReadStarted.countDown()
+            check(allowPrimaryRead.await(5, TimeUnit.SECONDS)) {
+                "Timed out waiting to release playlist initialization"
+            }
+            return primary
+        }
+
+        override fun readBackup(): String? = null
+
+        override fun commit(
+            text: String,
+            rotateBackup: Boolean,
+            replaceBackupWithCommittedPrimary: Boolean
+        ) {
+            primary = text
+        }
+
+        override fun quarantinePrimary(): File? = null
+    }
+
     private class RecordingStorage(
         var primary: String?,
         private val backup: String? = null,
         var failCommit: Boolean = false
     ) : LocalPlaylistStorage {
         var pendingSyncMutation: String? = null
+        var commitCount: Int = 0
 
         override fun readPrimary(): String? = primary
 
@@ -1109,6 +1211,7 @@ class LocalPlaylistRepositoryTest {
             rotateBackup: Boolean,
             replaceBackupWithCommittedPrimary: Boolean
         ) {
+            commitCount++
             if (failCommit) throw IOException("simulated write failure")
             primary = text
         }

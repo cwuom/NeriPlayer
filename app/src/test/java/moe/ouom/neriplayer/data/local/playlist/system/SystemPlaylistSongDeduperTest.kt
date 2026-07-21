@@ -18,6 +18,18 @@ class SystemPlaylistSongDeduperTest {
     }
 
     @Test
+    fun `deduplicates matching songs across source playlist batches`() {
+        val first = remoteSong(id = 1L, name = "first")
+        val duplicated = remoteSong(id = 1L, name = "duplicated")
+        val deduper = SystemPlaylistSongDeduper(expectedSongCount = 2)
+
+        deduper.addAll(listOf(first))
+        deduper.addAll(listOf(duplicated))
+
+        assertEquals(listOf(first), deduper.songs())
+    }
+
+    @Test
     fun `keeps first local song when metadata fallback matches`() {
         val contentAlias = localSong(
             id = 1L,
@@ -33,6 +45,25 @@ class SystemPlaylistSongDeduperTest {
         val distinct = listOf(contentAlias, pathAlias).distinctSystemSongs()
 
         assertEquals(listOf(contentAlias), distinct)
+    }
+
+    @Test
+    fun `deduplicates a large downloaded local collection while preserving first entries`() {
+        val uniqueSongs = List(8_192) { index ->
+            localSong(
+                id = index.toLong(),
+                mediaUri = "/storage/emulated/0/Music/download-$index.mp3",
+                localFilePath = "/storage/emulated/0/Music/download-$index.mp3"
+            ).copy(
+                name = "download-$index",
+                localFileName = "download-$index.mp3"
+            )
+        }
+        val duplicateSongs = uniqueSongs.map { song -> song.copy(name = "duplicate-${song.id}") }
+
+        val distinct = (uniqueSongs + duplicateSongs).distinctSystemSongs()
+
+        assertEquals(uniqueSongs, distinct)
     }
 
     private fun remoteSong(

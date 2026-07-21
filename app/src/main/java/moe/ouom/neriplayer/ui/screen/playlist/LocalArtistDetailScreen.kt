@@ -129,6 +129,11 @@ private fun SongItem.matchesLocalArtistSongSearch(
     }
 }
 
+internal fun shouldRemoveMissingLocalArtistUsage(
+    localPlaylistsReady: Boolean,
+    artistFound: Boolean
+): Boolean = localPlaylistsReady && !artistFound
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun LocalArtistDetailScreen(
@@ -140,6 +145,7 @@ fun LocalArtistDetailScreen(
     val context = LocalContext.current
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val playlists by repo.playlists.collectAsState()
+    val localPlaylistsReady by repo.initializationReadyFlow.collectAsState()
     val artistKey = remember(artistName) { localArtistStableKey(artistName) }
     val localArtists = remember(playlists, context) {
         buildLocalArtistSummaries(playlists, context)
@@ -224,12 +230,17 @@ fun LocalArtistDetailScreen(
         }
     }
 
-    LaunchedEffect(artist, headerCover) {
+    LaunchedEffect(artist, headerCover, localPlaylistsReady) {
+        if (!localPlaylistsReady) return@LaunchedEffect
         if (artist == null) {
-            AppContainer.playlistUsageRepo.removeEntry(
-                artistId,
-                PlaylistUsageRepository.SOURCE_LOCAL_ARTIST
-            )
+            val loadedArtistFound = buildLocalArtistSummaries(repo.playlists.value, context)
+                .any { it.stableKey == artistKey }
+            if (shouldRemoveMissingLocalArtistUsage(localPlaylistsReady, loadedArtistFound)) {
+                AppContainer.playlistUsageRepo.removeEntry(
+                    artistId,
+                    PlaylistUsageRepository.SOURCE_LOCAL_ARTIST
+                )
+            }
             return@LaunchedEffect
         }
 

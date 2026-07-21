@@ -473,6 +473,7 @@ fun NowPlayingScreen(
     var playbackSourceType by remember { mutableStateOf<PlaybackSourceType?>(null) }
 
     val playlists by PlayerManager.playlistsFlow.collectAsStateWithLifecycle()
+    val localPlaylistsReady by PlayerManager.localPlaylistsReadyFlow.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val coverDownloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
     val currentCoverUrl = remember(currentSong, context, coverDownloadPresenceVersion) {
@@ -1014,21 +1015,18 @@ fun NowPlayingScreen(
                         ) {
                             HapticIconButton(
                                 onClick = {
-                                    if (currentSong == null) return@HapticIconButton
-                                    val willFav = !isFavorite
+                                    val song = currentSong ?: return@HapticIconButton
+                                    val willFav = nextFavoriteStateAfterTap(isFavorite)
                                     launchWithLocalSyncWarning(
-                                        song = currentSong,
+                                        song = song,
                                         actionLabel = context.getString(R.string.favorite_add),
                                         warnForLocalSync = willFav
                                     ) {
                                         favOverride = willFav
-                                        if (willFav) {
-                                            PlayerManager.addCurrentToFavorites()
-                                        } else {
-                                            PlayerManager.removeCurrentFromFavorites()
-                                        }
+                                        PlayerManager.toggleCurrentFavorite()
                                     }
                                 },
+                                enabled = localPlaylistsReady,
                                 modifier = Modifier.size(48.dp)
                                     .sharedBounds(
                                         rememberSharedContentState(key = "btn_favorite"),

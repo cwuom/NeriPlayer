@@ -589,11 +589,15 @@ class AudioPlayerService : Service() {
 
     private fun refreshFavoriteSongKeys(): Boolean {
         val previousFavoriteSongKeys = favoriteSongKeys
-        val updatedFavoriteSongKeys = PlayerManager.playlistsFlow.value
-            .firstOrNull { FavoritesPlaylist.isSystemPlaylist(it, this) }
-            ?.songs
-            ?.mapTo(mutableSetOf()) { it.stableKey() }
-            .orEmpty()
+        val updatedFavoriteSongKeys = if (PlayerManager.localPlaylistsReady) {
+            PlayerManager.playlistsFlow.value
+                .firstOrNull { FavoritesPlaylist.isSystemPlaylist(it, this) }
+                ?.songs
+                ?.mapTo(mutableSetOf()) { it.stableKey() }
+                .orEmpty()
+        } else {
+            emptySet()
+        }
         favoriteSongKeys = updatedFavoriteSongKeys
         return hasCurrentSongFavoriteStateChanged(
             currentSongKey = playbackSurfaceSong()?.stableKey(),
@@ -1053,6 +1057,13 @@ class AudioPlayerService : Service() {
         serviceScope.launch {
             PlayerManager.playlistsFlow.collectSafely("playlistsFlow") {
                 if (!refreshFavoriteSongKeys()) return@collectSafely
+                updatePlaybackState(force = true)
+                updateNotification()
+            }
+        }
+        serviceScope.launch {
+            PlayerManager.localPlaylistsReadyFlow.collectSafely("localPlaylistsReadyFlow") {
+                refreshFavoriteSongKeys()
                 updatePlaybackState(force = true)
                 updateNotification()
             }
@@ -1590,12 +1601,20 @@ class AudioPlayerService : Service() {
     }
 
     private fun requiresInteractiveFavoriteConfirmation(song: SongItem?): Boolean {
-        if (song == null) return false
-        return !isFavoriteSong(song) && LocalSongSupport.isLocalSong(song, this)
+        return shouldUseInteractiveFavoriteIntent(
+            localPlaylistsReady = PlayerManager.localPlaylistsReady,
+            hasCurrentSong = song != null,
+            isFavorite = isFavoriteSong(song),
+            isLocalSong = song?.let { LocalSongSupport.isLocalSong(it, this) } == true,
+        )
     }
 
     private fun canToggleFavoriteFromExternalSurface(song: SongItem?): Boolean {
-        return !requiresInteractiveFavoriteConfirmation(song)
+        return shouldAllowExternalFavoriteToggle(
+            localPlaylistsReady = PlayerManager.localPlaylistsReady,
+            hasCurrentSong = song != null,
+            requiresInteractiveConfirmation = requiresInteractiveFavoriteConfirmation(song),
+        )
     }
 
     private fun updateAll() {

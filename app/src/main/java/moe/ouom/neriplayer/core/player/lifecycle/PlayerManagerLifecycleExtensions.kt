@@ -145,6 +145,7 @@ internal fun PlayerManager.initializeImpl(
                 "initialize(): maxCacheSize=$maxCacheSize, app=${app.packageName}, stack=[${debugStackHint()}]"
             )
             application = app
+            _localPlaylistsReadyFlow.value = false
             FloatingLyricsOverlayManager.initialize(app)
             currentCacheSize = maxCacheSize
 
@@ -900,8 +901,11 @@ internal fun PlayerManager.initializeImpl(
         }
 
         ioScope.launch {
-            localRepo.playlists.collect { repoLists ->
+            val repository = localRepo
+            if (!repository.awaitInitialized()) return@launch
+            repository.playlists.collect { repoLists ->
                 _playlistsFlow.value = PlayerFavoritesController.deepCopyPlaylists(repoLists)
+                _localPlaylistsReadyFlow.value = true
             }
         }
 
@@ -3393,6 +3397,7 @@ internal fun PlayerManager.releaseImpl() {
         NPLogger.d("NERI-PlayerManager", "release(): completed")
     } finally {
         initialized = false
+        _localPlaylistsReadyFlow.value = false
         AudioReactive.onEnabledChanged = null
         lastRequiresPcmAudioProcessing = null
         runCatching { conditionalHttpFactory?.close() }

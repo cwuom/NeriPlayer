@@ -130,6 +130,7 @@ import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
@@ -219,6 +220,9 @@ fun ExploreScreen(
 
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allLocalPlaylists by repo.playlists.collectAsStateWithLifecycle(initialValue = emptyList())
+    val localPlaylistsReady by repo.initializationReadyFlow.collectAsStateWithLifecycle(
+        initialValue = false
+    )
     val favoriteSongKeys = remember(allLocalPlaylists, context) {
         FavoritesPlaylist.firstOrNull(allLocalPlaylists, context)
             ?.songs
@@ -487,6 +491,7 @@ fun ExploreScreen(
                                         index = index + 1,
                                         song = song,
                                         isFavorite = isFavoriteSong,
+                                        favoriteActionEnabled = localPlaylistsReady,
                                         offlineMode = offlineMode,
                                         onClick = {
                                             if (song.album == PlayerManager.BILI_SOURCE_TAG) {
@@ -512,11 +517,19 @@ fun ExploreScreen(
                                         onPlayNext = { onSongPlayNext(song) },
                                         onAddToQueueEnd = { onSongAddToQueueEnd(song) },
                                         onToggleFavorite = {
-                                            scope.launchLocalPlaylistMutation("toggleFavoriteFromExplore") {
-                                                if (isFavoriteSong) {
-                                                    repo.removeFromFavorites(song)
-                                                } else {
-                                                    repo.addToFavorites(song)
+                                            if (localPlaylistsReady) {
+                                                scope.launchLocalPlaylistMutation(
+                                                    "toggleFavoriteFromExplore"
+                                                ) {
+                                                    val isFavoriteAtAction = FavoritesPlaylist
+                                                        .firstOrNull(repo.playlists.value, context)
+                                                        ?.songs
+                                                        ?.any { it.sameIdentityAs(song) } == true
+                                                    if (isFavoriteAtAction) {
+                                                        repo.removeFromFavorites(song)
+                                                    } else {
+                                                        repo.addToFavorites(song)
+                                                    }
                                                 }
                                             }
                                         }
@@ -929,6 +942,7 @@ private fun SongRow(
     index: Int,
     song: SongItem,
     isFavorite: Boolean,
+    favoriteActionEnabled: Boolean,
     offlineMode: Boolean,
     onClick: () -> Unit,
     onPlayNow: () -> Unit,
@@ -1053,6 +1067,7 @@ private fun SongRow(
                             }
                         )
                     },
+                    enabled = favoriteActionEnabled,
                     onClick = {
                         context.performHapticFeedback()
                         onToggleFavorite()

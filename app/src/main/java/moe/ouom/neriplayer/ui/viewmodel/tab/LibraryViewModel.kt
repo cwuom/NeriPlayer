@@ -91,6 +91,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     init {
         // 本地歌单
         viewModelScope.launch {
+            if (!localRepo.awaitInitialized()) return@launch
             localRepo.playlists.collect { list ->
                 _uiState.value = _uiState.value.copy(localPlaylists = list)
             }

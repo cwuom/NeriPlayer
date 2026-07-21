@@ -15,6 +15,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
+import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
@@ -73,6 +74,7 @@ internal data class RestoredPlayerStateSnapshot(
 
 private val songMetadataRequestCoordinator = SongMetadataRequestCoordinator()
 private val songMetadataMutationMutex = Mutex()
+private val favoriteMutationMutex = Mutex()
 
 private suspend fun <T> runSongMetadataMutation(block: suspend () -> T): T {
     return withContext(Dispatchers.IO) {
@@ -334,13 +336,17 @@ internal fun PlayerManager.scheduleStatePersist(
     }
 }
 
-private fun PlayerManager.updateCurrentFavorite(song: SongItem, add: Boolean) {
+private suspend fun PlayerManager.updateCurrentFavorite(
+    song: SongItem,
+    add: Boolean,
+    playlists: List<LocalPlaylist>
+) {
     NPLogger.d(
         "NERI-PlayerManager",
-        "updateCurrentFavorite(): action=${if (add) "add" else "remove"}, song=${song.name}/${song.id}, playlists=${_playlistsFlow.value.size}, stack=[${debugStackHint()}]"
+        "updateCurrentFavorite(): action=${if (add) "add" else "remove"}, song=${song.name}/${song.id}, playlists=${playlists.size}, stack=[${debugStackHint()}]"
     )
     val updatedLists = PlayerFavoritesController.optimisticUpdateFavorites(
-        playlists = _playlistsFlow.value,
+        playlists = playlists,
         add = add,
         song = song,
         application = application,
@@ -348,16 +354,40 @@ private fun PlayerManager.updateCurrentFavorite(song: SongItem, add: Boolean) {
     )
     _playlistsFlow.value = PlayerFavoritesController.deepCopyPlaylists(updatedLists)
 
+    try {
+        if (add) {
+            localRepo.addToFavorites(song)
+        } else {
+            localRepo.removeFromFavorites(song)
+        }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        val action = if (add) "addToFavorites" else "removeFromFavorites"
+        NPLogger.e("NERI-PlayerManager", "$action failed: ${error.message}", error)
+        _playlistsFlow.value = PlayerFavoritesController.deepCopyPlaylists(localRepo.playlists.value)
+    }
+}
+
+private fun PlayerManager.enqueueFavoriteMutation(
+    song: SongItem,
+    resolveAdd: (List<LocalPlaylist>) -> Boolean
+) {
     ioScope.launch {
-        try {
-            if (add) {
-                localRepo.addToFavorites(song)
-            } else {
-                localRepo.removeFromFavorites(song)
+        favoriteMutationMutex.withLock {
+            if (!localRepo.awaitInitialized()) {
+                NPLogger.w(
+                    "NERI-PlayerManager",
+                    "Favorite mutation skipped because local playlists failed to initialize"
+                )
+                return@withLock
             }
-        } catch (error: Exception) {
-            val action = if (add) "addToFavorites" else "removeFromFavorites"
-            NPLogger.e("NERI-PlayerManager", "$action failed: ${error.message}", error)
+            val playlists = localRepo.playlists.value
+            updateCurrentFavorite(
+                song = song,
+                add = resolveAdd(playlists),
+                playlists = playlists
+            )
         }
     }
 }
@@ -366,29 +396,31 @@ internal fun PlayerManager.addCurrentToFavoritesImpl() {
     ensureInitialized()
     if (!initialized) return
     val song = _currentSongFlow.value ?: return
-    updateCurrentFavorite(song = song, add = true)
+    enqueueFavoriteMutation(song) { true }
 }
 
 internal fun PlayerManager.removeCurrentFromFavoritesImpl() {
     ensureInitialized()
     if (!initialized) return
     val song = _currentSongFlow.value ?: return
-    updateCurrentFavorite(song = song, add = false)
+    enqueueFavoriteMutation(song) { false }
 }
 
 internal fun PlayerManager.toggleCurrentFavoriteImpl() {
     ensureInitialized()
     if (!initialized) return
     val song = _currentSongFlow.value ?: return
-    val currentlyFavorite = PlayerFavoritesController.isFavorite(_playlistsFlow.value, song, application)
-    NPLogger.d(
-        "NERI-PlayerManager",
-        "toggleCurrentFavorite(): song=${song.name}/${song.id}, currentlyFavorite=$currentlyFavorite, stack=[${debugStackHint()}]"
-    )
-    if (currentlyFavorite) {
-        updateCurrentFavorite(song = song, add = false)
-    } else {
-        updateCurrentFavorite(song = song, add = true)
+    enqueueFavoriteMutation(song) { playlists ->
+        val currentlyFavorite = PlayerFavoritesController.isFavorite(
+            playlists,
+            song,
+            application
+        )
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "toggleCurrentFavorite(): song=${song.name}/${song.id}, currentlyFavorite=$currentlyFavorite, stack=[${debugStackHint()}]"
+        )
+        !currentlyFavorite
     }
 }
 

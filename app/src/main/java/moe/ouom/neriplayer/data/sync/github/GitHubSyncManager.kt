@@ -87,6 +87,11 @@ class GitHubSyncManager private constructor(context: Context) {
 
     suspend fun performSync(): Result<SyncResult> = withContext(Dispatchers.IO) {
         val localizedContext = LanguageManager.applyLanguage(appContext)
+        if (!playlistRepo.awaitInitialized()) {
+            return@withContext Result.failure(
+                IllegalStateException("Local playlist initialization failed")
+            )
+        }
 
         if (!SyncCoordinator.tryLock()) {
             return@withContext Result.failure(

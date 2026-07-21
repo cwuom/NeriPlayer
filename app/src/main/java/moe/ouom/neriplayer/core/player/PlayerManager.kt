@@ -534,6 +534,10 @@ object PlayerManager {
     /** 本地歌单快照，供收藏状态和歌单选择弹窗使用 */
     internal val _playlistsFlow = MutableStateFlow<List<LocalPlaylist>>(emptyList())
     val playlistsFlow: StateFlow<List<LocalPlaylist>> = _playlistsFlow
+    internal val _localPlaylistsReadyFlow = MutableStateFlow(false)
+    internal val localPlaylistsReadyFlow: StateFlow<Boolean> = _localPlaylistsReadyFlow
+    internal val localPlaylistsReady: Boolean
+        get() = _localPlaylistsReadyFlow.value
 
     internal var playJob: Job? = null
     internal var currentYouTubePrefetchJob: Job? = null

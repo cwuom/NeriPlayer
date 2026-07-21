@@ -291,6 +291,12 @@ internal fun resolveDisplayedLocalPlaylistDetailState(
     }
 }
 
+internal fun shouldHandleMissingLocalPlaylistAsDeleted(
+    uiState: LocalPlaylistDetailUiState
+): Boolean {
+    return uiState.isResolved && uiState.playlist == null && !uiState.initializationFailed
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class,
     DelicateCoroutinesApi::class
 )
@@ -341,6 +347,7 @@ fun LocalPlaylistDetailScreen(
 
     val playlist = uiState.playlist
     val isResolved = uiState.isResolved
+    val initializationFailed = uiState.initializationFailed
     var deleteNavigationHandled by remember(playlistId) { mutableStateOf(false) }
 
     fun navigateAfterPlaylistDeleted() {
@@ -350,8 +357,8 @@ fun LocalPlaylistDetailScreen(
         onDeleted()
     }
 
-    LaunchedEffect(isResolved, playlist, playlistId) {
-        if (isResolved && playlist == null) {
+    LaunchedEffect(isResolved, initializationFailed, playlist, playlistId) {
+        if (shouldHandleMissingLocalPlaylistAsDeleted(uiState)) {
             playlistDeleted = true
             AppContainer.playlistUsageRepo.removeEntry(playlistId, "local")
             navigateAfterPlaylistDeleted()
@@ -369,7 +376,7 @@ fun LocalPlaylistDetailScreen(
     ) {
         Surface(Modifier.fillMaxSize(), color = Color.Transparent) {
             if (playlist == null) {
-                if (isResolved) {
+                if (isResolved && !initializationFailed) {
                     return@Surface
                 }
                 Scaffold(
@@ -399,7 +406,17 @@ fun LocalPlaylistDetailScreen(
                             .fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator()
+                        if (initializationFailed) {
+                            Text(
+                                text = stringResource(
+                                    R.string.playlist_load_failed_format,
+                                    stringResource(R.string.local_playlist_initialization_failed)
+                                ),
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        } else {
+                            CircularProgressIndicator()
+                        }
                     }
                 }
                 return@Surface
