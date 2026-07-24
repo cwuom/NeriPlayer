@@ -1704,8 +1704,13 @@ internal fun PlayerManager.startProgressUpdates() {
             if (durationMs > 0L) {
                 _playbackDurationMs.value = durationMs
             }
+            val lyriconPositionMs = if (durationMs > 0L) {
+                (positionMs + 200L).coerceAtMost(durationMs)
+            } else {
+                positionMs + 200L
+            }
             if (lyriconEnabled) {
-                LyriconManager.setPosition(positionMs)
+                LyriconManager.setPosition(lyriconPositionMs)
             }
             updateExternalBluetoothLyricLine(positionMs)
             maybePersistPlaybackProgress(positionMs)
