@@ -1705,9 +1705,9 @@ internal fun PlayerManager.startProgressUpdates() {
                 _playbackDurationMs.value = durationMs
             }
             val lyriconPositionMs = if (durationMs > 0L) {
-                (positionMs + updateIntervalMs).coerceAtMost(durationMs)
+                (positionMs + 200L).coerceAtMost(durationMs)
             } else {
-                positionMs + updateIntervalMs
+                positionMs + 200L
             }
             if (lyriconEnabled) {
                 LyriconManager.setPosition(lyriconPositionMs)
