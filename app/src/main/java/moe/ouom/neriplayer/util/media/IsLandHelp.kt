@@ -5,14 +5,9 @@ import org.json.JSONObject
 
 object IsLandHelp {
     /**
-     * Xiaomi Super Island - Music Island Share Configuration
-     * @param addpic Add icon
-     * @param pic Share card icon
-     * @param content Share card content
-     * @param title Share card title
-     * @param shareContent Content to share to the app
-     * @param sharePic Image to share to the app (currently unknown how to share images, untested)
-     * @return Directly inject into media notification */
+     * Xiaomi Super Island media share extras for notification injection.
+     * Only call when [shareContent] is a validated public catalog URL.
+     */
     fun isLandMusicShare(
         addpic: Bundle? = null,
         pic: String = "miui_media_album_icon",
@@ -26,13 +21,14 @@ object IsLandHelp {
         val paramV2 = JSONObject()
         val island = JSONObject()
         island.put(
-            "shareData", shareData(
+            "shareData",
+            shareData(
                 title = title,
                 content = content,
                 pic = pic,
                 sharePic = sharePic,
-                shareContent = shareContent
-            )
+                shareContent = shareContent,
+            ),
         )
 
         paramV2.put("param_island", island)
@@ -45,15 +41,6 @@ object IsLandHelp {
         return nfBundle
     }
 
-
-    /**
-     * Xiaomi Super Island Share Information
-     * @param content Content
-     * @param title Title
-     * @param pic Image
-     * @param shareContent Share Content
-     * @param sharePic Share Image
-     * */
     fun shareData(
         content: String,
         title: String,
@@ -69,5 +56,4 @@ object IsLandHelp {
         sharePic?.let { json.put("sharePic", it) }
         return json
     }
-
 }
