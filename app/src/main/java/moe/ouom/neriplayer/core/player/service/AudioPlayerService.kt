@@ -39,6 +39,7 @@ import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.drawable.Icon
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.media.AudioManager
@@ -55,10 +56,10 @@ import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.createBitmap
-import androidx.core.graphics.scale
 import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.graphics.drawable.IconCompat
 import androidx.core.graphics.drawable.toBitmap
+import androidx.core.graphics.scale
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.media.session.MediaButtonReceiver
@@ -78,39 +79,42 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.PlayerManager.externalBluetoothLyricLineFlow
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackIfUnhealthy
-import moe.ouom.neriplayer.core.player.persistence.preloadRestoredStateSnapshot
-import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
+import moe.ouom.neriplayer.core.player.lifecycle.stopPlaybackAfterUsbExclusiveNativeFailure
 import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothMetadataText
 import moe.ouom.neriplayer.core.player.metadata.shouldUseExternalBluetoothLyrics
+import moe.ouom.neriplayer.core.player.persistence.preloadRestoredStateSnapshot
+import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveKeepAliveProgress
 import moe.ouom.neriplayer.core.player.policy.usb.evaluateUsbExclusiveKeepAliveProgress
-import moe.ouom.neriplayer.core.player.lifecycle.stopPlaybackAfterUsbExclusiveNativeFailure
 import moe.ouom.neriplayer.core.player.timer.SleepTimerMode
-import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
+import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveWakeLock
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
+import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.listentogether.mapping.toSongItem
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherPlaybackState
-import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
 import moe.ouom.neriplayer.data.settings.DEFAULT_PLAYBACK_SERVICE_IDLE_SHUTDOWN_MINUTES
 import moe.ouom.neriplayer.data.settings.PlaybackServiceIdleShutdownPreference
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.traffic.isOfflineModeNow
+import moe.ouom.neriplayer.listentogether.mapping.toSongItem
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherPlaybackState
+import moe.ouom.neriplayer.util.media.IsLandHelp
+import moe.ouom.neriplayer.util.media.buildRemoteSongShareUrl
+import moe.ouom.neriplayer.util.media.isShareablePublicHttpUrl
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 
 private suspend inline fun <T> kotlinx.coroutines.flow.Flow<T>.collectSafely(
@@ -1554,6 +1558,8 @@ class AudioPlayerService : Service() {
         currentNotificationLargeIcon?.let { builder.setLargeIcon(it) }
 
         return builder.build().apply {
+            attachXiaomiMusicIslandShareExtras(song)
+
             if (currentStatusBarLyricState.hasTicker) {
                 val FLAG_ALWAYS_SHOW_TICKER = 0x01000000
                 val FLAG_ONLY_UPDATE_TICKER = 0x02000000
@@ -1567,6 +1573,34 @@ class AudioPlayerService : Service() {
             }
         }
 
+    }
+
+    private fun Notification.attachXiaomiMusicIslandShareExtras(song: SongItem?) {
+        if (song == null) return
+        val shareUrl = buildRemoteSongShareUrl(song, PlayerManager.currentPlaylist)
+            ?.takeIf(::isShareablePublicHttpUrl)
+            ?: return
+
+        runCatching {
+            val icon = Bundle().apply {
+                putParcelable(
+                    "miui_media_album_icon",
+                    Icon.createWithResource(
+                        this@AudioPlayerService,
+                        R.drawable.ic_notification_small,
+                    ),
+                )
+            }
+            val islandBundle = IsLandHelp.isLandMusicShare(
+                addpic = icon,
+                title = song.displayName(),
+                content = song.displayArtist(),
+                shareContent = shareUrl,
+            )
+            extras.putAll(islandBundle)
+        }.onFailure { error ->
+            NPLogger.w("NERI-APS", "Xiaomi music island share extras failed", error)
+        }
     }
 
     private fun buildBootstrapNotification(): Notification {

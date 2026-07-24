@@ -82,9 +82,8 @@ import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.util.media.buildRemoteSongShareUrl
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import java.io.File
 import kotlin.math.roundToInt
@@ -471,45 +470,22 @@ private suspend fun shareSong(
         return
     }
 
-    val shareText = context.getString(
-        R.string.nowplaying_share_song,
-        song.displayName(),
-        song.displayArtist(),
-        buildRemoteSongShareUrl(song, queue)
-    )
+    val shareUrl = buildRemoteSongShareUrl(song, queue)
+    val shareText = if (shareUrl.isNullOrBlank()) {
+        "${song.displayName()} - ${song.displayArtist()}"
+    } else {
+        context.getString(
+            R.string.nowplaying_share_song,
+            song.displayName(),
+            song.displayArtist(),
+            shareUrl,
+        )
+    }
     val sendIntent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
         putExtra(Intent.EXTRA_TEXT, shareText)
     }
     context.startActivity(Intent.createChooser(sendIntent, null))
-}
-
-private fun buildRemoteSongShareUrl(song: SongItem, queue: List<SongItem>): String {
-    extractYouTubeMusicVideoId(song.mediaUri)?.let { videoId ->
-        return "https://music.youtube.com/watch?v=$videoId"
-    }
-
-    if (song.album.startsWith(PlayerManager.BILI_SOURCE_TAG)) {
-        val videoParts = queue.filter {
-            it.id == song.id && it.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
-        }
-        if (videoParts.size > 1) {
-            val pageIndex = videoParts.indexOfFirst { it.album == song.album }
-            if (pageIndex != -1) {
-                return "https://www.bilibili.com/video/av${song.id}/?p=${pageIndex + 1}"
-            }
-        }
-        return "https://www.bilibili.com/video/av${song.id}"
-    }
-
-    val mediaUri = song.mediaUri
-    return when {
-        song.album.startsWith(PlayerManager.NETEASE_SOURCE_TAG) ->
-            "https://music.163.com/#/song?id=${song.id}"
-        !mediaUri.isNullOrBlank() &&
-            (mediaUri.startsWith("https://") || mediaUri.startsWith("http://")) -> mediaUri
-        else -> "https://music.163.com/#/song?id=${song.id}"
-    }
 }
 
 private suspend fun createAndShareLyricCard(
@@ -1023,7 +999,8 @@ private fun buildLyricCardShareText(
 ): String {
     val titleLine = "${song.displayName()} - ${song.displayArtist()}"
     if (song.isLocalSong()) return titleLine
-    return "$titleLine\n${buildRemoteSongShareUrl(song, queue)}"
+    val shareUrl = buildRemoteSongShareUrl(song, queue)
+    return if (shareUrl.isNullOrBlank()) titleLine else "$titleLine\n$shareUrl"
 }
 
 private fun drawSingleLine(

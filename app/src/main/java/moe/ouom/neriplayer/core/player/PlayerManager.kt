@@ -1577,6 +1577,9 @@ object PlayerManager {
             loudnessGainMb = normalizePlaybackLoudnessGainMb(newConfig.loudnessGainMb),
             volumeBalance = normalizePlaybackVolumeBalance(newConfig.volumeBalance)
         )
+        if (lyriconEnabled && previousConfig.speed != playbackSoundConfig.speed) {
+            LyriconManager.setPlaybackSpeed(playbackSoundConfig.speed)
+        }
         schedulePlaybackSoundConfigApply(
             previousConfig = previousConfig,
             newConfig = playbackSoundConfig

@@ -13,16 +13,16 @@ import io.github.proify.lyricon.lyric.model.RichLyricLine
 import io.github.proify.lyricon.lyric.model.Song
 import io.github.proify.lyricon.provider.service.addConnectionListener
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
-
-private const val LYRICON_FEED_INTERVAL_MS = 200L
 
 object LyriconManager {
     private var provider: LyriconProvider? = null
@@ -34,9 +34,14 @@ object LyriconManager {
     private var currentSong: SongItem? = null
     private var feedScope: CoroutineScope? = null
     private var feedJob: Job? = null
-    private var lastKnownPositionMs: Long = 0L
-    private var lastKnownElapsedRealtimeMs: Long = 0L
+    @Volatile
+    private var positionAnchor: LyriconPositionAnchor? = null
+    @Volatile
+    private var feedRunning: Boolean = false
+    @Volatile
     private var songDurationMs: Long = 0L
+    @Volatile
+    private var playbackSpeed: Float = 1f
 
     fun initialize(context: Context) {
         if (provider != null) return
@@ -63,7 +68,7 @@ object LyriconManager {
         enabled = isEnabled
         if (isEnabled) {
             ensurePublisherRegistered()
-            startFeedLoop()
+            // 仅在真正播放时由 setPlaybackState(true) 启动 feed
         } else {
             stopFeedLoop()
             release()
@@ -74,6 +79,8 @@ object LyriconManager {
 
     fun release() {
         stopFeedLoop()
+        cancelFeedScope()
+        clearPositionAnchor()
         resetSuperLyricState()
         enabled = false
         runCatching { provider?.player?.setPlaybackState(false) }
@@ -104,12 +111,42 @@ object LyriconManager {
     fun setPosition(positionMs: Long) {
         if (!enabled) return
         try {
-            lastKnownPositionMs = positionMs
-            lastKnownElapsedRealtimeMs = SystemClock.elapsedRealtime()
-            updateSuperLyric(positionMs)
+            // 锚点用真实媒体进度
+            val mediaPositionMs = mediaLyriconPositionMs(
+                positionMs = positionMs,
+                durationMs = songDurationMs,
+            )
+            updatePositionAnchor(mediaPositionMs)
+            // 显示层加 lead，补偿词幕延迟
+            val displayPositionMs = displayLyriconPositionMs(
+                mediaPositionMs = mediaPositionMs,
+                durationMs = songDurationMs,
+            )
+            runCatching { provider?.player?.setPosition(displayPositionMs) }
+            updateSuperLyric(displayPositionMs)
         } catch (e: Exception) {
             // NPLogger.e("LyriconManager", "setPosition failed", e)
         }
+    }
+
+    fun setPlaybackSpeed(speed: Float) {
+        val normalized = normalizeLyriconPlaybackSpeed(speed)
+        if (normalized == playbackSpeed) return
+        playbackSpeed = normalized
+        val nowNanos = SystemClock.elapsedRealtimeNanos()
+        positionAnchor = rebaseLyriconPositionAnchor(
+            anchor = positionAnchor,
+            newSpeed = normalized,
+            nowElapsedRealtimeNanos = nowNanos,
+            durationMs = songDurationMs,
+        ) ?: return
+        // 改速后立刻对齐，显示层仍带 lead
+        val mediaSynced = resolveLyriconFeedPosition(positionAnchor, nowNanos) ?: return
+        val displaySynced = displayLyriconPositionMs(
+            mediaPositionMs = mediaSynced,
+            durationMs = songDurationMs,
+        )
+        runCatching { provider?.player?.setPosition(displaySynced) }
     }
 
     fun updateSong(song: SongItem, lyrics: List<LyricEntry>?, translatedLyrics: List<LyricEntry>?) {
@@ -119,8 +156,9 @@ object LyriconManager {
             LyriconManager.lyrics = lyrics
             LyriconManager.translatedLyrics = translatedLyrics
             currentSong = song
-            songDurationMs = song.durationMs
+            songDurationMs = song.durationMs.coerceAtLeast(0L)
             lastLyricIndex = -1
+            positionAnchor = positionAnchor?.copy(durationMs = songDurationMs)
             val lyriconLyrics = lyrics?.map { entry ->
                 val words = if (entry.words != null) {
                     var currentIndex = 0
@@ -246,42 +284,66 @@ object LyriconManager {
         translatedLyrics = null
         currentSong = null
         songDurationMs = 0L
-        lastKnownPositionMs = 0L
-        lastKnownElapsedRealtimeMs = 0L
+    }
+
+    private fun updatePositionAnchor(positionMs: Long) {
+        positionAnchor = LyriconPositionAnchor(
+            positionMs = positionMs.coerceAtLeast(0L),
+            elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos(),
+            durationMs = songDurationMs,
+            playbackSpeed = playbackSpeed,
+        )
+    }
+
+    private fun clearPositionAnchor() {
+        positionAnchor = null
     }
 
     private fun startFeedLoop() {
-        if (feedJob?.isActive == true) return
-        val scope = feedScope ?: CoroutineScope(SupervisorJob()).also { feedScope = it }
-        feedJob = scope.launch {
-            while (isActive) {
-                val provider = provider
-                if (provider == null || !enabled) {
-                    delay(LYRICON_FEED_INTERVAL_MS)
-                    continue
-                }
-                val positionMs = resolveFeedPosition()
-                runCatching { provider.player.setPosition(positionMs) }
-                delay(LYRICON_FEED_INTERVAL_MS)
-            }
+        if (feedJob?.isActive == true) {
+            feedRunning = true
+            return
         }
-    }
-
-    private fun resolveFeedPosition(): Long {
-        val elapsed = SystemClock.elapsedRealtime() - lastKnownElapsedRealtimeMs
-        val positionMs = lastKnownPositionMs + elapsed
-        return if (songDurationMs > 0L) {
-            positionMs.coerceAtMost(songDurationMs)
-        } else {
-            positionMs
+        val scope = feedScope
+            ?: CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate).also { feedScope = it }
+        feedRunning = true
+        feedJob = scope.launch {
+            try {
+                while (isActive) {
+                    val activeProvider = provider
+                    if (activeProvider == null || !enabled) {
+                        delay(LYRICON_FEED_INTERVAL_MS)
+                        continue
+                    }
+                    val mediaPositionMs = resolveLyriconFeedPosition(
+                        anchor = positionAnchor,
+                        nowElapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos(),
+                    )
+                    if (mediaPositionMs != null) {
+                        val displayPositionMs = displayLyriconPositionMs(
+                            mediaPositionMs = mediaPositionMs,
+                            durationMs = songDurationMs,
+                        )
+                        runCatching { activeProvider.player.setPosition(displayPositionMs) }
+                    }
+                    delay(LYRICON_FEED_INTERVAL_MS)
+                }
+            } finally {
+                feedRunning = false
+            }
         }
     }
 
     private fun stopFeedLoop() {
         feedJob?.cancel()
         feedJob = null
-        lastKnownPositionMs = 0L
-        lastKnownElapsedRealtimeMs = 0L
+        feedRunning = false
+        // 保留锚点，避免暂停/seek/恢复时跳到曲末
+    }
+
+    private fun cancelFeedScope() {
+        feedScope?.cancel()
+        feedScope = null
     }
 
     private fun ensurePublisherRegistered() {

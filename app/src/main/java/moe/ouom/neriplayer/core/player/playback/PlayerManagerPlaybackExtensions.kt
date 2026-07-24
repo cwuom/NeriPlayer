@@ -16,6 +16,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
+import moe.ouom.neriplayer.core.lyricon.mediaLyriconPositionMs
 import moe.ouom.neriplayer.core.player.PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
@@ -1704,13 +1705,15 @@ internal fun PlayerManager.startProgressUpdates() {
             if (durationMs > 0L) {
                 _playbackDurationMs.value = durationMs
             }
-            val lyriconPositionMs = if (durationMs > 0L) {
-                (positionMs + 200L).coerceAtMost(durationMs)
-            } else {
-                positionMs + 200L
-            }
             if (lyriconEnabled) {
-                LyriconManager.setPosition(lyriconPositionMs)
+                LyriconManager.setPlaybackSpeed(playbackSoundConfig.speed)
+                // 与高级歌词同源：进度环原始媒体位置，显示 lead 在 LyriconManager 内处理
+                LyriconManager.setPosition(
+                    mediaLyriconPositionMs(
+                        positionMs = positionMs,
+                        durationMs = durationMs,
+                    )
+                )
             }
             updateExternalBluetoothLyricLine(positionMs)
             maybePersistPlaybackProgress(positionMs)

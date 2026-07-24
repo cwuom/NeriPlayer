@@ -66,6 +66,8 @@ import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.displayArtist
+import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.stats.TrackStat
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
@@ -75,6 +77,7 @@ import moe.ouom.neriplayer.ui.viewmodel.album.isNeteaseAlbumNavigationSource
 import moe.ouom.neriplayer.ui.viewmodel.album.neteaseAlbumDisplayName
 import moe.ouom.neriplayer.ui.viewmodel.album.resolveNeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
+import moe.ouom.neriplayer.util.media.buildRemoteSongShareUrl
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -384,12 +387,17 @@ private fun ShareSongAction(
                 return@clickable
             }
 
-            val shareText = context.getString(
-                R.string.nowplaying_share_song,
-                song.name,
-                song.artist,
-                buildRemoteSongShareUrl(song, queue)
-            )
+            val shareUrl = buildRemoteSongShareUrl(song, queue)
+            val shareText = if (shareUrl.isNullOrBlank()) {
+                "${song.displayName()} - ${song.displayArtist()}"
+            } else {
+                context.getString(
+                    R.string.nowplaying_share_song,
+                    song.displayName(),
+                    song.displayArtist(),
+                    shareUrl,
+                )
+            }
             val sendIntent = Intent(Intent.ACTION_SEND).apply {
                 putExtra(Intent.EXTRA_TEXT, shareText)
                 type = "text/plain"
