@@ -1817,6 +1817,8 @@ class YouTubeMusicPlaybackRepository(
             // status=OK 却解不出候选流, 说明 bootstrap 本身没毛病, 问题在签名那一步
             var sawUndecipherableOkResponse = false
             var sawBootstrapSuspectOutcome = false
+            // 缺 PoToken 被跳过验证的直链, sig 和 n 都已经解完了, 留着当最后兜底
+            var unverifiedDirectFallback: YouTubePlayableAudio? = null
             val usableProfiles = selectUsablePlayerClients(
                 profiles = playerClientProfiles(),
                 clientName = { it.clientName },
@@ -1889,6 +1891,17 @@ class YouTubeMusicPlaybackRepository(
                                     prefetchedPoToken = webRemixPoTokenPrefetch,
                                     allowBlockingAcquisition = allowBlockingWebRemixPoToken
                                 )
+                            }
+                            // 缺 PoToken 就整份丢掉的话, 这条已经解完签名的直链会连同那几秒一起作废,
+                            // 后面的 client 还得从头再解一遍; 留下来只在所有 client 都空手时才用
+                            if (directPlayableAudio == null && parsedDirectPlayableAudio != null) {
+                                unverifiedDirectFallback = selectPreferredPlayableAudio(
+                                    current = unverifiedDirectFallback,
+                                    incoming = parsedDirectPlayableAudio,
+                                    currentClientName = null,
+                                    incomingClientName = profile.clientName,
+                                    preferM4a = preferM4a
+                                ) ?: unverifiedDirectFallback
                             }
                             val hlsPlayableAudio = try {
                                 if (
@@ -2065,6 +2078,20 @@ class YouTubeMusicPlaybackRepository(
                 )
                 return PlayerAudioResolution(
                     playableAudio = bestPlayableAudio.mergeMetadataFrom(bestMetadata),
+                    metadata = bestMetadata
+                )
+            }
+
+            // 所有 client 都空手时才动这份: 它缺 PoToken 没做验证, 但签名已经解完,
+            // 丢掉它就是让下一轮把同一条流重新解一遍, 那几秒直接落在首播上;
+            // 真被 CDN 拒了还有播放器那边的回退兜着
+            unverifiedDirectFallback?.let { fallback ->
+                NPLogger.w(
+                    "YouTubeMusicPlayback",
+                    "player resolve falls back to the unverified direct stream: videoId=$videoId, bitrateKbps=${fallback.bitrateKbps}, elapsedMs=${playbackElapsedMs(resolveStartedAtMs)}"
+                )
+                return PlayerAudioResolution(
+                    playableAudio = fallback.mergeMetadataFrom(bestMetadata),
                     metadata = bestMetadata
                 )
             }
