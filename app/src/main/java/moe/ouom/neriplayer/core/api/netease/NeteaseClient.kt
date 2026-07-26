@@ -395,6 +395,16 @@ class NeteaseClient {
         return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = usePersistedCookies)
     }
 
+    /**
+     * 获取网易云每日推荐歌曲（日推）
+     * 对应 /api/v3/discovery/recommend/songs，需要登录（MUSIC_U）
+     */
+    @Throws(IOException::class)
+    fun getDailyRecommendedSongs(): String {
+        val url = "https://music.163.com/weapi/v3/discovery/recommend/songs"
+        return request(url, emptyMap(), CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+    }
+
     @Throws(IOException::class)
     fun searchSongs(
         keyword: String,

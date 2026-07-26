@@ -54,6 +54,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.AltRoute
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.BrightnessAuto
+import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.Brightness4
 import androidx.compose.material.icons.outlined.Colorize
 import androidx.compose.material.icons.outlined.Explore
@@ -337,6 +338,8 @@ fun SettingsScreen(
     onShowHomeTrendingCardChange: (Boolean) -> Unit,
     showHomeRadarCard: Boolean,
     onShowHomeRadarCardChange: (Boolean) -> Unit,
+    showHomeDailyCard: Boolean,
+    onShowHomeDailyCardChange: (Boolean) -> Unit,
     showHomeRecommendedCard: Boolean,
     onShowHomeRecommendedCardChange: (Boolean) -> Unit,
     homeHasRecentUsage: Boolean,
@@ -796,6 +799,7 @@ fun SettingsScreen(
     val homeStartAvailable =
         showHomeTrendingCard ||
             showHomeRadarCard ||
+            showHomeDailyCard ||
             showHomeRecommendedCard ||
             (showHomeContinueCard && homeHasRecentUsage)
     val homeTrendingLabelRes = if (internationalEnabled) {
@@ -1166,6 +1170,8 @@ fun SettingsScreen(
                             onShowHomeTrendingCardChange = onShowHomeTrendingCardChange,
                             showHomeRadarCard = showHomeRadarCard,
                             onShowHomeRadarCardChange = onShowHomeRadarCardChange,
+                            showHomeDailyCard = showHomeDailyCard,
+                            onShowHomeDailyCardChange = onShowHomeDailyCardChange,
                             showHomeRecommendedCard = showHomeRecommendedCard,
                             onShowHomeRecommendedCardChange = onShowHomeRecommendedCardChange,
                             lyricFontScale = lyricFontScale,
@@ -2386,6 +2392,8 @@ private fun SettingsPersonalizationPageContent(
     onShowHomeTrendingCardChange: (Boolean) -> Unit,
     showHomeRadarCard: Boolean,
     onShowHomeRadarCardChange: (Boolean) -> Unit,
+    showHomeDailyCard: Boolean,
+    onShowHomeDailyCardChange: (Boolean) -> Unit,
     showHomeRecommendedCard: Boolean,
     onShowHomeRecommendedCardChange: (Boolean) -> Unit,
     lyricFontScale: Float,
@@ -2480,6 +2488,17 @@ private fun SettingsPersonalizationPageContent(
             onCheckedChange = onShowHomeRadarCardChange,
             enabled = neteaseHomeCardsEnabled
         )
+
+        if (!internationalEnabled) {
+            SettingsHomeCardSwitch(
+                title = stringResource(R.string.recommend_daily),
+                description = stringResource(R.string.settings_home_card_daily_desc),
+                icon = Icons.Outlined.CalendarToday,
+                checked = showHomeDailyCard,
+                onCheckedChange = onShowHomeDailyCardChange,
+                enabled = neteaseHomeCardsEnabled
+            )
+        }
 
         SettingsHomeCardSwitch(
             title = stringResource(homeRecommendedLabelRes),

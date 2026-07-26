@@ -619,6 +619,8 @@
     <string name="recommend_hot">Hot</string>
     <string name="recommend_trending">Trending</string>
     <string name="recommend_radar">Personal Radar</string>
+    <string name="recommend_daily">Daily Mix</string>
+    <string name="settings_home_card_daily_desc">NetEase Cloud Music daily recommended songs. Requires login.</string>
     <string name="settings_internationalization">Internationalization</string>
     <string name="settings_internationalization_desc">Switch home recommendations and explore to YouTube Music</string>
     <string name="settings_youtube_enabled">Enable YouTube</string>

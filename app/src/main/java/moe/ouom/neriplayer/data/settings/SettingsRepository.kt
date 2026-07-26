@@ -359,6 +359,9 @@ class SettingsRepository(private val context: Context) {
     val homeCardRadarFlow: Flow<Boolean> =
         autoSettingsRepository.homeCardRadarFlow
 
+    val homeCardDailyFlow: Flow<Boolean> =
+        autoSettingsRepository.homeCardDailyFlow
+
     val homeCardRecommendedFlow: Flow<Boolean> =
         autoSettingsRepository.homeCardRecommendedFlow
 
@@ -922,6 +925,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setHomeCardRadar(enabled: Boolean) {
         autoSettingsRepository.setHomeCardRadar(enabled)
+    }
+
+    suspend fun setHomeCardDaily(enabled: Boolean) {
+        autoSettingsRepository.setHomeCardDaily(enabled)
     }
 
     suspend fun setHomeCardRecommended(enabled: Boolean) {
