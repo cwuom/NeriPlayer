@@ -3114,7 +3114,18 @@ class YouTubeMusicPlaybackRepository(
                     }
                 }
             }
-            if (authGeneration == authCacheGeneration) {
+            // 仍持有登录 cookie 时，一次回成未登录的 bootstrap 不能顶掉已登录的缓存，
+            // 否则库页会据此判定未登录并弹出 Google 登录页
+            val demotesLogin = cached?.loggedIn == true &&
+                !parsed.loggedIn &&
+                workingAuth.hasLoginCookies()
+            if (demotesLogin) {
+                NPLogger.w(
+                    "YouTubeMusicPlayback",
+                    "keep logged-in bootstrap: parsed came back anonymous while login cookies are present"
+                )
+            }
+            if (authGeneration == authCacheGeneration && !demotesLogin) {
                 bootstrapCache = parsed
             }
         }
@@ -3367,19 +3378,8 @@ class YouTubeMusicPlaybackRepository(
                 endpointPath = "player",
                 platform = "TV"
             ),
-            YouTubePlayerClientProfile(
-                clientId = YOUTUBE_PLAYER_ANDROID_MUSIC_CLIENT_ID,
-                clientName = YOUTUBE_PLAYER_ANDROID_MUSIC_CLIENT_NAME,
-                clientVersion = YOUTUBE_PLAYER_ANDROID_MUSIC_CLIENT_VERSION,
-                userAgent = YOUTUBE_PLAYER_ANDROID_MUSIC_USER_AGENT,
-                endpointPath = "player",
-                platform = "MOBILE",
-                deviceMake = "Google",
-                deviceModel = "Pixel 8",
-                osName = "Android",
-                osVersion = "14",
-                androidSdkVersion = 34
-            )
+            // ANDROID_MUSIC 需要 Android OAuth，拿网页 cookie 只会回 400 INVALID_ARGUMENT
+            // 或 LOGIN_REQUIRED，还会把解析拖进强制刷新 bootstrap 并连累登录态
         )
     }
 
