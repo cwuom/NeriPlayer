@@ -84,6 +84,28 @@ import java.util.Base64
     val trans: String? = null
 )
 
+@Serializable internal data class QQMusicLyricContainer(
+    val req: QQMusicLyricEnvelope? = null
+)
+
+@Serializable internal data class QQMusicLyricEnvelope(
+    val data: QQMusicLyricResponse? = null
+)
+
+/**
+ * QQ 用一行 // 占位表示这句没有翻译
+ *
+ * 原样留着会让未翻译的行显示成两条斜杠, 整行删掉时间戳才会匹配落空,
+ * 剩下的翻译行仍然各自对准自己那一句
+ */
+internal fun stripUntranslatedPlaceholderLines(lyric: String?): String? {
+    val source = lyric?.takeIf { it.isNotBlank() } ?: return null
+    return source.lineSequence()
+        .filterNot { line -> line.substringAfterLast(']').trim() == "//" }
+        .joinToString("\n")
+        .takeIf { it.isNotBlank() }
+}
+
 
 class QQMusicSearchApi(
     private val amllTtmlClient: AmllTtmlClient = AppContainer.amllTtmlClient,
@@ -206,13 +228,21 @@ class QQMusicSearchApi(
 
     private suspend fun fetchQQMusicLyric(songMid: String): Pair<String?, String?> {
         return try {
-            val url = "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg".toHttpUrl().newBuilder()
-                .addQueryParameter("songmid", songMid)
+            val lyricRequestData = JSONObject().put(
+                "req", JSONObject()
+                    .put("method", "GetPlayLyricInfo")
+                    .put("module", "music.musichallSong.PlayLyricInfo")
+                    .put(
+                        "param", JSONObject()
+                            .put("songMID", songMid)
+                            // 不显式点名要翻译, 接口只回一个空的 trans
+                            .put("trans", 1)
+                    )
+            ).toString()
+
+            val url = "https://u.y.qq.com/cgi-bin/musicu.fcg".toHttpUrl().newBuilder()
                 .addQueryParameter("format", "json")
-                .addQueryParameter("inCharset", "utf8")
-                .addQueryParameter("outCharset", "utf-8")
-                .addQueryParameter("nobase64", "1")
-                .addQueryParameter("g_tk", "5381")
+                .addQueryParameter("data", lyricRequestData)
                 .build()
 
             val request = Request.Builder().url(url)
@@ -220,11 +250,13 @@ class QQMusicSearchApi(
                 .build()
 
             val responseJson = executeRequest(request) as String
-            val lyricResponse = json.decodeFromString<QQMusicLyricResponse>(responseJson)
+            val lyricResponse = json.decodeFromString<QQMusicLyricContainer>(responseJson).req?.data
 
-            val lyric = decodeLyricPayload(lyricResponse.lyric)
+            val lyric = decodeLyricPayload(lyricResponse?.lyric)
 
-            val translatedLyric = decodeLyricPayload(lyricResponse.trans)
+            val translatedLyric = stripUntranslatedPlaceholderLines(
+                decodeLyricPayload(lyricResponse?.trans)
+            )
 
             Pair(lyric, translatedLyric)
         } catch (error: CancellationException) {
