@@ -54,6 +54,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
@@ -320,6 +322,24 @@ internal data class YouTubeAudioMetadata(
     val mimeType: String? = null,
     val contentLength: Long? = null
 )
+
+/**
+ * 重试之前值不值得先换一份新 bootstrap
+ *
+ * 每个 client 都回了 status=OK, 只是候选流的签名解不出来, 那这份 bootstrap 没有任何问题;
+ * 重拉一次要十几秒还换不来不同的结果, 等于把首播白白推后
+ */
+internal fun shouldRefreshBootstrapBeforePlayerRetry(
+    refreshRequestedByFallback: Boolean,
+    sawUndecipherableOkResponse: Boolean,
+    sawBootstrapSuspectOutcome: Boolean
+): Boolean {
+    if (refreshRequestedByFallback || sawBootstrapSuspectOutcome) {
+        return true
+    }
+    // 一次 OK 响应都没见过时说明还没问到任何结论, 保持原来的重拉行为
+    return !sawUndecipherableOkResponse
+}
 
 @Serializable
 internal data class YouTubePlaybackBootstrap(
@@ -1149,6 +1169,15 @@ class YouTubeMusicPlaybackRepository(
     private var bootstrapSnapshotRestored = false
 
     private val bootstrapRequestLock = Any()
+
+    /**
+     * 同一时刻只允许一份 bootstrap 在解析
+     *
+     * 首页 HTML 是 MB 级的, 解析中途还要摊平上千条 EXPERIMENT_FLAGS; 两份一起跑会把堆压到
+     * 不停触发阻塞 GC, 实测各自从一秒级劣化到二十秒
+     */
+    private val bootstrapLoadMutex = Mutex()
+
     private val warmBootstrapLock = Any()
 
     @Volatile
@@ -1731,6 +1760,9 @@ class YouTubeMusicPlaybackRepository(
             var bestPlayableAudio: YouTubePlayableAudio? = null
             var bestPlayableAudioClientName: String? = null
             var shouldRefreshBootstrapBeforeFallback = false
+            // status=OK 却解不出候选流, 说明 bootstrap 本身没毛病, 问题在签名那一步
+            var sawUndecipherableOkResponse = false
+            var sawBootstrapSuspectOutcome = false
             val usableProfiles = selectUsablePlayerClients(
                 profiles = playerClientProfiles(),
                 clientName = { it.clientName },
@@ -1892,10 +1924,13 @@ class YouTubeMusicPlaybackRepository(
 
                         // status=OK 却拿不到流时要能分清是压根没解析出格式, 还是选流阶段把它筛掉了
                         if (playability.status == "OK") {
+                            sawUndecipherableOkResponse = true
                             NPLogger.w(
                                 "YouTubeMusicPlayback",
                                 "player client yielded no usable audio: videoId=$videoId, client=${profile.clientName}, parsedAny=${playableAudio != null}, bestSoFar=${bestPlayableAudio?.streamType}, lastError=${lastError?.message}"
                             )
+                        } else {
+                            sawBootstrapSuspectOutcome = true
                         }
                         val description = buildString {
                             append("YouTube player unavailable via ")
@@ -1931,6 +1966,7 @@ class YouTubeMusicPlaybackRepository(
                         }
                     } catch (error: IOException) {
                         lastError = error
+                        sawBootstrapSuspectOutcome = true
                         NPLogger.w(
                             "YouTubeMusicPlayback",
                             "player client request failed: videoId=$videoId, client=${profile.clientName}, locale=${requestLocale.gl}/${requestLocale.hl}, error=${error.message}"
@@ -2001,7 +2037,19 @@ class YouTubeMusicPlaybackRepository(
                         "player resolve retry: videoId=$videoId, attempt=${attempt + 1}, error=${lastError?.message.orEmpty()}"
                     )
                 }
-                bootstrap = bootstrap(auth, forceRefresh = true)
+                if (shouldRefreshBootstrapBeforePlayerRetry(
+                        refreshRequestedByFallback = shouldRefreshBootstrapBeforeFallback,
+                        sawUndecipherableOkResponse = sawUndecipherableOkResponse,
+                        sawBootstrapSuspectOutcome = sawBootstrapSuspectOutcome
+                    )
+                ) {
+                    bootstrap = bootstrap(auth, forceRefresh = true)
+                } else {
+                    NPLogger.d(
+                        "YouTubeMusicPlayback",
+                        "player resolve keeps bootstrap: videoId=$videoId, attempt=${attempt + 1}, every client answered OK"
+                    )
+                }
             }
         }
 
@@ -3220,6 +3268,30 @@ class YouTubeMusicPlaybackRepository(
     }
 
     private suspend fun loadBootstrap(
+        auth: YouTubeAuthBundle,
+        forceRefresh: Boolean
+    ): YouTubePlaybackBootstrap = bootstrapLoadMutex.withLock {
+        val requestAuth = authProvider().normalized().takeIf { it.hasLoginCookies() } ?: auth
+        val requestAuthFingerprint = requestAuth.buildBootstrapAuthFingerprint(
+            origin = requestAuth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
+        )
+        // 排队期间前一个可能已经解析好了, 再解析一遍只是重复付这十几秒
+        if (!forceRefresh) {
+            bootstrapCache
+                ?.takeIf { it.authFingerprint == requestAuthFingerprint }
+                ?.takeIf { System.currentTimeMillis() - it.fetchedAtMs < PLAYABLE_BOOTSTRAP_TTL_MS }
+                ?.let { cached ->
+                    NPLogger.d(
+                        "YouTubeMusicPlayback",
+                        "bootstrap load coalesced: ageMs=${System.currentTimeMillis() - cached.fetchedAtMs}"
+                    )
+                    return@withLock cached
+                }
+        }
+        loadBootstrapLocked(auth = auth, forceRefresh = forceRefresh)
+    }
+
+    private suspend fun loadBootstrapLocked(
         auth: YouTubeAuthBundle,
         forceRefresh: Boolean
     ): YouTubePlaybackBootstrap {
