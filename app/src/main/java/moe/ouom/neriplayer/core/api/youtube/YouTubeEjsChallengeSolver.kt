@@ -133,6 +133,7 @@ internal class YouTubeEjsChallengeSolver(
     private val appContext = context.applicationContext
     private val solverLock = YouTubeJsSolveQueue()
     private val playerScriptCache = linkedMapOf<String, String>()
+    private val playerScriptStore = runCatching { YouTubePlayerScriptStore(appContext) }.getOrNull()
     private val signatureCache = linkedMapOf<String, String>()
     private val throttlingCache = linkedMapOf<String, String>()
     @Volatile
@@ -442,6 +443,11 @@ internal class YouTubeEjsChallengeSolver(
             playerScriptCache[playerJsUrl] = cached
             return cached
         }
+        // 地址带版本哈希, 存档命中就是同一份脚本, 冷启动省掉这 2MB 的往返
+        playerScriptStore?.read(playerJsUrl)?.let { persisted ->
+            putCached(playerScriptCache, playerJsUrl, persisted)
+            return persisted
+        }
         val request = Request.Builder()
             .url(playerJsUrl)
             .header("User-Agent", "Mozilla/5.0")
@@ -453,6 +459,7 @@ internal class YouTubeEjsChallengeSolver(
             response.body.readTextWithLimit(YOUTUBE_TEXT_RESPONSE_MAX_BYTES)
         }
         putCached(playerScriptCache, playerJsUrl, script)
+        playerScriptStore?.write(playerJsUrl, script)
         return script
     }
 
