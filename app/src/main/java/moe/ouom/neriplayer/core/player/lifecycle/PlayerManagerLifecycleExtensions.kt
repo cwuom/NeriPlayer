@@ -178,6 +178,8 @@ internal fun PlayerManager.initializeImpl(
             initialPlaybackPreferences.keepPlaybackModeState
         neteaseAutoSourceSwitchEnabled =
             initialPlaybackPreferences.neteaseAutoSourceSwitch
+        neteaseLocalSourceFallbackEnabled =
+            initialPlaybackPreferences.neteaseLocalSourceFallback
         playbackFadeInEnabled = initialPlaybackPreferences.playbackFadeIn
         playbackCrossfadeNextEnabled =
             initialPlaybackPreferences.playbackCrossfadeNext
@@ -213,7 +215,7 @@ internal fun PlayerManager.initializeImpl(
             initialPlaybackPreferences.playbackHighResolutionOutputEnabled
         NPLogger.d(
             "NERI-PlayerManager",
-            "initialize(): prefs quality=$preferredQuality, youtubeQuality=$youtubePreferredQuality, biliQuality=$biliPreferredQuality, mobileDataFollowDefault=$mobileDataFollowDefaultAudioQuality, mobileDataQuality=$mobileDataNeteaseAudioQuality/$mobileDataYouTubeAudioQuality/$mobileDataBiliAudioQuality, keepProgress=$keepLastPlaybackProgressEnabled, keepMode=$keepPlaybackModeStateEnabled, neteaseAutoSourceSwitch=$neteaseAutoSourceSwitchEnabled, fadeIn=$playbackFadeInEnabled/${playbackFadeInDurationMs}ms, crossfade=$playbackCrossfadeNextEnabled/${playbackCrossfadeInDurationMs}ms, highResolutionOutput=$playbackHighResolutionOutputEnabled, stopOnBluetoothDisconnect=$stopOnBluetoothDisconnectEnabled, usbExclusivePlayback=$usbExclusivePlaybackEnabled, allowMixedPlayback=$allowMixedPlaybackEnabled"
+            "initialize(): prefs quality=$preferredQuality, youtubeQuality=$youtubePreferredQuality, biliQuality=$biliPreferredQuality, mobileDataFollowDefault=$mobileDataFollowDefaultAudioQuality, mobileDataQuality=$mobileDataNeteaseAudioQuality/$mobileDataYouTubeAudioQuality/$mobileDataBiliAudioQuality, keepProgress=$keepLastPlaybackProgressEnabled, keepMode=$keepPlaybackModeStateEnabled, neteaseAutoSourceSwitch=$neteaseAutoSourceSwitchEnabled, neteaseLocalSourceFallback=$neteaseLocalSourceFallbackEnabled, fadeIn=$playbackFadeInEnabled/${playbackFadeInDurationMs}ms, crossfade=$playbackCrossfadeNextEnabled/${playbackCrossfadeInDurationMs}ms, highResolutionOutput=$playbackHighResolutionOutputEnabled, stopOnBluetoothDisconnect=$stopOnBluetoothDisconnectEnabled, usbExclusivePlayback=$usbExclusivePlaybackEnabled, allowMixedPlayback=$allowMixedPlaybackEnabled"
         )
         val okHttpClient = AppContainer.sharedOkHttpClient
         val upstreamFactory: HttpDataSource.Factory = OkHttpDataSource.Factory(okHttpClient)
@@ -857,6 +859,11 @@ internal fun PlayerManager.initializeImpl(
         ioScope.launch {
             settingsRepo.neteaseAutoSourceSwitchFlow.collect { enabled ->
                 neteaseAutoSourceSwitchEnabled = enabled
+            }
+        }
+        ioScope.launch {
+            settingsRepo.neteaseLocalSourceFallbackFlow.collect { enabled ->
+                neteaseLocalSourceFallbackEnabled = enabled
             }
         }
         ioScope.launch {

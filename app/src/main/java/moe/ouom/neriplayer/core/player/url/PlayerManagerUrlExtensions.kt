@@ -41,6 +41,7 @@ import moe.ouom.neriplayer.core.player.quality.effectiveNeteaseQuality
 import moe.ouom.neriplayer.core.player.quality.effectiveYouTubeQuality
 import moe.ouom.neriplayer.core.player.resolver.netease.NeteasePlaybackResponseParser
 import moe.ouom.neriplayer.core.player.resolver.netease.tryResolveNeteaseAutoBiliSource
+import moe.ouom.neriplayer.core.player.resolver.netease.tryResolveNeteaseMatchedLocalSource
 import moe.ouom.neriplayer.core.player.watchdog.configureActivePlaybackCandidates
 import moe.ouom.neriplayer.core.player.watchdog.currentPlaybackCandidate
 import moe.ouom.neriplayer.core.player.watchdog.resetPlaybackProgressAdvanceBaseline
@@ -202,7 +203,8 @@ internal suspend fun PlayerManager.resolveShareableListenTogetherStreamUrl(
         else -> getNeteaseSongUrl(
             song = song,
             suppressError = true,
-            sideEffects = sideEffects
+            sideEffects = sideEffects,
+            allowLocalFallback = false
         )
     }
     if (result is SongUrlResult.Success && !isDirectStreamUrl(result.url)) {
@@ -871,7 +873,8 @@ private suspend fun PlayerManager.invalidateCachedResourceBeforeResolve(
 private suspend fun PlayerManager.getNeteaseSongUrl(
     song: SongItem,
     suppressError: Boolean = false,
-    sideEffects: RefreshResolverSideEffects = RefreshResolverSideEffects()
+    sideEffects: RefreshResolverSideEffects = RefreshResolverSideEffects(),
+    allowLocalFallback: Boolean = true
 ): SongUrlResult = withContext(Dispatchers.IO) {
     try {
         val effectiveQuality = effectiveNeteaseQuality()
@@ -937,6 +940,11 @@ private suspend fun PlayerManager.getNeteaseSongUrl(
         if (previewFallback != null ||
             lastFailureReason == NeteasePlaybackResponseParser.FailureReason.NO_PERMISSION
         ) {
+            if (allowLocalFallback) {
+                tryResolveNeteaseMatchedLocalSource(song)?.let {
+                    return@withContext it
+                }
+            }
             tryResolveNeteaseAutoBiliSource(song, sideEffects)?.let {
                 return@withContext it
             }

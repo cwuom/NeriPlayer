@@ -1388,6 +1388,9 @@ private fun NeriAppContent(
     val neteaseAutoSourceSwitch by repo.neteaseAutoSourceSwitchFlow.collectAsStateWithLifecycle(
         initialValue = startupPlaybackPreferences.neteaseAutoSourceSwitch
     )
+    val neteaseLocalSourceFallback by repo.neteaseLocalSourceFallbackFlow.collectAsStateWithLifecycle(
+        initialValue = startupPlaybackPreferences.neteaseLocalSourceFallback
+    )
     val stopOnBluetoothDisconnect by repo.stopOnBluetoothDisconnectFlow.collectAsStateWithLifecycle(initialValue = true)
     val usbExclusivePlayback by repo.usbExclusivePlaybackFlow.collectAsStateWithLifecycle(
         initialValue = startupPlaybackPreferences.usbExclusivePlayback
@@ -2554,6 +2557,10 @@ private fun NeriAppContent(
                         neteaseAutoSourceSwitch = neteaseAutoSourceSwitch,
                         onNeteaseAutoSourceSwitchChange = { enabled ->
                             scope.launch { repo.setNeteaseAutoSourceSwitch(enabled) }
+                        },
+                        neteaseLocalSourceFallback = neteaseLocalSourceFallback,
+                        onNeteaseLocalSourceFallbackChange = { enabled ->
+                            scope.launch { repo.setNeteaseLocalSourceFallback(enabled) }
                         },
                         stopOnBluetoothDisconnect = stopOnBluetoothDisconnect,
                         onStopOnBluetoothDisconnectChange = { enabled ->

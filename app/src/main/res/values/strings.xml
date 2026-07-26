@@ -775,6 +775,8 @@
     <string name="auth_cookie_empty">Cookie 为空</string>
     <string name="settings_netease_auto_source_switch">网易云自动换源</string>
     <string name="settings_netease_auto_source_switch_desc">网易云歌曲无权限或仅返回试听片段时，自动在哔哩哔哩查找音源</string>
+    <string name="settings_netease_local_source_fallback">本地音频兜底</string>
+    <string name="settings_netease_local_source_fallback_desc">网易云歌曲无权限或仅返回试听片段时，优先播放已匹配相同歌曲信息的本地音频</string>
     <string name="settings_netease_quality">网易云默认音质</string>
     <string name="settings_bili_quality">B 站默认音质</string>
     <string name="netease_web_login">网易云登录</string>

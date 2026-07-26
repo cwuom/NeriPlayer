@@ -1497,6 +1497,19 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
+            key = "netease_local_source_fallback",
+            type = SettingValueType.Boolean,
+            defaultBoolean = true,
+            order = 136,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val neteaseLocalSourceFallback = autoSetting(
+            titleRes = R.string.settings_netease_local_source_fallback,
+            descriptionRes = R.string.settings_netease_local_source_fallback_desc
+        )
+
+        @AutoSetting(
             key = "keep_playback_mode_state",
             type = SettingValueType.Boolean,
             defaultBoolean = true,

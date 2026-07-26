@@ -399,6 +399,7 @@ object PlayerManager {
     internal var keepLastPlaybackProgressEnabled = true
     internal var keepPlaybackModeStateEnabled = true
     internal var neteaseAutoSourceSwitchEnabled = true
+    internal var neteaseLocalSourceFallbackEnabled = true
     internal var stopOnBluetoothDisconnectEnabled = true
     @Volatile
     internal var usbExclusivePlaybackEnabled = false

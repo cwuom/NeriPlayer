@@ -63,6 +63,7 @@ private const val PLAYBACK_MOBILE_DATA_BILI_AUDIO_QUALITY_KEY =
 private const val PLAYBACK_KEEP_PROGRESS_KEY = "keep_last_playback_progress"
 private const val PLAYBACK_KEEP_MODE_STATE_KEY = "keep_playback_mode_state"
 private const val PLAYBACK_NETEASE_AUTO_SOURCE_SWITCH_KEY = "netease_auto_source_switch"
+private const val PLAYBACK_NETEASE_LOCAL_SOURCE_FALLBACK_KEY = "netease_local_source_fallback"
 private const val PLAYBACK_FADE_IN_KEY = "playback_fade_in"
 private const val PLAYBACK_CROSSFADE_NEXT_KEY = "playback_crossfade_next"
 private const val PLAYBACK_SLEEP_TIMER_FINISH_CURRENT_ON_EXPIRY_KEY =
@@ -109,6 +110,7 @@ data class PlaybackPreferenceSnapshot(
     val keepLastPlaybackProgress: Boolean = true,
     val keepPlaybackModeState: Boolean = true,
     val neteaseAutoSourceSwitch: Boolean = true,
+    val neteaseLocalSourceFallback: Boolean = true,
     val playbackFadeIn: Boolean = false,
     val playbackCrossfadeNext: Boolean = false,
     val sleepTimerFinishCurrentOnExpiry: Boolean = false,
@@ -309,6 +311,10 @@ internal fun persistPlaybackPreferenceSnapshot(
                     PLAYBACK_NETEASE_AUTO_SOURCE_SWITCH_KEY,
                     normalizedSnapshot.neteaseAutoSourceSwitch
                 )
+                .putBoolean(
+                    PLAYBACK_NETEASE_LOCAL_SOURCE_FALLBACK_KEY,
+                    normalizedSnapshot.neteaseLocalSourceFallback
+                )
                 .putBoolean(PLAYBACK_FADE_IN_KEY, normalizedSnapshot.playbackFadeIn)
                 .putBoolean(PLAYBACK_CROSSFADE_NEXT_KEY, normalizedSnapshot.playbackCrossfadeNext)
                 .putBoolean(
@@ -409,6 +415,7 @@ internal fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnaps
         keepLastPlaybackProgress = this[SettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS] ?: true,
         keepPlaybackModeState = this[SettingsKeys.KEEP_PLAYBACK_MODE_STATE] ?: true,
         neteaseAutoSourceSwitch = this[SettingsKeys.NETEASE_AUTO_SOURCE_SWITCH] ?: true,
+        neteaseLocalSourceFallback = this[SettingsKeys.NETEASE_LOCAL_SOURCE_FALLBACK] ?: true,
         playbackFadeIn = this[SettingsKeys.PLAYBACK_FADE_IN] ?: false,
         playbackCrossfadeNext = this[SettingsKeys.PLAYBACK_CROSSFADE_NEXT] ?: false,
         sleepTimerFinishCurrentOnExpiry =
@@ -545,6 +552,8 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
         keepPlaybackModeState = prefs.getBoolean(PLAYBACK_KEEP_MODE_STATE_KEY, true),
         neteaseAutoSourceSwitch =
             prefs.getBoolean(PLAYBACK_NETEASE_AUTO_SOURCE_SWITCH_KEY, true),
+        neteaseLocalSourceFallback =
+            prefs.getBoolean(PLAYBACK_NETEASE_LOCAL_SOURCE_FALLBACK_KEY, true),
         playbackFadeIn = prefs.getBoolean(PLAYBACK_FADE_IN_KEY, false),
         playbackCrossfadeNext = prefs.getBoolean(PLAYBACK_CROSSFADE_NEXT_KEY, false),
         sleepTimerFinishCurrentOnExpiry = prefs.getBoolean(

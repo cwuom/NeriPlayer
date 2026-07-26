@@ -366,6 +366,8 @@ fun SettingsScreen(
     onKeepPlaybackModeStateChange: (Boolean) -> Unit,
     neteaseAutoSourceSwitch: Boolean,
     onNeteaseAutoSourceSwitchChange: (Boolean) -> Unit,
+    neteaseLocalSourceFallback: Boolean,
+    onNeteaseLocalSourceFallbackChange: (Boolean) -> Unit,
     stopOnBluetoothDisconnect: Boolean,
     onStopOnBluetoothDisconnectChange: (Boolean) -> Unit,
     usbExclusivePlayback: Boolean,
@@ -1403,6 +1405,30 @@ fun SettingsScreen(
 
                 SettingsPage.PlaybackSource -> {
                     miuixSettingsSectionCardItem("${selectedPage.name}:content") {
+                        AutoSettingsListItem(
+                            setting = AutoSettingsMetadata.requireSetting(
+                                AutoSettingsKeys.NETEASE_LOCAL_SOURCE_FALLBACK
+                            ),
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.LibraryMusic,
+                                    contentDescription = stringResource(
+                                        R.string.settings_netease_local_source_fallback
+                                    ),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            trailingContent = {
+                                MiuixSettingsSwitch(
+                                    checked = neteaseLocalSourceFallback,
+                                    onCheckedChange = onNeteaseLocalSourceFallbackChange
+                                )
+                            },
+                            onClick = {
+                                onNeteaseLocalSourceFallbackChange(!neteaseLocalSourceFallback)
+                            }
+                        )
                         AutoSettingsListItem(
                             setting = AutoSettingsMetadata.requireSetting(
                                 AutoSettingsKeys.NETEASE_AUTO_SOURCE_SWITCH
