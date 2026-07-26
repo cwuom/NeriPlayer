@@ -9,10 +9,19 @@ internal fun ListenTogetherPlaybackState.expectedPositionMs(
 ): Long {
     val correctedNowMs = nowMs + serverClockOffsetMs
     return if (state == "playing") {
-        (basePositionMs + ((correctedNowMs - baseTimestampMs) * playbackRate)).toLong().coerceAtLeast(0L)
+        // baseTimestampMs 非法(<=0)时回退到当前时钟，避免 elapsed 差值把位置推到天文数字
+        val effectiveBaseTimestampMs = if (baseTimestampMs > 0L) baseTimestampMs else correctedNowMs
+        (basePositionMs + ((correctedNowMs - effectiveBaseTimestampMs) * playbackRate))
+            .toLong()
+            .coerceAtLeast(0L)
     } else {
         basePositionMs.coerceAtLeast(0L)
     }
+}
+
+internal fun clampListenTogetherPositionMs(positionMs: Long, durationMs: Long): Long {
+    val floored = positionMs.coerceAtLeast(0L)
+    return if (durationMs > 0L) floored.coerceAtMost(durationMs) else floored
 }
 
 internal fun isListenTogetherSeekControlSatisfied(

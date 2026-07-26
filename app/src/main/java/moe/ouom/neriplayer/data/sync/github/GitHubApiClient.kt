@@ -225,8 +225,24 @@ class GitHubApiClient(
                     val body = response.body?.string()
                         ?: return@withContext Result.failure(IOException("Empty response"))
                     val fileResponse = gson.fromJson(body, GitHubFileResponse::class.java)
+                    // 打印实际体积，便于确认备份大小与是否触发 raw 通道
+                    NPLogger.d(
+                        TAG,
+                        "getFileContent path=$path size=${fileResponse.size} " +
+                            "inlineContentEmpty=${fileResponse.content.isEmpty()} encoding=${fileResponse.encoding}"
+                    )
                     if (fileResponse.size > MAX_SYNC_FILE_BYTES) {
                         return@withContext Result.failure(IOException("Remote backup file is too large"))
+                    }
+
+                    // GitHub Contents API 对 >1MB 文件返回空 content 且 encoding=none，
+                    // 需改走 raw 通道读取原始字节；sha 仍取自当前 JSON 响应
+                    if (fileResponse.content.isEmpty() && fileResponse.size > 0) {
+                        val rawContent = fetchRawFileContent(owner, repo, path)
+                            ?: return@withContext Result.failure(
+                                IOException("Failed to read large remote backup via raw channel: $path")
+                            )
+                        return@withContext Result.success(Pair(rawContent, fileResponse.sha))
                     }
 
                     // 解码Base64内容
@@ -235,6 +251,7 @@ class GitHubApiClient(
                     )
                     return@withContext Result.success(Pair(decodedContent, fileResponse.sha))
                 }
+                // 404 表示文件不存在，返回空串对；「>1MB content 为空」已在上方走 raw 通道，二者不再混淆
                 if (response.code == 404) {
                     return@withContext Result.success(Pair("", ""))
                 }
@@ -259,8 +276,22 @@ class GitHubApiClient(
                     val body = response.body?.string()
                         ?: return@withContext Result.failure(IOException("Empty response"))
                     val fileResponse = gson.fromJson(body, GitHubFileResponse::class.java)
+                    // 打印实际体积，桌面端据此确认实际备份大小
+                    NPLogger.d(
+                        TAG,
+                        "getFileContentStrict path=$path size=${fileResponse.size} " +
+                            "inlineContentEmpty=${fileResponse.content.isEmpty()} encoding=${fileResponse.encoding}"
+                    )
                     if (fileResponse.size > MAX_SYNC_FILE_BYTES) {
                         return@withContext Result.failure(IOException("Remote backup file is too large"))
+                    }
+                    // >1MB 文件 content 为空、encoding=none，改走 raw 通道；sha 仍取自 JSON 响应
+                    if (fileResponse.content.isEmpty() && fileResponse.size > 0) {
+                        val rawContent = fetchRawFileContent(owner, repo, path)
+                            ?: return@withContext Result.failure(
+                                IOException("Failed to read large remote backup via raw channel: $path")
+                            )
+                        return@withContext Result.success(rawContent to fileResponse.sha)
                     }
                     val decodedContent = String(
                         Base64.decode(fileResponse.content.replace("\n", ""), Base64.DEFAULT)
@@ -291,6 +322,28 @@ class GitHubApiClient(
         } catch (e: Exception) {
             NPLogger.e(TAG, "Get file content strict error", e)
             Result.failure(e)
+        }
+    }
+
+    /**
+     * 通过 raw 媒体类型读取文件原始字节
+     * GitHub Contents API 对 >1MB 文件不再内联 base64 content（encoding=none），
+     * 必须用单独的 Accept: application/vnd.github.raw 请求获取原始内容（raw 上限约 100MB）
+     * 该方法在 Dispatchers.IO 上下文内被调用，直接执行阻塞请求
+     */
+    private fun fetchRawFileContent(owner: String, repo: String, path: String): String? {
+        val request = Request.Builder()
+            .url("$GITHUB_API_BASE/repos/$owner/$repo/contents/$path")
+            .header("Authorization", "Bearer $token")
+            .header("Accept", "application/vnd.github.raw")
+            .build()
+        return client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                NPLogger.e(TAG, "Raw content fetch failed for $path: ${response.code}")
+                null
+            } else {
+                response.body?.string()
+            }
         }
     }
 

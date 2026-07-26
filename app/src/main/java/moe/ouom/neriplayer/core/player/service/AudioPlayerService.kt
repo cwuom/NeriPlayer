@@ -54,6 +54,7 @@ import android.util.TypedValue
 import androidx.annotation.DrawableRes
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.drawable.DrawableCompat
@@ -940,21 +941,15 @@ class AudioPlayerService : Service() {
         super.onCreate()
         if (SafeModeManager.shouldEnterSafeMode(this)) {
             isServiceInstanceActive = false
-            isServiceForegroundActive = false
             allowServiceRestart = false
             NPLogger.w("NERI-APS", "onCreate ignored because safe mode is active")
-            stopSelf()
+            // 即使经 startForegroundService / START_STICKY 拉起,也必须先满足 FGS 5s 契约再退出
+            startForegroundForSafeModeThenStop("safe_mode_create")
             return
         }
         isServiceInstanceActive = true
         NPLogger.d("NERI-APS", "onCreate begin ${buildStateSummary()}")
-        val nm: NotificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "NeriPlayer Playback",
-            NotificationManager.IMPORTANCE_LOW
-        )
-        nm.createNotificationChannel(channel)
+        ensurePlaybackNotificationChannel()
 
         mediaSession = MediaSessionCompat(this, "NeriPlayerSession").apply {
             setCallback(mediaSessionCallback)
@@ -1275,6 +1270,18 @@ class AudioPlayerService : Service() {
             "NERI-APS",
             "onStartCommand action=$action source=$startSource flags=$flags startId=$startId ${buildStateSummary()}"
         )
+        if (SafeModeManager.shouldEnterSafeMode(this)) {
+            // 安全模式下 onCreate 已早退且 mediaSession 未初始化;此处短路,先满足 FGS 契约再退出,
+            // 避免走前台分支读取未初始化的 mediaSession 崩溃
+            NPLogger.w(
+                "NERI-APS",
+                "onStartCommand short-circuited because safe mode is active source=$startSource"
+            )
+            isServiceInstanceActive = false
+            allowServiceRestart = false
+            startForegroundForSafeModeThenStop("safe_mode_start_command:$action:$startSource")
+            return START_NOT_STICKY
+        }
         allowServiceRestart = true
         keepPlayerRuntimeAfterServiceStop = false
         hasReceivedStartCommand = true
@@ -1611,7 +1618,7 @@ class AudioPlayerService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_small)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(getString(R.string.player_notification_preparing))
@@ -1622,11 +1629,41 @@ class AudioPlayerService : Service() {
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .setStyle(
+        // mediaSession 尚未初始化时降级为不带媒体样式的通知,避免读取 lateinit 崩溃
+        if (this::mediaSession.isInitialized) {
+            builder.setStyle(
                 androidx.media.app.NotificationCompat.MediaStyle()
                     .setMediaSession(mediaSession.sessionToken)
             )
+        }
+        return builder.build()
+    }
+
+    /**
+     * 极简前台通知:不依赖任何实例成员(尤其是尚未初始化的 mediaSession),
+     * 仅用于安全模式早退时满足 FGS 5s 契约后立即撤下
+     */
+    private fun buildMinimalForegroundNotification(): Notification {
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification_small)
+            .setContentTitle(getString(R.string.app_name))
+            .setCategory(Notification.CATEGORY_TRANSPORT)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setOnlyAlertOnce(true)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
+    }
+
+    /** 确保播放通知渠道存在,可在安全模式早退分支于任何成员初始化前安全调用 */
+    private fun ensurePlaybackNotificationChannel() {
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "NeriPlayer Playback",
+            NotificationManager.IMPORTANCE_LOW
+        )
+        NotificationManagerCompat.from(this).createNotificationChannel(channel)
     }
 
     private fun isFavoriteSong(song: SongItem?): Boolean {
@@ -2268,6 +2305,20 @@ class AudioPlayerService : Service() {
         stopForeground(STOP_FOREGROUND_REMOVE)
         isForegroundStarted = false
         isServiceForegroundActive = false
+    }
+
+    /**
+     * 安全模式早退路径:无论是否经 startForegroundService 拉起,都先用不依赖任何成员的极简通知
+     * 满足 Android 12+ 的 FGS 5s 契约,随后立即撤下前台并 stopSelf,
+     * 避免 ForegroundServiceDidNotStartInTime / 读取未初始化 mediaSession 崩溃
+     */
+    private fun startForegroundForSafeModeThenStop(reason: String) {
+        ensurePlaybackNotificationChannel()
+        if (startForegroundImmediately(buildMinimalForegroundNotification(), reason)) {
+            stopForegroundIfStarted(reason)
+        }
+        isServiceForegroundActive = false
+        stopSelf()
     }
 
     private fun handleListenTogetherServiceStateChanged(reason: String) {

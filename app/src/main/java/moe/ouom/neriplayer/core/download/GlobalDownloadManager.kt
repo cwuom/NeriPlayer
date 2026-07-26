@@ -53,6 +53,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
@@ -171,6 +172,12 @@ object GlobalDownloadManager {
 
     @Volatile
     private var downloadedSongCatalogReady = false
+
+    // 当前内存 catalog 所属的存储 root 标识（restore/扫描发布时更新）。
+    // 用于把"切换/重置目录后扫描新目录得到的真空"与"同目录 SAF 瞬时空列举失败"区分开：
+    // 前者 scanRootKey != catalogRootKey，应放行清空；后者相等，才启用 #D4 可疑空保护。
+    @Volatile
+    private var downloadedSongCatalogRootKey: String? = null
 
     @Volatile
     private var pendingRefresh = false
@@ -1074,8 +1081,17 @@ object GlobalDownloadManager {
                     )
                 }
             }
-            if (writeResult.getOrDefault(false)) {
-                return true
+            when (writeResult.getOrNull()) {
+                DownloadedAudioTagWriteOutcome.SUCCESS -> return true
+                // 容器天生写不了标签，重试只会白白删掉已经下载完整的音频
+                DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER -> {
+                    NPLogger.w(
+                        TAG,
+                        "容器不支持内嵌标签，保留音频并跳过后处理: ${audio.name}"
+                    )
+                    return true
+                }
+                else -> Unit
             }
             lastError = writeResult.exceptionOrNull()
                 ?: IllegalStateException("TagLib 未确认标签写入成功")
@@ -1373,11 +1389,52 @@ object GlobalDownloadManager {
                     }.getOrNull()
                 }
                 .sortedByDescending { it.downloadTime }
-            if (_downloadedSongs.value != songs) {
+            val existingSongs = _downloadedSongs.value
+            // 本次扫描所针对的存储 root 标识，用于与既有 catalog 所属 root 比对
+            val scanRootKey = ManagedDownloadStorage.currentSnapshotRootKey(context)
+            // 可疑空结果保护（#168 疑似根因）：SAF DocumentsProvider 可能瞬时返回空/失败游标，
+            // ManagedDownloadTreeChildQuery 列举失败时静默兜底为空列表，导致一次瞬时失败被当成
+            // 权威的"空目录"。若直接持久化空目录，下次启动会 restore 出空目录并把 catalogReady
+            // 标为就绪，从而跳过启动重扫，使已下载歌曲彻底"看不见"（文件本身仍在磁盘）。
+            //
+            // 判定条件（isSuspiciousEmptyDownloadScan，四者同时成立才视为可疑，避免误伤正常清空）：
+            //   1) 本次扫描结果为空；2) 既有内存目录非空；3) 存储 root 仍可解析；
+            //   4) 本次扫描 root 与既有 catalog 所属 root 一致（scanMatchesCatalogRoot）。
+            // 反面：应用内逐首删除走增量发布路径，删空后既有目录已为空，不触发本保护；
+            //       切换/重置下载目录后扫描的是新 root，与旧 catalog root 不一致，genuine-empty 放行清空。
+            // 权衡：同目录下外部文件管理器批量删空且 SAF 树仍可解析的极端场景下，会保留旧条目直到下一次
+            //       能成功列举或目录发生变化；相比"瞬时失败即清空导致数据不可见"，保守保留是更安全的失败方向。
+            if (songs.isEmpty() && existingSongs.isNotEmpty()) {
+                val storageRootResolvable = ManagedDownloadStorage.isStorageRootResolvable(context)
+                val scanMatchesCatalogRoot = downloadedSongCatalogRootKey == scanRootKey
+                if (
+                    isSuspiciousEmptyDownloadScan(
+                        scannedSongCount = songs.size,
+                        existingSongCount = existingSongs.size,
+                        storageRootResolvable = storageRootResolvable,
+                        scanMatchesCatalogRoot = scanMatchesCatalogRoot
+                    )
+                ) {
+                    NPLogger.w(
+                        TAG,
+                        "扫描结果为空但既有目录非空、存储根可解析且同 root，判定为可疑空结果，保留既有目录: " +
+                            "existing=${existingSongs.size}, forceRefresh=$forceRefresh"
+                    )
+                    // 仅在本次使用了缓存（非强制刷新）时安排一次强制重扫尝试恢复；
+                    // 若本次已是强制刷新仍为空，则不再重排，避免瞬时失败演化成无限重扫循环
+                    if (!forceRefresh) {
+                        scheduleCatalogReconcile(context, forceRefresh = true)
+                    }
+                    return
+                }
+            }
+            if (existingSongs != songs) {
                 publishDownloadedSongs(context, songs, persistCatalog = true)
+                downloadedSongCatalogRootKey = scanRootKey
             } else if (!downloadedSongCatalogReady) {
                 downloadedSongCatalogIndex = buildDownloadedSongCatalogIndex(songs)
                 downloadedSongCatalogReady = true
+                downloadedSongCatalogRootKey = scanRootKey
             }
         } catch (error: Exception) {
             NPLogger.e(TAG, "扫描已下载文件失败: ${error.message}", error)
@@ -1861,9 +1918,12 @@ object GlobalDownloadManager {
         return ManagedDownloadStorage.toPlayableUri(reference) ?: reference
     }
 
-    private fun restorePersistedDownloadedSongs(context: Context): Boolean {
+    private suspend fun restorePersistedDownloadedSongs(context: Context): Boolean {
         val restoredSongs = downloadedSongCatalogStore.restore(context) ?: return false
         publishDownloadedSongs(context, restoredSongs, persistCatalog = false)
+        // 记录 restore 出的 catalog 所属 root（当前配置目录），使随后同目录的启动瞬时空扫描仍受 #D4 保护；
+        // 若目录在离线期间被切换，则新 root 与随后扫描一致而与真实来源不符——属既有边界，不在本次修复范围
+        downloadedSongCatalogRootKey = ManagedDownloadStorage.currentSnapshotRootKey(context)
         return true
     }
 

@@ -736,6 +736,56 @@ internal fun PlayerManager.replaceCurrentInQueueAndPlayImpl(
     )
 }
 
+/**
+ * addToQueueNext 随机模式下三个随机索引列表的快照,便于纯逻辑重映射与单测
+ */
+internal data class ShuffleQueueIndexState(
+    val bag: List<Int>,
+    val history: List<Int>,
+    val future: List<Int>,
+)
+
+/**
+ * “下一首播放”在随机模式下的随机索引重映射(纯函数)
+ *
+ * 队列变化固定为两步且顺序不可颠倒:先 removeAt(existingIndex)(existingIndex<0 表示不移除),
+ * 再 add(insertIndex, 新曲)。随机列表里保存的是队列下标,必须做同样的收缩/扩张:
+ * 移除时丢弃指向被删槽位的下标、其后下标整体前移;插入时插入位及其后下标整体后移。
+ * 最后把新曲槽位从 bag/history 移除并放入 future,保证随机序不错播、不漏曲、不重复。
+ * currentIndex 由调用方经 queueIndexOf 单独重定位,这里不涉及 currentIndex
+ */
+internal fun remapShuffleStateForInsertNext(
+    state: ShuffleQueueIndexState,
+    existingIndex: Int,
+    insertIndex: Int,
+    newSongIndex: Int,
+): ShuffleQueueIndexState {
+    fun List<Int>.afterRemoval(removed: Int): List<Int> =
+        if (removed < 0) this
+        else mapNotNull {
+            when {
+                it == removed -> null
+                it > removed -> it - 1
+                else -> it
+            }
+        }
+
+    fun List<Int>.afterInsertion(at: Int): List<Int> =
+        if (at < 0) this else map { if (it >= at) it + 1 else it }
+
+    var bag = state.bag.afterRemoval(existingIndex).afterInsertion(insertIndex)
+    var history = state.history.afterRemoval(existingIndex).afterInsertion(insertIndex)
+    var future = state.future.afterRemoval(existingIndex).afterInsertion(insertIndex)
+
+    if (newSongIndex >= 0) {
+        bag = bag.filter { it != newSongIndex }
+        history = history.filter { it != newSongIndex }
+        if (newSongIndex !in future) future = future + newSongIndex
+    }
+
+    return ShuffleQueueIndexState(bag = bag, history = history, future = future)
+}
+
 internal fun PlayerManager.addToQueueNextImpl(song: SongItem) {
     ensureInitialized()
     if (!initialized) return
@@ -773,12 +823,23 @@ internal fun PlayerManager.addToQueueNextImpl(song: SongItem) {
         currentIndex.coerceIn(0, newPlaylist.lastIndex)
     }
     if (player.shuffleModeEnabled) {
+        // 队列中部移除/插入后,同步重映射三个随机索引列表,避免旧下标错位导致错播、漏曲、重复
         val newSongRealIndex = queueIndexOf(song, newPlaylist)
-
-        if (newSongRealIndex != -1) {
-            shuffleBag.remove(newSongRealIndex)
-            shuffleFuture.add(newSongRealIndex)
-        }
+        val remapped = remapShuffleStateForInsertNext(
+            state = ShuffleQueueIndexState(
+                bag = shuffleBag,
+                history = shuffleHistory,
+                future = shuffleFuture,
+            ),
+            existingIndex = existingIndex,
+            insertIndex = insertIndex,
+            newSongIndex = newSongRealIndex,
+        )
+        shuffleBag = remapped.bag.toMutableList()
+        shuffleHistory.clear()
+        shuffleHistory.addAll(remapped.history)
+        shuffleFuture.clear()
+        shuffleFuture.addAll(remapped.future)
     }
     NPLogger.d(
         "NERI-PlayerManager",

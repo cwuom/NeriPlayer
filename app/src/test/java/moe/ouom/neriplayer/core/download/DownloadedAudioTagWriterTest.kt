@@ -115,6 +115,38 @@ class DownloadedAudioTagWriterTest {
         assertFalse(DownloadedAudioTagWriter.hasRequiredEmbeddedMetadata(propertyMap, song))
     }
 
+    @Test
+    fun `taglib backed containers support embedded tags`() {
+        listOf(
+            "netease - Artist - Song.mp3",
+            "youtubeMusic - Artist - Song.m4a",
+            "bilibili - Artist - Song.flac",
+            "local - Artist - Song.ogg",
+            "local - Artist - Song.WAV"
+        ).forEach { fileName ->
+            assertTrue(fileName, DownloadedAudioTagWriter.supportsEmbeddedTags(fileName))
+        }
+    }
+
+    @Test
+    fun `matroska family containers do not support embedded tags`() {
+        listOf(
+            "youtubeMusic - 陈芳语 - 爱你.webm",
+            "youtubeMusic - Artist - Song.WEBM",
+            "local - Artist - Song.mkv",
+            "local - Artist - Song.mka",
+            "stream - Artist - Song.ts",
+            "stream - Artist - Song.m3u8"
+        ).forEach { fileName ->
+            assertFalse(fileName, DownloadedAudioTagWriter.supportsEmbeddedTags(fileName))
+        }
+    }
+
+    @Test
+    fun `extensionless file is not treated as taggable`() {
+        assertFalse(DownloadedAudioTagWriter.supportsEmbeddedTags("youtubeMusic - Artist - Song"))
+    }
+
     private fun testSong(
         name: String,
         artist: String

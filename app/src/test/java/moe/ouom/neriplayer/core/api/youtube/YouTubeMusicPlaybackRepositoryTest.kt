@@ -1919,6 +1919,222 @@ class YouTubeMusicPlaybackRepositoryTest {
     }
 
     @Test
+    fun parsePlayableAudio_returnsNullWhenThrottlingParameterUnresolved() {
+        // #Y4：唯一候选带 n 但解不出（resolver 返回空串）时，不得返回带混淆 n 的原 URL
+        val root = JSONObject(
+            """
+            {
+              "streamingData": {
+                "adaptiveFormats": [
+                  {
+                    "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"",
+                    "url": "https://rr1---sn.googlevideo.com/videoplayback?id=audio-1&n=obfuscated-n",
+                    "bitrate": 128000,
+                    "audioSampleRate": "44100",
+                    "approxDurationMs": "70000"
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        val cipherResolver = object : YouTubeStreamingCipherResolver {
+            override fun resolveSignature(encryptedSignature: String): String? = null
+            override fun resolveStreamingUrl(url: String): String = ""
+        }
+
+        val playableAudio = YouTubeMusicPlaybackParser.parsePlayableAudio(
+            root = root,
+            cipherResolver = cipherResolver
+        )
+
+        assertNull(playableAudio)
+    }
+
+    @Test
+    fun parsePlayableAudio_skipsCandidateWithUnresolvedThrottlingParameter() {
+        // #Y4：高码率候选 n 解不出时跳过，回退到下一个能解出的候选，而不是返回限速 URL
+        val root = JSONObject(
+            """
+            {
+              "streamingData": {
+                "adaptiveFormats": [
+                  {
+                    "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"",
+                    "url": "https://rr1---sn.googlevideo.com/videoplayback?id=audio-high&n=high-obfuscated",
+                    "bitrate": 160000,
+                    "audioSampleRate": "48000",
+                    "approxDurationMs": "70000"
+                  },
+                  {
+                    "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"",
+                    "url": "https://rr1---sn.googlevideo.com/videoplayback?id=audio-low&n=low-obfuscated",
+                    "bitrate": 128000,
+                    "audioSampleRate": "44100",
+                    "approxDurationMs": "70000"
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        val cipherResolver = object : YouTubeStreamingCipherResolver {
+            override fun resolveSignature(encryptedSignature: String): String? = null
+            override fun resolveStreamingUrl(url: String): String {
+                return if (url.contains("high-obfuscated")) {
+                    ""
+                } else {
+                    url.replace("low-obfuscated", "low-resolved")
+                }
+            }
+        }
+
+        val playableAudio = YouTubeMusicPlaybackParser.parsePlayableAudio(
+            root = root,
+            preferredQualityKey = "very_high",
+            cipherResolver = cipherResolver
+        )
+
+        assertNotNull(playableAudio)
+        assertEquals(
+            "https://rr1---sn.googlevideo.com/videoplayback?id=audio-low&n=low-resolved",
+            playableAudio?.url
+        )
+    }
+
+    @Test
+    fun parsePlayableAudio_preferM4aHardFiltersToM4aAcrossQualityTiers() {
+        // #Y3：LOW/HIGH 挡位下旧逻辑会因排序反转把更高码率的 webm 排到前面，
+        // preferM4a 必须硬性优先可打标的 m4a，避免下到 webm
+        val root = JSONObject(
+            """
+            {
+              "streamingData": {
+                "adaptiveFormats": [
+                  {
+                    "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"",
+                    "url": "https://rr1---sn.googlevideo.com/videoplayback?id=audio-aac-140",
+                    "bitrate": 130625,
+                    "audioSampleRate": "44100",
+                    "contentLength": "3606154",
+                    "approxDurationMs": "222741"
+                  },
+                  {
+                    "mimeType": "audio/webm; codecs=\"opus\"",
+                    "url": "https://rr1---sn.googlevideo.com/videoplayback?id=audio-opus-251",
+                    "bitrate": 149704,
+                    "audioSampleRate": "48000",
+                    "contentLength": "3830033",
+                    "approxDurationMs": "222741"
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        val lowQualityDownload = YouTubeMusicPlaybackParser.parsePlayableAudio(
+            root = root,
+            preferredQualityKey = "low",
+            preferM4a = true
+        )
+        val highQualityDownload = YouTubeMusicPlaybackParser.parsePlayableAudio(
+            root = root,
+            preferredQualityKey = "high",
+            preferM4a = true
+        )
+
+        assertNotNull(lowQualityDownload)
+        assertEquals("audio/mp4", lowQualityDownload?.mimeType)
+        assertNotNull(highQualityDownload)
+        assertEquals("audio/mp4", highQualityDownload?.mimeType)
+    }
+
+    @Test
+    fun selectPreferredPlayableAudio_preferM4aPrefersM4aOverHigherBitrateWebmDirect() {
+        // #Y3：跨 client 合并时，下载路径须把可打标的 m4a 直链硬性优先于更高码率 webm 直链
+        val m4aDirect = YouTubePlayableAudio(
+            url = "https://rr1---sn.googlevideo.com/videoplayback?id=aac-140",
+            durationMs = 223_000L,
+            mimeType = "audio/mp4",
+            contentLength = 3_606_154L,
+            streamType = YouTubePlayableStreamType.DIRECT,
+            bitrateKbps = 128,
+            sampleRateHz = 44_100
+        )
+        val webmDirect = YouTubePlayableAudio(
+            url = "https://rr1---sn.googlevideo.com/videoplayback?id=opus-251",
+            durationMs = 223_000L,
+            mimeType = "audio/webm",
+            contentLength = 3_830_033L,
+            streamType = YouTubePlayableStreamType.DIRECT,
+            bitrateKbps = 160,
+            sampleRateHz = 48_000
+        )
+
+        // 普通播放：更高码率 webm 胜出
+        assertSame(
+            webmDirect,
+            repository.selectPreferredPlayableAudio(current = m4aDirect, incoming = webmDirect)
+        )
+        // 下载 preferM4a：m4a 硬性胜出，与传入方向无关
+        assertSame(
+            m4aDirect,
+            repository.selectPreferredPlayableAudio(
+                current = webmDirect,
+                incoming = m4aDirect,
+                preferM4a = true
+            )
+        )
+        assertSame(
+            m4aDirect,
+            repository.selectPreferredPlayableAudio(
+                current = m4aDirect,
+                incoming = webmDirect,
+                preferM4a = true
+            )
+        )
+    }
+
+    @Test
+    fun rateLimitBackoffMs_returnsNullForNonRetryableErrors() {
+        // #Y5：仅 429/503 且携带状态码的异常才退避
+        assertNull(rateLimitBackoffMs(IOException("boom"), 0))
+        assertNull(rateLimitBackoffMs(null, 0))
+        assertNull(rateLimitBackoffMs(YouTubeHttpStatusException(403, null, "x"), 0))
+        assertNull(rateLimitBackoffMs(YouTubeHttpStatusException(500, null, "x"), 0))
+    }
+
+    @Test
+    fun rateLimitBackoffMs_usesExponentialBackoffWhenNoRetryAfter() {
+        assertEquals(500L, rateLimitBackoffMs(YouTubeHttpStatusException(429, null, "x"), 0))
+        assertEquals(1000L, rateLimitBackoffMs(YouTubeHttpStatusException(429, null, "x"), 1))
+        assertEquals(2000L, rateLimitBackoffMs(YouTubeHttpStatusException(503, null, "x"), 2))
+        assertEquals(4000L, rateLimitBackoffMs(YouTubeHttpStatusException(503, null, "x"), 3))
+        // priorHits 超过上限仍封顶在指数最高档（4000）
+        assertEquals(4000L, rateLimitBackoffMs(YouTubeHttpStatusException(429, null, "x"), 9))
+    }
+
+    @Test
+    fun rateLimitBackoffMs_respectsRetryAfterWithinCap() {
+        assertEquals(3000L, rateLimitBackoffMs(YouTubeHttpStatusException(429, 3000L, "x"), 2))
+        // Retry-After 超过上限 → 封顶 5000
+        assertEquals(5000L, rateLimitBackoffMs(YouTubeHttpStatusException(503, 60_000L, "x"), 0))
+    }
+
+    @Test
+    fun parseRetryAfterMs_parsesIntegerSecondsOnly() {
+        assertEquals(2000L, parseRetryAfterMs("2"))
+        assertEquals(0L, parseRetryAfterMs("0"))
+        assertNull(parseRetryAfterMs(null))
+        assertNull(parseRetryAfterMs(""))
+        assertNull(parseRetryAfterMs("   "))
+        assertNull(parseRetryAfterMs("-5"))
+        // HTTP-date 形式不支持，交给指数退避
+        assertNull(parseRetryAfterMs("Wed, 21 Oct 2015 07:28:00 GMT"))
+    }
+
+    @Test
     fun selectAudioPlaylist_prefersHighestBitrateHlsTrackForVeryHighQuality() {
         val manifest = """
             #EXTM3U

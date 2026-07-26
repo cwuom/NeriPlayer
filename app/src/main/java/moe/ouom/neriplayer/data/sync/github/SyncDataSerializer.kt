@@ -237,8 +237,9 @@ object SyncDataSerializer {
     @Serializable
     private data class LegacySyncData(
         @ProtoNumber(1) val version: String = "2.0",
-        @ProtoNumber(2) val deviceId: String,
-        @ProtoNumber(3) val deviceName: String,
+        // 回退路径同样按 proto3 语义补默认值，避免二次抛出 MissingFieldException
+        @ProtoNumber(2) val deviceId: String = "",
+        @ProtoNumber(3) val deviceName: String = "",
         @ProtoNumber(4) val lastModified: Long = System.currentTimeMillis(),
         @ProtoNumber(5) val playlists: List<LegacySyncPlaylist> = emptyList(),
         @ProtoNumber(6) val favoritePlaylists: List<LegacySyncFavoritePlaylist> = emptyList(),
@@ -259,11 +260,11 @@ object SyncDataSerializer {
 
     @Serializable
     private data class LegacySyncPlaylist(
-        @ProtoNumber(1) val id: Long,
-        @ProtoNumber(2) val name: String,
-        @ProtoNumber(3) val songs: List<LegacySyncSong>,
-        @ProtoNumber(4) val createdAt: Long,
-        @ProtoNumber(5) val modifiedAt: Long,
+        @ProtoNumber(1) val id: Long = 0L,
+        @ProtoNumber(2) val name: String = "",
+        @ProtoNumber(3) val songs: List<LegacySyncSong> = emptyList(),
+        @ProtoNumber(4) val createdAt: Long = 0L,
+        @ProtoNumber(5) val modifiedAt: Long = 0L,
         @ProtoNumber(6) val isDeleted: Boolean = false
     ) {
         fun toCurrent(): SyncPlaylist = SyncPlaylist(
@@ -332,10 +333,10 @@ object SyncDataSerializer {
 
     @Serializable
     private data class LegacySyncRecentPlay(
-        @ProtoNumber(1) val songId: Long,
-        @ProtoNumber(2) val song: LegacySyncSong,
-        @ProtoNumber(3) val playedAt: Long,
-        @ProtoNumber(4) val deviceId: String
+        @ProtoNumber(1) val songId: Long = 0L,
+        @ProtoNumber(2) val song: LegacySyncSong = LegacySyncSong(),
+        @ProtoNumber(3) val playedAt: Long = 0L,
+        @ProtoNumber(4) val deviceId: String = ""
     ) {
         fun toCurrent(): SyncRecentPlay = SyncRecentPlay(
             songId = songId,
@@ -347,7 +348,7 @@ object SyncDataSerializer {
 
     @Serializable
     private data class LegacySyncFavoritePlaylist(
-        @ProtoNumber(1) val id: Long,
+        @ProtoNumber(1) val id: Long = 0L,
         @ProtoNumber(2) val name: String = "",
         @ProtoNumber(3) val coverUrl: String? = null,
         @ProtoNumber(4) val trackCount: Int = 0,
@@ -371,9 +372,9 @@ object SyncDataSerializer {
 
     @Serializable
     private data class LegacySyncLogEntry(
-        @ProtoNumber(1) val timestamp: Long,
-        @ProtoNumber(2) val deviceId: String,
-        @ProtoNumber(3) val action: SyncAction,
+        @ProtoNumber(1) val timestamp: Long = 0L,
+        @ProtoNumber(2) val deviceId: String = "",
+        @ProtoNumber(3) val action: SyncAction = SyncAction.CREATE_PLAYLIST,
         @ProtoNumber(4) val playlistId: Long? = null,
         @ProtoNumber(5) val songId: Long? = null,
         @ProtoNumber(6) val details: String? = null

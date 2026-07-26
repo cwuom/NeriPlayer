@@ -476,17 +476,22 @@ class GitHubSyncManager private constructor(context: Context) {
             remote = remote.recentPlays,
             deletions = mergedRecentPlayDeletions
         )
-        val mergedPlaybackStats = mergePlaybackStats(
-            local = local.playbackStats,
-            remote = remote.playbackStats,
-            playbackStatsClearedAt = maxOf(local.playbackStatsClearedAt, remote.playbackStatsClearedAt)
-        )
-        val mergedPlaybackStatBuckets = mergePlaybackStatBuckets(
-            local = local.playbackStatBuckets,
-            remote = remote.playbackStatBuckets,
-            playbackStatsClearedAt = maxOf(local.playbackStatsClearedAt, remote.playbackStatsClearedAt)
-        )
         val playbackStatsClearedAt = maxOf(local.playbackStatsClearedAt, remote.playbackStatsClearedAt)
+        // 收尾顺序与桌面 three_way_merge 逐字一致：先用「未裁剪」的合并日桶抬升聚合值（消除「年 > 总」），再分别裁剪
+        val finalizedPlaybackStats = SyncPlaybackStatsMergePolicy.finalizeMergedStats(
+            mergedStats = mergePlaybackStats(
+                local = local.playbackStats,
+                remote = remote.playbackStats,
+                playbackStatsClearedAt = playbackStatsClearedAt
+            ),
+            mergedBuckets = mergePlaybackStatBuckets(
+                local = local.playbackStatBuckets,
+                remote = remote.playbackStatBuckets,
+                playbackStatsClearedAt = playbackStatsClearedAt
+            )
+        )
+        val mergedPlaybackStats = finalizedPlaybackStats.stats
+        val mergedPlaybackStatBuckets = finalizedPlaybackStats.buckets
 
         val mergedData = SyncData(
             deviceId = local.deviceId,
@@ -1074,6 +1079,8 @@ class GitHubSyncManager private constructor(context: Context) {
         }
 
         val (remoteContent, remoteSha) = remoteResult.getOrThrow()
+        // 至此 size > 0 且内联 content 为空的 >1MB 文件已在 GitHubApiClient 走 raw 通道读回，
+        // 因此此处 content 为空只可能是 size == 0 的真空文件，按无效备份处理
         if (remoteContent.isEmpty()) {
             return Result.failure(
                 IOException(LanguageManager.applyLanguage(appContext).getString(R.string.github_backup_file_invalid))
@@ -1144,8 +1151,17 @@ class GitHubSyncManager private constructor(context: Context) {
         val playlistsAdded = localData.playlists.count { !it.isDeleted }
         val playlistsDeleted = localData.playlists.count(SyncPlaylist::isDeleted)
         val songsAdded = localData.playlists.sumOf { playlist -> playlist.songs.size }
+        // 首次同步同样走收尾（顺序与桌面一致：先用「未裁剪」桶抬升，再裁剪），避免首个备份文件就撑过 GitHub 1MB 内联上限
+        val finalizedInitialStats = SyncPlaybackStatsMergePolicy.finalizeMergedStats(
+            mergedStats = localData.playbackStats,
+            mergedBuckets = localData.playbackStatBuckets
+        )
         return MergeResult(
-            mergedData = localData.copy(lastModified = System.currentTimeMillis()),
+            mergedData = localData.copy(
+                lastModified = System.currentTimeMillis(),
+                playbackStats = finalizedInitialStats.stats,
+                playbackStatBuckets = finalizedInitialStats.buckets
+            ),
             syncResult = SyncResult(
                 success = true,
                 message = localizedContext.getString(R.string.sync_initial_uploaded),

@@ -31,3 +31,19 @@ internal fun resolveListenTogetherControlBlockReason(
     }
     return null
 }
+
+/**
+ * 控制端(权威方)对转发来的成员控制请求做服务端侧鉴权。
+ * 关闭 allowMemberControl 后，只有控制端自身发起的转发请求可通过，
+ * 防止改造的监听端或旧自建 Worker 绕过本机 UI 校验越权控制房间。
+ */
+internal fun shouldRejectForwardedListenTogetherMemberControl(
+    requesterUuid: String?,
+    controllerUserUuid: String?,
+    allowMemberControl: Boolean
+): Boolean {
+    if (allowMemberControl) return false
+    val isRequesterController = !requesterUuid.isNullOrBlank() &&
+        requesterUuid == controllerUserUuid
+    return !isRequesterController
+}

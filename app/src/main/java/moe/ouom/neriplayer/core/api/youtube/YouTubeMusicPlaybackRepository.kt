@@ -135,12 +135,44 @@ private const val WEB_REMIX_PO_TOKEN_PREFETCH_JOIN_TIMEOUT_MS = 150L
 private const val PLAYABLE_URL_EXPIRY_SAFETY_MARGIN_MS = 90L * 1000L
 private const val EJS_FALLBACK_START_DELAY_MS = 40L
 private const val CIPHER_RESOLVE_TIMEOUT_MS = 12_000L
+// 脏 IP 下 429/503 退避基数与上限，避免密集重试进一步拉高限流等级（#Y5）
+private const val RATE_LIMIT_BACKOFF_BASE_MS = 500L
+private const val RATE_LIMIT_BACKOFF_MAX_MS = 5_000L
 
 private const val YOUTUBE_PLAYER_API_FORMAT_VERSION = "2"
 private const val STREAMING_CIPHER_LOG_THRESHOLD_MS = 250L
 private const val YOUTUBE_PLAYBACK_DIAG_PREFIX = "[YT-DIAG-20260530]"
 
 private fun playbackElapsedMs(startedAtMs: Long): Long = System.currentTimeMillis() - startedAtMs
+
+/**
+ * 携带 HTTP 状态码与 Retry-After 的请求失败异常。
+ * 仍继承 IOException，保持既有 catch(IOException) 与消息正则解析（401/403/429）兼容
+ */
+internal class YouTubeHttpStatusException(
+    val statusCode: Int,
+    val retryAfterMs: Long?,
+    message: String
+) : IOException(message)
+
+/** 解析 Retry-After：仅支持 delta-seconds 整数秒形式，HTTP-date 形式忽略并走指数退避 */
+@VisibleForTesting
+internal fun parseRetryAfterMs(headerValue: String?): Long? {
+    val seconds = headerValue?.trim()?.toLongOrNull() ?: return null
+    return if (seconds >= 0L) seconds * 1000L else null
+}
+
+/** 429/503 退避时长：优先 Retry-After，否则按累计命中次数指数退避，统一封顶 */
+@VisibleForTesting
+internal fun rateLimitBackoffMs(error: Throwable?, priorHits: Int): Long? {
+    val status = error as? YouTubeHttpStatusException ?: return null
+    if (status.statusCode != 429 && status.statusCode != 503) {
+        return null
+    }
+    status.retryAfterMs?.let { return it.coerceIn(0L, RATE_LIMIT_BACKOFF_MAX_MS) }
+    return (RATE_LIMIT_BACKOFF_BASE_MS shl priorHits.coerceIn(0, 3))
+        .coerceAtMost(RATE_LIMIT_BACKOFF_MAX_MS)
+}
 
 @VisibleForTesting
 internal object NewPipeFallbackTracker {
@@ -296,11 +328,18 @@ interface YouTubeStreamingCipherResolver {
     fun resolveStreamingUrl(url: String): String
 }
 
-private fun playableAudioMimePreferenceScore(mimeType: String?): Int {
+private fun isPlayableM4aContainer(mimeType: String?): Boolean {
     return when (mimeType?.lowercase(Locale.US)) {
-        MimeTypes.APPLICATION_M3U8.lowercase(Locale.US) -> 3
-        "audio/mp4", "audio/m4a", "audio/aac" -> 2
-        "audio/webm" -> 1
+        "audio/mp4", "audio/m4a", "audio/aac" -> true
+        else -> false
+    }
+}
+
+private fun playableAudioMimePreferenceScore(mimeType: String?): Int {
+    return when {
+        mimeType?.lowercase(Locale.US) == MimeTypes.APPLICATION_M3U8.lowercase(Locale.US) -> 3
+        isPlayableM4aContainer(mimeType) -> 2
+        mimeType?.lowercase(Locale.US) == "audio/webm" -> 1
         else -> 0
     }
 }
@@ -407,6 +446,16 @@ internal object YouTubeMusicPlaybackParser {
             )
         }
         return null
+    }
+
+    // 判断原始响应是否本就包含 googlevideo direct 音频流
+    // 用于识别"WEB_REMIX 返回了 direct 流，但候选因 n 无法解出被 #Y4 丢弃"的场景：
+    // 这类场景换 locale 不会改变 player.js/n 的可解性，应直接切换下一 client 而非重试当前 client 其他 locale
+    fun hasDirectGoogleVideoAudioStream(root: JSONObject): Boolean {
+        return collectAudioCandidates(root).any { candidate ->
+            val rawUrl = resolveFormatUrl(candidate.format, cipherResolver = null)
+            rawUrl.isNotBlank() && isYouTubeGoogleVideoStream(rawUrl)
+        }
     }
 
     fun parsePreferredAudioMetadata(
@@ -529,7 +578,12 @@ internal object YouTubeMusicPlaybackParser {
         if (url.isBlank()) {
             return ""
         }
-        return cipherResolver?.resolveStreamingUrl(url).orEmpty().ifBlank { url }
+        // 无 resolver 时保持原样返回，不破坏正常路径
+        val resolver = cipherResolver ?: return url
+        // resolver 对"带 n 参数但解不出"的候选返回空串表示该候选不可用；
+        // 必须原样透传空串让 parsePlayableAudio 跳过该候选，
+        // 而非回退到带混淆 n 的原 URL（会被 googlevideo 限速，#Y4/#257）
+        return resolver.resolveStreamingUrl(url)
     }
 
     private fun parseDurationMs(root: JSONObject): Long {
@@ -551,10 +605,17 @@ internal object YouTubeMusicPlaybackParser {
             .takeIf { it.isNotBlank() }
     }
 
-    private fun mimePreferenceScore(mimeType: String?): Int {
+    private fun isM4aAudioContainer(mimeType: String?): Boolean {
         return when (mimeType?.lowercase(Locale.US)) {
-            "audio/mp4", "audio/m4a", "audio/aac" -> 2
-            "audio/webm" -> 1
+            "audio/mp4", "audio/m4a", "audio/aac" -> true
+            else -> false
+        }
+    }
+
+    private fun mimePreferenceScore(mimeType: String?): Int {
+        return when {
+            isM4aAudioContainer(mimeType) -> 2
+            mimeType?.lowercase(Locale.US) == "audio/webm" -> 1
             else -> 0
         }
     }
@@ -567,13 +628,33 @@ internal object YouTubeMusicPlaybackParser {
         if (candidates.isEmpty()) {
             return emptyList()
         }
-        val comparator = if (preferM4a) {
-            compareByDescending<YouTubePlayerAudioCandidate> { mimePreferenceScore(it.mimeType) }
-                .thenByDescending { it.bitrate }
-                .thenByDescending { it.audioSampleRate }
-                .thenByDescending { it.contentLength ?: 0L }
-        } else {
-            audioCandidateComparator()
+        if (!preferM4a) {
+            return orderCandidatesByQualityTier(
+                candidates = candidates,
+                preferredQualityKey = preferredQualityKey,
+                comparator = audioCandidateComparator()
+            )
+        }
+        // preferM4a（尤其下载/requireDirect）把容器为 m4a/mp4/aac 作为硬性首要键：
+        // 先在可打标的 m4a 候选内部按画质挡位排序，只有完全没有 m4a 时才回退 webm/opus，
+        // 避免下载落到无法内嵌标签的 webm（#Y3/#223）
+        val comparator = compareByDescending<YouTubePlayerAudioCandidate> { mimePreferenceScore(it.mimeType) }
+            .thenByDescending { it.bitrate }
+            .thenByDescending { it.audioSampleRate }
+            .thenByDescending { it.contentLength ?: 0L }
+        val m4aCandidates = candidates.filter { isM4aAudioContainer(it.mimeType) }
+        val fallbackCandidates = candidates.filterNot { isM4aAudioContainer(it.mimeType) }
+        return orderCandidatesByQualityTier(m4aCandidates, preferredQualityKey, comparator) +
+            orderCandidatesByQualityTier(fallbackCandidates, preferredQualityKey, comparator)
+    }
+
+    private fun orderCandidatesByQualityTier(
+        candidates: List<YouTubePlayerAudioCandidate>,
+        preferredQualityKey: String?,
+        comparator: Comparator<YouTubePlayerAudioCandidate>
+    ): List<YouTubePlayerAudioCandidate> {
+        if (candidates.isEmpty()) {
+            return emptyList()
         }
         val sortedDescending = candidates.sortedWith(comparator)
         val sortedAscending = sortedDescending.asReversed()
@@ -1390,6 +1471,8 @@ class YouTubeMusicPlaybackRepository(
         )
         var lastError: IOException? = null
         var bestMetadata: YouTubeAudioMetadata? = null
+        // 跨 client/locale/attempt 累计 429/503 命中次数，用于指数退避（#Y5）
+        var rateLimitBackoffHits = 0
 
         repeat(PLAYER_REQUEST_MAX_ATTEMPTS) { attempt ->
             val poTokenForceRefresh = forceRefresh || attempt > 0
@@ -1494,6 +1577,7 @@ class YouTubeMusicPlaybackRepository(
                             shouldContinueWithNextPlayerClient =
                                 shouldSkipRemainingLocalesAfterWebRemixDirectFallback(
                                     profile = profile,
+                                    root = root,
                                     parsedDirectPlayableAudio = parsedDirectPlayableAudio,
                                     directPlayableAudio = directPlayableAudio,
                                     hlsPlayableAudio = hlsPlayableAudio
@@ -1502,7 +1586,8 @@ class YouTubeMusicPlaybackRepository(
                                 current = hlsPlayableAudio,
                                 incoming = directPlayableAudio,
                                 currentClientName = profile.clientName,
-                                incomingClientName = profile.clientName
+                                incomingClientName = profile.clientName,
+                                preferM4a = preferM4a
                             )
                         } else {
                             null
@@ -1512,7 +1597,8 @@ class YouTubeMusicPlaybackRepository(
                                 current = bestPlayableAudio,
                                 incoming = playableAudio,
                                 currentClientName = bestPlayableAudioClientName,
-                                incomingClientName = profile.clientName
+                                incomingClientName = profile.clientName,
+                                preferM4a = preferM4a
                             ) ?: continue@profileLoop
                             if (resolvedPlayableAudio === playableAudio) {
                                 bestPlayableAudioClientName = profile.clientName
@@ -1582,6 +1668,16 @@ class YouTubeMusicPlaybackRepository(
                             "YouTubeMusicPlayback",
                             "player client request failed: videoId=$videoId, client=${profile.clientName}, locale=${requestLocale.gl}/${requestLocale.hl}, error=${error.message}"
                         )
+                        // 脏 IP 下 429/503 先退避再继续下一 client/locale/attempt，避免密集重试加剧限流（#Y5）
+                        val backoffMs = rateLimitBackoffMs(error, rateLimitBackoffHits)
+                        if (backoffMs != null) {
+                            rateLimitBackoffHits++
+                            NPLogger.w(
+                                "YouTubeMusicPlayback",
+                                "rate limited (HTTP ${(error as? YouTubeHttpStatusException)?.statusCode}) for $videoId, backoff=${backoffMs}ms"
+                            )
+                            delay(backoffMs)
+                        }
                         if (shouldRetryWithFreshBootstrapAfterRequestFailure(
                                 profile = profile,
                                 attempt = attempt,
@@ -1641,16 +1737,23 @@ class YouTubeMusicPlaybackRepository(
 
     private fun shouldSkipRemainingLocalesAfterWebRemixDirectFallback(
         profile: YouTubePlayerClientProfile,
+        root: JSONObject,
         parsedDirectPlayableAudio: YouTubePlayableAudio?,
         directPlayableAudio: YouTubePlayableAudio?,
         hlsPlayableAudio: YouTubePlayableAudio?
     ): Boolean {
         if (profile.clientName != YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME) return false
         if (directPlayableAudio != null || hlsPlayableAudio != null) return false
-        if (parsedDirectPlayableAudio?.streamType != YouTubePlayableStreamType.DIRECT) return false
-        val streamUrl = parsedDirectPlayableAudio.url
-        return isYouTubeGoogleVideoStream(streamUrl) &&
-            extractStreamQueryParameter(streamUrl, "pot").isNullOrBlank()
+        val parsedDirect = parsedDirectPlayableAudio
+        if (parsedDirect?.streamType == YouTubePlayableStreamType.DIRECT) {
+            // 解析出 direct 候选但缺 pot：播放路径跳过阻塞校验后回退，无需再试其他 locale
+            val streamUrl = parsedDirect.url
+            return isYouTubeGoogleVideoStream(streamUrl) &&
+                extractStreamQueryParameter(streamUrl, "pot").isNullOrBlank()
+        }
+        // 候选因 n 解不出被 #Y4 丢弃时 parsedDirect 为 null：
+        // 若原始响应本就是 googlevideo direct 音频，换 locale 无益，直接切下一 client 省一次 player 请求
+        return YouTubeMusicPlaybackParser.hasDirectGoogleVideoAudioStream(root)
     }
 
     private suspend fun maybeAttachGvsPoToken(
@@ -1943,6 +2046,7 @@ class YouTubeMusicPlaybackRepository(
         val throttlingEjsFallbackLogged = AtomicBoolean(false)
         val signatureResolutionLogged = AtomicBoolean(false)
         val throttlingResolutionLogged = AtomicBoolean(false)
+        val throttlingUnresolvedDropLogged = AtomicBoolean(false)
 
         fun maybeLogResolution(
             challengeType: String,
@@ -2154,8 +2258,16 @@ class YouTubeMusicPlaybackRepository(
                         if (!skipThrottlingNewPipe && newPipeResult?.value == null) {
                             NewPipeFallbackTracker.recordThrottlingFailure(resolvedPlayerJsUrl)
                         }
-                        return@withTimeoutOrNull url
-                    } ?: url
+                        // n 参数存在但 NewPipe 与 EJS 都解不出：返回空串标记该候选不可用，
+                        // 让上层继续下一候选/下一 client，避免返回带混淆 n 的限速 URL（#Y4）
+                        if (throttlingUnresolvedDropLogged.compareAndSet(false, true)) {
+                            NPLogger.w(
+                                "YouTubeMusicPlayback",
+                                "drop stream candidate: throttling n unresolved for $videoId, skip to next candidate/client"
+                            )
+                        }
+                        return@withTimeoutOrNull ""
+                    } ?: ""
                 }
             }
         }
@@ -2807,14 +2919,24 @@ class YouTubeMusicPlaybackRepository(
         }
     }
 
-    private fun fetchBootstrapHtml(
+    private suspend fun fetchBootstrapHtml(
         auth: YouTubeAuthBundle,
         userAgent: String,
         cookieHeader: String
     ): String {
         var lastError: IOException? = null
         val requestLocale = currentPlayerRequestLocale()
-        for (origin in BOOTSTRAP_PAGE_ORIGINS) {
+        for ((index, origin) in BOOTSTRAP_PAGE_ORIGINS.withIndex()) {
+            // 前一个 origin 若因 429/503 失败，换 origin 前先退避，避免脏 IP 下无延迟连打（#Y5）
+            if (index > 0) {
+                rateLimitBackoffMs(lastError, index - 1)?.let { backoffMs ->
+                    NPLogger.w(
+                        "YouTubeMusicPlayback",
+                        "bootstrap rate limited, backoff=${backoffMs}ms before origin=$origin"
+                    )
+                    delay(backoffMs)
+                }
+            }
             val startedAtMs = System.currentTimeMillis()
             val requestHeaders = auth.buildYouTubePageRequestHeaders(
                 original = linkedMapOf(
@@ -2858,7 +2980,13 @@ class YouTubeMusicPlaybackRepository(
             if (!response.isSuccessful) {
                 val preview = response.body
                     .readErrorPreviewWithLimit(YOUTUBE_ERROR_RESPONSE_MAX_BYTES)
-                throw IOException("YouTube Music request failed: ${response.code} $preview")
+                // 保留 "request failed: <code>" 消息格式以兼容 extractYouTubeRequestFailureCode 正则；
+                // 额外携带状态码与 Retry-After，供 429/503 退避使用（#Y5）
+                throw YouTubeHttpStatusException(
+                    statusCode = response.code,
+                    retryAfterMs = parseRetryAfterMs(response.header("Retry-After")),
+                    message = "YouTube Music request failed: ${response.code} $preview"
+                )
             }
             return response.body.readTextWithLimit(YOUTUBE_TEXT_RESPONSE_MAX_BYTES)
         }
@@ -3065,7 +3193,8 @@ class YouTubeMusicPlaybackRepository(
         current: YouTubePlayableAudio?,
         incoming: YouTubePlayableAudio?,
         currentClientName: String? = null,
-        incomingClientName: String? = null
+        incomingClientName: String? = null,
+        preferM4a: Boolean = false
     ): YouTubePlayableAudio? {
         if (incoming == null) {
             return current
@@ -3078,6 +3207,12 @@ class YouTubeMusicPlaybackRepository(
             incoming.streamType != current.streamType -> {
                 // 优先 progressive 直链，seek 更快且能绕过数据中心 IP 下的 HLS/SABR 403
                 if (incoming.streamType == YouTubePlayableStreamType.DIRECT) incoming else current
+            }
+            preferM4a &&
+                isPlayableM4aContainer(incoming.mimeType) != isPlayableM4aContainer(current.mimeType) -> {
+                // 下载/requireDirect 下容器为 m4a 的候选可内嵌标签，
+                // 硬性优先于 webm/opus，即使 webm 码率更高也不选（#Y3/#223）
+                if (isPlayableM4aContainer(incoming.mimeType)) incoming else current
             }
             qualityComparison != 0 -> {
                 if (qualityComparison > 0) {
