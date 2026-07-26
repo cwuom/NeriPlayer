@@ -161,19 +161,23 @@ internal fun handleYouTubeAuthStateChanged(
     // 只移除旧请求引用, 避免 auth 恢复成功时把当前播放请求自己取消掉
     clearPlaybackAuthBoundCaches(false)
     evictConnections()
-    warmYouTubePlaybackIfAuthorized(
-        bundle = bundle,
+    warmYouTubePlaybackIfEnabled(
         youtubeEnabled = youtubeEnabled,
         warmBootstrapAsync = warmBootstrapAsync
     )
 }
 
-internal fun warmYouTubePlaybackIfAuthorized(
-    bundle: moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle,
+/**
+ * 未登录也要预热
+ *
+ * bootstrap 和 player.js 这两笔匿名播放照样要付, 而且匿名用户没有任何别的流程会顺带
+ * 把它们捂热; 以前卡在登录判断上, 结果最需要预热的那批人反而一次都热不到
+ */
+internal fun warmYouTubePlaybackIfEnabled(
     youtubeEnabled: Boolean = true,
     warmBootstrapAsync: () -> Unit
 ) {
-    if (youtubeEnabled && bundle.hasEffectiveAuth() && !ForegroundWebLoginGuard.isActive) {
+    if (youtubeEnabled && !ForegroundWebLoginGuard.isActive) {
         warmBootstrapAsync()
     }
 }
@@ -535,8 +539,7 @@ object AppContainer {
         if (!YouTubeFeatureGate.isEnabled()) {
             return
         }
-        warmYouTubePlaybackIfAuthorized(
-            bundle = youtubeAuthRepo.getAuthOnce().normalized(),
+        warmYouTubePlaybackIfEnabled(
             youtubeEnabled = YouTubeFeatureGate.isEnabled(),
             warmBootstrapAsync = youtubeMusicPlaybackRepository::warmBootstrapAsync
         )

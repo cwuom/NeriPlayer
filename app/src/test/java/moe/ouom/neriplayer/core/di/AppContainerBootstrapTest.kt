@@ -104,7 +104,7 @@ class AppContainerBootstrapTest {
     }
 
     @Test
-    fun `handleYouTubeAuthStateChanged skips warm bootstrap without login cookies`() {
+    fun `handleYouTubeAuthStateChanged rewarms after losing login cookies`() {
         var warmCalls = 0
 
         handleYouTubeAuthStateChanged(
@@ -115,51 +115,34 @@ class AppContainerBootstrapTest {
             warmBootstrapAsync = { warmCalls += 1 }
         )
 
-        assertEquals(0, warmCalls)
+        // 退登刚把缓存全清掉, 这时更不能不预热, 否则下一次播放要从零重来
+        assertEquals(1, warmCalls)
     }
 
     @Test
-    fun `warmYouTubePlaybackIfAuthorized triggers warm bootstrap when effective auth exists`() {
+    fun `warmYouTubePlaybackIfEnabled triggers warm bootstrap`() {
         var warmCalls = 0
 
-        warmYouTubePlaybackIfAuthorized(
-            bundle = YouTubeAuthBundle(cookies = mapOf("SAPISID" to "cookie")),
-            warmBootstrapAsync = { warmCalls += 1 }
-        )
+        warmYouTubePlaybackIfEnabled(warmBootstrapAsync = { warmCalls += 1 })
 
         assertEquals(1, warmCalls)
     }
 
     @Test
-    fun `warmYouTubePlaybackIfAuthorized triggers warm bootstrap with authorization only`() {
+    fun `warmYouTubePlaybackIfEnabled still warms an anonymous session`() {
         var warmCalls = 0
 
-        warmYouTubePlaybackIfAuthorized(
-            bundle = YouTubeAuthBundle(authorization = "SAPISIDHASH 123_hash"),
-            warmBootstrapAsync = { warmCalls += 1 }
-        )
+        // 匿名播放照样要付 bootstrap 和 player.js, 卡在登录判断上等于让最需要预热的那批人裸奔
+        warmYouTubePlaybackIfEnabled(warmBootstrapAsync = { warmCalls += 1 })
 
         assertEquals(1, warmCalls)
     }
 
     @Test
-    fun `warmYouTubePlaybackIfAuthorized skips warm bootstrap without effective auth`() {
+    fun `warmYouTubePlaybackIfEnabled skips warm bootstrap when YouTube is disabled`() {
         var warmCalls = 0
 
-        warmYouTubePlaybackIfAuthorized(
-            bundle = YouTubeAuthBundle(),
-            warmBootstrapAsync = { warmCalls += 1 }
-        )
-
-        assertEquals(0, warmCalls)
-    }
-
-    @Test
-    fun `warmYouTubePlaybackIfAuthorized skips warm bootstrap when YouTube is disabled`() {
-        var warmCalls = 0
-
-        warmYouTubePlaybackIfAuthorized(
-            bundle = YouTubeAuthBundle(cookies = mapOf("SAPISID" to "cookie")),
+        warmYouTubePlaybackIfEnabled(
             youtubeEnabled = false,
             warmBootstrapAsync = { warmCalls += 1 }
         )
