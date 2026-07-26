@@ -10,7 +10,14 @@ internal data class AudioLoadControlPolicy(
     val minBufferMs: Int = 15_000,
     val maxBufferMs: Int = 30_000,
     val bufferForPlaybackMs: Int = 800,
-    val bufferForPlaybackAfterRebufferMs: Int = 1_500
+    val bufferForPlaybackAfterRebufferMs: Int = 1_500,
+    /**
+     * 往回拖进度条时留着已经下过的那段
+     *
+     * 默认是 0, 意味着播过的音频立刻丢掉, 往回拖一点点都要重新联网拉一遍;
+     * 音频码率低, 留一分钟也就一两 MB, 换来的是回拖直接从内存续上
+     */
+    val backBufferMs: Int = 60_000
 )
 
 internal fun buildAudioLoadControl(
@@ -32,7 +39,6 @@ internal fun buildAudioLoadControl(
         assert(policy.maxBufferMs >= policy.minBufferMs) {
             "maxBufferMs must be >= minBufferMs"
         }
-
         DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 policy.minBufferMs,
@@ -42,6 +48,9 @@ internal fun buildAudioLoadControl(
             )
             // 纯音频按缓冲时长判断，避免字节阈值提前打断加载
             .setPrioritizeTimeOverSizeThresholds(true)
+            // 音频每帧都能独立解码, 不必从关键帧起留;
+            // 回退缓冲越界只当成不留, 不该连带把调好的启播时延打回默认值
+            .setBackBuffer(policy.backBufferMs.coerceAtLeast(0), false)
             .build()
     } catch (error: IllegalArgumentException) {
         buildDefaultLoadControlAfterFailure(error)

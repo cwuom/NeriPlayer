@@ -8,6 +8,7 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.LoadControl
 import androidx.media3.exoplayer.analytics.PlayerId
 import androidx.media3.exoplayer.source.MediaSource.MediaPeriodId
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -41,6 +42,25 @@ class AudioLoadControlFactoryTest {
         assertFalse(loadControl.shouldContinueLoading(parameters(bufferedDurationMs = 30_000)))
 
         loadControl.onReleased(playerId)
+    }
+
+    @Test
+    fun `audio keeps a back buffer so short rewinds stay offline`() {
+        val loadControl = buildAudioLoadControl()
+
+        assertEquals(60_000L, loadControl.getBackBufferDurationUs(playerId) / 1_000)
+        // 音频逐帧可解, 从关键帧起留只会白扔掉能用的数据
+        assertFalse(loadControl.retainBackBufferFromKeyframe(playerId))
+    }
+
+    @Test
+    fun `an out of range back buffer just means no back buffer`() {
+        val loadControl = buildAudioLoadControl(AudioLoadControlPolicy(backBufferMs = -1))
+
+        assertEquals(0L, loadControl.getBackBufferDurationUs(playerId))
+        // 回退缓冲越界不该连带把调好的启播时延也打回默认值
+        assertFalse(loadControl.shouldStart(799))
+        assertTrue(loadControl.shouldStart(800))
     }
 
     @Test
