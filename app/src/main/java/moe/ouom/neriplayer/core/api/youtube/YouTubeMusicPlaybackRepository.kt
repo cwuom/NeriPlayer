@@ -40,6 +40,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -53,8 +54,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.selects.select
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.youtube.isYouTubeAuthRecoverableFailure
 import moe.ouom.neriplayer.data.auth.youtube.shouldStartYouTubeWebAuthRecovery
@@ -367,6 +366,23 @@ private data class InFlightPlayableAudioRequest(
     // 参与去重键, 否则 avoidDirect 会复用偏好直链的在途结果
     val avoidDirect: Boolean
 )
+
+/**
+ * 在途解析及其认领状态
+ *
+ * 预取建好的解析会被后到的按需请求直接复用, 认领之后它就不该再被闸门拦着,
+ * 也不该在清理排队预取时被顺手取消
+ */
+private class InFlightPlayableAudioEntry(
+    val deferred: Deferred<YouTubePlayableAudio?>,
+    val onDemandSignal: CompletableDeferred<Unit>
+) {
+    val isOnDemand: Boolean
+        get() = onDemandSignal.isCompleted
+
+    /** 返回 true 表示本次调用把它从预取提升成了按需 */
+    fun promote(): Boolean = onDemandSignal.complete(Unit)
+}
 
 private data class InFlightBootstrapRequest(
     val authFingerprint: String,
@@ -1073,11 +1089,11 @@ class YouTubeMusicPlaybackRepository(
 ) {
     private val downloader = NewPipeOkHttpDownloader(okHttpClient, authProvider)
     private val playableAudioCache = linkedMapOf<String, CachedPlayableAudio>()
-    private val inFlightPlayableAudio = linkedMapOf<InFlightPlayableAudioRequest, Deferred<YouTubePlayableAudio?>>()
+    private val inFlightPlayableAudio = linkedMapOf<InFlightPlayableAudioRequest, InFlightPlayableAudioEntry>()
     private val inFlightBootstrapRequests = linkedMapOf<InFlightBootstrapRequest, Deferred<YouTubePlaybackBootstrap>>()
     private val inFlightPlayableAudioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val prefetchResolveGate = Semaphore(MAX_CONCURRENT_PREFETCH_RESOLVES)
+    private val prefetchResolveGate = YouTubePrefetchResolveGate(MAX_CONCURRENT_PREFETCH_RESOLVES)
 
     private val ejsChallengeSolver = applicationContext?.let {
         YouTubeEjsChallengeSolver(it, okHttpClient)
@@ -1106,7 +1122,9 @@ class YouTubeMusicPlaybackRepository(
         requireDirect: Boolean = false,
         preferM4a: Boolean = false,
         shareInFlight: Boolean = true,
-        avoidDirect: Boolean = false
+        avoidDirect: Boolean = false,
+        // 投机预取不认领在途解析, 否则闸门会被自己的预取一路提升到形同虚设
+        isPrefetch: Boolean = false
     ): YouTubePlayableAudio? = withContext(Dispatchers.IO) {
         if (!YouTubeFeatureGate.isEnabled()) {
             throw YouTubeFeatureDisabledException()
@@ -1142,7 +1160,8 @@ class YouTubeMusicPlaybackRepository(
                 preferM4a = preferM4a,
                 cacheKey = cacheKey,
                 forceRefresh = forceRefresh,
-                avoidDirect = avoidDirect
+                avoidDirect = avoidDirect,
+                isPrefetch = isPrefetch
             )
         } else {
             resolvePlayableAudio(
@@ -1341,7 +1360,7 @@ class YouTubeMusicPlaybackRepository(
             inFlightWarmBootstrap = null
         }
         synchronized(inFlightPlayableAudio) {
-            val deferreds = inFlightPlayableAudio.values.toList()
+            val deferreds = inFlightPlayableAudio.values.map { it.deferred }
             inFlightPlayableAudio.clear()
             if (cancelInFlightPlayableAudio) {
                 deferreds.forEach { deferred ->
@@ -1445,7 +1464,8 @@ class YouTubeMusicPlaybackRepository(
         preferM4a: Boolean,
         cacheKey: String,
         forceRefresh: Boolean,
-        avoidDirect: Boolean = false
+        avoidDirect: Boolean = false,
+        isPrefetch: Boolean = false
     ): YouTubePlayableAudio? {
         return startPlayableAudioResolution(
             videoId = videoId,
@@ -1455,7 +1475,8 @@ class YouTubeMusicPlaybackRepository(
             preferM4a = preferM4a,
             cacheKey = cacheKey,
             forceRefresh = forceRefresh,
-            avoidDirect = avoidDirect
+            avoidDirect = avoidDirect,
+            isPrefetch = isPrefetch
         ).await()
     }
 
@@ -1478,7 +1499,8 @@ class YouTubeMusicPlaybackRepository(
             forceRefresh = forceRefresh,
             avoidDirect = avoidDirect
         )
-        val deferred = synchronized(inFlightPlayableAudio) {
+        val onDemandSignal = CompletableDeferred<Unit>()
+        val entry = synchronized(inFlightPlayableAudio) {
             inFlightPlayableAudio[request]?.also {
                 NPLogger.d(
                     "YouTubeMusicPlayback",
@@ -1494,7 +1516,7 @@ class YouTubeMusicPlaybackRepository(
                     try {
                         // 按需解析不受闸门约束, 避免被排队中的预取堵住
                         val resolved = if (isPrefetch) {
-                            prefetchResolveGate.withPermit {
+                            prefetchResolveGate.withPrefetchSlot(onDemandSignal) {
                                 resolvePlayableAudio(
                                     videoId = videoId,
                                     preferredQualityKey = preferredQualityKey,
@@ -1532,21 +1554,53 @@ class YouTubeMusicPlaybackRepository(
                         throw error
                     }
                 }
+                val createdEntry = InFlightPlayableAudioEntry(created, onDemandSignal)
                 created.invokeOnCompletion {
                     synchronized(inFlightPlayableAudio) {
-                        if (inFlightPlayableAudio[request] === created) {
+                        if (inFlightPlayableAudio[request] === createdEntry) {
                             inFlightPlayableAudio.remove(request)
                         }
                     }
                 }
-                inFlightPlayableAudio[request] = created
-                created
+                inFlightPlayableAudio[request] = createdEntry
+                createdEntry
             }
         }
+        // 复用的如果是预取解析, 认领后它才能绕开闸门插到队首
+        if (!isPrefetch && entry.promote()) {
+            NPLogger.d(
+                "YouTubeMusicPlayback",
+                "promote prefetch resolve to on-demand: videoId=$videoId, quality=$preferredQualityKey"
+            )
+        }
+        val deferred = entry.deferred
         if (!deferred.isActive && !deferred.isCompleted && !deferred.isCancelled) {
             deferred.start()
         }
         return deferred
+    }
+
+    /**
+     * 丢掉还没被认领的排队预取解析
+     *
+     * 用户已经点了别的歌, 这些预取继续占着闸门只会把真正要播的那条往后压
+     */
+    fun cancelPendingPrefetchResolves(exceptVideoId: String?) {
+        val discarded = synchronized(inFlightPlayableAudio) {
+            inFlightPlayableAudio
+                .filter { (request, entry) ->
+                    request.videoId != exceptVideoId && !entry.isOnDemand
+                }
+                .map { (request, entry) -> request.videoId to entry.deferred }
+        }
+        if (discarded.isEmpty()) {
+            return
+        }
+        discarded.forEach { (_, deferred) -> deferred.cancel() }
+        NPLogger.d(
+            "YouTubeMusicPlayback",
+            "cancel pending prefetch resolves: except=$exceptVideoId, ids=${discarded.joinToString { it.first }}"
+        )
     }
 
     private suspend fun resolvePlayerAudioViaPlayerApi(

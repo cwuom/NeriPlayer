@@ -207,7 +207,6 @@ internal fun PlayerManager.cancelYouTubePrefetchForPlaybackDemand(
     song: SongItem,
     reason: String
 ) {
-    val activePrefetchJob = currentYouTubePrefetchJob ?: return
     val targetVideoId = if (isYouTubeMusicTrack(song)) {
         song.audioId
             ?.takeIf(String::isNotBlank)
@@ -215,6 +214,9 @@ internal fun PlayerManager.cancelYouTubePrefetchForPlaybackDemand(
     } else {
         null
     }
+    // 字节预取和地址解析预取是两套任务, 只停前者会让整队解析继续占着闸门
+    youtubeMusicPlaybackRepository.cancelPendingPrefetchResolves(targetVideoId)
+    val activePrefetchJob = currentYouTubePrefetchJob ?: return
     NPLogger.d(
         "NERI-PlayerManager",
         "cancel YouTube prefetch for playback demand: reason=$reason, targetVideoId=$targetVideoId, ids=${currentYouTubePrefetchVideoIds.joinToString()}"
@@ -282,7 +284,8 @@ private suspend fun PlayerManager.prefetchYouTubePlayableAudio(spec: YouTubePref
             preferredQualityOverride = spec.preferredQuality,
             forceRefresh = false,
             requireDirect = false,
-            preferM4a = false
+            preferM4a = false,
+            isPrefetch = true
         ) ?: return
         invalidateMismatchedCachedResource(
             cacheKey = cacheKey,
