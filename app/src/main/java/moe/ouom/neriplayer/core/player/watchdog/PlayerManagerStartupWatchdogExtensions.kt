@@ -6,6 +6,8 @@ import android.os.SystemClock
 import androidx.media3.common.Player
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.core.player.policy.refresh.YouTubePlaybackRecoveryStrategy
+import moe.ouom.neriplayer.core.player.url.YOUTUBE_STABLE_RECOVERY_QUALITY
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackIfUnhealthy
@@ -198,6 +200,19 @@ private fun PlayerManager.recoverPlaybackStartupStall(requestToken: Long) {
         !isLocalSong(song)
     ) {
         val resumePositionMs = player.currentPosition.coerceAtLeast(0L)
+        // 普通刷新救不回来还卡住，多半是这条直链取不动，
+        // 机房和被风控的出口上深偏移 range 会被限速，再要直链只会重复超时
+        val stallRecoveryStrategy = if (
+            startupStallRecoveryAttempts > 0 && isYouTubeMusicTrack(song)
+        ) {
+            YouTubePlaybackRecoveryStrategy(
+                preferredQualityOverride = YOUTUBE_STABLE_RECOVERY_QUALITY,
+                requireDirect = false,
+                preferM4a = true
+            )
+        } else {
+            null
+        }
         refreshCurrentSongUrl(
             resumePositionMs = resumePositionMs,
             allowFallback = false,
@@ -205,7 +220,8 @@ private fun PlayerManager.recoverPlaybackStartupStall(requestToken: Long) {
             bypassCooldown = true,
             fallbackSeekPositionMs = resumePositionMs,
             resumePlaybackAfterRefresh = true,
-            resumedPlaybackCommandSource = activePlaybackCommandSource
+            resumedPlaybackCommandSource = activePlaybackCommandSource,
+            youtubeRecoveryStrategy = stallRecoveryStrategy
         )
         return
     }

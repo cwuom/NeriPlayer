@@ -53,7 +53,7 @@ import java.io.File
 
 private const val OFFLINE_CACHE_URL_PREFIX = "http://offline.cache/"
 internal const val YOUTUBE_PLAYBACK_PREFER_M4A = false
-private const val YOUTUBE_STABLE_RECOVERY_QUALITY = "high"
+internal const val YOUTUBE_STABLE_RECOVERY_QUALITY = "high"
 
 internal suspend fun PlayerManager.resolveSongUrl(
     song: SongItem,
