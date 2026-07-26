@@ -155,10 +155,8 @@ internal class YouTubeWebPoTokenProvider(
     private var lastUnavailableLogAtMs: Long = 0L
 
     override suspend fun warmSession() {
+        // 未登录的 web GVS 更依赖 PoToken，按登录态早退会让匿名用户每次首播冷铸 token
         val auth = authProvider().normalized()
-        if (!auth.hasLoginCookies()) {
-            return
-        }
         if (ForegroundWebLoginGuard.isActive) {
             NPLogger.d(TAG, "warmSession skipped because ${ForegroundWebLoginGuard.SKIP_REASON}")
             return

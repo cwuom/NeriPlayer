@@ -99,6 +99,33 @@ internal class YouTubeEjsChallengeSolver(
         private const val SCRIPT_TIMEOUT_SECONDS = 45L
         private const val CACHE_CAPACITY = 32
         private const val SANDBOX_FAILURE_COOLDOWN_MS = 10L * 60L * 1000L
+
+        // JavaScriptSandbox 每进程只能绑定一次，而播放与下载各持一个 solver 实例，
+        // 各自 createConnectedInstanceAsync 时第二个必抛 Binding to already bound service，
+        // 绑定成本高所以常驻复用，只按次创建 isolate
+        private val sharedSandboxLock = Any()
+
+        @Volatile
+        private var sharedSandbox: JavaScriptSandbox? = null
+
+        private fun obtainSharedSandbox(context: Context): JavaScriptSandbox {
+            sharedSandbox?.let { return it }
+            return synchronized(sharedSandboxLock) {
+                sharedSandbox ?: JavaScriptSandbox
+                    .createConnectedInstanceAsync(context)
+                    .get(SCRIPT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    .also { sharedSandbox = it }
+            }
+        }
+
+        /** 沙箱失效时丢弃，下次 solve 重新绑定 */
+        private fun invalidateSharedSandbox() {
+            synchronized(sharedSandboxLock) {
+                val stale = sharedSandbox
+                sharedSandbox = null
+                runCatching { stale?.close() }
+            }
+        }
     }
 
     private val appContext = context.applicationContext
@@ -207,9 +234,10 @@ internal class YouTubeEjsChallengeSolver(
             }
 
             val sandbox = runCatching {
-                JavaScriptSandbox.createConnectedInstanceAsync(appContext)
-                    .get(SCRIPT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                obtainSharedSandbox(appContext)
             }.getOrElse { error ->
+                // 丢弃可能半初始化的实例
+                invalidateSharedSandbox()
                 return@synchronized sandboxFailureResult(
                     status = if (error.isTimeoutFailure()) {
                         YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_TIMEOUT
@@ -300,9 +328,12 @@ internal class YouTubeEjsChallengeSolver(
                 } finally {
                     closeQuietly(isolate)
                 }
-            } finally {
-                closeQuietly(sandbox)
+            } catch (error: Throwable) {
+                // isolate 抛出一般意味着共享沙箱已死，丢弃后下次重新绑定
+                invalidateSharedSandbox()
+                throw error
             }
+            // 不在此处 close，关闭会连带影响另一个 solver 实例
         }
         return resolved
     }
@@ -462,6 +493,11 @@ internal class YouTubeEjsChallengeSolver(
     }
 
     private fun shouldTemporarilyDisableSandbox(result: YouTubeJsChallengeSolveResult): Boolean {
+        // 冷却期内 EJS 全线不可用，NewPipe 又常因 player.js 变更被跳过，
+        // 两者同时失效则 n/sig 无任何求解路径
+        if (result.cause?.isRecoverableSandboxFailure() == true) {
+            return false
+        }
         return when (result.status) {
             YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_UNSUPPORTED,
             YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_CONNECTION_FAILED,
@@ -472,6 +508,18 @@ internal class YouTubeEjsChallengeSolver(
             }
             else -> false
         }
+    }
+
+    /** Binding to already bound service 是并发撞车，与设备能力无关，冷却它会误伤整条链 */
+    private fun Throwable.isRecoverableSandboxFailure(): Boolean {
+        val message = message.orEmpty()
+        if (
+            message.contains("already bound", ignoreCase = true) ||
+            message.contains("Binding to already", ignoreCase = true)
+        ) {
+            return true
+        }
+        return cause?.isRecoverableSandboxFailure() == true
     }
 
     private fun Throwable.isTimeoutFailure(): Boolean {

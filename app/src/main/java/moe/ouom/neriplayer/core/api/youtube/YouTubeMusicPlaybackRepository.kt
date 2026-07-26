@@ -53,6 +53,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.youtube.isYouTubeAuthRecoverableFailure
 import moe.ouom.neriplayer.data.auth.youtube.shouldStartYouTubeWebAuthRecovery
@@ -133,6 +135,10 @@ private const val YOUTUBE_PLAYER_PLAYBACK_LACT_MILLISECONDS = "9"
 // 首播更看重尽快落到可播链路，别在 fallback 前白等太久的 PO token
 private const val WEB_REMIX_PO_TOKEN_PREFETCH_JOIN_TIMEOUT_MS = 150L
 private const val PLAYABLE_URL_EXPIRY_SAFETY_MARGIN_MS = 90L * 1000L
+// EJS solver 内部串行，队列窗口一次派发 6 路预取会把单次求解从 570ms 拖到 2650ms，
+// 用户点播放时 join 到排队中的预取要等 8s 以上
+private const val MAX_CONCURRENT_PREFETCH_RESOLVES = 2
+
 private const val EJS_FALLBACK_START_DELAY_MS = 40L
 private const val CIPHER_RESOLVE_TIMEOUT_MS = 12_000L
 // 脏 IP 下 429/503 退避基数与上限，避免密集重试进一步拉高限流等级（#Y5）
@@ -178,6 +184,7 @@ internal fun rateLimitBackoffMs(error: Throwable?, priorHits: Int): Long? {
 internal object NewPipeFallbackTracker {
     private const val FAILURE_THRESHOLD = 2
     private val signatureFailures = ConcurrentHashMap<String, AtomicInteger>()
+
     private val throttlingFailures = ConcurrentHashMap<String, AtomicInteger>()
 
     fun maybeSkipSignature(playerJsUrl: String): Boolean {
@@ -300,7 +307,9 @@ private data class InFlightPlayableAudioRequest(
     val preferredQualityKey: String,
     val requireDirect: Boolean,
     val preferM4a: Boolean,
-    val forceRefresh: Boolean
+    val forceRefresh: Boolean,
+    // 参与去重键，否则 avoidDirect 会复用偏好直链的在途结果
+    val avoidDirect: Boolean
 )
 
 private data class InFlightBootstrapRequest(
@@ -361,6 +370,13 @@ internal suspend fun <T> awaitFirstChallengeSuccess(
         }
     }
     null
+}
+
+/** 只读已完成且未取消的候选，避免对被取消的 Deferred await 抛 CancellationException */
+internal suspend fun <T> Deferred<ChallengeCandidateResult<T>>?.hasFailedChallenge(): Boolean {
+    val deferred = this ?: return false
+    if (!deferred.isCompleted || deferred.isCancelled) return false
+    return runCatching { deferred.await().value }.getOrNull() == null
 }
 
 internal data class YouTubePlayerPlayabilityStatus(
@@ -889,6 +905,31 @@ internal object YouTubeMusicHlsManifestParser {
     }
 }
 
+/** n 和 sig 恒为 URL-safe token */
+private val CIPHER_TOKEN_PATTERN = Regex("^[A-Za-z0-9._~-]+$")
+
+/** JS 求值失败时的假成功返回值，非空且与原串不同，能骗过朴素校验 */
+private val CIPHER_TOKEN_JS_JUNK = setOf(
+    "undefined",
+    "null",
+    "nan",
+    "true",
+    "false",
+    "[object object]"
+)
+
+/** 拦截 JS 求值的假成功返回值 */
+internal fun isPlausibleCipherToken(value: String?): Boolean {
+    val token = value?.trim().orEmpty()
+    if (token.isEmpty()) return false
+    if (token.lowercase() in CIPHER_TOKEN_JS_JUNK) return false
+    return CIPHER_TOKEN_PATTERN.matches(token)
+}
+
+/** 解密后的流地址必须带合法 n */
+internal fun hasPlausibleThrottlingParameter(url: String): Boolean =
+    isPlausibleCipherToken(extractStreamQueryParameter(url, "n"))
+
 private fun extractStreamQueryParameter(url: String, key: String): String? {
     val rawQuery = runCatching { URI(url).rawQuery }.getOrNull().orEmpty()
     return rawQuery.split('&')
@@ -979,6 +1020,9 @@ class YouTubeMusicPlaybackRepository(
     private val inFlightPlayableAudio = linkedMapOf<InFlightPlayableAudioRequest, Deferred<YouTubePlayableAudio?>>()
     private val inFlightBootstrapRequests = linkedMapOf<InFlightBootstrapRequest, Deferred<YouTubePlaybackBootstrap>>()
     private val inFlightPlayableAudioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private val prefetchResolveGate = Semaphore(MAX_CONCURRENT_PREFETCH_RESOLVES)
+
     private val ejsChallengeSolver = applicationContext?.let {
         YouTubeEjsChallengeSolver(it, okHttpClient)
     }
@@ -1005,7 +1049,8 @@ class YouTubeMusicPlaybackRepository(
         forceRefresh: Boolean = false,
         requireDirect: Boolean = false,
         preferM4a: Boolean = false,
-        shareInFlight: Boolean = true
+        shareInFlight: Boolean = true,
+        avoidDirect: Boolean = false
     ): YouTubePlayableAudio? = withContext(Dispatchers.IO) {
         if (!YouTubeFeatureGate.isEnabled()) {
             throw YouTubeFeatureDisabledException()
@@ -1016,13 +1061,14 @@ class YouTubeMusicPlaybackRepository(
         val cacheKey = if (preferM4a) "${preferredQualityKey}_m4a" else preferredQualityKey
         NPLogger.d(
             "YouTubeMusicPlayback",
-            "getBestPlayableAudio: videoId=$videoId, quality=$preferredQualityKey, forceRefresh=$forceRefresh, requireDirect=$requireDirect, preferM4a=$preferM4a, shareInFlight=$shareInFlight"
+            "getBestPlayableAudio: videoId=$videoId, quality=$preferredQualityKey, forceRefresh=$forceRefresh, requireDirect=$requireDirect, preferM4a=$preferM4a, shareInFlight=$shareInFlight, avoidDirect=$avoidDirect"
         )
         if (!forceRefresh) {
             getCachedPlayableAudio(
                 videoId = videoId,
                 preferredQualityKey = cacheKey,
-                requireDirect = requireDirect
+                requireDirect = requireDirect,
+                avoidDirect = avoidDirect
             )?.let { cached ->
                 NPLogger.d(
                     "YouTubeMusicPlayback",
@@ -1039,7 +1085,8 @@ class YouTubeMusicPlaybackRepository(
                 logFailure = true,
                 preferM4a = preferM4a,
                 cacheKey = cacheKey,
-                forceRefresh = forceRefresh
+                forceRefresh = forceRefresh,
+                avoidDirect = avoidDirect
             )
         } else {
             resolvePlayableAudio(
@@ -1049,7 +1096,8 @@ class YouTubeMusicPlaybackRepository(
                 logFailure = true,
                 preferM4a = preferM4a,
                 cacheKey = cacheKey,
-                forceRefresh = forceRefresh
+                forceRefresh = forceRefresh,
+                avoidDirect = avoidDirect
             )
         }
     }
@@ -1082,7 +1130,8 @@ class YouTubeMusicPlaybackRepository(
             logFailure = false,
             preferM4a = preferM4a,
             cacheKey = cacheKey,
-            forceRefresh = false
+            forceRefresh = false,
+            isPrefetch = true
         ).await()
     }
 
@@ -1112,7 +1161,8 @@ class YouTubeMusicPlaybackRepository(
             logFailure = false,
             preferM4a = preferM4a,
             cacheKey = cacheKey,
-            forceRefresh = false
+            forceRefresh = false,
+            isPrefetch = true
         )
     }
 
@@ -1127,11 +1177,9 @@ class YouTubeMusicPlaybackRepository(
             )
             return@withContext
         }
+        // 匿名用户不预热的话首播要现拉一次首页再编译 player.js
         val auth = authProvider().normalized()
         syncAuthBoundCachesIfNeeded(auth)
-        if (!auth.hasLoginCookies()) {
-            return@withContext
-        }
         try {
             val bootstrap = bootstrap(auth = auth, forceRefresh = false)
             ejsChallengeSolver?.let { solver ->
@@ -1297,7 +1345,8 @@ class YouTubeMusicPlaybackRepository(
         logFailure: Boolean,
         preferM4a: Boolean,
         cacheKey: String,
-        forceRefresh: Boolean
+        forceRefresh: Boolean,
+        avoidDirect: Boolean = false
     ): YouTubePlayableAudio? {
         val authGeneration = authCacheGeneration
         val playerResolution = resolvePlayerAudioViaPlayerApi(
@@ -1306,7 +1355,8 @@ class YouTubeMusicPlaybackRepository(
             requireDirect = requireDirect,
             logFailure = logFailure,
             preferM4a = preferM4a,
-            forceRefresh = forceRefresh
+            forceRefresh = forceRefresh,
+            avoidDirect = avoidDirect
         )
         playerResolution?.playableAudio?.let { playableAudio ->
             if (authGeneration == authCacheGeneration) {
@@ -1321,7 +1371,9 @@ class YouTubeMusicPlaybackRepository(
             preferredQualityKey = preferredQualityKey,
             logFailure = logFailure,
             preferM4a = preferM4a
-        )?.mergeMetadataFrom(playerResolution?.metadata)
+        )   // 兜底路径也不能交出直链，否则原地循环 403
+            ?.takeUnless { avoidDirect && it.streamType == YouTubePlayableStreamType.DIRECT }
+            ?.mergeMetadataFrom(playerResolution?.metadata)
             ?.also { playableAudio ->
             if (authGeneration == authCacheGeneration) {
                 cachePlayableAudio(videoId, cacheKey, playableAudio)
@@ -1336,7 +1388,8 @@ class YouTubeMusicPlaybackRepository(
         logFailure: Boolean,
         preferM4a: Boolean,
         cacheKey: String,
-        forceRefresh: Boolean
+        forceRefresh: Boolean,
+        avoidDirect: Boolean = false
     ): YouTubePlayableAudio? {
         return startPlayableAudioResolution(
             videoId = videoId,
@@ -1345,7 +1398,8 @@ class YouTubeMusicPlaybackRepository(
             logFailure = logFailure,
             preferM4a = preferM4a,
             cacheKey = cacheKey,
-            forceRefresh = forceRefresh
+            forceRefresh = forceRefresh,
+            avoidDirect = avoidDirect
         ).await()
     }
 
@@ -1356,14 +1410,17 @@ class YouTubeMusicPlaybackRepository(
         logFailure: Boolean,
         preferM4a: Boolean,
         cacheKey: String,
-        forceRefresh: Boolean
+        forceRefresh: Boolean,
+        avoidDirect: Boolean = false,
+        isPrefetch: Boolean = false
     ): Deferred<YouTubePlayableAudio?> {
         val request = InFlightPlayableAudioRequest(
             videoId = videoId,
             preferredQualityKey = preferredQualityKey,
             requireDirect = requireDirect,
             preferM4a = preferM4a,
-            forceRefresh = forceRefresh
+            forceRefresh = forceRefresh,
+            avoidDirect = avoidDirect
         )
         val deferred = synchronized(inFlightPlayableAudio) {
             inFlightPlayableAudio[request]?.also {
@@ -1379,15 +1436,32 @@ class YouTubeMusicPlaybackRepository(
                         "start playable audio resolve: videoId=$videoId, quality=$preferredQualityKey, forceRefresh=$forceRefresh, requireDirect=$requireDirect, preferM4a=$preferM4a"
                     )
                     try {
-                        val resolved = resolvePlayableAudio(
-                            videoId = videoId,
-                            preferredQualityKey = preferredQualityKey,
-                            requireDirect = requireDirect,
-                            logFailure = logFailure,
-                            preferM4a = preferM4a,
-                            cacheKey = cacheKey,
-                            forceRefresh = forceRefresh
-                        )
+                        // 按需解析不受闸门约束，避免被排队中的预取堵住
+                        val resolved = if (isPrefetch) {
+                            prefetchResolveGate.withPermit {
+                                resolvePlayableAudio(
+                                    videoId = videoId,
+                                    preferredQualityKey = preferredQualityKey,
+                                    requireDirect = requireDirect,
+                                    logFailure = logFailure,
+                                    preferM4a = preferM4a,
+                                    cacheKey = cacheKey,
+                                    forceRefresh = forceRefresh,
+                                    avoidDirect = avoidDirect
+                                )
+                            }
+                        } else {
+                            resolvePlayableAudio(
+                                videoId = videoId,
+                                preferredQualityKey = preferredQualityKey,
+                                requireDirect = requireDirect,
+                                logFailure = logFailure,
+                                preferM4a = preferM4a,
+                                cacheKey = cacheKey,
+                                forceRefresh = forceRefresh,
+                                avoidDirect = avoidDirect
+                            )
+                        }
                         NPLogger.d(
                             "YouTubeMusicPlayback",
                             "finish playable audio resolve: videoId=$videoId, success=${resolved != null}, type=${resolved?.streamType}, elapsedMs=${playbackElapsedMs(startedAtMs)}"
@@ -1425,12 +1499,12 @@ class YouTubeMusicPlaybackRepository(
         requireDirect: Boolean,
         logFailure: Boolean,
         preferM4a: Boolean,
-        forceRefresh: Boolean
+        forceRefresh: Boolean,
+        avoidDirect: Boolean = false
     ): PlayerAudioResolution? {
+        // 网页端未登录也能取流，需要的是 visitorData + PoToken 而不是登录 cookie，
+        // 此前对无登录 cookie 直接返回 null 会把匿名用户整体推给已失效的 NewPipe 兜底
         val auth = authProvider().normalized()
-        if (!auth.hasLoginCookies()) {
-            return null
-        }
 
         return try {
             fetchPlayerAudioViaPlayerApi(
@@ -1439,7 +1513,8 @@ class YouTubeMusicPlaybackRepository(
                 auth = auth,
                 requireDirect = requireDirect,
                 preferM4a = preferM4a,
-                forceRefresh = forceRefresh
+                forceRefresh = forceRefresh,
+                avoidDirect = avoidDirect
             )
         } catch (error: Exception) {
             if (error is CancellationException) throw error
@@ -1460,7 +1535,8 @@ class YouTubeMusicPlaybackRepository(
         auth: YouTubeAuthBundle,
         requireDirect: Boolean = false,
         preferM4a: Boolean = false,
-        forceRefresh: Boolean = false
+        forceRefresh: Boolean = false,
+        avoidDirect: Boolean = false
     ): PlayerAudioResolution {
         val resolveStartedAtMs = System.currentTimeMillis()
         val bootstrapStartedAtMs = System.currentTimeMillis()
@@ -1473,8 +1549,13 @@ class YouTubeMusicPlaybackRepository(
         var bestMetadata: YouTubeAudioMetadata? = null
         // 跨 client/locale/attempt 累计 429/503 命中次数，用于指数退避（#Y5）
         var rateLimitBackoffHits = 0
+        // repeat 是 lambda 不能 break
+        var abortRemainingAttempts = false
 
         repeat(PLAYER_REQUEST_MAX_ATTEMPTS) { attempt ->
+            if (abortRemainingAttempts) {
+                return@repeat
+            }
             val poTokenForceRefresh = forceRefresh || attempt > 0
             val allowBlockingWebRemixPoToken = requireDirect
             val cipherResolver = createStreamingCipherResolver(
@@ -1537,21 +1618,29 @@ class YouTubeMusicPlaybackRepository(
                                 preferM4a = preferM4a,
                                 cipherResolver = cipherResolver
                             )
-                            val directPlayableAudio = maybeAttachGvsPoToken(
-                                playableAudio = parsedDirectPlayableAudio,
-                                profile = profile,
-                                videoId = videoId,
-                                auth = auth,
-                                bootstrap = bootstrap,
-                                forceRefresh = poTokenForceRefresh,
-                                prefetchedPoToken = webRemixPoTokenPrefetch,
-                                allowBlockingAcquisition = allowBlockingWebRemixPoToken
-                            )
+                            // 放弃直链候选，顺带省掉一次必然被丢弃的 GVS PoToken 铸造
+                            val directPlayableAudio = if (avoidDirect) {
+                                null
+                            } else {
+                                maybeAttachGvsPoToken(
+                                    playableAudio = parsedDirectPlayableAudio,
+                                    profile = profile,
+                                    videoId = videoId,
+                                    auth = auth,
+                                    bootstrap = bootstrap,
+                                    forceRefresh = poTokenForceRefresh,
+                                    prefetchedPoToken = webRemixPoTokenPrefetch,
+                                    allowBlockingAcquisition = allowBlockingWebRemixPoToken
+                                )
+                            }
                             val hlsPlayableAudio = try {
                                 if (
                                     requireDirect ||
-                                    directPlayableAudio != null ||
-                                    bestPlayableAudio?.streamType == YouTubePlayableStreamType.DIRECT
+                                    // 直链候选随后会被丢弃，这里再因已有直链跳过 manifest
+                                    // 脏节点下就一个候选都拿不到
+                                    (!avoidDirect && directPlayableAudio != null) ||
+                                    (!avoidDirect &&
+                                        bestPlayableAudio?.streamType == YouTubePlayableStreamType.DIRECT)
                                 ) {
                                     null
                                 } else {
@@ -1709,6 +1798,16 @@ class YouTubeMusicPlaybackRepository(
                 )
             }
 
+            // 4xx 是请求本身不被接受，换新 bootstrap 改变不了结果，
+            // 白付一次 fetch + parse 会把解析推过下载超时窗口
+            if (lastError.isNonRetryablePlayerClientError()) {
+                NPLogger.w(
+                    "YouTubeMusicPlayback",
+                    "player resolve abort retry: videoId=$videoId, non-retryable ${lastError?.message.orEmpty().take(120)}"
+                )
+                abortRemainingAttempts = true
+                return@repeat
+            }
             if (attempt < PLAYER_REQUEST_MAX_ATTEMPTS - 1) {
                 if (shouldRefreshBootstrapBeforeFallback) {
                     NPLogger.d(
@@ -2092,7 +2191,9 @@ class YouTubeMusicPlaybackRepository(
                                             error
                                         )
                                     }
-                                }.getOrNull()?.takeIf { it.isNotBlank() && it != encryptedSignature }
+                                }.getOrNull()?.takeIf {
+                                    it != encryptedSignature && isPlausibleCipherToken(it)
+                                }
                                 ChallengeCandidateResult(
                                     source = "NEWPIPE",
                                     value = resolvedByNewPipe,
@@ -2125,7 +2226,9 @@ class YouTubeMusicPlaybackRepository(
                                 )
                                 val elapsedMs = playbackElapsedMs(startedAtMs)
                                 val resolvedByEjs = ejsResult.solution.signature
-                                    ?.takeIf { it.isNotBlank() && it != encryptedSignature }
+                                    ?.takeIf {
+                                        it != encryptedSignature && isPlausibleCipherToken(it)
+                                    }
                                 if (resolvedByEjs == null &&
                                     ejsResult.status != YouTubeJsChallengeSolveStatus.SUCCESS &&
                                     signatureEjsFallbackLogged.compareAndSet(false, true)
@@ -2145,6 +2248,13 @@ class YouTubeMusicPlaybackRepository(
                         }
                         val winner = awaitFirstChallengeSuccess(listOfNotNull(newPipeDeferred, ejsDeferred))
                         if (winner != null) {
+                            // 同 throttling，不记失败 EJS 会一直白等启动延迟
+                            if (!skipSignatureNewPipe &&
+                                winner.source != "NEWPIPE" &&
+                                newPipeDeferred.hasFailedChallenge()
+                            ) {
+                                NewPipeFallbackTracker.recordSignatureFailure(resolvedPlayerJsUrl)
+                            }
                             maybeLogResolution(
                                 challengeType = "signature",
                                 source = winner.source,
@@ -2192,7 +2302,25 @@ class YouTubeMusicPlaybackRepository(
                                             error
                                         )
                                     }
-                                }.getOrNull()?.takeIf { it.isNotBlank() && it != url }
+                                }.getOrNull()?.takeIf { candidateUrl ->
+                                    // player.js 变更后 NewPipe 会返回 n=[object Object]，
+                                    // 非空且与原串不同，只判这两条会放行必然 403 的地址
+                                    val accepted = candidateUrl.isNotBlank() &&
+                                        candidateUrl != url &&
+                                        hasPlausibleThrottlingParameter(candidateUrl)
+                                    if (!accepted &&
+                                        candidateUrl.isNotBlank() &&
+                                        candidateUrl != url &&
+                                        throttlingErrorLogged.compareAndSet(false, true)
+                                    ) {
+                                        NPLogger.w(
+                                            "YouTubeMusicPlayback",
+                                            "Reject NewPipe throttling result for $videoId: " +
+                                                "n=${extractStreamQueryParameter(candidateUrl, "n")}"
+                                        )
+                                    }
+                                    accepted
+                                }
                                 ChallengeCandidateResult(
                                     source = "NEWPIPE",
                                     value = resolvedByNewPipe,
@@ -2225,7 +2353,7 @@ class YouTubeMusicPlaybackRepository(
                                 )
                                 val elapsedMs = playbackElapsedMs(startedAtMs)
                                 val resolvedByEjs = ejsResult.solution.throttlingParameter
-                                    ?.takeIf { it.isNotBlank() && it != obfuscatedN }
+                                    ?.takeIf { it != obfuscatedN && isPlausibleCipherToken(it) }
                                     ?.let { replaceStreamQueryParameter(url, "n", it) }
                                 if (resolvedByEjs == null &&
                                     ejsResult.status != YouTubeJsChallengeSolveStatus.SUCCESS &&
@@ -2246,6 +2374,14 @@ class YouTubeMusicPlaybackRepository(
                         }
                         val winner = awaitFirstChallengeSuccess(listOfNotNull(newPipeDeferred, ejsDeferred))
                         if (winner != null) {
+                            // 不记失败的话 player.js 变更后 NewPipe 永远不被标记，
+                            // EJS 每次都要白等 EJS_FALLBACK_START_DELAY_MS
+                            if (!skipThrottlingNewPipe &&
+                                winner.source != "NEWPIPE" &&
+                                newPipeDeferred.hasFailedChallenge()
+                            ) {
+                                NewPipeFallbackTracker.recordThrottlingFailure(resolvedPlayerJsUrl)
+                            }
                             maybeLogResolution(
                                 challengeType = "throttling",
                                 source = winner.source,
@@ -3319,6 +3455,15 @@ class YouTubeMusicPlaybackRepository(
     }
 
     @Suppress("UNUSED_PARAMETER")
+    /** 429/408 可重试，其余 4xx 表示请求参数不被接受，强刷 bootstrap 无用 */
+    private fun Throwable?.isNonRetryablePlayerClientError(): Boolean {
+        val status = (this as? YouTubeHttpStatusException)?.statusCode ?: return false
+        if (status == 429 || status == 408) {
+            return false
+        }
+        return status in 400..499
+    }
+
     private fun shouldRetryWithFreshBootstrapAfterRequestFailure(
         profile: YouTubePlayerClientProfile,
         attempt: Int,
@@ -3331,7 +3476,8 @@ class YouTubeMusicPlaybackRepository(
     private fun getCachedPlayableAudio(
         videoId: String,
         preferredQualityKey: String,
-        requireDirect: Boolean = false
+        requireDirect: Boolean = false,
+        avoidDirect: Boolean = false
     ): YouTubePlayableAudio? {
         val cacheKey = playableAudioCacheKey(videoId, preferredQualityKey)
         synchronized(playableAudioCache) {
@@ -3346,6 +3492,10 @@ class YouTubeMusicPlaybackRepository(
                 return null
             }
             if (requireDirect && cached.audio.streamType != YouTubePlayableStreamType.DIRECT) {
+                return null
+            }
+            // 命中缓存里的直链会拿回同一条 403 地址
+            if (avoidDirect && cached.audio.streamType == YouTubePlayableStreamType.DIRECT) {
                 return null
             }
             return cached.audio

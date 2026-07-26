@@ -2913,7 +2913,8 @@ object AudioDownloadManager {
         for (attempt in attempts) {
             val candidate = resolveYouTubeMusicDownloadAudio(
                 videoId = videoId,
-                attempt = attempt
+                attempt = attempt,
+                avoidDirect = avoidDirect
             ) ?: continue
             if (candidate.streamType == YouTubePlayableStreamType.DIRECT) {
                 if (avoidDirect) {
@@ -2969,7 +2970,8 @@ object AudioDownloadManager {
 
     private suspend fun resolveYouTubeMusicDownloadAudio(
         videoId: String,
-        attempt: YouTubeDownloadResolveAttempt
+        attempt: YouTubeDownloadResolveAttempt,
+        avoidDirect: Boolean = false
     ): YouTubePlayableAudio? {
         val startedAtMs = System.currentTimeMillis()
         return try {
@@ -2984,7 +2986,8 @@ object AudioDownloadManager {
                     forceRefresh = attempt.forceRefresh,
                     requireDirect = attempt.requireDirect,
                     preferM4a = true,
-                    shareInFlight = attempt.shareInFlight
+                    shareInFlight = attempt.shareInFlight,
+                    avoidDirect = avoidDirect
                 )
             }
             val elapsedMs = System.currentTimeMillis() - startedAtMs

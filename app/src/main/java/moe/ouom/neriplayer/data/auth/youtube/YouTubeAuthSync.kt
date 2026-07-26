@@ -163,14 +163,32 @@ fun mergeYouTubeAuthCookieUpdates(
     }
     var changed = false
 
+    // 收编作用于每一条 YouTube 响应，含 googlevideo 与匿名响应，
+    // 一次 Set-Cookie: SID=EXPIRED 就会把 SID 家族永久删除并落盘，
+    // 只有显式登出才该清除登录身份
+    val loggedInBefore = YouTubeCookieSupport.isLoggedIn(mergedCookies)
+
     setCookieHeaders.forEach { rawHeader ->
         val update = parseSetCookieUpdate(rawHeader) ?: return@forEach
+        val isLoginIdentityCookie = update.name in YouTubeCookieSupport.importantLoginCookieKeys
         if (update.shouldRemove) {
+            if (loggedInBefore && isLoginIdentityCookie) {
+                return@forEach
+            }
             changed = mergedCookies.remove(update.name) != null || changed
         } else if (mergedCookies[update.name] != update.value) {
+            if (loggedInBefore && isLoginIdentityCookie && update.value.isBlank()) {
+                // 空值等价于删除
+                return@forEach
+            }
             mergedCookies[update.name] = update.value
             changed = true
         }
+    }
+
+    // 逐条都放行也不允许整体跌回未登录态
+    if (loggedInBefore && !YouTubeCookieSupport.isLoggedIn(mergedCookies)) {
+        return null
     }
 
     if (!changed) {
