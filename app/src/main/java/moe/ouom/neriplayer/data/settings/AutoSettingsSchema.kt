@@ -431,6 +431,17 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
+            key = "home_card_daily",
+            type = SettingValueType.Boolean,
+            defaultBoolean = true,
+            order = 55,
+            ui = SettingUiType.Custom
+        )
+        val homeCardDaily = autoSetting(
+            titleRes = R.string.settings_home_cards
+        )
+
+        @AutoSetting(
             key = "home_card_recommended",
             type = SettingValueType.Boolean,
             defaultBoolean = true,

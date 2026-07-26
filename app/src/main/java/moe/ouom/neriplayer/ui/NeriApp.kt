@@ -1360,6 +1360,7 @@ private fun NeriAppContent(
     val showHomeContinueCard by repo.homeCardContinueFlow.collectAsStateWithLifecycle(initialValue = true)
     val showHomeTrendingCard by repo.homeCardTrendingFlow.collectAsStateWithLifecycle(initialValue = true)
     val showHomeRadarCard by repo.homeCardRadarFlow.collectAsStateWithLifecycle(initialValue = true)
+    val showHomeDailyCard by repo.homeCardDailyFlow.collectAsStateWithLifecycle(initialValue = true)
     val showHomeRecommendedCard by repo.homeCardRecommendedFlow.collectAsStateWithLifecycle(initialValue = true)
     val playbackFadeIn by repo.playbackFadeInFlow.collectAsStateWithLifecycle(initialValue = false)
     val playbackCrossfadeNext by repo.playbackCrossfadeNextFlow.collectAsStateWithLifecycle(initialValue = false)
@@ -2016,6 +2017,7 @@ private fun NeriAppContent(
                 (showHomeContinueCard && homeUsageEntries.isNotEmpty()) ||
                     showHomeTrendingCard ||
                     showHomeRadarCard ||
+                    showHomeDailyCard ||
                     showHomeRecommendedCard
             val effectiveStartDestination = remember(
                 defaultStartDestination,
@@ -2204,6 +2206,7 @@ private fun NeriAppContent(
                         showContinueCard = showHomeContinueCard,
                         showTrendingCard = showHomeTrendingCard,
                         showRadarCard = showHomeRadarCard,
+                        showDailyCard = showHomeDailyCard,
                         showRecommendedCard = showHomeRecommendedCard,
                         offlineMode = offlineMode,
                         onSongClick = ::playSongsAndOpenNowPlaying,
@@ -2474,6 +2477,10 @@ private fun NeriAppContent(
                         showHomeRadarCard = showHomeRadarCard,
                         onShowHomeRadarCardChange = { enabled ->
                             scope.launch { repo.setHomeCardRadar(enabled) }
+                        },
+                        showHomeDailyCard = showHomeDailyCard,
+                        onShowHomeDailyCardChange = { enabled ->
+                            scope.launch { repo.setHomeCardDaily(enabled) }
                         },
                         showHomeRecommendedCard = showHomeRecommendedCard,
                         onShowHomeRecommendedCardChange = { enabled ->

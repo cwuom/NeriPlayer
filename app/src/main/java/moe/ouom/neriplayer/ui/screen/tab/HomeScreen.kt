@@ -56,6 +56,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Radar
 import androidx.compose.material.icons.outlined.Star
@@ -145,6 +146,7 @@ fun HomeScreen(
     showContinueCard: Boolean = true,
     showTrendingCard: Boolean = true,
     showRadarCard: Boolean = true,
+    showDailyCard: Boolean = true,
     showRecommendedCard: Boolean = true,
     offlineMode: Boolean = false,
     onItemClick: (PlaylistSummary) -> Unit = {},
@@ -232,6 +234,7 @@ fun HomeScreen(
     val isInternational = ui.internationalizationEnabled
     val showNeteaseTrending = showTrendingCard && (isInternational || ui.hasLogin)
     val showNeteaseRadar = showRadarCard && (isInternational || ui.hasLogin)
+    val showNeteaseDaily = showDailyCard && !isInternational && ui.hasLogin
     val showOnlineFeeds = !offlineMode
     var wasOffline by remember { mutableStateOf(offlineMode) }
     val configuration = LocalConfiguration.current
@@ -261,7 +264,7 @@ fun HomeScreen(
     }
 
     val hasVisibleSections =
-            showContinue || (showOnlineFeeds && (showNeteaseTrending || showNeteaseRadar || showRecommendedCard || isInternational))
+            showContinue || (showOnlineFeeds && (showNeteaseTrending || showNeteaseRadar || showNeteaseDaily || showRecommendedCard || isInternational))
 
     Box(Modifier.fillMaxSize()) {
         Column(
@@ -507,6 +510,28 @@ fun HomeScreen(
                                 }
                             }
                         } else {
+                            if (showNeteaseDaily) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    SectionHeader(
+                                        icon = Icons.Outlined.CalendarToday,
+                                        title = stringResource(R.string.recommend_daily)
+                                    )
+                                }
+                                sectionContent(
+                                    section = ui.dailySongs,
+                                    loadingText = homeLoadingText,
+                                    errorDetail = ui.dailySongs.error
+                                ) {
+                                    item(span = { GridItemSpan(maxLineSpan) }) {
+                                        ResponsiveSongPagerList(
+                                            songs = ui.dailySongs.items,
+                                            onSongClick = onSongClick,
+                                            offlineMode = offlineMode
+                                        )
+                                    }
+                                }
+                            }
+
                             if (showNeteaseTrending) {
                                 item(span = { GridItemSpan(maxLineSpan) }) {
                                     SectionHeader(

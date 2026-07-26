@@ -619,6 +619,8 @@
     <string name="recommend_hot">热歌</string>
     <string name="recommend_trending">热力飙升</string>
     <string name="recommend_radar">私人雷达</string>
+    <string name="recommend_daily">每日推荐</string>
+    <string name="settings_home_card_daily_desc">网易云每日推荐歌曲（日推），需登录网易云账号</string>
     <string name="settings_internationalization">国际化</string>
     <string name="settings_internationalization_desc">开启后首页推荐和探索页将切换为 YouTube Music</string>
     <string name="settings_youtube_enabled">启用 YouTube</string>
