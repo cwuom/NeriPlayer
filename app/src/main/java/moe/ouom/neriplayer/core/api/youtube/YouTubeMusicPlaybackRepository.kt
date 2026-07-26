@@ -324,6 +324,35 @@ internal data class YouTubeAudioMetadata(
 )
 
 /**
+ * 这份存档还能不能拿来垫一次播放
+ *
+ * 只看年龄不看指纹: 换账号时 clearAuthBoundCaches 已经把缓存清空了, 能留到这里的
+ * 就是同一个身份; 指纹在启动早期会因为 auth 还在加载而短暂漂移, 为此丢掉一份好存档
+ * 等于把十几秒的解析摆回首播路径上
+ */
+internal fun isUsableStaleBootstrap(
+    bootstrap: YouTubePlaybackBootstrap,
+    nowMs: Long,
+    maxAgeMs: Long = BOOTSTRAP_SNAPSHOT_MAX_AGE_MS
+): Boolean {
+    if (bootstrap.apiKey.isBlank() || bootstrap.playerJsUrl.isBlank()) {
+        return false
+    }
+    val ageMs = nowMs - bootstrap.fetchedAtMs
+    return ageMs in 0L until maxAgeMs
+}
+
+/**
+ * 已经排上一次加载时还要不要真的等它
+ *
+ * 只有 forceRefresh 明确要新的, 或者手上什么都没有时才值得等
+ */
+internal fun shouldAwaitBootstrapLoad(
+    forceRefresh: Boolean,
+    hasUsableStaleBootstrap: Boolean
+): Boolean = forceRefresh || !hasUsableStaleBootstrap
+
+/**
  * 重试之前值不值得先换一份新 bootstrap
  *
  * 每个 client 都回了 status=OK, 只是候选流的签名解不出来, 那这份 bootstrap 没有任何问题;
@@ -3183,6 +3212,18 @@ class YouTubeMusicPlaybackRepository(
         }
         if (!deferred.isActive && !deferred.isCompleted && !deferred.isCancelled) {
             deferred.start()
+        }
+        // 加载已经排上了, 但手里还有份能用的旧 bootstrap 时等它没有意义,
+        // 解析慢的那十几秒会一比一变成首播延迟
+        val staleFallback = cached?.takeIf {
+            isUsableStaleBootstrap(it, System.currentTimeMillis())
+        }
+        if (!shouldAwaitBootstrapLoad(forceRefresh, staleFallback != null)) {
+            NPLogger.d(
+                "YouTubeMusicPlayback",
+                "serve stale bootstrap instead of waiting: ageMs=${System.currentTimeMillis() - (staleFallback?.fetchedAtMs ?: 0L)}, fingerprintMatched=${staleFallback?.authFingerprint == requestAuthFingerprint}, elapsedMs=${playbackElapsedMs(startedAtMs)}"
+            )
+            return staleFallback!!
         }
         return deferred.await()
     }

@@ -242,6 +242,21 @@ internal class YouTubeWebPoTokenProvider(
             NPLogger.d(TAG, "GVS PO token skipped because ${ForegroundWebLoginGuard.SKIP_REASON} videoId=$videoId")
             return null
         }
+        // 查缓存不需要 WebView, 挤在 accessMutex 后面只会让命中排在整页预热之后
+        if (!forceRefresh) {
+            lookupCachedGvsPoToken(
+                videoId = videoId,
+                remoteHost = remoteHost,
+                authFingerprint = buildAuthFingerprint(auth),
+                nowMs = System.currentTimeMillis()
+            )?.let { token ->
+                NPLogger.d(
+                    TAG,
+                    "GVS PO token cache hit before lock videoId=$videoId elapsedMs=${System.currentTimeMillis() - startedAtMs}"
+                )
+                return token
+            }
+        }
         return accessMutex.withLock {
             try {
                 if (ForegroundWebLoginGuard.isActive) {
@@ -774,6 +789,29 @@ internal class YouTubeWebPoTokenProvider(
             TAG,
             "WebPoClient unavailable on $url, ready=${snapshot.readyState}, ytcfg=${snapshot.hasYtcfg}"
         )
+    }
+
+    /**
+     * 不碰 WebView 的纯缓存查询
+     *
+     * 命中就直接给, 顺手把 videoId 索引指过去, 下一次连会话级那一跳都省了
+     */
+    private fun lookupCachedGvsPoToken(
+        videoId: String,
+        remoteHost: String,
+        authFingerprint: String,
+        nowMs: Long
+    ): String? {
+        val indexKey = buildCacheKeyIndexKey(videoId, remoteHost, authFingerprint)
+        val sessionKey = buildYouTubePoTokenSessionKey(remoteHost, authFingerprint)
+        return synchronized(tokenCache) {
+            val cached = selectUsableYouTubePoToken(cacheKeyIndex[indexKey], tokenCache, nowMs)
+                ?: selectUsableYouTubePoToken(sessionScopedCacheKeys[sessionKey], tokenCache, nowMs)
+                ?: return@synchronized null
+            touchCacheKey(cached.first, cached.second)
+            cacheKeyIndex[indexKey] = cached.first
+            cached.second.token
+        }
     }
 
     private fun buildCacheKey(
