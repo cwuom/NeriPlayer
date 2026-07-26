@@ -41,6 +41,7 @@ import moe.ouom.neriplayer.core.player.quality.effectiveNeteaseQuality
 import moe.ouom.neriplayer.core.player.quality.effectiveYouTubeQuality
 import moe.ouom.neriplayer.core.player.resolver.netease.NeteasePlaybackResponseParser
 import moe.ouom.neriplayer.core.player.resolver.netease.tryResolveNeteaseAutoBiliSource
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.watchdog.configureActivePlaybackCandidates
 import moe.ouom.neriplayer.core.player.watchdog.currentPlaybackCandidate
 import moe.ouom.neriplayer.core.player.watchdog.resetPlaybackProgressAdvanceBaseline
@@ -862,6 +863,13 @@ private suspend fun PlayerManager.getNeteaseSongUrl(
 ): SongUrlResult = withContext(Dispatchers.IO) {
     try {
         val effectiveQuality = effectiveNeteaseQuality()
+
+        // 自定义音源(洛雪脚本)优先模式:先尝试自定义音源,成功即用
+        val customManager = AppContainer.customSourceManager
+        if (customManager.repository.priorityMode.value && customManager.hasActiveNeteaseSource()) {
+            resolveNeteaseCustomSource(song, effectiveQuality)?.let { return@withContext it }
+        }
+
         val qualityCandidates = buildNeteaseQualityCandidates(effectiveQuality)
         var previewFallback: SongUrlResult.Success? = null
         var lastFailureReason: NeteasePlaybackResponseParser.FailureReason? = null
@@ -929,6 +937,15 @@ private suspend fun PlayerManager.getNeteaseSongUrl(
             }
         }
 
+        // 回退模式:官方拿不到完整音频(试听片段/无权限/无播放地址)时尝试自定义音源
+        if (customManager.hasActiveNeteaseSource() &&
+            (previewFallback != null ||
+                lastFailureReason == NeteasePlaybackResponseParser.FailureReason.NO_PERMISSION ||
+                lastFailureReason == NeteasePlaybackResponseParser.FailureReason.NO_PLAY_URL)
+        ) {
+            resolveNeteaseCustomSource(song, effectiveQuality)?.let { return@withContext it }
+        }
+
         previewFallback?.let { return@withContext it }
 
         if (!suppressError) {
@@ -960,6 +977,32 @@ private suspend fun PlayerManager.getNeteaseSongUrl(
             }
         }
         SongUrlResult.Failure
+    }
+}
+
+/**
+ * 使用启用的自定义音源(洛雪脚本)解析网易云歌曲的播放地址。
+ * 成功返回 Success,失败返回 null(交由调用方继续走原逻辑或回退)。
+ */
+private suspend fun PlayerManager.resolveNeteaseCustomSource(
+    song: SongItem,
+    neteaseQualityKey: String
+): SongUrlResult.Success? = withContext(Dispatchers.IO) {
+    try {
+        val url = AppContainer.customSourceManager.resolveNeteaseUrl(song, neteaseQualityKey)
+        if (url.isNullOrBlank()) {
+            null
+        } else {
+            NPLogger.d("NERI-PlayerManager", "自定义音源解析成功: id=${song.id}")
+            SongUrlResult.Success(
+                url = url,
+                durationMs = song.durationMs.takeIf { it > 0 }
+            )
+        }
+    } catch (e: Exception) {
+        if (e is CancellationException) throw e
+        NPLogger.w("NERI-PlayerManager", "自定义音源解析异常", e)
+        null
     }
 }
 

@@ -2068,4 +2068,16 @@
 
     <!-- About -->
     <string name="about_app_footer">NeriPlayer • GPLv3 • Powered by You</string>
+    <string name="custom_source_title">Custom Source</string>
+    <string name="custom_source_desc">Import an LX Music-compatible custom source script (.js) to resolve NetEase playback URLs. Only use scripts you trust.</string>
+    <string name="custom_source_import_file">Import file</string>
+    <string name="custom_source_import_paste">Paste script</string>
+    <string name="custom_source_import_confirm">Import</string>
+    <string name="custom_source_cancel">Cancel</string>
+    <string name="custom_source_test">Test</string>
+    <string name="custom_source_empty">No sources imported yet</string>
+    <string name="custom_source_priority_title">Prefer custom source</string>
+    <string name="custom_source_priority_desc">When on, resolve via custom source first (fall back to official on failure); when off, only used when official cannot return full audio.</string>
+    <string name="custom_source_entry_title">Custom Source</string>
+    <string name="custom_source_entry_desc">Import LX Music source scripts to enhance NetEase playback</string>
 </resources>
