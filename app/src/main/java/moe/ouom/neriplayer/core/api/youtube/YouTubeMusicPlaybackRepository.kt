@@ -219,6 +219,9 @@ internal object NewPipeFallbackTracker {
  * ANDROID_MUSIC 在部分账号和出口上恒回 400 INVALID_ARGUMENT, 换 bootstrap 也没用
  * 每次解析都白付一次往返; 连续失败到阈值后先停一段时间, 成功一次就恢复
  */
+/** player.js 地址到 STS 的进程级缓存，地址带版本哈希所以无需失效 */
+private val signatureTimestampCache = ConcurrentHashMap<String, Int>()
+
 internal object PlayerClientHealthTracker {
     private const val FAILURE_THRESHOLD = 3
     private const val SUPPRESSION_WINDOW_MS = 30L * 60L * 1000L
@@ -3211,6 +3214,9 @@ class YouTubeMusicPlaybackRepository(
         if (playerJsUrl.isBlank()) {
             return null
         }
+        // player.js 地址自带版本哈希，同一个地址的 STS 不会变，
+        // 而这里要整份拉下约 2MB 才能取出一个数字，重复付这笔钱会把首播拖成秒级
+        signatureTimestampCache[playerJsUrl]?.let { return it }
         val request = Request.Builder()
             .url(playerJsUrl)
             .header("User-Agent", userAgent)
@@ -3228,7 +3234,9 @@ class YouTubeMusicPlaybackRepository(
                 "Failed to fetch player signature timestamp",
                 error
             )
-        }.getOrNull()
+        }.getOrNull()?.also { timestamp ->
+            signatureTimestampCache[playerJsUrl] = timestamp
+        }
     }
 
     private fun resolvePlayableAudioViaNewPipe(
