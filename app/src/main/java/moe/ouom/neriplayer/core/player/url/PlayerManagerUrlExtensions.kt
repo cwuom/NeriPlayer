@@ -265,9 +265,22 @@ internal fun resolveYouTubePlaybackRecoveryStrategy(
     if (!shouldAttemptYouTubePlaybackRecovery(error, isOfflineCache)) return null
     return YouTubePlaybackRecoveryStrategy(
         preferredQualityOverride = YOUTUBE_STABLE_RECOVERY_QUALITY,
-        requireDirect = true,
+        requireDirect = shouldRequireDirectOnYouTubeRecovery(error, isOfflineCache),
         preferM4a = true
     )
+}
+
+/**
+ * googlevideo 拒了直链时不能再强制直链，否则恢复必然拿回同一条 403
+ *
+ * 机房和被风控的出口上直链常年不可用，只有放开这个约束才能落到 HLS
+ */
+internal fun shouldRequireDirectOnYouTubeRecovery(
+    error: PlaybackException,
+    isOfflineCache: Boolean
+): Boolean {
+    if (isOfflineCache) return true
+    return error.errorCode != PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
 }
 
 internal fun offlineCacheKeyFromUrl(url: String?): String? {

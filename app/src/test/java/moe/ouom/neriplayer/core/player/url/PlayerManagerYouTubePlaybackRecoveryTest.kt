@@ -6,6 +6,7 @@ import androidx.media3.common.PlaybackException
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -103,5 +104,24 @@ class PlayerManagerYouTubePlaybackRecoveryTest {
             coverUrl = null,
             mediaUri = mediaUri
         )
+    }
+
+    @Test
+    fun `bad http status recovery stops forcing a direct stream`() {
+        // 机房出口上 googlevideo 常年拒直链，继续强制直链只会拿回同一条 403
+        val strategy = resolveYouTubePlaybackRecoveryStrategy(
+            error = playbackError(PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS),
+            isOfflineCache = false
+        )
+        assertFalse(strategy!!.requireDirect)
+    }
+
+    @Test
+    fun `container failure still recovers through a direct stream`() {
+        val strategy = resolveYouTubePlaybackRecoveryStrategy(
+            error = playbackError(PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED),
+            isOfflineCache = false
+        )
+        assertTrue(strategy!!.requireDirect)
     }
 }
