@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.listentogether
 
 import moe.ouom.neriplayer.listentogether.invite.ListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.invite.configuredListenTogetherBaseUrlOrNull
+import moe.ouom.neriplayer.listentogether.invite.configuredListenTogetherInviteBaseUrlOrNull
 import moe.ouom.neriplayer.listentogether.invite.parseListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherBaseUrl
 import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherInviteJoinBaseUrl
@@ -120,5 +121,25 @@ class ListenTogetherBaseUrlTest {
 
         assertNull(invite?.baseUrl)
         assertTrue(invite?.hasInvalidBaseUrl == true)
+    }
+
+    @Test
+    fun `invite parser rejects cleartext http server`() {
+        val invite = parseListenTogetherInvite(
+            "neriplayer://listen-together/join?roomId=P8BAEV&baseUrl=http%3A%2F%2F192.168.1.10%3A8787%2F"
+        )
+
+        assertNull(invite?.baseUrl)
+        assertTrue(invite?.hasInvalidBaseUrl == true)
+    }
+
+    @Test
+    fun `invite base url helper enforces https only`() {
+        assertEquals(
+            "https://example.com",
+            configuredListenTogetherInviteBaseUrlOrNull(" https://example.com/ ")
+        )
+        assertNull(configuredListenTogetherInviteBaseUrlOrNull("http://192.168.1.10:8787"))
+        assertNull(configuredListenTogetherInviteBaseUrlOrNull("example.com"))
     }
 }

@@ -20,14 +20,41 @@ import org.json.JSONObject
 import java.io.File
 import java.util.Locale
 
+/** 音频内嵌标签写入结果，用于区分"可重试的失败"与"容器天生不支持标签" */
+internal enum class DownloadedAudioTagWriteOutcome {
+    SUCCESS,
+
+    /**
+     * 容器不支持内嵌标签（如 WebM/Matroska）。重试没有意义，
+     * 调用方应当保留已下载的音频，仅依赖 sidecar 封面与歌词文件
+     */
+    UNSUPPORTED_CONTAINER,
+
+    FAILED
+}
+
 internal object DownloadedAudioTagWriter {
     private const val TAG = "DownloadedAudioTagWriter"
     private const val FRONT_COVER_TYPE = "Front Cover"
     private const val MAX_EMBEDDED_COVER_BYTES = 8L * 1024L * 1024L
+
+    /**
+     * TagLib 无法承载标签的容器。YouTube 的 opus 音频落盘为 .webm，
+     * 属于 Matroska 家族，TagLib 既解析不了也写不进去
+     */
+    private val TAG_UNSUPPORTED_EXTENSIONS = setOf(
+        "webm", "mkv", "mka", "ts", "flv", "m3u8", "m3u"
+    )
     private val NETEASE_WORD_LINE_REGEX = Regex("""^\[(\d+),\s*\d+]\s*(.*)$""")
     private val NETEASE_WORD_TOKEN_REGEX = Regex("""[\(<]\d+,\s*\d+,\s*-?\d+[\)>]""")
     private val LRC_TIMED_LINE_REGEX = Regex("""^\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?]""")
     private val LRC_METADATA_LINE_REGEX = Regex("""^\[[A-Za-z][A-Za-z0-9_]*:.*]$""")
+
+    /** 判断该文件名对应的容器能否承载内嵌标签 */
+    internal fun supportsEmbeddedTags(fileName: String): Boolean {
+        val extension = fileName.substringAfterLast('.', "").lowercase(Locale.US)
+        return extension.isNotEmpty() && extension !in TAG_UNSUPPORTED_EXTENSIONS
+    }
 
     suspend fun write(
         context: Context,
@@ -35,8 +62,13 @@ internal object DownloadedAudioTagWriter {
         song: SongItem,
         sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?,
         standardizedLyricEmbeddingEnabled: Boolean
-    ): Boolean = withContext(Dispatchers.IO) {
-        val descriptor = openWritableDescriptor(context, audio) ?: return@withContext false
+    ): DownloadedAudioTagWriteOutcome = withContext(Dispatchers.IO) {
+        if (!supportsEmbeddedTags(audio.name)) {
+            NPLogger.d(TAG, "容器不支持内嵌标签，跳过写入: file=${audio.name}")
+            return@withContext DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER
+        }
+        val descriptor = openWritableDescriptor(context, audio)
+            ?: return@withContext DownloadedAudioTagWriteOutcome.FAILED
         descriptor.use { target ->
             val existingPropertyMap = loadExistingPropertyMap(target)
             val propertyMap = buildPropertyMap(
@@ -84,13 +116,23 @@ internal object DownloadedAudioTagWriter {
                     TAG,
                     "音频内嵌标签写入完成: file=${audio.name}, propertyChanged=$propertyChanged, coverChanged=${coverPictures != null}"
                 )
-            } else {
+                return@use DownloadedAudioTagWriteOutcome.SUCCESS
+            }
+
+            // TagLib 连既有标签都读不出来，说明这个容器它根本不认识，重试无意义
+            if (!propertySaved && existingPropertyMap == null) {
                 NPLogger.w(
                     TAG,
-                    "音频内嵌标签写入未完成: file=${audio.name}, propertySaved=$propertySaved, coverSaved=$coverSaved, metadataVerified=$metadataVerified"
+                    "TagLib 无法解析该音频容器，跳过内嵌标签: file=${audio.name}"
                 )
+                return@use DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER
             }
-            successful
+
+            NPLogger.w(
+                TAG,
+                "音频内嵌标签写入未完成: file=${audio.name}, propertySaved=$propertySaved, coverSaved=$coverSaved, metadataVerified=$metadataVerified"
+            )
+            DownloadedAudioTagWriteOutcome.FAILED
         }
     }
 

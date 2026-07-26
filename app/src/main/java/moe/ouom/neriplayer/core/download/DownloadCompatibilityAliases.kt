@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadArtifactPlanner 
 import moe.ouom.neriplayer.core.download.cleanup.groupRemainingManagedReferencesByIdentity as groupRemainingManagedReferencesByIdentityDelegate
 import moe.ouom.neriplayer.core.download.cleanup.mergeManagedRequestedReferences as mergeManagedRequestedReferencesDelegate
 import moe.ouom.neriplayer.core.download.cleanup.resolveUndeletedManagedReferences as resolveUndeletedManagedReferencesDelegate
+import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriter as DownloadedAudioTagWriterDelegate
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames as candidateManagedDownloadBaseNamesDelegate
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadFileNameTemplates as candidateManagedDownloadFileNameTemplatesDelegate
@@ -24,6 +25,7 @@ import moe.ouom.neriplayer.core.download.naming.renderManagedDownloadBaseName as
 import moe.ouom.neriplayer.core.download.naming.sanitizeManagedDownloadFileName as sanitizeManagedDownloadFileNameDelegate
 import moe.ouom.neriplayer.core.download.policy.buildExpectedDownloadArtists as buildExpectedDownloadArtistsDelegate
 import moe.ouom.neriplayer.core.download.policy.buildExpectedDownloadTitles as buildExpectedDownloadTitlesDelegate
+import moe.ouom.neriplayer.core.download.policy.isSuspiciousEmptyDownloadScan as isSuspiciousEmptyDownloadScanDelegate
 import moe.ouom.neriplayer.core.download.policy.isUnfinalizedDownloadedMetadata as isUnfinalizedDownloadedMetadataDelegate
 import moe.ouom.neriplayer.core.download.policy.resolveCompletedDownloadFinalizationAction as resolveCompletedDownloadFinalizationActionDelegate
 import moe.ouom.neriplayer.core.download.policy.resolveDownloadedLyricContent as resolveDownloadedLyricContentDelegate
@@ -115,6 +117,18 @@ internal fun candidateManagedDownloadBaseNames(fileNameWithoutExtension: String)
 
 internal fun shouldRunInitialDownloadScan(catalogReady: Boolean, hasRecoveredEntries: Boolean = false): Boolean =
     shouldRunInitialDownloadScanDelegate(catalogReady, hasRecoveredEntries)
+
+internal fun isSuspiciousEmptyDownloadScan(
+    scannedSongCount: Int,
+    existingSongCount: Int,
+    storageRootResolvable: Boolean,
+    scanMatchesCatalogRoot: Boolean
+): Boolean = isSuspiciousEmptyDownloadScanDelegate(
+    scannedSongCount,
+    existingSongCount,
+    storageRootResolvable,
+    scanMatchesCatalogRoot
+)
 
 internal fun shouldDeferStartupManagedCleanup(configuredDirectoryUri: String?, treeRootAvailable: Boolean): Boolean =
     shouldDeferStartupManagedCleanupDelegate(configuredDirectoryUri, treeRootAvailable)
@@ -360,13 +374,16 @@ internal object DownloadedAudioTagWriter {
         song: SongItem,
         sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?,
         standardizedLyricEmbeddingEnabled: Boolean
-    ): Boolean = DownloadedAudioTagWriterDelegate.write(
+    ): DownloadedAudioTagWriteOutcome = DownloadedAudioTagWriterDelegate.write(
         context,
         audio,
         song,
         sidecarReferences,
         standardizedLyricEmbeddingEnabled
     )
+
+    fun supportsEmbeddedTags(fileName: String): Boolean =
+        DownloadedAudioTagWriterDelegate.supportsEmbeddedTags(fileName)
 
     fun normalizeEmbeddedAlbumName(album: String): String? =
         DownloadedAudioTagWriterDelegate.normalizeEmbeddedAlbumName(album)

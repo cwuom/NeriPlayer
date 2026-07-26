@@ -11,7 +11,9 @@ internal fun buildListenTogetherForwardedControlSyntheticState(
     committedEvent: ListenTogetherEvent,
     nowMs: Long = System.currentTimeMillis()
 ): ListenTogetherRoomState {
+    // 空 queue 的转发请求视为“不改动队列”，回退当前房间队列，避免被清空
     val nextQueue = message.queue
+        ?.takeIf { it.isNotEmpty() }
         ?.mergeCurrentTrack(message.currentIndex ?: currentState.currentIndex, message.track)
         ?: currentState.queue.mergeCurrentTrack(currentState.currentIndex, currentState.track)
     val nextIndex = (message.currentIndex ?: currentState.currentIndex).coerceIn(

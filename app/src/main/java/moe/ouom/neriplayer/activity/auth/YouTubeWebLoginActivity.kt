@@ -69,6 +69,7 @@ import moe.ouom.neriplayer.data.auth.youtube.YouTubeWebLoginVerifier
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.auth.youtube.evaluateYouTubeAuthHealth
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
+import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_DEFAULT_WEB_USER_AGENT
 import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeLoginHost
 import moe.ouom.neriplayer.util.network.DynamicProxySelector
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -218,8 +219,13 @@ class YouTubeWebLoginActivity : ComponentActivity() {
                 setSupportZoom(true)
                 builtInZoomControls = true
                 displayZoomControls = false
+                // 用桌面 Chrome UA 导航,避免装有 YouTube/YT Music app 的设备上 Google 把
+                // service=youtube 的网页登录重定向到 Play 商店或 app,使流程停留在网页并回到 music 域
+                userAgentString = YOUTUBE_DEFAULT_WEB_USER_AGENT
             }
-            webViewUserAgent = settings.userAgentString.orEmpty()
+            // 存入 bundle 的 UA 固定为项目标准 Web UA(WEB_REMIX 播放经 resolveBootstrapUserAgent 也用它),
+            // 把登录导航 UA 与播放请求 UA 解耦,不让登录用的桌面 UA 额外污染播放指纹语义
+            webViewUserAgent = YOUTUBE_DEFAULT_WEB_USER_AGENT
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
             webChromeClient = WebChromeClient()

@@ -52,6 +52,75 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `empty scan is suspicious only when existing catalog is non-empty and root resolvable`() {
+        // #D4：同 root 下 SAF 列举瞬时失败返回空，既有目录非空且存储根可解析时判为可疑，不覆盖既有目录
+        assertTrue(
+            isSuspiciousEmptyDownloadScan(
+                scannedSongCount = 0,
+                existingSongCount = 3,
+                storageRootResolvable = true,
+                scanMatchesCatalogRoot = true
+            )
+        )
+        // 存储根不可解析（权限丢失/目录被移除→回退空目录）属于可解释的空，放行
+        assertFalse(
+            isSuspiciousEmptyDownloadScan(
+                scannedSongCount = 0,
+                existingSongCount = 3,
+                storageRootResolvable = false,
+                scanMatchesCatalogRoot = true
+            )
+        )
+        // 既有目录本就为空，没有需要保护的内容，放行（不会误伤真正的空目录）
+        assertFalse(
+            isSuspiciousEmptyDownloadScan(
+                scannedSongCount = 0,
+                existingSongCount = 0,
+                storageRootResolvable = true,
+                scanMatchesCatalogRoot = true
+            )
+        )
+        // 扫描结果非空属于正常更新，不判为可疑
+        assertFalse(
+            isSuspiciousEmptyDownloadScan(
+                scannedSongCount = 2,
+                existingSongCount = 3,
+                storageRootResolvable = true,
+                scanMatchesCatalogRoot = true
+            )
+        )
+    }
+
+    @Test
+    fun `directory switch to empty is not suspicious so stale catalog is cleared`() {
+        // H1 回归（场景 1）：切换/重置下载目录到空目录后，扫描的是新 root，
+        // 而既有 catalog 属于旧 root（scanMatchesCatalogRoot=false）。即使存储根可解析、既有目录非空，
+        // 也不得判为可疑——应放行清空，避免继续展示旧目录陈旧条目，且 app 内刷新可自愈。
+        assertFalse(
+            isSuspiciousEmptyDownloadScan(
+                scannedSongCount = 0,
+                existingSongCount = 3,
+                storageRootResolvable = true,
+                scanMatchesCatalogRoot = false
+            )
+        )
+    }
+
+    @Test
+    fun `same directory transient empty scan stays protected`() {
+        // H1 回归（场景 2）：同一下载目录（scanMatchesCatalogRoot=true）下的瞬时空列举失败仍受 #D4 保护，
+        // 判为可疑并保留既有目录，确保修复 H1 不会削弱对瞬时失败的防护。
+        assertTrue(
+            isSuspiciousEmptyDownloadScan(
+                scannedSongCount = 0,
+                existingSongCount = 5,
+                storageRootResolvable = true,
+                scanMatchesCatalogRoot = true
+            )
+        )
+    }
+
+    @Test
     fun `startup managed cleanup is deferred only for available SAF trees`() {
         assertTrue(
             shouldDeferStartupManagedCleanup(

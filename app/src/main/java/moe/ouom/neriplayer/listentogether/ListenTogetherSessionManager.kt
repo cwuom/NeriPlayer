@@ -77,6 +77,7 @@ import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
 import moe.ouom.neriplayer.listentogether.session.AcceptedRoomState
 import moe.ouom.neriplayer.listentogether.session.LISTEN_TOGETHER_PAUSED_HEARTBEAT_INTERVAL_MS
 import moe.ouom.neriplayer.listentogether.session.LISTEN_TOGETHER_PLAYING_HEARTBEAT_INTERVAL_MS
+import moe.ouom.neriplayer.listentogether.session.ListenTogetherForwardedRequestDeduper
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherRecentEventTracker
 import moe.ouom.neriplayer.listentogether.session.PendingMemberControlRequest
 import moe.ouom.neriplayer.listentogether.session.PendingTrackFinishedLegacyFallback
@@ -92,11 +93,13 @@ import moe.ouom.neriplayer.listentogether.session.shouldApplyListenTogetherRoomS
 import moe.ouom.neriplayer.listentogether.session.shouldDropListenTogetherControllerLocalEcho
 import moe.ouom.neriplayer.listentogether.session.shouldDeferListenTogetherIncomingStateForLocalTrackFinish
 import moe.ouom.neriplayer.listentogether.session.shouldIgnoreListenTogetherIncomingState
+import moe.ouom.neriplayer.listentogether.session.shouldRejectForwardedListenTogetherMemberControl
 import moe.ouom.neriplayer.listentogether.session.shouldRepairListenTogetherListenerState
 import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherNickname
 import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherRoomId
 import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherUserUuid
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 class ListenTogetherSessionManager(
@@ -106,10 +109,13 @@ class ListenTogetherSessionManager(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var heartbeatJob: Job? = null
+    @Volatile
     private var reconnectJob: Job? = null
     private var membershipRecoveryJob: Job? = null
     private var syncWatchdogJob: Job? = null
     private val roomStateLock = Any()
+    // 串行化重连生命周期的 check-then-act，避免 onClosed/onFailure 并发触发多条 WS
+    private val connectionLock = Any()
 
     @Volatile
     private var started = false
@@ -127,10 +133,8 @@ class ListenTogetherSessionManager(
     private var lastControllerLocalControlAtElapsedMs: Long = 0L
     @Volatile
     private var reconnectEnabled = false
-    @Volatile
-    private var reconnectAttempt = 0
-    @Volatile
-    private var lastHandledForwardedRequestSequence: Long = 0L
+    private val reconnectAttempt = AtomicInteger(0)
+    private val forwardedRequestDeduper = ListenTogetherForwardedRequestDeduper()
     @Volatile
     private var pendingStateRefreshAfterReconnect = false
     @Volatile
@@ -335,7 +339,7 @@ class ListenTogetherSessionManager(
                     }
                     lastWebSocketMessageAtElapsedMs = SystemClock.elapsedRealtime()
                     val shouldRefreshState = pendingStateRefreshAfterReconnect
-                    reconnectAttempt = 0
+                    resetReconnectAttempt()
                     reconnectJob?.cancel()
                     reconnectJob = null
                     startHeartbeat()
@@ -519,7 +523,7 @@ class ListenTogetherSessionManager(
 
     fun disconnectWebSocket() {
         reconnectEnabled = false
-        reconnectAttempt = 0
+        resetReconnectAttempt()
         pendingStateRefreshAfterReconnect = false
         cancelListenTogetherBackgroundJobs(reconnectJob, membershipRecoveryJob)
         reconnectJob = null
@@ -535,7 +539,7 @@ class ListenTogetherSessionManager(
             pendingRoomRepairVersion = -1L
         }
         lastControllerLocalControlAtElapsedMs = 0L
-        lastHandledForwardedRequestSequence = 0L
+        forwardedRequestDeduper.clear()
         awaitingTrackFinishStableKey = null
         pendingTrackFinishedLegacyFallback = null
         pendingMemberControlRequest = null
@@ -556,7 +560,7 @@ class ListenTogetherSessionManager(
 
     fun leaveRoom() {
         reconnectEnabled = false
-        reconnectAttempt = 0
+        resetReconnectAttempt()
         pendingStateRefreshAfterReconnect = false
         cancelListenTogetherBackgroundJobs(reconnectJob, membershipRecoveryJob)
         reconnectJob = null
@@ -574,7 +578,7 @@ class ListenTogetherSessionManager(
             _roomState.value = null
         }
         lastControllerLocalControlAtElapsedMs = 0L
-        lastHandledForwardedRequestSequence = 0L
+        forwardedRequestDeduper.clear()
         awaitingTrackFinishStableKey = null
         pendingTrackFinishedLegacyFallback = null
         pendingMemberControlRequest = null
@@ -1160,11 +1164,16 @@ class ListenTogetherSessionManager(
     private fun handleMemberControlRequested(message: ListenTogetherSocketEnvelope) {
         val snapshot = _sessionState.value
         if (!isCurrentUserController(snapshot)) return
-        val requestSequence = message.requestSequence ?: 0L
-        if (requestSequence in 1..lastHandledForwardedRequestSequence) {
+        if (
+            !forwardedRequestDeduper.shouldProcess(
+                requesterUuid = message.causedBy?.userUuid,
+                sequence = message.requestSequence,
+                eventId = message.causedBy?.eventId
+            )
+        ) {
             NPLogger.d(
                 TAG,
-                "handleMemberControlRequested(): ignore duplicate/outdated requestSequence=$requestSequence, lastHandled=$lastHandledForwardedRequestSequence"
+                "handleMemberControlRequested(): ignore duplicate/outdated requester=${message.causedBy?.userUuid}, requestSequence=${message.requestSequence}, eventId=${message.causedBy?.eventId}"
             )
             return
         }
@@ -1178,21 +1187,20 @@ class ListenTogetherSessionManager(
         if (shouldRejectForwardedMemberControl(message, forwardedEvent)) {
             return
         }
-        requestSequence.takeIf { it > 0L }?.let { lastHandledForwardedRequestSequence = it }
         if (
             SystemClock.elapsedRealtime() - lastControllerLocalControlAtElapsedMs <
             CONTROLLER_LOCAL_CONTROL_COOLDOWN_MS
         ) {
             NPLogger.d(
                 TAG,
-                "handleMemberControlRequested(): controller local action wins, skip requestSequence=$requestSequence, requester=${message.causedBy?.userUuid}"
+                "handleMemberControlRequested(): controller local action wins, skip requester=${message.causedBy?.userUuid}"
             )
             publishControllerHeartbeatIfNeeded(force = true, reason = "controller_priority")
             return
         }
         NPLogger.d(
             TAG,
-            "handleMemberControlRequested(): requestSequence=$requestSequence, requester=${message.causedBy?.userUuid}, type=${message.causedBy?.type}, commitType=${forwardedEvent.type}"
+            "handleMemberControlRequested(): requester=${message.causedBy?.userUuid}, type=${message.causedBy?.type}, commitType=${forwardedEvent.type}"
         )
         applyForwardedControllerRequestLocally(message, forwardedEvent)
         markOutboundEvent(forwardedEvent.eventId)
@@ -1200,7 +1208,7 @@ class ListenTogetherSessionManager(
         if (!sendControlEventPureWebSocket(forwardedEvent, "forwarded_member_control")) {
             NPLogger.w(
                 TAG,
-                "handleMemberControlRequested(): websocket unavailable, requester=${message.causedBy?.userUuid}, requestSequence=$requestSequence"
+                "handleMemberControlRequested(): websocket unavailable, requester=${message.causedBy?.userUuid}"
             )
         }
     }
@@ -1369,9 +1377,35 @@ class ListenTogetherSessionManager(
         message: ListenTogetherSocketEnvelope,
         forwardedEvent: ListenTogetherEvent
     ): Boolean {
+        val roomState = _roomState.value
+        // 房态未落地(未知)时对转发成员控制一律 fail-closed，
+        // 否则 settings.normalized() 回退默认 allowMemberControl=true 会造成安全门误放行
+        if (roomState == null) {
+            NPLogger.w(
+                TAG,
+                "shouldRejectForwardedMemberControl(): room state unknown, reject forwarded control, requester=${message.causedBy?.userUuid}, type=${message.causedBy?.type}"
+            )
+            publishControllerHeartbeatIfNeeded(force = true, reason = "reject_member_control_room_unknown")
+            return true
+        }
+        // 服务端侧鉴权：成员控制关闭时拒绝一切非控制端发起的转发请求，防止改造端越权
+        if (
+            shouldRejectForwardedListenTogetherMemberControl(
+                requesterUuid = message.causedBy?.userUuid,
+                controllerUserUuid = roomState.controllerUserUuid,
+                allowMemberControl = roomState.settings.normalized().allowMemberControl
+            )
+        ) {
+            NPLogger.w(
+                TAG,
+                "shouldRejectForwardedMemberControl(): member control disabled, requester=${message.causedBy?.userUuid}, type=${message.causedBy?.type}"
+            )
+            publishControllerHeartbeatIfNeeded(force = true, reason = "reject_member_control_disabled")
+            return true
+        }
         val requestType = message.causedBy?.type ?: return false
         if (requestType !in trackBoundRequestControlEventTypes) return false
-        val currentStableKey = _roomState.value?.currentStableKey()
+        val currentStableKey = roomState.currentStableKey()
         val requestedStableKey = forwardedEvent.requestedStableKey()
         if (isListenTogetherMemberControlTargetCurrent(requestType, requestedStableKey, currentStableKey)) {
             return false
@@ -1712,6 +1746,13 @@ class ListenTogetherSessionManager(
         }
     }
 
+    private fun resetReconnectAttempt() {
+        // 与 scheduleReconnect 的自增共用同一把锁串行，避免与成功/断开后的重置交错导致计数漂移
+        synchronized(connectionLock) {
+            reconnectAttempt.set(0)
+        }
+    }
+
     private fun scheduleReconnect(reason: String) {
         val snapshot = _sessionState.value
         if (!reconnectEnabled) {
@@ -1726,38 +1767,39 @@ class ListenTogetherSessionManager(
             NPLogger.d(TAG, "scheduleReconnect(): skipped, already connecting, reason=$reason")
             return
         }
-        if (reconnectJob?.isActive == true) {
-            NPLogger.d(TAG, "scheduleReconnect(): already scheduled, reason=$reason")
-            return
-        }
-        val attempt = reconnectAttempt + 1
-        if (attempt > LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS) {
+        synchronized(connectionLock) {
+            if (reconnectJob?.isActive == true) {
+                NPLogger.d(TAG, "scheduleReconnect(): already scheduled, reason=$reason")
+                return
+            }
+            val attempt = reconnectAttempt.incrementAndGet()
+            if (attempt > LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS) {
+                NPLogger.w(
+                    TAG,
+                    "scheduleReconnect(): max attempts reached ($LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS), giving up, reason=$reason"
+                )
+                closeRoomLocally("reconnect_max_attempts_exceeded")
+                return
+            }
+            val delayMs = listenTogetherReconnectDelayMs(attempt)
             NPLogger.w(
                 TAG,
-                "scheduleReconnect(): max attempts reached ($LISTEN_TOGETHER_MAX_RECONNECT_ATTEMPTS), giving up, reason=$reason"
+                "scheduleReconnect(): roomId=${snapshot.roomId}, attempt=$attempt, delayMs=$delayMs, reason=$reason"
             )
-            closeRoomLocally("reconnect_max_attempts_exceeded")
-            return
-        }
-        val delayMs = listenTogetherReconnectDelayMs(attempt)
-        reconnectAttempt = attempt
-        NPLogger.w(
-            TAG,
-            "scheduleReconnect(): roomId=${snapshot.roomId}, attempt=$attempt, delayMs=$delayMs, reason=$reason"
-        )
-        reconnectJob = scope.launch {
-            delay(delayMs)
-            reconnectJob = null
-            val latest = _sessionState.value
-            if (!reconnectEnabled || latest.wsUrl.isNullOrBlank() || latest.roomId.isNullOrBlank()) {
-                NPLogger.d(TAG, "scheduleReconnect(): cancelled before execution")
-                return@launch
+            reconnectJob = scope.launch {
+                delay(delayMs)
+                reconnectJob = null
+                val latest = _sessionState.value
+                if (!reconnectEnabled || latest.wsUrl.isNullOrBlank() || latest.roomId.isNullOrBlank()) {
+                    NPLogger.d(TAG, "scheduleReconnect(): cancelled before execution")
+                    return@launch
+                }
+                NPLogger.d(TAG, "reconnect(): roomId=${latest.roomId}, attempt=$attempt")
+                if (tryRecoverMembershipBeforeReconnect("scheduled_reconnect:$reason")) {
+                    return@launch
+                }
+                connectWebSocket()
             }
-            NPLogger.d(TAG, "reconnect(): roomId=${latest.roomId}, attempt=$attempt")
-            if (tryRecoverMembershipBeforeReconnect("scheduled_reconnect:$reason")) {
-                return@launch
-            }
-            connectWebSocket()
         }
     }
 
@@ -2071,7 +2113,7 @@ class ListenTogetherSessionManager(
             "closeRoomLocally(): roomId=${snapshot.roomId}, role=${snapshot.role}, reason=$reason, lastAppliedVersion=$lastAppliedRoomVersion"
         )
         reconnectEnabled = false
-        reconnectAttempt = 0
+        resetReconnectAttempt()
         pendingStateRefreshAfterReconnect = false
         cancelListenTogetherBackgroundJobs(reconnectJob, membershipRecoveryJob)
         reconnectJob = null
@@ -2089,7 +2131,7 @@ class ListenTogetherSessionManager(
             _roomState.value = null
         }
         lastControllerLocalControlAtElapsedMs = 0L
-        lastHandledForwardedRequestSequence = 0L
+        forwardedRequestDeduper.clear()
         pendingMemberControlRequest = null
         lastListenerStateRefreshAtElapsedMs = 0L
         lastWebSocketMessageAtElapsedMs = 0L

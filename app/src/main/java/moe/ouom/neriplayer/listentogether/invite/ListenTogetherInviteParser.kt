@@ -43,7 +43,7 @@ private fun parseListenTogetherInviteInternal(rawText: String): ListenTogetherIn
         ?.trim()
         ?.takeIf { it.isNotBlank() && validateListenTogetherNickname(it) == null }
     val rawBaseUrl = query["baseUrl"]?.trim().orEmpty()
-    val normalizedBaseUrl = configuredListenTogetherBaseUrlOrNull(rawBaseUrl)
+    val normalizedBaseUrl = configuredListenTogetherInviteBaseUrlOrNull(rawBaseUrl)
     return ListenTogetherInvite(
         roomId = roomId,
         inviterNickname = inviterNickname,

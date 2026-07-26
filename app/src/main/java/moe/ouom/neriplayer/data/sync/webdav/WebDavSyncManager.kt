@@ -468,17 +468,22 @@ class WebDavSyncManager private constructor(context: Context) {
             remote = remote.recentPlays,
             deletions = mergedRecentPlayDeletions
         )
-        val mergedPlaybackStats = mergePlaybackStats(
-            local = local.playbackStats,
-            remote = remote.playbackStats,
-            playbackStatsClearedAt = maxOf(local.playbackStatsClearedAt, remote.playbackStatsClearedAt)
-        )
-        val mergedPlaybackStatBuckets = mergePlaybackStatBuckets(
-            local = local.playbackStatBuckets,
-            remote = remote.playbackStatBuckets,
-            playbackStatsClearedAt = maxOf(local.playbackStatsClearedAt, remote.playbackStatsClearedAt)
-        )
         val playbackStatsClearedAt = maxOf(local.playbackStatsClearedAt, remote.playbackStatsClearedAt)
+        // 收尾顺序与桌面 three_way_merge / GitHub 路径逐字一致：先用「未裁剪」的合并日桶抬升（消除「年 > 总」），再分别裁剪
+        val finalizedPlaybackStats = SyncPlaybackStatsMergePolicy.finalizeMergedStats(
+            mergedStats = mergePlaybackStats(
+                local = local.playbackStats,
+                remote = remote.playbackStats,
+                playbackStatsClearedAt = playbackStatsClearedAt
+            ),
+            mergedBuckets = mergePlaybackStatBuckets(
+                local = local.playbackStatBuckets,
+                remote = remote.playbackStatBuckets,
+                playbackStatsClearedAt = playbackStatsClearedAt
+            )
+        )
+        val mergedPlaybackStats = finalizedPlaybackStats.stats
+        val mergedPlaybackStatBuckets = finalizedPlaybackStats.buckets
 
         val mergedData = SyncData(
             deviceId = local.deviceId,
@@ -1082,8 +1087,17 @@ class WebDavSyncManager private constructor(context: Context) {
         val playlistsAdded = localData.playlists.count { !it.isDeleted }
         val playlistsDeleted = localData.playlists.count(SyncPlaylist::isDeleted)
         val songsAdded = localData.playlists.sumOf { playlist -> playlist.songs.size }
+        // 首次同步同样走收尾（与 GitHub / 桌面一致：先用「未裁剪」桶抬升，再裁剪），避免首个备份文件无界增长
+        val finalizedInitialStats = SyncPlaybackStatsMergePolicy.finalizeMergedStats(
+            mergedStats = localData.playbackStats,
+            mergedBuckets = localData.playbackStatBuckets
+        )
         return MergeResult(
-            mergedData = localData.copy(lastModified = System.currentTimeMillis()),
+            mergedData = localData.copy(
+                lastModified = System.currentTimeMillis(),
+                playbackStats = finalizedInitialStats.stats,
+                playbackStatBuckets = finalizedInitialStats.buckets
+            ),
             syncResult = SyncResult(
                 success = true,
                 message = localizedContext.getString(R.string.sync_initial_uploaded),

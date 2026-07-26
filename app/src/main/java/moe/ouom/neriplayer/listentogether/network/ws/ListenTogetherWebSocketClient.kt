@@ -21,6 +21,9 @@ class ListenTogetherWebSocketClient(
         explicitNulls = false
     }
 
+    // 回调运行在 OkHttp 分发线程，需保证对 webSocket 引用的可见性，
+    // 否则 onOpen/onMessage 里的身份校验可能读到过期引用而误丢消息
+    @Volatile
     private var webSocket: WebSocket? = null
 
     @Synchronized

@@ -16,6 +16,33 @@ internal fun shouldRunInitialDownloadScan(
     return hasRecoveredEntries || !catalogReady
 }
 
+/**
+ * 判定一次下载扫描的空结果是否"可疑"（疑似 SAF 列举瞬时失败），从而不应用空结果覆盖既有目录。
+ *
+ * 背景（#168 疑似根因）：SAF DocumentsProvider 可能瞬时返回空/失败游标，列举失败时兜底为空列表，
+ * 一次瞬时失败会被当成权威的"空目录"持久化，下次启动信任空目录不再重扫，导致已下载歌曲"看不见"
+ * （文件本身仍在磁盘）。
+ *
+ * 四条件同时成立才视为可疑，避免误伤正常清空：
+ * 1. 本次扫描结果为空；
+ * 2. 既有目录（内存/已持久化）非空，说明之前确实扫描/恢复到过下载；
+ * 3. 存储 root 仍可解析（SAF 树仍在或使用应用私有目录），排除"目录被移除→回退空目录"的可解释空；
+ * 4. 本次扫描的存储 root 与既有 catalog 所属 root 一致（scanMatchesCatalogRoot）。
+ *    切换/重置下载目录后，扫描的是新 root，而既有 catalog 属于旧 root，此时的空是"换目录后的真空"，
+ *    应放行以正确清空并让 app 内刷新可自愈，而不是把旧目录条目误判为瞬时失败保留。
+ */
+internal fun isSuspiciousEmptyDownloadScan(
+    scannedSongCount: Int,
+    existingSongCount: Int,
+    storageRootResolvable: Boolean,
+    scanMatchesCatalogRoot: Boolean
+): Boolean {
+    return scannedSongCount == 0 &&
+        existingSongCount > 0 &&
+        storageRootResolvable &&
+        scanMatchesCatalogRoot
+}
+
 internal fun shouldDeferStartupManagedCleanup(
     configuredDirectoryUri: String?,
     treeRootAvailable: Boolean

@@ -160,14 +160,22 @@ internal class ManagedDownloadMigrationFinalizer(
         return if (deleted) 0 else 1
     }
 
-    private fun shouldKeepSourceForSizeMismatch(sourceSize: Long, copiedSize: Long): Boolean {
-        if (sourceSize <= 0L || copiedSize <= 0L) {
-            return false
+    companion object {
+        // 返回 true = 保留源文件（跳过删除）；false = 确认拷贝可信、允许删源
+        internal fun shouldKeepSourceForSizeMismatch(sourceSize: Long, copiedSize: Long): Boolean {
+            // 目标尺寸不可知或为空(<=0)时无法确认拷贝完整，保守保留源文件，避免误删导致数据丢失
+            // 原实现在 copiedSize<=0 时返回 false（继续删源），方向恰好相反，是 #D3 数据丢失根因
+            if (copiedSize <= 0L) {
+                return true
+            }
+            // 目标已确认非空后，再按容差比对源/目标尺寸：不一致才保留源
+            // sourceSize<=0（源本就为空/未知）时，仅当目标同样落在容差内才会判为一致而删源，
+            // 与"源本就为空才可删"的语义一致
+            return !ManagedDownloadCommitVerifier.isSizeWithinTolerance(
+                actualSizeBytes = copiedSize,
+                expectedSizeBytes = sourceSize,
+                toleranceBytes = SAF_COMMITTED_SIZE_TOLERANCE_BYTES
+            )
         }
-        return !ManagedDownloadCommitVerifier.isSizeWithinTolerance(
-            actualSizeBytes = copiedSize,
-            expectedSizeBytes = sourceSize,
-            toleranceBytes = SAF_COMMITTED_SIZE_TOLERANCE_BYTES
-        )
     }
 }

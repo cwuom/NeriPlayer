@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.data.local.playlist.model.LEGACY_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.sync.model.CURRENT_SYNC_METADATA_VERSION
 import moe.ouom.neriplayer.data.sync.model.LEGACY_SYNC_METADATA_VERSION
+import moe.ouom.neriplayer.data.sync.model.SyncAction
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import moe.ouom.neriplayer.data.sync.model.SyncData
 import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
@@ -479,6 +480,148 @@ class SyncDataSerializerCompatTest {
         assertEquals(emptyList<SyncCausalToken>(), normalized.songs.single().syncMembershipTokens)
         assertTrue(normalized.songs.single().addedAt > 0L)
     }
+
+    @Test
+    fun `protobuf desktop sync log with omitted action decodes as create playlist`() {
+        // 桌面 proto3 省略 action(CREATE_PLAYLIST 序数 0) 与 deviceId/deviceName 默认值，
+        // 修复前会抛 MissingFieldException 导致整个快照判损坏
+        val desktopData = DesktopLogSyncData(
+            syncLog = listOf(
+                DesktopLogEntry(
+                    timestamp = 123L,
+                    deviceId = "desktop",
+                    playlistId = 5L
+                )
+            )
+        )
+
+        val decoded = ProtoBuf.decodeFromByteArray<SyncData>(
+            ProtoBuf.encodeToByteArray(desktopData)
+        )
+        val entry = decoded.syncLog.single()
+
+        assertEquals("", decoded.deviceId)
+        assertEquals("", decoded.deviceName)
+        assertEquals(123L, entry.timestamp)
+        assertEquals("desktop", entry.deviceId)
+        assertEquals(SyncAction.CREATE_PLAYLIST, entry.action)
+        assertEquals(5L, entry.playlistId)
+    }
+
+    @Test
+    fun `protobuf desktop sync data with omitted device fields decodes`() {
+        val bytes = ProtoBuf.encodeToByteArray(DeviceOmittingSyncData(lastModified = 42L))
+        val decoded = ProtoBuf.decodeFromByteArray<SyncData>(bytes)
+
+        assertEquals("", decoded.deviceId)
+        assertEquals("", decoded.deviceName)
+        assertEquals(42L, decoded.lastModified)
+    }
+
+    @Test
+    fun `protobuf desktop favorite and playlist with omitted id decode with zero`() {
+        val bytes = ProtoBuf.encodeToByteArray(
+            IdOmittingSyncData(
+                playlists = listOf(IdOmittingPlaylist(modifiedAt = 7L)),
+                favoritePlaylists = listOf(IdOmittingFavorite(name = "fav"))
+            )
+        )
+        val decoded = ProtoBuf.decodeFromByteArray<SyncData>(bytes)
+
+        assertEquals(0L, decoded.playlists.single().id)
+        assertEquals(7L, decoded.playlists.single().modifiedAt)
+        assertEquals(0L, decoded.favoritePlaylists.single().id)
+        assertEquals("fav", decoded.favoritePlaylists.single().name)
+    }
+
+    @Test
+    fun `protobuf sync data with omitted causal token counter decodes without throwing`() {
+        // 复现修复前的 restore 变砖：SyncSong 内嵌的 token 其 counter(tag 2) 在报文中完全缺省，
+        // 旧实现 SyncCausalToken 无默认值会抛 MissingFieldException，使整份快照解码失败
+        val payload = TokenProbeSyncData(
+            playlists = listOf(
+                TokenProbePlaylist(
+                    songs = listOf(
+                        TokenProbeSong(
+                            id = 7L,
+                            syncMembershipTokens = listOf(CounterOmittingToken(deviceId = "device-a"))
+                        )
+                    )
+                )
+            )
+        )
+
+        val decoded = ProtoBuf.decodeFromByteArray<SyncData>(
+            ProtoBuf.encodeToByteArray(payload)
+        )
+        val token = decoded.playlists.single().songs.single().syncMembershipTokens.single()
+
+        // 缺省 counter 解为默认值 0，解码不抛异常
+        assertEquals("device-a", token.deviceId)
+        assertEquals(0L, token.counter)
+        // 非法 token(counter<=0) 在归一化阶段被丢弃（对齐桌面 normalize_sync_causal_tokens）
+        assertTrue(
+            decoded.playlists.single().songs.single()
+                .syncMembershipTokens.normalizedSyncCausalTokens().isEmpty()
+        )
+    }
+
+    @Serializable
+    private data class TokenProbeSyncData(
+        @ProtoNumber(5) val playlists: List<TokenProbePlaylist> = emptyList()
+    )
+
+    @Serializable
+    private data class TokenProbePlaylist(
+        @ProtoNumber(1) val id: Long = 0L,
+        @ProtoNumber(3) val songs: List<TokenProbeSong> = emptyList()
+    )
+
+    @Serializable
+    private data class TokenProbeSong(
+        @ProtoNumber(1) val id: Long = 0L,
+        @ProtoNumber(27) val syncMembershipTokens: List<CounterOmittingToken> = emptyList()
+    )
+
+    @Serializable
+    private data class CounterOmittingToken(
+        // 仅声明 deviceId；counter(tag 2) 在报文中缺省，模拟损坏/第三方产出的非法 token
+        @ProtoNumber(1) val deviceId: String = ""
+    )
+
+    @Serializable
+    private data class DesktopLogSyncData(
+        @ProtoNumber(8) val syncLog: List<DesktopLogEntry>
+    )
+
+    @Serializable
+    private data class DesktopLogEntry(
+        @ProtoNumber(1) val timestamp: Long = 0L,
+        @ProtoNumber(2) val deviceId: String = "",
+        // tag 3 (action) 故意缺省，模拟桌面 proto3 省略 CREATE_PLAYLIST(序数 0)
+        @ProtoNumber(4) val playlistId: Long? = null
+    )
+
+    @Serializable
+    private data class DeviceOmittingSyncData(
+        @ProtoNumber(4) val lastModified: Long = 0L
+    )
+
+    @Serializable
+    private data class IdOmittingSyncData(
+        @ProtoNumber(5) val playlists: List<IdOmittingPlaylist> = emptyList(),
+        @ProtoNumber(6) val favoritePlaylists: List<IdOmittingFavorite> = emptyList()
+    )
+
+    @Serializable
+    private data class IdOmittingPlaylist(
+        @ProtoNumber(5) val modifiedAt: Long = 0L
+    )
+
+    @Serializable
+    private data class IdOmittingFavorite(
+        @ProtoNumber(2) val name: String = ""
+    )
 
     @Serializable
     private data class OldSyncData(
