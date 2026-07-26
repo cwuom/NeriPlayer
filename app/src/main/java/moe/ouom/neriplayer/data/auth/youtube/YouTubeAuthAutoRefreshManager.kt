@@ -202,6 +202,7 @@ class YouTubeAuthAutoRefreshManager(
 
     private val applicationContext = context.applicationContext
     private val accessMutex = Mutex()
+    private val cookieRotator = YouTubeCookieRotator()
 
     @Volatile
     private var webView: WebView? = null
@@ -251,6 +252,35 @@ class YouTubeAuthAutoRefreshManager(
             val currentAuth = authProvider().normalized()
             val currentHealth = authHealthProvider()
             val now = System.currentTimeMillis()
+
+            // *PSIDTS 十分钟就换一次, 先走一次轻量轮换, 成了就完全不必起 WebView
+            val rotatedCookies = cookieRotator.rotate(
+                cookies = currentAuth.cookies,
+                userAgent = currentAuth.userAgent.ifBlank { webViewUserAgent },
+                force = force
+            )
+            if (rotatedCookies.isNotEmpty()) {
+                authUpdater(
+                    mergeYouTubeAuthBundle(
+                        base = currentAuth,
+                        observedCookies = rotatedCookies
+                    )
+                )
+                syncRotatedCookiesToWebView(rotatedCookies)
+                consecutiveFailures = 0
+                circuitOpenUntilMs = 0L
+                NPLogger.i(
+                    TAG,
+                    "refresh rotated cookies reason=$reason keys=${rotatedCookies.keys.joinToString()} nextIntervalMs=${cookieRotator.nextRotationIntervalMs()}"
+                )
+                return@withLock YouTubeAuthAutoRefreshResult(
+                    attempted = true,
+                    refreshed = true,
+                    authChanged = true,
+                    reason = "rotated"
+                )
+            }
+
             val gateDecision = shouldAttemptRefresh(
                 auth = currentAuth,
                 health = currentHealth,
@@ -577,6 +607,23 @@ class YouTubeAuthAutoRefreshManager(
                 signInUrl = root.optString("signInUrl")
             )
         }.getOrNull()
+    }
+
+    /**
+     * 轮换出来的新值也要写回浏览器
+     *
+     * 存档和 WebView 各存一份, 只更新存档的话下次页面加载还是拿旧值去请求
+     */
+    private fun syncRotatedCookiesToWebView(rotatedCookies: Map<String, String>) {
+        runCatching {
+            applyYouTubeWebCookies(
+                cookieManager = CookieManager.getInstance(),
+                cookies = rotatedCookies,
+                skipExisting = false
+            )
+        }.onFailure { error ->
+            NPLogger.w(TAG, "sync rotated cookies to webview failed: ${error.message}")
+        }
     }
 
     private fun buildObservedAuthBundle(

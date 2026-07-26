@@ -36,6 +36,7 @@ import moe.ouom.neriplayer.core.startup.app.AppProcessClassifier
 import moe.ouom.neriplayer.core.startup.app.AppStartupPlanner
 import moe.ouom.neriplayer.core.startup.app.WebViewDataDirectorySuffix
 import moe.ouom.neriplayer.core.startup.app.YouTubeMusicUiGatewayInitializer
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRotationWorker
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.util.crash.AnrWatchdog
@@ -108,6 +109,9 @@ class NeriPlayerApplication : Application() {
             ManagedDownloadStorage.initialize(this)
 
             YouTubeMusicUiGatewayInitializer.initialize()
+
+            // 长期不开 App 时没有任何前台流程会去续期, 靠这个周期任务把会话保活
+            YouTubeAuthRotationWorker.schedulePeriodicRotation(this)
 
             // 初始化全局下载管理器
             GlobalDownloadManager.initialize(this)
