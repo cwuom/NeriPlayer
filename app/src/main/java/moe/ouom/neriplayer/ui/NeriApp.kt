@@ -1804,8 +1804,8 @@ private fun NeriAppContent(
                     coverArtRefreshToken += 1
                     if (!PlayerManager.isUsbExclusiveNativePlaybackStable()) {
                         updateStartupAudioFocus("lifecycle_resume")
-                        PlayerManager.recoverUsbExclusivePlaybackOnForeground("lifecycle_resume")
                     }
+                    PlayerManager.recoverUsbExclusivePlaybackOnForeground("lifecycle_resume")
                 }
                 Lifecycle.Event.ON_PAUSE,
                 Lifecycle.Event.ON_STOP -> {
