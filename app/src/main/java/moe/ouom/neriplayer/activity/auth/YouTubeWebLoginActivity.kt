@@ -153,6 +153,9 @@ class YouTubeWebLoginActivity : ComponentActivity() {
     @Volatile
     private var loginVerificationInFlight: Boolean = false
 
+    /** 校验期间的常驻提示，避免误判点完成无响应 */
+    private var verifyingSnack: Snackbar? = null
+
     @Volatile
     private var lastRejectedVerificationKey: String = ""
 
@@ -455,7 +458,14 @@ class YouTubeWebLoginActivity : ComponentActivity() {
         pageSessionState: ObservedPageSessionState,
         showFailureSnack: Boolean
     ) {
-        if (hasReturned || loginVerificationInFlight) {
+        if (hasReturned) {
+            return
+        }
+        if (loginVerificationInFlight) {
+            // 静默吞掉重复点击会表现为按钮无响应
+            if (showFailureSnack) {
+                showVerifyingSnack()
+            }
             return
         }
 
@@ -478,6 +488,9 @@ class YouTubeWebLoginActivity : ComponentActivity() {
         }
 
         loginVerificationInFlight = true
+        if (showFailureSnack) {
+            showVerifyingSnack()
+        }
         lifecycleScope.launch {
             val verification = runCatching {
                 withContext(Dispatchers.IO) {
@@ -485,6 +498,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
                 }
             }
             loginVerificationInFlight = false
+            dismissVerifyingSnack()
             if (hasReturned) {
                 return@launch
             }
@@ -546,11 +560,29 @@ class YouTubeWebLoginActivity : ComponentActivity() {
     }
 
     private fun showCookieMissingSnack() {
+        dismissVerifyingSnack()
         Snackbar.make(
             webView,
             getString(R.string.settings_youtube_auth_missing),
             Snackbar.LENGTH_LONG
         ).show()
+    }
+
+    /** 校验走网络可能耗时数秒，期间没有反馈用户会误判为无响应并中途退出 */
+    private fun showVerifyingSnack() {
+        if (verifyingSnack?.isShown == true) {
+            return
+        }
+        verifyingSnack = Snackbar.make(
+            webView,
+            getString(R.string.settings_youtube_auth_verifying),
+            Snackbar.LENGTH_INDEFINITE
+        ).also { it.show() }
+    }
+
+    private fun dismissVerifyingSnack() {
+        verifyingSnack?.dismiss()
+        verifyingSnack = null
     }
 
     private fun executeLoginVerificationRequest(request: Request): String {

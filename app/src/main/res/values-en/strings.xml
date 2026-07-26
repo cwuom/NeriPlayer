@@ -751,6 +751,7 @@
     <string name="settings_netease_status_missing">No usable Cookie detected. Tap to sign in again or import one</string>
     <string name="settings_youtube_login_methods">Browser/Cookie Import</string>
     <string name="settings_youtube_auth_missing">No usable YouTube / YouTube Music auth information was captured</string>
+    <string name="settings_youtube_auth_verifying">Verifying sign-in state, please wait…</string>
     <string name="settings_youtube_status_valid">Saved and last refreshed %1$s</string>
     <string name="settings_youtube_status_saved_invalid">Saved YouTube auth information was found, but it may be invalid. Tap to refresh it or sign out</string>
     <string name="settings_youtube_status_missing">No usable YouTube sign-in state detected. Tap to sign in again or import one</string>

@@ -751,6 +751,7 @@
     <string name="settings_netease_status_missing">未检测到可用 Cookie，点击重新登录或导入</string>
     <string name="settings_youtube_login_methods">浏览器/Cookie 导入</string>
     <string name="settings_youtube_auth_missing">未读取到可用的 YouTube / YouTube Music 鉴权信息</string>
+    <string name="settings_youtube_auth_verifying">正在校验登录状态，请稍候…</string>
     <string name="settings_youtube_status_valid">已保存，最近更新于 %1$s</string>
     <string name="settings_youtube_status_saved_invalid">检测到已保存的 YouTube 鉴权信息，但当前可能无效，点击可刷新或退出登录</string>
     <string name="settings_youtube_status_missing">未检测到可用 YouTube 登录态，点击重新登录或导入</string>
