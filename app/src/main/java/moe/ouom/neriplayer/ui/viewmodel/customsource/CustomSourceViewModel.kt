@@ -111,28 +111,12 @@ class CustomSourceViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    /** 用一段测试:对启用音源解析测试歌曲。 */
+    /** 端到端测试:对启用音源真实解析一首示例歌曲,显示详细结果。 */
     fun testActiveSource() {
         viewModelScope.launch {
-            val active = repo.activeSource
-            if (active == null) {
-                _uiState.value = _uiState.value.copy(message = "请先启用一个音源")
-                return@launch
-            }
             _uiState.value = _uiState.value.copy(busy = true, message = null)
-            val script = repo.readScript(active)
-            val msg = if (script.isNullOrBlank()) {
-                "脚本内容缺失"
-            } else {
-                val probe = runCatching { manager.probeScript(script) }.getOrNull()
-                when {
-                    probe == null -> "测试失败"
-                    !probe.ok -> "脚本自检未通过: ${probe.error ?: "未知"}"
-                    probe.sources.containsKey(CustomAudioSource.LX_SOURCE_NETEASE) ->
-                        "自检通过,支持网易云,音质: ${probe.sources[CustomAudioSource.LX_SOURCE_NETEASE]?.joinToString(", ")}"
-                    else -> "自检通过,但不支持网易云(wy)"
-                }
-            }
+            val msg = runCatching { manager.diagnoseActiveNetease() }
+                .getOrElse { "测试异常: ${it.message}" }
             _uiState.value = _uiState.value.copy(busy = false, message = msg)
         }
     }

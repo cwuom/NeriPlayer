@@ -83,6 +83,16 @@ class LxScriptEngine(
         val error: String? = null
     )
 
+    /** 解析结果:url 为 null 表示失败,detail 给出可读的诊断信息(供 UI/日志展示)。 */
+    data class ResolveResult(
+        val url: String?,
+        val detail: String
+    )
+
+    /** 最近一次脚本内部报告的错误(console.error / window.onerror / 未捕获 Promise)。 */
+    @Volatile var lastScriptError: String? = null
+        private set
+
     /** 在主线程创建 WebView 并注入脚本;挂起直到脚本触发 inited 或超时。 */
     @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
     suspend fun start(timeoutMs: Long = 15_000): InitResult {
@@ -130,9 +140,20 @@ class LxScriptEngine(
         quality: String,
         musicInfo: JSONObject,
         timeoutMs: Long = 20_000
-    ): String? {
+    ): String? = resolve(source, quality, musicInfo, timeoutMs).url
+
+    /** 与 getMusicUrl 相同,但返回带诊断信息的结果。 */
+    suspend fun resolve(
+        source: String,
+        quality: String,
+        musicInfo: JSONObject,
+        timeoutMs: Long = 20_000
+    ): ResolveResult {
         if (!initialized) start()
-        if (initResult?.ok == false) return null
+        initResult?.let {
+            if (!it.ok) return ResolveResult(null, "引擎未初始化: ${it.error ?: "未知"}")
+        }
+        lastScriptError = null
 
         val callId = "req_${requestSeq.incrementAndGet()}"
         val deferred = CompletableDeferred<String>()
@@ -154,19 +175,27 @@ class LxScriptEngine(
         pendingRequests.remove(callId)
         if (raw == null) {
             NPLogger.w(TAG, "musicUrl 超时: source=$source quality=$quality")
-            return null
+            val extra = lastScriptError?.let { " | 脚本错误: $it" } ?: ""
+            return ResolveResult(null, "解析超时(${timeoutMs}ms),脚本可能未返回或网络阻塞$extra")
         }
         return try {
             val obj = JSONObject(raw)
             if (obj.optBoolean("ok", false)) {
-                obj.optString("url").takeIf { it.isNotBlank() }
+                val url = obj.optString("url").takeIf { it.isNotBlank() }
+                if (url != null) {
+                    ResolveResult(url, "成功: ${url.take(80)}")
+                } else {
+                    ResolveResult(null, "脚本返回了空 URL(该音质/歌曲可能无资源)")
+                }
             } else {
-                NPLogger.w(TAG, "musicUrl 脚本返回失败: ${obj.optString("error")}")
-                null
+                val err = obj.optString("error")
+                NPLogger.w(TAG, "musicUrl 脚本返回失败: $err")
+                val extra = lastScriptError?.let { " | $it" } ?: ""
+                ResolveResult(null, "脚本返回失败: ${err.ifBlank { "未知" }}$extra")
             }
         } catch (e: Exception) {
             NPLogger.w(TAG, "musicUrl 结果解析失败: $raw", e)
-            null
+            ResolveResult(null, "结果解析异常: ${e.message}")
         }
     }
 
@@ -221,6 +250,12 @@ class LxScriptEngine(
         @JavascriptInterface
         fun log(message: String) {
             NPLogger.d(TAG, "[script] $message")
+        }
+
+        @JavascriptInterface
+        fun onScriptError(message: String) {
+            lastScriptError = message
+            NPLogger.w(TAG, "[script-error] $message")
         }
 
         /** 由脚本发起 HTTP 请求;完成后回调 JS __neri_httpCallback。 */
