@@ -407,6 +407,18 @@ private data class YouTubePlayerAudioCandidate(
 interface YouTubeStreamingCipherResolver {
     fun resolveSignature(encryptedSignature: String): String?
     fun resolveStreamingUrl(url: String): String
+
+    /**
+     * 把 sig 和 n 一次算完填进求解器缓存
+     *
+     * 分开求解要各建一次 isolate 再各传一遍 player.js, 固定成本付两遍;
+     * 合并算一次之后, 后面两步照原样跑但直接命中缓存
+     * 这一步失败什么都不做, 完整退回原来的两步路径
+     */
+    fun prewarmChallenges(
+        encryptedSignature: String?,
+        obfuscatedThrottlingParameter: String?
+    ) = Unit
 }
 
 private fun isPlayableM4aContainer(mimeType: String?): Boolean {
@@ -638,6 +650,11 @@ internal object YouTubeMusicPlaybackParser {
             if (!params.containsKey("s")) {
                 return resolveStreamingUrl(url, cipherResolver)
             }
+            // s 和 URL 里的 n 此刻都在手, 先合并求解一次省掉第二次的固定成本
+            cipherResolver?.prewarmChallenges(
+                encryptedSignature = params["s"],
+                obfuscatedThrottlingParameter = extractStreamQueryParameter(url, "n")
+            )
             val decryptedSignature = params["s"]
                 ?.takeIf { it.isNotBlank() }
                 ?.let { cipherResolver?.resolveSignature(it) }
@@ -2291,6 +2308,34 @@ class YouTubeMusicPlaybackRepository(
         }
 
         return object : YouTubeStreamingCipherResolver {
+            override fun prewarmChallenges(
+                encryptedSignature: String?,
+                obfuscatedThrottlingParameter: String?
+            ) {
+                val solver = ejsChallengeSolver ?: return
+                // 只有两个都在才值得合并, 单个的话走原路径一样是一次求解
+                val signature = encryptedSignature?.takeIf { it.isNotBlank() } ?: return
+                val throttling = obfuscatedThrottlingParameter?.takeIf { it.isNotBlank() } ?: return
+                val resolvedPlayerJsUrl = playerJsUrl.ifBlank { bootstrapCache?.playerJsUrl.orEmpty() }
+                if (resolvedPlayerJsUrl.isBlank()) {
+                    return
+                }
+                val startedAtMs = System.currentTimeMillis()
+                val prewarmed = runCatching {
+                    solver.solveDetailed(
+                        playerJsUrl = resolvedPlayerJsUrl,
+                        encryptedSignature = signature,
+                        throttlingParameter = throttling
+                    )
+                }.getOrNull()
+                if (prewarmed?.status == YouTubeJsChallengeSolveStatus.SUCCESS) {
+                    NPLogger.d(
+                        "YouTubeMusicPlayback",
+                        "prewarmed sig and n together for $videoId elapsedMs=${playbackElapsedMs(startedAtMs)}"
+                    )
+                }
+            }
+
             override fun resolveSignature(encryptedSignature: String): String? {
                 val resolvedPlayerJsUrl = playerJsUrl.ifBlank { bootstrapCache?.playerJsUrl.orEmpty() }
                 val skipSignatureNewPipe = NewPipeFallbackTracker.maybeSkipSignature(resolvedPlayerJsUrl)

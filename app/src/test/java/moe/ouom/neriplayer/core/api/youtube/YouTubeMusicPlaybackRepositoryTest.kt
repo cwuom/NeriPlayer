@@ -4247,4 +4247,60 @@ class YouTubeMusicPlaybackRepositoryTest {
         NewPipeFallbackTracker.recordThrottlingFailure(key)
         assertTrue(NewPipeFallbackTracker.maybeSkipThrottling(key))
     }
+
+    @Test
+    fun parsePlayableAudio_prewarmsSignatureAndThrottlingBeforeResolvingEitherOne() {
+        val root = JSONObject(
+            """
+            {
+              "streamingData": {
+                "adaptiveFormats": [
+                  {
+                    "mimeType": "audio/webm",
+                    "signatureCipher": "url=https%3A%2F%2Frr1---sn.googlevideo.com%2Fvideoplayback%3Fid%3Daudio-4%26n%3Dobfuscated-n&sp=signature&s=encrypted-signature",
+                    "bitrate": 160000,
+                    "audioSampleRate": "48000",
+                    "approxDurationMs": "70000"
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        val calls = mutableListOf<String>()
+        val cipherResolver = object : YouTubeStreamingCipherResolver {
+            override fun prewarmChallenges(
+                encryptedSignature: String?,
+                obfuscatedThrottlingParameter: String?
+            ) {
+                calls.add("prewarm:$encryptedSignature/$obfuscatedThrottlingParameter")
+            }
+
+            override fun resolveSignature(encryptedSignature: String): String? {
+                calls.add("signature")
+                return "decoded-signature"
+            }
+
+            override fun resolveStreamingUrl(url: String): String {
+                calls.add("throttling")
+                return url.replace("obfuscated-n", "deobfuscated-n")
+            }
+        }
+
+        val playableAudio = YouTubeMusicPlaybackParser.parsePlayableAudio(
+            root = root,
+            cipherResolver = cipherResolver
+        )
+
+        // 合并求解必须发生在两次单独求解之前, 否则缓存暖不上等于白发一次
+        assertEquals(
+            listOf("prewarm:encrypted-signature/obfuscated-n", "signature", "throttling"),
+            calls.toList()
+        )
+        assertEquals(
+            "https://rr1---sn.googlevideo.com/videoplayback?id=audio-4&n=deobfuscated-n&signature=decoded-signature",
+            playableAudio?.url
+        )
+    }
 }
