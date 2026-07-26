@@ -573,11 +573,19 @@ fun DetailScreen(
                                         )
                                         Spacer(Modifier.height(4.dp))
                                         Text(
-                                            text = stringResource(
-                                                R.string.playlist_play_count_format,
-                                                formatPlayCount(context, ui.header?.playCount ?: 0),
-                                                ui.header?.trackCount ?: 0
-                                            ),
+                                            // 专辑没有播放量概念(网易云专辑接口不返回 playCount), 只显示曲目数, 避免出现误导性的"播放量 0"
+                                            text = if (ui.header?.isAlbum == true) {
+                                                stringResource(
+                                                    R.string.collection_track_count_format,
+                                                    ui.header?.trackCount ?: 0
+                                                )
+                                            } else {
+                                                stringResource(
+                                                    R.string.playlist_play_count_format,
+                                                    formatPlayCount(context, ui.header?.playCount ?: 0),
+                                                    ui.header?.trackCount ?: 0
+                                                )
+                                            },
                                             style = MaterialTheme.typography.bodySmall.copy(
                                                 shadow = Shadow(
                                                     color = Color.Black.copy(alpha = 0.6f),
