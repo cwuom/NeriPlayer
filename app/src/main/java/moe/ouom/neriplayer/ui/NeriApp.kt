@@ -2118,6 +2118,7 @@ private fun NeriAppContent(
                 revealTopFraction: Float = 0f,
                 contentTranslationYFraction: Float = 0f,
                 contentScale: Float = 1f,
+                fixedBackground: Boolean = false,
                 content: @Composable () -> Unit
             ) {
                 AdvancedGlassSceneLayer(
@@ -2128,7 +2129,9 @@ private fun NeriAppContent(
                         contentScale = contentScale
                     ),
                     disableStretchOverscroll = backgroundImageUri != null,
+                    fixedBackground = fixedBackground,
                     background = {
+                        // 场景自绘壁纸背景, 玻璃模糊要采样它
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -2168,6 +2171,7 @@ private fun NeriAppContent(
                     revealTopFraction = motion.revealTopFraction,
                     contentTranslationYFraction = motion.contentTranslationYFraction,
                     contentScale = motion.contentScale,
+                    fixedBackground = false,
                     content = content
                 )
             }
@@ -2177,6 +2181,7 @@ private fun NeriAppContent(
                 revealTopFraction: Float,
                 contentTranslationYFraction: Float,
                 contentScale: Float,
+                sceneDepth: Int = 0,
                 content: @Composable () -> Unit
             ) {
                 val applyExternalDrawerMotion =
@@ -2194,6 +2199,9 @@ private fun NeriAppContent(
                     } else {
                         1f
                     },
+                    // 只有 tab 根列表 (sceneDepth 0) 走固定背景, 横滑切 tab 时壁纸不动
+                    // 嵌套详情必须保留不透明自背景, 靠揭示裁剪盖住退出列表, 否则两页内容互透叠印
+                    fixedBackground = backgroundImageUri != null && sceneDepth == 0,
                     content = content
                 )
             }
@@ -2209,11 +2217,12 @@ private fun NeriAppContent(
                         offlineMode = offlineMode,
                         onSongClick = ::playSongsAndOpenNowPlaying,
                         coherentFeedbackEnabled = coherentFeedbackEnabled,
-                        renderScene = { revealTop, translationY, scale, sceneContent ->
+                        renderScene = { revealTop, translationY, scale, sceneDepth, sceneContent ->
                             RenderMainTabNavigationScene(
                                 revealTop,
                                 translationY,
                                 scale,
+                                sceneDepth = sceneDepth,
                                 content = sceneContent
                             )
                         }
@@ -2228,11 +2237,12 @@ private fun NeriAppContent(
                         onSongAddToQueueEnd = ::addSongToQueueEndFromSearch,
                         onPlayParts = ::playBiliPartsAndOpenNowPlaying,
                         coherentFeedbackEnabled = coherentFeedbackEnabled,
-                        renderScene = { revealTop, translationY, scale, sceneContent ->
+                        renderScene = { revealTop, translationY, scale, sceneDepth, sceneContent ->
                             RenderMainTabNavigationScene(
                                 revealTop,
                                 translationY,
                                 scale,
+                                sceneDepth = sceneDepth,
                                 content = sceneContent
                             )
                         }
@@ -2249,11 +2259,12 @@ private fun NeriAppContent(
                         },
                         offlineMode = offlineMode,
                         coherentFeedbackEnabled = coherentFeedbackEnabled,
-                        renderScene = { revealTop, translationY, scale, sceneContent ->
+                        renderScene = { revealTop, translationY, scale, sceneDepth, sceneContent ->
                             RenderMainTabNavigationScene(
                                 revealTop,
                                 translationY,
                                 scale,
+                                sceneDepth = sceneDepth,
                                 content = sceneContent
                             )
                         }
@@ -2602,11 +2613,12 @@ private fun NeriAppContent(
                         },
                         onBeforeLanguageRestart = clearThemeRevealState,
                         coherentFeedbackEnabled = coherentFeedbackEnabled,
-                        renderScene = { revealTop, translationY, scale, sceneContent ->
+                        renderScene = { revealTop, translationY, scale, sceneDepth, sceneContent ->
                             RenderMainTabNavigationScene(
                                 revealTop,
                                 translationY,
                                 scale,
+                                sceneDepth = sceneDepth,
                                 content = sceneContent
                             )
                         }

@@ -22,12 +22,39 @@ internal fun AdvancedGlassSceneLayer(
     modifier: Modifier = Modifier,
     motion: AdvancedGlassSceneMotion = AdvancedGlassSceneMotion.None,
     disableStretchOverscroll: Boolean = false,
+    // 固定背景场景不画自己的壁纸, 玻璃面直接采样根层静止壁纸, 只用于 tab 根列表
+    fixedBackground: Boolean = false,
     background: @Composable BoxScope.() -> Unit,
     content: @Composable BoxScope.() -> Unit
 ) {
+    var sceneHeightPx by remember { mutableIntStateOf(0) }
+
+    if (fixedBackground) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .clipToBounds()
+                .clipSceneReveal(motion.revealTopFraction)
+                .onSizeChanged { size -> sceneHeightPx = size.height }
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        translationY = sceneHeightPx *
+                            motion.contentTranslationYFraction.coerceIn(0f, 1f)
+                        scaleX = motion.contentScale.coerceIn(0.8f, 1f)
+                        scaleY = motion.contentScale.coerceIn(0.8f, 1f)
+                        transformOrigin = TransformOrigin(0.5f, 0f)
+                    },
+                content = content
+            )
+        }
+        return
+    }
+
     val backgroundBackdrop = rememberAdvancedGlassBackdrop()
     val contentBackdrop = rememberAdvancedGlassBackdrop()
-    var sceneHeightPx by remember { mutableIntStateOf(0) }
 
     AdvancedGlassHost(
         controller = controller,

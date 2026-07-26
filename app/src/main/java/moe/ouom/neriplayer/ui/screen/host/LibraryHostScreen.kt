@@ -134,8 +134,9 @@ fun LibraryHostScreen(
         revealTopFraction: Float,
         contentTranslationYFraction: Float,
         contentScale: Float,
+        sceneDepth: Int,
         content: @Composable () -> Unit
-    ) -> Unit = { _, _, _, content ->
+    ) -> Unit = { _, _, _, _, content ->
         content()
     }
 ) {
@@ -297,7 +298,8 @@ fun LibraryHostScreen(
             renderScene(
                 sceneMotion.revealTopFraction,
                 sceneMotion.contentTranslationYFraction,
-                sceneMotion.contentScale
+                sceneMotion.contentScale,
+                current.navigationDepth
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     if (current == null) {

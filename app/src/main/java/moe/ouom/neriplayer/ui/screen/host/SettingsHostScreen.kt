@@ -220,8 +220,9 @@ fun SettingsHostScreen(
         revealTopFraction: Float,
         contentTranslationYFraction: Float,
         contentScale: Float,
+        sceneDepth: Int,
         content: @Composable () -> Unit
-    ) -> Unit = { _, _, _, content ->
+    ) -> Unit = { _, _, _, _, content ->
         content()
     },
 ) {
@@ -345,7 +346,8 @@ fun SettingsHostScreen(
             renderScene(
                 sceneMotion.revealTopFraction,
                 sceneMotion.contentTranslationYFraction,
-                sceneMotion.contentScale
+                sceneMotion.contentScale,
+                state.navigationDepth
             ) {
                     saveableStateHolder.SaveableStateProvider(state.saveableKey()) {
                         when (state) {
