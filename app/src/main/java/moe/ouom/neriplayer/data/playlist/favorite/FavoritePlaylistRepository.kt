@@ -87,7 +87,7 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
         } catch (_: Exception) {
             emptyList()
         }
-        publish(list, triggerSync = false)
+        publish(list, triggerSync = false, persist = false)
     }
 
     private fun saveToDisk(favorites: List<FavoritePlaylist>): Boolean {
@@ -98,7 +98,11 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
         }.isSuccess
     }
 
-    private fun publish(favorites: List<FavoritePlaylist>, triggerSync: Boolean = true) {
+    private fun publish(
+        favorites: List<FavoritePlaylist>,
+        triggerSync: Boolean = true,
+        persist: Boolean = true
+    ) {
         val normalized = favorites
             .groupBy { "${it.id}_${it.source}" }
             .map { (_, snapshots) ->
@@ -114,7 +118,8 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
             .sortedWith(compareByDescending<FavoritePlaylist> { it.sortOrder }.thenByDescending {
                 maxOf(it.modifiedAt, it.addedTime)
             })
-        val persisted = saveToDisk(normalized)
+        // 初次从盘加载时无需把刚读到的数据原样写回，避免每次冷启动无条件重写收藏文件
+        val persisted = if (persist) saveToDisk(normalized) else false
         if (triggerSync) {
             if (persisted) {
                 syncStorage.markSyncMutation()

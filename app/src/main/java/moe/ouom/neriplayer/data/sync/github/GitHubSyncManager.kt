@@ -1087,41 +1087,22 @@ class GitHubSyncManager private constructor(context: Context) {
             )
         }
 
-        var actualRemoteSha = remoteSha
         val remoteData = try {
             SyncDataSerializer.ensureRemoteContentSize(remoteContent)
             sanitizeSyncData(SyncDataSerializer.deserialize(remoteContent))
         } catch (e: Exception) {
-            val alternativeFileName = SyncDataSerializer.getFileName(!SyncDataSerializer.isBinaryFileName(actualFileName))
-            val fallbackResult = if (alternativeFileName != actualFileName) {
-                apiClient.getFileContentStrict(owner, repo, alternativeFileName).getOrNull()
-            } else null
-            val fallbackContent = fallbackResult?.first
-            val fallbackSha = fallbackResult?.second
-            val parsedFallback = if (fallbackContent != null && fallbackContent.isNotEmpty()) {
-                runCatching {
-                    SyncDataSerializer.ensureRemoteContentSize(fallbackContent)
-                    sanitizeSyncData(SyncDataSerializer.deserialize(fallbackContent))
-                }.getOrNull()
-            } else null
-
-            if (parsedFallback != null) {
-                actualFileName = alternativeFileName
-                if (!fallbackSha.isNullOrBlank()) {
-                    actualRemoteSha = fallbackSha
-                }
-                parsedFallback
-            } else {
-                NPLogger.e(TAG, "Failed to parse remote data", e)
-                return Result.failure(e)
-            }
+            // 解析失败即安全失败：不得回退到另一文件名的陈旧快照做合并上传，
+            // 否则早已删除的数据会经 union 合并复活并回流，且损坏文件永不自愈（P1-4）。
+            // 中止本次同步、保持不覆盖不上传，损坏文件留待人工或后续自愈路径处理
+            NPLogger.e(TAG, "Failed to parse remote data, aborting sync without stale fallback", e)
+            return Result.failure(e)
         }
 
         return Result.success(
             GitHubRemoteSnapshot(
                 data = remoteData,
                 version = GitHubRemoteVersion(
-                    sha = actualRemoteSha,
+                    sha = remoteSha,
                     fileName = actualFileName
                 )
             )

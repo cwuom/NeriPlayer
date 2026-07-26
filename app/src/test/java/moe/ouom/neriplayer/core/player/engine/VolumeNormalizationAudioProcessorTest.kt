@@ -7,6 +7,7 @@ import java.nio.ByteOrder
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -176,6 +177,99 @@ class VolumeNormalizationAudioProcessorTest {
         assertTrue(averageAbsoluteSample(output) < 400f)
     }
 
+    @Test
+    fun `configure accepts pcm16 and pcm float but rejects other encodings`() {
+        val processor = VolumeNormalizationAudioProcessor {
+            PlaybackVolumeNormalizationSnapshot(enabled = true, generation = 1L)
+        }
+
+        processor.configure(AudioFormat(48_000, 2, C.ENCODING_PCM_16BIT))
+        assertTrue(processor.isActive)
+
+        processor.configure(AudioFormat(48_000, 2, C.ENCODING_PCM_FLOAT))
+        assertTrue(processor.isActive)
+
+        processor.configure(AudioFormat(48_000, 2, C.ENCODING_PCM_24BIT))
+        assertFalse(processor.isActive)
+
+        processor.configure(AudioFormat(48_000, 0, C.ENCODING_PCM_FLOAT))
+        assertFalse(processor.isActive)
+    }
+
+    @Test
+    fun `float analysis returns rms peak and sample count`() {
+        val buffer = floatBuffer(0.5f, -0.5f, 0f, 0.25f)
+
+        val stats = analyzePcmFloat(buffer)
+
+        assertEquals(4, stats.sampleCount)
+        assertEquals(0.5f, stats.peak, 0.0001f)
+        assertEquals(0.375f, stats.rms, 0.0001f)
+    }
+
+    @Test
+    fun `float quiet input is amplified`() {
+        val normalizer = FloatVolumeNormalizer()
+        val warmup = repeatedFloatBuffer(sample = 0.01f, count = 2_000)
+        normalizer.process(
+            inputBuffer = warmup,
+            outputBuffer = ByteBuffer.allocate(warmup.capacity()).order(ByteOrder.LITTLE_ENDIAN),
+            sampleRate = 100,
+            channelCount = 1
+        )
+        val input = repeatedFloatBuffer(sample = 0.01f, count = 100)
+        val output = ByteBuffer.allocate(input.capacity()).order(ByteOrder.LITTLE_ENDIAN)
+
+        normalizer.process(
+            inputBuffer = input,
+            outputBuffer = output,
+            sampleRate = 100,
+            channelCount = 1
+        )
+        output.flip()
+
+        assertTrue(maxAbsoluteFloatSample(output) > 0.015f)
+    }
+
+    @Test
+    fun `float output respects peak ceiling after quiet boost`() {
+        val normalizer = FloatVolumeNormalizer()
+        val quietInput = repeatedFloatBuffer(sample = 0.01f, count = 2_000)
+        normalizer.process(
+            inputBuffer = quietInput,
+            outputBuffer = ByteBuffer.allocate(quietInput.capacity()).order(ByteOrder.LITTLE_ENDIAN),
+            sampleRate = 100,
+            channelCount = 1
+        )
+        val loudInput = repeatedFloatBuffer(sample = 1.0f, count = 100)
+        val loudOutput = ByteBuffer.allocate(loudInput.capacity()).order(ByteOrder.LITTLE_ENDIAN)
+
+        normalizer.process(
+            inputBuffer = loudInput,
+            outputBuffer = loudOutput,
+            sampleRate = 100,
+            channelCount = 1
+        )
+        loudOutput.flip()
+
+        assertTrue(maxAbsoluteFloatSample(loudOutput) <= 0.7943282f + 0.0001f)
+    }
+
+    @Test
+    fun `disabled processor keeps float bit exact`() {
+        val processor = configuredFloatProcessor(enabled = false)
+        val input = directFloatBuffer(0.5f, -0.25f, 1.0f, -1.0f, 0f)
+        val expected = input.duplicate().order(ByteOrder.nativeOrder())
+
+        processor.queueInput(input)
+        val output = processor.getOutput()
+
+        assertEquals(expected.remaining(), output.remaining())
+        while (expected.hasRemaining()) {
+            assertEquals(expected.get(), output.get())
+        }
+    }
+
     private fun pcm16Buffer(vararg samples: Int): ByteBuffer {
         return ByteBuffer.allocate(samples.size * 2)
             .order(ByteOrder.LITTLE_ENDIAN)
@@ -219,6 +313,51 @@ class VolumeNormalizationAudioProcessorTest {
         processor.configure(AudioFormat(100, 1, C.ENCODING_PCM_16BIT))
         processor.flush()
         return processor
+    }
+
+    private fun configuredFloatProcessor(enabled: Boolean): VolumeNormalizationAudioProcessor {
+        val processor = VolumeNormalizationAudioProcessor {
+            PlaybackVolumeNormalizationSnapshot(enabled = enabled, generation = 1L)
+        }
+        processor.configure(AudioFormat(100, 1, C.ENCODING_PCM_FLOAT))
+        processor.flush()
+        return processor
+    }
+
+    private fun floatBuffer(vararg samples: Float): ByteBuffer {
+        return ByteBuffer.allocate(samples.size * 4)
+            .order(ByteOrder.LITTLE_ENDIAN)
+            .apply {
+                samples.forEach { putFloat(it) }
+                flip()
+            }
+    }
+
+    private fun repeatedFloatBuffer(sample: Float, count: Int): ByteBuffer {
+        return ByteBuffer.allocate(count * 4)
+            .order(ByteOrder.LITTLE_ENDIAN)
+            .apply {
+                repeat(count) { putFloat(sample) }
+                flip()
+            }
+    }
+
+    private fun directFloatBuffer(vararg samples: Float): ByteBuffer {
+        return ByteBuffer.allocateDirect(samples.size * 4)
+            .order(ByteOrder.nativeOrder())
+            .apply {
+                samples.forEach { putFloat(it) }
+                flip()
+            }
+    }
+
+    private fun maxAbsoluteFloatSample(buffer: ByteBuffer): Float {
+        val samples = buffer.duplicate().order(buffer.order())
+        var peak = 0f
+        while (samples.remaining() >= 4) {
+            peak = maxOf(peak, abs(samples.float))
+        }
+        return peak
     }
 
     private fun maxAbsoluteSample(buffer: ByteBuffer): Int {

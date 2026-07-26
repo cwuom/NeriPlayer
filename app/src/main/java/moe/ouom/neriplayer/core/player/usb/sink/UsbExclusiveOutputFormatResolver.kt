@@ -7,6 +7,8 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import androidx.media3.common.C
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.usb.device.UsbExclusiveDeviceSelectionOutcome
+import moe.ouom.neriplayer.core.player.usb.device.selectUsbExclusiveDevice
 import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.settings.UsbExclusiveSampleRateMode
 import moe.ouom.neriplayer.data.settings.UsbExclusiveUnsupportedFormatPolicy
@@ -61,9 +63,9 @@ internal object UsbExclusiveOutputFormatResolver {
     private fun AudioDeviceInfo.matchesUsbExclusiveDeviceKey(deviceKey: String): Boolean {
         if (deviceKey == DEFAULT_USB_EXCLUSIVE_DEVICE_KEY) return true
         val selection = parseUsbExclusiveDeviceKey(deviceKey) ?: return false
+        // 精确相等,避免子串误命中(如键 "dac" 命中 "dac_pro"),与 host 侧精确匹配对齐
         val normalizedProduct = normalizedDeviceLabel(productName?.toString().orEmpty())
-        return normalizedProduct.isNotBlank() &&
-            (normalizedProduct == selection.label || normalizedProduct.contains(selection.label))
+        return normalizedProduct.isNotBlank() && normalizedProduct == selection.label
     }
 
     private fun parseUsbExclusiveDeviceKey(deviceKey: String): ParsedUsbExclusiveDeviceKey? {
@@ -84,7 +86,8 @@ internal object UsbExclusiveOutputFormatResolver {
         context: Context,
         inputSampleRate: Int,
         inputChannelCount: Int,
-        inputEncoding: Int
+        inputEncoding: Int,
+        resolvedDeviceKey: String? = null
     ): UsbOutputFormatResolution {
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
             ?: return failure("audio_manager_unavailable")
@@ -96,12 +99,29 @@ internal object UsbExclusiveOutputFormatResolver {
         val usbOutputs = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
             .filter { device -> device.isSink && isUsbOutputType(device.type) }
             .sortedBy(AudioDeviceInfo::getId)
-        val output = usbOutputs
-            .firstOrNull { device ->
-                device.matchesUsbExclusiveDeviceKey(preferences.selectedDeviceKey)
-            }
-            ?: usbOutputs.singleOrNull()
-            ?: return failure("no_selected_system_usb_audio_output")
+        // 优先使用 host 侧已选中设备的具体 key,使能力查询与音频输出指向同一设备;
+        // 缺省再回退设置项。auto 且在场多个不同物理设备时拒绝而非静默取首个。
+        val effectiveDeviceKey = resolvedDeviceKey?.takeIf { it.isNotBlank() }
+            ?: preferences.selectedDeviceKey
+        // 同一物理 DAC 可能暴露多个 AudioDeviceInfo(不同 type),按 label 归组取代表,
+        // 避免把单设备误判为多设备
+        val representativeOutputs = usbOutputs
+            .groupBy { normalizedDeviceLabel(it.productName?.toString().orEmpty()) }
+            .values
+            .map { it.first() }
+        val selection = selectUsbExclusiveDevice(
+            candidates = representativeOutputs,
+            selectedDeviceKey = effectiveDeviceKey,
+            allowSingleFallback = true
+        ) { device -> device.matchesUsbExclusiveDeviceKey(effectiveDeviceKey) }
+        val output = when (selection.outcome) {
+            UsbExclusiveDeviceSelectionOutcome.SELECTED ->
+                selection.device ?: return failure("no_selected_system_usb_audio_output")
+            UsbExclusiveDeviceSelectionOutcome.AMBIGUOUS ->
+                return failure("ambiguous_multiple_system_usb_audio_outputs")
+            UsbExclusiveDeviceSelectionOutcome.NONE ->
+                return failure("no_selected_system_usb_audio_output")
+        }
 
         val reportedRates = output.sampleRates.filter { it > 0 }
         val sampleRateCandidates = nativeSampleRateCandidates(

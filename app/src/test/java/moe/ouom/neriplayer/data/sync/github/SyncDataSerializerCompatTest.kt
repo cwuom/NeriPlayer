@@ -236,7 +236,7 @@ class SyncDataSerializerCompatTest {
         )
 
         val decoded = ProtoBuf.decodeFromByteArray<SyncData>(ProtoBuf.encodeToByteArray(oldData))
-        val normalized = decoded.playlists.single().normalizedForDisplayOrder(now = 2_000L)
+        val normalized = decoded.playlists.single().normalizedForDisplayOrder()
 
         assertEquals(listOf("newer-song", "missing-added-at"), normalized.songs.map { it.name })
         assertEquals(0L, normalized.songs.last().addedAt)
@@ -474,7 +474,7 @@ class SyncDataSerializerCompatTest {
             SyncPlaylist::class.java
         )
 
-        val normalized = legacyPlaylist.normalizedForDisplayOrder(now = 30L)
+        val normalized = legacyPlaylist.normalizedForDisplayOrder()
 
         assertEquals(emptyList<SyncCausalToken>(), normalized.songs.single().syncMembershipTokens)
         assertTrue(normalized.songs.single().addedAt > 0L)

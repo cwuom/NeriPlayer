@@ -36,6 +36,7 @@ import moe.ouom.neriplayer.core.startup.app.AppProcessClassifier
 import moe.ouom.neriplayer.core.startup.app.AppStartupPlanner
 import moe.ouom.neriplayer.core.startup.app.WebViewDataDirectorySuffix
 import moe.ouom.neriplayer.core.startup.app.YouTubeMusicUiGatewayInitializer
+import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.util.crash.AnrWatchdog
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
@@ -96,6 +97,11 @@ class NeriPlayerApplication : Application() {
 
             NativeCrashHandler.init(this)
             AppContainer.initialize(this)
+
+            // 后台预热收藏仓库：首次构造会同步 loadFromDisk，放到 IO 线程避免首个 UI 触达在主线程读盘
+            AppContainer.launchBackgroundIo {
+                FavoritePlaylistRepository.getInstance(this@NeriPlayerApplication)
+            }
 
             // 提前注册前后台回调，避免等播放器初始化后才开始统计 Activity 状态
             FloatingLyricsOverlayManager.initialize(this)

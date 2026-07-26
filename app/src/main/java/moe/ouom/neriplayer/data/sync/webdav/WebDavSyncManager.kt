@@ -1117,9 +1117,9 @@ class WebDavSyncManager private constructor(context: Context) {
         val localizedContext = LanguageManager.applyLanguage(appContext)
         val useDataSaver = storage.isDataSaverMode()
         val content = SyncDataSerializer.serialize(data, useDataSaver)
-        // 省流模式直传原始 GZIP(ProtoBuf) 字节；非省流传 UTF-8 JSON 字节
+        // 省流传 Base64(GZIP(ProtoBuf)) 文本字节（老端可读）；非省流传 UTF-8 JSON 字节
         val mediaType = if (useDataSaver) {
-            "application/octet-stream"
+            "text/plain; charset=utf-8"
         } else {
             "application/json; charset=utf-8"
         }

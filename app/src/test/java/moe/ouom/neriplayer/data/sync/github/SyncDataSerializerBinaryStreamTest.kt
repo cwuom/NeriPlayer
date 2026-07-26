@@ -11,28 +11,57 @@ import org.junit.Test
 import java.util.Base64
 
 /**
- * 二进制流传输改造的往返与迁移测试
- * 覆盖：raw 写-读往返、旧 base64 文本 read-both、GZIP 魔数识别边界、
- * GitHub base64-once 编码正确性、WebDAV octet-stream 读写、损坏远端安全失败
+ * 省流写路径回退到 Base64 文本 + read-both 的兼容测试
+ *
+ * 覆盖：省流写出=老端可读的 base64 文本（非 raw GZIP）、read-both 仍读 raw GZIP
+ * （为将来 write-raw 预留）、base64/JSON 往返、GitHub base64-once、WebDAV 文本读写、
+ * 损坏远端安全失败
  */
 class SyncDataSerializerBinaryStreamTest {
 
-    private val GZIP_MAGIC_0 = 0x1F.toByte()
-    private val GZIP_MAGIC_1 = 0x8B.toByte()
+    private val gzipMagic0 = 0x1F.toByte()
+    private val gzipMagic1 = 0x8B.toByte()
 
-    // 省流模式写出的即为原始 GZIP(ProtoBuf) 字节，往返可读回
+    // 核心：省流写路径必须回退为 Base64(GZIP) 文本，老端才能读；不得是原始 GZIP 字节
     @Test
-    fun `raw compressed bytes round trip`() {
+    fun `data saver upload is legacy readable base64 text`() {
         val data = sampleData()
-        val raw = SyncDataSerializer.serialize(data, useDataSaver = true)
+        val body = SyncDataSerializer.serialize(data, useDataSaver = true)
 
-        assertTrue("省流产物应为原始 GZIP 字节", isGzip(raw))
+        assertFalse("省流产物不应是原始 GZIP 字节（老端会解码失败）", isGzip(body))
 
-        val decoded = SyncDataSerializer.deserialize(raw)
+        // 模拟老端读取：把字节当 UTF-8 文本 -> 标准 base64 解码一次 -> 得到 GZIP 字节
+        val legacyText = body.toString(Charsets.UTF_8)
+        val legacyDecoded = Base64.getDecoder().decode(legacyText)
+        assertTrue("老端 base64 解码后应为 GZIP 原始字节", isGzip(legacyDecoded))
+
+        // 新端 read-both 能读回自己写的 base64 文本
+        assertMatchesSample(SyncDataSerializer.deserialize(body))
+    }
+
+    // read-both：为将来 write-raw 预留，原始 GZIP(ProtoBuf) 字节仍必须可读
+    @Test
+    fun `read both still reads raw gzip for future write raw`() {
+        val data = sampleData()
+        val body = SyncDataSerializer.serialize(data, useDataSaver = true)
+
+        // 从 base64 文本解出 raw GZIP 字节（即将来 write-raw 切换后的产物形态）
+        val rawGzip = Base64.getDecoder().decode(body.toString(Charsets.UTF_8))
+        assertTrue("解出的字节应命中 GZIP 魔数", isGzip(rawGzip))
+
+        // read-both 的 GZIP 魔数分支必须能直接读原始 GZIP 字节
+        assertMatchesSample(SyncDataSerializer.deserialize(rawGzip))
+    }
+
+    // 省流 base64 文本往返；再次序列化字节一致，证明序列化层无额外归一化/丢字段
+    @Test
+    fun `base64 text round trip is stable`() {
+        val data = sampleData()
+        val body = SyncDataSerializer.serialize(data, useDataSaver = true)
+
+        val decoded = SyncDataSerializer.deserialize(body)
         assertMatchesSample(decoded)
-
-        // 解码后再次编码应字节一致，证明序列化层无额外归一化/丢字段
-        assertArrayEquals(raw, SyncDataSerializer.serialize(decoded, useDataSaver = true))
+        assertArrayEquals(body, SyncDataSerializer.serialize(decoded, useDataSaver = true))
     }
 
     // 非省流写出 UTF-8 JSON 字节，往返可读回（含 WebDAV 旧 JSON 文件场景）
@@ -47,58 +76,28 @@ class SyncDataSerializerBinaryStreamTest {
         assertMatchesSample(SyncDataSerializer.deserialize(jsonBytes))
     }
 
-    // read-both：旧 backup.bin 是 Base64(GZIP(ProtoBuf)) 文本，必须仍可读
-    @Test
-    fun `legacy base64 backup is still readable`() {
-        val data = sampleData()
-        val raw = SyncDataSerializer.serialize(data, useDataSaver = true)
-        // 旧格式：对原始 GZIP 字节再做一层 Base64 得到文本，落盘为其 UTF-8 字节
-        val legacyBytes = Base64.getEncoder().encodeToString(raw).toByteArray(Charsets.UTF_8)
-
-        assertFalse("旧 base64 文本首字节不应命中 GZIP 魔数", isGzip(legacyBytes))
-        assertMatchesSample(SyncDataSerializer.deserialize(legacyBytes))
-    }
-
-    // GZIP 魔数识别边界：raw 命中魔数走解压，JSON/base64 文本不命中
-    @Test
-    fun `gzip magic detection boundary`() {
-        val data = sampleData()
-
-        val raw = SyncDataSerializer.serialize(data, useDataSaver = true)
-        assertTrue(isGzip(raw))
-
-        val jsonBytes = SyncDataSerializer.serialize(data, useDataSaver = false)
-        assertFalse(isGzip(jsonBytes))
-
-        // 仅有单个 0x1F、不足两字节魔数，不应被当作 GZIP（会落入文本分支并最终失败）
-        assertThrowsAny { SyncDataSerializer.deserialize(byteArrayOf(GZIP_MAGIC_0)) }
-    }
-
-    // GitHub 上传对原始字节做「一次」Base64；下载解码一次即得回原始 GZIP 字节
+    // GitHub contents API 对上传字节做「一次」base64；下载解码一次即得回上传字节
     @Test
     fun `github contents api base64 once round trip`() {
         val data = sampleData()
-        val raw = SyncDataSerializer.serialize(data, useDataSaver = true)
+        val body = SyncDataSerializer.serialize(data, useDataSaver = true)
 
-        // 模拟 GitHubApiClient.updateFileContent：对原始字节 base64 一次
-        val uploaded = Base64.getEncoder().encodeToString(raw)
+        // 模拟 GitHubApiClient.updateFileContent：对上传字节 base64 一次
+        val uploaded = Base64.getEncoder().encodeToString(body)
         // 模拟 GitHubApiClient.getFileContent：content 字段 base64 解码一次
         val downloaded = Base64.getMimeDecoder().decode(uploaded)
 
-        // 解码一次即得回原始 GZIP 字节，证明未叠加第二层 base64
-        assertArrayEquals(raw, downloaded)
-        assertTrue("单次 base64 解码后应直接是 GZIP 原始字节", isGzip(downloaded))
-
+        assertArrayEquals(body, downloaded)
         assertMatchesSample(SyncDataSerializer.deserialize(downloaded))
     }
 
-    // WebDAV octet-stream：省流传原始 GZIP 字节，非省流传 JSON 字节，两者均可读回
+    // WebDAV 文本通道：省流传 base64 文本，非省流传 JSON，两者均可读回
     @Test
-    fun `webdav octet stream read write`() {
+    fun `webdav text channel read write`() {
         val data = sampleData()
 
         val binaryBody = SyncDataSerializer.serialize(data, useDataSaver = true)
-        assertTrue(isGzip(binaryBody))
+        assertFalse(isGzip(binaryBody))
         assertMatchesSample(SyncDataSerializer.deserialize(binaryBody))
 
         val jsonBody = SyncDataSerializer.serialize(data, useDataSaver = false)
@@ -111,12 +110,12 @@ class SyncDataSerializerBinaryStreamTest {
         assertThrowsAny { SyncDataSerializer.deserialize(ByteArray(0)) }
         // 命中 GZIP 魔数但内容截断/非法，解压必然失败
         assertThrowsAny {
-            SyncDataSerializer.deserialize(byteArrayOf(GZIP_MAGIC_0, GZIP_MAGIC_1, 0x08, 0x00, 0x01))
+            SyncDataSerializer.deserialize(byteArrayOf(gzipMagic0, gzipMagic1, 0x08, 0x00, 0x01))
         }
     }
 
     private fun isGzip(bytes: ByteArray): Boolean =
-        bytes.size >= 2 && bytes[0] == GZIP_MAGIC_0 && bytes[1] == GZIP_MAGIC_1
+        bytes.size >= 2 && bytes[0] == gzipMagic0 && bytes[1] == gzipMagic1
 
     private fun assertThrowsAny(block: () -> Unit) {
         var threw = false

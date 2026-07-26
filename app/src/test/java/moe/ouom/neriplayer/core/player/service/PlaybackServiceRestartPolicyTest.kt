@@ -28,6 +28,36 @@ class PlaybackServiceRestartPolicyTest {
     }
 
     @Test
+    fun `foreground promotion failure preserves runtime while engine is playing`() {
+        assertTrue(
+            shouldPreservePlayerRuntimeOnForegroundPromotionFailure(
+                enginePlaying = true,
+                playbackControlPlaying = false,
+            )
+        )
+    }
+
+    @Test
+    fun `foreground promotion failure preserves runtime when playback is intended`() {
+        assertTrue(
+            shouldPreservePlayerRuntimeOnForegroundPromotionFailure(
+                enginePlaying = false,
+                playbackControlPlaying = true,
+            )
+        )
+    }
+
+    @Test
+    fun `foreground promotion failure releases runtime only when idle`() {
+        assertFalse(
+            shouldPreservePlayerRuntimeOnForegroundPromotionFailure(
+                enginePlaying = false,
+                playbackControlPlaying = false,
+            )
+        )
+    }
+
+    @Test
     fun `system restart stays sticky while runtime initializes`() {
         assertTrue(
             shouldUseStickyStartModeWhilePlayerRuntimeInitializes(

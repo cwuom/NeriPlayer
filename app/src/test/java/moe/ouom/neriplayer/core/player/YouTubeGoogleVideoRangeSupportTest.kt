@@ -62,6 +62,43 @@ class YouTubeGoogleVideoRangeSupportTest {
     }
 
     @Test
+    fun shouldUseChunkedRangeForDownload_forcesChunkOnSeekableDirectUrlUnlikePlayback() {
+        // 已解析(n+sig+clen)的 WEB_REMIX 直链：播放侧可整段 seek 故不分块，
+        // 但下载侧必须分块，否则整档 GET 会被 googlevideo 403
+        val url =
+            "https://rr1---sn-aigl6ney.googlevideo.com/videoplayback" +
+                "?source=youtube&id=audio-demo&n=resolved-n&sig=resolved-signature&mime=audio%2Fwebm&clen=3965665"
+
+        assertFalse(YouTubeGoogleVideoRangeSupport.shouldUseChunkedRange(url))
+        assertTrue(YouTubeGoogleVideoRangeSupport.shouldUseChunkedRangeForDownload(url))
+    }
+
+    @Test
+    fun shouldUseChunkedRangeForDownload_matchesPlainPlaybackUrl() {
+        val url =
+            "https://rr2---sn-aigzrn7k.googlevideo.com/videoplayback" +
+                "?source=youtube&mime=audio%2Fwebm&clen=3965665"
+
+        assertTrue(YouTubeGoogleVideoRangeSupport.shouldUseChunkedRangeForDownload(url))
+    }
+
+    @Test
+    fun shouldUseChunkedRangeForDownload_rejectsHlsAndNonGoogleVideo() {
+        val manifestUrl =
+            "https://manifest.googlevideo.com/api/manifest/hls_playlist/expire/1773862162/id/demo/itag/234/source/youtube/playlist/index.m3u8"
+        val segmentUrl =
+            "https://rr1---sn-aigzrnze.googlevideo.com/videoplayback/id/demo/itag/234/source/youtube/playlist/index.m3u8/begin/0/len/3750/file/seg.ts"
+        val lookalikeUrl =
+            "https://rr2---sn.fakegooglevideo.com/videoplayback?source=youtube&clen=3965665"
+        val nonYouTubeUrl = "https://example.com/audio.m4a"
+
+        assertFalse(YouTubeGoogleVideoRangeSupport.shouldUseChunkedRangeForDownload(manifestUrl))
+        assertFalse(YouTubeGoogleVideoRangeSupport.shouldUseChunkedRangeForDownload(segmentUrl))
+        assertFalse(YouTubeGoogleVideoRangeSupport.shouldUseChunkedRangeForDownload(lookalikeUrl))
+        assertFalse(YouTubeGoogleVideoRangeSupport.shouldUseChunkedRangeForDownload(nonYouTubeUrl))
+    }
+
+    @Test
     fun shouldForceExplicitFullRange_matchesResolvedWebRemixDirectUrlWithContentLength() {
         val url =
             "https://rr1---sn-aigl6ney.googlevideo.com/videoplayback" +

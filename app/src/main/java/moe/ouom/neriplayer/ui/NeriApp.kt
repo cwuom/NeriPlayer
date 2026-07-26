@@ -36,6 +36,7 @@ import android.os.Looper
 import android.view.PixelCopy
 import android.view.View
 import android.view.ViewTreeObserver
+import android.widget.Toast
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContentTransitionScope
@@ -2519,6 +2520,13 @@ private fun NeriAppContent(
                             playbackHighResolutionOutputEnabled,
                         onPlaybackHighResolutionOutputEnabledChange = { enabled ->
                             PlayerManager.setPlaybackHighResolutionOutputEnabled(enabled)
+                            // 32-bit 输出在播放器初始化时绑定到 AudioSink，运行时无法在不重建
+                            // player(会断播)的前提下切换，因此明确提示用户重启后生效
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.settings_restart_hint),
+                                Toast.LENGTH_SHORT
+                            ).show()
                         },
                         playbackVolumeBalance = playbackVolumeBalance,
                         onPlaybackVolumeBalanceChange = { balance ->

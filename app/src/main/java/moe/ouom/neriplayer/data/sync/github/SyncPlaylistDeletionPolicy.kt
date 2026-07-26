@@ -91,8 +91,13 @@ internal object SyncPlaylistDeletionPolicy {
         return normalizedDeletions
             .filterNot { deletion ->
                 deletion.removedMembershipTokens.orEmpty().isEmpty() &&
-                    activeSongsByKey[deletion.stableKey()]?.let(::effectiveAddedAt)
-                        ?.let { addedAt -> addedAt > deletion.deletedAt } == true
+                    activeSongsByKey[deletion.stableKey()]?.let { activeSong ->
+                        // 仅当活跃歌曲带 membership token（在新版本被真正重新添加、该 identity
+                        // 已由 causal token 接管）时才裁 legacy 墓碑；无 token 歌曲的 addedAt
+                        // 可能来自 legacy 迁移合成，不可据此判定重新添加，否则误裁墓碑使已删歌复活（P1-1）
+                        activeSong.syncMembershipTokens.orEmpty().isNotEmpty() &&
+                            effectiveAddedAt(activeSong) > deletion.deletedAt
+                    } == true
             }
             .sortedWith(deletionOrderComparator)
     }

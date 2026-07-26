@@ -53,6 +53,15 @@ object ThemeDefaults {
     )
     val PRESET_SET = PRESET_COLORS.map { it.uppercase(Locale.ROOT) }.toSet()
 
+    private val SEED_COLOR_HEX_REGEX = Regex("^[0-9A-F]{6}$")
+
+    // 归一种子色 hex：去 # 前缀、转大写，仅接受合法 6 位 hex，否则回退默认。
+    // 写入前拦截与主题解析前兜底共用，避免非法值使 toColorInt 在主题组合期崩溃
+    fun sanitizeSeedColorHex(value: String?): String {
+        val normalized = value?.trim()?.removePrefix("#")?.uppercase(Locale.ROOT)
+        return normalized?.takeIf { SEED_COLOR_HEX_REGEX.matches(it) } ?: DEFAULT_SEED_COLOR_HEX
+    }
+
     fun normalizePaletteStyle(value: String?): String {
         return PALETTE_STYLES.firstOrNull { it.equals(value, ignoreCase = true) }
             ?: DEFAULT_PALETTE_STYLE

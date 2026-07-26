@@ -27,6 +27,7 @@ import moe.ouom.neriplayer.core.player.policy.usb.shouldIgnoreStaleUsbDeviceDeta
 import moe.ouom.neriplayer.core.player.policy.usb.shouldPreserveUsbDeviceDetachOpenBlock
 import moe.ouom.neriplayer.core.player.policy.usb.usbExclusiveTransferWindowDurationMs
 import moe.ouom.neriplayer.core.player.usb.device.matchesUsbExclusiveDeviceKey
+import moe.ouom.neriplayer.core.player.usb.device.usbExclusiveDeviceKey
 import moe.ouom.neriplayer.core.player.usb.device.openPermittedUsbAudioDevice
 import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbAudioSinkReconfiguration
 import moe.ouom.neriplayer.core.player.usb.sink.ResolvedUsbOutputFormat
@@ -66,6 +67,8 @@ object UsbExclusiveSessionController {
     private val focusSuppressed = AtomicBoolean(false)
     private val activeDeviceId = AtomicInteger(NO_ACTIVE_USB_DEVICE_ID)
     private val activeDeviceName = AtomicReference<String?>(null)
+    // 记录 host 侧已开启设备的具体 key,供音频侧格式解析对齐到同一物理设备,避免"能力查自 A、音频走 B"
+    private val activeDeviceKey = AtomicReference<String?>(null)
     private val nativeCloseExecutor = Executors.newSingleThreadExecutor { task ->
         Thread(task, "NeriUsbExclusiveClose").apply { isDaemon = true }
     }
@@ -630,7 +633,8 @@ object UsbExclusiveSessionController {
                 context = appContext,
                 inputSampleRate = inputSampleRate,
                 inputChannelCount = inputChannelCount,
-                inputEncoding = inputEncoding
+                inputEncoding = inputEncoding,
+                resolvedDeviceKey = activeDeviceKey.get()
             )
             val preferredOutput = formatResolution.format
             if (preferredOutput == null) {
@@ -2354,6 +2358,7 @@ object UsbExclusiveSessionController {
     private fun beginDeviceSession(device: UsbDevice) {
         activeDeviceName.set(device.deviceName)
         activeDeviceId.set(device.deviceId)
+        activeDeviceKey.set(device.usbExclusiveDeviceKey())
         focusSuppressed.set(false)
         ioGate.open()
     }
@@ -2367,6 +2372,7 @@ object UsbExclusiveSessionController {
     private fun clearActiveDeviceIdentity() {
         activeDeviceId.set(NO_ACTIVE_USB_DEVICE_ID)
         activeDeviceName.set(null)
+        activeDeviceKey.set(null)
     }
 
     private fun blockWritesImmediately() {

@@ -152,6 +152,56 @@ class AdvancedLyricsViewTest {
     }
 
     @Test
+    fun `buildAdvancedSyncedLyrics routes shared timestamp translation to the real lyric line`() {
+        // 元数据行与正文行共享 15638ms，翻译必须落在正文行而不是错位到元数据行
+        val lyrics = listOf(
+            LyricEntry(text = "出品：网易飓风", startTimeMs = 15_638L, endTimeMs = 15_638L),
+            LyricEntry(text = "营销：网易飓风", startTimeMs = 15_638L, endTimeMs = 15_638L),
+            LyricEntry(text = "OP：唯迹文化", startTimeMs = 15_638L, endTimeMs = 15_638L),
+            LyricEntry(text = "爱上了一个人眼睛不说谎", startTimeMs = 15_638L, endTimeMs = 18_891L),
+            LyricEntry(text = "眼泪总偷偷的躲在眼眶", startTimeMs = 18_891L, endTimeMs = 22_000L)
+        )
+
+        val result = buildAdvancedSyncedLyrics(
+            rawLyrics = null,
+            rawTranslatedLyrics = """
+                [00:15.638]爱上了译
+                [00:18.891]眼泪译
+            """.trimIndent(),
+            lyrics = lyrics,
+            translatedLyrics = emptyList()
+        )
+
+        assertEquals(null, (result.lines[0] as SyncedLine).translation)
+        assertEquals(null, (result.lines[1] as SyncedLine).translation)
+        assertEquals(null, (result.lines[2] as SyncedLine).translation)
+        assertEquals("爱上了译", (result.lines[3] as SyncedLine).translation)
+        assertEquals("眼泪译", (result.lines[4] as SyncedLine).translation)
+    }
+
+    @Test
+    fun `buildAdvancedSyncedLyrics shows no translation when translated lyric is metadata only`() {
+        // Bug B：翻译内容只有制作信息时不应显示任何翻译
+        val lyrics = listOf(
+            LyricEntry(text = "第一句", startTimeMs = 1_000L, endTimeMs = 2_000L),
+            LyricEntry(text = "第二句", startTimeMs = 2_000L, endTimeMs = 3_000L)
+        )
+
+        val result = buildAdvancedSyncedLyrics(
+            rawLyrics = null,
+            rawTranslatedLyrics = """
+                [00:00.00]作词 : 罗言
+                [00:01.00]作曲 : 罗言
+            """.trimIndent(),
+            lyrics = lyrics,
+            translatedLyrics = emptyList()
+        )
+
+        assertEquals(null, (result.lines[0] as SyncedLine).translation)
+        assertEquals(null, (result.lines[1] as SyncedLine).translation)
+    }
+
+    @Test
     fun `buildAdvancedSyncedLyrics keeps parsed word timings when raw lyric is plain lrc`() {
         val lyrics = listOf(
             LyricEntry(

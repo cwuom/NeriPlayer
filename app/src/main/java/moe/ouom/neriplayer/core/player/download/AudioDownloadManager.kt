@@ -74,6 +74,7 @@ import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeHost
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeWebRemixDirectMissingPoToken
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.autoSettingFlow
@@ -435,7 +436,7 @@ object AudioDownloadManager {
             request.header(headerName).orEmpty()
         }
         return if (
-            YouTubeGoogleVideoRangeSupport.shouldUseChunkedRange(request) &&
+            YouTubeGoogleVideoRangeSupport.shouldUseChunkedRangeForDownload(request) &&
             !YouTubeGoogleVideoRangeSupport.hasExplicitRangeHeader(headers)
         ) {
             DownloadTransportKind.CHUNKED_RANGE
@@ -1193,13 +1194,16 @@ object AudioDownloadManager {
                     var activeTransportKind: DownloadTransportKind? = null
                     var activeWorkingFileName: String? = null
                     var forceRefreshYouTubeSource = false
+                    // 直链下载被 403 后置位：后续重试改走不需 pot 的 HLS，避免在脏 IP 上死磕必 403 的直链
+                    var avoidYouTubeDirectSource = false
                     while (true) {
                         ensureSongDownloadNotCancelled(songKey, "prepare", batchSessionId, attemptId)
                         try {
                             val resolved = when {
                                 isYouTubeMusic -> resolveYouTubeMusic(
                                     song = song,
-                                    forceRefresh = forceRefreshYouTubeSource
+                                    forceRefresh = forceRefreshYouTubeSource,
+                                    avoidDirect = avoidYouTubeDirectSource
                                 )
                                 isBili -> resolveBili(song)
                                 else -> resolveNetease(song.id)
@@ -1280,18 +1284,10 @@ object AudioDownloadManager {
                                 ).forEach { (name, value) ->
                                     reqBuilder.header(name, value)
                                 }
-                                val totalContentLength = resolved.contentLength
-                                    ?: YouTubeGoogleVideoRangeSupport.resolveQueryContentLength(url)
-                                if (
-                                    resolved.streamType == YouTubePlayableStreamType.DIRECT &&
-                                    totalContentLength != null &&
-                                    YouTubeGoogleVideoRangeSupport.shouldForceExplicitFullRange(url)
-                                ) {
-                                    reqBuilder.header(
-                                        "Range",
-                                        YouTubeGoogleVideoRangeSupport.buildFullRangeHeader(totalContentLength)
-                                    )
-                                }
+                                // 下载不再对 googlevideo 直链注入整档 Range(bytes=0-<clen-1>):
+                                // 整档单请求会被 googlevideo 全量下载风控 403(同一直链能 range 播放却下不了)。
+                                // 直链下载改由 resolveDownloadTransportKind/singleThreadDownload 统一走分块 range，
+                                // 显式整档头会命中 hasExplicitRangeHeader 反而退回 DIRECT，故此处不再设置。
                             }
 
                             val request = reqBuilder.build()
@@ -1474,6 +1470,11 @@ object AudioDownloadManager {
                                 )
                                 if (isYouTubeMusic && shouldRefreshYouTubeDownloadSourceOnFailure(error)) {
                                     forceRefreshYouTubeSource = true
+                                    // 直链被 403：脏 IP 下 WEB_REMIX web-GVS 直链带 pot 也挡不住，
+                                    // 后续重试改走不需 pot 的 HLS 兜底
+                                    if (isForbiddenYouTubeDownloadFailure(error)) {
+                                        avoidYouTubeDirectSource = true
+                                    }
                                 }
                                 NPLogger.w(
                                     TAG,
@@ -2260,14 +2261,24 @@ object AudioDownloadManager {
     }
 
     internal fun shouldRefreshYouTubeDownloadSourceOnFailure(error: Throwable): Boolean {
+        val statusCode = extractYouTubeDownloadHttpStatus(error) ?: return false
+        return isRefreshableYouTubeDownloadStatusCode(statusCode)
+    }
+
+    // 403 表示服务端拒绝该直链：WEB_REMIX web-GVS 直链在脏 IP 下即便带 pot 也常被 403
+    // （同一直链能 range 播放却下不了）。据此让下载重试改走不需 pot 的 HLS 兜底
+    internal fun isForbiddenYouTubeDownloadFailure(error: Throwable): Boolean {
+        return extractYouTubeDownloadHttpStatus(error) == 403
+    }
+
+    private fun extractYouTubeDownloadHttpStatus(error: Throwable): Int? {
         if (error is java.util.concurrent.CancellationException) {
-            return false
+            return null
         }
-        val statusCode = when (error) {
+        return when (error) {
             is ChunkRequestIOException -> error.responseCode
             else -> parseHttpStatusCode(error)
-        } ?: return false
-        return isRefreshableYouTubeDownloadStatusCode(statusCode)
+        }
     }
 
     private fun isRefreshableYouTubeDownloadStatusCode(statusCode: Int): Boolean {
@@ -2889,17 +2900,38 @@ object AudioDownloadManager {
 
     private suspend fun resolveYouTubeMusic(
         song: SongItem,
-        forceRefresh: Boolean = false
+        forceRefresh: Boolean = false,
+        avoidDirect: Boolean = false
     ): ResolvedDownloadSource? {
         val videoId = extractYouTubeMusicVideoId(song.mediaUri) ?: return null
         var directPlayableAudio: YouTubePlayableAudio? = null
         var fallbackPlayableAudio: YouTubePlayableAudio? = null
-        for (attempt in resolveYouTubeDownloadResolveAttempts(forceRefresh)) {
+        // 直链下载曾被 403 时(avoidDirect)只用不要求直链的策略并跳过所有直链候选，改优先 HLS：
+        // HLS(m3u8) 的 GVS 不需要 pot，脏 IP 下比 WEB_REMIX web-GVS 直链稳（对齐 yt-dlp/PoToken 指南）
+        val attempts = resolveYouTubeDownloadResolveAttempts(forceRefresh)
+            .let { list -> if (avoidDirect) list.filterNot { it.requireDirect } else list }
+        for (attempt in attempts) {
             val candidate = resolveYouTubeMusicDownloadAudio(
                 videoId = videoId,
                 attempt = attempt
             ) ?: continue
             if (candidate.streamType == YouTubePlayableStreamType.DIRECT) {
+                if (avoidDirect) {
+                    NPLogger.w(
+                        TAG,
+                        "直链下载曾 403，改走 HLS：跳过直链候选 videoId=$videoId, mode=${attempt.logLabel}"
+                    )
+                    continue
+                }
+                // WEB_REMIX 直链缺 pot 时:1 字节探活可过但整段下载必被 googlevideo 403，
+                // 跳过该候选继续降级(重解析 mint pot / HLS 兜底)，避免下载拿到必失败的直链
+                if (isYouTubeWebRemixDirectMissingPoToken(candidate.url)) {
+                    NPLogger.w(
+                        TAG,
+                        "YouTube Music 下载直链为 WEB_REMIX 但缺少 pot，跳过继续降级: videoId=$videoId, mode=${attempt.logLabel}"
+                    )
+                    continue
+                }
                 directPlayableAudio = candidate
                 break
             }
@@ -3221,7 +3253,7 @@ object AudioDownloadManager {
         batchSessionId: Long? = null,
         attemptId: Long? = null
     ): DownloadedPayloadSummary = withContext(Dispatchers.IO) {
-        if (YouTubeGoogleVideoRangeSupport.shouldUseChunkedRange(request) &&
+        if (YouTubeGoogleVideoRangeSupport.shouldUseChunkedRangeForDownload(request) &&
             !YouTubeGoogleVideoRangeSupport.hasExplicitRangeHeader(
                 request.headers.names().associateWith { headerName ->
                     request.header(headerName).orEmpty()

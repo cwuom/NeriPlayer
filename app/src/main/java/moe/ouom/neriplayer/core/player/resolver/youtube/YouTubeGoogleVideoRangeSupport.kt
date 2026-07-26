@@ -93,6 +93,36 @@ internal object YouTubeGoogleVideoRangeSupport {
         return shouldUseChunkedRange(request.url.toString())
     }
 
+    /**
+     * 下载专用：判断 googlevideo 直链下载是否应走分块 range
+     *
+     * 与 [shouldUseChunkedRange] 的唯一区别：不因 [supportsSeekingWithoutUrlRefresh] 为真而短路。
+     * 播放侧对已解析(n/sig 齐全)的直链可整段 seek，但下载侧对这类直链发起
+     * 整档 `bytes=0-<clen-1>` 单请求 GET 会被 googlevideo 全量下载风控 403(即便同一直链能 range 播放)，
+     * 因此下载一律对 googlevideo /videoplayback 直链走分块 range(小段顺序请求)，
+     * 更贴近播放器读取行为且天然可续传。manifest/HLS 播放列表与分片不在此列(各有专用传输)。
+     */
+    fun shouldUseChunkedRangeForDownload(url: String): Boolean {
+        val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return false
+        val host = uri.host?.lowercase(Locale.US) ?: return false
+        if (!isYouTubeGoogleVideoHost(host)) {
+            return false
+        }
+        val path = uri.path?.lowercase(Locale.US).orEmpty()
+        if (host.startsWith("manifest.") || path.contains("/api/manifest/")) {
+            return false
+        }
+        if (path.contains("/playlist/index.m3u8") || path.contains("/file/seg.ts")) {
+            return false
+        }
+        val rawUrl = url.lowercase(Locale.US)
+        return rawUrl.contains("source=youtube") || rawUrl.contains("/videoplayback")
+    }
+
+    fun shouldUseChunkedRangeForDownload(request: Request): Boolean {
+        return shouldUseChunkedRangeForDownload(request.url.toString())
+    }
+
     fun resolveQueryContentLength(url: String): Long? {
         return Regex("""(?:\?|&)clen=(\d+)""")
             .find(url)

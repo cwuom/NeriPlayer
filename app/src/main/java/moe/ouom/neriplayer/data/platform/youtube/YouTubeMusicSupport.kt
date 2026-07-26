@@ -49,6 +49,12 @@ const val YOUTUBE_DEFAULT_WEB_USER_AGENT: String =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
         "AppleWebKit/537.36 (KHTML, like Gecko) " +
         "Chrome/146.0.0.0 Safari/537.36"
+// 登录 WebView 导航兜底 UA:设备默认 UA 不可用或剥离后为空时使用
+// Google 对移动设备上呈现桌面 UA 的 WebView 判定为不安全浏览器并硬封锁,故兜底也用移动 Chrome UA
+const val YOUTUBE_DEFAULT_MOBILE_WEB_USER_AGENT: String =
+    "Mozilla/5.0 (Linux; Android 14; Pixel 8) " +
+        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+        "Chrome/146.0.0.0 Mobile Safari/537.36"
 internal const val YOUTUBE_STREAM_ANDROID_USER_AGENT: String =
     "com.google.android.youtube/21.03.36 (Linux; U; Android 15; US) gzip"
 internal const val YOUTUBE_STREAM_IOS_USER_AGENT: String =
@@ -148,6 +154,36 @@ fun YouTubeAuthBundle.resolveBootstrapUserAgent(): String {
     } else {
         candidate
     }
+}
+
+private val USER_AGENT_WHITESPACE_RUN = Regex("\\s+")
+
+/**
+ * 从 Android WebView 默认 UA 中剥掉 WebView 专属标记,使其接近真实移动 Chrome:
+ * - "; wv" 是 WebView 身份标记
+ * - "Version/4.0 " 是 WebView 内核版本标记
+ *
+ * Google 登录页对携带 WebView 标记的请求容易软性跳转到 Play/app,剥掉后更像移动浏览器。
+ * 入参为空时返回空串,由调用方决定兜底。
+ */
+fun stripWebViewMarkersFromUserAgent(raw: String): String {
+    if (raw.isBlank()) {
+        return ""
+    }
+    return raw
+        .replace("; wv", "")
+        .replace("Version/4.0 ", "")
+        .replace(USER_AGENT_WHITESPACE_RUN, " ")
+        .trim()
+}
+
+/**
+ * 计算登录 WebView 导航用的移动浏览器 UA:优先取剥掉 WebView 标记后的设备默认 UA,
+ * 为空或不可用时回退到固定移动 Chrome 常量。仅用于登录导航,不写入 auth bundle。
+ */
+fun resolveYouTubeMobileWebLoginUserAgent(rawDefaultUserAgent: String?): String {
+    return stripWebViewMarkersFromUserAgent(rawDefaultUserAgent.orEmpty())
+        .ifBlank { YOUTUBE_DEFAULT_MOBILE_WEB_USER_AGENT }
 }
 
 fun YouTubeAuthBundle.buildBootstrapAuthFingerprint(
@@ -516,6 +552,31 @@ private fun parseYouTubeStreamClientName(streamUrl: String?): String? {
     return parseQueryParameters(rawQuery)["c"]
         ?.takeIf { it.isNotBlank() }
         ?.uppercase(Locale.US)
+}
+
+private const val YOUTUBE_STREAM_WEB_REMIX_CLIENT = "WEB_REMIX"
+
+/**
+ * 判断直链是否为"缺少 pot 的 WEB_REMIX googlevideo 直链"
+ * WEB_REMIX 直链强依赖 pot:1 字节探活(Range: bytes=0-0)可通过，
+ * 但整段/全量 Range 下载缺 pot 会被 googlevideo 返回 403，表现为"能播放却下载必失败"
+ * 下载前用它过滤这类直链，改走重解析(mint pot)或 HLS 兜底；
+ * 其它 client(ANDROID_MUSIC / TVHTML5 / IOS 等)的直链不需要 pot，返回 false 以免误伤
+ */
+fun isYouTubeWebRemixDirectMissingPoToken(streamUrl: String?): Boolean {
+    if (streamUrl.isNullOrBlank()) {
+        return false
+    }
+    val uri = runCatching { URI(streamUrl) }.getOrNull() ?: return false
+    if (!isYouTubeGoogleVideoHost(uri.host)) {
+        return false
+    }
+    val query = parseQueryParameters(uri.rawQuery)
+    val clientName = query["c"]?.takeIf { it.isNotBlank() }?.uppercase(Locale.US)
+    if (clientName != YOUTUBE_STREAM_WEB_REMIX_CLIENT) {
+        return false
+    }
+    return query["pot"].isNullOrBlank()
 }
 
 private fun String.urlEncode(): String = URLEncoder.encode(this, Charsets.UTF_8.name())

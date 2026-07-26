@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.data
 
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_DEFAULT_MOBILE_WEB_USER_AGENT
 import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_DEFAULT_WEB_USER_AGENT
 import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_STREAM_IOS_USER_AGENT
 import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_WEB_ORIGIN
@@ -10,9 +11,12 @@ import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeInnertubeRequestHea
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubePageRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.effectiveCookieHeader
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeWebRemixDirectMissingPoToken
 import moe.ouom.neriplayer.data.platform.youtube.resolveAuthorizationHeader
 import moe.ouom.neriplayer.data.platform.youtube.resolveBootstrapUserAgent
 import moe.ouom.neriplayer.data.platform.youtube.resolveXGoogAuthUser
+import moe.ouom.neriplayer.data.platform.youtube.resolveYouTubeMobileWebLoginUserAgent
+import moe.ouom.neriplayer.data.platform.youtube.stripWebViewMarkersFromUserAgent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -301,5 +305,160 @@ class YouTubeMusicSupportTest {
         assertFalse(headers.containsKey("Authorization"))
         assertFalse(headers.containsKey("X-Goog-AuthUser"))
         assertFalse(headers.containsKey("X-Origin"))
+    }
+
+    @Test
+    fun stripWebViewMarkersFromUserAgent_removesWvAndVersionMarkers() {
+        val stripped = stripWebViewMarkersFromUserAgent(STANDARD_WEBVIEW_USER_AGENT)
+
+        assertEquals(
+            "Mozilla/5.0 (Linux; Android 14; Pixel 7) " +
+                "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Chrome/120.0.0.0 Mobile Safari/537.36",
+            stripped
+        )
+        assertFalse(stripped.contains("; wv"))
+        assertFalse(stripped.contains("Version/4.0"))
+        assertTrue(stripped.contains("Android 14"))
+        assertTrue(stripped.contains("Mobile Safari"))
+    }
+
+    @Test
+    fun stripWebViewMarkersFromUserAgent_handlesUaWithoutDeviceModel() {
+        val stripped = stripWebViewMarkersFromUserAgent(
+            "Mozilla/5.0 (Linux; Android 14; wv) " +
+                "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Version/4.0 Chrome/120.0.0.0 Mobile Safari/537.36"
+        )
+
+        assertEquals(
+            "Mozilla/5.0 (Linux; Android 14) " +
+                "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Chrome/120.0.0.0 Mobile Safari/537.36",
+            stripped
+        )
+    }
+
+    @Test
+    fun stripWebViewMarkersFromUserAgent_collapsesWhitespaceAndTrims() {
+        val stripped = stripWebViewMarkersFromUserAgent(
+            "  Mozilla/5.0   (Linux; Android 14; Pixel)   " +
+                "Chrome/120.0.0.0  Mobile Safari/537.36  "
+        )
+
+        assertEquals(
+            "Mozilla/5.0 (Linux; Android 14; Pixel) " +
+                "Chrome/120.0.0.0 Mobile Safari/537.36",
+            stripped
+        )
+    }
+
+    @Test
+    fun stripWebViewMarkersFromUserAgent_returnsEmptyForBlankInput() {
+        assertEquals("", stripWebViewMarkersFromUserAgent(""))
+        assertEquals("", stripWebViewMarkersFromUserAgent("   "))
+    }
+
+    @Test
+    fun stripWebViewMarkersFromUserAgent_isIdempotentForCleanUa() {
+        val clean = "Mozilla/5.0 (Linux; Android 14; Pixel 8) " +
+            "AppleWebKit/537.36 (KHTML, like Gecko) " +
+            "Chrome/146.0.0.0 Mobile Safari/537.36"
+
+        assertEquals(clean, stripWebViewMarkersFromUserAgent(clean))
+    }
+
+    @Test
+    fun resolveYouTubeMobileWebLoginUserAgent_stripsMarkersFromDeviceDefault() {
+        val resolved = resolveYouTubeMobileWebLoginUserAgent(STANDARD_WEBVIEW_USER_AGENT)
+
+        assertFalse(resolved.contains("; wv"))
+        assertFalse(resolved.contains("Version/4.0"))
+        assertTrue(resolved.contains("Mobile Safari"))
+        assertNotEquals(YOUTUBE_DEFAULT_MOBILE_WEB_USER_AGENT, resolved)
+    }
+
+    @Test
+    fun resolveYouTubeMobileWebLoginUserAgent_fallsBackWhenNullOrBlank() {
+        assertEquals(
+            YOUTUBE_DEFAULT_MOBILE_WEB_USER_AGENT,
+            resolveYouTubeMobileWebLoginUserAgent(null)
+        )
+        assertEquals(
+            YOUTUBE_DEFAULT_MOBILE_WEB_USER_AGENT,
+            resolveYouTubeMobileWebLoginUserAgent("")
+        )
+        assertEquals(
+            YOUTUBE_DEFAULT_MOBILE_WEB_USER_AGENT,
+            resolveYouTubeMobileWebLoginUserAgent("   ")
+        )
+    }
+
+    @Test
+    fun mobileFallbackUserAgent_isMobileAndFreeOfWebViewMarkers() {
+        assertFalse(YOUTUBE_DEFAULT_MOBILE_WEB_USER_AGENT.contains("; wv"))
+        assertFalse(YOUTUBE_DEFAULT_MOBILE_WEB_USER_AGENT.contains("Version/4.0"))
+        assertTrue(YOUTUBE_DEFAULT_MOBILE_WEB_USER_AGENT.contains("Mobile"))
+        assertTrue(YOUTUBE_DEFAULT_MOBILE_WEB_USER_AGENT.contains("Android"))
+        assertFalse(YOUTUBE_DEFAULT_MOBILE_WEB_USER_AGENT.contains("Windows"))
+        assertNotEquals(YOUTUBE_DEFAULT_WEB_USER_AGENT, YOUTUBE_DEFAULT_MOBILE_WEB_USER_AGENT)
+    }
+
+    @Test
+    fun isYouTubeWebRemixDirectMissingPoToken_flagsWebRemixGoogleVideoWithoutPot() {
+        // 下载失败根因:WEB_REMIX googlevideo 直链缺 pot，整段下载会被 403
+        assertTrue(
+            isYouTubeWebRemixDirectMissingPoToken(
+                "https://rr1---sn-abc.googlevideo.com/videoplayback?expire=123&c=WEB_REMIX&itag=140"
+            )
+        )
+        // pot= 但值为空 同样视为缺失
+        assertTrue(
+            isYouTubeWebRemixDirectMissingPoToken(
+                "https://rr1---sn-abc.googlevideo.com/videoplayback?c=WEB_REMIX&itag=140&pot="
+            )
+        )
+    }
+
+    @Test
+    fun isYouTubeWebRemixDirectMissingPoToken_acceptsWebRemixWithPot() {
+        // 带 pot 的 WEB_REMIX 直链是下载期望的可用直链
+        assertFalse(
+            isYouTubeWebRemixDirectMissingPoToken(
+                "https://rr1---sn-abc.googlevideo.com/videoplayback?c=WEB_REMIX&itag=140&pot=Abc123Token"
+            )
+        )
+    }
+
+    @Test
+    fun isYouTubeWebRemixDirectMissingPoToken_ignoresNonWebRemixAndNonGoogleVideo() {
+        // 其它 client 直链不需要 pot，不能误伤
+        assertFalse(
+            isYouTubeWebRemixDirectMissingPoToken(
+                "https://rr1---sn-abc.googlevideo.com/videoplayback?c=ANDROID_MUSIC&itag=140"
+            )
+        )
+        // googlevideo 但缺少 c 参数:无法确认为 WEB_REMIX，保持接受避免误伤
+        assertFalse(
+            isYouTubeWebRemixDirectMissingPoToken(
+                "https://rr1---sn-abc.googlevideo.com/videoplayback?itag=140"
+            )
+        )
+        // 非 googlevideo 主机即使标注 WEB_REMIX 也不适用该判定
+        assertFalse(
+            isYouTubeWebRemixDirectMissingPoToken(
+                "https://example.com/videoplayback?c=WEB_REMIX&itag=140"
+            )
+        )
+        // 空输入不崩溃且不误判
+        assertFalse(isYouTubeWebRemixDirectMissingPoToken(null))
+        assertFalse(isYouTubeWebRemixDirectMissingPoToken(""))
+    }
+
+    private companion object {
+        private const val STANDARD_WEBVIEW_USER_AGENT: String =
+            "Mozilla/5.0 (Linux; Android 14; Pixel 7; wv) " +
+                "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Version/4.0 Chrome/120.0.0.0 Mobile Safari/537.36"
     }
 }

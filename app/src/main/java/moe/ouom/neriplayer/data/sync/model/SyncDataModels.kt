@@ -104,7 +104,7 @@ data class SyncPlaylist(
         }
     }
 
-    internal fun normalizedForDisplayOrder(now: Long = System.currentTimeMillis()): SyncPlaylist {
+    internal fun normalizedForDisplayOrder(): SyncPlaylist {
         if (isDeleted) {
             return copy(
                 songs = emptyList(),
@@ -115,7 +115,7 @@ data class SyncPlaylist(
         val displaySongs = if (songOrderVersion >= DISPLAY_ORDER_SONG_ORDER_VERSION) {
             songs.sortedByAddedAtForDisplay()
         } else {
-            songs.migrateLegacySongsToDisplayOrder(modifiedAt, now)
+            songs.migrateLegacySongsToDisplayOrder(modifiedAt)
         }
         return if (
             songOrderVersion >= DISPLAY_ORDER_SONG_ORDER_VERSION &&
@@ -143,15 +143,16 @@ data class SyncPlaylist(
 }
 
 private fun List<SyncSong>.migrateLegacySongsToDisplayOrder(
-    playlistModifiedAt: Long,
-    now: Long
+    playlistModifiedAt: Long
 ): List<SyncSong> {
     if (isEmpty()) return emptyList()
+    // 锚点必须与设备墙钟无关：只用歌单自身 modifiedAt（快照产生时刻）而非 now，
+    // 否则被抬高的 addedAt 恒大于任何历史 deletedAt，使 identity 删除墓碑永久失效并被
+    // pruneResolvedDeletions 裁剪，导致已删歌曲复活（P1-1）
     val newestAddedAt = maxOf(
-        now,
         playlistModifiedAt,
         maxOfOrNull { it.addedAt } ?: 0L
-    )
+    ).coerceAtLeast(1L)
     return asReversed().mapIndexed { index, song ->
         song.copyWithNormalizedMembershipTokens(
             addedAt = (newestAddedAt - index).coerceAtLeast(1L)

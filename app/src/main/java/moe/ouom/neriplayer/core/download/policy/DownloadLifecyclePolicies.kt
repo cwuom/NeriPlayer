@@ -6,8 +6,37 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
+
+/** 标签后处理一次尝试后的收尾动作 */
+internal enum class TagPostProcessingAction {
+    FINALIZE_TAGGED,
+    FINALIZE_UNTAGGED,
+    RETRY
+}
+
+/**
+ * 标签后处理结果 -> 收尾动作。
+ *
+ * 标签为尽力而为的元数据：只要音频本体完整就必须保留并按完成收尾，绝不能因写不进标签
+ * 而回滚删除完整文件并反复重下耗流量（P1-1）。
+ * - SUCCESS：标签已写入，按带标签完成
+ * - UNSUPPORTED_CONTAINER：容器天生写不了（如 WebM），保留音频按无标签完成，重试无意义
+ * - FAILED / 未知：可能瞬时失败，仍有重试次数则重试；重试耗尽仍失败（如 SAF 持续
+ *   打不开可写 fd）也保留音频按无标签完成，而不是删除
+ */
+internal fun tagPostProcessingAction(
+    outcome: DownloadedAudioTagWriteOutcome?,
+    hasRemainingAttempts: Boolean
+): TagPostProcessingAction = when (outcome) {
+    DownloadedAudioTagWriteOutcome.SUCCESS -> TagPostProcessingAction.FINALIZE_TAGGED
+    DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER -> TagPostProcessingAction.FINALIZE_UNTAGGED
+    DownloadedAudioTagWriteOutcome.FAILED, null ->
+        if (hasRemainingAttempts) TagPostProcessingAction.RETRY
+        else TagPostProcessingAction.FINALIZE_UNTAGGED
+}
 
 internal fun shouldRunInitialDownloadScan(
     catalogReady: Boolean,

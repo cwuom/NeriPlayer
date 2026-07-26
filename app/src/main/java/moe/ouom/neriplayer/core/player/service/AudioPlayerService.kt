@@ -2229,7 +2229,22 @@ class AudioPlayerService : Service() {
         allowServiceRestart = false
         isServiceForegroundActive = false
         isServiceInstanceActive = false
-        releaseServiceResourcesAfterForegroundFailure(reason)
+        // 前台提升失败仅代表服务无法保持前台，不代表播放运行时必须销毁；
+        // 若仍在播放或用户仍有播放诉求，保留运行时以保住当前播放
+        val preservePlayerRuntime = shouldPreservePlayerRuntimeOnForegroundPromotionFailure(
+            enginePlaying = runCatching { PlayerManager.isPlayingFlow.value }.getOrDefault(false),
+            playbackControlPlaying = runCatching { PlayerManager.playbackControlPlayingFlow.value }
+                .getOrDefault(false),
+        )
+        if (preservePlayerRuntime) {
+            // 让随后的 onDestroy 走"保留运行时"分支，避免销毁正在播放的会话
+            keepPlayerRuntimeAfterServiceStop = true
+            NPLogger.w(
+                "NERI-APS",
+                "foreground promotion failed but playback is active; preserving player runtime reason=$reason"
+            )
+        }
+        releaseServiceResourcesAfterForegroundFailure(reason, preservePlayerRuntime)
         shutdownUsbRuntime("foreground_promotion_failed:$reason")
         if (startId != null) {
             stopSelfResult(startId)
@@ -2239,7 +2254,10 @@ class AudioPlayerService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun releaseServiceResourcesAfterForegroundFailure(reason: String) {
+    private fun releaseServiceResourcesAfterForegroundFailure(
+        reason: String,
+        preservePlayerRuntime: Boolean
+    ) {
         usbExclusiveKeepAliveJob?.cancel()
         usbExclusiveKeepAliveJob = null
         serviceScope.coroutineContext.cancelChildren()
@@ -2250,6 +2268,14 @@ class AudioPlayerService : Service() {
             }.onFailure { error ->
                 NPLogger.w("NERI-APS", "media session release failed after FGS failure reason=$reason", error)
             }
+        }
+        if (preservePlayerRuntime) {
+            // 保住当前播放：不销毁 PlayerManager 运行时，仅放弃前台化并停止服务
+            NPLogger.i(
+                "NERI-APS",
+                "skipping player release after FGS failure to keep active playback alive reason=$reason"
+            )
+            return
         }
         runCatching { PlayerManager.release() }
             .onFailure { error ->

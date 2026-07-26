@@ -638,7 +638,10 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setThemeSeedColor(hex: String) {
-        context.dataStore.edit { it[SettingsKeys.THEME_SEED_COLOR] = hex }
+        // 归一非法 hex，避免坏值落库后每次主题组合崩溃
+        context.dataStore.edit {
+            it[SettingsKeys.THEME_SEED_COLOR] = ThemeDefaults.sanitizeSeedColorHex(hex)
+        }
     }
 
     suspend fun setThemePaletteStyle(style: String) {

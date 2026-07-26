@@ -54,6 +54,8 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
+import moe.ouom.neriplayer.core.download.policy.TagPostProcessingAction
+import moe.ouom.neriplayer.core.download.policy.tagPostProcessingAction
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
@@ -1063,7 +1065,6 @@ object GlobalDownloadManager {
         sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?
     ): Boolean {
         val songKey = song.stableKey()
-        var lastError: Throwable? = null
         repeat(METADATA_POST_PROCESSING_MAX_ATTEMPTS) { attempt ->
             if (isSongCancelled(songKey)) {
                 return true
@@ -1081,38 +1082,32 @@ object GlobalDownloadManager {
                     )
                 }
             }
-            when (writeResult.getOrNull()) {
-                DownloadedAudioTagWriteOutcome.SUCCESS -> return true
-                // 容器天生写不了标签，重试只会白白删掉已经下载完整的音频
-                DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER -> {
-                    NPLogger.w(
-                        TAG,
-                        "容器不支持内嵌标签，保留音频并跳过后处理: ${audio.name}"
-                    )
+            val hasRemainingAttempts =
+                attempt < METADATA_POST_PROCESSING_MAX_ATTEMPTS - 1 && !isSongCancelled(songKey)
+            when (tagPostProcessingAction(writeResult.getOrNull(), hasRemainingAttempts)) {
+                TagPostProcessingAction.FINALIZE_TAGGED -> return true
+                // 音频已完整：容器不支持或持续写不进标签（如 SAF 打不开可写 fd）都保留音频、
+                // 仅按无内嵌标签完成，避免回滚删掉完整文件并反复重下耗流量
+                TagPostProcessingAction.FINALIZE_UNTAGGED -> {
+                    val reason = writeResult.exceptionOrNull()?.message
+                        ?: writeResult.getOrNull()?.name
+                    NPLogger.w(TAG, "保留音频并按无内嵌标签完成: ${audio.name} - $reason")
                     return true
                 }
-                else -> Unit
-            }
-            lastError = writeResult.exceptionOrNull()
-                ?: IllegalStateException("TagLib 未确认标签写入成功")
-            if (isSongCancelled(songKey)) {
-                return true
-            }
-            if (attempt < METADATA_POST_PROCESSING_MAX_ATTEMPTS - 1) {
-                NPLogger.w(
-                    TAG,
-                    "元信息后处理失败，准备重试(第${attempt + 1}次): ${audio.name} - ${lastError?.message}"
-                )
-                delay(METADATA_POST_PROCESSING_RETRY_DELAY_MS * (attempt + 1))
+                TagPostProcessingAction.RETRY -> {
+                    val lastError = writeResult.exceptionOrNull()
+                        ?: IllegalStateException("TagLib 未确认标签写入成功")
+                    NPLogger.w(
+                        TAG,
+                        "元信息后处理失败，准备重试(第${attempt + 1}次): ${audio.name} - ${lastError.message}"
+                    )
+                    delay(METADATA_POST_PROCESSING_RETRY_DELAY_MS * (attempt + 1))
+                }
             }
         }
 
-        NPLogger.e(
-            TAG,
-            "元信息后处理最终失败: ${audio.name} - ${lastError?.message}",
-            lastError
-        )
-        return false
+        // 兜底：最后一轮已返回 FINALIZE_UNTAGGED，此处理论不可达；仍保留音频不删除
+        return true
     }
 
     private suspend fun isDownloadMetadataPostProcessingEnabled(context: Context): Boolean {

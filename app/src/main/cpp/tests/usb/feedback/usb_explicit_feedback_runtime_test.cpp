@@ -324,6 +324,96 @@ void longSchedulingGapWithoutValidFeedbackStillFailsClosed() {
     assert(snapshot.longGapReacquisitions == 0U);
 }
 
+// #U1 回归:复现生产事件循环每 1ms 一次 tick 的节律。间隙超过原地重获阈值(修复后 282ms)但
+// 未到硬保持超时(532ms)时,返回的有效反馈包必须触发原地重获,而不能被周期 tick 先判定
+// HoldoverTimeout 拆流。period=500us 时:softMiss=32ms、hardHoldover=500ms、硬失败=532ms。
+// 修复前阈值=532ms,此处包在 300ms 返回会走 slew relock 使 longGapReacquisitions 保持 0,断言失败。
+void reacquiresUnderProductionTickCadenceAfterLongGap() {
+    ExplicitFeedbackRuntime runtime;
+    configureRuntime(&runtime);
+    assert(runtime.start(0));
+
+    constexpr std::array<uint8_t, 4> twelveFrames { 0x00, 0x00, 0x0C, 0x00 };
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 1, 500'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 2, 1'000'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 3, 1'500'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    assert(runtime.nextPacket(true).status == StreamGatePacketStatus::PlayerPacket);
+
+    // 间隙期间每 1ms 一次 tick,推进到 300ms:> 282ms 重获阈值、< 532ms 硬失败,时钟停在 Holdover
+    constexpr int64_t resumedAtNs = 300'000'000;
+    for (int64_t nowNs = 2'000'000; nowNs < resumedAtNs; nowNs += 1'000'000) {
+        assert(runtime.tick(nowNs));
+    }
+    auto gapSnapshot = runtime.snapshot();
+    assert(!gapSnapshot.terminalFailure);
+    assert(gapSnapshot.gate.clock.state == FeedbackClockState::Holdover);
+    assert(gapSnapshot.longGapReacquisitions == 0U);
+
+    // 间隙结束返回有效包:间隙 298.5ms >= 282ms 阈值 -> 原地重获而非拆流
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 4, resumedAtNs, twelveFrames.data(), twelveFrames.size()
+    )));
+    auto snapshot = runtime.snapshot();
+    assert(!snapshot.terminalFailure);
+    assert(snapshot.state == ExplicitFeedbackRuntimeState::Acquiring);
+    assert(snapshot.longGapReacquisitions == 1U);
+    assert(snapshot.gate.clock.failureReason == FeedbackClockFailureReason::None);
+    const auto bootstrap = runtime.nextPacket(true);
+    assert(bootstrap.status == StreamGatePacketStatus::ZeroBootstrap);
+
+    // 重获后可正常重新锁定
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 5, resumedAtNs + 500'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 6, resumedAtNs + 1'000'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    snapshot = runtime.snapshot();
+    assert(!snapshot.terminalFailure);
+    assert(snapshot.gate.clock.state == FeedbackClockState::Locked);
+    assert(snapshot.longGapReacquisitions == 1U);
+    assert(runtime.nextPacket(true).status == StreamGatePacketStatus::PlayerPacket);
+}
+
+// 间隙持续超过硬保持超时(532ms)且始终无有效反馈返回:仍按 HoldoverTimeout 失败(修复前后一致)
+void productionTickCadenceGapBeyondHardHoldoverStillFailsClosed() {
+    ExplicitFeedbackRuntime runtime;
+    configureRuntime(&runtime);
+    assert(runtime.start(0));
+
+    constexpr std::array<uint8_t, 4> twelveFrames { 0x00, 0x00, 0x0C, 0x00 };
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 1, 500'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 2, 1'000'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    assert(runtime.onFeedbackInCompletion(completion(
+        7, 3, 1'500'000, twelveFrames.data(), twelveFrames.size()
+    )));
+    assert(runtime.nextPacket(true).status == StreamGatePacketStatus::PlayerPacket);
+
+    bool failed = false;
+    for (int64_t nowNs = 2'000'000; nowNs <= 600'000'000; nowNs += 1'000'000) {
+        if (!runtime.tick(nowNs)) {
+            failed = true;
+            break;
+        }
+    }
+    assert(failed);
+    const auto snapshot = runtime.snapshot();
+    assert(snapshot.terminalFailure);
+    assert(snapshot.failure == ExplicitFeedbackRuntimeFailure::FeedbackClock);
+    assert(snapshot.gate.clock.failureReason == FeedbackClockFailureReason::HoldoverTimeout);
+    assert(snapshot.longGapReacquisitions == 0U);
+}
+
 } // namespace
 
 int main() {
@@ -336,5 +426,7 @@ int main() {
     toleratesAndroidSchedulingGapAndRelocks();
     reacquiresAfterLongSchedulingGapWithValidFeedback();
     longSchedulingGapWithoutValidFeedbackStillFailsClosed();
+    reacquiresUnderProductionTickCadenceAfterLongGap();
+    productionTickCadenceGapBeyondHardHoldoverStillFailsClosed();
     return 0;
 }

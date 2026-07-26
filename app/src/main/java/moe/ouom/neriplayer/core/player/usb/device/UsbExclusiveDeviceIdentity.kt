@@ -38,6 +38,68 @@ internal fun usbExclusiveDeviceLabelFromKey(deviceKey: String): String? {
         ?.takeIf(String::isNotBlank)
 }
 
+internal enum class UsbExclusiveDeviceSelectionOutcome {
+    SELECTED,
+    NONE,
+    AMBIGUOUS
+}
+
+internal data class UsbExclusiveDeviceSelectionResult<T>(
+    val outcome: UsbExclusiveDeviceSelectionOutcome,
+    val device: T?
+)
+
+/**
+ * 统一 host 与音频侧的独占设备选择判定,消除两侧各自按不同排序取首个导致"能力查自 A、音频走 B"
+ * 的选错/无声问题:
+ * - 指定设备:选中精确匹配项(同一物理设备可能有多个入口,取首个);匹配不到且仅一个候选且
+ *   allowSingleFallback 为真时退回该候选(兼容 productName 为空导致 label 不一致);否则视为未找到
+ * - auto:仅当恰好一个候选时选中;多个候选返回 AMBIGUOUS(拒绝而非静默取首个),交由上层回退普通音频
+ * 注:音频侧候选须先按物理设备去重后再传入,否则同一 DAC 的多个 AudioDeviceInfo 会被误判为多设备
+ */
+internal fun <T> selectUsbExclusiveDevice(
+    candidates: List<T>,
+    selectedDeviceKey: String,
+    allowSingleFallback: Boolean,
+    matches: (T) -> Boolean
+): UsbExclusiveDeviceSelectionResult<T> {
+    if (selectedDeviceKey != DEFAULT_USB_EXCLUSIVE_DEVICE_KEY) {
+        val matched = candidates.filter(matches)
+        return when {
+            matched.size == 1 -> UsbExclusiveDeviceSelectionResult(
+                UsbExclusiveDeviceSelectionOutcome.SELECTED,
+                matched.first()
+            )
+            // 显式 key 命中多个物理设备(如两台同型号 DAC)无法区分具体单元,
+            // 拒绝而非静默取首个,避免能力查询与音频输出落到不同设备(H1/M3)
+            matched.size > 1 -> UsbExclusiveDeviceSelectionResult(
+                UsbExclusiveDeviceSelectionOutcome.AMBIGUOUS,
+                null
+            )
+            allowSingleFallback && candidates.size == 1 -> UsbExclusiveDeviceSelectionResult(
+                UsbExclusiveDeviceSelectionOutcome.SELECTED,
+                candidates.first()
+            )
+            // 指定设备不在场:拒绝(NONE),不从无关设备里挑选
+            else -> UsbExclusiveDeviceSelectionResult(
+                UsbExclusiveDeviceSelectionOutcome.NONE,
+                null
+            )
+        }
+    }
+    return when (candidates.size) {
+        0 -> UsbExclusiveDeviceSelectionResult(UsbExclusiveDeviceSelectionOutcome.NONE, null)
+        1 -> UsbExclusiveDeviceSelectionResult(
+            UsbExclusiveDeviceSelectionOutcome.SELECTED,
+            candidates.first()
+        )
+        else -> UsbExclusiveDeviceSelectionResult(
+            UsbExclusiveDeviceSelectionOutcome.AMBIGUOUS,
+            null
+        )
+    }
+}
+
 private data class UsbExclusiveDeviceSelection(
     val vendorId: Int,
     val productId: Int,
@@ -65,9 +127,9 @@ private fun usbExclusiveDeviceKeyMatchesLabel(
     selection: UsbExclusiveDeviceSelection,
     label: String
 ): Boolean {
+    // 精确相等,避免子串误命中(如键 "dac" 命中 "dac_pro"),与 host 侧 VID+PID+label 精确匹配对齐
     val normalizedProduct = normalizedDeviceLabel(label)
-    return normalizedProduct.isNotBlank() &&
-        (normalizedProduct == selection.label || normalizedProduct.contains(selection.label))
+    return normalizedProduct.isNotBlank() && normalizedProduct == selection.label
 }
 
 private fun UsbDevice.stableUsbDeviceLabel(): String {

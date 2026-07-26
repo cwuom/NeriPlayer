@@ -46,14 +46,17 @@ import java.util.zip.GZIPOutputStream
 /**
  * 同步数据序列化工具
  *
- * 传输产物统一为「原始字节」，不再叠加 Base64：
+ * 写路径（迁移期保活）：产物与旧客户端逐字节兼容，保证老端仍能读新端写的备份
  * - 非省流（backup.json）: UTF-8 编码的 JSON 文本字节
- * - 省流（backup.bin）: 原始 GZIP(ProtoBuf) 字节
+ * - 省流（backup.bin）: Base64(GZIP(ProtoBuf)) 文本字节（老端可读的历史格式）
  *
- * 反序列化按内容自动识别（read-both），保证同时读旧备份与新备份：
- * - 以 GZIP 魔数 0x1F 0x8B 开头 -> 直接解压 -> ProtoBuf（新 raw 格式）
- * - 文本且首个有效字节为 '{' -> JSON（旧 backup.json / 旧 WebDAV JSON）
- * - 其余文本 -> 旧 Base64(GZIP(ProtoBuf)) -> Base64 解码 -> 解压 -> ProtoBuf
+ * 写侧暂不切 raw GZIP：旧端把 backup.bin 当 UTF-8 文本再 Base64 解码，raw 二进制必抛异常
+ * 导致旧端 fail-stop 断同步；等全端更新后再由后续开关切到 write-raw
+ *
+ * 读路径按内容自动识别（read-both），三种在野格式都不失败：
+ * - 以 GZIP 魔数 0x1F 0x8B 开头 -> 直接解压 -> ProtoBuf（为将来 write-raw 预留）
+ * - 文本且首个有效字节为 '{' -> JSON（旧/新 backup.json / 旧 WebDAV JSON）
+ * - 其余文本 -> Base64(GZIP(ProtoBuf)) -> Base64 解码 -> 解压 -> ProtoBuf（backup.bin）
  */
 @OptIn(ExperimentalSerializationApi::class)
 object SyncDataSerializer {
@@ -71,14 +74,16 @@ object SyncDataSerializer {
     private const val MAX_DECOMPRESSED_BYTES = 16 * 1024 * 1024
 
     /**
-     * 序列化数据为原始字节（用于上传与体积统计）
+     * 序列化数据为上传字节（同时用于体积统计）
      * @param data 同步数据
      * @param useDataSaver 是否使用省流模式
-     * @return useDataSaver=true 时为原始 GZIP(ProtoBuf) 字节；否则为 UTF-8 JSON 字节
+     * @return useDataSaver=true 时为 Base64(GZIP(ProtoBuf)) 文本字节（老端可读）；否则为 UTF-8 JSON 字节
      */
     fun serialize(data: SyncData, useDataSaver: Boolean): ByteArray {
         return if (useDataSaver) {
-            compress(protoBuf.encodeToByteArray(data))
+            // 迁移期保活：写老端可读的 Base64 文本，而非原始 GZIP 字节
+            val rawGzip = compress(protoBuf.encodeToByteArray(data))
+            Base64.getEncoder().encodeToString(rawGzip).toByteArray(Charsets.UTF_8)
         } else {
             serializeJson(data).toByteArray(Charsets.UTF_8)
         }

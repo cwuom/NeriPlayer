@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.download
 
 import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.player.resolver.youtube.ChunkRequestIOException
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -136,6 +137,16 @@ class AudioDownloadManagerTest {
                 IOException("磁盘写入失败")
             )
         )
+    }
+
+    @Test
+    fun `forbidden download failure is detected for 403 only`() {
+        // 403(含 ChunkRequestIOException)才触发"改走 HLS"，其余可刷新码不触发
+        assertTrue(AudioDownloadManager.isForbiddenYouTubeDownloadFailure(IllegalStateException("HTTP 403")))
+        assertTrue(AudioDownloadManager.isForbiddenYouTubeDownloadFailure(ChunkRequestIOException(403, "forbidden")))
+        assertFalse(AudioDownloadManager.isForbiddenYouTubeDownloadFailure(ChunkRequestIOException(429, "rate")))
+        assertFalse(AudioDownloadManager.isForbiddenYouTubeDownloadFailure(IllegalStateException("HTTP 416")))
+        assertFalse(AudioDownloadManager.isForbiddenYouTubeDownloadFailure(IOException("磁盘写入失败")))
     }
 
     @Test
@@ -344,6 +355,26 @@ class AudioDownloadManagerTest {
             AudioDownloadManager.resolveDownloadTransportKind(
                 YouTubePlayableStreamType.DIRECT,
                 explicitRangeRequest
+            )
+        )
+    }
+
+    @Test
+    fun `download transport chunks seekable web remix direct url instead of full range`() {
+        // 回归：已解析(n+sig+clen)的 WEB_REMIX 直链此前被判为 DIRECT(整档下载)导致 403，
+        // 现应统一走 CHUNKED_RANGE，避免整档 GET 触发 googlevideo 全量下载风控
+        val seekableWebRemixRequest = Request.Builder()
+            .url(
+                "https://rr1---sn-aigl6ney.googlevideo.com/videoplayback" +
+                    "?source=youtube&id=audio-demo&n=resolved-n&sig=resolved-signature&mime=audio%2Fmp4&clen=3611036"
+            )
+            .build()
+
+        assertEquals(
+            AudioDownloadManager.DownloadTransportKind.CHUNKED_RANGE,
+            AudioDownloadManager.resolveDownloadTransportKind(
+                YouTubePlayableStreamType.DIRECT,
+                seekableWebRemixRequest
             )
         )
     }
