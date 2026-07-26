@@ -123,6 +123,7 @@ import moe.ouom.neriplayer.core.player.policy.refresh.YouTubePlaybackRecoveryStr
 import moe.ouom.neriplayer.core.player.policy.pending.resolvePendingMediaLoadPosition
 import moe.ouom.neriplayer.core.player.policy.command.resolvePlaybackSoundConfigForEngine
 import moe.ouom.neriplayer.core.player.policy.command.resolveExoRepeatMode
+import moe.ouom.neriplayer.core.player.policy.wake.DEFAULT_PLAYBACK_WAKE_MODE
 import moe.ouom.neriplayer.core.player.policy.wake.resolvePlaybackWakeMode
 import moe.ouom.neriplayer.core.player.policy.command.shouldShowPauseButtonForPlaybackControls
 import moe.ouom.neriplayer.core.player.policy.command.shouldBootstrapPlaybackServiceOnAppLaunch
@@ -250,7 +251,7 @@ object PlayerManager {
     internal val initializationLock = Any()
     internal lateinit var application: Application
     internal lateinit var player: ExoPlayer
-    private var currentWakeMode: Int = C.WAKE_MODE_NONE
+    private var currentWakeMode: Int = DEFAULT_PLAYBACK_WAKE_MODE
 
     @Volatile
     internal var interactiveNowPlayingVisible: Boolean = false
@@ -2092,6 +2093,11 @@ object PlayerManager {
         if (wakeMode == currentWakeMode) return
         player.setWakeMode(wakeMode)
         currentWakeMode = wakeMode
+    }
+
+    internal fun applyInitialPlaybackWakeMode() {
+        player.setWakeMode(DEFAULT_PLAYBACK_WAKE_MODE)
+        currentWakeMode = DEFAULT_PLAYBACK_WAKE_MODE
     }
 
     fun updateInteractiveNowPlayingVisible(visible: Boolean) {

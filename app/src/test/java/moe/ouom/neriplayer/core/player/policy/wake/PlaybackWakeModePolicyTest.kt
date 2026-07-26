@@ -6,6 +6,11 @@ import org.junit.Test
 
 class PlaybackWakeModePolicyTest {
     @Test
+    fun `default playback keeps network playback awake`() {
+        assertEquals(C.WAKE_MODE_NETWORK, DEFAULT_PLAYBACK_WAKE_MODE)
+    }
+
+    @Test
     fun `network streams keep network wake mode`() {
         assertEquals(C.WAKE_MODE_NETWORK, resolvePlaybackWakeMode("https://example.test/a.mp3"))
         assertEquals(C.WAKE_MODE_NETWORK, resolvePlaybackWakeMode("http://example.test/a.mp3"))

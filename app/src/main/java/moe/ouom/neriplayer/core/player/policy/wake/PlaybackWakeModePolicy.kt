@@ -4,6 +4,8 @@ import androidx.media3.common.C
 
 private const val OFFLINE_CACHE_HOST = "offline.cache"
 
+internal const val DEFAULT_PLAYBACK_WAKE_MODE = C.WAKE_MODE_NETWORK
+
 fun resolvePlaybackWakeMode(url: String?): Int {
     val normalized = url?.trim().orEmpty()
     if (normalized.isBlank()) return C.WAKE_MODE_NONE
