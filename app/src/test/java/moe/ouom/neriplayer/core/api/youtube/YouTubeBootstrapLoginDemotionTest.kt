@@ -28,4 +28,58 @@ class YouTubeBootstrapLoginDemotionTest {
         assertFalse(demotesYouTubeLogin(parsedLoggedIn = true, holdsLoginCookies = true))
         assertFalse(demotesYouTubeLogin(parsedLoggedIn = true, holdsLoginCookies = false))
     }
+
+    @Test
+    fun stillCachesAnAnonymousParseWhenNothingIsCachedYet() {
+        // 出口被判游客时服务端会一直回 loggedIn=false, 一律不缓存会让缓存永远建不起来,
+        // 每次播放现拉现解析的那几秒会一比一落在首播上
+        assertFalse(
+            demotesCachedYouTubeLogin(
+                cachedLoggedIn = null,
+                parsedLoggedIn = false,
+                holdsLoginCookies = true
+            )
+        )
+        assertFalse(
+            demotesCachedYouTubeLogin(
+                cachedLoggedIn = false,
+                parsedLoggedIn = false,
+                holdsLoginCookies = true
+            )
+        )
+    }
+
+    @Test
+    fun refusesToOverwriteACachedLoginWithAnAnonymousParse() {
+        assertTrue(
+            demotesCachedYouTubeLogin(
+                cachedLoggedIn = true,
+                parsedLoggedIn = false,
+                holdsLoginCookies = true
+            )
+        )
+    }
+
+    @Test
+    fun letsALoggedInParseThrough() {
+        assertFalse(
+            demotesCachedYouTubeLogin(
+                cachedLoggedIn = true,
+                parsedLoggedIn = true,
+                holdsLoginCookies = true
+            )
+        )
+    }
+
+    @Test
+    fun caresOnlyAboutLoginCookiesWhenGuardingTheCache() {
+        // 本来就没登录时, 游客态解析就是事实
+        assertFalse(
+            demotesCachedYouTubeLogin(
+                cachedLoggedIn = true,
+                parsedLoggedIn = false,
+                holdsLoginCookies = false
+            )
+        )
+    }
 }

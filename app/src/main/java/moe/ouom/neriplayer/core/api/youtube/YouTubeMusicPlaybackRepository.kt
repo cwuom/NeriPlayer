@@ -336,6 +336,19 @@ internal fun demotesYouTubeLogin(
 ): Boolean = holdsLoginCookies && !parsedLoggedIn
 
 /**
+ * 这份结果能不能顶掉内存里那份
+ *
+ * 游客态的 bootstrap 里 apiKey/visitorData/clientVersion/STS 全都是能用的, 播放照样成,
+ * 所以只在已经握着一份登录态时才拒绝覆盖; 一律不缓存会让出口被判游客时缓存永远建不起来,
+ * 每次播放都要现拉现解析, 那几秒会一比一落在首播上
+ */
+internal fun demotesCachedYouTubeLogin(
+    cachedLoggedIn: Boolean?,
+    parsedLoggedIn: Boolean,
+    holdsLoginCookies: Boolean
+): Boolean = cachedLoggedIn == true && demotesYouTubeLogin(parsedLoggedIn, holdsLoginCookies)
+
+/**
  * 这份存档还能不能拿来垫一次播放
  *
  * 只看年龄不看指纹: 换账号时 clearAuthBoundCaches 已经把缓存清空了, 能留到这里的
@@ -3506,9 +3519,11 @@ class YouTubeMusicPlaybackRepository(
                     }
                 }
             }
-            val demotesLogin = demotesYouTubeLogin(
+            val holdsLoginCookies = workingAuth.hasLoginCookies()
+            val demotesLogin = demotesCachedYouTubeLogin(
+                cachedLoggedIn = cached?.loggedIn,
                 parsedLoggedIn = parsed.loggedIn,
-                holdsLoginCookies = workingAuth.hasLoginCookies()
+                holdsLoginCookies = holdsLoginCookies
             )
             if (demotesLogin) {
                 NPLogger.w(
@@ -3518,8 +3533,16 @@ class YouTubeMusicPlaybackRepository(
             }
             if (authGeneration == authCacheGeneration && !demotesLogin) {
                 bootstrapCache = parsed
-                // 下次冷启动直接吃这份, 省掉现拉首页再摊平上千条 EXPERIMENT_FLAGS
-                bootstrapStore?.save(parsed)
+                // 存档只收登录态: 出口被判游客时服务端会连着回 loggedIn=false,
+                // 那份能用来播放但不能留到下次冷启动, 否则一开局就是掉登录
+                if (!demotesYouTubeLogin(parsed.loggedIn, holdsLoginCookies)) {
+                    bootstrapStore?.save(parsed)
+                } else {
+                    NPLogger.d(
+                        "YouTubeMusicPlayback",
+                        "cache anonymous bootstrap for playback but keep it out of the archive"
+                    )
+                }
             }
         }
     }
