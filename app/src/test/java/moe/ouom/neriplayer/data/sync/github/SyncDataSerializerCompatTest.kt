@@ -73,8 +73,7 @@ class SyncDataSerializerCompatTest {
                     }
                   ]
                 }
-            """.trimIndent(),
-            isBinaryFormat = false
+            """.trimIndent().toByteArray()
         )
         val playlist = decoded.playlists.single()
 

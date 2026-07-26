@@ -44,9 +44,8 @@ class WebDavApiClient(
         private const val TAG = "WebDavApiClient"
         private const val DEFAULT_REMOTE_FILE_NAME = "neriplayer-sync.json"
 
-        fun calculateFingerprint(content: String): String {
-            val digest = MessageDigest.getInstance("SHA-256")
-                .digest(content.toByteArray(Charsets.UTF_8))
+        fun calculateFingerprint(content: ByteArray): String {
+            val digest = MessageDigest.getInstance("SHA-256").digest(content)
             return digest.joinToString("") { "%02x".format(it) }
         }
 
@@ -74,8 +73,8 @@ class WebDavApiClient(
         }
     }
 
-    data class RemoteFileSnapshot(
-        val content: String,
+    class RemoteFileSnapshot(
+        val content: ByteArray,
         val fingerprint: String,
         val version: ConcurrencyToken
     )
@@ -128,7 +127,7 @@ class WebDavApiClient(
             client.newCall(request).execute().use { response ->
                 when {
                     response.isSuccessful -> {
-                        val body = response.body?.string()
+                        val body = response.body?.bytes()
                             ?: throw IOException("Empty response")
                         RemoteFileSnapshot(
                             content = body,
@@ -163,7 +162,8 @@ class WebDavApiClient(
 
     fun updateFileContent(
         remoteUrl: String,
-        content: String,
+        content: ByteArray,
+        mediaType: String = "application/octet-stream",
         expectedVersion: ConcurrencyToken? = null,
         createOnly: Boolean = false
     ): Result<WriteResult> {
@@ -192,7 +192,7 @@ class WebDavApiClient(
             val request = Request.Builder()
                 .url(remoteUrl)
                 .headers(requestBuilder.build().headers)
-                .put(content.toRequestBody("application/json; charset=utf-8".toMediaType()))
+                .put(content.toRequestBody(mediaType.toMediaType()))
                 .build()
 
             client.newCall(request).execute().use { response ->

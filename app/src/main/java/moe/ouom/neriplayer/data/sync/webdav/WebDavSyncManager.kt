@@ -1060,8 +1060,8 @@ class WebDavSyncManager private constructor(context: Context) {
         }
 
         val remoteData = try {
-            SyncDataSerializer.ensureRemoteContentSize(snapshot.content, false)
-            sanitizeSyncData(SyncDataSerializer.deserialize(snapshot.content, false))
+            SyncDataSerializer.ensureRemoteContentSize(snapshot.content)
+            sanitizeSyncData(SyncDataSerializer.deserialize(snapshot.content))
         } catch (e: Exception) {
             NPLogger.e(TAG, "Failed to parse remote data", e)
             return Result.failure(e)
@@ -1115,15 +1115,23 @@ class WebDavSyncManager private constructor(context: Context) {
         version: WebDavRemoteVersion
     ): Result<WebDavRemoteVersion> {
         val localizedContext = LanguageManager.applyLanguage(appContext)
-        val content = SyncDataSerializer.serialize(data, false)
+        val useDataSaver = storage.isDataSaverMode()
+        val content = SyncDataSerializer.serialize(data, useDataSaver)
+        // 省流模式直传原始 GZIP(ProtoBuf) 字节；非省流传 UTF-8 JSON 字节
+        val mediaType = if (useDataSaver) {
+            "application/octet-stream"
+        } else {
+            "application/json; charset=utf-8"
+        }
         NPLogger.d(
             TAG,
-            "Upload data size: ${SyncDataSerializer.getDataSize(data, false)} bytes (WebDAV)"
+            "Upload data size: ${SyncDataSerializer.getDataSize(data, useDataSaver)} bytes (DataSaver: $useDataSaver, WebDAV)"
         )
 
         val uploadResult = apiClient.updateFileContent(
             remoteUrl = remoteUrl,
             content = content,
+            mediaType = mediaType,
             expectedVersion = version.token,
             createOnly = version.createOnly
         )

@@ -1089,16 +1089,8 @@ class GitHubSyncManager private constructor(context: Context) {
 
         var actualRemoteSha = remoteSha
         val remoteData = try {
-            SyncDataSerializer.ensureRemoteContentSize(
-                remoteContent,
-                SyncDataSerializer.isBinaryFileName(actualFileName)
-            )
-            sanitizeSyncData(
-                SyncDataSerializer.deserialize(
-                    remoteContent,
-                    SyncDataSerializer.isBinaryFileName(actualFileName)
-                )
-            )
+            SyncDataSerializer.ensureRemoteContentSize(remoteContent)
+            sanitizeSyncData(SyncDataSerializer.deserialize(remoteContent))
         } catch (e: Exception) {
             val alternativeFileName = SyncDataSerializer.getFileName(!SyncDataSerializer.isBinaryFileName(actualFileName))
             val fallbackResult = if (alternativeFileName != actualFileName) {
@@ -1106,18 +1098,10 @@ class GitHubSyncManager private constructor(context: Context) {
             } else null
             val fallbackContent = fallbackResult?.first
             val fallbackSha = fallbackResult?.second
-            val parsedFallback = if (!fallbackContent.isNullOrEmpty()) {
+            val parsedFallback = if (fallbackContent != null && fallbackContent.isNotEmpty()) {
                 runCatching {
-                    SyncDataSerializer.ensureRemoteContentSize(
-                        fallbackContent,
-                        SyncDataSerializer.isBinaryFileName(alternativeFileName)
-                    )
-                    sanitizeSyncData(
-                        SyncDataSerializer.deserialize(
-                            fallbackContent,
-                            SyncDataSerializer.isBinaryFileName(alternativeFileName)
-                        )
-                    )
+                    SyncDataSerializer.ensureRemoteContentSize(fallbackContent)
+                    sanitizeSyncData(SyncDataSerializer.deserialize(fallbackContent))
                 }.getOrNull()
             } else null
 
