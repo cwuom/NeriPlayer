@@ -67,7 +67,7 @@ object UsbExclusiveSessionController {
     private val focusSuppressed = AtomicBoolean(false)
     private val activeDeviceId = AtomicInteger(NO_ACTIVE_USB_DEVICE_ID)
     private val activeDeviceName = AtomicReference<String?>(null)
-    // 记录 host 侧已开启设备的具体 key,供音频侧格式解析对齐到同一物理设备,避免"能力查自 A、音频走 B"
+    // 记录 host 侧已开启设备的具体 key,供音频侧格式解析对齐到同一物理设备,避免"能力查自 A, 音频走 B"
     private val activeDeviceKey = AtomicReference<String?>(null)
     private val nativeCloseExecutor = Executors.newSingleThreadExecutor { task ->
         Thread(task, "NeriUsbExclusiveClose").apply { isDaemon = true }

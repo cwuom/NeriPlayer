@@ -283,16 +283,16 @@ fun LyricsScreen(
         animationSpec = spring(dampingRatio = 0.8f),
         label = "cover_scale"
     )
-    // 垂直偏移控制在标题栏内（约-8dp），避免飞出界面
+    // 垂直偏移控制在标题栏内 (约-8dp) , 避免飞出界面
     val coverOffsetY by animateFloatAsState(
         targetValue = if (isLyricsMode) -8f else 0f,
         animationSpec = spring(dampingRatio = 0.8f),
         label = "cover_offset_y"
     )
 
-    // 播放控件动画 - 轻微上浮/下沉，保持常驻在安全区域内
+    // 播放控件动画 - 轻微上浮/下沉, 保持常驻在安全区域内
 
-    // 使用填充整个屏幕，不创建新背景，复用现有背景
+    // 使用填充整个屏幕, 不创建新背景, 复用现有背景
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -324,7 +324,7 @@ fun LyricsScreen(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // 封面 - 紧邻返回键，缩小时约48dp
+            // 封面 - 紧邻返回键, 缩小时约48dp
             Box(
                 modifier = Modifier
                     .size((64 * coverScale).dp)
@@ -361,7 +361,7 @@ fun LyricsScreen(
 
             Spacer(modifier = Modifier.width(10.dp))
 
-            // 标题区始终占用剩余空间，避免挤出边界
+            // 标题区始终占用剩余空间, 避免挤出边界
             Column(
                 modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.Start
@@ -439,7 +439,7 @@ fun LyricsScreen(
                 }
             }
 
-            // 收藏按钮（与 NowPlaying 保持一致的逻辑）
+            // 收藏按钮 (与 NowPlaying 保持一致的逻辑)
             val playlists by PlayerManager.playlistsFlow.collectAsState()
             val localPlaylistsReady by PlayerManager.localPlaylistsReadyFlow.collectAsState()
             val isFavoriteComputed = remember(currentSong, playlists) {
@@ -699,7 +699,7 @@ fun LyricsScreen(
             Spacer(modifier = Modifier.height(12.dp))
         }
 
-        // 底部操作栏（固定在底部，与 NowPlayingScreen 完全一致）
+        // 底部操作栏 (固定在底部, 与 NowPlayingScreen 完全一致)
         Row(
             modifier = Modifier
                 .fillMaxWidth(toolbarWidthFraction)
@@ -765,7 +765,7 @@ fun LyricsScreen(
                 )
             }
 
-            // 音量按钮（根据设备显示不同图标，居中）
+            // 音量按钮 (根据设备显示不同图标, 居中)
             val context = LocalContext.current
             val audioManager = remember { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }
             val devices = audioManager.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
@@ -797,7 +797,7 @@ fun LyricsScreen(
                 )
             }
 
-            // 歌词按钮（返回封面页，高亮显示）
+            // 歌词按钮 (返回封面页, 高亮显示)
             @SuppressLint("UnusedContentLambdaTargetStateParameter")
             HapticIconButton(onClick = onNavigateBack,
                 modifier = Modifier.then(

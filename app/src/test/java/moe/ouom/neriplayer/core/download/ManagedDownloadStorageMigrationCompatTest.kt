@@ -269,7 +269,7 @@ class ManagedDownloadStorageMigrationCompatTest {
 
     @Test
     fun `shouldKeepSourceForSizeMismatch keeps source when copied size is unknown or empty`() {
-        // #D3 回归：目标尺寸为 0（SAF 对新建文档常返回 length=0）时必须保留源，避免误删导致数据丢失
+        // #D3 回归: 目标尺寸为 0 (SAF 对新建文档常返回 length=0) 时必须保留源, 避免误删导致数据丢失
         assertTrue(
             ManagedDownloadMigrationFinalizer.shouldKeepSourceForSizeMismatch(
                 sourceSize = 100L,
@@ -282,7 +282,7 @@ class ManagedDownloadStorageMigrationCompatTest {
                 copiedSize = 0L
             )
         )
-        // 防御性：负数（不可知）同样保留源
+        // 防御性: 负数 (不可知) 同样保留源
         assertTrue(
             ManagedDownloadMigrationFinalizer.shouldKeepSourceForSizeMismatch(
                 sourceSize = 100L,
@@ -293,14 +293,14 @@ class ManagedDownloadStorageMigrationCompatTest {
 
     @Test
     fun `shouldKeepSourceForSizeMismatch keeps source when target is truncated or size mismatches`() {
-        // 目标非空但明显小于源（截断/损坏）时保留源
+        // 目标非空但明显小于源 (截断/损坏) 时保留源
         assertTrue(
             ManagedDownloadMigrationFinalizer.shouldKeepSourceForSizeMismatch(
                 sourceSize = 100L,
                 copiedSize = 1L
             )
         )
-        // 源尺寸不可知(0) 但目标非空且远超容差，视为不一致，保留源
+        // 源尺寸不可知(0) 但目标非空且远超容差, 视为不一致, 保留源
         assertTrue(
             ManagedDownloadMigrationFinalizer.shouldKeepSourceForSizeMismatch(
                 sourceSize = 0L,
@@ -311,21 +311,21 @@ class ManagedDownloadStorageMigrationCompatTest {
 
     @Test
     fun `shouldKeepSourceForSizeMismatch allows deleting source when copy faithfully matches`() {
-        // 源/目标尺寸一致（容差内）时确认拷贝可信，允许删源
+        // 源/目标尺寸一致 (容差内) 时确认拷贝可信, 允许删源
         assertFalse(
             ManagedDownloadMigrationFinalizer.shouldKeepSourceForSizeMismatch(
                 sourceSize = 100L,
                 copiedSize = 100L
             )
         )
-        // 容差为 1 字节，相差 1 仍视为一致
+        // 容差为 1 字节, 相差 1 仍视为一致
         assertFalse(
             ManagedDownloadMigrationFinalizer.shouldKeepSourceForSizeMismatch(
                 sourceSize = 100L,
                 copiedSize = 101L
             )
         )
-        // 源本就为空(0)、目标落在容差内(1)，视为一致，允许删源（源本就为空才可删）
+        // 源本就为空(0), 目标落在容差内(1), 视为一致, 允许删源 (源本就为空才可删)
         assertFalse(
             ManagedDownloadMigrationFinalizer.shouldKeepSourceForSizeMismatch(
                 sourceSize = 0L,

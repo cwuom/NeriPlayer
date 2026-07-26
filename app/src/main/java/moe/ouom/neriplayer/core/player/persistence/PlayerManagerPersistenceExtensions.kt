@@ -114,7 +114,7 @@ private fun PlayerManager.buildPersistedPlaylistState(
 ): PersistedState {
     return PersistedState(
         playlist = playlistReference.mapIndexed { index, song ->
-            // 只给当前歌曲保留内嵌歌词，避免大队列切歌时反复序列化整批长文本
+            // 只给当前歌曲保留内嵌歌词, 避免大队列切歌时反复序列化整批长文本
             song.toPersistedSongItem(
                 includeLyrics = shouldPersistEmbeddedLyrics(song) && index == playbackStateSnapshot.index
             )
@@ -746,12 +746,12 @@ internal data class ShuffleQueueIndexState(
 )
 
 /**
- * “下一首播放”在随机模式下的随机索引重映射(纯函数)
+ * "下一首播放"在随机模式下的随机索引重映射(纯函数)
  *
  * 队列变化固定为两步且顺序不可颠倒:先 removeAt(existingIndex)(existingIndex<0 表示不移除),
- * 再 add(insertIndex, 新曲)。随机列表里保存的是队列下标,必须做同样的收缩/扩张:
- * 移除时丢弃指向被删槽位的下标、其后下标整体前移;插入时插入位及其后下标整体后移。
- * 最后把新曲槽位从 bag/history 移除并放入 future,保证随机序不错播、不漏曲、不重复。
+ * 再 add(insertIndex, 新曲); 随机列表里保存的是队列下标,必须做同样的收缩/扩张:
+ * 移除时丢弃指向被删槽位的下标, 其后下标整体前移;插入时插入位及其后下标整体后移
+ * 最后把新曲槽位从 bag/history 移除并放入 future,保证随机序不错播, 不漏曲, 不重复
  * currentIndex 由调用方经 queueIndexOf 单独重定位,这里不涉及 currentIndex
  */
 internal fun remapShuffleStateForInsertNext(
@@ -823,7 +823,7 @@ internal fun PlayerManager.addToQueueNextImpl(song: SongItem) {
         currentIndex.coerceIn(0, newPlaylist.lastIndex)
     }
     if (player.shuffleModeEnabled) {
-        // 队列中部移除/插入后,同步重映射三个随机索引列表,避免旧下标错位导致错播、漏曲、重复
+        // 队列中部移除/插入后,同步重映射三个随机索引列表,避免旧下标错位导致错播, 漏曲, 重复
         val newSongRealIndex = queueIndexOf(song, newPlaylist)
         val remapped = remapShuffleStateForInsertNext(
             state = ShuffleQueueIndexState(

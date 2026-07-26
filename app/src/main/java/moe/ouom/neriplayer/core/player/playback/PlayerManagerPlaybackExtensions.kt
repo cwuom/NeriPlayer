@@ -1707,7 +1707,7 @@ internal fun PlayerManager.startProgressUpdates() {
             }
             if (lyriconEnabled) {
                 LyriconManager.setPlaybackSpeed(playbackSoundConfig.speed)
-                // 与高级歌词同源：进度环原始媒体位置，显示 lead 在 LyriconManager 内处理
+                // 与高级歌词同源: 进度环原始媒体位置, 显示 lead 在 LyriconManager 内处理
                 LyriconManager.setPosition(
                     mediaLyriconPositionMs(
                         positionMs = positionMs,

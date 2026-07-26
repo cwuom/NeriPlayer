@@ -112,9 +112,9 @@ import javax.net.ssl.SSLException
 import kotlin.LazyThreadSafetyMode
 
 /**
- * 音频下载管理器：解析来源（网易云 / Bilibili）并保存到本地目录
- * - 不依赖系统 DownloadManager，直接用共享 OkHttpClient，实现自定义 Header 与代理
- * - 默认保存路径：/Android/data/<package>/files/Music/NeriPlayer/<Artist - Title>.<ext>
+ * 音频下载管理器: 解析来源 (网易云 / Bilibili) 并保存到本地目录
+ * - 不依赖系统 DownloadManager, 直接用共享 OkHttpClient, 实现自定义 Header 与代理
+ * - 默认保存路径: /Android/data/<package>/files/Music/NeriPlayer/<Artist - Title>.<ext>
  * - 支持通过 SAF 将下载目录切换到自定义文件夹
  */
 object AudioDownloadManager {
@@ -1194,7 +1194,7 @@ object AudioDownloadManager {
                     var activeTransportKind: DownloadTransportKind? = null
                     var activeWorkingFileName: String? = null
                     var forceRefreshYouTubeSource = false
-                    // 直链下载被 403 后置位：后续重试改走不需 pot 的 HLS，避免在脏 IP 上死磕必 403 的直链
+                    // 直链下载被 403 后置位: 后续重试改走不需 pot 的 HLS, 避免在脏 IP 上死磕必 403 的直链
                     var avoidYouTubeDirectSource = false
                     while (true) {
                         ensureSongDownloadNotCancelled(songKey, "prepare", batchSessionId, attemptId)
@@ -1246,7 +1246,7 @@ object AudioDownloadManager {
                             }
                             forceRefreshYouTubeSource = false
 
-                            // song duration 已经从 resolved 获取，不再写入数据库，只保持在当前上下文中
+                            // song duration 已经从 resolved 获取, 不再写入数据库, 只保持在当前上下文中
                             // 真正的持久化由 GlobalDownloadManager 完成
                             val workingSong = if (song.durationMs == 0L && resolved.durationMs != null && resolved.durationMs > 0L) {
                                 song.copy(durationMs = resolved.durationMs)
@@ -1285,9 +1285,9 @@ object AudioDownloadManager {
                                     reqBuilder.header(name, value)
                                 }
                                 // 下载不再对 googlevideo 直链注入整档 Range(bytes=0-<clen-1>):
-                                // 整档单请求会被 googlevideo 全量下载风控 403(同一直链能 range 播放却下不了)。
-                                // 直链下载改由 resolveDownloadTransportKind/singleThreadDownload 统一走分块 range，
-                                // 显式整档头会命中 hasExplicitRangeHeader 反而退回 DIRECT，故此处不再设置。
+                                // 整档单请求会被 googlevideo 全量下载风控 403(同一直链能 range 播放却下不了)
+                                // 直链下载改由 resolveDownloadTransportKind/singleThreadDownload 统一走分块 range
+                                // 显式整档头会命中 hasExplicitRangeHeader 反而退回 DIRECT, 故此处不再设置
                             }
 
                             val request = reqBuilder.build()
@@ -1470,7 +1470,7 @@ object AudioDownloadManager {
                                 )
                                 if (isYouTubeMusic && shouldRefreshYouTubeDownloadSourceOnFailure(error)) {
                                     forceRefreshYouTubeSource = true
-                                    // 直链被 403：脏 IP 下 WEB_REMIX web-GVS 直链带 pot 也挡不住，
+                                    // 直链被 403: 脏 IP 下 WEB_REMIX web-GVS 直链带 pot 也挡不住
                                     // 后续重试改走不需 pot 的 HLS 兜底
                                     if (isForbiddenYouTubeDownloadFailure(error)) {
                                         avoidYouTubeDirectSource = true
@@ -2265,8 +2265,8 @@ object AudioDownloadManager {
         return isRefreshableYouTubeDownloadStatusCode(statusCode)
     }
 
-    // 403 表示服务端拒绝该直链：WEB_REMIX web-GVS 直链在脏 IP 下即便带 pot 也常被 403
-    // （同一直链能 range 播放却下不了）。据此让下载重试改走不需 pot 的 HLS 兜底
+    // 403 表示服务端拒绝该直链: WEB_REMIX web-GVS 直链在脏 IP 下即便带 pot 也常被 403
+    // (同一直链能 range 播放却下不了) ; 据此让下载重试改走不需 pot 的 HLS 兜底
     internal fun isForbiddenYouTubeDownloadFailure(error: Throwable): Boolean {
         return extractYouTubeDownloadHttpStatus(error) == 403
     }
@@ -2783,7 +2783,7 @@ object AudioDownloadManager {
         return resolveReadableDownloadedPlaybackUri(context, song) != null
     }
 
-    /** 解析下载歌曲对应的本地封面，供离线 UI 兜底使用 */
+    /** 解析下载歌曲对应的本地封面, 供离线 UI 兜底使用 */
     fun getLocalCoverUri(
         context: Context,
         song: SongItem,
@@ -2906,8 +2906,8 @@ object AudioDownloadManager {
         val videoId = extractYouTubeMusicVideoId(song.mediaUri) ?: return null
         var directPlayableAudio: YouTubePlayableAudio? = null
         var fallbackPlayableAudio: YouTubePlayableAudio? = null
-        // 直链下载曾被 403 时(avoidDirect)只用不要求直链的策略并跳过所有直链候选，改优先 HLS：
-        // HLS(m3u8) 的 GVS 不需要 pot，脏 IP 下比 WEB_REMIX web-GVS 直链稳（对齐 yt-dlp/PoToken 指南）
+        // 直链下载曾被 403 时(avoidDirect)只用不要求直链的策略并跳过所有直链候选, 改优先 HLS:
+        // HLS(m3u8) 的 GVS 不需要 pot, 脏 IP 下比 WEB_REMIX web-GVS 直链稳 (对齐 yt-dlp/PoToken 指南)
         val attempts = resolveYouTubeDownloadResolveAttempts(forceRefresh)
             .let { list -> if (avoidDirect) list.filterNot { it.requireDirect } else list }
         for (attempt in attempts) {
@@ -2924,8 +2924,8 @@ object AudioDownloadManager {
                     )
                     continue
                 }
-                // WEB_REMIX 直链缺 pot 时:1 字节探活可过但整段下载必被 googlevideo 403，
-                // 跳过该候选继续降级(重解析 mint pot / HLS 兜底)，避免下载拿到必失败的直链
+                // WEB_REMIX 直链缺 pot 时:1 字节探活可过但整段下载必被 googlevideo 403
+                // 跳过该候选继续降级(重解析 mint pot / HLS 兜底), 避免下载拿到必失败的直链
                 if (isYouTubeWebRemixDirectMissingPoToken(candidate.url)) {
                     NPLogger.w(
                         TAG,
@@ -3478,11 +3478,11 @@ object AudioDownloadManager {
                 } catch (error: ChunkRequestIOException) {
                     val alreadyComplete = totalBytes > 0L && downloadedBytes >= totalBytes
                     if (error.responseCode == 416 && downloadedBytes > 0L) {
-                        // 416 = range 越界，通常意味着当前 offset 已经到尾部
+                        // 416 = range 越界, 通常意味着当前 offset 已经到尾部
                         break
                     }
                     if (error.responseCode == 403 && alreadyComplete) {
-                        // 403 = CDN 拒绝，只有在总长度已满足时才接受为完成
+                        // 403 = CDN 拒绝, 只有在总长度已满足时才接受为完成
                         break
                     }
                     throw error

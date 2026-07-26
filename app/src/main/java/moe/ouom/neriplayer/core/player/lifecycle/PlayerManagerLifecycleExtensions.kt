@@ -260,7 +260,7 @@ internal fun PlayerManager.initializeImpl(
             extractorsFactory
         )
 
-        // USB 独占优先保留解码器的原生整数 PCM，别在进入 native USB 前强行改成 float
+        // USB 独占优先保留解码器的原生整数 PCM, 别在进入 native USB 前强行改成 float
         val enableFloatOutput =
             playbackHighResolutionOutputEnabled && !usbExclusivePlaybackEnabled
         val renderersFactory = ReactiveRenderersFactory(app)

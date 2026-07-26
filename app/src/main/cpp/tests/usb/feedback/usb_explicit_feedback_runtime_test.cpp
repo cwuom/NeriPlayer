@@ -324,10 +324,10 @@ void longSchedulingGapWithoutValidFeedbackStillFailsClosed() {
     assert(snapshot.longGapReacquisitions == 0U);
 }
 
-// #U1 回归:复现生产事件循环每 1ms 一次 tick 的节律。间隙超过原地重获阈值(修复后 282ms)但
+// #U1 回归:复现生产事件循环每 1ms 一次 tick 的节律; 间隙超过原地重获阈值(修复后 282ms)但
 // 未到硬保持超时(532ms)时,返回的有效反馈包必须触发原地重获,而不能被周期 tick 先判定
-// HoldoverTimeout 拆流。period=500us 时:softMiss=32ms、hardHoldover=500ms、硬失败=532ms。
-// 修复前阈值=532ms,此处包在 300ms 返回会走 slew relock 使 longGapReacquisitions 保持 0,断言失败。
+// HoldoverTimeout 拆流; period=500us 时:softMiss=32ms, hardHoldover=500ms, 硬失败=532ms
+// 修复前阈值=532ms,此处包在 300ms 返回会走 slew relock 使 longGapReacquisitions 保持 0,断言失败
 void reacquiresUnderProductionTickCadenceAfterLongGap() {
     ExplicitFeedbackRuntime runtime;
     configureRuntime(&runtime);
@@ -345,7 +345,7 @@ void reacquiresUnderProductionTickCadenceAfterLongGap() {
     )));
     assert(runtime.nextPacket(true).status == StreamGatePacketStatus::PlayerPacket);
 
-    // 间隙期间每 1ms 一次 tick,推进到 300ms:> 282ms 重获阈值、< 532ms 硬失败,时钟停在 Holdover
+    // 间隙期间每 1ms 一次 tick,推进到 300ms:> 282ms 重获阈值, < 532ms 硬失败,时钟停在 Holdover
     constexpr int64_t resumedAtNs = 300'000'000;
     for (int64_t nowNs = 2'000'000; nowNs < resumedAtNs; nowNs += 1'000'000) {
         assert(runtime.tick(nowNs));

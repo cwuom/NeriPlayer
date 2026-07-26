@@ -69,7 +69,7 @@ class ListenTogetherControlHardeningTest {
         )
     }
 
-    // MEDIUM: 转发请求去重，按 (requesterUuid, sequence)，无序号用事件 id
+    // MEDIUM: 转发请求去重, 按 (requesterUuid, sequence), 无序号用事件 id
     @Test
     fun `deduper keeps per requester sequence independent`() {
         val deduper = ListenTogetherForwardedRequestDeduper()
@@ -123,7 +123,7 @@ class ListenTogetherControlHardeningTest {
         assertEquals(0L, clampListenTogetherPositionMs(-1L, 0L))
     }
 
-    // MEDIUM: baseTimestampMs<=0 回退当前时钟，避免位置爆炸
+    // MEDIUM: baseTimestampMs<=0 回退当前时钟, 避免位置爆炸
     @Test
     fun `expected position falls back when base timestamp invalid`() {
         val playback = ListenTogetherPlaybackState(
@@ -162,7 +162,7 @@ class ListenTogetherControlHardeningTest {
         assertEquals(12_345L, playback.expectedPositionMs(nowMs = 1_700_000_000_000L))
     }
 
-    // MEDIUM: 空 queue 的转发请求视为“不改动队列”，回退当前房间队列而非清空
+    // MEDIUM: 空 queue 的转发请求视为"不改动队列", 回退当前房间队列而非清空
     @Test
     fun `forwarded control with empty queue retains current queue`() {
         val track1 = listenTogetherTrack("k1")

@@ -70,7 +70,7 @@ fun NeriTheme(
             if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
         else -> {
-            // 兜底非法 hex：解析前归一，避免坏值使 toColorInt 在主题组合期抛异常崩溃
+            // 兜底非法 hex: 解析前归一, 避免坏值使 toColorInt 在主题组合期抛异常崩溃
             val seed = Color(("#${ThemeDefaults.sanitizeSeedColorHex(seedColorHex)}").toColorInt())
             rememberDynamicColorScheme(
                 seedColor = seed,

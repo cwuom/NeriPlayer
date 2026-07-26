@@ -1,11 +1,11 @@
 package moe.ouom.neriplayer.core.lyricon
 
-/** Lyricon 独立位置推送周期，与 UI 进度刷新解耦 */
+/** Lyricon 独立位置推送周期, 与 UI 进度刷新解耦 */
 internal const val LYRICON_FEED_INTERVAL_MS = 200L
 
 /**
- * 推给 Lyricon/词幕的显示预推（媒体时间轴）
- * 锚点用真实媒体进度，仅显示层加 lead，避免 dead-reckon 叠推
+ * 推给 Lyricon/词幕的显示预推 (媒体时间轴)
+ * 锚点用真实媒体进度, 仅显示层加 lead, 避免 dead-reckon 叠推
  */
 internal const val LYRICON_DISPLAY_LEAD_MS = 750L
 
@@ -21,7 +21,7 @@ internal data class LyriconPositionAnchor(
 )
 
 /**
- * 对齐高级歌词插值：anchor + elapsedRealtime * speed
+ * 对齐高级歌词插值: anchor + elapsedRealtime * speed
  * 无有效锚点时返回 null
  */
 internal fun resolveLyriconFeedPosition(
@@ -36,7 +36,7 @@ internal fun resolveLyriconFeedPosition(
 }
 
 /**
- * 倍速变化：先按旧速推到 now，再以新速重锚
+ * 倍速变化: 先按旧速推到 now, 再以新速重锚
  */
 internal fun rebaseLyriconPositionAnchor(
     anchor: LyriconPositionAnchor?,
@@ -55,7 +55,7 @@ internal fun rebaseLyriconPositionAnchor(
 }
 
 /**
- * 进度环写入锚点：严格媒体进度（与高级歌词同源）
+ * 进度环写入锚点: 严格媒体进度 (与高级歌词同源)
  */
 internal fun mediaLyriconPositionMs(
     positionMs: Long,
@@ -65,8 +65,8 @@ internal fun mediaLyriconPositionMs(
 }
 
 /**
- * 推给 Lyricon/SuperLyric 的显示位置：媒体进度 + 固定 lead
- * lead 不进锚点，避免叠推
+ * 推给 Lyricon/SuperLyric 的显示位置: 媒体进度 + 固定 lead
+ * lead 不进锚点, 避免叠推
  */
 internal fun displayLyriconPositionMs(
     mediaPositionMs: Long,
@@ -80,7 +80,7 @@ internal fun displayLyriconPositionMs(
 }
 
 /**
- * 与高级歌词一致：有限 speed 取 max(0)，非法回退 1
+ * 与高级歌词一致: 有限 speed 取 max(0), 非法回退 1
  * 0 表示冻结前进
  */
 internal fun normalizeLyriconPlaybackSpeed(speed: Float): Float {

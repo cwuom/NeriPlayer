@@ -46,17 +46,17 @@ import java.util.zip.GZIPOutputStream
 /**
  * 同步数据序列化工具
  *
- * 写路径（迁移期保活）：产物与旧客户端逐字节兼容，保证老端仍能读新端写的备份
- * - 非省流（backup.json）: UTF-8 编码的 JSON 文本字节
- * - 省流（backup.bin）: Base64(GZIP(ProtoBuf)) 文本字节（老端可读的历史格式）
+ * 写路径 (迁移期保活) : 产物与旧客户端逐字节兼容, 保证老端仍能读新端写的备份
+ * - 非省流 (backup.json) : UTF-8 编码的 JSON 文本字节
+ * - 省流 (backup.bin) : Base64(GZIP(ProtoBuf)) 文本字节 (老端可读的历史格式)
  *
- * 写侧暂不切 raw GZIP：旧端把 backup.bin 当 UTF-8 文本再 Base64 解码，raw 二进制必抛异常
- * 导致旧端 fail-stop 断同步；等全端更新后再由后续开关切到 write-raw
+ * 写侧暂不切 raw GZIP: 旧端把 backup.bin 当 UTF-8 文本再 Base64 解码, raw 二进制必抛异常
+ * 导致旧端 fail-stop 断同步; 等全端更新后再由后续开关切到 write-raw
  *
- * 读路径按内容自动识别（read-both），三种在野格式都不失败：
- * - 以 GZIP 魔数 0x1F 0x8B 开头 -> 直接解压 -> ProtoBuf（为将来 write-raw 预留）
- * - 文本且首个有效字节为 '{' -> JSON（旧/新 backup.json / 旧 WebDAV JSON）
- * - 其余文本 -> Base64(GZIP(ProtoBuf)) -> Base64 解码 -> 解压 -> ProtoBuf（backup.bin）
+ * 读路径按内容自动识别 (read-both) , 三种在野格式都不失败:
+ * - 以 GZIP 魔数 0x1F 0x8B 开头 -> 直接解压 -> ProtoBuf (为将来 write-raw 预留)
+ * - 文本且首个有效字节为 '{' -> JSON (旧/新 backup.json / 旧 WebDAV JSON)
+ * - 其余文本 -> Base64(GZIP(ProtoBuf)) -> Base64 解码 -> 解压 -> ProtoBuf (backup.bin)
  */
 @OptIn(ExperimentalSerializationApi::class)
 object SyncDataSerializer {
@@ -69,19 +69,19 @@ object SyncDataSerializer {
     }
     private val protoBuf = ProtoBuf
     private const val MAX_JSON_BYTES = 8 * 1024 * 1024
-    // 省流/二进制上限：同时覆盖新的原始 GZIP 字节与历史 Base64 文本
+    // 省流/二进制上限: 同时覆盖新的原始 GZIP 字节与历史 Base64 文本
     private const val MAX_COMPRESSED_BYTES = 12 * 1024 * 1024
     private const val MAX_DECOMPRESSED_BYTES = 16 * 1024 * 1024
 
     /**
-     * 序列化数据为上传字节（同时用于体积统计）
+     * 序列化数据为上传字节 (同时用于体积统计)
      * @param data 同步数据
      * @param useDataSaver 是否使用省流模式
-     * @return useDataSaver=true 时为 Base64(GZIP(ProtoBuf)) 文本字节（老端可读）；否则为 UTF-8 JSON 字节
+     * @return useDataSaver=true 时为 Base64(GZIP(ProtoBuf)) 文本字节 (老端可读) ; 否则为 UTF-8 JSON 字节
      */
     fun serialize(data: SyncData, useDataSaver: Boolean): ByteArray {
         return if (useDataSaver) {
-            // 迁移期保活：写老端可读的 Base64 文本，而非原始 GZIP 字节
+            // 迁移期保活: 写老端可读的 Base64 文本, 而非原始 GZIP 字节
             val rawGzip = compress(protoBuf.encodeToByteArray(data))
             Base64.getEncoder().encodeToString(rawGzip).toByteArray(Charsets.UTF_8)
         } else {
@@ -90,11 +90,11 @@ object SyncDataSerializer {
     }
 
     /**
-     * 反序列化数据（按内容自动识别格式，read-both）
-     * 兼容三种在野格式，确保读旧备份与新备份都不失败：
-     * 1. 原始 GZIP(ProtoBuf) 字节（新 raw 格式，魔数 0x1F 0x8B 开头）
-     * 2. JSON 文本（旧 backup.json / 旧 WebDAV，首个有效字节为 '{'）
-     * 3. 旧 Base64(GZIP(ProtoBuf)) 文本（旧 backup.bin）
+     * 反序列化数据 (按内容自动识别格式, read-both)
+     * 兼容三种在野格式, 确保读旧备份与新备份都不失败:
+     * 1. 原始 GZIP(ProtoBuf) 字节 (新 raw 格式, 魔数 0x1F 0x8B 开头)
+     * 2. JSON 文本 (旧 backup.json / 旧 WebDAV, 首个有效字节为 '{')
+     * 3. 旧 Base64(GZIP(ProtoBuf)) 文本 (旧 backup.bin)
      */
     fun deserialize(content: ByteArray): SyncData {
         if (looksLikeGzip(content)) {
@@ -104,7 +104,7 @@ object SyncDataSerializer {
         return if (looksLikeJson(content)) {
             deserializeJson(text)
         } else {
-            // 旧 backup.bin：先 Base64 解码得到 GZIP 字节，再解压
+            // 旧 backup.bin: 先 Base64 解码得到 GZIP 字节, 再解压
             decodeGzipProto(Base64.getMimeDecoder().decode(text.trim()))
         }
     }
@@ -125,7 +125,7 @@ object SyncDataSerializer {
     }
 
     /**
-     * GZIP(ProtoBuf) 原始字节 -> SyncData（含旧/错误字段编号 schema 的兼容回退）
+     * GZIP(ProtoBuf) 原始字节 -> SyncData (含旧/错误字段编号 schema 的兼容回退)
      */
     private fun decodeGzipProto(gzipBytes: ByteArray): SyncData {
         require(gzipBytes.size <= MAX_COMPRESSED_BYTES) {
@@ -141,14 +141,14 @@ object SyncDataSerializer {
             }
     }
 
-    /** 原始 GZIP 字节以魔数 0x1F 0x8B 开头，用于区分新 raw 格式与历史文本格式 */
+    /** 原始 GZIP 字节以魔数 0x1F 0x8B 开头, 用于区分新 raw 格式与历史文本格式 */
     private fun looksLikeGzip(bytes: ByteArray): Boolean {
         return bytes.size >= 2 &&
             bytes[0] == 0x1F.toByte() &&
             bytes[1] == 0x8B.toByte()
     }
 
-    /** 跳过前导 UTF-8 BOM 与空白后，首个有效字节为 '{' 即视为 JSON 对象 */
+    /** 跳过前导 UTF-8 BOM 与空白后, 首个有效字节为 '{' 即视为 JSON 对象 */
     private fun looksLikeJson(bytes: ByteArray): Boolean {
         var i = 0
         if (bytes.size >= 3 &&
@@ -203,7 +203,7 @@ object SyncDataSerializer {
     }
 
     /**
-     * 远端内容大小上限校验（按内容自动选择 JSON / 二进制上限）
+     * 远端内容大小上限校验 (按内容自动选择 JSON / 二进制上限)
      */
     fun ensureRemoteContentSize(content: ByteArray) {
         val maxBytes = if (looksLikeJson(content)) MAX_JSON_BYTES else MAX_COMPRESSED_BYTES
@@ -211,7 +211,7 @@ object SyncDataSerializer {
     }
 
     /**
-     * 获取数据大小（用于统计），返回实际上传的原始字节数
+     * 获取数据大小 (用于统计) , 返回实际上传的原始字节数
      */
     fun getDataSize(data: SyncData, useDataSaver: Boolean): Int {
         return serialize(data, useDataSaver).size
@@ -232,7 +232,7 @@ object SyncDataSerializer {
     }
 
     /**
-     * 获取文件名（根据格式）
+     * 获取文件名 (根据格式)
      */
     fun getFileName(useDataSaver: Boolean): String {
         return if (useDataSaver) "backup.bin" else "backup.json"
@@ -246,12 +246,12 @@ object SyncDataSerializer {
     }
 
     /**
-     * 兼容旧/错误字段编号的 schema（mediaUri 插入到 addedAt 之前的版本）
+     * 兼容旧/错误字段编号的 schema (mediaUri 插入到 addedAt 之前的版本)
      */
     @Serializable
     private data class LegacySyncData(
         @ProtoNumber(1) val version: String = "2.0",
-        // 回退路径同样按 proto3 语义补默认值，避免二次抛出 MissingFieldException
+        // 回退路径同样按 proto3 语义补默认值, 避免二次抛出 MissingFieldException
         @ProtoNumber(2) val deviceId: String = "",
         @ProtoNumber(3) val deviceName: String = "",
         @ProtoNumber(4) val lastModified: Long = System.currentTimeMillis(),

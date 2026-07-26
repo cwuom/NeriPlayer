@@ -322,14 +322,14 @@ fun LocalPlaylistDetailScreen(
         ?: LocalMetadataProcessingState()
     LaunchedEffect(playlistId) { vm.start(playlistId) }
 
-    // 保存最新的歌单数据，用于在Screen销毁时更新使用记录
+    // 保存最新的歌单数据, 用于在Screen销毁时更新使用记录
     var latestPlaylist by remember { mutableStateOf<moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist?>(null) }
     var playlistDeleted by remember(playlistId) { mutableStateOf(false) }
     LaunchedEffect(uiState.playlist) {
         uiState.playlist?.let { latestPlaylist = it }
     }
 
-    // 在Screen销毁时更新使用记录，确保返回主页时卡片显示最新信息
+    // 在Screen销毁时更新使用记录, 确保返回主页时卡片显示最新信息
     DisposableEffect(Unit) {
         onDispose {
             if (playlistDeleted) return@onDispose
@@ -628,12 +628,12 @@ fun LocalPlaylistDetailScreen(
                 )
             }
 
-            // 可变列表保持展示顺序，数据层会负责兼容旧版本存储
+            // 可变列表保持展示顺序, 数据层会负责兼容旧版本存储
             val localSongs = remember(playlistId) {
                 mutableStateListOf<SongItem>().also { it.addAll(playlist.songs) }
             }
 
-            // 阻断 VM->UI 同步；同时用 pendingOrderIdentities 兼容重排和批删
+            // 阻断 VM->UI 同步; 同时用 pendingOrderIdentities 兼容重排和批删
             var blockSync by remember(playlistId) { mutableStateOf(false) }
             var pendingOrderIdentities by remember(playlistId) { mutableStateOf<List<SongIdentity>?>(null) }
             LaunchedEffect(playlist.songs, blockSync, pendingOrderIdentities) {
@@ -885,7 +885,7 @@ fun LocalPlaylistDetailScreen(
                 }
             )
 
-            // 记住滚动位置，避免切换页面后回到顶部（用稳定 key 防止列表变动导致错位）
+            // 记住滚动位置, 避免切换页面后回到顶部 (用稳定 key 防止列表变动导致错位)
             val savedListKey = rememberSaveable(playlistId) { mutableStateOf<String?>(null) }
             var savedListOffset by rememberSaveable(playlistId) { mutableIntStateOf(0) }
             val hasRestoredScroll = rememberSaveable(playlistId) { mutableStateOf(false) }
@@ -1504,7 +1504,7 @@ fun LocalPlaylistDetailScreen(
                                             }
                                         }
 
-                                        // 右侧：非多选为时间/播放态；多选为手柄
+                                        // 右侧: 非多选为时间/播放态; 多选为手柄
                                         val isPlayingSong = currentSong?.sameIdentityAs(song) == true
                                         val trailingVisible = !isDragging && !selectionMode
 

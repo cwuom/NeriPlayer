@@ -225,7 +225,7 @@ class GitHubApiClient(
                     val body = response.body?.string()
                         ?: return@withContext Result.failure(IOException("Empty response"))
                     val fileResponse = gson.fromJson(body, GitHubFileResponse::class.java)
-                    // 打印实际体积，便于确认备份大小与是否触发 raw 通道
+                    // 打印实际体积, 便于确认备份大小与是否触发 raw 通道
                     NPLogger.d(
                         TAG,
                         "getFileContent path=$path size=${fileResponse.size} " +
@@ -235,8 +235,8 @@ class GitHubApiClient(
                         return@withContext Result.failure(IOException("Remote backup file is too large"))
                     }
 
-                    // GitHub Contents API 对 >1MB 文件返回空 content 且 encoding=none，
-                    // 需改走 raw 通道读取原始字节；sha 仍取自当前 JSON 响应
+                    // GitHub Contents API 对 >1MB 文件返回空 content 且 encoding=none
+                    // 需改走 raw 通道读取原始字节; sha 仍取自当前 JSON 响应
                     if (fileResponse.content.isEmpty() && fileResponse.size > 0) {
                         val rawContent = fetchRawFileContent(owner, repo, path)
                             ?: return@withContext Result.failure(
@@ -245,11 +245,11 @@ class GitHubApiClient(
                         return@withContext Result.success(Pair(rawContent, fileResponse.sha))
                     }
 
-                    // 单次 Base64 解码得到原始文件字节（GitHub 内联 content 为带换行的 base64，MIME 解码器可直接处理）
+                    // 单次 Base64 解码得到原始文件字节 (GitHub 内联 content 为带换行的 base64, MIME 解码器可直接处理)
                     val decodedBytes = Base64.getMimeDecoder().decode(fileResponse.content)
                     return@withContext Result.success(Pair(decodedBytes, fileResponse.sha))
                 }
-                // 404 表示文件不存在，返回空字节对；「>1MB content 为空」已在上方走 raw 通道，二者不再混淆
+                // 404 表示文件不存在, 返回空字节对; ">1MB content 为空"已在上方走 raw 通道, 二者不再混淆
                 if (response.code == 404) {
                     return@withContext Result.success(Pair(ByteArray(0), ""))
                 }
@@ -274,7 +274,7 @@ class GitHubApiClient(
                     val body = response.body?.string()
                         ?: return@withContext Result.failure(IOException("Empty response"))
                     val fileResponse = gson.fromJson(body, GitHubFileResponse::class.java)
-                    // 打印实际体积，桌面端据此确认实际备份大小
+                    // 打印实际体积, 桌面端据此确认实际备份大小
                     NPLogger.d(
                         TAG,
                         "getFileContentStrict path=$path size=${fileResponse.size} " +
@@ -283,7 +283,7 @@ class GitHubApiClient(
                     if (fileResponse.size > MAX_SYNC_FILE_BYTES) {
                         return@withContext Result.failure(IOException("Remote backup file is too large"))
                     }
-                    // >1MB 文件 content 为空、encoding=none，改走 raw 通道；sha 仍取自 JSON 响应
+                    // >1MB 文件 content 为空, encoding=none, 改走 raw 通道; sha 仍取自 JSON 响应
                     if (fileResponse.content.isEmpty() && fileResponse.size > 0) {
                         val rawContent = fetchRawFileContent(owner, repo, path)
                             ?: return@withContext Result.failure(
@@ -323,9 +323,9 @@ class GitHubApiClient(
 
     /**
      * 通过 raw 媒体类型读取文件原始字节
-     * GitHub Contents API 对 >1MB 文件不再内联 base64 content（encoding=none），
-     * 必须用单独的 Accept: application/vnd.github.raw 请求获取原始内容（raw 上限约 100MB）
-     * 该方法在 Dispatchers.IO 上下文内被调用，直接执行阻塞请求
+     * GitHub Contents API 对 >1MB 文件不再内联 base64 content (encoding=none)
+     * 必须用单独的 Accept: application/vnd.github.raw 请求获取原始内容 (raw 上限约 100MB)
+     * 该方法在 Dispatchers.IO 上下文内被调用, 直接执行阻塞请求
      */
     private fun fetchRawFileContent(owner: String, repo: String, path: String): ByteArray? {
         val request = Request.Builder()
@@ -356,7 +356,7 @@ class GitHubApiClient(
         branch: String? = null
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
-            // 如果没有指定分支，先获取仓库的默认分支
+            // 如果没有指定分支, 先获取仓库的默认分支
             val targetBranch = branch ?: run {
                 val repoResult = checkRepository(owner, repo)
                 if (repoResult.isSuccess) {
@@ -368,10 +368,10 @@ class GitHubApiClient(
                 }
             }
 
-            // 对原始字节做「一次」Base64（Contents API 硬性要求），不再叠加历史的第二层
+            // 对原始字节做"一次"Base64 (Contents API 硬性要求) , 不再叠加历史的第二层
             val encodedContent = Base64.getEncoder().encodeToString(content)
 
-            // 使用JSONObject构建请求体，确保sha为null或空字符串时不包含该字段
+            // 使用JSONObject构建请求体, 确保sha为null或空字符串时不包含该字段
             val jsonObject = org.json.JSONObject().apply {
                 put("message", message)
                 put("content", encodedContent)

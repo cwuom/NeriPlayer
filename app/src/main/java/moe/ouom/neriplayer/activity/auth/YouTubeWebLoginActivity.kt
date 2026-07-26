@@ -155,7 +155,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
     @Volatile
     private var loginVerificationInFlight: Boolean = false
 
-    /** 校验期间的常驻提示，避免误判点完成无响应 */
+    /** 校验期间的常驻提示, 避免误判点完成无响应 */
     private var verifyingSnack: Snackbar? = null
     private var offSiteLoginReturns = 0
 
@@ -236,14 +236,14 @@ class YouTubeWebLoginActivity : ComponentActivity() {
                 )
             }
             // 存入 bundle 的 UA 仍固定为桌面 Web UA(WEB_REMIX 播放经 resolveBootstrapUserAgent 也用它),
-            // 登录导航用移动 UA、播放请求用桌面 UA,二者解耦,登录 UA 不污染播放指纹语义
+            // 登录导航用移动 UA, 播放请求用桌面 UA,二者解耦,登录 UA 不污染播放指纹语义
             webViewUserAgent = YOUTUBE_DEFAULT_WEB_USER_AGENT
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
             webChromeClient = WebChromeClient()
             webViewClient = InnerClient()
         }
-        // WebView 的 JS 定时器是进程级的，前台登录页先主动恢复一次更稳
+        // WebView 的 JS 定时器是进程级的, 前台登录页先主动恢复一次更稳
         webView.resumeTimers()
 
         restorePersistedCookies()
@@ -388,7 +388,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
         }
         resetPersistedWebStorage()
 
-        // Google 登录页对历史 cookie 很敏感，这里只保留最小 consent 基线
+        // Google 登录页对历史 cookie 很敏感, 这里只保留最小 consent 基线
         applyYouTubeWebCookies(
             cookieManager = cookieManager,
             cookies = emptyMap(),
@@ -571,7 +571,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
         ).show()
     }
 
-    /** 校验走网络可能耗时数秒，期间没有反馈用户会误判为无响应并中途退出 */
+    /** 校验走网络可能耗时数秒, 期间没有反馈用户会误判为无响应并中途退出 */
     private fun showVerifyingSnack() {
         if (verifyingSnack?.isShown == true) {
             return
@@ -792,8 +792,8 @@ class YouTubeWebLoginActivity : ComponentActivity() {
     }
 
     /**
-     * 登录链路有时会停在 Play 商店的 YouTube Music 页而不是 music.youtube.com，
-     * 此时账号其实已经登上，但收割只认 YouTube 域，界面就会一直卡在等 cookie
+     * 登录链路有时会停在 Play 商店的 YouTube Music 页而不是 music.youtube.com
+     * 此时账号其实已经登上, 但收割只认 YouTube 域, 界面就会一直卡在等 cookie
      */
     private fun shouldReturnToYouTubeAfterLogin(url: String?): Boolean {
         if (offSiteLoginReturns >= MAX_OFF_SITE_LOGIN_RETURNS) {

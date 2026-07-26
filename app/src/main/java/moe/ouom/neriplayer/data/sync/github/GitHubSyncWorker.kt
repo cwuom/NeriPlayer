@@ -58,7 +58,7 @@ class GitHubSyncWorker(
 
         /**
          * 调度延迟同步(5秒后执行)
-         * @param triggerByUserAction 是否由用户操作触发（如果是，则忽略自动同步开关）
+         * @param triggerByUserAction 是否由用户操作触发 (如果是, 则忽略自动同步开关)
          */
         fun scheduleDelayedSync(
             context: Context,
@@ -116,7 +116,7 @@ class GitHubSyncWorker(
         }
 
         /**
-         * 立即执行同步（无论是否开启自动同步）
+         * 立即执行同步 (无论是否开启自动同步)
          */
         fun syncNow(context: Context) {
             val syncRequest = OneTimeWorkRequestBuilder<GitHubSyncWorker>()
@@ -136,7 +136,7 @@ class GitHubSyncWorker(
 
             val storage = SecureTokenStorage(applicationContext)
 
-            // 如果是强制同步或用户操作触发，跳过自动同步检查
+            // 如果是强制同步或用户操作触发, 跳过自动同步检查
             if (!forceSync && !triggerByUserAction) {
                 // 检查是否启用自动同步
                 if (!storage.isAutoSyncEnabled()) {
@@ -182,7 +182,7 @@ class GitHubSyncWorker(
                     showErrorNotification(error)
                 }
 
-                // Token过期时不重试，其他错误重试
+                // Token过期时不重试, 其他错误重试
                 if (error is TokenExpiredException) {
                     Result.failure()
                 } else {
@@ -240,7 +240,7 @@ class GitHubSyncWorker(
     private fun showErrorNotification(error: Throwable?) {
         val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-        // 创建通知渠道（Android 8.0+）
+        // 创建通知渠道 (Android 8.0+)
         val channel = NotificationChannel(
             NOTIFICATION_CHANNEL_ID,
             applicationContext.getString(R.string.github_sync_channel_name),

@@ -47,9 +47,9 @@ import moe.ouom.neriplayer.core.player.resolver.youtube.ConditionalChunkedHttpDa
 import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeGoogleVideoRangeSupport
 
 /**
- * 自定义的 HttpDataSource.Factory：
- * - 按 host/路径动态注入请求头（B 站 / YouTube 拉流）
- * - 监听鉴权仓库变化，实时刷新注入的 Cookie 字符串
+ * 自定义的 HttpDataSource.Factory:
+ * - 按 host/路径动态注入请求头 (B 站 / YouTube 拉流)
+ * - 监听鉴权仓库变化, 实时刷新注入的 Cookie 字符串
  */
 @UnstableApi
 class ConditionalHttpDataSourceFactory(
@@ -144,7 +144,7 @@ class ConditionalHttpDataSourceFactory(
     }
 
     /**
-     * 基于原始请求头构建 B 站拉流所需的头部（Referer/UA/Cookie）
+     * 基于原始请求头构建 B 站拉流所需的头部 (Referer/UA/Cookie)
      */
     private fun buildBiliHeaders(original: Map<String, String>): Map<String, String> {
         val newHeaders = LinkedHashMap<String, String>(original)

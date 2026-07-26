@@ -5,8 +5,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 回归测试：同一 videoId 不同轮次可能解析到不同表示且共用缓存键，
- * 只判缓存偏小的方向时反向差值为负会直接放行，新旧字节混写后 seek 会崩在
+ * 回归测试: 同一 videoId 不同轮次可能解析到不同表示且共用缓存键
+ * 只判缓存偏小的方向时反向差值为负会直接放行, 新旧字节混写后 seek 会崩在
  * MatroskaExtractor 的 ArrayIndexOutOfBoundsException
  */
 class CachedResourceMismatchTest {
@@ -19,7 +19,7 @@ class CachedResourceMismatchTest {
 
     @Test
     fun `cached larger representation from a previous session is replaced`() {
-        // 真机数值，上次会话缓存 124615180，本次解析 72498309
+        // 真机数值, 上次会话缓存 124615180, 本次解析 72498309
         assertTrue(
             shouldReplaceCachedPreviewResource(
                 cachedContentLength = 124_615_180,
@@ -35,7 +35,7 @@ class CachedResourceMismatchTest {
 
     @Test
     fun `small difference is tolerated in both directions`() {
-        // 小于 512KB 的差异不失效，避免误伤正常抖动
+        // 小于 512KB 的差异不失效, 避免误伤正常抖动
         assertFalse(shouldReplaceCachedPreviewResource(50_000_000, 50_100_000))
         assertFalse(shouldReplaceCachedPreviewResource(50_100_000, 50_000_000))
     }

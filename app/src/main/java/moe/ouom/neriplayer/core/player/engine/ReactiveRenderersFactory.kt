@@ -35,9 +35,9 @@ import moe.ouom.neriplayer.core.player.usb.sink.UsbExclusiveAudioSink
 import moe.ouom.neriplayer.core.player.effects.AudioReactive
 
 /**
- * 自定义 RenderersFactory：
- * - 注入 TeeAudioProcessor 将 PCM 能量送入 AudioReactive，供可视化/背景特效使用
- * - FFmpeg renderer 交给 Media3 扩展模式注册，避免抢在平台解码器前面
+ * 自定义 RenderersFactory:
+ * - 注入 TeeAudioProcessor 将 PCM 能量送入 AudioReactive, 供可视化/背景特效使用
+ * - FFmpeg renderer 交给 Media3 扩展模式注册, 避免抢在平台解码器前面
  */
 @UnstableApi
 class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(context) {
@@ -52,7 +52,7 @@ class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(conte
         val fallbackSink = DefaultAudioSink.Builder(context)
             .setAudioProcessors(arrayOf<AudioProcessor>(volumeNormalization, balance, tee))
             .setEnableFloatOutput(enableFloatOutput)
-            // 优先使用 Media3 的音频处理链，避免部分设备在极低倍速下
+            // 优先使用 Media3 的音频处理链, 避免部分设备在极低倍速下
             // 走平台 AudioTrack PlaybackParams 时出现明显电音/颗粒化失真
             .setEnableAudioTrackPlaybackParams(false)
             .build()

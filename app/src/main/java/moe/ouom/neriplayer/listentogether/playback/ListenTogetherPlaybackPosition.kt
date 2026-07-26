@@ -9,7 +9,7 @@ internal fun ListenTogetherPlaybackState.expectedPositionMs(
 ): Long {
     val correctedNowMs = nowMs + serverClockOffsetMs
     return if (state == "playing") {
-        // baseTimestampMs 非法(<=0)时回退到当前时钟，避免 elapsed 差值把位置推到天文数字
+        // baseTimestampMs 非法(<=0)时回退到当前时钟, 避免 elapsed 差值把位置推到天文数字
         val effectiveBaseTimestampMs = if (baseTimestampMs > 0L) baseTimestampMs else correctedNowMs
         (basePositionMs + ((correctedNowMs - effectiveBaseTimestampMs) * playbackRate))
             .toLong()

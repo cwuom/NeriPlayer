@@ -56,7 +56,7 @@ import moe.ouom.neriplayer.R
 
 @Composable
 fun HsvPicker(
-    onColorChanged: (String) -> Unit, // 回调返回 6 位 HEX（不含#）
+    onColorChanged: (String) -> Unit, // 回调返回 6 位 HEX (不含#)
     initialHex: String = "0061A4"
 ) {
     // 初始把 HEX 转为 HSV
@@ -77,7 +77,7 @@ fun HsvPicker(
         Color(argb)
     }
     val hex = remember(previewColor) {
-        // 转 6 位 HEX（不含 #）
+        // 转 6 位 HEX (不含 #)
         val a = previewColor.toArgb()
         val r = (a shr 16) and 0xFF
         val g = (a shr 8) and 0xFF

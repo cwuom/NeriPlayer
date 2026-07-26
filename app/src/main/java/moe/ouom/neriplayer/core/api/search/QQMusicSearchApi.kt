@@ -55,7 +55,7 @@ import java.util.Base64
     val singer: List<QQMusicArtist>,
     @SerialName("albummid") val albumMid: String?,
     @SerialName("albumname") val albumName: String?,
-    val interval: Long // 歌曲时长（秒）
+    val interval: Long // 歌曲时长 (秒)
 )
 
 @Serializable private data class QQMusicArtist(val name: String)

@@ -209,7 +209,7 @@ internal fun shouldStopServiceForExternalPauseCommand(
     source: String,
     stopServiceRequested: Boolean,
 ): Boolean {
-    // 系统外部控制面板的 stop 经常只是“结束本次会话”，不能把当前队列一并释放掉
+    // 系统外部控制面板的 stop 经常只是"结束本次会话", 不能把当前队列一并释放掉
     return stopServiceRequested && source != MEDIA_SESSION_STOP_SOURCE
 }
 
@@ -1575,7 +1575,7 @@ class AudioPlayerService : Service() {
                 flags = flags.or(FLAG_ONLY_UPDATE_TICKER)
                 // ticker_icon: 状态栏歌词前的小图标
                 extras.putInt("ticker_icon", R.drawable.ic_notification_small)
-                // false 表示沿用缓存图标，图标资源变化时才需要切换
+                // false 表示沿用缓存图标, 图标资源变化时才需要切换
                 extras.putBoolean("ticker_icon_switch", false)
             }
         }
@@ -2107,7 +2107,7 @@ class AudioPlayerService : Service() {
             "NERI-APS",
             "onTaskRemoved hasItems=${PlayerManager.hasItems()} isPlaying=${PlayerManager.isPlayingFlow.value}"
         )
-        // 划掉任务不代表用户停止播放，正在播的会话要保留进程重建恢复意图
+        // 划掉任务不代表用户停止播放, 正在播的会话要保留进程重建恢复意图
         if (PlayerManager.hasItems()) {
             flushPlaybackStatsSafely("task_removed", "task removed")
             runCatching {
@@ -2229,15 +2229,15 @@ class AudioPlayerService : Service() {
         allowServiceRestart = false
         isServiceForegroundActive = false
         isServiceInstanceActive = false
-        // 前台提升失败仅代表服务无法保持前台，不代表播放运行时必须销毁；
-        // 若仍在播放或用户仍有播放诉求，保留运行时以保住当前播放
+        // 前台提升失败仅代表服务无法保持前台, 不代表播放运行时必须销毁
+        // 若仍在播放或用户仍有播放诉求, 保留运行时以保住当前播放
         val preservePlayerRuntime = shouldPreservePlayerRuntimeOnForegroundPromotionFailure(
             enginePlaying = runCatching { PlayerManager.isPlayingFlow.value }.getOrDefault(false),
             playbackControlPlaying = runCatching { PlayerManager.playbackControlPlayingFlow.value }
                 .getOrDefault(false),
         )
         if (preservePlayerRuntime) {
-            // 让随后的 onDestroy 走"保留运行时"分支，避免销毁正在播放的会话
+            // 让随后的 onDestroy 走"保留运行时"分支, 避免销毁正在播放的会话
             keepPlayerRuntimeAfterServiceStop = true
             NPLogger.w(
                 "NERI-APS",
@@ -2270,7 +2270,7 @@ class AudioPlayerService : Service() {
             }
         }
         if (preservePlayerRuntime) {
-            // 保住当前播放：不销毁 PlayerManager 运行时，仅放弃前台化并停止服务
+            // 保住当前播放: 不销毁 PlayerManager 运行时, 仅放弃前台化并停止服务
             NPLogger.i(
                 "NERI-APS",
                 "skipping player release after FGS failure to keep active playback alive reason=$reason"

@@ -102,14 +102,14 @@ class NeteaseClient {
     /** 是否已登录 */
     fun hasLogin(): Boolean = !persistedCookies["MUSIC_U"].isNullOrBlank()
 
-    /** 设置/更新持久化 Cookie，并把它们注入到本实例的 CookieJar */
+    /** 设置/更新持久化 Cookie, 并把它们注入到本实例的 CookieJar */
     fun setPersistedCookies(cookies: Map<String, String>) {
         val m = cookies.toMutableMap()
         m.putIfAbsent("os", "pc")
         m.putIfAbsent("appver", "8.10.35")
         persistedCookies = m.toMap()
 
-        // 把持久化 Cookie 注入到运行期 CookieJar，便于本实例读取 __csrf 等
+        // 把持久化 Cookie 注入到运行期 CookieJar, 便于本实例读取 __csrf 等
         seedCookieJarFromPersisted("music.163.com")
         seedCookieJarFromPersisted("interface.music.163.com")
     }
@@ -181,7 +181,7 @@ class NeteaseClient {
         return map.entries.joinToString("; ") { (k, v) -> "$k=$v" }
     }
 
-    /** 访问一次站点首页，通常会下发 __csrf 等 Cookie */
+    /** 访问一次站点首页, 通常会下发 __csrf 等 Cookie */
     @Throws(IOException::class)
     fun ensureWeapiSession() {
         request(
@@ -251,7 +251,7 @@ class NeteaseClient {
             buildPersistedCookieHeader()?.let { builder.header("Cookie", it) }
         }
 
-        // WEAPI 的 csrf_token 优先用持久化 Cookie，再回退本地 CookieJar
+        // WEAPI 的 csrf_token 优先用持久化 Cookie, 再回退本地 CookieJar
         if (mode == CryptoMode.WEAPI) {
             val csrf = if (usePersistedCookies) {
                 persistedCookies["__csrf"] ?: getCsrfCookie() ?: ""
@@ -441,9 +441,9 @@ class NeteaseClient {
 
     /**
      * 获取下载链接
-     * 如果已登录但拿不到 URL，先预热拿 __csrf 再重试一次
+     * 如果已登录但拿不到 URL, 先预热拿 __csrf 再重试一次
      * @param songId 歌曲 ID
-     * @param level 音质 （standard, exhigh, lossless, hires, jyeffect(高清环绕声), sky(沉浸环绕声), jymaster(超清母带)）
+     * @param level 音质 (standard, exhigh, lossless, hires, jyeffect(高清环绕声), sky(沉浸环绕声), jymaster(超清母带))
      * */
     @Throws(IOException::class)
     fun getSongDownloadUrl(songId: Long, level: String = "lossless"): String {
@@ -701,8 +701,8 @@ class NeteaseClient {
 
     /**
      * 获取用户创建的歌单
-     * @param userId 用户 ID；传 0 时自动使用当前登录用户 ID
-     * @param offset 偏移量，分页用
+     * @param userId 用户 ID; 传 0 时自动使用当前登录用户 ID
+     * @param offset 偏移量, 分页用
      * @param limit  每页返回数量
      */
     @Throws(IOException::class)
@@ -734,8 +734,8 @@ class NeteaseClient {
 
     /**
      * 获取用户收藏的专辑
-     * @param userId 用户 ID；传 0 时自动使用当前登录用户 ID
-     * @param offset 偏移量，分页用
+     * @param userId 用户 ID; 传 0 时自动使用当前登录用户 ID
+     * @param offset 偏移量, 分页用
      * @param limit  每页返回数量
      */
     @Throws(IOException::class)
@@ -764,8 +764,8 @@ class NeteaseClient {
     
     /**
      * 获取用户收藏的歌单
-     * @param userId 用户 ID；传 0 时自动使用当前登录用户 ID
-     * @param offset 偏移量，分页用
+     * @param userId 用户 ID; 传 0 时自动使用当前登录用户 ID
+     * @param offset 偏移量, 分页用
      * @param limit  每页返回数量
      */
     @Throws(IOException::class)
@@ -792,8 +792,8 @@ class NeteaseClient {
     }
 
     /**
-     * 获取“我喜欢的音乐”歌单 ID
-     * @param userId 用户 ID；传 0 时自动使用当前登录用户 ID
+     * 获取"我喜欢的音乐"歌单 ID
+     * @param userId 用户 ID; 传 0 时自动使用当前登录用户 ID
      */
     @Throws(IOException::class)
     fun getLikedPlaylistId(userId: Long): String {
@@ -825,7 +825,7 @@ class NeteaseClient {
 
     /**
      * 获取用户喜欢的所有歌曲 ID
-     * @param userId 用户 ID；传 0 时自动使用当前登录用户 ID
+     * @param userId 用户 ID; 传 0 时自动使用当前登录用户 ID
      */
     @Throws(IOException::class)
     fun getUserLikedSongIds(userId: Long): String {
@@ -838,8 +838,8 @@ class NeteaseClient {
     /**
      * 喜欢/取消喜欢一首歌
      * @param songId 歌曲 ID
-     * @param like   是否喜欢（true=喜欢, false=取消喜欢）
-     * @param time   可选参数，时间戳
+     * @param like 是否喜欢 (true=喜欢, false=取消喜欢)
+     * @param time 可选参数, 时间戳
      */
     @Throws(IOException::class)
     fun likeSong(songId: Long, like: Boolean = true, time: Long? = null): String {
@@ -852,7 +852,7 @@ class NeteaseClient {
     }
 
     /**
-     * 获取当前登录用户的账户信息（包含 userId）
+     * 获取当前登录用户的账户信息 (包含 userId)
      */
     @Throws(IOException::class)
     fun getCurrentUserAccount(): String {

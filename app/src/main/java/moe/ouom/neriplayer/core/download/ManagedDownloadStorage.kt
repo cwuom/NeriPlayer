@@ -1165,9 +1165,9 @@ internal object ManagedDownloadStorage {
     }
 
     /**
-     * 存储 root 是否仍可解析：用于区分"确实没有下载"与"SAF 列举瞬时失败"。
-     * 未配置自定义 SAF 目录时使用应用私有目录，始终可解析；配置了 SAF 树目录时，
-     * 只有该树仍可解析才算可用（树不可解析会回退到空的私有目录，属于可解释的空，不纳入可疑保护）。
+     * 存储 root 是否仍可解析: 用于区分"确实没有下载"与"SAF 列举瞬时失败"
+     * 未配置自定义 SAF 目录时使用应用私有目录, 始终可解析; 配置了 SAF 树目录时
+     * 只有该树仍可解析才算可用 (树不可解析会回退到空的私有目录, 属于可解释的空, 不纳入可疑保护)
      */
     suspend fun isStorageRootResolvable(context: Context): Boolean = withContext(Dispatchers.IO) {
         val configuredUri = normalizeDirectoryUri(settings.configuredDirectoryUri)
@@ -1179,10 +1179,10 @@ internal object ManagedDownloadStorage {
     }
 
     /**
-     * 当前配置目录对应的稳定 root 标识（"tree:<identity>" 或 "file:<path>"）。
-     * 用于判定一次扫描的 root 是否与既有 catalog 所属 root 一致：切换/重置下载目录后 root 会改变，
-     * 据此可把"换目录后的真空"与"同目录瞬时空列举失败"区分开。等价 URI 归一到同一 identity，
-     * 因此对同一底层目录的重新选择仍视为同 root。
+     * 当前配置目录对应的稳定 root 标识 ("tree:<identity>" 或 "file:<path>")
+     * 用于判定一次扫描的 root 是否与既有 catalog 所属 root 一致: 切换/重置下载目录后 root 会改变
+     * 据此可把"换目录后的真空"与"同目录瞬时空列举失败"区分开; 等价 URI 归一到同一 identity
+     * 因此对同一底层目录的重新选择仍视为同 root
      */
     suspend fun currentSnapshotRootKey(context: Context): String = withContext(Dispatchers.IO) {
         resolveSnapshotCacheKey(context)

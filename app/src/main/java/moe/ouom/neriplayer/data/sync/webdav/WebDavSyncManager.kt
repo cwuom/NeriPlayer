@@ -469,7 +469,7 @@ class WebDavSyncManager private constructor(context: Context) {
             deletions = mergedRecentPlayDeletions
         )
         val playbackStatsClearedAt = maxOf(local.playbackStatsClearedAt, remote.playbackStatsClearedAt)
-        // 收尾顺序与桌面 three_way_merge / GitHub 路径逐字一致：先用「未裁剪」的合并日桶抬升（消除「年 > 总」），再分别裁剪
+        // 收尾顺序与桌面 three_way_merge / GitHub 路径逐字一致: 先用"未裁剪"的合并日桶抬升 (消除"年 > 总") , 再分别裁剪
         val finalizedPlaybackStats = SyncPlaybackStatsMergePolicy.finalizeMergedStats(
             mergedStats = mergePlaybackStats(
                 local = local.playbackStats,
@@ -1087,7 +1087,7 @@ class WebDavSyncManager private constructor(context: Context) {
         val playlistsAdded = localData.playlists.count { !it.isDeleted }
         val playlistsDeleted = localData.playlists.count(SyncPlaylist::isDeleted)
         val songsAdded = localData.playlists.sumOf { playlist -> playlist.songs.size }
-        // 首次同步同样走收尾（与 GitHub / 桌面一致：先用「未裁剪」桶抬升，再裁剪），避免首个备份文件无界增长
+        // 首次同步同样走收尾 (与 GitHub / 桌面一致: 先用"未裁剪"桶抬升, 再裁剪) , 避免首个备份文件无界增长
         val finalizedInitialStats = SyncPlaybackStatsMergePolicy.finalizeMergedStats(
             mergedStats = localData.playbackStats,
             mergedBuckets = localData.playbackStatBuckets
@@ -1117,7 +1117,7 @@ class WebDavSyncManager private constructor(context: Context) {
         val localizedContext = LanguageManager.applyLanguage(appContext)
         val useDataSaver = storage.isDataSaverMode()
         val content = SyncDataSerializer.serialize(data, useDataSaver)
-        // 省流传 Base64(GZIP(ProtoBuf)) 文本字节（老端可读）；非省流传 UTF-8 JSON 字节
+        // 省流传 Base64(GZIP(ProtoBuf)) 文本字节 (老端可读) ; 非省流传 UTF-8 JSON 字节
         val mediaType = if (useDataSaver) {
             "text/plain; charset=utf-8"
         } else {

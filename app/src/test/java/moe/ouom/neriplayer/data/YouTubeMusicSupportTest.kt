@@ -406,7 +406,7 @@ class YouTubeMusicSupportTest {
 
     @Test
     fun isYouTubeWebRemixDirectMissingPoToken_flagsWebRemixGoogleVideoWithoutPot() {
-        // 下载失败根因:WEB_REMIX googlevideo 直链缺 pot，整段下载会被 403
+        // 下载失败根因:WEB_REMIX googlevideo 直链缺 pot, 整段下载会被 403
         assertTrue(
             isYouTubeWebRemixDirectMissingPoToken(
                 "https://rr1---sn-abc.googlevideo.com/videoplayback?expire=123&c=WEB_REMIX&itag=140"
@@ -432,13 +432,13 @@ class YouTubeMusicSupportTest {
 
     @Test
     fun isYouTubeWebRemixDirectMissingPoToken_ignoresNonWebRemixAndNonGoogleVideo() {
-        // 其它 client 直链不需要 pot，不能误伤
+        // 其它 client 直链不需要 pot, 不能误伤
         assertFalse(
             isYouTubeWebRemixDirectMissingPoToken(
                 "https://rr1---sn-abc.googlevideo.com/videoplayback?c=ANDROID_MUSIC&itag=140"
             )
         )
-        // googlevideo 但缺少 c 参数:无法确认为 WEB_REMIX，保持接受避免误伤
+        // googlevideo 但缺少 c 参数:无法确认为 WEB_REMIX, 保持接受避免误伤
         assertFalse(
             isYouTubeWebRemixDirectMissingPoToken(
                 "https://rr1---sn-abc.googlevideo.com/videoplayback?itag=140"

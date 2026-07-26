@@ -75,7 +75,7 @@ int64_t longGapReacquisitionThresholdNs(int64_t expectedReportPeriodNs) {
     }
     const FeedbackClockConfig config = clockConfig(expectedReportPeriodNs);
     // 重获阈值必须严格小于硬保持超时(softMiss+hardHoldover),否则事件循环每 1-10ms 的
-    // 周期 tick 会先在同一时刻判定 HoldoverTimeout 拆流,使原地重获形同虚设(#U1)。
+    // 周期 tick 会先在同一时刻判定 HoldoverTimeout 拆流,使原地重获形同虚设(#U1)
     // 取 hardHoldover 的一半,保证阈值仍大于 softMiss(落在保持窗口内),且余量远大于 tick 周期
     const uint64_t periods = static_cast<uint64_t>(config.softMissPeriods) +
         static_cast<uint64_t>(config.hardHoldoverPeriods) / 2U;

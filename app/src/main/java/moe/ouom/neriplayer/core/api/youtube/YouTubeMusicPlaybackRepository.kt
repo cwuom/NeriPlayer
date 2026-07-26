@@ -132,16 +132,16 @@ private const val YOUTUBE_PLAYER_WEB_REMIX_COLOR_DEPTH = 32
 private const val YOUTUBE_PLAYER_WEB_REMIX_BROWSER_CONNECTION = 31
 private const val YOUTUBE_PLAYER_WEB_REMIX_HISTORY_LENGTH = 5
 private const val YOUTUBE_PLAYER_PLAYBACK_LACT_MILLISECONDS = "9"
-// 首播更看重尽快落到可播链路，别在 fallback 前白等太久的 PO token
+// 首播更看重尽快落到可播链路, 别在 fallback 前白等太久的 PO token
 private const val WEB_REMIX_PO_TOKEN_PREFETCH_JOIN_TIMEOUT_MS = 150L
 private const val PLAYABLE_URL_EXPIRY_SAFETY_MARGIN_MS = 90L * 1000L
-// EJS solver 内部按 solverLock 串行，预取并发再高也不增加求解吞吐，
-// 只会把用户点击前面的排队深度成倍拉长，每首歌还要占 sig 和 n 两次
+// EJS solver 内部按 solverLock 串行, 预取并发再高也不增加求解吞吐
+// 只会把用户点击前面的排队深度成倍拉长, 每首歌还要占 sig 和 n 两次
 private const val MAX_CONCURRENT_PREFETCH_RESOLVES = 1
 
 private const val EJS_FALLBACK_START_DELAY_MS = 40L
 private const val CIPHER_RESOLVE_TIMEOUT_MS = 12_000L
-// 脏 IP 下 429/503 退避基数与上限，避免密集重试进一步拉高限流等级（#Y5）
+// 脏 IP 下 429/503 退避基数与上限, 避免密集重试进一步拉高限流等级 (#Y5)
 private const val RATE_LIMIT_BACKOFF_BASE_MS = 500L
 private const val RATE_LIMIT_BACKOFF_MAX_MS = 5_000L
 
@@ -152,8 +152,8 @@ private const val YOUTUBE_PLAYBACK_DIAG_PREFIX = "[YT-DIAG-20260530]"
 private fun playbackElapsedMs(startedAtMs: Long): Long = System.currentTimeMillis() - startedAtMs
 
 /**
- * 携带 HTTP 状态码与 Retry-After 的请求失败异常。
- * 仍继承 IOException，保持既有 catch(IOException) 与消息正则解析（401/403/429）兼容
+ * 携带 HTTP 状态码与 Retry-After 的请求失败异常
+ * 仍继承 IOException, 保持既有 catch(IOException) 与消息正则解析 (401/403/429) 兼容
  */
 internal class YouTubeHttpStatusException(
     val statusCode: Int,
@@ -161,14 +161,14 @@ internal class YouTubeHttpStatusException(
     message: String
 ) : IOException(message)
 
-/** 解析 Retry-After：仅支持 delta-seconds 整数秒形式，HTTP-date 形式忽略并走指数退避 */
+/** 解析 Retry-After: 仅支持 delta-seconds 整数秒形式, HTTP-date 形式忽略并走指数退避 */
 @VisibleForTesting
 internal fun parseRetryAfterMs(headerValue: String?): Long? {
     val seconds = headerValue?.trim()?.toLongOrNull() ?: return null
     return if (seconds >= 0L) seconds * 1000L else null
 }
 
-/** 429/503 退避时长：优先 Retry-After，否则按累计命中次数指数退避，统一封顶 */
+/** 429/503 退避时长: 优先 Retry-After, 否则按累计命中次数指数退避, 统一封顶 */
 @VisibleForTesting
 internal fun rateLimitBackoffMs(error: Throwable?, priorHits: Int): Long? {
     val status = error as? YouTubeHttpStatusException ?: return null
@@ -216,8 +216,8 @@ internal object NewPipeFallbackTracker {
 /**
  * 记录哪些 player client 正在稳定地拒绝请求
  *
- * ANDROID_MUSIC 在部分账号和出口上恒回 400 INVALID_ARGUMENT，换 bootstrap 也没用，
- * 每次解析都白付一次往返；连续失败到阈值后先停一段时间，成功一次就恢复
+ * ANDROID_MUSIC 在部分账号和出口上恒回 400 INVALID_ARGUMENT, 换 bootstrap 也没用
+ * 每次解析都白付一次往返; 连续失败到阈值后先停一段时间, 成功一次就恢复
  */
 internal object PlayerClientHealthTracker {
     private const val FAILURE_THRESHOLD = 3
@@ -255,7 +255,7 @@ internal object PlayerClientHealthTracker {
 }
 
 /**
- * 全部候选都被压制时至少留一个，否则解析会直接无路可走
+ * 全部候选都被压制时至少留一个, 否则解析会直接无路可走
  */
 internal fun <T> selectUsablePlayerClients(
     profiles: List<T>,
@@ -361,7 +361,7 @@ private data class InFlightPlayableAudioRequest(
     val requireDirect: Boolean,
     val preferM4a: Boolean,
     val forceRefresh: Boolean,
-    // 参与去重键，否则 avoidDirect 会复用偏好直链的在途结果
+    // 参与去重键, 否则 avoidDirect 会复用偏好直链的在途结果
     val avoidDirect: Boolean
 )
 
@@ -425,7 +425,7 @@ internal suspend fun <T> awaitFirstChallengeSuccess(
     null
 }
 
-/** 只读已完成且未取消的候选，避免对被取消的 Deferred await 抛 CancellationException */
+/** 只读已完成且未取消的候选, 避免对被取消的 Deferred await 抛 CancellationException */
 internal suspend fun <T> Deferred<ChallengeCandidateResult<T>>?.hasFailedChallenge(): Boolean {
     val deferred = this ?: return false
     if (!deferred.isCompleted || deferred.isCancelled) return false
@@ -518,8 +518,8 @@ internal object YouTubeMusicPlaybackParser {
     }
 
     // 判断原始响应是否本就包含 googlevideo direct 音频流
-    // 用于识别"WEB_REMIX 返回了 direct 流，但候选因 n 无法解出被 #Y4 丢弃"的场景：
-    // 这类场景换 locale 不会改变 player.js/n 的可解性，应直接切换下一 client 而非重试当前 client 其他 locale
+    // 用于识别"WEB_REMIX 返回了 direct 流, 但候选因 n 无法解出被 #Y4 丢弃"的场景:
+    // 这类场景换 locale 不会改变 player.js/n 的可解性, 应直接切换下一 client 而非重试当前 client 其他 locale
     fun hasDirectGoogleVideoAudioStream(root: JSONObject): Boolean {
         return collectAudioCandidates(root).any { candidate ->
             val rawUrl = resolveFormatUrl(candidate.format, cipherResolver = null)
@@ -647,11 +647,11 @@ internal object YouTubeMusicPlaybackParser {
         if (url.isBlank()) {
             return ""
         }
-        // 无 resolver 时保持原样返回，不破坏正常路径
+        // 无 resolver 时保持原样返回, 不破坏正常路径
         val resolver = cipherResolver ?: return url
-        // resolver 对"带 n 参数但解不出"的候选返回空串表示该候选不可用；
-        // 必须原样透传空串让 parsePlayableAudio 跳过该候选，
-        // 而非回退到带混淆 n 的原 URL（会被 googlevideo 限速，#Y4/#257）
+        // resolver 对"带 n 参数但解不出"的候选返回空串表示该候选不可用
+        // 必须原样透传空串让 parsePlayableAudio 跳过该候选
+        // 而非回退到带混淆 n 的原 URL (会被 googlevideo 限速, #Y4/#257)
         return resolver.resolveStreamingUrl(url)
     }
 
@@ -704,9 +704,9 @@ internal object YouTubeMusicPlaybackParser {
                 comparator = audioCandidateComparator()
             )
         }
-        // preferM4a（尤其下载/requireDirect）把容器为 m4a/mp4/aac 作为硬性首要键：
-        // 先在可打标的 m4a 候选内部按画质挡位排序，只有完全没有 m4a 时才回退 webm/opus，
-        // 避免下载落到无法内嵌标签的 webm（#Y3/#223）
+        // preferM4a (尤其下载/requireDirect) 把容器为 m4a/mp4/aac 作为硬性首要键:
+        // 先在可打标的 m4a 候选内部按画质挡位排序, 只有完全没有 m4a 时才回退 webm/opus
+        // 避免下载落到无法内嵌标签的 webm (#Y3/#223)
         val comparator = compareByDescending<YouTubePlayerAudioCandidate> { mimePreferenceScore(it.mimeType) }
             .thenByDescending { it.bitrate }
             .thenByDescending { it.audioSampleRate }
@@ -961,7 +961,7 @@ internal object YouTubeMusicHlsManifestParser {
 /** n 和 sig 恒为 URL-safe token */
 private val CIPHER_TOKEN_PATTERN = Regex("^[A-Za-z0-9._~-]+$")
 
-/** JS 求值失败时的假成功返回值，非空且与原串不同，能骗过朴素校验 */
+/** JS 求值失败时的假成功返回值, 非空且与原串不同, 能骗过朴素校验 */
 private val CIPHER_TOKEN_JS_JUNK = setOf(
     "undefined",
     "null",
@@ -1489,7 +1489,7 @@ class YouTubeMusicPlaybackRepository(
                         "start playable audio resolve: videoId=$videoId, quality=$preferredQualityKey, forceRefresh=$forceRefresh, requireDirect=$requireDirect, preferM4a=$preferM4a"
                     )
                     try {
-                        // 按需解析不受闸门约束，避免被排队中的预取堵住
+                        // 按需解析不受闸门约束, 避免被排队中的预取堵住
                         val resolved = if (isPrefetch) {
                             prefetchResolveGate.withPermit {
                                 resolvePlayableAudio(
@@ -1555,7 +1555,7 @@ class YouTubeMusicPlaybackRepository(
         forceRefresh: Boolean,
         avoidDirect: Boolean = false
     ): PlayerAudioResolution? {
-        // 网页端未登录也能取流，需要的是 visitorData + PoToken 而不是登录 cookie，
+        // 网页端未登录也能取流, 需要的是 visitorData + PoToken 而不是登录 cookie
         // 此前对无登录 cookie 直接返回 null 会把匿名用户整体推给已失效的 NewPipe 兜底
         val auth = authProvider().normalized()
 
@@ -1593,9 +1593,9 @@ class YouTubeMusicPlaybackRepository(
     ): PlayerAudioResolution {
         val resolveStartedAtMs = System.currentTimeMillis()
         val bootstrapStartedAtMs = System.currentTimeMillis()
-        // 不把流级 forceRefresh 传下去，切音质或重试都会命中这里，
-        // 而重新拉一次首页再解析要好几秒；bootstrap 真过期由 TTL 和
-        // authFingerprint 判定，请求失败后下面的重试分支会强刷
+        // 不把流级 forceRefresh 传下去, 切音质或重试都会命中这里
+        // 而重新拉一次首页再解析要好几秒; bootstrap 真过期由 TTL 和
+        // authFingerprint 判定, 请求失败后下面的重试分支会强刷
         var bootstrap = bootstrap(auth)
         NPLogger.d(
             "YouTubeMusicPlayback",
@@ -1603,7 +1603,7 @@ class YouTubeMusicPlaybackRepository(
         )
         var lastError: IOException? = null
         var bestMetadata: YouTubeAudioMetadata? = null
-        // 跨 client/locale/attempt 累计 429/503 命中次数，用于指数退避（#Y5）
+        // 跨 client/locale/attempt 累计 429/503 命中次数, 用于指数退避 (#Y5)
         var rateLimitBackoffHits = 0
         // repeat 是 lambda 不能 break
         var abortRemainingAttempts = false
@@ -1680,7 +1680,7 @@ class YouTubeMusicPlaybackRepository(
                                 preferM4a = preferM4a,
                                 cipherResolver = cipherResolver
                             )
-                            // 放弃直链候选，顺带省掉一次必然被丢弃的 GVS PoToken 铸造
+                            // 放弃直链候选, 顺带省掉一次必然被丢弃的 GVS PoToken 铸造
                             val directPlayableAudio = if (avoidDirect) {
                                 null
                             } else {
@@ -1698,7 +1698,7 @@ class YouTubeMusicPlaybackRepository(
                             val hlsPlayableAudio = try {
                                 if (
                                     requireDirect ||
-                                    // 直链候选随后会被丢弃，这里再因已有直链跳过 manifest
+                                    // 直链候选随后会被丢弃, 这里再因已有直链跳过 manifest
                                     // 脏节点下就一个候选都拿不到
                                     (!avoidDirect && directPlayableAudio != null) ||
                                     (!avoidDirect &&
@@ -1706,7 +1706,7 @@ class YouTubeMusicPlaybackRepository(
                                 ) {
                                     null
                                 } else {
-                                    // 已有 direct 候选时不再额外拉 manifest，减少无效请求和风控暴露面
+                                    // 已有 direct 候选时不再额外拉 manifest, 减少无效请求和风控暴露面
                                     resolveHlsPlayableAudio(
                                         root = root,
                                         preferredQualityKey = preferredQualityKey,
@@ -1761,7 +1761,7 @@ class YouTubeMusicPlaybackRepository(
                                     acceptedFromCurrentProfile = resolvedPlayableAudio === playableAudio
                                 )
                             ) {
-                                // 播放首帧比跨 client 继续比质量更重要，direct 命中后直接交给播放器
+                                // 播放首帧比跨 client 继续比质量更重要, direct 命中后直接交给播放器
                                 NPLogger.d(
                                     "YouTubeMusicPlayback",
                                     "player resolve satisfied by ${profile.clientName} direct: videoId=$videoId, elapsedMs=${playbackElapsedMs(resolveStartedAtMs)}"
@@ -1822,7 +1822,7 @@ class YouTubeMusicPlaybackRepository(
                         if (error.isNonRetryablePlayerClientError()) {
                             PlayerClientHealthTracker.recordRejection(profile.clientName)
                         }
-                        // 脏 IP 下 429/503 先退避再继续下一 client/locale/attempt，避免密集重试加剧限流（#Y5）
+                        // 脏 IP 下 429/503 先退避再继续下一 client/locale/attempt, 避免密集重试加剧限流 (#Y5)
                         val backoffMs = rateLimitBackoffMs(error, rateLimitBackoffHits)
                         if (backoffMs != null) {
                             rateLimitBackoffHits++
@@ -1863,7 +1863,7 @@ class YouTubeMusicPlaybackRepository(
                 )
             }
 
-            // 4xx 是请求本身不被接受，换新 bootstrap 改变不了结果，
+            // 4xx 是请求本身不被接受, 换新 bootstrap 改变不了结果
             // 白付一次 fetch + parse 会把解析推过下载超时窗口
             if (lastError.isNonRetryablePlayerClientError()) {
                 NPLogger.w(
@@ -1910,13 +1910,13 @@ class YouTubeMusicPlaybackRepository(
         if (directPlayableAudio != null || hlsPlayableAudio != null) return false
         val parsedDirect = parsedDirectPlayableAudio
         if (parsedDirect?.streamType == YouTubePlayableStreamType.DIRECT) {
-            // 解析出 direct 候选但缺 pot：播放路径跳过阻塞校验后回退，无需再试其他 locale
+            // 解析出 direct 候选但缺 pot: 播放路径跳过阻塞校验后回退, 无需再试其他 locale
             val streamUrl = parsedDirect.url
             return isYouTubeGoogleVideoStream(streamUrl) &&
                 extractStreamQueryParameter(streamUrl, "pot").isNullOrBlank()
         }
-        // 候选因 n 解不出被 #Y4 丢弃时 parsedDirect 为 null：
-        // 若原始响应本就是 googlevideo direct 音频，换 locale 无益，直接切下一 client 省一次 player 请求
+        // 候选因 n 解不出被 #Y4 丢弃时 parsedDirect 为 null:
+        // 若原始响应本就是 googlevideo direct 音频, 换 locale 无益, 直接切下一 client 省一次 player 请求
         return YouTubeMusicPlaybackParser.hasDirectGoogleVideoAudioStream(root)
     }
 
@@ -2313,7 +2313,7 @@ class YouTubeMusicPlaybackRepository(
                         }
                         val winner = awaitFirstChallengeSuccess(listOfNotNull(newPipeDeferred, ejsDeferred))
                         if (winner != null) {
-                            // 同 throttling，不记失败 EJS 会一直白等启动延迟
+                            // 同 throttling, 不记失败 EJS 会一直白等启动延迟
                             if (!skipSignatureNewPipe &&
                                 winner.source != "NEWPIPE" &&
                                 newPipeDeferred.hasFailedChallenge()
@@ -2368,8 +2368,8 @@ class YouTubeMusicPlaybackRepository(
                                         )
                                     }
                                 }.getOrNull()?.takeIf { candidateUrl ->
-                                    // player.js 变更后 NewPipe 会返回 n=[object Object]，
-                                    // 非空且与原串不同，只判这两条会放行必然 403 的地址
+                                    // player.js 变更后 NewPipe 会返回 n=[object Object]
+                                    // 非空且与原串不同, 只判这两条会放行必然 403 的地址
                                     val accepted = candidateUrl.isNotBlank() &&
                                         candidateUrl != url &&
                                         hasPlausibleThrottlingParameter(candidateUrl)
@@ -2439,7 +2439,7 @@ class YouTubeMusicPlaybackRepository(
                         }
                         val winner = awaitFirstChallengeSuccess(listOfNotNull(newPipeDeferred, ejsDeferred))
                         if (winner != null) {
-                            // 不记失败的话 player.js 变更后 NewPipe 永远不被标记，
+                            // 不记失败的话 player.js 变更后 NewPipe 永远不被标记
                             // EJS 每次都要白等 EJS_FALLBACK_START_DELAY_MS
                             if (!skipThrottlingNewPipe &&
                                 winner.source != "NEWPIPE" &&
@@ -2459,8 +2459,8 @@ class YouTubeMusicPlaybackRepository(
                         if (!skipThrottlingNewPipe && newPipeResult?.value == null) {
                             NewPipeFallbackTracker.recordThrottlingFailure(resolvedPlayerJsUrl)
                         }
-                        // n 参数存在但 NewPipe 与 EJS 都解不出：返回空串标记该候选不可用，
-                        // 让上层继续下一候选/下一 client，避免返回带混淆 n 的限速 URL（#Y4）
+                        // n 参数存在但 NewPipe 与 EJS 都解不出: 返回空串标记该候选不可用
+                        // 让上层继续下一候选/下一 client, 避免返回带混淆 n 的限速 URL (#Y4)
                         if (throttlingUnresolvedDropLogged.compareAndSet(false, true)) {
                             NPLogger.w(
                                 "YouTubeMusicPlayback",
@@ -2759,7 +2759,7 @@ class YouTubeMusicPlaybackRepository(
             clientContext.put("visitorData", bootstrap.visitorData)
         }
         if (profile.clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME && userAgent.isNotBlank()) {
-            // WEB_REMIX 需要更接近浏览器 watch 页的 client 上下文，避免退回到风险更高的移动端直链
+            // WEB_REMIX 需要更接近浏览器 watch 页的 client 上下文, 避免退回到风险更高的移动端直链
             clientContext.put("deviceMake", "")
             clientContext.put("deviceModel", "")
             clientContext.put("userAgent", ensureGfeUserAgent(userAgent))
@@ -3114,7 +3114,7 @@ class YouTubeMusicPlaybackRepository(
                     }
                 }
             }
-            // 仍持有登录 cookie 时，一次回成未登录的 bootstrap 不能顶掉已登录的缓存，
+            // 仍持有登录 cookie 时, 一次回成未登录的 bootstrap 不能顶掉已登录的缓存
             // 否则库页会据此判定未登录并弹出 Google 登录页
             val demotesLogin = cached?.loggedIn == true &&
                 !parsed.loggedIn &&
@@ -3139,7 +3139,7 @@ class YouTubeMusicPlaybackRepository(
         var lastError: IOException? = null
         val requestLocale = currentPlayerRequestLocale()
         for ((index, origin) in BOOTSTRAP_PAGE_ORIGINS.withIndex()) {
-            // 前一个 origin 若因 429/503 失败，换 origin 前先退避，避免脏 IP 下无延迟连打（#Y5）
+            // 前一个 origin 若因 429/503 失败, 换 origin 前先退避, 避免脏 IP 下无延迟连打 (#Y5)
             if (index > 0) {
                 rateLimitBackoffMs(lastError, index - 1)?.let { backoffMs ->
                     NPLogger.w(
@@ -3192,8 +3192,8 @@ class YouTubeMusicPlaybackRepository(
             if (!response.isSuccessful) {
                 val preview = response.body
                     .readErrorPreviewWithLimit(YOUTUBE_ERROR_RESPONSE_MAX_BYTES)
-                // 保留 "request failed: <code>" 消息格式以兼容 extractYouTubeRequestFailureCode 正则；
-                // 额外携带状态码与 Retry-After，供 429/503 退避使用（#Y5）
+                // 保留 "request failed: <code>" 消息格式以兼容 extractYouTubeRequestFailureCode 正则
+                // 额外携带状态码与 Retry-After, 供 429/503 退避使用 (#Y5)
                 throw YouTubeHttpStatusException(
                     statusCode = response.code,
                     retryAfterMs = parseRetryAfterMs(response.header("Retry-After")),
@@ -3378,8 +3378,8 @@ class YouTubeMusicPlaybackRepository(
                 endpointPath = "player",
                 platform = "TV"
             ),
-            // ANDROID_MUSIC 需要 Android OAuth，拿网页 cookie 只会回 400 INVALID_ARGUMENT
-            // 或 LOGIN_REQUIRED，还会把解析拖进强制刷新 bootstrap 并连累登录态
+            // ANDROID_MUSIC 需要 Android OAuth, 拿网页 cookie 只会回 400 INVALID_ARGUMENT
+            // 或 LOGIN_REQUIRED, 还会把解析拖进强制刷新 bootstrap 并连累登录态
         )
     }
 
@@ -3406,13 +3406,13 @@ class YouTubeMusicPlaybackRepository(
         val qualityComparison = comparePlayableAudioQuality(incoming, current)
         return when {
             incoming.streamType != current.streamType -> {
-                // 优先 progressive 直链，seek 更快且能绕过数据中心 IP 下的 HLS/SABR 403
+                // 优先 progressive 直链, seek 更快且能绕过数据中心 IP 下的 HLS/SABR 403
                 if (incoming.streamType == YouTubePlayableStreamType.DIRECT) incoming else current
             }
             preferM4a &&
                 isPlayableM4aContainer(incoming.mimeType) != isPlayableM4aContainer(current.mimeType) -> {
-                // 下载/requireDirect 下容器为 m4a 的候选可内嵌标签，
-                // 硬性优先于 webm/opus，即使 webm 码率更高也不选（#Y3/#223）
+                // 下载/requireDirect 下容器为 m4a 的候选可内嵌标签
+                // 硬性优先于 webm/opus, 即使 webm 码率更高也不选 (#Y3/#223)
                 if (isPlayableM4aContainer(incoming.mimeType)) incoming else current
             }
             qualityComparison != 0 -> {
@@ -3515,12 +3515,12 @@ class YouTubeMusicPlaybackRepository(
         attempt: Int,
         forceRefresh: Boolean
     ): Boolean {
-        // 先让后续 client 立即接管，避免 WEB_REMIX 一次失败就白白多刷一轮 bootstrap
+        // 先让后续 client 立即接管, 避免 WEB_REMIX 一次失败就白白多刷一轮 bootstrap
         return false
     }
 
     @Suppress("UNUSED_PARAMETER")
-    /** 429/408 可重试，其余 4xx 表示请求参数不被接受，强刷 bootstrap 无用 */
+    /** 429/408 可重试, 其余 4xx 表示请求参数不被接受, 强刷 bootstrap 无用 */
     private fun Throwable?.isNonRetryablePlayerClientError(): Boolean {
         val status = (this as? YouTubeHttpStatusException)?.statusCode ?: return false
         if (status == 429 || status == 408) {
@@ -3534,7 +3534,7 @@ class YouTubeMusicPlaybackRepository(
         attempt: Int,
         forceRefresh: Boolean
     ): Boolean {
-        // 同一轮里先跑完 fallback，下一轮再统一强刷 bootstrap
+        // 同一轮里先跑完 fallback, 下一轮再统一强刷 bootstrap
         return false
     }
 

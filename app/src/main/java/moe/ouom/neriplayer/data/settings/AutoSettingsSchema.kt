@@ -23,17 +23,17 @@ import moe.ouom.neriplayer.ksp.annotations.autoSwitchSetting
 /*
  * 设置项统一登记表
  *
- * 新增 DataStore 设置时优先只改这里，KSP 会自动生成 SettingsKeys、备份白名单、
- * AutoSettingsRepository、section 常量、section scope 和可复用元数据
+ * 新增 DataStore 设置时优先只改这里, KSP 会自动生成 SettingsKeys, 备份白名单
+ * AutoSettingsRepository, section 常量, section scope 和可复用元数据
  *
- * 放置规则：
- * - 能被通用开关直接保存的 Boolean，用 ui = Switch 和默认 access
- * - 有弹窗、Slider、平台可用性判断、多个设置互斥或额外持久化副作用的，用 ui = Custom
- * - 启动快照、主题快照、播放快照、路径权限这类不能绕过业务 setter 的，用 access = KeyOnly
- * - 分类用嵌套 object 表达，调用侧优先用 AutoSettingsScopes.display 这种 scope，不要再手写 "display"
- * - 需要在旧代码保持原常量名的，用 constantName 固定生成名
- * - Material 图标用 icon，已有 drawable 资源用 iconRes
- * - 简单开关可用 @AutoSetting(order = x) + autoSwitchSetting(...)，业务侧可直接
+ * 放置规则:
+ * - 能被通用开关直接保存的 Boolean, 用 ui = Switch 和默认 access
+ * - 有弹窗, Slider, 平台可用性判断, 多个设置互斥或额外持久化副作用的, 用 ui = Custom
+ * - 启动快照, 主题快照, 播放快照, 路径权限这类不能绕过业务 setter 的, 用 access = KeyOnly
+ * - 分类用嵌套 object 表达, 调用侧优先用 AutoSettingsScopes.display 这种 scope, 不要再手写 "display"
+ * - 需要在旧代码保持原常量名的, 用 constantName 固定生成名
+ * - Material 图标用 icon, 已有 drawable 资源用 iconRes
+ * - 简单开关可用 @AutoSetting(order = x) + autoSwitchSetting(...), 业务侧可直接
  *   用 SettingsRepository.settingFlow/setSetting 读取这个源代码对象
  */
 @AutoSettingsCatalog
@@ -41,8 +41,8 @@ object AutoSettingsSchema {
     /*
      * 基础行为
      *
-     * 放和整 App 行为相关、但不属于某个播放/下载子系统的设置
-     * 主题即时切换、首次启动状态和国际化检测有额外副作用，不能让通用 setter 绕过
+     * 放和整 App 行为相关, 但不属于某个播放/下载子系统的设置
+     * 主题即时切换, 首次启动状态和国际化检测有额外副作用, 不能让通用 setter 绕过
      */
     @AutoSettingsSection(
         order = 10
@@ -181,7 +181,7 @@ object AutoSettingsSchema {
      * 主题取色
      *
      * 只放主题色和调色盘这类纯视觉主题数据
-     * 当前主题写入还会更新启动快照或触发页面动画，因此先保留 KeyOnly
+     * 当前主题写入还会更新启动快照或触发页面动画, 因此先保留 KeyOnly
      */
     @AutoSettingsSection(
         order = 20
@@ -236,8 +236,8 @@ object AutoSettingsSchema {
     /*
      * 音质偏好
      *
-     * 放各平台默认音质选择，UI 通常是选项弹窗，不是简单开关
-     * 写入后还要同步播放启动快照，所以这里统一标记为 Custom + KeyOnly
+     * 放各平台默认音质选择, UI 通常是选项弹窗, 不是简单开关
+     * 写入后还要同步播放启动快照, 所以这里统一标记为 Custom + KeyOnly
      */
     @AutoSettingsSection(
         order = 30
@@ -359,8 +359,8 @@ object AutoSettingsSchema {
     /*
      * 个性化入口
      *
-     * 放首页入口、首页卡片、输入体验这类不直接影响播放器内核的偏好
-     * 复杂首页卡片会根据国际化状态换文案，保留手写 UI 但元数据仍由这里生成
+     * 放首页入口, 首页卡片, 输入体验这类不直接影响播放器内核的偏好
+     * 复杂首页卡片会根据国际化状态换文案, 保留手写 UI 但元数据仍由这里生成
      */
     @AutoSettingsSection(
         order = 40
@@ -445,8 +445,8 @@ object AutoSettingsSchema {
     /*
      * 显示与歌词外观
      *
-     * 放封面、播放页文案、歌词显示和背景图这类纯显示偏好
-     * 图片选择和 Slider 需要自定义 UI，但 key、默认值、备份和元数据仍在这里统一登记
+     * 放封面, 播放页文案, 歌词显示和背景图这类纯显示偏好
+     * 图片选择和 Slider 需要自定义 UI, 但 key, 默认值, 备份和元数据仍在这里统一登记
      */
     @AutoSettingsSection(
         order = 50
@@ -636,8 +636,8 @@ object AutoSettingsSchema {
     /*
      * 动效与歌词运动
      *
-     * 放播放页动效、歌词动效和模糊强度
-     * 很多开关受 Android 版本或互斥关系影响，所以复杂项只生成元数据，不走通用开关
+     * 放播放页动效, 歌词动效和模糊强度
+     * 很多开关受 Android 版本或互斥关系影响, 所以复杂项只生成元数据, 不走通用开关
      */
     @AutoSettingsSection(
         order = 60
@@ -808,7 +808,7 @@ object AutoSettingsSchema {
      * 歌词设置
      *
      * 放外部词幕适配和各来源默认歌词偏移
-     * 偏移会影响已有歌曲的用户偏移重算，所以保留手写入口
+     * 偏移会影响已有歌曲的用户偏移重算, 所以保留手写入口
      */
     @AutoSettingsSection(
         order = 65
@@ -1057,7 +1057,7 @@ object AutoSettingsSchema {
      * 网络
      *
      * 放会影响网络栈启动快照的开关
-     * 这些值可能在进程早期读取，写入时必须同步 bootstrap snapshot
+     * 这些值可能在进程早期读取, 写入时必须同步 bootstrap snapshot
      */
     @AutoSettingsSection(
         order = 70
@@ -1086,8 +1086,8 @@ object AutoSettingsSchema {
     /*
      * 下载路径与命名
      *
-     * 放下载目录、目录展示名和文件名模板
-     * 目录权限、迁移流程和快照同步都必须走手写业务入口
+     * 放下载目录, 目录展示名和文件名模板
+     * 目录权限, 迁移流程和快照同步都必须走手写业务入口
      */
     @AutoSettingsSection(
         order = 80
@@ -1173,7 +1173,7 @@ object AutoSettingsSchema {
      * 流量管理
      *
      * 放流量统计展示和移动/漫游网络下的风险操作提示
-     * 统计数据不进 DataStore，只有用户偏好开关在这里登记
+     * 统计数据不进 DataStore, 只有用户偏好开关在这里登记
      */
     @AutoSettingsSection(
         order = 85
@@ -1198,8 +1198,8 @@ object AutoSettingsSchema {
     /*
      * 存储与缓存
      *
-     * 放缓存容量、清理入口和本地存储展示相关的设置
-     * 缓存容量会影响播放器启动快照，保留手写 setter
+     * 放缓存容量, 清理入口和本地存储展示相关的设置
+     * 缓存容量会影响播放器启动快照, 保留手写 setter
      */
     @AutoSettingsSection(
         order = 90
@@ -1228,8 +1228,8 @@ object AutoSettingsSchema {
     /*
      * 备份与同步
      *
-     * 放配置导入导出、GitHub/WebDAV 同步和备份提示偏好
-     * token、远端配置和立即同步属于独立存储，不进入 DataStore schema
+     * 放配置导入导出, GitHub/WebDAV 同步和备份提示偏好
+     * token, 远端配置和立即同步属于独立存储, 不进入 DataStore schema
      */
     @AutoSettingsSection(
         order = 100
@@ -1258,8 +1258,8 @@ object AutoSettingsSchema {
     /*
      * 播放行为
      *
-     * 放播放器启动时就要知道的行为偏好，比如淡入淡出、状态恢复和音频焦点
-     * 这些项会写 playback snapshot，不能让通用 setter 直接绕过
+     * 放播放器启动时就要知道的行为偏好, 比如淡入淡出, 状态恢复和音频焦点
+     * 这些项会写 playback snapshot, 不能让通用 setter 直接绕过
      */
     @AutoSettingsSection(
         order = 110

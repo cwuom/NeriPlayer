@@ -93,7 +93,7 @@ class CoverUrlMapper private constructor(private val storageDir: File) {
     /**
      * 获取网络地址
      * @param url 可能是本地地址或网络地址
-     * @return 如果是本地地址且有映射，返回网络地址；否则返回原地址
+     * @return 如果是本地地址且有映射, 返回网络地址; 否则返回原地址
      */
     fun getNetworkUrl(url: String?): String? {
         if (url.isNullOrBlank()) return url
@@ -113,7 +113,7 @@ class CoverUrlMapper private constructor(private val storageDir: File) {
     }
 
     /**
-     * 清理无效的映射（本地文件已不存在）
+     * 清理无效的映射 (本地文件已不存在)
      */
     @Suppress("unused")
     fun cleanupInvalidMappings() {

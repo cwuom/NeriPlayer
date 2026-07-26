@@ -129,7 +129,7 @@ object LanguageManager {
     }
 
     /**
-     * 初始化语言设置（在Application中调用）
+     * 初始化语言设置 (在Application中调用)
      * Initialize language setting (call in Application)
      */
     fun init(context: Context) {

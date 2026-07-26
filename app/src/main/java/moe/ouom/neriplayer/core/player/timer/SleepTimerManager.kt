@@ -69,7 +69,7 @@ class SleepTimerManager(
     private val _timerState = MutableStateFlow(SleepTimerState())
     val timerState: StateFlow<SleepTimerState> = _timerState
 
-    /** 预设时间选项（分钟） */
+    /** 预设时间选项 (分钟) */
     val presetMinutes = listOf(15, 30, 45, 60, 90, 120)
 
     /**
@@ -190,7 +190,7 @@ class SleepTimerManager(
         }
     }
 
-    // 通知专用：> 60s 时只显示分钟，减少通知重建频率
+    // 通知专用: > 60s 时只显示分钟, 减少通知重建频率
     fun formatRemainingTimeForNotification(): String {
         val state = _timerState.value
         if (!state.isActive || !state.mode.isCountdownMode()) {

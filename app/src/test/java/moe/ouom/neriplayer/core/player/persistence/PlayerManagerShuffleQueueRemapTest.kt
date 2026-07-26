@@ -8,15 +8,15 @@ import org.junit.Test
 /**
  * addToQueueNext 随机索引重映射回归测试(#P3)
  *
- * 复现随机播放“下一首播放”在队列中部插入/移除后的错播、漏曲、重复:
+ * 复现随机播放"下一首播放"在队列中部插入/移除后的错播, 漏曲, 重复:
  * shuffleBag/shuffleHistory/shuffleFuture 里保存的是队列下标,
- * 队列结构变化时必须做同样的收缩/扩张,否则旧下标会指向错误曲目或越界。
+ * 队列结构变化时必须做同样的收缩/扩张,否则旧下标会指向错误曲目或越界
  */
 class PlayerManagerShuffleQueueRemapTest {
 
     @Test
     fun `middle insert keeps every remaining shuffle index valid and complete`() {
-        // 队列 [A,B,C,D],当前 B(1),随机袋 = [D(3), C(2)];对新曲 E 执行“下一首播放”
+        // 队列 [A,B,C,D],当前 B(1),随机袋 = [D(3), C(2)];对新曲 E 执行"下一首播放"
         // insertIndex = currentIndex + 1 = 2,E 不在队列 -> existingIndex = -1
         // newPlaylist = [A, B, E, C, D],E 的真实下标 = 2
         val newPlaylist = listOf("A", "B", "E", "C", "D")
@@ -33,7 +33,7 @@ class PlayerManagerShuffleQueueRemapTest {
             newSongIndex = newSongIndex,
         )
 
-        // 旧 bug 会把 D 丢出随机池、把 C 错位;修复后袋里仍应恰好是 D 和 C
+        // 旧 bug 会把 D 丢出随机池, 把 C 错位;修复后袋里仍应恰好是 D 和 C
         assertEquals(setOf("D", "C"), result.bag.map { newPlaylist[it] }.toSet())
         // 新曲 E 进入 future,不再留在 bag
         assertEquals(listOf("E"), result.future.map { newPlaylist[it] })
@@ -45,7 +45,7 @@ class PlayerManagerShuffleQueueRemapTest {
     @Test
     fun `moving an existing song to next remaps both removal and insertion`() {
         // 队列 [A,B,C,D,E],当前 A(0),随机袋 = [D(3), B(1), E(4), C(2)]
-        // 对已存在的 D 执行“下一首播放”:removeAt(3) 后 add(1, D)
+        // 对已存在的 D 执行"下一首播放":removeAt(3) 后 add(1, D)
         // newPlaylist = [A, D, B, C, E]
         val newPlaylist = listOf("A", "D", "B", "C", "E")
         val newSongIndex = newPlaylist.indexOf("D") // 1
@@ -71,7 +71,7 @@ class PlayerManagerShuffleQueueRemapTest {
     @Test
     fun `history entries shift on removal and stale new-song history is dropped`() {
         // 队列 [A,B,C,D],当前 C(2),history=[A(0)],bag=[B(1), D(3)]
-        // 对已存在的 A 执行“下一首播放”:removeAt(0) 后 insertIndex=2
+        // 对已存在的 A 执行"下一首播放":removeAt(0) 后 insertIndex=2
         // newPlaylist = [B, C, A, D]
         val newPlaylist = listOf("B", "C", "A", "D")
         val newSongIndex = newPlaylist.indexOf("A") // 2

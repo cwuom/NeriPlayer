@@ -174,7 +174,7 @@ class LyriconPositionFeedTest {
             10_000L,
             displayLyriconPositionMs(mediaPositionMs = 9_500L, durationMs = 10_000L)
         )
-        // lead 不进媒体锚点：同一 media 多次 display 结果稳定
+        // lead 不进媒体锚点: 同一 media 多次 display 结果稳定
         val media = 2_000L
         assertEquals(
             displayLyriconPositionMs(mediaPositionMs = media, durationMs = 10_000L),

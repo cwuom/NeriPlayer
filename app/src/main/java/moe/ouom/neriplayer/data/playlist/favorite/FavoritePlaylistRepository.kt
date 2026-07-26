@@ -118,7 +118,7 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
             .sortedWith(compareByDescending<FavoritePlaylist> { it.sortOrder }.thenByDescending {
                 maxOf(it.modifiedAt, it.addedTime)
             })
-        // 初次从盘加载时无需把刚读到的数据原样写回，避免每次冷启动无条件重写收藏文件
+        // 初次从盘加载时无需把刚读到的数据原样写回, 避免每次冷启动无条件重写收藏文件
         val persisted = if (persist) saveToDisk(normalized) else false
         if (triggerSync) {
             if (persisted) {

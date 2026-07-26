@@ -63,8 +63,8 @@ class YouTubeGoogleVideoRangeSupportTest {
 
     @Test
     fun shouldUseChunkedRangeForDownload_forcesChunkOnSeekableDirectUrlUnlikePlayback() {
-        // 已解析(n+sig+clen)的 WEB_REMIX 直链：播放侧可整段 seek 故不分块，
-        // 但下载侧必须分块，否则整档 GET 会被 googlevideo 403
+        // 已解析(n+sig+clen)的 WEB_REMIX 直链: 播放侧可整段 seek 故不分块
+        // 但下载侧必须分块, 否则整档 GET 会被 googlevideo 403
         val url =
             "https://rr1---sn-aigl6ney.googlevideo.com/videoplayback" +
                 "?source=youtube&id=audio-demo&n=resolved-n&sig=resolved-signature&mime=audio%2Fwebm&clen=3965665"
@@ -203,7 +203,7 @@ class YouTubeGoogleVideoRangeSupportTest {
             }
         }.exceptionOrNull()
 
-        // 403 不再 fallback，只尝试一次就抛出
+        // 403 不再 fallback, 只尝试一次就抛出
         assertEquals(listOf(300_000L), attempts)
         assertTrue(error is ChunkRequestIOException)
     }

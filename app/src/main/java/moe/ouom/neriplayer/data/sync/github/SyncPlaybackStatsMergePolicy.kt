@@ -5,10 +5,10 @@ import moe.ouom.neriplayer.data.sync.model.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.model.SyncTrackStat
 
 internal object SyncPlaybackStatsMergePolicy {
-    // 裁剪阈值必须与桌面端 sync/merge.rs 逐字一致，否则双端会互相把对方裁掉的数据补回来形成回声上传
+    // 裁剪阈值必须与桌面端 sync/merge.rs 逐字一致, 否则双端会互相把对方裁掉的数据补回来形成回声上传
     // playbackStats 上限
     const val MAX_TRACK_STATS = 2000
-    // playbackStatBuckets 保留窗口（天）
+    // playbackStatBuckets 保留窗口 (天)
     const val BUCKET_RETENTION_DAYS = 400L
     // playbackStatBuckets 数量上限
     const val MAX_STAT_BUCKETS = 8000
@@ -62,9 +62,9 @@ internal object SyncPlaybackStatsMergePolicy {
     }
 
     /**
-     * 裁剪曲目统计：按 lastPlayedAt 降序保留，并列按 identityKey 升序，最多保留 MAX_TRACK_STATS 条
-     * 幂等：trim(trim(x)) == trim(x)；确定性排序保证双端从同一合并结果得到同一保留集合
-     * 裁剪时机固定在「merge 之后、序列化之前」
+     * 裁剪曲目统计: 按 lastPlayedAt 降序保留, 并列按 identityKey 升序, 最多保留 MAX_TRACK_STATS 条
+     * 幂等: trim(trim(x)) == trim(x); 确定性排序保证双端从同一合并结果得到同一保留集合
+     * 裁剪时机固定在"merge 之后, 序列化之前"
      */
     fun trimStats(stats: List<SyncTrackStat>): List<SyncTrackStat> {
         if (stats.size <= MAX_TRACK_STATS) return stats
@@ -77,10 +77,10 @@ internal object SyncPlaybackStatsMergePolicy {
     }
 
     /**
-     * 裁剪日桶：先按 400 天保留窗口过滤，再按数量上限 MAX_STAT_BUCKETS 截断
-     * 窗口锚点取数据集内最大的 dayStartAt（绝不能用墙钟），cutoff = maxDayStartAt - 400 天
-     * 超上限时按 dayStartAt 降序、playCount 降序、identityKey 升序截断
-     * 幂等：最新一天恒在窗口内，锚点与 cutoff 重复裁剪不变，故 trim(trim(x)) == trim(x)
+     * 裁剪日桶: 先按 400 天保留窗口过滤, 再按数量上限 MAX_STAT_BUCKETS 截断
+     * 窗口锚点取数据集内最大的 dayStartAt (绝不能用墙钟) , cutoff = maxDayStartAt - 400 天
+     * 超上限时按 dayStartAt 降序, playCount 降序, identityKey 升序截断
+     * 幂等: 最新一天恒在窗口内, 锚点与 cutoff 重复裁剪不变, 故 trim(trim(x)) == trim(x)
      */
     fun trimBuckets(buckets: List<SyncPlaybackStatBucket>): List<SyncPlaybackStatBucket> {
         if (buckets.isEmpty()) return buckets
@@ -98,9 +98,9 @@ internal object SyncPlaybackStatsMergePolicy {
     }
 
     /**
-     * 单调抬升兜底：把「总」聚合计数抬升到不低于同曲分桶之和，只增不减、幂等
-     * 与桌面端 lift_stats_to_bucket_totals 对齐，用于消除「年 > 总」口径分裂
-     * 合并语义整体基于 max（merge 用 max，lift 用 max），因此即使两端实现略有差异也收敛，不产生回声
+     * 单调抬升兜底: 把"总"聚合计数抬升到不低于同曲分桶之和, 只增不减, 幂等
+     * 与桌面端 lift_stats_to_bucket_totals 对齐, 用于消除"年 > 总"口径分裂
+     * 合并语义整体基于 max (merge 用 max, lift 用 max) , 因此即使两端实现略有差异也收敛, 不产生回声
      */
     fun liftStatsToBucketTotals(
         stats: List<SyncTrackStat>,
@@ -131,17 +131,17 @@ internal object SyncPlaybackStatsMergePolicy {
         }
     }
 
-    /** 合并统计收尾结果：已抬升并裁剪的曲目统计与日桶 */
+    /** 合并统计收尾结果: 已抬升并裁剪的曲目统计与日桶 */
     data class FinalizedPlaybackStats(
         val stats: List<SyncTrackStat>,
         val buckets: List<SyncPlaybackStatBucket>
     )
 
     /**
-     * 合并统计收尾：顺序必须与桌面 merge.rs three_way_merge 逐字一致——
-     * 先用「未裁剪」的合并日桶做单调抬升，再分别裁剪日桶与曲目统计。
-     * 若先裁剪再抬升，窗口外(>400 天)或超上限的日桶不会计入抬升，导致跨端「总」值不收敛、
-     * 且 lift 兜底覆盖不到全量分桶之和（展示口径分裂）。集中在此处，保证多个调用点顺序不会再各自漂移。
+     * 合并统计收尾: 顺序必须与桌面 merge.rs three_way_merge 逐字一致 --
+     * 先用"未裁剪"的合并日桶做单调抬升, 再分别裁剪日桶与曲目统计
+     * 若先裁剪再抬升, 窗口外(>400 天)或超上限的日桶不会计入抬升, 导致跨端"总"值不收敛
+     * 且 lift 兜底覆盖不到全量分桶之和 (展示口径分裂) ; 集中在此处, 保证多个调用点顺序不会再各自漂移
      */
     fun finalizeMergedStats(
         mergedStats: List<SyncTrackStat>,

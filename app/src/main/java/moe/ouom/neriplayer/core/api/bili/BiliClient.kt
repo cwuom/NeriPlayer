@@ -69,10 +69,10 @@ class BiliClient(
         private const val WEB_TICKET_URL =
             "https://api.bilibili.com/bapis/bilibili.api.ticket.v1.Ticket/GenWebTicket"
 
-        // 基础信息（WBI 可用）
+        // 基础信息 (WBI 可用)
         private const val VIEW_URL = "https://api.bilibili.com/x/web-interface/wbi/view"
 
-        // 搜索（WBI）
+        // 搜索 (WBI)
         private const val SEARCH_TYPE_URL = "https://api.bilibili.com/x/web-interface/wbi/search/type"
 
         // 点赞近况
@@ -87,13 +87,13 @@ class BiliClient(
         private const val COLLECTION_ARCHIVES_URL = "https://api.bilibili.com/x/polymer/web-space/seasons_archives_list"
         private const val PAGELIST_URL = "https://api.bilibili.com/x/player/pagelist"
 
-        /** 默认 UA（Web） */
+        /** 默认 UA (Web) */
         private const val DEFAULT_WEB_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
                     "AppleWebKit/537.36 (KHTML, like Gecko) " +
                     "Chrome/124.0.0.0 Safari/537.36"
 
-        /** 指纹接口专用 UA（移动端） */
+        /** 指纹接口专用 UA (移动端) */
         private const val FINGERPRINT_UA =
             "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) " +
                     "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 " +
@@ -135,18 +135,18 @@ class BiliClient(
         /** 合集内容接口默认分页尺寸 */
         private const val COLLECTION_ARCHIVE_PAGE_SIZE = 30
 
-        /** 控制 B 站分页接口并发，避免大量收藏夹时被限流 */
+        /** 控制 B 站分页接口并发, 避免大量收藏夹时被限流 */
         private const val MAX_PARALLEL_PAGE_REQUESTS = 6
 
         /** WebTicket HMAC key */
         private const val WEB_TICKET_KEY = "XgwSnGZ1p"
 
         // ---- fnval 位 ----
-        /** DASH 开关（必开，否则只有 durl/mp4） */
+        /** DASH 开关 (必开, 否则只有 durl/mp4) */
         const val FNVAL_DASH = 1 shl 4  // 16
-        /** 杜比音频（E-AC-3/Atmos），要拿 dolby.audio 必开 */
+        /** 杜比音频 (E-AC-3/Atmos) , 要拿 dolby.audio 必开 */
         const val FNVAL_DOLBY = 1 shl 8  // 256
-        /** 其它位（如 AV1/HDR/8K 等）按需再开，这里不强制 */
+        /** 其它位 (如 AV1/HDR/8K 等) 按需再开, 这里不强制 */
     }
 
     private val http: OkHttpClient = client ?: OkHttpClient.Builder()
@@ -166,24 +166,24 @@ class BiliClient(
 
     // 外部可用的数据结构
     data class PlayOptions(
-        /** 画质 qn；DASH 下此参数基本无效（会返回所有可用轨） */
+        /** 画质 qn; DASH 下此参数基本无效 (会返回所有可用轨) */
         val qn: Int? = null,
-        /** 流格式标识，推荐：DASH + Dolby，确保能下发普通音轨与杜比音轨 */
+        /** 流格式标识, 推荐: DASH + Dolby, 确保能下发普通音轨与杜比音轨 */
         val fnval: Int = FNVAL_DASH or FNVAL_DOLBY,
         val fnver: Int = 0,
-        /** 允许 4K（配合 qn=120 & fourk=1），对音轨无影响 */
+        /** 允许 4K (配合 qn=120 & fourk=1) , 对音轨无影响 */
         val fourk: Int = 0,
-        /** 平台：pc（默认，需 Referer），html5（无 Referer 校验，仅 MP4） */
+        /** 平台: pc (默认, 需 Referer) , html5 (无 Referer 校验, 仅 MP4) */
         val platform: String = "pc",
-        /** platform=html5 时为 1 可拉 1080p（high_quality=1） */
+        /** platform=html5 时为 1 可拉 1080p (high_quality=1) */
         val highQuality: Int? = null,
-        /** 未登录试拉较高画质（64/80），1 开启 */
+        /** 未登录试拉较高画质 (64/80) , 1 开启 */
         val tryLook: Int? = null,
         /** session 透传 */
         val session: String? = null,
-        /** 可选：gaia_source，无 Cookie 时有时需要（view-card / pre-load） */
+        /** 可选: gaia_source, 无 Cookie 时有时需要 (view-card / pre-load) */
         val gaiaSource: String? = null,
-        /** 可选：isGaiaAvoided */
+        /** 可选: isGaiaAvoided */
         val isGaiaAvoided: Boolean? = null,
     )
 
@@ -220,7 +220,7 @@ class BiliClient(
 
     /**
      * 统一的播放信息封装
-     * MP4 看 durl；DASH 看 dashVideo/dashAudio
+     * MP4 看 durl; DASH 看 dashVideo/dashAudio
      */
     data class PlayInfo(
         val code: Int,
@@ -453,7 +453,7 @@ class BiliClient(
             val picRaw = data.optString("pic")
             val cover = ensureHttps(picRaw)
 
-            // desc_v2 优先，回落 desc
+            // desc_v2 优先, 回落 desc
             val descV2 = data.optJSONArray("desc_v2")
             val desc = if (descV2 != null && descV2.length() > 0) {
                 buildString {
@@ -601,7 +601,7 @@ class BiliClient(
 
     // 收藏夹 //
 
-    /** 获取指定用户创建的所有收藏夹（公开 + 登录可见私密） */
+    /** 获取指定用户创建的所有收藏夹 (公开 + 登录可见私密) */
     suspend fun getUserCreatedFavFolders(upMid: Long): List<FavFolder> =
         withContext(Dispatchers.IO) {
             val listAll = fetchCreatedFavFoldersListAll(upMid)
@@ -622,7 +622,7 @@ class BiliClient(
             mergeFavFolders(listAll.folders, paged)
         }
 
-    /** 获取用户收藏/订阅的他人收藏夹，platform=web 时 B 站也会混入已收藏的视频合集 */
+    /** 获取用户收藏/订阅的他人收藏夹, platform=web 时 B 站也会混入已收藏的视频合集 */
     suspend fun getUserCollectedFavFolders(upMid: Long): List<FavFolder> =
         withContext(Dispatchers.IO) {
             fetchCollectedFavFoldersByPage(upMid)
@@ -652,7 +652,7 @@ class BiliClient(
             )
         }
 
-    /** 获取收藏夹内容明细（分页） */
+    /** 获取收藏夹内容明细 (分页) */
     suspend fun getFavFolderContents(
         mediaId: Long,
         page: Int = 1,
@@ -1125,12 +1125,12 @@ class BiliClient(
     private var cachedAt: Long = 0L
 
     /**
-     * 将原始参数做 Wbi 加签，返回完整 URL
+     * 将原始参数做 Wbi 加签, 返回完整 URL
      */
     private suspend fun signWbiUrl(base: String, paramsIn: Map<String, String>): HttpUrl {
         val mixinKey = getOrRefreshMixinKey()
 
-        // 复制并加入 wts；对参数值做特殊字符过滤
+        // 复制并加入 wts; 对参数值做特殊字符过滤
         val params = paramsIn.mapValues { (_, v) -> filterValue(v) }.toMutableMap()
         val wts = (System.currentTimeMillis() / 1000L).toString()
         params["wts"] = wts
@@ -1336,7 +1336,7 @@ class BiliClient(
 
     // 工具 / 扩展 //
 
-    /** 只在值非空且非空白时设置 Header（避免递归） */
+    /** 只在值非空且非空白时设置 Header (避免递归) */
     private fun Request.Builder.headerCookieIfPresent(value: String?): Request.Builder {
         return if (value.isNullOrBlank()) {
             this
@@ -1455,12 +1455,12 @@ class BiliClient(
     // 将 PlayInfo 映射为统一的音频流结构 //
 
     /**
-     * 合并 dash.audio、dash.dolby.audio 和 dash.flac.audio
-     * - 普通音轨：qualityTag = null
-     * - 杜比音轨：qualityTag = "dolby"
-     * - Hi-Res（flac）：qualityTag = "hires"
+     * 合并 dash.audio, dash.dolby.audio 和 dash.flac.audio
+     * - 普通音轨: qualityTag = null
+     * - 杜比音轨: qualityTag = "dolby"
+     * - Hi-Res (flac) : qualityTag = "hires"
      *
-     * bitrateKbps = bandwidth(Byte/s)*8/1000，并做非负保护
+     * bitrateKbps = bandwidth(Byte/s)*8/1000, 并做非负保护
      */
     fun PlayInfo.toAudioStreamInfos(): List<BiliAudioStreamInfo> {
         val list = mutableListOf<BiliAudioStreamInfo>()
@@ -1491,7 +1491,7 @@ class BiliClient(
             )
         }
 
-        // Hi-Res（flac）
+        // Hi-Res (flac)
         flac?.audio?.let { a ->
             val candidateUrls = prioritizeBiliStreamUrls(a.baseUrl, a.backupUrls)
             list += BiliAudioStreamInfo(
@@ -1549,7 +1549,7 @@ class BiliClient(
 }
 
 /**
- * 适配器：用 BiliClient 作为音频数据源，接到 BiliPlaybackRepository
+ * 适配器: 用 BiliClient 作为音频数据源, 接到 BiliPlaybackRepository
  */
 class BiliClientAudioDataSource(
     override val client: BiliClient

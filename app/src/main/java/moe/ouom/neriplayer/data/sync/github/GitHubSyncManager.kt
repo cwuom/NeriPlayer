@@ -477,7 +477,7 @@ class GitHubSyncManager private constructor(context: Context) {
             deletions = mergedRecentPlayDeletions
         )
         val playbackStatsClearedAt = maxOf(local.playbackStatsClearedAt, remote.playbackStatsClearedAt)
-        // 收尾顺序与桌面 three_way_merge 逐字一致：先用「未裁剪」的合并日桶抬升聚合值（消除「年 > 总」），再分别裁剪
+        // 收尾顺序与桌面 three_way_merge 逐字一致: 先用"未裁剪"的合并日桶抬升聚合值 (消除"年 > 总") , 再分别裁剪
         val finalizedPlaybackStats = SyncPlaybackStatsMergePolicy.finalizeMergedStats(
             mergedStats = mergePlaybackStats(
                 local = local.playbackStats,
@@ -1079,8 +1079,8 @@ class GitHubSyncManager private constructor(context: Context) {
         }
 
         val (remoteContent, remoteSha) = remoteResult.getOrThrow()
-        // 至此 size > 0 且内联 content 为空的 >1MB 文件已在 GitHubApiClient 走 raw 通道读回，
-        // 因此此处 content 为空只可能是 size == 0 的真空文件，按无效备份处理
+        // 至此 size > 0 且内联 content 为空的 >1MB 文件已在 GitHubApiClient 走 raw 通道读回
+        // 因此此处 content 为空只可能是 size == 0 的真空文件, 按无效备份处理
         if (remoteContent.isEmpty()) {
             return Result.failure(
                 IOException(LanguageManager.applyLanguage(appContext).getString(R.string.github_backup_file_invalid))
@@ -1091,9 +1091,9 @@ class GitHubSyncManager private constructor(context: Context) {
             SyncDataSerializer.ensureRemoteContentSize(remoteContent)
             sanitizeSyncData(SyncDataSerializer.deserialize(remoteContent))
         } catch (e: Exception) {
-            // 解析失败即安全失败：不得回退到另一文件名的陈旧快照做合并上传，
-            // 否则早已删除的数据会经 union 合并复活并回流，且损坏文件永不自愈（P1-4）。
-            // 中止本次同步、保持不覆盖不上传，损坏文件留待人工或后续自愈路径处理
+            // 解析失败即安全失败: 不得回退到另一文件名的陈旧快照做合并上传
+            // 否则早已删除的数据会经 union 合并复活并回流, 且损坏文件永不自愈 (P1-4)
+            // 中止本次同步, 保持不覆盖不上传, 损坏文件留待人工或后续自愈路径处理
             NPLogger.e(TAG, "Failed to parse remote data, aborting sync without stale fallback", e)
             return Result.failure(e)
         }
@@ -1116,7 +1116,7 @@ class GitHubSyncManager private constructor(context: Context) {
         val playlistsAdded = localData.playlists.count { !it.isDeleted }
         val playlistsDeleted = localData.playlists.count(SyncPlaylist::isDeleted)
         val songsAdded = localData.playlists.sumOf { playlist -> playlist.songs.size }
-        // 首次同步同样走收尾（顺序与桌面一致：先用「未裁剪」桶抬升，再裁剪），避免首个备份文件就撑过 GitHub 1MB 内联上限
+        // 首次同步同样走收尾 (顺序与桌面一致: 先用"未裁剪"桶抬升, 再裁剪) , 避免首个备份文件就撑过 GitHub 1MB 内联上限
         val finalizedInitialStats = SyncPlaybackStatsMergePolicy.finalizeMergedStats(
             mergedStats = localData.playbackStats,
             mergedBuckets = localData.playbackStatBuckets

@@ -100,7 +100,7 @@ internal object UsbExclusiveOutputFormatResolver {
             .filter { device -> device.isSink && isUsbOutputType(device.type) }
             .sortedBy(AudioDeviceInfo::getId)
         // 优先使用 host 侧已选中设备的具体 key,使能力查询与音频输出指向同一设备;
-        // 缺省再回退设置项。auto 且在场多个不同物理设备时拒绝而非静默取首个。
+        // 缺省再回退设置项; auto 且在场多个不同物理设备时拒绝而非静默取首个
         val effectiveDeviceKey = resolvedDeviceKey?.takeIf { it.isNotBlank() }
             ?: preferences.selectedDeviceKey
         // 同一物理 DAC 可能暴露多个 AudioDeviceInfo(不同 type),按 label 归组取代表,
@@ -189,7 +189,7 @@ internal object UsbExclusiveOutputFormatResolver {
             C.ENCODING_PCM_24BIT_BIG_ENDIAN -> 24
             C.ENCODING_PCM_32BIT,
             C.ENCODING_PCM_32BIT_BIG_ENDIAN -> 32
-            // Media3 float 保留了源音频的完整精度，优先按 32-bit 申请原生 USB 输出
+            // Media3 float 保留了源音频的完整精度, 优先按 32-bit 申请原生 USB 输出
             C.ENCODING_PCM_FLOAT -> 32
             else -> null
         }

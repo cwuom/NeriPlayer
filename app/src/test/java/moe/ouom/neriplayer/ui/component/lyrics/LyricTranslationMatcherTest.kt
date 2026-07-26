@@ -7,15 +7,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 覆盖歌词翻译配对的两个回归：
- * - Bug A：多行共享同一时间戳时翻译整体错位一行（元数据行窃取翻译）
- * - Bug B：没有真正翻译的歌把制作信息当成翻译显示
+ * 覆盖歌词翻译配对的两个回归:
+ * - Bug A: 多行共享同一时间戳时翻译整体错位一行 (元数据行窃取翻译)
+ * - Bug B: 没有真正翻译的歌把制作信息当成翻译显示
  */
 class LyricTranslationMatcherTest {
 
     @Test
     fun `shared timestamp keeps translation on the real lyric line not the metadata line`() {
-        // 出品/营销/OP 与正文行共享 15638ms，翻译应落在正文行而非最靠前的元数据行
+        // 出品/营销/OP 与正文行共享 15638ms, 翻译应落在正文行而非最靠前的元数据行
         val lines = listOf(
             LyricEntry(text = "出品：网易飓风", startTimeMs = 15_638L, endTimeMs = 15_638L),
             LyricEntry(text = "营销：网易飓风", startTimeMs = 15_638L, endTimeMs = 15_638L),
@@ -39,7 +39,7 @@ class LyricTranslationMatcherTest {
 
     @Test
     fun `mixed yrc and lrc lyrics align translations without shifting up one line`() {
-        // 作词/作曲(逐字) + 共享时间戳的元数据 + 正文，翻译只覆盖正文
+        // 作词/作曲(逐字) + 共享时间戳的元数据 + 正文, 翻译只覆盖正文
         val lines = listOf(
             LyricEntry(
                 text = "作词: 罗言",
@@ -118,7 +118,7 @@ class LyricTranslationMatcherTest {
 
     @Test
     fun `metadata only translation produces no matches`() {
-        // Bug B：整段翻译只有制作信息时不显示任何翻译
+        // Bug B: 整段翻译只有制作信息时不显示任何翻译
         val lines = listOf(
             LyricEntry(text = "第一句", startTimeMs = 1_000L, endTimeMs = 2_000L),
             LyricEntry(text = "第二句", startTimeMs = 2_000L, endTimeMs = 3_000L)
@@ -154,8 +154,8 @@ class LyricTranslationMatcherTest {
 
     @Test
     fun `real yrc english lyric with sparse chinese translation aligns downward`() {
-        // 用户真实样本 Keep Your Head Up：YRC 英文逐字原文 + 独立稀疏中文 LRC 翻译
-        // 翻译只覆盖部分行，必须向下 carry-forward 精确对齐，不得错位/漏配/泄漏到无翻译行
+        // 用户真实样本 Keep Your Head Up: YRC 英文逐字原文 + 独立稀疏中文 LRC 翻译
+        // 翻译只覆盖部分行, 必须向下 carry-forward 精确对齐, 不得错位/漏配/泄漏到无翻译行
         val lines = listOf(
             LyricEntry("When she was younger, she would pretend", 120L, 4980L),
             LyricEntry("That her bedroom was a castle", 5940L, 11190L),

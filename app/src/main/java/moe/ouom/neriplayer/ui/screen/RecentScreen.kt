@@ -455,7 +455,7 @@ fun RecentScreen(
         )
     }
 
-    // 删除确认弹窗（单条/多选共用）
+    // 删除确认弹窗 (单条/多选共用)
     if (showDeleteConfirm) {
         val deleteCount = pendingDeleteSongs.size
         val deleteMessage = if (deleteCount <= 1) {

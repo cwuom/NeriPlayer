@@ -50,7 +50,7 @@ internal data class UsbExclusiveDeviceSelectionResult<T>(
 )
 
 /**
- * 统一 host 与音频侧的独占设备选择判定,消除两侧各自按不同排序取首个导致"能力查自 A、音频走 B"
+ * 统一 host 与音频侧的独占设备选择判定,消除两侧各自按不同排序取首个导致"能力查自 A, 音频走 B"
  * 的选错/无声问题:
  * - 指定设备:选中精确匹配项(同一物理设备可能有多个入口,取首个);匹配不到且仅一个候选且
  *   allowSingleFallback 为真时退回该候选(兼容 productName 为空导致 label 不一致);否则视为未找到

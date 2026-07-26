@@ -58,7 +58,7 @@ internal fun mergePositiveTimestamp(left: Long, right: Long): Long {
 @Serializable
 data class SyncData(
     @ProtoNumber(1) val version: String = "2.0",
-    // proto3 语义下标量默认值不写入报文，桌面端可能省略，解码侧必须提供默认值以免 MissingFieldException
+    // proto3 语义下标量默认值不写入报文, 桌面端可能省略, 解码侧必须提供默认值以免 MissingFieldException
     @ProtoNumber(2) val deviceId: String = "",
     @ProtoNumber(3) val deviceName: String = "",
     @ProtoNumber(4) val lastModified: Long = System.currentTimeMillis(),
@@ -76,7 +76,7 @@ data class SyncData(
 /**
  * 同步歌单
  * 包含时间戳用于冲突检测
- * 桌面端 ProtoBuf 编码会省略默认值，因此可为空或为零的字段需要提供解码默认值
+ * 桌面端 ProtoBuf 编码会省略默认值, 因此可为空或为零的字段需要提供解码默认值
  */
 @Serializable
 data class SyncPlaylist(
@@ -146,9 +146,9 @@ private fun List<SyncSong>.migrateLegacySongsToDisplayOrder(
     playlistModifiedAt: Long
 ): List<SyncSong> {
     if (isEmpty()) return emptyList()
-    // 锚点必须与设备墙钟无关：只用歌单自身 modifiedAt（快照产生时刻）而非 now，
-    // 否则被抬高的 addedAt 恒大于任何历史 deletedAt，使 identity 删除墓碑永久失效并被
-    // pruneResolvedDeletions 裁剪，导致已删歌曲复活（P1-1）
+    // 锚点必须与设备墙钟无关: 只用歌单自身 modifiedAt (快照产生时刻) 而非 now
+    // 否则被抬高的 addedAt 恒大于任何历史 deletedAt, 使 identity 删除墓碑永久失效并被
+    // pruneResolvedDeletions 裁剪, 导致已删歌曲复活 (P1-1)
     val newestAddedAt = maxOf(
         playlistModifiedAt,
         maxOfOrNull { it.addedAt } ?: 0L
@@ -458,7 +458,7 @@ data class SyncFavoritePlaylist(
  */
 @Serializable
 data class SyncLogEntry(
-    // action 枚举序数 0 (CREATE_PLAYLIST) 在 proto3 会被省略，缺省值必须与 tag=0 语义一致
+    // action 枚举序数 0 (CREATE_PLAYLIST) 在 proto3 会被省略, 缺省值必须与 tag=0 语义一致
     @ProtoNumber(1) val timestamp: Long = 0L,
     @ProtoNumber(2) val deviceId: String = "",
     @ProtoNumber(3) val action: SyncAction = SyncAction.CREATE_PLAYLIST,

@@ -40,7 +40,7 @@ interface BiliAudioDataSource {
 }
 
 /**
- * 播放仓库：按设置的默认音质选择音轨，失败则逐级降级直到有可用
+ * 播放仓库: 按设置的默认音质选择音轨, 失败则逐级降级直到有可用
  */
 class BiliPlaybackRepository(
     private val source: BiliAudioDataSource,

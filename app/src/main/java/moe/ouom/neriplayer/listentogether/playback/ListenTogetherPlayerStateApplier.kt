@@ -90,7 +90,7 @@ internal class ListenTogetherPlayerStateApplier(
 
         val rawExpectedPositionMs = expectedPositionMs
             ?: state.playback.expectedPositionMs(serverClockOffsetMs = serverClockOffsetProvider())
-        // 用目标曲目时长钳上限，防止异常大的 position 把播放器推到曲末造成误切/卡顿
+        // 用目标曲目时长钳上限, 防止异常大的 position 把播放器推到曲末造成误切/卡顿
         val resolvedExpectedPositionMs = clampListenTogetherPositionMs(
             positionMs = rawExpectedPositionMs,
             durationMs = targetSong.durationMs

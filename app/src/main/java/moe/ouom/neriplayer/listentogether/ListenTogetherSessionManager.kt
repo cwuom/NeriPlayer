@@ -114,7 +114,7 @@ class ListenTogetherSessionManager(
     private var membershipRecoveryJob: Job? = null
     private var syncWatchdogJob: Job? = null
     private val roomStateLock = Any()
-    // 串行化重连生命周期的 check-then-act，避免 onClosed/onFailure 并发触发多条 WS
+    // 串行化重连生命周期的 check-then-act, 避免 onClosed/onFailure 并发触发多条 WS
     private val connectionLock = Any()
 
     @Volatile
@@ -1160,7 +1160,7 @@ class ListenTogetherSessionManager(
         }
     }
 
-    // 旧自建 Worker 可能仍依赖这条中转路径，当前内置 Worker 已直接仲裁听众请求
+    // 旧自建 Worker 可能仍依赖这条中转路径, 当前内置 Worker 已直接仲裁听众请求
     private fun handleMemberControlRequested(message: ListenTogetherSocketEnvelope) {
         val snapshot = _sessionState.value
         if (!isCurrentUserController(snapshot)) return
@@ -1378,7 +1378,7 @@ class ListenTogetherSessionManager(
         forwardedEvent: ListenTogetherEvent
     ): Boolean {
         val roomState = _roomState.value
-        // 房态未落地(未知)时对转发成员控制一律 fail-closed，
+        // 房态未落地(未知)时对转发成员控制一律 fail-closed
         // 否则 settings.normalized() 回退默认 allowMemberControl=true 会造成安全门误放行
         if (roomState == null) {
             NPLogger.w(
@@ -1388,7 +1388,7 @@ class ListenTogetherSessionManager(
             publishControllerHeartbeatIfNeeded(force = true, reason = "reject_member_control_room_unknown")
             return true
         }
-        // 服务端侧鉴权：成员控制关闭时拒绝一切非控制端发起的转发请求，防止改造端越权
+        // 服务端侧鉴权: 成员控制关闭时拒绝一切非控制端发起的转发请求, 防止改造端越权
         if (
             shouldRejectForwardedListenTogetherMemberControl(
                 requesterUuid = message.causedBy?.userUuid,
@@ -1747,7 +1747,7 @@ class ListenTogetherSessionManager(
     }
 
     private fun resetReconnectAttempt() {
-        // 与 scheduleReconnect 的自增共用同一把锁串行，避免与成功/断开后的重置交错导致计数漂移
+        // 与 scheduleReconnect 的自增共用同一把锁串行, 避免与成功/断开后的重置交错导致计数漂移
         synchronized(connectionLock) {
             reconnectAttempt.set(0)
         }

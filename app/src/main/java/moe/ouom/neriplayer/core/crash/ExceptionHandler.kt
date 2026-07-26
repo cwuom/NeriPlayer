@@ -55,7 +55,7 @@ import kotlin.system.exitProcess
 
 /**
  * 全局异常处理器
- * 使用NPLogger记录异常信息，并在主线程显示错误弹窗
+ * 使用NPLogger记录异常信息, 并在主线程显示错误弹窗
  */
 object ExceptionHandler {
     private const val CRASH_DIR_NAME = "crashes"
@@ -123,7 +123,7 @@ object ExceptionHandler {
 
     /**
      * 处理异常
-     * @param source 异常来源（线程名或组件名）
+     * @param source 异常来源 (线程名或组件名)
      * @param throwable 异常对象
      * @param isUncaught 是否为未捕获异常
      */
@@ -169,24 +169,24 @@ object ExceptionHandler {
         NPLogger.e("ExceptionHandler", "Exception occurred in $source", throwable)
         NPLogger.e("ExceptionHandler", exceptionInfo)
 
-        // 独立写入崩溃日志文件（不依赖NPLogger的开关）
+        // 独立写入崩溃日志文件 (不依赖NPLogger的开关)
         if (isUncaught) {
             writeCrashLogSync(exceptionInfo)
         } else {
             writeCrashLogToFile(exceptionInfo)
         }
 
-        // 在主线程显示错误弹窗（仅处理可恢复异常）
+        // 在主线程显示错误弹窗 (仅处理可恢复异常)
         if (!isUncaught) {
             showErrorDialogOnMainThread(source, throwable)
         }
     }
     
     /**
-     * 安全执行代码块，捕获异常并处理
+     * 安全执行代码块, 捕获异常并处理
      * @param source 异常来源标识
      * @param block 要执行的代码块
-     * @return 执行结果，如果发生异常返回null
+     * @return 执行结果, 如果发生异常返回null
      */
     inline fun <T> safeExecute(source: String, block: () -> T): T? {
         return try {
@@ -259,7 +259,7 @@ object ExceptionHandler {
     }
 
     /**
-     * 尽量保持系统原始崩溃链路；若系统未提供默认处理器，则显式终止进程，
+     * 尽量保持系统原始崩溃链路; 若系统未提供默认处理器, 则显式终止进程
      * 避免异常被吞掉后应用继续运行在损坏状态
      */
     private fun delegateOrTerminate(thread: Thread, throwable: Throwable) {
@@ -295,7 +295,7 @@ object ExceptionHandler {
     }
 
     /**
-     * 统一解析崩溃目录，供 JVM 与 native 崩溃处理共用
+     * 统一解析崩溃目录, 供 JVM 与 native 崩溃处理共用
      */
     fun resolveCrashDirectory(context: Context): File? {
         val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
@@ -308,7 +308,7 @@ object ExceptionHandler {
     }
 
     /**
-     * 写入崩溃日志到文件（独立于NPLogger，始终执行）
+     * 写入崩溃日志到文件 (独立于NPLogger, 始终执行)
      */
     private fun writeCrashLogToFile(exceptionInfo: String) {
         val logFile = crashLogFile ?: return
@@ -326,7 +326,7 @@ object ExceptionHandler {
     }
 
     /**
-     * 同步写入崩溃日志（用于未捕获异常，确保落盘）
+     * 同步写入崩溃日志 (用于未捕获异常, 确保落盘)
      */
     private fun writeCrashLogSync(exceptionInfo: String) {
         if (crashLogFile == null) {

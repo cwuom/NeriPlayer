@@ -20,13 +20,13 @@ import org.json.JSONObject
 import java.io.File
 import java.util.Locale
 
-/** 音频内嵌标签写入结果，用于区分"可重试的失败"与"容器天生不支持标签" */
+/** 音频内嵌标签写入结果, 用于区分"可重试的失败"与"容器天生不支持标签" */
 internal enum class DownloadedAudioTagWriteOutcome {
     SUCCESS,
 
     /**
-     * 容器不支持内嵌标签（如 WebM/Matroska）。重试没有意义，
-     * 调用方应当保留已下载的音频，仅依赖 sidecar 封面与歌词文件
+     * 容器不支持内嵌标签 (如 WebM/Matroska) ; 重试没有意义
+     * 调用方应当保留已下载的音频, 仅依赖 sidecar 封面与歌词文件
      */
     UNSUPPORTED_CONTAINER,
 
@@ -39,8 +39,8 @@ internal object DownloadedAudioTagWriter {
     private const val MAX_EMBEDDED_COVER_BYTES = 8L * 1024L * 1024L
 
     /**
-     * TagLib 无法承载标签的容器。YouTube 的 opus 音频落盘为 .webm，
-     * 属于 Matroska 家族，TagLib 既解析不了也写不进去
+     * TagLib 无法承载标签的容器; YouTube 的 opus 音频落盘为 .webm
+     * 属于 Matroska 家族, TagLib 既解析不了也写不进去
      */
     private val TAG_UNSUPPORTED_EXTENSIONS = setOf(
         "webm", "mkv", "mka", "ts", "flv", "m3u8", "m3u"
@@ -119,7 +119,7 @@ internal object DownloadedAudioTagWriter {
                 return@use DownloadedAudioTagWriteOutcome.SUCCESS
             }
 
-            // TagLib 连既有标签都读不出来，说明这个容器它根本不认识，重试无意义
+            // TagLib 连既有标签都读不出来, 说明这个容器它根本不认识, 重试无意义
             if (!propertySaved && existingPropertyMap == null) {
                 NPLogger.w(
                     TAG,

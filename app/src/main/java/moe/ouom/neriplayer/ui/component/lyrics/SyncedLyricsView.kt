@@ -187,7 +187,7 @@ private fun String.withoutTtmlLayoutWhitespace(): String {
 }
 
 /**
- * 根据当前时间计算该行的高亮进度（0f..1f），基于字符数进行精确计算
+ * 根据当前时间计算该行的高亮进度 (0f..1f) , 基于字符数进行精确计算
  */
 fun calculateLineProgress(line: LyricEntry, currentTimeMs: Long): Float {
     val start = line.startTimeMs
@@ -367,7 +367,7 @@ fun SyncedLyricsView(
             try {
                 listState.animateScrollToItem(currentIndex)
             } finally {
-                // 确保自动滚动被取消或完成后及时复位，避免后续手动滚动无法进入清晰态
+                // 确保自动滚动被取消或完成后及时复位, 避免后续手动滚动无法进入清晰态
                 isAutoScrolling = false
             }
         }
@@ -457,7 +457,7 @@ fun SyncedLyricsView(
                     val isActive = index == currentIndex
 
                     if (shouldUseClearText) {
-                        // 滚动时：显示简单文本
+                        // 滚动时: 显示简单文本
                         Text(
                             text = line.text,
                             style = TextStyle(
@@ -470,7 +470,7 @@ fun SyncedLyricsView(
                             softWrap = true
                         )
                     } else {
-                        // 播放时：显示带动画的复杂文本
+                        // 播放时: 显示带动画的复杂文本
                         val targetScale =
                             if (!visualEffectsEnabled) 1f
                             else if (isActive) visualSpec.activeScale
@@ -613,9 +613,9 @@ internal fun lyricListItemKey(index: Int, line: LyricEntry): String {
 
 
 /**
- * 解析网易云 yrc（逐字/逐词）
- * 示例：[12580,3470](12580,250,0)难(12830,300,0)以...
- * 会把每段文字的长度写入 WordTiming.charCount，用于多行逐字揭示
+ * 解析网易云 yrc (逐字/逐词)
+ * 示例: [12580,3470](12580,250,0)难(12830,300,0)以
+ * 会把每段文字的长度写入 WordTiming.charCount, 用于多行逐字揭示
  */
 fun parseNeteaseYrc(yrc: String): List<LyricEntry> {
 //    NPLogger.d("parseYrc-N", yrc)
@@ -689,7 +689,7 @@ internal fun Modifier.multilineGradientReveal(
             currentLine.text.length * calculateLineProgress(currentLine, drawTimeMs).coerceIn(0f, 1f)
         }
 
-        // 进度达100%，直接显示全部高亮，跳过裁剪
+        // 进度达100%, 直接显示全部高亮, 跳过裁剪
         if (effectiveRevealOffsetChars >= textLength) {
             drawContent()
             return@drawWithContent
@@ -698,12 +698,12 @@ internal fun Modifier.multilineGradientReveal(
         val safeChars = effectiveRevealOffsetChars.coerceIn(0f, textLength.toFloat())
         val totalLines = layout.lineCount
 
-        // 遍历所有行，分三种情况处理，已完成行、当前行、未开始行
+        // 遍历所有行, 分三种情况处理, 已完成行, 当前行, 未开始行
         for (lineIndex in 0 until totalLines) {
             val lineStartIdx = layout.getLineStart(lineIndex) // 该行第一个字符的索引
-            val lineEndIdx = layout.getLineEnd(lineIndex, true) // 该行最后一个字符的索引（含换行符）
+            val lineEndIdx = layout.getLineEnd(lineIndex, true) // 该行最后一个字符的索引 (含换行符)
 
-            // 进度超过该行最后一个字符，直接绘制全高亮
+            // 进度超过该行最后一个字符, 直接绘制全高亮
             if (safeChars >= lineEndIdx) {
                 clipRect(
                     left = layout.getLineLeft(lineIndex),
@@ -714,14 +714,14 @@ internal fun Modifier.multilineGradientReveal(
                     this@drawWithContent.drawContent()
                 }
             }
-            // 进度落在该行内，执行渐变裁剪
+            // 进度落在该行内, 执行渐变裁剪
             else if (safeChars >= lineStartIdx) {
                 val currentIdxInLine = (safeChars - lineStartIdx).coerceAtLeast(0f)
                 val currentCharIdx = lineStartIdx + floor(currentIdxInLine).toInt()
                 val frac = (currentIdxInLine - floor(currentIdxInLine)).coerceIn(0f, 1f)
 
                 // 计算当前字符和下一个字符的X坐标
-                // 使用 getBoundingBox 获取更准确的字符边界，避免字体渲染偏移
+                // 使用 getBoundingBox 获取更准确的字符边界, 避免字体渲染偏移
                 val x0 = try {
                     layout.getBoundingBox(currentCharIdx).left
                 } catch (e: Exception) {
@@ -798,7 +798,7 @@ internal fun Modifier.multilineGradientReveal(
                     )
                 }
             }
-            // 进度未到该行，不绘制高亮
+            // 进度未到该行, 不绘制高亮
             else {
                 continue
             }
@@ -875,14 +875,14 @@ fun SyncedLyricsActiveLine(
             maxLines = Int.MAX_VALUE,
             softWrap = true,
             onTextLayout = { newLayout ->
-                // 仅在布局实际变化时更新，减少重绘
+                // 仅在布局实际变化时更新, 减少重绘
                 if (layout?.layoutInput != newLayout.layoutInput) {
                     layout = newLayout
                 }
             }
         )
 
-        // 高亮文本 - 仅在布局准备好后渲染，避免旧数据导致的异常
+        // 高亮文本 - 仅在布局准备好后渲染, 避免旧数据导致的异常
         if (isLayoutReady) {
             Text(
                 text = line.text,
@@ -921,7 +921,7 @@ internal fun resolveHeadGlowTarget(
     nextLineCenterY: Float
 ): HeadGlowTarget {
     return if (nextLine != currentLine) {
-        // 换行时先留在当前行末，避免最后一个字提前跳到下一行
+        // 换行时先留在当前行末, 避免最后一个字提前跳到下一行
         HeadGlowTarget(
             x = currentLineRight,
             y = currentLineCenterY
@@ -935,9 +935,9 @@ internal fun resolveHeadGlowTarget(
 }
 
 /**
- * 解析 LRC（逐句）
+ * 解析 LRC (逐句)
  * 支持 [mm:ss.SSS] 或 [mm:ss]
- * 没有逐字信息时，逐字揭示会按整句线性推进
+ * 没有逐字信息时, 逐字揭示会按整句线性推进
  */
 fun parseNeteaseLrc(lrc: String): List<LyricEntry> {
 //    NPLogger.d("parseLyc-N", lrc)

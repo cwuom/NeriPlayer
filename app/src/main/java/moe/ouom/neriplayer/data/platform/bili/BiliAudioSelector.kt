@@ -27,15 +27,15 @@ import java.net.URI
  */
 
 /**
- * 统一的音质偏好 key：
- * - "dolby"    : 杜比全景声（如有）
- * - "hires"    : Hi-Res（如有）
- * - "lossless" : 无损（如有，B 站会优先命中 flac/hires）
+ * 统一的音质偏好 key:
+ * - "dolby" : 杜比全景声 (如有)
+ * - "hires" : Hi-Res (如有)
+ * - "lossless" : 无损 (如有, B 站会优先命中 flac/hires)
  * - "high"     : 约 192kbps
  * - "medium"   : 约 128kbps
  * - "low"      : 约 64kbps
  *
- * 注意：不硬编码 B 站的 dash 音频 ID，统一用标签/比特率做选择，避免因平台变动导致崩溃
+ * 注意: 不硬编码 B 站的 dash 音频 ID, 统一用标签/比特率做选择, 避免因平台变动导致崩溃
  */
 
 data class BiliAudioStreamInfo(
@@ -130,7 +130,7 @@ enum class BiliQuality(val key: String, val minBitrateKbps: Int) {
     }
 }
 
-/** 在可用音轨中，按偏好从高到低选择第一条满足条件的；不满足则自动降级 */
+/** 在可用音轨中, 按偏好从高到低选择第一条满足条件的; 不满足则自动降级 */
 fun selectStreamByPreference(
     available: List<BiliAudioStreamInfo>,
     preferredKey: String

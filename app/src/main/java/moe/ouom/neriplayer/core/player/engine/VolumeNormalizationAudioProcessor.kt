@@ -50,7 +50,7 @@ internal class VolumeNormalizationAudioProcessor(
     private val stateProvider: () -> PlaybackVolumeNormalizationSnapshot =
         PlaybackVolumeNormalizationState::current
 ) : BaseAudioProcessor() {
-    // 开启高解析度输出时音源会以 PCM_FLOAT 进链，这里按编码切换归一化器，
+    // 开启高解析度输出时音源会以 PCM_FLOAT 进链, 这里按编码切换归一化器
     // 避免只支持 16-bit 时对 float 直接返回 NOT_SET 让响度归一化被整段旁路
     private var normalizer: VolumeNormalizer = Pcm16VolumeNormalizer()
     private val reusableStats = Pcm16LevelStats()
@@ -70,7 +70,7 @@ internal class VolumeNormalizationAudioProcessor(
                 normalizer as? Pcm16VolumeNormalizer ?: Pcm16VolumeNormalizer()
             C.ENCODING_PCM_FLOAT ->
                 normalizer as? FloatVolumeNormalizer ?: FloatVolumeNormalizer()
-            // 其它编码（如 24/32-bit 整数 PCM）不在处理链支持范围内，安全旁路
+            // 其它编码 (如 24/32-bit 整数 PCM) 不在处理链支持范围内, 安全旁路
             else -> return AudioFormat.NOT_SET
         }
         sampleRate = inputAudioFormat.sampleRate
@@ -113,7 +113,7 @@ internal class VolumeNormalizationAudioProcessor(
 }
 
 /**
- * 与采样格式无关的响度归一化核心：增益追踪、限幅包络等纯数学逻辑集中在此，
+ * 与采样格式无关的响度归一化核心: 增益追踪, 限幅包络等纯数学逻辑集中在此
  * 采样点的读取/写入由子类按 PCM_16BIT 或 PCM_FLOAT 实现
  */
 internal abstract class VolumeNormalizer {
@@ -124,16 +124,16 @@ internal abstract class VolumeNormalizer {
     private var analyzedPeak = 0f
     private var limiterEnvelope = FloatArray(0)
 
-    /** 单个采样点的字节数（16-bit=2，float=4） */
+    /** 单个采样点的字节数 (16-bit=2, float=4) */
     protected abstract val bytesPerSample: Int
 
-    /** 统计当前缓冲区的 rms/peak/采样点数，不得移动 buffer 的 position */
+    /** 统计当前缓冲区的 rms/peak/采样点数, 不得移动 buffer 的 position */
     protected abstract fun analyze(buffer: ByteBuffer, stats: Pcm16LevelStats)
 
-    /** 按绝对字节偏移读取归一化到 [-1, 1] 的采样值，不得移动 buffer 的 position */
+    /** 按绝对字节偏移读取归一化到 [-1, 1] 的采样值, 不得移动 buffer 的 position */
     protected abstract fun readNormalizedAt(buffer: ByteBuffer, byteIndex: Int): Float
 
-    /** 顺序读取一个采样、乘增益后写出，读写各前进一个采样 */
+    /** 顺序读取一个采样, 乘增益后写出, 读写各前进一个采样 */
     protected abstract fun writeScaledSample(
         inputBuffer: ByteBuffer,
         outputBuffer: ByteBuffer,
@@ -331,7 +331,7 @@ internal class FloatVolumeNormalizer : VolumeNormalizer() {
         outputBuffer: ByteBuffer,
         gain: Float
     ) {
-        // float PCM 约定值域为 [-1, 1]，写出前钳位避免应用增益后溢出
+        // float PCM 约定值域为 [-1, 1], 写出前钳位避免应用增益后溢出
         outputBuffer.putFloat((inputBuffer.float * gain).coerceIn(-1f, 1f))
     }
 }

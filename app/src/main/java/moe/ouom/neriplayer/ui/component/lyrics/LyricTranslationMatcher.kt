@@ -10,10 +10,10 @@ private const val TranslationClosestMatchToleranceMs = 2_000L
 /**
  * 按时间戳把翻译行配对到原文行
  *
- * 两个关键点：
- * 1. 多行共享同一时间戳时（网易云常见：作词/作曲/出品/营销/OP 等元数据行与正文行同处一个时间戳），
- *    翻译要向下对齐到组内靠后的正文行，而不是被最靠前的元数据行“窃取”，否则整体翻译会错位一行
- * 2. 制作信息/元数据行本身不是翻译，先过滤掉，避免没有真正翻译的歌把 credits 当成翻译显示
+ * 两个关键点:
+ * 1. 多行共享同一时间戳时 (网易云常见: 作词/作曲/出品/营销/OP 等元数据行与正文行同处一个时间戳)
+ * 翻译要向下对齐到组内靠后的正文行, 而不是被最靠前的元数据行"窃取", 否则整体翻译会错位一行
+ * 2. 制作信息/元数据行本身不是翻译, 先过滤掉, 避免没有真正翻译的歌把 credits 当成翻译显示
  */
 internal fun matchTranslationsToLineIndices(
     lines: List<LyricEntry>,
@@ -24,7 +24,7 @@ internal fun matchTranslationsToLineIndices(
         return emptyMap()
     }
 
-    // 过滤制作信息行：真正没有翻译时不产生任何配对
+    // 过滤制作信息行: 真正没有翻译时不产生任何配对
     val effectiveTranslations = translations.filterNot { isLyricCreditMetadataLine(it.text) }
     if (effectiveTranslations.isEmpty()) {
         return emptyMap()
@@ -35,7 +35,7 @@ internal fun matchTranslationsToLineIndices(
     var lineIndex = 0
 
     while (lineIndex < lines.size && translationIndex < effectiveTranslations.size) {
-        // 找到与当前行起始时间相同的一组行；组内最后一行的时间覆盖到下一时间戳，最能代表这个时间区间
+        // 找到与当前行起始时间相同的一组行; 组内最后一行的时间覆盖到下一时间戳, 最能代表这个时间区间
         val groupStartMs = lines[lineIndex].startTimeMs
         var groupEndExclusive = lineIndex
         while (groupEndExclusive < lines.size && lines[groupEndExclusive].startTimeMs == groupStartMs) {
@@ -45,7 +45,7 @@ internal fun matchTranslationsToLineIndices(
         val representativeLine = lines[groupEndExclusive - 1]
         val nextLine = lines.getOrNull(groupEndExclusive)
 
-        // 收集应归属这一组的翻译，最多 groupSize 条，并保持时间顺序
+        // 收集应归属这一组的翻译, 最多 groupSize 条, 并保持时间顺序
         val groupTranslations = ArrayList<LyricEntry>(groupSize)
         while (
             translationIndex < effectiveTranslations.size &&
@@ -67,7 +67,7 @@ internal fun matchTranslationsToLineIndices(
             }
         }
 
-        // 向下对齐：翻译分配给组内靠后的行，靠前的元数据行不参与，避免整体错位一行
+        // 向下对齐: 翻译分配给组内靠后的行, 靠前的元数据行不参与, 避免整体错位一行
         val matchedCount = groupTranslations.size
         for (offset in 0 until matchedCount) {
             matchesByIndex[groupEndExclusive - matchedCount + offset] = groupTranslations[offset]
@@ -80,7 +80,7 @@ internal fun matchTranslationsToLineIndices(
 }
 
 private enum class TranslationLineDecision {
-    /** 翻译远早于当前行且无重叠，跳过这条翻译继续比较 */
+    /** 翻译远早于当前行且无重叠, 跳过这条翻译继续比较 */
     SKIP_STALE,
 
     /** 翻译归属当前行 */
@@ -131,12 +131,12 @@ private fun decideTranslationForLine(
         return TranslationLineDecision.SKIP_STALE
     }
 
-    // 先看真实播放区间，避免翻译提前一两秒时被误判为上一句
+    // 先看真实播放区间, 避免翻译提前一两秒时被误判为上一句
     val shouldMatchByOverlap = currentOverlapMs > 0L &&
         currentOverlapMs >= nextOverlapMs
 
-    // 严格匹配：在容差内且离当前行最近
-    // 宽松匹配：翻译在当前行之前但在宽松容差内，且离当前行比下一行近
+    // 严格匹配: 在容差内且离当前行最近
+    // 宽松匹配: 翻译在当前行之前但在宽松容差内, 且离当前行比下一行近
     val shouldMatchCurrentLine =
         shouldMatchByOverlap ||
         (currentDistanceMs <= toleranceMs && currentDistanceMs <= nextDistanceMs) ||
@@ -151,7 +151,7 @@ private fun decideTranslationForLine(
 
 private val LyricCreditMetadataRegex = Regex("""^\s*([\p{L}·]{1,12})\s*[:：]\s*\S""")
 
-// 网易云等平台常见的制作信息角色，用于识别“非翻译”的元数据行
+// 网易云等平台常见的制作信息角色, 用于识别"非翻译"的元数据行
 private val LyricCreditMetadataRoles = setOf(
     "作词", "作詞", "作曲", "编曲", "編曲", "制作人", "製作人", "制作", "製作",
     "出品", "出品人", "联合出品", "聯合出品", "营销", "營銷", "策划", "策劃",
@@ -166,9 +166,9 @@ private val LyricCreditMetadataRoles = setOf(
 )
 
 /**
- * 判断歌词行是否为制作信息/元数据行（如“作词 : 罗言”“OP：唯迹文化”）
+ * 判断歌词行是否为制作信息/元数据行 (如"作词 : 罗言""OP: 唯迹文化")
  *
- * 仅当分隔符前是已知制作角色时才判定为元数据，避免把含冒号的正常歌词误删
+ * 仅当分隔符前是已知制作角色时才判定为元数据, 避免把含冒号的正常歌词误删
  */
 internal fun isLyricCreditMetadataLine(text: String): Boolean {
     val role = LyricCreditMetadataRegex.find(text)?.groupValues?.getOrNull(1)?.trim()?.lowercase()

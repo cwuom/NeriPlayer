@@ -28,8 +28,8 @@ import androidx.appcompat.app.AppCompatDelegate
 object NightModeHelper {
 
     /**
-     * 优先级：forceDark > followSystem > 强制浅色
-     * 调用后会触发 Activity 重建，资源/Compose/UI一致更新
+     * 优先级: forceDark > followSystem > 强制浅色
+     * 调用后会触发 Activity 重建, 资源/Compose/UI一致更新
      */
     fun applyNightMode(
         followSystemDark: Boolean,

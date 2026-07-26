@@ -292,7 +292,7 @@ class SyncPlaylistDeletionPolicyTest {
 
     @Test
     fun `resolved readd with membership token prunes legacy deletion`() {
-        // 真正重新添加会拿到新 token（该 identity 由 causal token 接管），legacy 墓碑冗余可裁
+        // 真正重新添加会拿到新 token (该 identity 由 causal token 接管) , legacy 墓碑冗余可裁
         val deletions = listOf(deletion(playlistId = 7L, songId = 11L, deletedAt = 200L))
         val playlists = listOf(
             SyncPlaylist(
@@ -320,8 +320,8 @@ class SyncPlaylistDeletionPolicyTest {
 
     @Test
     fun `legacy migrated song without token does not prune deletion`() {
-        // P1-1 回归：无 token 的活跃歌曲（addedAt 可能来自 legacy 迁移合成、被抬到 deletedAt 之后）
-        // 不得据其 addedAt 裁掉 legacy 墓碑，否则墓碑全网消失导致已删歌永久复活
+        // P1-1 回归: 无 token 的活跃歌曲 (addedAt 可能来自 legacy 迁移合成, 被抬到 deletedAt 之后)
+        // 不得据其 addedAt 裁掉 legacy 墓碑, 否则墓碑全网消失导致已删歌永久复活
         val deletions = listOf(deletion(playlistId = 7L, songId = 11L, deletedAt = 200L))
         val playlists = listOf(
             SyncPlaylist(
@@ -343,9 +343,9 @@ class SyncPlaylistDeletionPolicyTest {
 
     @Test
     fun `legacy snapshot migration keeps deleted song deleted`() {
-        // P1-1 端到端回归：旧格式快照（songOrderVersion 缺省=LEGACY）经迁移后，
-        // 锚点用歌单 modifiedAt（快照产生时刻、早于删除）而非墙钟 now，
-        // 使 identity 墓碑（deletedAt 晚于 modifiedAt）仍然生效，已删歌不复活
+        // P1-1 端到端回归: 旧格式快照 (songOrderVersion 缺省=LEGACY) 经迁移后
+        // 锚点用歌单 modifiedAt (快照产生时刻, 早于删除) 而非墙钟 now
+        // 使 identity 墓碑 (deletedAt 晚于 modifiedAt) 仍然生效, 已删歌不复活
         val legacyPlaylist = SyncPlaylist(
             id = 7L,
             name = "legacy",
@@ -355,7 +355,7 @@ class SyncPlaylistDeletionPolicyTest {
         )
         val migrated = legacyPlaylist.normalizedForDisplayOrder()
 
-        // 迁移后的 addedAt 不得晚于快照 modifiedAt（不再被抬到墙钟 now）
+        // 迁移后的 addedAt 不得晚于快照 modifiedAt (不再被抬到墙钟 now)
         assertTrue(
             "迁移锚点不得使用墙钟 now",
             migrated.songs.single().addedAt <= 100L

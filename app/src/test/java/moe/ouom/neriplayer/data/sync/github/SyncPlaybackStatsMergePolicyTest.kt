@@ -228,7 +228,7 @@ class SyncPlaybackStatsMergePolicyTest {
         assertTrue(merged.isEmpty())
     }
 
-    // ---- P0-2 裁剪：曲目统计上限 ----
+    // ---- P0-2 裁剪: 曲目统计上限 ----
 
     @Test
     fun `trimStats caps to max keeping most recent`() {
@@ -239,7 +239,7 @@ class SyncPlaybackStatsMergePolicyTest {
         val trimmed = SyncPlaybackStatsMergePolicy.trimStats(stats)
 
         assertEquals(SyncPlaybackStatsMergePolicy.MAX_TRACK_STATS, trimmed.size)
-        // lastPlayedAt = 1 的一条被裁掉，仅保留 2..MAX+1
+        // lastPlayedAt = 1 的一条被裁掉, 仅保留 2..MAX+1
         assertEquals(2L, trimmed.minOf { it.lastPlayedAt })
     }
 
@@ -281,7 +281,7 @@ class SyncPlaybackStatsMergePolicyTest {
         assertEquals(stats, SyncPlaybackStatsMergePolicy.trimStats(stats))
     }
 
-    // ---- P0-2 裁剪：日桶 400 天窗口 + 数量上限 ----
+    // ---- P0-2 裁剪: 日桶 400 天窗口 + 数量上限 ----
 
     @Test
     fun `trimBuckets drops buckets outside retention window`() {
@@ -301,7 +301,7 @@ class SyncPlaybackStatsMergePolicyTest {
     @Test
     fun `trimBuckets window anchor uses dataset max not wall clock`() {
         val day = 86_400_000L
-        // 全部为「远古」日桶：若锚点用墙钟会被全部裁掉；用数据集内最大 dayStartAt 则应全部保留
+        // 全部为"远古"日桶: 若锚点用墙钟会被全部裁掉; 用数据集内最大 dayStartAt 则应全部保留
         val ancient = listOf(
             trackBucket(identityKey = "a", dayStartAt = 1 * day, firstPlayedAt = 1L, lastPlayedAt = 1 * day),
             trackBucket(identityKey = "b", dayStartAt = 2 * day, firstPlayedAt = 1L, lastPlayedAt = 2 * day),
@@ -349,7 +349,7 @@ class SyncPlaybackStatsMergePolicyTest {
         assertEquals(once, twice)
     }
 
-    // ---- P1-2 单调抬升（消除「年 > 总」）----
+    // ---- P1-2 单调抬升 (消除"年 > 总") ----
 
     @Test
     fun `lift raises stat total to bucket sum`() {
@@ -398,12 +398,12 @@ class SyncPlaybackStatsMergePolicyTest {
         val twice = SyncPlaybackStatsMergePolicy.liftStatsToBucketTotals(once, buckets)
 
         val bucketSum = buckets.filter { it.identityKey == "song" }.sumOf { it.totalListenMs }
-        // 「总」>=「同曲分桶之和」，杜绝「年 > 总」
+        // "总">="同曲分桶之和", 杜绝"年 > 总"
         assertTrue(once.single().totalListenMs >= bucketSum)
         assertEquals(once, twice)
     }
 
-    // ---- M1 收尾顺序：lift 必须用「未裁剪」桶（与桌面 three_way_merge 逐字对齐）----
+    // ---- M1 收尾顺序: lift 必须用"未裁剪"桶 (与桌面 three_way_merge 逐字对齐) ----
 
     @Test
     fun `finalizeMergedStats lifts using untrimmed buckets covering out-of-window sum`() {
@@ -418,8 +418,8 @@ class SyncPlaybackStatsMergePolicyTest {
                 lastPlayedAt = newestDay
             )
         )
-        // 同一曲：窗口内当天一桶 + 窗口外(>400 天)一桶。窗口外桶会被 trimBuckets 裁掉，
-        // 但收尾必须先用「未裁剪」全量桶抬升，故「总」应覆盖两桶之和（与桌面一致）
+        // 同一曲: 窗口内当天一桶 + 窗口外(>400 天)一桶; 窗口外桶会被 trimBuckets 裁掉
+        // 但收尾必须先用"未裁剪"全量桶抬升, 故"总"应覆盖两桶之和 (与桌面一致)
         val buckets = listOf(
             trackBucket(
                 identityKey = "song",
@@ -441,10 +441,10 @@ class SyncPlaybackStatsMergePolicyTest {
 
         val finalized = SyncPlaybackStatsMergePolicy.finalizeMergedStats(stats, buckets)
 
-        // 全量桶之和 = 120 + 50 = 170、2 + 1 = 3；若回退成「先裁剪再抬升」则只会得到 120 / 2
+        // 全量桶之和 = 120 + 50 = 170, 2 + 1 = 3; 若回退成"先裁剪再抬升"则只会得到 120 / 2
         assertEquals(170L, finalized.stats.single().totalListenMs)
         assertEquals(3, finalized.stats.single().playCount)
-        // 窗口外桶已被裁剪，仅保留窗口内当天桶
+        // 窗口外桶已被裁剪, 仅保留窗口内当天桶
         assertEquals(setOf(newestDay), finalized.buckets.map { it.dayStartAt }.toSet())
     }
 
@@ -452,7 +452,7 @@ class SyncPlaybackStatsMergePolicyTest {
     fun `finalizeMergedStats applies stat and bucket count caps`() {
         val day = 86_400_000L
         val newestDay = 10 * day
-        // 曲目统计与日桶数量分别超上限；收尾（GitHub 与 WebDAV 共用同一函数）应把两者裁到各自上限
+        // 曲目统计与日桶数量分别超上限; 收尾 (GitHub 与 WebDAV 共用同一函数) 应把两者裁到各自上限
         val stats = (1..(SyncPlaybackStatsMergePolicy.MAX_TRACK_STATS + 5)).map { i ->
             trackStat(identityKey = "s-$i", firstPlayedAt = 1L, lastPlayedAt = i.toLong())
         }

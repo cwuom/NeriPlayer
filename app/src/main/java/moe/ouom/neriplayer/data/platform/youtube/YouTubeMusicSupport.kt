@@ -163,8 +163,8 @@ private val USER_AGENT_WHITESPACE_RUN = Regex("\\s+")
  * - "; wv" 是 WebView 身份标记
  * - "Version/4.0 " 是 WebView 内核版本标记
  *
- * Google 登录页对携带 WebView 标记的请求容易软性跳转到 Play/app,剥掉后更像移动浏览器。
- * 入参为空时返回空串,由调用方决定兜底。
+ * Google 登录页对携带 WebView 标记的请求容易软性跳转到 Play/app,剥掉后更像移动浏览器
+ * 入参为空时返回空串,由调用方决定兜底
  */
 fun stripWebViewMarkersFromUserAgent(raw: String): String {
     if (raw.isBlank()) {
@@ -179,7 +179,7 @@ fun stripWebViewMarkersFromUserAgent(raw: String): String {
 
 /**
  * 计算登录 WebView 导航用的移动浏览器 UA:优先取剥掉 WebView 标记后的设备默认 UA,
- * 为空或不可用时回退到固定移动 Chrome 常量。仅用于登录导航,不写入 auth bundle。
+ * 为空或不可用时回退到固定移动 Chrome 常量; 仅用于登录导航,不写入 auth bundle
  */
 fun resolveYouTubeMobileWebLoginUserAgent(rawDefaultUserAgent: String?): String {
     return stripWebViewMarkersFromUserAgent(rawDefaultUserAgent.orEmpty())
@@ -205,7 +205,7 @@ private fun normalizeBootstrapFingerprintOrigin(origin: String): String {
     }
 }
 
-// LOGIN_INFO 和 SIDCC 经常会抖，放进 fingerprint 会把可复用的播放缓存也清掉
+// LOGIN_INFO 和 SIDCC 经常会抖, 放进 fingerprint 会把可复用的播放缓存也清掉
 private val YOUTUBE_AUTH_CACHE_STABLE_COOKIE_KEYS: List<String> = listOf(
     "SAPISID",
     "APISID",
@@ -367,7 +367,7 @@ fun YouTubeAuthBundle.buildYouTubeStreamRequestHeaders(
     includeReferer: Boolean = true,
     streamUrl: String? = null
 ): Map<String, String> {
-    // googlevideo/manifest 是跨域媒体请求，不应继续附带 YouTube 登录态头
+    // googlevideo/manifest 是跨域媒体请求, 不应继续附带 YouTube 登录态头
     val normalizedOrigin = normalizeYouTubeOriginValue(
         candidate = refererOrigin,
         fallbackOrigin = origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
@@ -558,10 +558,10 @@ private const val YOUTUBE_STREAM_WEB_REMIX_CLIENT = "WEB_REMIX"
 
 /**
  * 判断直链是否为"缺少 pot 的 WEB_REMIX googlevideo 直链"
- * WEB_REMIX 直链强依赖 pot:1 字节探活(Range: bytes=0-0)可通过，
- * 但整段/全量 Range 下载缺 pot 会被 googlevideo 返回 403，表现为"能播放却下载必失败"
- * 下载前用它过滤这类直链，改走重解析(mint pot)或 HLS 兜底；
- * 其它 client(ANDROID_MUSIC / TVHTML5 / IOS 等)的直链不需要 pot，返回 false 以免误伤
+ * WEB_REMIX 直链强依赖 pot:1 字节探活(Range: bytes=0-0)可通过
+ * 但整段/全量 Range 下载缺 pot 会被 googlevideo 返回 403, 表现为"能播放却下载必失败"
+ * 下载前用它过滤这类直链, 改走重解析(mint pot)或 HLS 兜底
+ * 其它 client(ANDROID_MUSIC / TVHTML5 / IOS 等)的直链不需要 pot, 返回 false 以免误伤
  */
 fun isYouTubeWebRemixDirectMissingPoToken(streamUrl: String?): Boolean {
     if (streamUrl.isNullOrBlank()) {

@@ -14,8 +14,8 @@ fun configuredListenTogetherBaseUrlOrNull(value: String?): String? {
 }
 
 /**
- * 邀请链接来自外部不可信来源，强制 https，避免被诱导连接明文 http 端点遭中间人劫持。
- * 手动配置的自建服务器仍可用明文(走 configuredListenTogetherBaseUrlOrNull)。
+ * 邀请链接来自外部不可信来源, 强制 https, 避免被诱导连接明文 http 端点遭中间人劫持
+ * 手动配置的自建服务器仍可用明文(走 configuredListenTogetherBaseUrlOrNull)
  */
 fun configuredListenTogetherInviteBaseUrlOrNull(value: String?): String? {
     return configuredListenTogetherBaseUrlOrNull(value)

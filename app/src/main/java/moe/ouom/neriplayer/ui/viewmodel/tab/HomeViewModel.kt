@@ -112,7 +112,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         lastYouTubeAuthFingerprint = buildYouTubeAuthFingerprint(youtubeAuthRepo.getAuthOnce())
         _uiState.value = _uiState.value.copy(hasLogin = hasRecommendLogin)
 
-        // 观察国际化设置变化，切换推荐源
+        // 观察国际化设置变化, 切换推荐源
         viewModelScope.launch {
             combine(
                 AppContainer.settingsRepo.internationalizationEnabledFlow,
@@ -282,9 +282,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * 首页歌曲推荐：
-     * - 热门热曲：使用关键词“热歌”搜索 30 首
-     * - 私人雷达：使用关键词“私人雷达”搜索 30 首
+     * 首页歌曲推荐:
+     * - 热门热曲: 使用关键词"热歌"搜索 30 首
+     * - 私人雷达: 使用关键词"私人雷达"搜索 30 首
      */
     fun loadHomeRecommendations(force: Boolean = false) {
         if (offlineMode) return

@@ -1183,7 +1183,7 @@ private fun NowPlayingAccentBackdrop(
                         )
                     )
                 )
-                // 亮色模式白色遮罩，整体柔化
+                // 亮色模式白色遮罩, 整体柔化
                 if (whiteMaskAlpha > 0f) {
                     drawRect(Color.White.copy(alpha = whiteMaskAlpha))
                 }
@@ -1222,7 +1222,7 @@ fun NeriApp(
     )
 
     LaunchedEffect(Unit) {
-        // 先交一个极轻的背景首帧，下一帧再挂整棵导航和状态订阅树
+        // 先交一个极轻的背景首帧, 下一帧再挂整棵导航和状态订阅树
         withFrameNanos { }
         appContentReady = true
     }
@@ -1277,7 +1277,7 @@ private fun NeriAppContent(
     val systemDark = rememberActualSystemDarkTheme()
     val application = remember(context) { context.applicationContext as Application }
     SideEffect {
-        // 播放点击可能早于启动预加载完成，先绑定上下文避免懒初始化缺入口
+        // 播放点击可能早于启动预加载完成, 先绑定上下文避免懒初始化缺入口
         PlayerManager.bindApplication(application)
     }
     val startupPlaybackPreferences = remember(application) {
@@ -1465,7 +1465,7 @@ private fun NeriAppContent(
         clearThemeRevealVisualState()
     }
 
-    // 缓存当前封面的取色结果，避免开关动态取色时先闪到默认种子色
+    // 缓存当前封面的取色结果, 避免开关动态取色时先闪到默认种子色
     var coverSeedHex by remember { mutableStateOf<String?>(null) }
     val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
     val displayCoverUrl = rememberSongDisplayCoverUrl(currentSong)
@@ -1846,7 +1846,7 @@ private fun NeriAppContent(
             source = "ui_click_before_play"
         )
         showNowPlaying = true
-        // 播放队列可能包含歌词等大字段，避免通过 Binder 传整份歌单导致崩溃
+        // 播放队列可能包含歌词等大字段, 避免通过 Binder 传整份歌单导致崩溃
         PlayerManager.playPlaylist(songs, index)
         scheduleAudioServiceStart(
             "play_songs_and_open_now_playing",
@@ -2531,8 +2531,8 @@ private fun NeriAppContent(
                             playbackHighResolutionOutputEnabled,
                         onPlaybackHighResolutionOutputEnabledChange = { enabled ->
                             PlayerManager.setPlaybackHighResolutionOutputEnabled(enabled)
-                            // 32-bit 输出在播放器初始化时绑定到 AudioSink，运行时无法在不重建
-                            // player(会断播)的前提下切换，因此明确提示用户重启后生效
+                            // 32-bit 输出在播放器初始化时绑定到 AudioSink, 运行时无法在不重建
+                            // player(会断播)的前提下切换, 因此明确提示用户重启后生效
                             Toast.makeText(
                                 context,
                                 context.getString(R.string.settings_restart_hint),
@@ -3667,7 +3667,7 @@ private fun NeriAppContent(
                             }
 
                             if (useCoverBlurBackground) {
-                                // 先铺一层强调色背景，避免首次加载和旋转重建时黑底闪烁
+                                // 先铺一层强调色背景, 避免首次加载和旋转重建时黑底闪烁
                                 NowPlayingAccentBackdrop(
                                     coverUrl = blurBackdropCoverUrl,
                                     isDark = true,

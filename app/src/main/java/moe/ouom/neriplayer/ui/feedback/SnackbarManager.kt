@@ -31,7 +31,7 @@ import kotlinx.coroutines.launch
 
 /**
  * 集中管理 Snackbar 的工具类
- * 提供统一的 Snackbar 显示接口，支持自定义属性
+ * 提供统一的 Snackbar 显示接口, 支持自定义属性
  */
 @Suppress("unused")
 object SnackbarManager {
@@ -88,7 +88,7 @@ object SnackbarManager {
     }
 
     /**
-     * 显示无限时长的 Snackbar（需要用户手动关闭）
+     * 显示无限时长的 Snackbar (需要用户手动关闭)
      */
     fun showIndefiniteSnackbar(
         scope: CoroutineScope,

@@ -153,7 +153,7 @@ class AdvancedLyricsViewTest {
 
     @Test
     fun `buildAdvancedSyncedLyrics routes shared timestamp translation to the real lyric line`() {
-        // 元数据行与正文行共享 15638ms，翻译必须落在正文行而不是错位到元数据行
+        // 元数据行与正文行共享 15638ms, 翻译必须落在正文行而不是错位到元数据行
         val lyrics = listOf(
             LyricEntry(text = "出品：网易飓风", startTimeMs = 15_638L, endTimeMs = 15_638L),
             LyricEntry(text = "营销：网易飓风", startTimeMs = 15_638L, endTimeMs = 15_638L),
@@ -181,7 +181,7 @@ class AdvancedLyricsViewTest {
 
     @Test
     fun `buildAdvancedSyncedLyrics shows no translation when translated lyric is metadata only`() {
-        // Bug B：翻译内容只有制作信息时不应显示任何翻译
+        // Bug B: 翻译内容只有制作信息时不应显示任何翻译
         val lyrics = listOf(
             LyricEntry(text = "第一句", startTimeMs = 1_000L, endTimeMs = 2_000L),
             LyricEntry(text = "第二句", startTimeMs = 2_000L, endTimeMs = 3_000L)

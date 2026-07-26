@@ -4,9 +4,9 @@ import android.content.Context
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 /**
- * 记录独占会话生命周期，但不修改系统全局音量
+ * 记录独占会话生命周期, 但不修改系统全局音量
  *
- * 全局静音会影响其他应用，而且截图、键盘等系统音效会反复触发回调
+ * 全局静音会影响其他应用, 而且截图, 键盘等系统音效会反复触发回调
  */
 internal object UsbExclusiveSystemSoundGuard {
     private const val TAG = "NERI-UsbSoundGuard"

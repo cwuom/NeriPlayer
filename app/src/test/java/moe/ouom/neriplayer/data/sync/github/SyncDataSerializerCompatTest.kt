@@ -482,7 +482,7 @@ class SyncDataSerializerCompatTest {
 
     @Test
     fun `protobuf desktop sync log with omitted action decodes as create playlist`() {
-        // 桌面 proto3 省略 action(CREATE_PLAYLIST 序数 0) 与 deviceId/deviceName 默认值，
+        // 桌面 proto3 省略 action(CREATE_PLAYLIST 序数 0) 与 deviceId/deviceName 默认值
         // 修复前会抛 MissingFieldException 导致整个快照判损坏
         val desktopData = DesktopLogSyncData(
             syncLog = listOf(
@@ -535,8 +535,8 @@ class SyncDataSerializerCompatTest {
 
     @Test
     fun `protobuf sync data with omitted causal token counter decodes without throwing`() {
-        // 复现修复前的 restore 变砖：SyncSong 内嵌的 token 其 counter(tag 2) 在报文中完全缺省，
-        // 旧实现 SyncCausalToken 无默认值会抛 MissingFieldException，使整份快照解码失败
+        // 复现修复前的 restore 变砖: SyncSong 内嵌的 token 其 counter(tag 2) 在报文中完全缺省
+        // 旧实现 SyncCausalToken 无默认值会抛 MissingFieldException, 使整份快照解码失败
         val payload = TokenProbeSyncData(
             playlists = listOf(
                 TokenProbePlaylist(
@@ -555,10 +555,10 @@ class SyncDataSerializerCompatTest {
         )
         val token = decoded.playlists.single().songs.single().syncMembershipTokens.single()
 
-        // 缺省 counter 解为默认值 0，解码不抛异常
+        // 缺省 counter 解为默认值 0, 解码不抛异常
         assertEquals("device-a", token.deviceId)
         assertEquals(0L, token.counter)
-        // 非法 token(counter<=0) 在归一化阶段被丢弃（对齐桌面 normalize_sync_causal_tokens）
+        // 非法 token(counter<=0) 在归一化阶段被丢弃 (对齐桌面 normalize_sync_causal_tokens)
         assertTrue(
             decoded.playlists.single().songs.single()
                 .syncMembershipTokens.normalizedSyncCausalTokens().isEmpty()
@@ -584,7 +584,7 @@ class SyncDataSerializerCompatTest {
 
     @Serializable
     private data class CounterOmittingToken(
-        // 仅声明 deviceId；counter(tag 2) 在报文中缺省，模拟损坏/第三方产出的非法 token
+        // 仅声明 deviceId; counter(tag 2) 在报文中缺省, 模拟损坏/第三方产出的非法 token
         @ProtoNumber(1) val deviceId: String = ""
     )
 
@@ -597,7 +597,7 @@ class SyncDataSerializerCompatTest {
     private data class DesktopLogEntry(
         @ProtoNumber(1) val timestamp: Long = 0L,
         @ProtoNumber(2) val deviceId: String = "",
-        // tag 3 (action) 故意缺省，模拟桌面 proto3 省略 CREATE_PLAYLIST(序数 0)
+        // tag 3 (action) 故意缺省, 模拟桌面 proto3 省略 CREATE_PLAYLIST(序数 0)
         @ProtoNumber(4) val playlistId: Long? = null
     )
 

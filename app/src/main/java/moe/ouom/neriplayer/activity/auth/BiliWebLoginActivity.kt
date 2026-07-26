@@ -68,7 +68,7 @@ import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
  * 用内置 WebView 登录哔哩哔哩
  * 登录后读取 Cookie 并返回 JSON(Map<String,String>)
  *
- * 通过 Intent Extra 约定返回：
+ * 通过 Intent Extra 约定返回:
  *   - RESULT_COOKIE: String(JSON of Map<String,String>)
  */
 class BiliWebLoginActivity : ComponentActivity() {
@@ -163,7 +163,7 @@ class BiliWebLoginActivity : ComponentActivity() {
             webChromeClient = InnerChromeClient()
             webViewClient = InnerClient()
         }
-        // 后台 YouTube 预热 WebView 可能残留了全局定时器暂停状态，这里先抢回前台时钟
+        // 后台 YouTube 预热 WebView 可能残留了全局定时器暂停状态, 这里先抢回前台时钟
         webView.resumeTimers()
         forceFreshWebContext()
 

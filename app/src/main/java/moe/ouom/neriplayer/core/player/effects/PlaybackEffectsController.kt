@@ -22,7 +22,7 @@ import moe.ouom.neriplayer.core.player.engine.PlaybackVolumeNormalizationState
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 /**
- * 统一管理倍速、音调和均衡器，避免这些逻辑散在 PlayerManager 里
+ * 统一管理倍速, 音调和均衡器, 避免这些逻辑散在 PlayerManager 里
  */
 class PlaybackEffectsController {
     companion object {

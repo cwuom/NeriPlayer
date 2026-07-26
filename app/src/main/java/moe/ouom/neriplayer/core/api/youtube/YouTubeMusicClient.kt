@@ -149,7 +149,7 @@ data class YouTubeMusicHomeShelf(
     val items: List<YouTubeMusicHomeItem>
 )
 
-/** 推荐栏中的单个项（歌单/专辑/单曲） */
+/** 推荐栏中的单个项 (歌单/专辑/单曲) */
 data class YouTubeMusicHomeItem(
     val title: String,
     val subtitle: String,
@@ -267,7 +267,7 @@ internal object YouTubeMusicSearchParams {
 
     /**
      * YouTube Music Web search filter params.
-     * 当前 songs -> "II" 为固定协议片段，但属于未公开内部参数，未来可能变化
+     * 当前 songs -> "II" 为固定协议片段, 但属于未公开内部参数, 未来可能变化
      */
     fun songs(ignoreSpelling: Boolean = false): String {
         return buildString {
@@ -732,7 +732,7 @@ internal object YouTubeMusicParser {
                 ?.optJSONArray("contents")
         )?.let { return it }
 
-        // 一些歌单响应不会把曲目 shelf 放进 secondaryContents，需要回退到主内容区扫描
+        // 一些歌单响应不会把曲目 shelf 放进 secondaryContents, 需要回退到主内容区扫描
         scanPlaylistSections(
             root.optJSONObject("contents")
                 ?.optJSONObject("twoColumnBrowseResultsRenderer")
@@ -1473,7 +1473,7 @@ internal object YouTubeMusicParser {
 
 /**
  * 将 YouTube Music 缩略图 URL 升级为完整尺寸
- * YouTube 缩略图 URL 通常以 `=w60-h60-...` 结尾来限制尺寸，
+ * YouTube 缩略图 URL 通常以 `=w60-h60-...` 结尾来限制尺寸
  * 此函数将其替换为 `=w1200-h1200` 以获取高清封面
  */
 fun upgradeYouTubeThumbnailUrl(url: String): String {
@@ -1483,7 +1483,7 @@ fun upgradeYouTubeThumbnailUrl(url: String): String {
     return if (sizeParamRegex.containsMatchIn(url)) {
         url.replace(sizeParamRegex, "=w1200-h1200")
     } else if (url.contains("lh3.googleusercontent.com") || url.contains("yt3.ggpht.com")) {
-        // 没有尺寸参数但属于 Google 图片服务的 URL，附加尺寸参数
+        // 没有尺寸参数但属于 Google 图片服务的 URL, 附加尺寸参数
         if (url.contains('=')) url else "$url=w1200-h1200"
     } else {
         url
@@ -1579,7 +1579,7 @@ internal object YouTubeMusicPlayerParser {
             }
             .toMap()
 
-        // 没有签名参数时可以直接复用 url；否则交给 NewPipe 兜底解签
+        // 没有签名参数时可以直接复用 url; 否则交给 NewPipe 兜底解签
         if (!fields["s"].isNullOrBlank()) {
             return null
         }
@@ -2342,12 +2342,12 @@ class YouTubeMusicClient(
         val bootstrap = bootstrap()
         val requestLocale = YouTubeMusicLocaleResolver.preferred()
 
-        // 第一步：调用 next 端点获取歌词 browseId
+        // 第一步: 调用 next 端点获取歌词 browseId
         val nextRoot = postMusicNext(bootstrap, videoId, requestLocale)
         val lyricsBrowseId = YouTubeMusicParser.parseLyricsBrowseId(nextRoot)
             ?: return@withContext null
 
-        // 第二步：调用 browse 端点获取歌词内容
+        // 第二步: 调用 browse 端点获取歌词内容
         val browseRoot = postMusicBrowse(
             bootstrap = bootstrap,
             payload = JSONObject().put("browseId", lyricsBrowseId),
@@ -2807,7 +2807,7 @@ class YouTubeMusicClient(
                         payload = payload,
                         requestLocale = requestLocale
                     )
-                    // 某些地区/语言组合会返回只有 microformat 的空壳 browse，需要切到通用 locale 重试
+                    // 某些地区/语言组合会返回只有 microformat 的空壳 browse, 需要切到通用 locale 重试
                     if (YouTubeMusicLocaleResolver.shouldRetryWithSafeFallback(payload, root)) {
                         NPLogger.w(
                             TAG,

@@ -50,7 +50,7 @@ class NeriPlayerApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        // 冷启动首个播放点击可能早于 Compose 的 SideEffect，先把 Application 绑给播放器
+        // 冷启动首个播放点击可能早于 Compose 的 SideEffect, 先把 Application 绑给播放器
         PlayerManager.bindApplication(this)
         val runningInMainProcess = AppProcessClassifier.isMainProcess(
             currentProcessName = getProcessName(),
@@ -98,12 +98,12 @@ class NeriPlayerApplication : Application() {
             NativeCrashHandler.init(this)
             AppContainer.initialize(this)
 
-            // 后台预热收藏仓库：首次构造会同步 loadFromDisk，放到 IO 线程避免首个 UI 触达在主线程读盘
+            // 后台预热收藏仓库: 首次构造会同步 loadFromDisk, 放到 IO 线程避免首个 UI 触达在主线程读盘
             AppContainer.launchBackgroundIo {
                 FavoritePlaylistRepository.getInstance(this@NeriPlayerApplication)
             }
 
-            // 提前注册前后台回调，避免等播放器初始化后才开始统计 Activity 状态
+            // 提前注册前后台回调, 避免等播放器初始化后才开始统计 Activity 状态
             FloatingLyricsOverlayManager.initialize(this)
             ManagedDownloadStorage.initialize(this)
 
@@ -112,7 +112,7 @@ class NeriPlayerApplication : Application() {
             // 初始化全局下载管理器
             GlobalDownloadManager.initialize(this)
 
-            // 初始化 LyriconManager，如果用户启用了 Lyricon 功能
+            // 初始化 LyriconManager, 如果用户启用了 Lyricon 功能
             if (readPlaybackPreferenceSnapshotSync(this).lyriconEnabled) {
                 LyriconManager.initialize(this)
             }

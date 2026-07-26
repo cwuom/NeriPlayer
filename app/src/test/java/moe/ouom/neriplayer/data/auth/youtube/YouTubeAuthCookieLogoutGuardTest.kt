@@ -7,8 +7,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 回归测试：cookie 收编作用于每一条 YouTube 响应，无条件执行 Set-Cookie 删除指令时
- * 一次 SID=EXPIRED 就会把登录身份永久抹掉并落盘，用户被无故登出
+ * 回归测试: cookie 收编作用于每一条 YouTube 响应, 无条件执行 Set-Cookie 删除指令时
+ * 一次 SID=EXPIRED 就会把登录身份永久抹掉并落盘, 用户被无故登出
  */
 class YouTubeAuthCookieLogoutGuardTest {
 
@@ -43,7 +43,7 @@ class YouTubeAuthCookieLogoutGuardTest {
             )
         )
 
-        // 要么整体拒绝合并，要么合并后仍是登录态
+        // 要么整体拒绝合并, 要么合并后仍是登录态
         if (merged != null) {
             assertTrue("登录身份不得被响应删除", merged.hasLoginCookies())
         }

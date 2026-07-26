@@ -7,8 +7,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 回归测试：player.js 换版后 NewPipe 抽错 n 函数，求值得到 JS 对象被拼成
- * n=[object Object]，非空且已改变所以骗过朴素校验，还因为比 EJS 快而赢下竞速，
+ * 回归测试: player.js 换版后 NewPipe 抽错 n 函数, 求值得到 JS 对象被拼成
+ * n=[object Object], 非空且已改变所以骗过朴素校验, 还因为比 EJS 快而赢下竞速
  * 导致播放与下载全线 403
  */
 class YouTubeCipherTokenValidationTest {
@@ -94,7 +94,7 @@ class YouTubeCipherTokenValidationTest {
 
     @Test
     fun `hasFailedChallenge ignores cancelled candidate`() = runBlocking {
-        // 竞速失败方会被取消，不该误记为解析失败
+        // 竞速失败方会被取消, 不该误记为解析失败
         val cancelled = CompletableDeferred<ChallengeCandidateResult<String>>().apply { cancel() }
         assertFalse(cancelled.hasFailedChallenge())
     }

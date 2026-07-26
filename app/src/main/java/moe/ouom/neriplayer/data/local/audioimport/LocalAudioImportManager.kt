@@ -323,7 +323,7 @@ object LocalAudioImportManager {
     }
 
     /**
-     * 全盘扫描设备上的本地音频（常见音乐格式）
+     * 全盘扫描设备上的本地音频 (常见音乐格式)
      */
     suspend fun scanDeviceSongs(context: Context): LocalAudioImportResult = withContext(Dispatchers.IO) {
         val scanStartedAt = SystemClock.elapsedRealtime()

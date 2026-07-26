@@ -271,9 +271,9 @@ internal fun resolveYouTubePlaybackRecoveryStrategy(
 }
 
 /**
- * googlevideo 拒了直链时不能再强制直链，否则恢复必然拿回同一条 403
+ * googlevideo 拒了直链时不能再强制直链, 否则恢复必然拿回同一条 403
  *
- * 机房和被风控的出口上直链常年不可用，只有放开这个约束才能落到 HLS
+ * 机房和被风控的出口上直链常年不可用, 只有放开这个约束才能落到 HLS
  */
 internal fun shouldRequireDirectOnYouTubeRecovery(
     error: PlaybackException,
@@ -1061,7 +1061,7 @@ private suspend fun PlayerManager.getYouTubeMusicAudioUrl(
         val preferredQuality = youtubeRecoveryStrategy?.preferredQualityOverride
             ?: effectiveYouTubeQuality()
         val requireDirect = youtubeRecoveryStrategy?.requireDirect ?: false
-        // 首播保留用户选择；出错恢复时才切到更稳的 m4a 直链
+        // 首播保留用户选择; 出错恢复时才切到更稳的 m4a 直链
         val preferM4a = youtubeRecoveryStrategy?.preferM4a ?: false
         val resolvedPlayableAudio = youtubeMusicPlaybackRepository.getBestPlayableAudio(
             videoId = videoId,

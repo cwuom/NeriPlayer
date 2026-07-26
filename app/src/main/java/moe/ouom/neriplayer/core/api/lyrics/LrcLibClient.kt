@@ -25,8 +25,8 @@ package moe.ouom.neriplayer.core.api.lyrics
 
 /*
  * LRCLIB 歌词 API 客户端
- * https://lrclib.net — 免费开源的同步歌词数据库
- * 无需 API Key，支持按歌曲名+艺术家+时长精确匹配
+ * https://lrclib.net - 免费开源的同步歌词数据库
+ * 无需 API Key, 支持按歌曲名+艺术家+时长精确匹配
  */
 
 import kotlinx.coroutines.Dispatchers
@@ -53,11 +53,11 @@ class LrcLibClient(private val okHttpClient: OkHttpClient) {
     }
 
     /**
-     * 通过歌曲名、艺术家和时长精确获取歌词
+     * 通过歌曲名, 艺术家和时长精确获取歌词
      * @param trackName 歌曲名
      * @param artistName 艺术家名
-     * @param durationSeconds 歌曲时长（秒）
-     * @return LrcLibResult 或 null（未找到）
+     * @param durationSeconds 歌曲时长 (秒)
+     * @return LrcLibResult 或 null (未找到)
      */
     suspend fun getLyrics(
         trackName: String,
@@ -98,8 +98,8 @@ class LrcLibClient(private val okHttpClient: OkHttpClient) {
     }
 
     /**
-     * 通过关键词搜索歌词（模糊匹配），返回第一个匹配结果
-     * @param query 搜索关键词（歌曲名+艺术家）
+     * 通过关键词搜索歌词 (模糊匹配) , 返回第一个匹配结果
+     * @param query 搜索关键词 (歌曲名+艺术家)
      * @return LrcLibResult 或 null
      */
     suspend fun searchLyrics(query: String): LrcLibResult? = withContext(Dispatchers.IO) {
@@ -137,7 +137,7 @@ class LrcLibClient(private val okHttpClient: OkHttpClient) {
                     }
                 }
 
-                // 没有同步歌词，返回第一个有纯文本歌词的
+                // 没有同步歌词, 返回第一个有纯文本歌词的
                 val first = arr.optJSONObject(0) ?: return@withContext null
                 LrcLibResult(
                     syncedLyrics = null,

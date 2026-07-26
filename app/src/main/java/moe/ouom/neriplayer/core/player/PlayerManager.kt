@@ -359,10 +359,10 @@ object PlayerManager {
     private val _preferredQualityKeys = MutableStateFlow(PreferredQualityKeys())
 
     /**
-     * 各平台的音质偏好，供切换弹窗回显
+     * 各平台的音质偏好, 供切换弹窗回显
      *
-     * 播放页弹窗改的是全局偏好，选中项不能拿当前流实测出来的档位充数，
-     * 否则平台只发得出低码率时弹窗会显示低档，用户点一下就把默认设置改掉了
+     * 播放页弹窗改的是全局偏好, 选中项不能拿当前流实测出来的档位充数
+     * 否则平台只发得出低码率时弹窗会显示低档, 用户点一下就把默认设置改掉了
      */
     val preferredQualityKeys: StateFlow<PreferredQualityKeys> =
         _preferredQualityKeys.asStateFlow()
@@ -421,7 +421,7 @@ object PlayerManager {
     @Volatile
     internal var currentIndex = -1
 
-    /** 记录随机播放历史，支持上一首和跨轮次回退 */
+    /** 记录随机播放历史, 支持上一首和跨轮次回退 */
     internal val shuffleHistory = mutableListOf<Int>()   // 已播放过的随机索引历史
     internal val shuffleFuture  = mutableListOf<Int>()   // queued next items for shuffle history
     internal var shuffleBag     = mutableListOf<Int>()   // remaining shuffle candidates for current cycle
@@ -496,7 +496,7 @@ object PlayerManager {
 
     /**
      * 播放/暂停按钮使用的视觉状态
-     * 它跟随用户最近一次播放控制意图，避免淡入/淡出时播放图标滞后
+     * 它跟随用户最近一次播放控制意图, 避免淡入/淡出时播放图标滞后
      */
     internal val _playbackControlPlayingFlow = MutableStateFlow(false)
     val playbackControlPlayingFlow: StateFlow<Boolean> = _playbackControlPlayingFlow
@@ -553,7 +553,7 @@ object PlayerManager {
     )
     val playbackCommandFlow: SharedFlow<PlaybackCommand> = _playbackCommandFlow.asSharedFlow()
 
-    /** 当前曲目的解析后媒体地址，供恢复播放和错误恢复使用 */
+    /** 当前曲目的解析后媒体地址, 供恢复播放和错误恢复使用 */
     internal val _currentMediaUrl = MutableStateFlow<String?>(null)
     val currentMediaUrlFlow: StateFlow<String?> = _currentMediaUrl
 
@@ -566,7 +566,7 @@ object PlayerManager {
     val playbackSoundStateFlow: StateFlow<PlaybackSoundState> = _playbackSoundState
     internal var playbackStatsTracker = PlaybackStatsTracker()
 
-    /** 本地歌单快照，供收藏状态和歌单选择弹窗使用 */
+    /** 本地歌单快照, 供收藏状态和歌单选择弹窗使用 */
     internal val _playlistsFlow = MutableStateFlow<List<LocalPlaylist>>(emptyList())
     val playlistsFlow: StateFlow<List<LocalPlaylist>> = _playlistsFlow
     internal val _localPlaylistsReadyFlow = MutableStateFlow(false)
@@ -618,12 +618,12 @@ object PlayerManager {
     val lrcLibClient by lazy { AppContainer.lrcLibClient }
     val amllTtmlClient by lazy { AppContainer.amllTtmlClient }
 
-    // YouTube Music 歌词缓存，避免短时间内重复请求
+    // YouTube Music 歌词缓存, 避免短时间内重复请求
     internal val ytMusicLyricsCache = android.util.LruCache<String, List<LyricEntry>>(20)
-    // 网易云歌词缓存，避免原文/翻译和编辑器回退重复打接口
+    // 网易云歌词缓存, 避免原文/翻译和编辑器回退重复打接口
     internal val neteaseLyricsCache = android.util.LruCache<Long, NeteaseLyricsCacheEntry>(20)
 
-    // 当前缓存上限，设置变化后会据此重建缓存
+    // 当前缓存上限, 设置变化后会据此重建缓存
     internal var currentCacheSize: Long = 1024L * 1024 * 1024
 
     var sleepTimerManager: SleepTimerManager = createSleepTimerManager()
@@ -1470,7 +1470,7 @@ object PlayerManager {
         val normalizedKey = optionKey.trim().lowercase()
         if (normalizedKey.isBlank()) return
         val currentAudioInfo = _currentPlaybackAudioInfo.value ?: return
-        // 和弹窗回显保持同一基准，按偏好而不是当前流实测档位去重，
+        // 和弹窗回显保持同一基准, 按偏好而不是当前流实测档位去重
         // 否则偏好和实测不一致时点实测档会被误判为未变化
         val preferredKey = _preferredQualityKeys.value.forSource(currentAudioInfo.source)
         if (normalizedKey == preferredKey) return
@@ -1998,7 +1998,7 @@ object PlayerManager {
                 "flushPlaybackStatsBlocking: reason=$reason, song=${currentSnapshot.song.name}, listenedMs=${currentSnapshot.listenedMs}, playCountIncrement=${currentSnapshot.playCountIncrement}"
             )
         }
-        // drain + flush 合并为单次 blockingIo，最大阻塞 2s
+        // drain + flush 合并为单次 blockingIo, 最大阻塞 2s
         moe.ouom.neriplayer.core.player.state.blockingIo(timeoutMs = 2_000L) {
             pendingJob?.join()
             if (currentSnapshot != null) {
@@ -2088,8 +2088,8 @@ object PlayerManager {
     }
 
     /**
-     * 键必须在解析前确定，预取与播放才能对齐同一份缓存，
-     * 所以不能并入解析后才知道的 itag，同键下的表示变化由缓存失效兜底
+     * 键必须在解析前确定, 预取与播放才能对齐同一份缓存
+     * 所以不能并入解析后才知道的 itag, 同键下的表示变化由缓存失效兜底
      */
     internal fun computeYouTubeCacheKey(
         videoId: String,

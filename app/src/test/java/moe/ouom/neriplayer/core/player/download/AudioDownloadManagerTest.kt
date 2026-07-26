@@ -141,7 +141,7 @@ class AudioDownloadManagerTest {
 
     @Test
     fun `forbidden download failure is detected for 403 only`() {
-        // 403(含 ChunkRequestIOException)才触发"改走 HLS"，其余可刷新码不触发
+        // 403(含 ChunkRequestIOException)才触发"改走 HLS", 其余可刷新码不触发
         assertTrue(AudioDownloadManager.isForbiddenYouTubeDownloadFailure(IllegalStateException("HTTP 403")))
         assertTrue(AudioDownloadManager.isForbiddenYouTubeDownloadFailure(ChunkRequestIOException(403, "forbidden")))
         assertFalse(AudioDownloadManager.isForbiddenYouTubeDownloadFailure(ChunkRequestIOException(429, "rate")))
@@ -361,8 +361,8 @@ class AudioDownloadManagerTest {
 
     @Test
     fun `download transport chunks seekable web remix direct url instead of full range`() {
-        // 回归：已解析(n+sig+clen)的 WEB_REMIX 直链此前被判为 DIRECT(整档下载)导致 403，
-        // 现应统一走 CHUNKED_RANGE，避免整档 GET 触发 googlevideo 全量下载风控
+        // 回归: 已解析(n+sig+clen)的 WEB_REMIX 直链此前被判为 DIRECT(整档下载)导致 403
+        // 现应统一走 CHUNKED_RANGE, 避免整档 GET 触发 googlevideo 全量下载风控
         val seekableWebRemixRequest = Request.Builder()
             .url(
                 "https://rr1---sn-aigl6ney.googlevideo.com/videoplayback" +

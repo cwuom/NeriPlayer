@@ -126,8 +126,8 @@ private data class DynamicBackgroundShaderPalette(
 
 /**
  * 渲染 Hyper 背景
- * - Android 13+（API 33）启用 RuntimeShader；低版本自动降级为透明
- * - 通过 withFrameNanos 获取逐帧时间，驱动 BgEffectPainter
+ * - Android 13+ (API 33) 启用 RuntimeShader; 低版本自动降级为透明
+ * - 通过 withFrameNanos 获取逐帧时间, 驱动 BgEffectPainter
  */
 @Composable
 fun HyperBackground(
@@ -232,7 +232,7 @@ fun HyperBackground(
                 isDark = currentIsDark
             )
         } catch (_: Throwable) {
-            // 提色失败时保留上一组颜色，避免切歌瞬间退回默认背景
+            // 提色失败时保留上一组颜色, 避免切歌瞬间退回默认背景
         }
     }
 

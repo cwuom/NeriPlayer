@@ -1920,7 +1920,7 @@ class YouTubeMusicPlaybackRepositoryTest {
 
     @Test
     fun parsePlayableAudio_returnsNullWhenThrottlingParameterUnresolved() {
-        // #Y4：唯一候选带 n 但解不出（resolver 返回空串）时，不得返回带混淆 n 的原 URL
+        // #Y4: 唯一候选带 n 但解不出 (resolver 返回空串) 时, 不得返回带混淆 n 的原 URL
         val root = JSONObject(
             """
             {
@@ -1953,7 +1953,7 @@ class YouTubeMusicPlaybackRepositoryTest {
 
     @Test
     fun parsePlayableAudio_skipsCandidateWithUnresolvedThrottlingParameter() {
-        // #Y4：高码率候选 n 解不出时跳过，回退到下一个能解出的候选，而不是返回限速 URL
+        // #Y4: 高码率候选 n 解不出时跳过, 回退到下一个能解出的候选, 而不是返回限速 URL
         val root = JSONObject(
             """
             {
@@ -2004,8 +2004,8 @@ class YouTubeMusicPlaybackRepositoryTest {
 
     @Test
     fun parsePlayableAudio_preferM4aHardFiltersToM4aAcrossQualityTiers() {
-        // #Y3：LOW/HIGH 挡位下旧逻辑会因排序反转把更高码率的 webm 排到前面，
-        // preferM4a 必须硬性优先可打标的 m4a，避免下到 webm
+        // #Y3: LOW/HIGH 挡位下旧逻辑会因排序反转把更高码率的 webm 排到前面
+        // preferM4a 必须硬性优先可打标的 m4a, 避免下到 webm
         val root = JSONObject(
             """
             {
@@ -2052,7 +2052,7 @@ class YouTubeMusicPlaybackRepositoryTest {
 
     @Test
     fun selectPreferredPlayableAudio_preferM4aPrefersM4aOverHigherBitrateWebmDirect() {
-        // #Y3：跨 client 合并时，下载路径须把可打标的 m4a 直链硬性优先于更高码率 webm 直链
+        // #Y3: 跨 client 合并时, 下载路径须把可打标的 m4a 直链硬性优先于更高码率 webm 直链
         val m4aDirect = YouTubePlayableAudio(
             url = "https://rr1---sn.googlevideo.com/videoplayback?id=aac-140",
             durationMs = 223_000L,
@@ -2072,12 +2072,12 @@ class YouTubeMusicPlaybackRepositoryTest {
             sampleRateHz = 48_000
         )
 
-        // 普通播放：更高码率 webm 胜出
+        // 普通播放: 更高码率 webm 胜出
         assertSame(
             webmDirect,
             repository.selectPreferredPlayableAudio(current = m4aDirect, incoming = webmDirect)
         )
-        // 下载 preferM4a：m4a 硬性胜出，与传入方向无关
+        // 下载 preferM4a: m4a 硬性胜出, 与传入方向无关
         assertSame(
             m4aDirect,
             repository.selectPreferredPlayableAudio(
@@ -2098,7 +2098,7 @@ class YouTubeMusicPlaybackRepositoryTest {
 
     @Test
     fun rateLimitBackoffMs_returnsNullForNonRetryableErrors() {
-        // #Y5：仅 429/503 且携带状态码的异常才退避
+        // #Y5: 仅 429/503 且携带状态码的异常才退避
         assertNull(rateLimitBackoffMs(IOException("boom"), 0))
         assertNull(rateLimitBackoffMs(null, 0))
         assertNull(rateLimitBackoffMs(YouTubeHttpStatusException(403, null, "x"), 0))
@@ -2111,14 +2111,14 @@ class YouTubeMusicPlaybackRepositoryTest {
         assertEquals(1000L, rateLimitBackoffMs(YouTubeHttpStatusException(429, null, "x"), 1))
         assertEquals(2000L, rateLimitBackoffMs(YouTubeHttpStatusException(503, null, "x"), 2))
         assertEquals(4000L, rateLimitBackoffMs(YouTubeHttpStatusException(503, null, "x"), 3))
-        // priorHits 超过上限仍封顶在指数最高档（4000）
+        // priorHits 超过上限仍封顶在指数最高档 (4000)
         assertEquals(4000L, rateLimitBackoffMs(YouTubeHttpStatusException(429, null, "x"), 9))
     }
 
     @Test
     fun rateLimitBackoffMs_respectsRetryAfterWithinCap() {
         assertEquals(3000L, rateLimitBackoffMs(YouTubeHttpStatusException(429, 3000L, "x"), 2))
-        // Retry-After 超过上限 → 封顶 5000
+        // Retry-After 超过上限 -> 封顶 5000
         assertEquals(5000L, rateLimitBackoffMs(YouTubeHttpStatusException(503, 60_000L, "x"), 0))
     }
 
@@ -2130,7 +2130,7 @@ class YouTubeMusicPlaybackRepositoryTest {
         assertNull(parseRetryAfterMs(""))
         assertNull(parseRetryAfterMs("   "))
         assertNull(parseRetryAfterMs("-5"))
-        // HTTP-date 形式不支持，交给指数退避
+        // HTTP-date 形式不支持, 交给指数退避
         assertNull(parseRetryAfterMs("Wed, 21 Oct 2015 07:28:00 GMT"))
     }
 

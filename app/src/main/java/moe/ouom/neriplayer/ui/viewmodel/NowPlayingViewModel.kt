@@ -360,7 +360,7 @@ class NowPlayingViewModel : ViewModel() {
                 val songDetails = api.getSongInfo(selectedSong.id)
 
                 if (!songDetails.lyric.isNullOrBlank()) {
-                    // 一次性更新歌词和翻译歌词，避免数据竞争
+                    // 一次性更新歌词和翻译歌词, 避免数据竞争
                     PlayerManager.updateSongLyricsAndTranslation(
                         song,
                         songDetails.lyric!!,
@@ -434,7 +434,7 @@ class NowPlayingViewModel : ViewModel() {
                     )
                     onResult(true, info, context.getString(R.string.music_restore_success))
                 } else {
-                    // 网易云音乐：从网易云获取原始信息
+                    // 网易云音乐: 从网易云获取原始信息
                     val appContainer = AppContainer
                     val songDetails = appContainer.cloudMusicSearchApi?.getSongInfo(originalSong.id.toString())
 

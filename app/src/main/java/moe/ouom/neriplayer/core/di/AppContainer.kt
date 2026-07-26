@@ -108,7 +108,7 @@ internal fun configureSharedOkHttpClient(
     return builder
         .connectTimeout(SHARED_HTTP_CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .readTimeout(SHARED_HTTP_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        // 播放、同步与 WebSocket 共用此客户端，不能用总时限截断长请求
+        // 播放, 同步与 WebSocket 共用此客户端, 不能用总时限截断长请求
         .callTimeout(SHARED_HTTP_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .connectionPool(connectionPool)
         .retryOnConnectionFailure(true)
@@ -158,7 +158,7 @@ internal fun handleYouTubeAuthStateChanged(
         return
     }
     clearBootstrapCache()
-    // 只移除旧请求引用，避免 auth 恢复成功时把当前播放请求自己取消掉
+    // 只移除旧请求引用, 避免 auth 恢复成功时把当前播放请求自己取消掉
     clearPlaybackAuthBoundCaches(false)
     evictConnections()
     warmYouTubePlaybackIfAuthorized(
@@ -199,7 +199,7 @@ private fun moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle.toWarmBootst
 }
 
 /**
- * 全局依赖容器，使用 Service Locator 模式管理 App 的单例
+ * 全局依赖容器, 使用 Service Locator 模式管理 App 的单例
  */
 object AppContainer {
     private lateinit var application: Application
@@ -248,7 +248,7 @@ object AppContainer {
     }
 
 
-    // 共享 OkHttpClient：受 DynamicProxySelector 管理
+    // 共享 OkHttpClient: 受 DynamicProxySelector 管理
     val sharedOkHttpClient by lazy {
         val clientBuilder = OkHttpClient.Builder()
             .proxySelector(DynamicProxySelector)
