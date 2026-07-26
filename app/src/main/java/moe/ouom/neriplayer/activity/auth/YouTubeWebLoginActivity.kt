@@ -95,6 +95,8 @@ class YouTubeWebLoginActivity : ComponentActivity() {
             "youtube.com",
             "m.youtube.com"
         )
+        private const val YOUTUBE_MUSIC_RETURN_URL = "https://music.youtube.com/"
+        private const val MAX_OFF_SITE_LOGIN_RETURNS = 2
         private val WEB_STORAGE_ORIGINS = listOf(
             "https://accounts.google.com",
             "https://music.youtube.com",
@@ -155,6 +157,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
 
     /** 校验期间的常驻提示，避免误判点完成无响应 */
     private var verifyingSnack: Snackbar? = null
+    private var offSiteLoginReturns = 0
 
     @Volatile
     private var lastRejectedVerificationKey: String = ""
@@ -775,9 +778,54 @@ class YouTubeWebLoginActivity : ComponentActivity() {
             CookieManager.getInstance().flush()
             capturePageSessionState()
             persistObservedAuthIfNeeded()
+            if (shouldReturnToYouTubeAfterLogin(url)) {
+                NPLogger.d(
+                    "YouTubeWebLogin",
+                    "login landed off-site, returning to YouTube Music to harvest cookies"
+                )
+                view?.loadUrl(YOUTUBE_MUSIC_RETURN_URL)
+                return
+            }
             loginCompletionWatcher.scheduleCheck()
             super.onPageFinished(view, url)
         }
+    }
+
+    /**
+     * 登录链路有时会停在 Play 商店的 YouTube Music 页而不是 music.youtube.com，
+     * 此时账号其实已经登上，但收割只认 YouTube 域，界面就会一直卡在等 cookie
+     */
+    private fun shouldReturnToYouTubeAfterLogin(url: String?): Boolean {
+        if (offSiteLoginReturns >= MAX_OFF_SITE_LOGIN_RETURNS) {
+            return false
+        }
+        val host = runCatching { Uri.parse(url.orEmpty()).host }
+            .getOrNull()
+            ?.lowercase()
+            .orEmpty()
+        if (host.isEmpty() || host in AUTH_HOSTS || host.endsWith("google.com")) {
+            return false
+        }
+        val cookieHeader = runCatching {
+            CookieManager.getInstance().getCookie(YOUTUBE_MUSIC_RETURN_URL)
+        }.getOrNull().orEmpty()
+        if (!YouTubeCookieSupport.isLoggedIn(parseYouTubeCookieHeader(cookieHeader))) {
+            return false
+        }
+        offSiteLoginReturns++
+        return true
+    }
+
+    private fun parseYouTubeCookieHeader(raw: String): Map<String, String> {
+        return raw.split(';')
+            .mapNotNull { segment ->
+                val trimmed = segment.trim()
+                val index = trimmed.indexOf('=')
+                if (index <= 0) return@mapNotNull null
+                trimmed.substring(0, index).trim() to trimmed.substring(index + 1).trim()
+            }
+            .filter { (key, value) -> key.isNotBlank() && value.isNotBlank() }
+            .toMap()
     }
 
     private fun isAllowedLoginUri(uri: Uri?): Boolean {
