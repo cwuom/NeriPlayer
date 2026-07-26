@@ -94,10 +94,32 @@ private data class WebPoPageSnapshot(
     val bindsGvsTokenToVideoId: Boolean = false
 )
 
-private data class CachedWebPoToken(
+internal data class CachedWebPoToken(
     val token: String,
     val expiresAtMs: Long
 )
+
+/**
+ * 绑定不带 videoId 时, 整场会话共用一个 token
+ *
+ * 这种情况下换一首歌本来什么都不用做, 但缓存只按 videoId 建索引, 新歌一律落到
+ * 起 WebView 重铸那条路上; 用这个键把会话级 token 单独记一份, 换歌就能直接命中
+ */
+internal fun buildYouTubePoTokenSessionKey(
+    remoteHost: String,
+    authFingerprint: String
+): String = "$remoteHost|$authFingerprint"
+
+/** 取出还没过期的那份, 顺便把找不到和已过期两种情况收敛成一个出口 */
+internal fun selectUsableYouTubePoToken(
+    cacheKey: String?,
+    tokens: Map<String, CachedWebPoToken>,
+    nowMs: Long
+): Pair<String, CachedWebPoToken>? {
+    val key = cacheKey?.takeIf { it.isNotBlank() } ?: return null
+    val token = tokens[key]?.takeIf { it.expiresAtMs > nowMs && it.token.isNotBlank() } ?: return null
+    return key to token
+}
 
 private data class WebPoMintResult(
     val status: String = "",
@@ -135,6 +157,9 @@ internal class YouTubeWebPoTokenProvider(
     private val tokenCache = linkedMapOf<String, CachedWebPoToken>()
     /** videoId 维度的缓存键索引，用于在不碰 WebView 的前提下命中已有 token */
     private val cacheKeyIndex = linkedMapOf<String, String>()
+
+    /** 会话维度的缓存键, 只在铸造时确认过绑定不含 videoId 才会记进来 */
+    private val sessionScopedCacheKeys = linkedMapOf<String, String>()
     private val pendingBridgeResults = linkedMapOf<String, CompletableDeferred<String>>()
     private val pendingEvaluateResults = linkedSetOf<CompletableDeferred<String?>>()
 
@@ -197,6 +222,7 @@ internal class YouTubeWebPoTokenProvider(
         synchronized(tokenCache) {
             tokenCache.clear()
             cacheKeyIndex.clear()
+            sessionScopedCacheKeys.clear()
         }
         preparedCookieFingerprint = null
         preparedAtMs = 0L
@@ -228,12 +254,17 @@ internal class YouTubeWebPoTokenProvider(
                 // 命中判断排在页面准备之后就等于让有效 token 也去付一次整页重载
                 if (!forceRefresh) {
                     val indexKey = buildCacheKeyIndexKey(videoId, remoteHost, authFingerprint)
+                    val sessionKey = buildYouTubePoTokenSessionKey(remoteHost, authFingerprint)
                     val cached = synchronized(tokenCache) {
-                        cacheKeyIndex[indexKey]
-                            ?.let { key -> tokenCache[key]?.takeIf { it.expiresAtMs > now }?.let { key to it } }
+                        selectUsableYouTubePoToken(cacheKeyIndex[indexKey], tokenCache, now)
+                        // 会话级 token 对所有歌都成立, 换歌不该再起一次 WebView
+                            ?: selectUsableYouTubePoToken(sessionScopedCacheKeys[sessionKey], tokenCache, now)
                     }
                     if (cached != null) {
-                        synchronized(tokenCache) { touchCacheKey(cached.first, cached.second) }
+                        synchronized(tokenCache) {
+                            touchCacheKey(cached.first, cached.second)
+                            cacheKeyIndex[indexKey] = cached.first
+                        }
                         NPLogger.d(
                             TAG,
                             "GVS PO token cache hit without page prepare videoId=$videoId ttlMs=${cached.second.expiresAtMs - now} elapsedMs=${System.currentTimeMillis() - startedAtMs}"
@@ -295,6 +326,12 @@ internal class YouTubeWebPoTokenProvider(
                                 cacheKeyIndex[
                                     buildCacheKeyIndexKey(videoId, remoteHost, authFingerprint)
                                 ] = cacheKey
+                                // 只有页面明确说了不按 videoId 绑, 这份才能拿去给别的歌用
+                                if (!pageSnapshot.bindsGvsTokenToVideoId) {
+                                    sessionScopedCacheKeys[
+                                        buildYouTubePoTokenSessionKey(remoteHost, authFingerprint)
+                                    ] = cacheKey
+                                }
                                 trimCacheLocked()
                             }
                             NPLogger.d(
@@ -771,6 +808,7 @@ internal class YouTubeWebPoTokenProvider(
         }
         // 索引指向已淘汰的键只会白查一次并回落到正常路径，但不清理会无界增长
         cacheKeyIndex.entries.removeAll { it.value !in tokenCache }
+        sessionScopedCacheKeys.entries.removeAll { it.value !in tokenCache }
     }
 
     private fun isAllowedBootstrapUri(uri: Uri?): Boolean {
