@@ -74,7 +74,15 @@ import java.util.Base64
 )
 @Serializable private data class QQMusicAlbum(val name: String, val mid: String)
 
-@Serializable private data class QQMusicLyricResponse(val lyric: String?, val trans: String?)
+/**
+ * 没有歌词时接口整个字段都不下发
+ *
+ * 可空但缺默认值在 kotlinx.serialization 里仍算必填, 会直接抛 MissingFieldException
+ */
+@Serializable internal data class QQMusicLyricResponse(
+    val lyric: String? = null,
+    val trans: String? = null
+)
 
 
 class QQMusicSearchApi(
