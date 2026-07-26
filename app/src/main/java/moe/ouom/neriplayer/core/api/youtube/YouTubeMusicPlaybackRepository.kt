@@ -1838,6 +1838,13 @@ class YouTubeMusicPlaybackRepository(
                             continue@profileLoop
                         }
 
+                        // status=OK 却拿不到流时要能分清是压根没解析出格式, 还是选流阶段把它筛掉了
+                        if (playability.status == "OK") {
+                            NPLogger.w(
+                                "YouTubeMusicPlayback",
+                                "player client yielded no usable audio: videoId=$videoId, client=${profile.clientName}, parsedAny=${playableAudio != null}, bestSoFar=${bestPlayableAudio?.streamType}, lastError=${lastError?.message}"
+                            )
+                        }
                         val description = buildString {
                             append("YouTube player unavailable via ")
                             append(profile.clientName)

@@ -166,10 +166,11 @@ internal class YouTubeBootstrapHtmlSource(html: String) {
     ): String {
         return fieldNames.asSequence()
             // 模式里字段名是字面量，名字都不在文档里就不必扫一遍 MB 级正文
-            .filter { fieldName -> source.contains(fieldName) }
-            .map { fieldName ->
+            .map { fieldName -> fieldName to source.indexOf(fieldName) }
+            .filter { (_, fieldIndex) -> fieldIndex >= 0 }
+            .map { (fieldName, fieldIndex) ->
                 compiledFieldPattern(patternBuilder(fieldName))
-                    .find(source)
+                    .find(source, startIndex = regexStartIndexForField(fieldIndex))
                     ?.groupValues
                     ?.getOrNull(1)
                     .orEmpty()
@@ -208,6 +209,14 @@ private fun decodeInlineJavascriptEscapes(source: String): String {
     }
     return normalized
 }
+
+/**
+ * 正则从字段名首次出现处起扫，不必从头再刷一遍 MB 级正文
+ *
+ * 匹配必然包含字段名，所以不可能落在首次出现之前；
+ * 模式允许名字前带一个引号，留一个字符余量就够
+ */
+private fun regexStartIndexForField(fieldIndex: Int): Int = (fieldIndex - 1).coerceAtLeast(0)
 
 private val ytcfgSetCallPattern = Regex("""ytcfg\.set\s*\(""")
 
