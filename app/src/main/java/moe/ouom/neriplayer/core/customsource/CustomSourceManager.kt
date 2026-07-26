@@ -80,7 +80,7 @@ class CustomSourceManager(
     suspend fun probeScript(scriptContent: String): LxScriptEngine.InitResult {
         val probe = LxScriptEngine(appContext, scriptContent)
         return try {
-            probe.start(timeoutMs = 15_000)
+            probe.start(timeoutMs = 22_000)
         } finally {
             probe.destroy()
         }

@@ -32,6 +32,18 @@ import org.json.JSONObject
  * 使用 base64 内联脚本,避免脚本中的字符干扰 HTML 解析。
  */
 internal fun buildBootstrapHtml(userScript: String): String {
+    val meta = CustomSourceMetadataParser.parse(userScript)
+    val infoJson = JSONObject().apply {
+        put("name", meta.name)
+        put("version", meta.version)
+        put("author", meta.author)
+        put("description", meta.description)
+    }
+    val infoJsonLiteral = JSONObject.quote(infoJson.toString())
+    return buildBootstrapHtml(userScript, infoJsonLiteral)
+}
+
+private fun buildBootstrapHtml(userScript: String, infoJsonLiteral: String): String {
     val scriptJsonString = JSONObject.quote(userScript) // 安全转义为 JS 字符串字面量
     return """
 <!DOCTYPE html>
@@ -39,12 +51,18 @@ internal fun buildBootstrapHtml(userScript: String): String {
 <head><meta charset="utf-8"></head>
 <body>
 <script>
+// 先注入脚本原文,供 currentScriptInfo.rawScript 使用(部分源脚本要对原文做 md5 完整性校验)
+window.__NERI_RAW_SCRIPT = $scriptJsonString;
+// 注入脚本头部元数据(name/version/author/description),供 currentScriptInfo 使用
+try { window.__NERI_SCRIPT_INFO = JSON.parse($infoJsonLiteral); } catch (e) { window.__NERI_SCRIPT_INFO = {}; }
+</script>
+<script>
 $LX_RUNTIME_JS
 </script>
 <script>
 (function () {
   try {
-    var __userScriptSource = $scriptJsonString;
+    var __userScriptSource = window.__NERI_RAW_SCRIPT;
     // 以 Function 方式执行用户脚本,提供隔离作用域
     var __run = new Function(__userScriptSource);
     __run();
@@ -258,23 +276,46 @@ private val LX_RUNTIME_JS = """
       return decodeURIComponent(escape(atob(str)));
     } catch (e) { return atob(str); }
   }
+  // hex 编解码,按 UTF-8 字节处理(LX 脚本常用 buffer.from(x).toString('hex') 生成签名)
+  function hexEncode(str) {
+    var bytes = unescape(encodeURIComponent(str)), out = '';
+    for (var i = 0; i < bytes.length; i++) {
+      var h = bytes.charCodeAt(i).toString(16);
+      out += h.length === 1 ? '0' + h : h;
+    }
+    return out;
+  }
+  function hexDecode(hex) {
+    var bytes = '';
+    for (var i = 0; i < hex.length; i += 2) {
+      bytes += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
+    }
+    try { return decodeURIComponent(escape(bytes)); } catch (e) { return bytes; }
+  }
+
+  function makeBuf(raw) {
+    return {
+      __raw: raw,
+      length: raw.length,
+      toString: function (enc) {
+        if (enc === 'base64') return b64EncodeUnicode(this.__raw);
+        if (enc === 'hex') return hexEncode(this.__raw);
+        return this.__raw;
+      }
+    };
+  }
 
   var utils = {
     buffer: {
       from: function (data, encoding) {
-        // 返回一个简化的 buffer-like 对象
-        if (encoding === 'base64') {
-          return { __raw: b64DecodeUnicode(data), toString: function (enc) {
-            return enc === 'base64' ? b64EncodeUnicode(this.__raw) : this.__raw;
-          }};
-        }
-        var raw = String(data);
-        return { __raw: raw, toString: function (enc) {
-          return enc === 'base64' ? b64EncodeUnicode(this.__raw) : this.__raw;
-        }};
+        if (data && typeof data === 'object' && data.__raw !== undefined) return makeBuf(data.__raw);
+        if (encoding === 'base64') return makeBuf(b64DecodeUnicode(String(data)));
+        if (encoding === 'hex') return makeBuf(hexDecode(String(data)));
+        return makeBuf(String(data));
       },
       bufToString: function (buf, enc) {
         if (buf && typeof buf.toString === 'function') return buf.toString(enc);
+        if (typeof buf === 'string') return makeBuf(buf).toString(enc);
         return String(buf);
       }
     },
@@ -315,7 +356,17 @@ private val LX_RUNTIME_JS = """
     },
     request: lxRequest,
     utils: utils,
-    currentScriptInfo: { rawScript: '', name: 'NeriPlayer Custom Source' }
+    currentScriptInfo: (function () {
+      var info = (typeof window !== 'undefined' && window.__NERI_SCRIPT_INFO) ? window.__NERI_SCRIPT_INFO : {};
+      var raw = (typeof window !== 'undefined' && window.__NERI_RAW_SCRIPT) ? window.__NERI_RAW_SCRIPT : '';
+      return {
+        rawScript: raw,
+        name: info.name || 'NeriPlayer Custom Source',
+        description: info.description || '',
+        version: (info.version != null ? String(info.version) : '1.0.0'),
+        author: info.author || ''
+      };
+    })()
   };
 
   globalThis.lx = lx;

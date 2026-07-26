@@ -63,9 +63,9 @@ class LxScriptEngine(
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val http = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .callTimeout(45, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .callTimeout(15, TimeUnit.SECONDS)
         .build()
 
     @Volatile private var webView: WebView? = null
@@ -95,7 +95,7 @@ class LxScriptEngine(
 
     /** 在主线程创建 WebView 并注入脚本;挂起直到脚本触发 inited 或超时。 */
     @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
-    suspend fun start(timeoutMs: Long = 15_000): InitResult {
+    suspend fun start(timeoutMs: Long = 22_000): InitResult {
         initResult?.let { return it }
         mainHandler.post {
             try {
