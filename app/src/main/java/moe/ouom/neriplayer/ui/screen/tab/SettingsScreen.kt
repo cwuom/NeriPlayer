@@ -378,6 +378,7 @@ fun SettingsScreen(
     preemptAudioFocus: Boolean,
     onPreemptAudioFocusChange: (Boolean) -> Unit,
     onNavigateToDownloadManager: () -> Unit = {},
+    onNavigateToCustomSource: () -> Unit = {},
     maxCacheSizeBytes: Long,
     onMaxCacheSizeBytesChange: (Long) -> Unit,
     onClearCacheClick: (StorageCacheClearOptions) -> Unit,
@@ -1058,6 +1059,21 @@ fun SettingsScreen(
                                     }
                                 )
                             },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.LibraryMusic,
+                                    contentDescription = stringResource(R.string.custom_source_entry_title),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.custom_source_entry_title)) },
+                            supportingContent = {
+                                Text(stringResource(R.string.custom_source_entry_desc))
+                            },
+                            modifier = Modifier.settingsItemClickable(onClick = onNavigateToCustomSource),
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
                     }

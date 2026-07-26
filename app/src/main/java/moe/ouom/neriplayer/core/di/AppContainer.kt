@@ -247,6 +247,14 @@ object AppContainer {
         YouTubeMusicPlaylistCacheRepository(application)
     }
 
+    // 自定义音源(兼容洛雪音乐 LX 脚本)
+    val customSourceRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        moe.ouom.neriplayer.core.customsource.CustomSourceRepository(application)
+    }
+    val customSourceManager by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        moe.ouom.neriplayer.core.customsource.CustomSourceManager(application, customSourceRepo)
+    }
+
 
     // 共享 OkHttpClient：受 DynamicProxySelector 管理
     val sharedOkHttpClient by lazy {
@@ -407,6 +415,14 @@ object AppContainer {
         startYouTubeAuthObserver()
         startSettingsObserver()
         warmYouTubePlaybackOnAppStart()
+        warmCustomSourceRepository()
+    }
+
+    private fun warmCustomSourceRepository() {
+        scope.launch {
+            runCatching { customSourceRepo.load() }
+                .onFailure { NPLogger.e("AppContainer", "Failed to load custom sources", it) }
+        }
     }
 
     private fun warmLocalPlaylistRepository() {

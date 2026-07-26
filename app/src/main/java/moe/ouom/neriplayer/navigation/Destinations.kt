@@ -70,6 +70,9 @@ sealed class Destinations(val route: String, val labelResId: Int) {
     // 本地歌单详情路由
     data object LocalPlaylistDetail : Destinations("local_playlist_detail/{playlistId}", moe.ouom.neriplayer.R.string.playlist_local_detail)
 
+    // 自定义音源管理路由
+    data object CustomSource : Destinations("custom_source", moe.ouom.neriplayer.R.string.custom_source_title)
+
     // 下载管理器路由
     data object DownloadManager : Destinations("download_manager", moe.ouom.neriplayer.R.string.download_manager)
 

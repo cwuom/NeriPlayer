@@ -54,7 +54,8 @@ import moe.ouom.neriplayer.ui.screen.tab.SettingsScreen
 internal enum class SettingsScreenState {
     Settings,
     DownloadManager,
-    DownloadProgress
+    DownloadProgress,
+    CustomSource
 }
 
 private fun SettingsScreenState.saveableKey(): String = "settings_host:${name}"
@@ -63,6 +64,7 @@ private val SettingsScreenState.navigationDepth: Int
     get() = when (this) {
         SettingsScreenState.Settings -> 0
         SettingsScreenState.DownloadManager -> 1
+        SettingsScreenState.CustomSource -> 1
         SettingsScreenState.DownloadProgress -> 2
     }
 
@@ -70,13 +72,20 @@ internal fun SettingsScreenState.nextTowards(
     requestedState: SettingsScreenState
 ): SettingsScreenState = when {
     navigationDepth < requestedState.navigationDepth -> when (this) {
-        SettingsScreenState.Settings -> SettingsScreenState.DownloadManager
+        SettingsScreenState.Settings ->
+            if (requestedState == SettingsScreenState.CustomSource) {
+                SettingsScreenState.CustomSource
+            } else {
+                SettingsScreenState.DownloadManager
+            }
         SettingsScreenState.DownloadManager -> SettingsScreenState.DownloadProgress
+        SettingsScreenState.CustomSource -> SettingsScreenState.CustomSource
         SettingsScreenState.DownloadProgress -> SettingsScreenState.DownloadProgress
     }
     navigationDepth > requestedState.navigationDepth -> when (this) {
         SettingsScreenState.Settings -> SettingsScreenState.Settings
         SettingsScreenState.DownloadManager -> SettingsScreenState.Settings
+        SettingsScreenState.CustomSource -> SettingsScreenState.Settings
         SettingsScreenState.DownloadProgress -> SettingsScreenState.DownloadManager
     }
     else -> this
@@ -322,6 +331,7 @@ fun SettingsHostScreen(
                 when (requestedScreenState) {
                 SettingsScreenState.DownloadProgress -> SettingsScreenState.DownloadManager
                 SettingsScreenState.DownloadManager -> SettingsScreenState.Settings
+                SettingsScreenState.CustomSource -> SettingsScreenState.Settings
                 SettingsScreenState.Settings -> SettingsScreenState.Settings
                 }
             )
@@ -490,6 +500,9 @@ fun SettingsHostScreen(
                             onNavigateToDownloadManager = {
                                 requestScreen(SettingsScreenState.DownloadManager)
                             },
+                            onNavigateToCustomSource = {
+                                requestScreen(SettingsScreenState.CustomSource)
+                            },
                             maxCacheSizeBytes = maxCacheSizeBytes,
                             onMaxCacheSizeBytesChange = onMaxCacheSizeBytesChange,
                             onClearCacheClick = onClearCacheClick,
@@ -513,6 +526,12 @@ fun SettingsHostScreen(
                                         requestScreen(SettingsScreenState.DownloadManager)
                                     },
                                     listState = downloadProgressListState
+                                )
+                            }
+
+                            SettingsScreenState.CustomSource -> {
+                                moe.ouom.neriplayer.ui.screen.customsource.CustomSourceScreen(
+                                    onBack = { requestScreen(SettingsScreenState.Settings) }
                                 )
                             }
                         }
