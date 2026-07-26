@@ -131,7 +131,7 @@ internal class YouTubeEjsChallengeSolver(
     }
 
     private val appContext = context.applicationContext
-    private val solverLock = Any()
+    private val solverLock = YouTubeJsSolveQueue()
     private val playerScriptCache = linkedMapOf<String, String>()
     private val signatureCache = linkedMapOf<String, String>()
     private val throttlingCache = linkedMapOf<String, String>()
@@ -203,13 +203,13 @@ internal class YouTubeEjsChallengeSolver(
             )
         }
 
-        val resolved = synchronized(solverLock) {
+        val resolved = solverLock.withNewestFirst {
             val warmSignature = signatureKey?.let { getCached(signatureCache, it) }
             val warmThrottling = throttlingKey?.let { getCached(throttlingCache, it) }
             if ((requestedSignature == null || warmSignature != null) &&
                 (requestedThrottling == null || warmThrottling != null)
             ) {
-                return@synchronized YouTubeJsChallengeSolveResult(
+                return@withNewestFirst YouTubeJsChallengeSolveResult(
                     status = YouTubeJsChallengeSolveStatus.SUCCESS,
                     solution = YouTubeJsChallengeSolution(
                         signature = warmSignature,
@@ -220,7 +220,7 @@ internal class YouTubeEjsChallengeSolver(
 
             val nowMs = System.currentTimeMillis()
             if (nowMs < sandboxDisabledUntilMs) {
-                return@synchronized YouTubeJsChallengeSolveResult(
+                return@withNewestFirst YouTubeJsChallengeSolveResult(
                     status = YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_TEMPORARILY_DISABLED,
                     detail = sandboxDisabledReason.ifBlank {
                         "JavaScriptSandbox disabled for ${sandboxDisabledUntilMs - nowMs}ms"
@@ -229,7 +229,7 @@ internal class YouTubeEjsChallengeSolver(
             }
 
             if (!JavaScriptSandbox.isSupported()) {
-                return@synchronized sandboxFailureResult(
+                return@withNewestFirst sandboxFailureResult(
                     status = YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_UNSUPPORTED,
                     detail = "JavaScriptSandbox is not supported on this device"
                 )
@@ -240,7 +240,7 @@ internal class YouTubeEjsChallengeSolver(
             }.getOrElse { error ->
                 // 丢弃可能半初始化的实例
                 invalidateSharedSandbox()
-                return@synchronized sandboxFailureResult(
+                return@withNewestFirst sandboxFailureResult(
                     status = if (error.isTimeoutFailure()) {
                         YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_TIMEOUT
                     } else {
@@ -256,7 +256,7 @@ internal class YouTubeEjsChallengeSolver(
                     JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER
                 )
                 if (!hasPromiseSupport || !hasArrayBufferSupport) {
-                    return@synchronized sandboxFailureResult(
+                    return@withNewestFirst sandboxFailureResult(
                         status = YouTubeJsChallengeSolveStatus.MISSING_SANDBOX_FEATURES,
                         detail = "promise=$hasPromiseSupport, arrayBuffer=$hasArrayBufferSupport"
                     )
@@ -267,7 +267,7 @@ internal class YouTubeEjsChallengeSolver(
                     val playerScript = runCatching {
                         getPlayerScript(resolvedPlayerJsUrl)
                     }.getOrElse { error ->
-                        return@synchronized YouTubeJsChallengeSolveResult(
+                        return@withNewestFirst YouTubeJsChallengeSolveResult(
                             status = YouTubeJsChallengeSolveStatus.PLAYER_SCRIPT_FETCH_FAILED,
                             detail = "playerJsUrl=$resolvedPlayerJsUrl",
                             cause = error
@@ -293,7 +293,7 @@ internal class YouTubeEjsChallengeSolver(
                             )
                         ).get(SCRIPT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                     }.getOrElse { error ->
-                        return@synchronized sandboxFailureResult(
+                        return@withNewestFirst sandboxFailureResult(
                             status = if (error.isTimeoutFailure()) {
                                 YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_TIMEOUT
                             } else {
@@ -310,7 +310,7 @@ internal class YouTubeEjsChallengeSolver(
                         requestedThrottling = if (warmThrottling == null) requestedThrottling else null
                     )
                     if (!parsedResult.isSuccess) {
-                        return@synchronized parsedResult
+                        return@withNewestFirst parsedResult
                     }
 
                     parsedResult.solution.signature?.let { solved ->
@@ -320,7 +320,7 @@ internal class YouTubeEjsChallengeSolver(
                         throttlingKey?.let { putCached(throttlingCache, it, solved) }
                     }
 
-                    return@synchronized YouTubeJsChallengeSolveResult(
+                    return@withNewestFirst YouTubeJsChallengeSolveResult(
                         status = YouTubeJsChallengeSolveStatus.SUCCESS,
                         solution = YouTubeJsChallengeSolution(
                             signature = warmSignature ?: parsedResult.solution.signature,
@@ -346,7 +346,7 @@ internal class YouTubeEjsChallengeSolver(
             return false
         }
         return runCatching {
-            synchronized(solverLock) {
+            solverLock.withNewestFirst {
                 getPlayerScript(resolvedPlayerJsUrl)
             }
             true
