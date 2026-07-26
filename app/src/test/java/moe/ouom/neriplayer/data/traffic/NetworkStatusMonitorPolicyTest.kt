@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.traffic
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -85,6 +86,88 @@ class NetworkStatusMonitorPolicyTest {
         val hasUsbTransport: Boolean = false,
         val hasSatelliteTransport: Boolean = false
     )
+
+    @Test
+    fun `unmetered vpn without underlying transport is not treated as mobile data`() {
+        // 挂 VPN 时 active network 可能既不报 WiFi 也不报蜂窝，
+        // 过去一律兜底成 MOBILE，流量策略会把 YouTube 音质压到降级档
+        assertEquals(
+            TrafficNetworkType.WIFI,
+            resolveTrafficNetworkType(
+                hasCellularTransport = false,
+                hasWifiTransport = false,
+                hasEthernetTransport = false,
+                isNotRoaming = false,
+                isNotMetered = true
+            )
+        )
+    }
+
+    @Test
+    fun `metered vpn without underlying transport still counts as mobile data`() {
+        assertEquals(
+            TrafficNetworkType.MOBILE,
+            resolveTrafficNetworkType(
+                hasCellularTransport = false,
+                hasWifiTransport = false,
+                hasEthernetTransport = false,
+                isNotRoaming = true,
+                isNotMetered = false
+            )
+        )
+    }
+
+    @Test
+    fun `ethernet counts as wifi`() {
+        assertEquals(
+            TrafficNetworkType.WIFI,
+            resolveTrafficNetworkType(
+                hasCellularTransport = false,
+                hasWifiTransport = false,
+                hasEthernetTransport = true,
+                isNotRoaming = false,
+                isNotMetered = false
+            )
+        )
+    }
+
+    @Test
+    fun `cellular keeps roaming and mobile split regardless of metering`() {
+        assertEquals(
+            TrafficNetworkType.MOBILE,
+            resolveTrafficNetworkType(
+                hasCellularTransport = true,
+                hasWifiTransport = false,
+                hasEthernetTransport = false,
+                isNotRoaming = true,
+                isNotMetered = true
+            )
+        )
+        assertEquals(
+            TrafficNetworkType.ROAMING,
+            resolveTrafficNetworkType(
+                hasCellularTransport = true,
+                hasWifiTransport = false,
+                hasEthernetTransport = false,
+                isNotRoaming = false,
+                isNotMetered = true
+            )
+        )
+    }
+
+    @Test
+    fun `wifi transport wins over metered flag`() {
+        assertEquals(
+            TrafficNetworkType.WIFI,
+            resolveTrafficNetworkType(
+                hasCellularTransport = false,
+                hasWifiTransport = true,
+                hasEthernetTransport = false,
+                isNotRoaming = false,
+                isNotMetered = false
+            )
+        )
+    }
 
     private fun directNetworkTransport(
         hasWifiTransport: Boolean = false,

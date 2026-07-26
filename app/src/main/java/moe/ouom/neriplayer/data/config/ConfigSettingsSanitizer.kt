@@ -401,6 +401,7 @@ private val YOUTUBE_AUDIO_QUALITY_VALUES = setOf(
     "low",
     "medium",
     "high",
+    "very_high",
     DEFAULT_YOUTUBE_AUDIO_QUALITY
 )
 private val BILI_AUDIO_QUALITY_VALUES = setOf(

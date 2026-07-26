@@ -53,6 +53,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -86,6 +87,8 @@ import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_VOLUME_BALANCE
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_VOLUME_NORMALIZATION_ENABLED
 import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
+import moe.ouom.neriplayer.core.player.model.PreferredQualityKeys
+import moe.ouom.neriplayer.core.player.model.forSource
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
 import moe.ouom.neriplayer.core.player.model.PlaybackSoundConfig
@@ -338,8 +341,39 @@ object PlayerManager {
     internal lateinit var playbackStateFile: File
 
     internal var preferredQuality: String = "exhigh"
+        set(value) {
+            field = value
+            publishPreferredQualityKeys()
+        }
     internal var youtubePreferredQuality: String = "high"
+        set(value) {
+            field = value
+            publishPreferredQualityKeys()
+        }
     internal var biliPreferredQuality: String = "high"
+        set(value) {
+            field = value
+            publishPreferredQualityKeys()
+        }
+
+    private val _preferredQualityKeys = MutableStateFlow(PreferredQualityKeys())
+
+    /**
+     * 各平台的音质偏好，供切换弹窗回显
+     *
+     * 播放页弹窗改的是全局偏好，选中项不能拿当前流实测出来的档位充数，
+     * 否则平台只发得出低码率时弹窗会显示低档，用户点一下就把默认设置改掉了
+     */
+    val preferredQualityKeys: StateFlow<PreferredQualityKeys> =
+        _preferredQualityKeys.asStateFlow()
+
+    private fun publishPreferredQualityKeys() {
+        _preferredQualityKeys.value = PreferredQualityKeys(
+            netease = preferredQuality,
+            youtube = youtubePreferredQuality,
+            bili = biliPreferredQuality
+        )
+    }
     internal var mobileDataFollowDefaultAudioQuality = true
     internal var mobileDataNeteaseAudioQuality: String = "standard"
     internal var mobileDataYouTubeAudioQuality: String = "low"
@@ -1436,7 +1470,10 @@ object PlayerManager {
         val normalizedKey = optionKey.trim().lowercase()
         if (normalizedKey.isBlank()) return
         val currentAudioInfo = _currentPlaybackAudioInfo.value ?: return
-        if (normalizedKey == currentAudioInfo.qualityKey) return
+        // 和弹窗回显保持同一基准，按偏好而不是当前流实测档位去重，
+        // 否则偏好和实测不一致时点实测档会被误判为未变化
+        val preferredKey = _preferredQualityKeys.value.forSource(currentAudioInfo.source)
+        if (normalizedKey == preferredKey) return
 
         ioScope.launch {
             when (currentAudioInfo.source) {

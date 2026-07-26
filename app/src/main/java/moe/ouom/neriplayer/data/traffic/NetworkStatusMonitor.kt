@@ -88,19 +88,30 @@ private fun ConnectivityManager.currentTrafficNetworkType(): TrafficNetworkType 
     val capabilities = getNetworkCapabilities(activeNetwork)
         ?: return@runCatching TrafficNetworkType.MOBILE
 
-    if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) {
-        val isNotRoaming = Build.VERSION.SDK_INT < Build.VERSION_CODES.P ||
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING)
-        return@runCatching if (isNotRoaming) {
-            TrafficNetworkType.MOBILE
-        } else {
-            TrafficNetworkType.ROAMING
-        }
-    }
-
-    if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
-        return@runCatching TrafficNetworkType.WIFI
-    }
-
-    TrafficNetworkType.MOBILE
+    resolveTrafficNetworkType(
+        hasCellularTransport = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR),
+        hasWifiTransport = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI),
+        hasEthernetTransport = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET),
+        isNotRoaming = Build.VERSION.SDK_INT < Build.VERSION_CODES.P ||
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING),
+        isNotMetered = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+    )
 }.getOrDefault(TrafficNetworkType.MOBILE)
+
+internal fun resolveTrafficNetworkType(
+    hasCellularTransport: Boolean,
+    hasWifiTransport: Boolean,
+    hasEthernetTransport: Boolean,
+    isNotRoaming: Boolean,
+    isNotMetered: Boolean
+): TrafficNetworkType {
+    if (hasCellularTransport) {
+        return if (isNotRoaming) TrafficNetworkType.MOBILE else TrafficNetworkType.ROAMING
+    }
+    if (hasWifiTransport || hasEthernetTransport) {
+        return TrafficNetworkType.WIFI
+    }
+    // VPN 这类虚拟网络可能拿不到底层 transport，一律当移动数据会让
+    // WiFi 上挂 VPN 的用户被流量策略降级音质，改用系统的计费标记判断
+    return if (isNotMetered) TrafficNetworkType.WIFI else TrafficNetworkType.MOBILE
+}

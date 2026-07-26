@@ -195,6 +195,7 @@ import moe.ouom.neriplayer.core.download.shouldHideRemoteDownloadAction
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
+import moe.ouom.neriplayer.core.player.model.forSource
 import moe.ouom.neriplayer.core.player.model.PlaybackQualityOption
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
@@ -389,6 +390,7 @@ fun NowPlayingScreen(
     val durationMs by PlayerManager.playbackDurationFlow.collectAsStateWithLifecycle()
     val sleepTimerState by PlayerManager.sleepTimerManager.timerState.collectAsStateWithLifecycle()
     val currentPlaybackAudioInfo by PlayerManager.currentPlaybackAudioInfoFlow.collectAsStateWithLifecycle()
+    val preferredQualityKeys by PlayerManager.preferredQualityKeys.collectAsStateWithLifecycle()
     val playbackSoundState by PlayerManager.playbackSoundStateFlow.collectAsStateWithLifecycle()
     val settingsRepo = remember { AppContainer.settingsRepo }
     val listenTogetherSessionManager = remember { AppContainer.listenTogetherSessionManager }
@@ -1784,7 +1786,10 @@ fun NowPlayingScreen(
             if (showQualitySwitchDialog && currentPlaybackAudioInfo != null) {
                 NowPlayingQualityOptionsDialog(
                     title = stringResource(R.string.nowplaying_quality_switch_title),
-                    selectedKey = currentPlaybackAudioInfo?.qualityKey,
+                    selectedKey = currentPlaybackAudioInfo
+                        ?.source
+                        ?.let(preferredQualityKeys::forSource)
+                        ?: currentPlaybackAudioInfo?.qualityKey,
                     options = currentPlaybackAudioInfo?.qualityOptions.orEmpty(),
                     onDismiss = { showQualitySwitchDialog = false },
                     onSelect = { option ->
