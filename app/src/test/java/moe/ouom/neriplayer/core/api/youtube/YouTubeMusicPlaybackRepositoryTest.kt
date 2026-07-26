@@ -4303,4 +4303,97 @@ class YouTubeMusicPlaybackRepositoryTest {
             playableAudio?.url
         )
     }
+
+    @Test
+    fun parsePlayableAudio_fallsBackToTheNextCandidateWhenTheFirstResolvesBlank() {
+        val root = JSONObject(
+            """
+            {
+              "streamingData": {
+                "adaptiveFormats": [
+                  {
+                    "mimeType": "audio/webm",
+                    "signatureCipher": "url=https%3A%2F%2Frr1---sn.googlevideo.com%2Fvideoplayback%3Fid%3Daudio-high%26n%3Dbad-n&sp=signature&s=encrypted-high",
+                    "bitrate": 160000,
+                    "audioSampleRate": "48000",
+                    "approxDurationMs": "70000"
+                  },
+                  {
+                    "mimeType": "audio/webm",
+                    "signatureCipher": "url=https%3A%2F%2Frr1---sn.googlevideo.com%2Fvideoplayback%3Fid%3Daudio-mid%26n%3Dgood-n&sp=signature&s=encrypted-mid",
+                    "bitrate": 128000,
+                    "audioSampleRate": "48000",
+                    "approxDurationMs": "70000"
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        val prewarmed = mutableListOf<String>()
+        val cipherResolver = object : YouTubeStreamingCipherResolver {
+            override fun prewarmChallenges(
+                encryptedSignature: String?,
+                obfuscatedThrottlingParameter: String?
+            ) {
+                prewarmed.add("$encryptedSignature/$obfuscatedThrottlingParameter")
+            }
+
+            override fun resolveSignature(encryptedSignature: String): String? = "decoded"
+
+            override fun resolveStreamingUrl(url: String): String {
+                // 解不出 n 的候选用空串表示不可用, 解析要继续往下一个候选走
+                return if (url.contains("bad-n")) "" else url.replace("good-n", "deobfuscated-n")
+            }
+        }
+
+        val playableAudio = YouTubeMusicPlaybackParser.parsePlayableAudio(
+            root = root,
+            cipherResolver = cipherResolver
+        )
+
+        // 每个被丢掉的候选都单独付了一次合并求解, 这正是回退的代价
+        assertEquals(
+            listOf("encrypted-high/bad-n", "encrypted-mid/good-n"),
+            prewarmed.toList()
+        )
+        assertEquals(
+            "https://rr1---sn.googlevideo.com/videoplayback?id=audio-mid&n=deobfuscated-n&signature=decoded",
+            playableAudio?.url
+        )
+    }
+
+    @Test
+    fun parsePlayableAudio_returnsNullWhenEveryCandidateResolvesBlank() {
+        val root = JSONObject(
+            """
+            {
+              "streamingData": {
+                "adaptiveFormats": [
+                  {
+                    "mimeType": "audio/webm",
+                    "signatureCipher": "url=https%3A%2F%2Frr1---sn.googlevideo.com%2Fvideoplayback%3Fid%3Daudio-high%26n%3Dbad-n&sp=signature&s=encrypted-high",
+                    "bitrate": 160000,
+                    "audioSampleRate": "48000",
+                    "approxDurationMs": "70000"
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        val cipherResolver = object : YouTubeStreamingCipherResolver {
+            override fun resolveSignature(encryptedSignature: String): String? = "decoded"
+            override fun resolveStreamingUrl(url: String): String = ""
+        }
+
+        assertNull(
+            YouTubeMusicPlaybackParser.parsePlayableAudio(
+                root = root,
+                cipherResolver = cipherResolver
+            )
+        )
+    }
 }

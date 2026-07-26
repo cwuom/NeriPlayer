@@ -531,10 +531,19 @@ internal object YouTubeMusicPlaybackParser {
             preferM4a = preferM4a
         )
         val durationFallbackMs = parseDurationMs(root)
+        // 丢掉一个候选就白付一次完整求解, 单条求解日志被一次性守卫盖住了看不出轮数
+        var discardedCandidates = 0
         for (candidate in candidates) {
             val playableUrl = resolveFormatUrl(candidate.format, cipherResolver)
             if (playableUrl.isBlank()) {
+                discardedCandidates++
                 continue
+            }
+            if (discardedCandidates > 0) {
+                NPLogger.d(
+                    "YouTubeMusicPlayback",
+                    "playable audio candidate fallback: discarded=$discardedCandidates, total=${candidates.size}, acceptedMime=${candidate.mimeType}, acceptedBitrate=${candidate.bitrate}"
+                )
             }
             return YouTubePlayableAudio(
                 url = playableUrl,
@@ -543,6 +552,12 @@ internal object YouTubeMusicPlaybackParser {
                 contentLength = candidate.contentLength,
                 bitrateKbps = candidate.bitrate.takeIf { it > 0 }?.let { (it + 500) / 1000 },
                 sampleRateHz = candidate.audioSampleRate.takeIf { it > 0 }
+            )
+        }
+        if (discardedCandidates > 0) {
+            NPLogger.w(
+                "YouTubeMusicPlayback",
+                "playable audio has no usable candidate: discarded=$discardedCandidates, total=${candidates.size}"
             )
         }
         return null
