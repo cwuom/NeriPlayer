@@ -135,9 +135,9 @@ private const val YOUTUBE_PLAYER_PLAYBACK_LACT_MILLISECONDS = "9"
 // 首播更看重尽快落到可播链路，别在 fallback 前白等太久的 PO token
 private const val WEB_REMIX_PO_TOKEN_PREFETCH_JOIN_TIMEOUT_MS = 150L
 private const val PLAYABLE_URL_EXPIRY_SAFETY_MARGIN_MS = 90L * 1000L
-// EJS solver 内部串行，队列窗口一次派发 6 路预取会把单次求解从 570ms 拖到 2650ms，
-// 用户点播放时 join 到排队中的预取要等 8s 以上
-private const val MAX_CONCURRENT_PREFETCH_RESOLVES = 2
+// EJS solver 内部按 solverLock 串行，预取并发再高也不增加求解吞吐，
+// 只会把用户点击前面的排队深度成倍拉长，每首歌还要占 sig 和 n 两次
+private const val MAX_CONCURRENT_PREFETCH_RESOLVES = 1
 
 private const val EJS_FALLBACK_START_DELAY_MS = 40L
 private const val CIPHER_RESOLVE_TIMEOUT_MS = 12_000L

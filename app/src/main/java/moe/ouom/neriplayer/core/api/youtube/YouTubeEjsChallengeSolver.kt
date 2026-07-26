@@ -97,7 +97,9 @@ internal class YouTubeEjsChallengeSolver(
         private const val LIB_ASSET_PATH = "youtube/yt.solver.lib.min.js"
         private const val CORE_ASSET_PATH = "youtube/yt.solver.core.min.js"
         private const val SCRIPT_TIMEOUT_SECONDS = 45L
-        private const val CACHE_CAPACITY = 32
+        // 一条队列每首要缓存 sig 和 n 两条，容量按 32 算连一张歌单都装不下，
+        // 旧条目被挤掉后同一首歌会反复重解
+        private const val CACHE_CAPACITY = 512
         private const val SANDBOX_FAILURE_COOLDOWN_MS = 10L * 60L * 1000L
 
         // JavaScriptSandbox 每进程只能绑定一次，而播放与下载各持一个 solver 实例，
