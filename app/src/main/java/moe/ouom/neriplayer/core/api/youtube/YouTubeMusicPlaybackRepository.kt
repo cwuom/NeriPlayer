@@ -324,6 +324,18 @@ internal data class YouTubeAudioMetadata(
 )
 
 /**
+ * 这次解析结果是不是在把登录态往下掉
+ *
+ * 手里还攥着登录 cookie 却解析出游客态, 那就是服务端这一次没认出来, 不是事实;
+ * 之前只在"缓存里已经有登录态"时才拦, 于是冷启动或缓存本身是游客态时这份会一路落盘,
+ * 而落盘的游客态会一直粘着, 下次冷启动直接从掉登录开局
+ */
+internal fun demotesYouTubeLogin(
+    parsedLoggedIn: Boolean,
+    holdsLoginCookies: Boolean
+): Boolean = holdsLoginCookies && !parsedLoggedIn
+
+/**
  * 这份存档还能不能拿来垫一次播放
  *
  * 只看年龄不看指纹: 换账号时 clearAuthBoundCaches 已经把缓存清空了, 能留到这里的
@@ -3255,6 +3267,20 @@ class YouTubeMusicPlaybackRepository(
         ) {
             return null
         }
+        // 旧版本可能已经把一份游客态写进存档了, 拿它开局就是直接掉登录
+        if (snapshot != null &&
+            demotesYouTubeLogin(
+                parsedLoggedIn = snapshot.loggedIn,
+                holdsLoginCookies = authProvider().normalized().hasLoginCookies()
+            )
+        ) {
+            NPLogger.w(
+                "YouTubeMusicPlayback",
+                "drop anonymous bootstrap snapshot while login cookies are present"
+            )
+            store.clear()
+            return null
+        }
         val restored = (snapshot ?: return null).copy(cookieHeader = cookieHeader)
         val authGeneration = authCacheGeneration
         synchronized(bootstrapRequestLock) {
@@ -3382,7 +3408,10 @@ class YouTubeMusicPlaybackRepository(
         }
         val fetchedAtMs = System.currentTimeMillis()
         val bootstrapSource = YouTubeBootstrapHtmlSource(homeHtml)
+        // 解析这段实测三到十四秒而下载只占一秒, 分段计时才知道是摊平 ytcfg 还是补 STS
+        val ytcfgStartedAtMs = System.currentTimeMillis()
         val dataSyncId = bootstrapSource.optionalString("DATASYNC_ID", "datasyncId")
+        val ytcfgElapsedMs = playbackElapsedMs(ytcfgStartedAtMs)
         val (derivedDelegatedSessionId, derivedUserSessionId) = parseDataSyncId(dataSyncId)
         val playerJsUrl = resolvePlayerJavaScriptUrl(
             bootstrapSource.requireString(
@@ -3421,7 +3450,17 @@ class YouTubeMusicPlaybackRepository(
             remoteHost = bootstrapSource.optionalString("remoteHost"),
             signatureTimestamp = bootstrapSource.optionalNumber("STS", "signatureTimestamp")
                 .ifBlank { cachedSignatureTimestamp?.toString().orEmpty() }
-                .ifBlank { fetchPlayerSignatureTimestamp(playerJsUrl, userAgent)?.toString().orEmpty() }
+                .ifBlank {
+                    // 走到这里要整份拉 player.js 才能取一个数字, 是解析里最贵的一步
+                    val stsStartedAtMs = System.currentTimeMillis()
+                    fetchPlayerSignatureTimestamp(playerJsUrl, userAgent)?.toString().orEmpty()
+                        .also {
+                            NPLogger.d(
+                                "YouTubeMusicPlayback",
+                                "bootstrap fetched signature timestamp from player.js: elapsedMs=${playbackElapsedMs(stsStartedAtMs)}"
+                            )
+                        }
+                }
                 .toIntOrNull(),
             appInstallData = bootstrapSource.optionalString("appInstallData"),
             coldConfigData = bootstrapSource.optionalString("coldConfigData"),
@@ -3450,7 +3489,7 @@ class YouTubeMusicPlaybackRepository(
         return parsedBootstrap.also { parsed ->
             NPLogger.d(
                 "YouTubeMusicPlayback",
-                "bootstrap parsed: forceRefresh=$forceRefresh, loggedIn=${parsed.loggedIn}, elapsedMs=${playbackElapsedMs(startedAtMs)}"
+                "bootstrap parsed: forceRefresh=$forceRefresh, loggedIn=${parsed.loggedIn}, ytcfgMs=$ytcfgElapsedMs, elapsedMs=${playbackElapsedMs(startedAtMs)}"
             )
             if (cached?.playerJsUrl != parsed.playerJsUrl) {
                 inFlightPlayableAudioScope.launch {
@@ -3467,11 +3506,10 @@ class YouTubeMusicPlaybackRepository(
                     }
                 }
             }
-            // 仍持有登录 cookie 时, 一次回成未登录的 bootstrap 不能顶掉已登录的缓存
-            // 否则库页会据此判定未登录并弹出 Google 登录页
-            val demotesLogin = cached?.loggedIn == true &&
-                !parsed.loggedIn &&
-                workingAuth.hasLoginCookies()
+            val demotesLogin = demotesYouTubeLogin(
+                parsedLoggedIn = parsed.loggedIn,
+                holdsLoginCookies = workingAuth.hasLoginCookies()
+            )
             if (demotesLogin) {
                 NPLogger.w(
                     "YouTubeMusicPlayback",
