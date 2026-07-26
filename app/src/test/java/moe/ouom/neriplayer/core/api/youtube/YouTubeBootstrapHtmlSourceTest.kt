@@ -7,6 +7,28 @@ import org.junit.Test
 class YouTubeBootstrapHtmlSourceTest {
 
     @Test
+    fun optionalString_skipsTheExperimentFlagBlobThatDominatesParseCost() {
+        val experimentFlags = (1..4000).joinToString(",") { index ->
+            """"flag_$index":"value_$index""""
+        }
+        val source = YouTubeBootstrapHtmlSource(
+            """
+                <script>
+                ytcfg.set({
+                  "INNERTUBE_API_KEY": "real-api-key",
+                  "EXPERIMENT_FLAGS": {$experimentFlags},
+                  "VISITOR_DATA": "visitor-data"
+                });
+                </script>
+            """.trimIndent()
+        )
+
+        // 跳过实验开关子树后, bootstrap 真正要的字段一个都不能丢
+        assertEquals("real-api-key", source.optionalString("INNERTUBE_API_KEY"))
+        assertEquals("visitor-data", source.optionalString("VISITOR_DATA"))
+    }
+
+    @Test
     fun optionalString_findsNestedPlayerConfigValuesFromYtcfgJson() {
         val source = YouTubeBootstrapHtmlSource(
             """

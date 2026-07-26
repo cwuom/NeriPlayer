@@ -224,12 +224,31 @@ private val sourceEscapePattern = Regex(
     """\\+(?:[xX]([0-9A-Fa-f]{2})|[uU]([0-9A-Fa-f]{4}))"""
 )
 
+/**
+ * 实验开关的子树不下钻
+ *
+ * ytcfg 里绝大部分体积都在这几棵树上, 一棵 EXPERIMENT_FLAGS 就有上千个标量,
+ * 全摊进 HashMap 是解析要十几秒的主因; 而 bootstrap 真正要的那二十来个字段
+ * 一个都不在里面
+ */
+private val skippedYtcfgSubtrees = setOf(
+    "EXPERIMENT_FLAGS",
+    "EXPERIMENT_FLAGS_JSON",
+    "serializedExperimentFlags",
+    "serializedExperimentIds",
+    "STICKY_EXPERIMENT_FLAGS",
+    "HL_EXPERIMENT_FLAGS"
+)
+
 private fun collectScalarsDeep(node: JSONObject, into: MutableMap<String, String>) {
     // 本层标量先落表再下钻，保证浅层同名字段压过深层的
     val children = ArrayList<Any>()
     val keys = node.keys()
     while (keys.hasNext()) {
         val key = keys.next()
+        if (key in skippedYtcfgSubtrees) {
+            continue
+        }
         when (val value = node.opt(key)) {
             is JSONObject -> children.add(value)
             is JSONArray -> children.add(value)
