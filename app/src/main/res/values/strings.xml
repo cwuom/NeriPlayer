@@ -2080,4 +2080,5 @@
     <string name="custom_source_priority_desc">开启后优先用自定义音源解析(失败回退官方);关闭则仅在官方拿不到完整音频时使用。</string>
     <string name="custom_source_entry_title">自定义音源</string>
     <string name="custom_source_entry_desc">导入洛雪音乐(LX)音源脚本,增强网易云播放解析</string>
+    <string name="custom_source_ok">确定</string>
 </resources>

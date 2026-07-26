@@ -2080,4 +2080,5 @@
     <string name="custom_source_priority_desc">When on, resolve via custom source first (fall back to official on failure); when off, only used when official cannot return full audio.</string>
     <string name="custom_source_entry_title">Custom Source</string>
     <string name="custom_source_entry_desc">Import LX Music source scripts to enhance NetEase playback</string>
+    <string name="custom_source_ok">OK</string>
 </resources>

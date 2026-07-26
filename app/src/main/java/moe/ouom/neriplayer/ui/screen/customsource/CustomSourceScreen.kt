@@ -96,11 +96,17 @@ fun CustomSourceScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var showPasteDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(ui.message) {
-        ui.message?.let {
-            snackbarHostState.showSnackbar(it)
-            vm.consumeMessage()
-        }
+    // 结果/诊断信息用对话框显示(可多行,不会被截断)
+    if (ui.message != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { vm.consumeMessage() },
+            confirmButton = {
+                OutlinedButton(onClick = { vm.consumeMessage() }) {
+                    Text(stringResource(R.string.custom_source_ok))
+                }
+            },
+            text = { Text(ui.message ?: "") }
+        )
     }
 
     val filePicker = rememberLauncherForActivityResult(

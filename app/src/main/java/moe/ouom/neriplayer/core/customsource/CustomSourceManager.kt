@@ -86,6 +86,46 @@ class CustomSourceManager(
         }
     }
 
+    /**
+     * 端到端诊断:用当前启用音源真实解析一首示例网易云歌曲,返回可读结果。
+     * 供设置页"测试"按钮使用,无需 logcat 即可看到失败原因。
+     */
+    suspend fun diagnoseActiveNetease(sampleSongId: Long = 1824045033L): String {
+        val active = repository.activeSource ?: return "请先启用一个音源"
+        val script = repository.readScript(active)
+        if (script.isNullOrBlank()) return "脚本内容缺失"
+
+        val eng = LxScriptEngine(appContext, script)
+        return try {
+            val init = eng.start()
+            if (!init.ok) {
+                return "① 初始化失败: ${init.error ?: "未知"}"
+            }
+            val platforms = init.sources.keys.joinToString(", ").ifBlank { "(无)" }
+            if (!init.sources.containsKey(CustomAudioSource.LX_SOURCE_NETEASE) && init.sources.isNotEmpty()) {
+                return "① 初始化成功,但脚本声明支持的平台为: $platforms,不含网易云(wy)"
+            }
+            val musicInfo = JSONObject().apply {
+                put("songmid", sampleSongId)
+                put("id", sampleSongId)
+                put("name", "测试歌曲")
+                put("singer", "测试")
+                put("albumName", "")
+                put("source", CustomAudioSource.LX_SOURCE_NETEASE)
+            }
+            val result = eng.resolve(
+                source = CustomAudioSource.LX_SOURCE_NETEASE,
+                quality = "320k",
+                musicInfo = musicInfo
+            )
+            "① 初始化成功(平台: $platforms)\n② 解析示例歌曲: ${result.detail}"
+        } catch (e: Exception) {
+            "测试异常: ${e.message}"
+        } finally {
+            eng.destroy()
+        }
+    }
+
     /** 启用状态变化后调用:重建/销毁引擎。 */
     suspend fun onActiveSourceChanged() {
         engineMutex.withLock {
