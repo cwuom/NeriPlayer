@@ -161,7 +161,9 @@ class YouTubeAuthSyncTest {
         assertNotNull(merged)
         assertEquals("new-sapisid", merged?.cookies?.get("SAPISID"))
         assertEquals("papisid", merged?.cookies?.get("__Secure-1PAPISID"))
-        assertTrue(merged?.cookies?.containsKey("LOGIN_INFO") == false)
+        // 登录期间不认 LOGIN_INFO 的过期指令, 与 SID 家族同一条规矩:
+        // 匿名响应也会带这条, 照办就等于被一条普通响应登出
+        assertEquals("login-token", merged?.cookies?.get("LOGIN_INFO"))
         assertEquals(300L, merged?.savedAt)
     }
 

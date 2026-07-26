@@ -55,6 +55,19 @@ object YouTubeCookieSupport {
 
     private val importantLoginCookiePrefixes: List<String> = emptyList()
 
+    /**
+     * 收到过期指令也不许删的登录 cookie
+     *
+     * 比 importantLoginCookieKeys 多出 HSID/LSID/LOGIN_INFO: 那份只有 SID 家族, 于是匿名响应
+     * 带的 Set-Cookie 过期指令能把这三项删掉并落盘; 而 HSID 和 LOGIN_INFO 正是 youtube.com
+     * 判定登录用的, 缺了就一直被判游客, 补回去也会被下一条响应再删一次
+     *
+     * 单独一份而不是直接扩充 importantLoginCookieKeys, 是因为那份还用来判断"算不算已登录",
+     * 把 LOGIN_INFO 算进去会让只剩它时也判成已登录
+     */
+    val deletionProtectedLoginCookieKeys: Set<String> =
+        importantLoginCookieKeys.toSet() + setOf("HSID", "LSID", "LOGIN_INFO")
+
     val activeSessionCookieKeys: List<String> = listOf(
         "SAPISID",
         "APISID",

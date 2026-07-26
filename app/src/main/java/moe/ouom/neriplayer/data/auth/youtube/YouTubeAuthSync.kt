@@ -170,7 +170,7 @@ fun mergeYouTubeAuthCookieUpdates(
 
     setCookieHeaders.forEach { rawHeader ->
         val update = parseSetCookieUpdate(rawHeader) ?: return@forEach
-        val isLoginIdentityCookie = update.name in YouTubeCookieSupport.importantLoginCookieKeys
+        val isLoginIdentityCookie = update.name in YouTubeCookieSupport.deletionProtectedLoginCookieKeys
         if (update.shouldRemove) {
             if (loggedInBefore && isLoginIdentityCookie) {
                 return@forEach

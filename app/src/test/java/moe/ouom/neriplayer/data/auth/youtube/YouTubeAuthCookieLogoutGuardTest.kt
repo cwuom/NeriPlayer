@@ -126,4 +126,62 @@ class YouTubeAuthCookieLogoutGuardTest {
         )
         assertNull("无变化时不应触发落盘", merged)
     }
+
+    @Test
+    fun `expired HSID and LOGIN_INFO from a response must not be dropped`() {
+        val base = loggedInBundle().let { bundle ->
+            val cookies = LinkedHashMap(bundle.cookies).apply { put("LOGIN_INFO", "login-info-value") }
+            bundle.copy(
+                cookies = cookies,
+                cookieHeader = cookies.entries.joinToString("; ") { (k, v) -> "$k=$v" }
+            )
+        }
+
+        // 匿名响应会带上这几项的过期指令, 旧保护只覆盖 SID 家族, 于是它们被删掉并落盘,
+        // 而 youtube.com 正是靠 HSID 和 LOGIN_INFO 判定登录
+        val merged = mergeYouTubeAuthCookieUpdates(
+            base = base,
+            setCookieHeaders = listOf(
+                "HSID=EXPIRED; Max-Age=0; Path=/; Domain=.youtube.com",
+                "LOGIN_INFO=; Max-Age=0; Path=/; Domain=.youtube.com",
+                "LSID=EXPIRED; Max-Age=0; Path=/"
+            )
+        )
+
+        val result = merged ?: base
+        assertEquals("hsid-value", result.cookies["HSID"])
+        assertEquals("login-info-value", result.cookies["LOGIN_INFO"])
+        assertTrue(result.hasLoginCookies())
+    }
+
+    @Test
+    fun `a blank HSID update must not erase the stored one`() {
+        val base = loggedInBundle()
+
+        val merged = mergeYouTubeAuthCookieUpdates(
+            base = base,
+            setCookieHeaders = listOf("HSID=; Path=/; Domain=.youtube.com")
+        )
+
+        val result = merged ?: base
+        assertEquals("hsid-value", result.cookies["HSID"])
+    }
+
+    @Test
+    fun `an anonymous session still lets HSID expire`() {
+        val cookies = linkedMapOf("HSID" to "hsid-value", "YSC" to "ysc-value")
+        val anonymous = YouTubeAuthBundle(
+            cookies = cookies,
+            cookieHeader = cookies.entries.joinToString("; ") { (k, v) -> "$k=$v" }
+        )
+
+        // 本来就没登录时没有身份可保, 过期指令就该照办
+        val merged = mergeYouTubeAuthCookieUpdates(
+            base = anonymous,
+            setCookieHeaders = listOf("HSID=EXPIRED; Max-Age=0; Path=/")
+        )
+
+        assertNotNull(merged)
+        assertNull(merged!!.cookies["HSID"])
+    }
 }
