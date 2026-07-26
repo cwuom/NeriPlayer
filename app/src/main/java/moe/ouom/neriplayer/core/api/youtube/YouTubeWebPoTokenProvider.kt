@@ -133,6 +133,8 @@ internal class YouTubeWebPoTokenProvider(
     private val applicationContext = context.applicationContext
     private val accessMutex = Mutex()
     private val tokenCache = linkedMapOf<String, CachedWebPoToken>()
+    /** videoId 维度的缓存键索引，用于在不碰 WebView 的前提下命中已有 token */
+    private val cacheKeyIndex = linkedMapOf<String, String>()
     private val pendingBridgeResults = linkedMapOf<String, CompletableDeferred<String>>()
     private val pendingEvaluateResults = linkedSetOf<CompletableDeferred<String?>>()
 
@@ -194,6 +196,7 @@ internal class YouTubeWebPoTokenProvider(
     override fun clearSession() {
         synchronized(tokenCache) {
             tokenCache.clear()
+            cacheKeyIndex.clear()
         }
         preparedCookieFingerprint = null
         preparedAtMs = 0L
@@ -221,6 +224,23 @@ internal class YouTubeWebPoTokenProvider(
                 }
                 val now = System.currentTimeMillis()
                 val authFingerprint = buildAuthFingerprint(auth)
+                // token 能用 6 小时，页面准备的 TTL 只有 20 分钟，
+                // 命中判断排在页面准备之后就等于让有效 token 也去付一次整页重载
+                if (!forceRefresh) {
+                    val indexKey = buildCacheKeyIndexKey(videoId, remoteHost, authFingerprint)
+                    val cached = synchronized(tokenCache) {
+                        cacheKeyIndex[indexKey]
+                            ?.let { key -> tokenCache[key]?.takeIf { it.expiresAtMs > now }?.let { key to it } }
+                    }
+                    if (cached != null) {
+                        synchronized(tokenCache) { touchCacheKey(cached.first, cached.second) }
+                        NPLogger.d(
+                            TAG,
+                            "GVS PO token cache hit without page prepare videoId=$videoId ttlMs=${cached.second.expiresAtMs - now} elapsedMs=${System.currentTimeMillis() - startedAtMs}"
+                        )
+                        return@withLock cached.second.token
+                    }
+                }
                 val pageSnapshot = ensurePreparedPage(
                     auth = auth,
                     authFingerprint = authFingerprint,
@@ -262,6 +282,7 @@ internal class YouTubeWebPoTokenProvider(
                     }
                 }
 
+                var rebuiltPageForMint = false
                 repeat(MINT_ATTEMPTS) { attempt ->
                     val result = mintPoToken(contentBinding)
                     when {
@@ -271,6 +292,9 @@ internal class YouTubeWebPoTokenProvider(
                                     token = result.token,
                                     expiresAtMs = now + TOKEN_TTL_MS
                                 )
+                                cacheKeyIndex[
+                                    buildCacheKeyIndexKey(videoId, remoteHost, authFingerprint)
+                                ] = cacheKey
                                 trimCacheLocked()
                             }
                             NPLogger.d(
@@ -297,6 +321,12 @@ internal class YouTubeWebPoTokenProvider(
                                 TAG,
                                 "WebPoClient mint failed (attempt=${attempt + 1}): ${result?.error.orEmpty()}"
                             )
+                            // 整页重建一次还铸不出来就不会因为多试几轮变好，
+                            // 每次失败都重跑会让单次调用累积十几秒
+                            if (rebuiltPageForMint) {
+                                return@withLock null
+                            }
+                            rebuiltPageForMint = true
                             ensurePreparedPage(
                                 auth = auth,
                                 authFingerprint = authFingerprint,
@@ -716,6 +746,14 @@ internal class YouTubeWebPoTokenProvider(
         return "$contentBinding|$remoteHost"
     }
 
+    private fun buildCacheKeyIndexKey(
+        videoId: String,
+        remoteHost: String,
+        authFingerprint: String
+    ): String {
+        return "$videoId|$remoteHost|$authFingerprint"
+    }
+
     private fun touchCacheKey(
         cacheKey: String,
         entry: CachedWebPoToken
@@ -731,6 +769,8 @@ internal class YouTubeWebPoTokenProvider(
             val eldestKey = tokenCache.entries.firstOrNull()?.key ?: break
             tokenCache.remove(eldestKey)
         }
+        // 索引指向已淘汰的键只会白查一次并回落到正常路径，但不清理会无界增长
+        cacheKeyIndex.entries.removeAll { it.value !in tokenCache }
     }
 
     private fun isAllowedBootstrapUri(uri: Uri?): Boolean {
