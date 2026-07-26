@@ -2050,6 +2050,10 @@ object PlayerManager {
         }
     }
 
+    /**
+     * 键必须在解析前确定，预取与播放才能对齐同一份缓存，
+     * 所以不能并入解析后才知道的 itag，同键下的表示变化由缓存失效兜底
+     */
     internal fun computeYouTubeCacheKey(
         videoId: String,
         preferredQuality: String = effectiveYouTubeQuality(),

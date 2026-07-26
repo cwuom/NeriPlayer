@@ -11,6 +11,9 @@ import moe.ouom.neriplayer.core.player.model.estimateBitrateKbps
 import moe.ouom.neriplayer.core.player.model.inferYouTubeQualityKeyFromBitrate
 import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
 import moe.ouom.neriplayer.core.player.resolver.netease.NeteasePlaybackResponseParser
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 
 internal val NETEASE_QUALITY_FALLBACK_ORDER = listOf(
     "jymaster",
@@ -227,13 +230,24 @@ internal fun buildNeteaseSuccessResult(
     )
 }
 
+/**
+ * 缓存与本次解析到的流容量不符即视为不同表示，需要整体失效
+ *
+ * 同一 videoId 不同解析轮次可能返回不同表示且共用缓存键，只判缓存偏小的方向时
+ * 反向差值为负会直接放行，旧分片与新字节混写进同一个键后 seek 会读到跨流数据
+ */
 internal fun shouldReplaceCachedPreviewResource(
     cachedContentLength: Long,
     expectedContentLength: Long
 ): Boolean {
-    val contentLengthGap = expectedContentLength - cachedContentLength
-    return cachedContentLength > 0L &&
-        expectedContentLength > 0L &&
-        contentLengthGap >= 512L * 1024L &&
-        cachedContentLength * 100L < expectedContentLength * 85L
+    if (cachedContentLength <= 0L || expectedContentLength <= 0L) {
+        return false
+    }
+    val contentLengthGap = abs(expectedContentLength - cachedContentLength)
+    if (contentLengthGap < 512L * 1024L) {
+        return false
+    }
+    val smaller = min(cachedContentLength, expectedContentLength)
+    val larger = max(cachedContentLength, expectedContentLength)
+    return smaller * 100L < larger * 85L
 }
