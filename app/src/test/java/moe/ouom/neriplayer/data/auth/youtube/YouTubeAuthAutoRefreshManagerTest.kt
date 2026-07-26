@@ -245,4 +245,31 @@ class YouTubeAuthAutoRefreshManagerTest {
             savedAt = savedAt
         ).normalized(savedAt = savedAt)
     }
+
+    @Test
+    fun `keeps session instead of opening sign-in page when login cookies are intact`() {
+        // 页面没暴露会话信号但 cookie 还在，跳登录页在用户看来就是掉登录态
+        assertFalse(
+            shouldTriggerYouTubeRefreshLogin(
+                pageReady = true,
+                hasYtcfg = true,
+                hasLiveSessionSignal = false,
+                loginUrl = "https://accounts.google.com/ServiceLogin?service=youtube",
+                hasActiveSessionCookies = true
+            )
+        )
+    }
+
+    @Test
+    fun `still signs in when no login cookies are held`() {
+        assertTrue(
+            shouldTriggerYouTubeRefreshLogin(
+                pageReady = true,
+                hasYtcfg = true,
+                hasLiveSessionSignal = false,
+                loginUrl = "https://accounts.google.com/ServiceLogin?service=youtube",
+                hasActiveSessionCookies = false
+            )
+        )
+    }
 }

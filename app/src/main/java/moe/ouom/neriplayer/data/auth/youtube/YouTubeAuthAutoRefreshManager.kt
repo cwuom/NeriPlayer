@@ -87,8 +87,14 @@ internal fun shouldTriggerYouTubeRefreshLogin(
     pageReady: Boolean,
     hasYtcfg: Boolean,
     hasLiveSessionSignal: Boolean,
-    loginUrl: String
+    loginUrl: String,
+    hasActiveSessionCookies: Boolean = false
 ): Boolean {
+    // 手里还握着完整的登录 cookie 时不能因为页面没暴露会话信号就跳登录页，
+    // 那一跳在用户看来就是登录态凭空没了
+    if (hasActiveSessionCookies) {
+        return false
+    }
     return pageReady &&
         hasYtcfg &&
         !hasLiveSessionSignal &&
@@ -270,7 +276,8 @@ class YouTubeAuthAutoRefreshManager(
                             pageReady = isYouTubeRefreshPageSettled(pageSnapshot?.readyState.orEmpty()),
                             hasYtcfg = pageSnapshot?.hasYtcfg == true,
                             hasLiveSessionSignal = pageSnapshot?.hasLiveSessionSignal() == true,
-                            loginUrl = loginUrl
+                            loginUrl = loginUrl,
+                            hasActiveSessionCookies = YouTubeCookieSupport.isLoggedIn(refreshedAuth.cookies)
                         )
                     ) {
                         NPLogger.i(
