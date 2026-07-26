@@ -54,6 +54,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.selects.select
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.youtube.isYouTubeAuthRecoverableFailure
 import moe.ouom.neriplayer.data.auth.youtube.shouldStartYouTubeWebAuthRecovery
@@ -319,12 +321,14 @@ internal data class YouTubeAudioMetadata(
     val contentLength: Long? = null
 )
 
-private data class YouTubePlaybackBootstrap(
+@Serializable
+internal data class YouTubePlaybackBootstrap(
     val apiKey: String,
     val webRemixClientVersion: String,
     val visitorData: String,
     val playerJsUrl: String,
-    val cookieHeader: String,
+    /** 整串登录 cookie 不落盘, 恢复存档时按当时的 auth 重新拼一份 */
+    @Transient val cookieHeader: String = "",
     val authFingerprint: String,
     val sessionIndex: String,
     val userAgent: String,
@@ -340,7 +344,8 @@ private data class YouTubePlaybackBootstrap(
     val delegatedSessionId: String,
     val userSessionId: String,
     val loggedIn: Boolean,
-    val fetchedAtMs: Long
+    val fetchedAtMs: Long,
+    val version: Int = BOOTSTRAP_SNAPSHOT_VERSION_CURRENT
 )
 
 private data class YouTubeWebRemixRequestMetadata(
@@ -1134,10 +1139,20 @@ class YouTubeMusicPlaybackRepository(
         YouTubeWebPoTokenProvider(it, authProvider)
     }
 
+    private val bootstrapStore = applicationContext?.let { YouTubeBootstrapStore(it) }
+
     @Volatile
     private var bootstrapCache: YouTubePlaybackBootstrap? = null
+
+    /** 存档只在进程内读一次, 读不到也不必每次播放都再去碰一次磁盘 */
+    @Volatile
+    private var bootstrapSnapshotRestored = false
+
     private val bootstrapRequestLock = Any()
     private val warmBootstrapLock = Any()
+
+    @Volatile
+    private var inFlightStaleBootstrapRefresh: Deferred<Unit>? = null
 
     @Volatile
     private var inFlightWarmBootstrap: Deferred<Unit>? = null
@@ -1377,6 +1392,9 @@ class YouTubeMusicPlaybackRepository(
         authCacheGeneration += 1L
         bootstrapCache = null
         lastAuthFingerprint = null
+        // 换了身份, 存档里的 sessionIndex/dataSyncId 全都作废
+        bootstrapStore?.clear()
+        bootstrapSnapshotRestored = true
         synchronized(playableAudioCache) {
             playableAudioCache.clear()
         }
@@ -1386,6 +1404,8 @@ class YouTubeMusicPlaybackRepository(
             deferreds.forEach { deferred ->
                 deferred.cancel(CancellationException("YouTube auth updated"))
             }
+            inFlightStaleBootstrapRefresh?.cancel(CancellationException("YouTube auth updated"))
+            inFlightStaleBootstrapRefresh = null
         }
         synchronized(warmBootstrapLock) {
             inFlightWarmBootstrap?.cancel(CancellationException("YouTube auth updated"))
@@ -3054,16 +3074,32 @@ class YouTubeMusicPlaybackRepository(
             origin = requestAuth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
         )
         val cached = bootstrapCache
+            ?: restoreBootstrapSnapshotIfNeeded(
+                authFingerprint = requestAuthFingerprint,
+                cookieHeader = appendYouTubeConsentCookie(requestAuth.effectiveCookieHeader())
+            )
         if (!forceRefresh &&
             cached != null &&
-            cached.authFingerprint == requestAuthFingerprint &&
-            System.currentTimeMillis() - cached.fetchedAtMs < PLAYABLE_BOOTSTRAP_TTL_MS
+            cached.authFingerprint == requestAuthFingerprint
         ) {
-            NPLogger.d(
-                "YouTubeMusicPlayback",
-                "bootstrap cache hit: forceRefresh=$forceRefresh, ageMs=${System.currentTimeMillis() - cached.fetchedAtMs}, elapsedMs=${playbackElapsedMs(startedAtMs)}"
-            )
-            return cached
+            val ageMs = System.currentTimeMillis() - cached.fetchedAtMs
+            if (ageMs < PLAYABLE_BOOTSTRAP_TTL_MS) {
+                NPLogger.d(
+                    "YouTubeMusicPlayback",
+                    "bootstrap cache hit: forceRefresh=$forceRefresh, ageMs=$ageMs, elapsedMs=${playbackElapsedMs(startedAtMs)}"
+                )
+                return cached
+            }
+            // 过了新鲜期不等于已经失效, 重拉一次要十几秒, 先拿旧的开播, 刷新丢后台;
+            // 真过期了播放器那边会带 forceRefresh 再走一遍, 那条路才需要等
+            if (ageMs < BOOTSTRAP_SNAPSHOT_MAX_AGE_MS) {
+                refreshStaleBootstrapAsync(auth)
+                NPLogger.d(
+                    "YouTubeMusicPlayback",
+                    "bootstrap stale hit: ageMs=$ageMs, elapsedMs=${playbackElapsedMs(startedAtMs)}"
+                )
+                return cached
+            }
         }
 
         val requestKey = InFlightBootstrapRequest(
@@ -3101,6 +3137,86 @@ class YouTubeMusicPlaybackRepository(
             deferred.start()
         }
         return deferred.await()
+    }
+
+    /**
+     * 冷启动第一次要 bootstrap 时把上次的存档捞回来
+     *
+     * cookieHeader 没有落盘, 这里按当前 auth 重拼一份; 指纹对得上就说明还是同一个身份,
+     * 拼出来的和当初存的是同一串
+     */
+    private fun restoreBootstrapSnapshotIfNeeded(
+        authFingerprint: String,
+        cookieHeader: String
+    ): YouTubePlaybackBootstrap? {
+        val store = synchronized(bootstrapRequestLock) {
+            if (bootstrapSnapshotRestored) {
+                return null
+            }
+            bootstrapSnapshotRestored = true
+            bootstrapStore
+        } ?: return null
+
+        val snapshot = store.load()
+        if (!isYouTubeBootstrapSnapshotUsable(
+                snapshot = snapshot,
+                authFingerprint = authFingerprint,
+                nowMs = System.currentTimeMillis()
+            )
+        ) {
+            return null
+        }
+        val restored = (snapshot ?: return null).copy(cookieHeader = cookieHeader)
+        val authGeneration = authCacheGeneration
+        synchronized(bootstrapRequestLock) {
+            if (bootstrapCache == null && authGeneration == authCacheGeneration) {
+                bootstrapCache = restored
+            }
+        }
+        NPLogger.d(
+            "YouTubeMusicPlayback",
+            "bootstrap snapshot restored: ageMs=${System.currentTimeMillis() - restored.fetchedAtMs}, loggedIn=${restored.loggedIn}"
+        )
+        return restored
+    }
+
+    /**
+     * 旧 bootstrap 还能用的时候, 刷新不该占着播放这条路
+     *
+     * 同一时刻只留一个刷新在跑, 否则连点几首歌就会并发拉好几份首页, 那正是首播被拖慢的原因
+     */
+    private fun refreshStaleBootstrapAsync(auth: YouTubeAuthBundle) {
+        val refreshTask = synchronized(bootstrapRequestLock) {
+            inFlightStaleBootstrapRefresh
+                ?.takeUnless { it.isCompleted || it.isCancelled }
+                ?: run {
+                    lateinit var created: Deferred<Unit>
+                    created = inFlightPlayableAudioScope.async(start = CoroutineStart.LAZY) {
+                        try {
+                            loadBootstrap(auth = auth, forceRefresh = true)
+                            Unit
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: Exception) {
+                            NPLogger.w(
+                                "YouTubeMusicPlayback",
+                                "stale bootstrap refresh failed: ${error.message}"
+                            )
+                        } finally {
+                            synchronized(bootstrapRequestLock) {
+                                if (inFlightStaleBootstrapRefresh === created) {
+                                    inFlightStaleBootstrapRefresh = null
+                                }
+                            }
+                        }
+                    }
+                    inFlightStaleBootstrapRefresh = created
+                    created
+                }
+        }
+        if (!refreshTask.isActive && !refreshTask.isCompleted && !refreshTask.isCancelled) {
+            refreshTask.start()
+        }
     }
 
     private suspend fun loadBootstrap(
@@ -3251,6 +3367,8 @@ class YouTubeMusicPlaybackRepository(
             }
             if (authGeneration == authCacheGeneration && !demotesLogin) {
                 bootstrapCache = parsed
+                // 下次冷启动直接吃这份, 省掉现拉首页再摊平上千条 EXPERIMENT_FLAGS
+                bootstrapStore?.save(parsed)
             }
         }
     }
