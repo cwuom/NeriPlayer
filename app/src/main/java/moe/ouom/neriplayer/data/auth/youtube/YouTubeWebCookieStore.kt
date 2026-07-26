@@ -53,6 +53,22 @@ internal fun shouldApplyYouTubeConsentCookie(
     return replaceExisting || existingCookies["SOCS"].isNullOrBlank()
 }
 
+/**
+ * 整份替换时该不该把浏览器里这个 cookie 清掉
+ *
+ * 存档里没有身份 cookie 只说明当初没收上来, 不代表浏览器里这份已经作废;
+ * 清掉之后每次加载都是匿名, 而匿名又会再触发一次刷新, 循环出不来
+ */
+internal fun shouldClearYouTubeWebCookieOnReplace(
+    key: String,
+    sanitizedCookies: Map<String, String>
+): Boolean {
+    if (!sanitizedCookies[key].isNullOrBlank()) {
+        return false
+    }
+    return !YouTubeCookieSupport.isIdentityCookieKey(key)
+}
+
 internal fun collectYouTubeWebCookies(
     cookieManager: CookieManager,
     urls: Iterable<String> = YouTubeCookieSupport.webCookieReadUrls
@@ -81,7 +97,7 @@ internal fun applyYouTubeWebCookies(
     urls.forEach { url ->
         if (replaceExisting) {
             existingCookies.keys.forEach { key ->
-                if (sanitizedCookies[key].isNullOrBlank()) {
+                if (shouldClearYouTubeWebCookieOnReplace(key, sanitizedCookies)) {
                     cookieManager.setCookie(url, "$key=${buildYouTubeWebCookieClearSuffix(url)}")
                     cookieManager.setCookie(url, "$key=$YOUTUBE_WEB_COOKIE_HOST_CLEAR_SUFFIX")
                     changed = true

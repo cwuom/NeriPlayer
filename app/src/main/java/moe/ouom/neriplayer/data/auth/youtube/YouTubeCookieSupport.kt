@@ -217,6 +217,23 @@ object YouTubeCookieSupport {
         )
     }
 
+    /**
+     * 判断这个 cookie 是不是身份凭据
+     *
+     * HSID 和 LOGIN_INFO 是 HttpOnly, 老存档里可能压根没收录过,
+     * 拿存档做差集去清理浏览器就会把仍然有效的身份 cookie 一起抹掉
+     */
+    fun isIdentityCookieKey(key: String): Boolean {
+        val normalized = key.trim()
+        if (normalized.isEmpty()) {
+            return false
+        }
+        if (normalized in webLoginBlockingCookieKeys) {
+            return true
+        }
+        return webLoginBlockingCookiePrefixes.any { normalized.startsWith(it) }
+    }
+
     fun collectWebLoginResetCookieKeys(cookies: Map<String, String>): List<String> {
         return cookies.entries
             .asSequence()
