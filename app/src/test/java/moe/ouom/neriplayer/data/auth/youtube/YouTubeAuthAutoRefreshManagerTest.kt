@@ -272,4 +272,114 @@ class YouTubeAuthAutoRefreshManagerTest {
             )
         )
     }
+
+    @Test
+    fun `salvages the http only identity cookies the archive never captured`() {
+        // 存档里从来没有 HSID 和 LOGIN_INFO, 浏览器里一直都在
+        val salvaged = collectSalvageableYouTubeIdentityCookies(
+            persistedCookies = mapOf(
+                "SID" to "sid-value",
+                "SAPISID" to "sapisid-value",
+                "__Secure-1PSID" to "1psid-value"
+            ),
+            observedCookies = mapOf(
+                "SID" to "sid-value",
+                "SAPISID" to "sapisid-value",
+                "__Secure-1PSID" to "1psid-value",
+                "HSID" to "hsid-value",
+                "LOGIN_INFO" to "login-info-value"
+            )
+        )
+
+        assertEquals(
+            mapOf("HSID" to "hsid-value", "LOGIN_INFO" to "login-info-value"),
+            salvaged
+        )
+    }
+
+    @Test
+    fun `salvages nothing once the archive already holds every identity cookie`() {
+        val salvaged = collectSalvageableYouTubeIdentityCookies(
+            persistedCookies = mapOf(
+                "SID" to "sid-value",
+                "HSID" to "hsid-value",
+                "LOGIN_INFO" to "login-info-value"
+            ),
+            observedCookies = mapOf(
+                "SID" to "sid-value",
+                "HSID" to "hsid-rotated",
+                "LOGIN_INFO" to "login-info-rotated"
+            )
+        )
+
+        // 已有值不参与, 免得拿一份被判过游客态的快照覆盖掉有效凭据
+        assertTrue(salvaged.isEmpty())
+    }
+
+    @Test
+    fun `salvages nothing from an anonymous observation`() {
+        val salvaged = collectSalvageableYouTubeIdentityCookies(
+            persistedCookies = mapOf("SID" to "sid-value"),
+            observedCookies = mapOf(
+                "VISITOR_INFO1_LIVE" to "visitor-value",
+                "YSC" to "ysc-value",
+                "NID" to "nid-value"
+            )
+        )
+
+        assertTrue(salvaged.isEmpty())
+    }
+
+    @Test
+    fun `leaves non identity cookies out of the salvage`() {
+        val salvaged = collectSalvageableYouTubeIdentityCookies(
+            persistedCookies = mapOf("SID" to "sid-value"),
+            observedCookies = mapOf(
+                "SID" to "sid-value",
+                "HSID" to "hsid-value",
+                "VISITOR_INFO1_LIVE" to "visitor-value",
+                "YSC" to "ysc-value",
+                "PREF" to "pref-value"
+            )
+        )
+
+        assertEquals(mapOf("HSID" to "hsid-value"), salvaged)
+    }
+
+    @Test
+    fun `skips blank observed values so a cleared cookie never lands in the archive`() {
+        val salvaged = collectSalvageableYouTubeIdentityCookies(
+            persistedCookies = mapOf("SID" to "sid-value"),
+            observedCookies = mapOf(
+                "SID" to "sid-value",
+                "HSID" to "",
+                "LOGIN_INFO" to "login-info-value"
+            )
+        )
+
+        assertEquals(mapOf("LOGIN_INFO" to "login-info-value"), salvaged)
+    }
+
+    @Test
+    fun `merging a salvage only adds keys and keeps every persisted value`() {
+        val persisted = YouTubeAuthBundle(
+            cookies = linkedMapOf(
+                "SID" to "sid-value",
+                "SAPISID" to "sapisid-value"
+            ),
+            cookieHeader = "SID=sid-value; SAPISID=sapisid-value",
+            savedAt = 1_000L
+        )
+
+        val merged = mergeYouTubeAuthBundle(
+            base = persisted,
+            observedCookies = mapOf("HSID" to "hsid-value")
+        )
+
+        assertEquals("sid-value", merged.cookies["SID"])
+        assertEquals("sapisid-value", merged.cookies["SAPISID"])
+        assertEquals("hsid-value", merged.cookies["HSID"])
+        // 只补 cookie 不该顺手刷新时间戳, 否则会盖掉刷新新鲜度判断
+        assertEquals(1_000L, merged.savedAt)
+    }
 }

@@ -121,6 +121,27 @@ internal fun shouldAcceptYouTubeRefreshResult(
     return false
 }
 
+/**
+ * 快照被判成游客态时, 里面还有哪些身份 cookie 值得单独捞回来
+ *
+ * HSID 和 LOGIN_INFO 是 HttpOnly, 早期存档从没收录过, 而刷新一旦被判游客态就整份丢弃,
+ * 存档于是永远补不齐这两项, 之后每次请求都是匿名, 匿名又会再触发一次刷新, 循环出不来;
+ * 只挑存档里缺的那几项, 已有值不参与, 所以不存在把有效凭据换成陈旧值的风险
+ */
+internal fun collectSalvageableYouTubeIdentityCookies(
+    persistedCookies: Map<String, String>,
+    observedCookies: Map<String, String>
+): Map<String, String> {
+    if (!YouTubeCookieSupport.isLoggedIn(observedCookies)) {
+        return emptyMap()
+    }
+    return observedCookies.filter { (key, value) ->
+        value.isNotBlank() &&
+            YouTubeCookieSupport.isIdentityCookieKey(key) &&
+            persistedCookies[key].isNullOrBlank()
+    }
+}
+
 internal fun resolveObservedYouTubeAuthUser(
     capturedAuthUser: String,
     pageSessionIndex: String
@@ -327,6 +348,23 @@ class YouTubeAuthAutoRefreshManager(
                             TAG,
                             "refresh skipped reason=$reason url=$url pageReady=${pageSnapshot?.readyState.orEmpty()} hasYtcfg=${pageSnapshot?.hasYtcfg == true} liveSession=$pageConfirmedSession"
                         )
+                        // 整份结果不可信不代表这几项也不可信, 丢掉存档就再也补不回来了
+                        val salvageableCookies = collectSalvageableYouTubeIdentityCookies(
+                            persistedCookies = currentAuth.cookies,
+                            observedCookies = refreshedAuth.cookies
+                        )
+                        if (salvageableCookies.isNotEmpty()) {
+                            authUpdater(
+                                mergeYouTubeAuthBundle(
+                                    base = currentAuth,
+                                    observedCookies = salvageableCookies
+                                )
+                            )
+                            NPLogger.i(
+                                TAG,
+                                "refresh salvaged identity cookies reason=$reason url=$url keys=${salvageableCookies.keys.joinToString()}"
+                            )
+                        }
                         return@forEach
                     }
 
