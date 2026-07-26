@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshResolverSideEffects
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshSideEffectGate
 import moe.ouom.neriplayer.core.player.url.resolveSongUrl
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal fun PlayerManager.prefetchNextGenericTrackUrl() {
@@ -51,7 +52,10 @@ internal fun PlayerManager.prefetchNextGenericTrackUrl() {
                 allowGenericPrefetchCache = false,
                 sideEffects = RefreshResolverSideEffects(RefreshSideEffectGate { false })
             )
-            if (result is SongUrlResult.Success && isDirectStreamUrl(result.url)) {
+            // 本地兜底命中的受限歌曲同样值得预取, 否则消费方会白等一个不落盘的任务
+            if (result is SongUrlResult.Success &&
+                (isDirectStreamUrl(result.url) || LocalSongSupport.isLocalMediaUri(result.url))
+            ) {
                 genericUrlPrefetchCache.put(
                     key = cacheKey,
                     result = result,
@@ -117,15 +121,26 @@ internal fun PlayerManager.cancelGenericUrlPrefetchUnlessReusableForSong(
 internal suspend fun PlayerManager.consumeGenericUrlPrefetch(
     cacheKey: String
 ): SongUrlResult.Success? {
-    genericUrlPrefetchCache.consume(cacheKey, SystemClock.elapsedRealtime())?.let { result ->
-        NPLogger.d("NERI-PlayerManager", "generic URL prefetch cache hit: key=$cacheKey")
-        return result
-    }
+    consumeValidGenericUrlPrefetch(cacheKey)?.let { return it }
     val activeJob = currentGenericUrlPrefetchJob
         ?.takeIf { it.isActive && currentGenericUrlPrefetchKey == cacheKey }
         ?: return null
     activeJob.join()
+    return consumeValidGenericUrlPrefetch(cacheKey)
+}
+
+private fun PlayerManager.consumeValidGenericUrlPrefetch(cacheKey: String): SongUrlResult.Success? {
     val result = genericUrlPrefetchCache.consume(cacheKey, SystemClock.elapsedRealtime()) ?: return null
+    // 预取到消费之间开关可能被关掉或文件失效, 复验不过就丢弃走全新解析
+    if (LocalSongSupport.isLocalMediaUri(result.url) &&
+        (!neteaseLocalSourceFallbackEnabled || !isReadableLocalMediaUri(result.url))
+    ) {
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "drop stale local prefetch result: key=$cacheKey"
+        )
+        return null
+    }
     NPLogger.d("NERI-PlayerManager", "generic URL prefetch cache hit: key=$cacheKey")
     return result
 }

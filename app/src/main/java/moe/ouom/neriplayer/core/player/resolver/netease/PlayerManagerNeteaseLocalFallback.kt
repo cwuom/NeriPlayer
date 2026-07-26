@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.player.resolver.netease
 
+import androidx.core.net.toUri
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -31,11 +32,15 @@ internal fun PlayerManager.tryResolveNeteaseMatchedLocalSource(song: SongItem): 
             "NERI-PlayerManager",
             "Netease source unavailable, fallback to matched local audio: " +
                 "song=${song.name}, matchedSongId=${candidate.matchedSongId}, " +
-                "local=${candidate.localFileName ?: localMediaUri}"
+                "local=${candidate.localFileName ?: localMediaUri}, " +
+                "songDurationMs=${song.durationMs}, localDurationMs=${candidate.durationMs}"
         )
+        val playableAudioInfo = runCatching { playableUrl.toUri() }.getOrNull()
+            ?.let { buildLocalPlaybackAudioInfo(it, application) }
+            ?: buildLocalPlaybackAudioInfo(candidate, application)
         return SongUrlResult.Success(
             url = playableUrl,
-            audioInfo = buildLocalPlaybackAudioInfo(candidate, application),
+            audioInfo = playableAudioInfo,
             noticeMessage = getLocalizedString(R.string.player_netease_local_fallback_notice)
         )
     }
