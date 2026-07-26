@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.api.youtube
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class YouTubeBootstrapHtmlSourceTest {
@@ -140,5 +141,70 @@ class YouTubeBootstrapHtmlSourceTest {
         )
 
         assertEquals("20550", source.optionalNumber("STS", "signatureTimestamp"))
+    }
+
+    @Test
+    fun optionalString_prefersShallowFieldOverSameNameNestedDeeper() {
+        val source = YouTubeBootstrapHtmlSource(
+            """
+                <script>
+                ytcfg.set({
+                  "INNERTUBE_API_KEY": "top-level",
+                  "WEB_PLAYER_CONTEXT_CONFIGS": {
+                    "WEB_PLAYER_CONTEXT_CONFIG_ID_MUSIC_WATCH": {
+                      "INNERTUBE_API_KEY": "nested"
+                    }
+                  }
+                });
+                </script>
+            """.trimIndent()
+        )
+
+        assertEquals("top-level", source.optionalString("INNERTUBE_API_KEY"))
+    }
+
+    @Test
+    fun optionalString_skipsBlankScalarsAndKeepsSearchingDeeper() {
+        val source = YouTubeBootstrapHtmlSource(
+            """
+                <script>
+                ytcfg.set({
+                  "INNERTUBE_API_KEY": "anchor",
+                  "VISITOR_DATA": "",
+                  "NESTED": { "VISITOR_DATA": "real-visitor-data" }
+                });
+                </script>
+            """.trimIndent()
+        )
+
+        assertEquals("real-visitor-data", source.optionalString("VISITOR_DATA"))
+    }
+
+    @Test
+    fun optionalString_resolvesAbsentOptionalFieldsWithoutScanningWholeDocument() {
+        // 首页正文按 MB 计，缺失的可选字段过去每个都要全文正则两遍
+        val filler = "<div>x</div>\\x20".repeat(60_000)
+        val source = YouTubeBootstrapHtmlSource(
+            """
+                <script>
+                ytcfg.set({
+                  "INNERTUBE_API_KEY": "api-key",
+                  "VISITOR_DATA": "visitor-data"
+                });
+                </script>
+                $filler
+            """.trimIndent()
+        )
+
+        val startedAtMs = System.currentTimeMillis()
+        assertEquals("api-key", source.optionalString("INNERTUBE_API_KEY"))
+        assertEquals("", source.optionalString("appInstallData"))
+        assertEquals("", source.optionalString("coldConfigData"))
+        assertEquals("", source.optionalString("rolloutToken"))
+        assertEquals("", source.optionalString("deviceExperimentId"))
+        assertEquals("", source.optionalNumber("SESSION_INDEX"))
+        val elapsedMs = System.currentTimeMillis() - startedAtMs
+
+        assertTrue("bootstrap 字段解析耗时 ${elapsedMs}ms", elapsedMs < 2_000L)
     }
 }

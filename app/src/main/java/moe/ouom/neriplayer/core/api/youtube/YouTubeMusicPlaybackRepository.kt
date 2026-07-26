@@ -213,6 +213,59 @@ internal object NewPipeFallbackTracker {
     }
 }
 
+/**
+ * 记录哪些 player client 正在稳定地拒绝请求
+ *
+ * ANDROID_MUSIC 在部分账号和出口上恒回 400 INVALID_ARGUMENT，换 bootstrap 也没用，
+ * 每次解析都白付一次往返；连续失败到阈值后先停一段时间，成功一次就恢复
+ */
+internal object PlayerClientHealthTracker {
+    private const val FAILURE_THRESHOLD = 3
+    private const val SUPPRESSION_WINDOW_MS = 30L * 60L * 1000L
+
+    private val failures = ConcurrentHashMap<String, AtomicInteger>()
+    private val suppressedUntilMs = ConcurrentHashMap<String, Long>()
+
+    fun isSuppressed(clientName: String, nowMs: Long = System.currentTimeMillis()): Boolean {
+        val until = suppressedUntilMs[clientName] ?: return false
+        if (nowMs >= until) {
+            suppressedUntilMs.remove(clientName)
+            failures.remove(clientName)
+            return false
+        }
+        return true
+    }
+
+    fun recordRejection(clientName: String, nowMs: Long = System.currentTimeMillis()) {
+        val hits = failures.computeIfAbsent(clientName) { AtomicInteger() }.incrementAndGet()
+        if (hits >= FAILURE_THRESHOLD) {
+            suppressedUntilMs[clientName] = nowMs + SUPPRESSION_WINDOW_MS
+        }
+    }
+
+    fun recordSuccess(clientName: String) {
+        failures.remove(clientName)
+        suppressedUntilMs.remove(clientName)
+    }
+
+    fun reset() {
+        failures.clear()
+        suppressedUntilMs.clear()
+    }
+}
+
+/**
+ * 全部候选都被压制时至少留一个，否则解析会直接无路可走
+ */
+internal fun <T> selectUsablePlayerClients(
+    profiles: List<T>,
+    clientName: (T) -> String,
+    isSuppressed: (String) -> Boolean
+): List<T> {
+    val usable = profiles.filterNot { isSuppressed(clientName(it)) }
+    return usable.ifEmpty { profiles }
+}
+
 enum class YouTubePlayableStreamType {
     DIRECT,
     HLS
@@ -1540,7 +1593,10 @@ class YouTubeMusicPlaybackRepository(
     ): PlayerAudioResolution {
         val resolveStartedAtMs = System.currentTimeMillis()
         val bootstrapStartedAtMs = System.currentTimeMillis()
-        var bootstrap = bootstrap(auth, forceRefresh = forceRefresh)
+        // 不把流级 forceRefresh 传下去，切音质或重试都会命中这里，
+        // 而重新拉一次首页再解析要好几秒；bootstrap 真过期由 TTL 和
+        // authFingerprint 判定，请求失败后下面的重试分支会强刷
+        var bootstrap = bootstrap(auth)
         NPLogger.d(
             "YouTubeMusicPlayback",
             "player bootstrap ready: videoId=$videoId, forceRefresh=$forceRefresh, elapsedMs=${playbackElapsedMs(bootstrapStartedAtMs)}"
@@ -1566,7 +1622,12 @@ class YouTubeMusicPlaybackRepository(
             var bestPlayableAudio: YouTubePlayableAudio? = null
             var bestPlayableAudioClientName: String? = null
             var shouldRefreshBootstrapBeforeFallback = false
-            profileLoop@ for (profile in playerClientProfiles()) {
+            val usableProfiles = selectUsablePlayerClients(
+                profiles = playerClientProfiles(),
+                clientName = { it.clientName },
+                isSuppressed = PlayerClientHealthTracker::isSuppressed
+            )
+            profileLoop@ for (profile in usableProfiles) {
                 for ((localeIndex, requestLocale) in requestLocaleCandidates.withIndex()) {
                     try {
                         val root = postPlayerRequest(
@@ -1576,6 +1637,7 @@ class YouTubeMusicPlaybackRepository(
                             profile = profile,
                             requestLocale = requestLocale
                         )
+                        PlayerClientHealthTracker.recordSuccess(profile.clientName)
                         val playability = YouTubeMusicPlaybackParser.parsePlayabilityStatus(root)
                         NPLogger.d(
                             "YouTubeMusicPlayback",
@@ -1757,6 +1819,9 @@ class YouTubeMusicPlaybackRepository(
                             "YouTubeMusicPlayback",
                             "player client request failed: videoId=$videoId, client=${profile.clientName}, locale=${requestLocale.gl}/${requestLocale.hl}, error=${error.message}"
                         )
+                        if (error.isNonRetryablePlayerClientError()) {
+                            PlayerClientHealthTracker.recordRejection(profile.clientName)
+                        }
                         // 脏 IP 下 429/503 先退避再继续下一 client/locale/attempt，避免密集重试加剧限流（#Y5）
                         val backoffMs = rateLimitBackoffMs(error, rateLimitBackoffHits)
                         if (backoffMs != null) {

@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.api.youtube
 
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -20,6 +21,22 @@ internal class YouTubeBootstrapHtmlSource(html: String) {
             ?: normalizedHtml
                 .takeUnless { it == rawHtml }
                 ?.let(::extractYtcfgJson)
+    }
+
+    /**
+     * ytcfg 里的标量按 DFS 前序摊平，同名取最先出现的一个
+     *
+     * 逐字段递归时每个字段都要走一遍完整 JSON 树，而 ytcfg 带着上千条
+     * EXPERIMENT_FLAGS，二十来个字段就是二十遍全树遍历
+     */
+    private val ytcfgScalars by lazy(LazyThreadSafetyMode.NONE) {
+        val scalars = HashMap<String, String>()
+        ytcfg?.let { collectScalarsDeep(it, scalars) }
+        scalars
+    }
+
+    private val hasInlineEscapes by lazy(LazyThreadSafetyMode.NONE) {
+        rawHtml.hasInlineJavascriptEscapes()
     }
 
     fun requireString(
@@ -57,14 +74,19 @@ internal class YouTubeBootstrapHtmlSource(html: String) {
         fieldNames: Array<String>,
         patternBuilder: (String) -> String
     ): String {
-        fieldNames.asSequence()
-            .map { fieldName -> ytcfg.findScalarDeep(fieldName) }
-            .firstOrNull { it.isNotBlank() }
-            ?.let { return it }
+        val scalars = ytcfgScalars
+        fieldNames.forEach { fieldName ->
+            scalars[fieldName]?.let { return it }
+        }
 
         findRegexValue(rawHtml, fieldNames, patternBuilder)
             .takeIf { it.isNotBlank() }
             ?.let { return it }
+
+        // 没有转义序列时解码必然原样返回，别为此复制一份 MB 级字符串
+        if (!hasInlineEscapes) {
+            return ""
+        }
 
         return normalizedHtml
             .takeUnless { it == rawHtml }
@@ -143,8 +165,10 @@ internal class YouTubeBootstrapHtmlSource(html: String) {
         patternBuilder: (String) -> String
     ): String {
         return fieldNames.asSequence()
+            // 模式里字段名是字面量，名字都不在文档里就不必扫一遍 MB 级正文
+            .filter { fieldName -> source.contains(fieldName) }
             .map { fieldName ->
-                Regex(patternBuilder(fieldName))
+                compiledFieldPattern(patternBuilder(fieldName))
                     .find(source)
                     ?.groupValues
                     ?.getOrNull(1)
@@ -165,12 +189,7 @@ internal class YouTubeBootstrapHtmlSource(html: String) {
 }
 
 private fun decodeInlineJavascriptEscapes(source: String): String {
-    if (!source.contains('\\') ||
-        (!source.contains("\\x") &&
-            !source.contains("\\X") &&
-            !source.contains("\\u") &&
-            !source.contains("\\U"))
-    ) {
+    if (!source.hasInlineJavascriptEscapes()) {
         return source
     }
     var normalized = source
@@ -196,29 +215,49 @@ private val sourceEscapePattern = Regex(
     """\\+(?:[xX]([0-9A-Fa-f]{2})|[uU]([0-9A-Fa-f]{4}))"""
 )
 
-private fun JSONObject?.findScalarDeep(fieldName: String): String {
-    if (this == null) {
-        return ""
-    }
-    scalarToString(opt(fieldName)).takeIf { it.isNotBlank() }?.let { return it }
-    val keys = keys()
+private fun collectScalarsDeep(node: JSONObject, into: MutableMap<String, String>) {
+    // 本层标量先落表再下钻，保证浅层同名字段压过深层的
+    val children = ArrayList<Any>()
+    val keys = node.keys()
     while (keys.hasNext()) {
-        when (val value = opt(keys.next())) {
-            is JSONObject -> value.findScalarDeep(fieldName).takeIf { it.isNotBlank() }?.let { return it }
-            is JSONArray -> value.findScalarDeep(fieldName).takeIf { it.isNotBlank() }?.let { return it }
+        val key = keys.next()
+        when (val value = node.opt(key)) {
+            is JSONObject -> children.add(value)
+            is JSONArray -> children.add(value)
+            else -> {
+                val scalar = scalarToString(value)
+                if (scalar.isNotBlank() && !into.containsKey(key)) {
+                    into[key] = scalar
+                }
+            }
         }
     }
-    return ""
+    children.forEach { child ->
+        when (child) {
+            is JSONObject -> collectScalarsDeep(child, into)
+            is JSONArray -> collectScalarsDeep(child, into)
+        }
+    }
 }
 
-private fun JSONArray.findScalarDeep(fieldName: String): String {
-    for (index in 0 until length()) {
-        when (val value = opt(index)) {
-            is JSONObject -> value.findScalarDeep(fieldName).takeIf { it.isNotBlank() }?.let { return it }
-            is JSONArray -> value.findScalarDeep(fieldName).takeIf { it.isNotBlank() }?.let { return it }
+private fun collectScalarsDeep(node: JSONArray, into: MutableMap<String, String>) {
+    for (index in 0 until node.length()) {
+        when (val value = node.opt(index)) {
+            is JSONObject -> collectScalarsDeep(value, into)
+            is JSONArray -> collectScalarsDeep(value, into)
         }
     }
-    return ""
+}
+
+private val compiledFieldPatterns = ConcurrentHashMap<String, Regex>()
+
+private fun compiledFieldPattern(pattern: String): Regex {
+    return compiledFieldPatterns.getOrPut(pattern) { Regex(pattern) }
+}
+
+private fun String.hasInlineJavascriptEscapes(): Boolean {
+    return contains('\\') &&
+        (contains("\\x") || contains("\\X") || contains("\\u") || contains("\\U"))
 }
 
 private fun scalarToString(value: Any?): String {
