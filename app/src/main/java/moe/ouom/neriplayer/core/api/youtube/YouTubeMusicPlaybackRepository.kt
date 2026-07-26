@@ -185,10 +185,40 @@ internal fun rateLimitBackoffMs(error: Throwable?, priorHits: Int): Long? {
 
 @VisibleForTesting
 internal object NewPipeFallbackTracker {
-    private const val FAILURE_THRESHOLD = 2
+    /**
+     * 一次失败就够
+     *
+     * NewPipe 的反混淆是拿固定正则去套 player.js, 同一版地址要么匹配要么不匹配, 没有偶发;
+     * 等第二次样本等于让冷启动的头两首各白付三秒多
+     */
+    private const val FAILURE_THRESHOLD = 1
     private val signatureFailures = ConcurrentHashMap<String, AtomicInteger>()
 
     private val throttlingFailures = ConcurrentHashMap<String, AtomicInteger>()
+
+    @Volatile
+    private var store: YouTubeNewPipeFallbackStore? = null
+
+    /** 存档只在进程内挂一次, 之后每次记录都同步写回 */
+    fun attachStore(newStore: YouTubeNewPipeFallbackStore) {
+        if (store != null) {
+            return
+        }
+        synchronized(this) {
+            if (store != null) {
+                return
+            }
+            store = newStore
+            newStore.load()?.let { snapshot ->
+                snapshot.signature.forEach { key ->
+                    signatureFailures.computeIfAbsent(key) { AtomicInteger() }.set(FAILURE_THRESHOLD)
+                }
+                snapshot.throttling.forEach { key ->
+                    throttlingFailures.computeIfAbsent(key) { AtomicInteger() }.set(FAILURE_THRESHOLD)
+                }
+            }
+        }
+    }
 
     fun maybeSkipSignature(playerJsUrl: String): Boolean {
         val key = playerJsUrl.ifBlank { "<unknown-signature>" }
@@ -203,11 +233,30 @@ internal object NewPipeFallbackTracker {
     fun recordSignatureFailure(playerJsUrl: String) {
         val key = playerJsUrl.ifBlank { "<unknown-signature>" }
         signatureFailures.computeIfAbsent(key) { AtomicInteger() }.incrementAndGet()
+        persist(signatureKey = key, throttlingKey = null)
     }
 
     fun recordThrottlingFailure(playerJsUrl: String) {
         val key = playerJsUrl.ifBlank { "<unknown-throttling>" }
         throttlingFailures.computeIfAbsent(key) { AtomicInteger() }.incrementAndGet()
+        persist(signatureKey = null, throttlingKey = key)
+    }
+
+    private fun persist(signatureKey: String?, throttlingKey: String?) {
+        val target = store ?: return
+        synchronized(this) {
+            val snapshot = target.load() ?: NewPipeFallbackSnapshot()
+            target.save(
+                snapshot.copy(
+                    signature = signatureKey
+                        ?.let { retainRecentNewPipeFallbackKeys(snapshot.signature, it) }
+                        ?: snapshot.signature,
+                    throttling = throttlingKey
+                        ?.let { retainRecentNewPipeFallbackKeys(snapshot.throttling, it) }
+                        ?: snapshot.throttling
+                )
+            )
+        }
     }
 
     fun reset() {
@@ -1214,6 +1263,13 @@ class YouTubeMusicPlaybackRepository(
     }
 
     private val bootstrapStore = applicationContext?.let { YouTubeBootstrapStore(it) }
+
+    init {
+        // NewPipe 解不动哪版 player.js 是确定的, 记到下次冷启动免得再白付一次三秒
+        applicationContext?.let { context ->
+            runCatching { NewPipeFallbackTracker.attachStore(YouTubeNewPipeFallbackStore(context)) }
+        }
+    }
 
     @Volatile
     private var bootstrapCache: YouTubePlaybackBootstrap? = null
