@@ -124,6 +124,57 @@ class YouTubeCookieRotatorTest {
     }
 
     @Test
+    fun retriesAtTheNormalCadenceWhileFailuresLookLikeNoise() {
+        // 前几次失败当抖动处理, 不该因此拉长正常轮换
+        for (rejections in 0 until ROTATION_REJECTIONS_BEFORE_BACKOFF) {
+            assertEquals(ROTATION_MIN_INTERVAL_MS, nextYouTubeRotationBackoffMs(rejections))
+        }
+    }
+
+    @Test
+    fun backsOffExponentiallyOnceFailuresLookPersistent() {
+        assertEquals(
+            ROTATION_MIN_INTERVAL_MS * 2,
+            nextYouTubeRotationBackoffMs(ROTATION_REJECTIONS_BEFORE_BACKOFF)
+        )
+        assertEquals(
+            ROTATION_MIN_INTERVAL_MS * 4,
+            nextYouTubeRotationBackoffMs(ROTATION_REJECTIONS_BEFORE_BACKOFF + 1)
+        )
+        assertEquals(
+            ROTATION_MIN_INTERVAL_MS * 8,
+            nextYouTubeRotationBackoffMs(ROTATION_REJECTIONS_BEFORE_BACKOFF + 2)
+        )
+    }
+
+    @Test
+    fun neverBacksOffPastTheCapEvenAfterALongDeadStreak() {
+        // 端点对某些账号恒回 403, 退避要收敛而不是越滚越大直到溢出
+        assertEquals(ROTATION_MAX_BACKOFF_MS, nextYouTubeRotationBackoffMs(100))
+        assertEquals(ROTATION_MAX_BACKOFF_MS, nextYouTubeRotationBackoffMs(Int.MAX_VALUE))
+    }
+
+    @Test
+    fun honoursACallerSuppliedIntervalWhenDecidingToRotate() {
+        val backoffMs = nextYouTubeRotationBackoffMs(ROTATION_REJECTIONS_BEFORE_BACKOFF)
+
+        assertFalse(
+            shouldRotateYouTubeCookies(
+                lastRotatedAtMs = 1_000L,
+                nowMs = 1_000L + backoffMs - 1L,
+                minIntervalMs = backoffMs
+            )
+        )
+        assertTrue(
+            shouldRotateYouTubeCookies(
+                lastRotatedAtMs = 1_000L,
+                nowMs = 1_000L + backoffMs,
+                minIntervalMs = backoffMs
+            )
+        )
+    }
+
+    @Test
     fun countsAFirstTimeCookieAsChanged() {
         val changed = collectChangedRotatedCookies(
             currentCookies = emptyMap(),

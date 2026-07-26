@@ -47,6 +47,14 @@ internal const val ROTATION_MIN_INTERVAL_MS = 60_000L
 /** 服务端没告诉我们周期时的兜底, 与它自己声明的 600 秒一致 */
 internal const val ROTATION_DEFAULT_INTERVAL_MS = 600_000L
 
+/** 允许几次连续失败再开始退避, 留够余量给网络抖动 */
+internal const val ROTATION_REJECTIONS_BEFORE_BACKOFF = 3
+
+/** 退避上限, 到这里基本等于放弃轮换, 保活交回 WebView 刷新那条路 */
+internal const val ROTATION_MAX_BACKOFF_MS = 6L * 60L * 60L * 1000L
+
+private const val ROTATION_MAX_BACKOFF_EXPONENT = 16
+
 /** 轮换真正会换掉的两项, 其余 Set-Cookie 一律不收 */
 internal val ROTATED_COOKIE_KEYS = listOf("__Secure-1PSIDTS", "__Secure-3PSIDTS")
 
@@ -140,6 +148,31 @@ internal fun collectRotatedYouTubeCookies(setCookieHeaders: List<String>): Map<S
     return rotated
 }
 
+/**
+ * 连续被拒之后要等多久再试
+ *
+ * 端点对某些账号会一直回 403, 这时每分钟重打一次只是白烧请求还容易被更严地限流;
+ * 连续失败就指数退避, 一次成功立刻清零, 所以偶发抖动不会把正常轮换拖慢
+ */
+internal fun nextYouTubeRotationBackoffMs(
+    consecutiveRejections: Int,
+    minIntervalMs: Long = ROTATION_MIN_INTERVAL_MS,
+    maxBackoffMs: Long = ROTATION_MAX_BACKOFF_MS
+): Long {
+    if (consecutiveRejections < ROTATION_REJECTIONS_BEFORE_BACKOFF) {
+        return minIntervalMs
+    }
+    val exponent = (consecutiveRejections - ROTATION_REJECTIONS_BEFORE_BACKOFF + 1)
+        .coerceAtMost(ROTATION_MAX_BACKOFF_EXPONENT)
+    var backoffMs = minIntervalMs
+    repeat(exponent) {
+        backoffMs = backoffMs.saturatingDouble()
+    }
+    return backoffMs.coerceAtMost(maxBackoffMs)
+}
+
+private fun Long.saturatingDouble(): Long = if (this > Long.MAX_VALUE / 2) Long.MAX_VALUE else this * 2
+
 internal fun shouldRotateYouTubeCookies(
     lastRotatedAtMs: Long,
     nowMs: Long,
@@ -183,6 +216,10 @@ internal class YouTubeCookieRotator(
     @Volatile
     private var rotationIntervalMs: Long = ROTATION_DEFAULT_INTERVAL_MS
 
+    /** 端点对部分账号恒回 403, 记着连续失败次数好把重试拉开 */
+    @Volatile
+    private var consecutiveRejections: Int = 0
+
     /** 轮换请求自带 Cookie 头, 客户端再插一手只会把两份 cookie 混在一起 */
     private val rotationClient: OkHttpClient by lazy {
         httpClientProvider()
@@ -209,8 +246,15 @@ internal class YouTubeCookieRotator(
             return@withContext emptyMap()
         }
         val now = nowMsProvider()
-        if (!force && !shouldRotateYouTubeCookies(lastRotatedAtMs, now)) {
-            NPLogger.d(TAG, "rotate throttled: sinceLastMs=${now - lastRotatedAtMs}")
+        val retryIntervalMs = nextYouTubeRotationBackoffMs(consecutiveRejections)
+        // 退避期内连 force 也不放行, 否则后台任务每次醒来都会去撞同一堵墙
+        if (!shouldRotateYouTubeCookies(lastRotatedAtMs, now, retryIntervalMs) &&
+            (!force || retryIntervalMs > ROTATION_MIN_INTERVAL_MS)
+        ) {
+            NPLogger.d(
+                TAG,
+                "rotate throttled: sinceLastMs=${now - lastRotatedAtMs} retryIntervalMs=$retryIntervalMs rejections=$consecutiveRejections"
+            )
             return@withContext emptyMap()
         }
 
@@ -241,9 +285,14 @@ internal class YouTubeCookieRotator(
             val (code, setCookieHeaders, body) = outcome
             lastRotatedAtMs = nowMsProvider()
             if (code != 200) {
-                NPLogger.w(TAG, "rotate rejected: code=$code")
+                consecutiveRejections += 1
+                NPLogger.w(
+                    TAG,
+                    "rotate rejected: code=$code rejections=$consecutiveRejections nextRetryMs=${nextYouTubeRotationBackoffMs(consecutiveRejections)}"
+                )
                 return@withContext emptyMap()
             }
+            consecutiveRejections = 0
             rotationIntervalMs = parseYouTubeRotationIntervalMs(body)
             val rotated = collectRotatedYouTubeCookies(setCookieHeaders)
             val changed = collectChangedRotatedCookies(cookies, rotated)
@@ -256,7 +305,8 @@ internal class YouTubeCookieRotator(
             throw error
         } catch (error: Exception) {
             lastRotatedAtMs = nowMsProvider()
-            NPLogger.w(TAG, "rotate failed: ${error.message}")
+            consecutiveRejections += 1
+            NPLogger.w(TAG, "rotate failed: ${error.message} rejections=$consecutiveRejections")
             emptyMap()
         }
     }
