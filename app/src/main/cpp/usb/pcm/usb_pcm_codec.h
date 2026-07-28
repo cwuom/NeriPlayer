@@ -6,6 +6,10 @@ namespace neri::usb {
 
 int bytesPerSampleForEncoding(int encoding);
 
+bool isLittleEndianIntegerPcmEncoding(int encoding);
+
+int integerPcmBitsForEncoding(int encoding);
+
 float readEncodedPcmSample(const uint8_t* input, int encoding);
 
 float readIntegerPcmSample(

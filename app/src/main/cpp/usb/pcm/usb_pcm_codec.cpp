@@ -43,6 +43,28 @@ int bytesPerSampleForEncoding(int encoding) {
     }
 }
 
+bool isLittleEndianIntegerPcmEncoding(int encoding) {
+    return encoding == kEncodingPcm16Bit ||
+        encoding == kEncodingPcm24Bit ||
+        encoding == kEncodingPcm32Bit;
+}
+
+int integerPcmBitsForEncoding(int encoding) {
+    switch (encoding) {
+        case kEncodingPcm16Bit:
+        case kEncodingPcm16BitBigEndian:
+            return 16;
+        case kEncodingPcm24Bit:
+        case kEncodingPcm24BitBigEndian:
+            return 24;
+        case kEncodingPcm32Bit:
+        case kEncodingPcm32BitBigEndian:
+            return 32;
+        default:
+            return 0;
+    }
+}
+
 float readEncodedPcmSample(const uint8_t* input, int encoding) {
     if (input == nullptr) {
         return 0.0f;
@@ -145,11 +167,12 @@ void writeIntegerPcmSample(
     }
     const int validBits = std::clamp(bitsPerSample, 1, std::min(32, subslotBytes * 8));
     const float clipped = std::isfinite(sample) ? std::clamp(sample, -1.0f, 1.0f) : 0.0f;
-    const int64_t negativeScale = int64_t { 1 } << (validBits - 1);
-    const int64_t positiveScale = negativeScale - 1;
-    const int64_t value = clipped >= 0.0f
-        ? static_cast<int64_t>(std::llround(static_cast<double>(clipped) * positiveScale))
-        : static_cast<int64_t>(std::llround(static_cast<double>(clipped) * negativeScale));
+    const int64_t scale = int64_t { 1 } << (validBits - 1);
+    const int64_t positiveScale = scale - 1;
+    const int64_t rounded = static_cast<int64_t>(
+        std::llround(static_cast<double>(clipped) * scale)
+    );
+    const int64_t value = std::clamp(rounded, -scale, positiveScale);
     const uint64_t validMask = validBits == 32
         ? UINT64_C(0xFFFFFFFF)
         : (UINT64_C(1) << validBits) - 1U;

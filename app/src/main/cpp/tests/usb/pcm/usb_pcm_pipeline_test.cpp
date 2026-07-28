@@ -362,6 +362,24 @@ void verifiesFloatInputPassThroughProduces32BitUsbSignal() {
     assert(secondLeft < -0.49f && secondLeft >= -0.5f);
 }
 
+void verifies32BitIntegerPassThroughPreservesRawBytes() {
+    neri::usb::PcmPipeline pipeline;
+    std::string error;
+    auto config = configFor32Bit(48000, 48000);
+    config.input.encoding = 22;
+    assert(pipeline.configure(config, &error));
+
+    const std::array<uint8_t, 16> input {
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
+        0xFF, 0xFF, 0xFF, 0x7F, 0x00, 0x00, 0x00, 0x80
+    };
+    assert(pipeline.write(input.data(), input.size(), &error) == input.size());
+
+    std::array<uint8_t, 16> output {};
+    assert(pipeline.fill(output.data(), output.size(), true) == output.size());
+    assert(output == input);
+}
+
 void verifiesStereoChannelPeaksPreserveChannelOrder() {
     neri::usb::PcmPipeline pipeline;
     std::string error;
@@ -448,6 +466,36 @@ void verifiesIntegerCodecDepthsAndEndianInputs() {
     assert(padded24Output[3] == 0x80);
     assert(neri::usb::readIntegerPcmSample(padded24Output.data(), 4, 24) == -1.0f);
 
+    std::array<uint8_t, 3> positive24 { 0xFF, 0xFF, 0x7F };
+    const float positive24Sample = neri::usb::readIntegerPcmSample(
+        positive24.data(),
+        3,
+        24
+    );
+    std::array<uint8_t, 3> positive24RoundTrip {};
+    neri::usb::writeIntegerPcmSample(
+        positive24RoundTrip.data(),
+        3,
+        24,
+        positive24Sample
+    );
+    assert(positive24RoundTrip == positive24);
+
+    std::array<uint8_t, 2> positive16 { 0xFF, 0x7F };
+    const float positive16Sample = neri::usb::readIntegerPcmSample(
+        positive16.data(),
+        2,
+        16
+    );
+    std::array<uint8_t, 2> positive16RoundTrip {};
+    neri::usb::writeIntegerPcmSample(
+        positive16RoundTrip.data(),
+        2,
+        16,
+        positive16Sample
+    );
+    assert(positive16RoundTrip == positive16);
+
     constexpr std::array<uint8_t, 2> littleEndianHalf { 0x00, 0x40 };
     constexpr std::array<uint8_t, 2> bigEndianHalf { 0x40, 0x00 };
     assert(neri::usb::readEncodedPcmSample(littleEndianHalf.data(), 2) == 0.5f);
@@ -486,6 +534,7 @@ int main() {
     verifiesBackpressureSnapshotTracksFullRing();
     verifiesFloatInputResampleProducesUsbSignalStats();
     verifiesFloatInputPassThroughProduces32BitUsbSignal();
+    verifies32BitIntegerPassThroughPreservesRawBytes();
     verifiesStereoChannelPeaksPreserveChannelOrder();
     verifies32BitInputCanDrive24BitUsb32Container();
     verifiesIntegerCodecDepthsAndEndianInputs();

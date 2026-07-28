@@ -235,6 +235,20 @@ size_t PcmPipeline::freeBytesLocked() const {
     return ring_.empty() ? 0 : ring_.size() - levelBytes_;
 }
 
+bool PcmPipeline::canCopyIntegerFrames(
+    int inputSampleBytes,
+    int inputFrameBytes
+) const {
+    return inputFormat_.sampleRate == outputFormat_.sampleRate &&
+        inputFormat_.channelCount == outputFormat_.channelCount &&
+        isLittleEndianIntegerPcmEncoding(inputFormat_.encoding) &&
+        integerPcmBitsForEncoding(inputFormat_.encoding) == outputFormat_.bitsPerSample &&
+        inputSampleBytes == outputFormat_.subslotBytes &&
+        inputFrameBytes == outputFormat_.frameBytes &&
+        outputFormat_.frameBytes ==
+            outputFormat_.channelCount * outputFormat_.subslotBytes;
+}
+
 void PcmPipeline::beginBackpressureLocked(int64_t nowUs) {
     if (backpressureStartedAtUs_ > 0) {
         return;
@@ -323,6 +337,30 @@ size_t PcmPipeline::write(const uint8_t* input, size_t inputBytes, std::string* 
     }
     if (freeOutputFrames == 0) {
         return 0;
+    }
+
+    if (canCopyIntegerFrames(inputSampleBytes, inputFrameBytes)) {
+        inputFrames = std::min(
+            inputFrames,
+            static_cast<int>(std::min<size_t>(
+                freeOutputFrames,
+                static_cast<size_t>(std::numeric_limits<int32_t>::max())
+            ))
+        );
+        const size_t copyBytes = static_cast<size_t>(inputFrames) *
+            static_cast<size_t>(inputFrameBytes);
+        std::lock_guard<std::mutex> guard(lock_);
+        if (freeBytesLocked() < copyBytes) {
+            beginBackpressureLocked(monotonicMicros());
+            return 0;
+        }
+        endBackpressureLocked(monotonicMicros());
+        const size_t written = writeRingLocked(input, copyBytes);
+        if (written != copyBytes) {
+            return 0;
+        }
+        inputBytes_ += static_cast<int64_t>(copyBytes);
+        return copyBytes;
     }
 
     const double ratio = static_cast<double>(inputFormat_.sampleRate) /
@@ -485,6 +523,11 @@ void PcmPipeline::applyGain(uint8_t* output, size_t bytes) {
             1,
             outputFormat_.sampleRate * kGainRampDurationMs / 1000
         );
+    }
+    if (gainRampFramesRemaining_ == 0 &&
+        std::abs(applied - 1.0f) <= 0.000001f &&
+        std::abs(gainRampTarget_ - 1.0f) <= 0.000001f) {
+        return;
     }
     for (int frame = 0; frame < frames; ++frame) {
         if (gainRampFramesRemaining_ > 0) {

@@ -85,6 +85,10 @@ public:
 
 private:
     [[nodiscard]] size_t freeBytesLocked() const;
+    [[nodiscard]] bool canCopyIntegerFrames(
+        int inputSampleBytes,
+        int inputFrameBytes
+    ) const;
     void beginBackpressureLocked(int64_t nowUs);
     void endBackpressureLocked(int64_t nowUs);
     size_t writeRingLocked(const uint8_t* input, size_t bytes);
