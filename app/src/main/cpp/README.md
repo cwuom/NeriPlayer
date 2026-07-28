@@ -1,6 +1,6 @@
 # NeriPlayer Native Source License / Native 源码授权说明
 
-Last updated / 最后更新：2026-07-21
+Last updated / 最后更新：2026-07-28
 
 This directory contains NeriPlayer native source code, and also includes
 third-party native source code used by the build.

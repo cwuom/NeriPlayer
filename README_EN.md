@@ -132,6 +132,12 @@ Current positioning:
   `PlayerManagerNeteaseAutoSourceSwitch` scores Bilibili candidates by title,
   artist, and duration. Playback errors can also refresh the current URL before
   falling back to skip/stop behavior.
+- **YouTube resolution has layered fallbacks**:
+  valid signed-in identity cookies are preserved and rotated when needed, while
+  anonymous visitor sessions keep separate bootstrap and PoToken state. Verified
+  signature/n, `player.js`, and challenge results are cached and reused; stale
+  player code or a CDN-rejected direct URL falls through to EJS/HLS instead of
+  retrying the same unusable stream.
 - **High-performance GLSL/AGSL fluid background**:
   the Now Playing dynamic background is rendered frame-by-frame by
   `BgEffectPainter`, `RuntimeShader`, and
@@ -184,7 +190,9 @@ Current positioning:
   startup watchdogs, foreground/background health audits, dynamic transfer
   scaling, and automatic stall recovery are now part of the path. After a long
   scheduling gap, the runtime reacquires the feedback clock instead of continuing
-  with a stale rate estimate.
+  with a stale rate estimate. Foreground/background recovery chooses wake behavior
+  from the network or local source, and bit-perfect volume keeps software gain at
+  0 dB so the DAC controls the level.
 - **Downloads have moved from "can save" to "can recover"**:
   downloads do not use the system `DownloadManager`. They use the shared
   `OkHttpClient`, configurable concurrency, staging files, and sidecar metadata.
@@ -205,7 +213,9 @@ Current positioning:
   stable track identity, then participates in sync merging. Remote sync snapshots
   tolerate legacy or malformed missing-field payloads, filter records without
   resolvable track identity, and keep songs with missing `addedAt` behind dated
-  songs in current display-order playlists.
+  songs in current display-order playlists. Playback and traffic statistics use
+  debounced batch writes, flush at important lifecycle points, and keep a bounded
+  number of daily buckets.
 - **Traffic controls are built into the product, not bolted on later**:
   `TrafficStatsRepository` tracks playback/download bytes, Wi-Fi/mobile/roaming
   distribution, and cache-hit bytes. Download flows can also warn before high-risk
@@ -239,7 +249,9 @@ Current positioning:
   position drift by threshold, and reloads the authoritative stream after an
   asynchronous shared link arrives so pending local startup cannot override
   the room's pause/play command.
-  Durable Objects persist room state while WebSocket keeps active members in sync.
+  Invites carry the room secret needed for a first join, while member secrets are
+  kept out of public room state. Durable Objects persist room state while WebSocket
+  keeps active members in sync.
 
 ---
 
@@ -317,10 +329,14 @@ For release build and signing details, see
   `PlayerManager` handles stream resolution, queue state, shuffle/repeat,
   persistence, failure retry, playback URL refresh, YouTube prefetching, and
   platform-specific request policies.
+- YouTube playback preserves valid login cookies, supports cookie rotation and
+  anonymous resolution, reuses bootstrap/`player.js`/PoToken caches with priority
+  prefetching, and falls back to EJS/HLS after direct-link rejection.
 - 🔁 **NetEase auto source switch**:
   when a NetEase song is unavailable, has no playable URL, or only returns a
   preview clip, the player first tries lower quality and can then match a
-  Bilibili fallback source by title, artist, and duration.
+  Bilibili fallback source by title, artist, and duration. When enabled, it can
+  also match a readable local audio file by stable metadata.
 - 🧯 **Playback failure fallback**:
   playback errors first try refreshing the active playback URL. Bilibili stream
   resolution retries missing DASH audio and can fall back to html5/mp4 progressive
@@ -350,7 +366,9 @@ For release build and signing details, see
   long scheduling gaps. If playback startup, native transfer backpressure, or
   foreground/background transitions become unhealthy, the app tries in-place
   reconfiguration, coordinated AudioSink recreation, dynamic transfer scaling,
-  and soft recovery before falling back to Android system output.
+  and soft recovery before falling back to Android system output. Foreground/background
+  recovery chooses wake behavior for network or local playback, and bit-perfect volume
+  keeps software gain at 0 dB for DAC-side volume control.
 - 💾 **Configurable streaming cache**:
   audio cache uses `SimpleCache + LRU`, defaults to **1 GB**, and supports
   cleanup for audio cache, image cache, download staging, share staging, and
@@ -365,7 +383,9 @@ For release build and signing details, see
   local management with lyrics, covers, metadata, and audio tags. Default
   download concurrency is **6**, configurable up to **8**. Download queues are
   persisted so unfinished work can recover after restart, while complete local
-  files can settle directly as finished.
+  files can settle directly as finished. `googlevideo` direct links use chunked
+  Range requests and resume by offset; if post-download tag writing fails, the
+  finalized audio file is retained.
 - 📁 **Migratable download directory**:
   downloads default to the app-managed directory, but can be moved to a custom
   SAF directory. Existing downloads are migrated when switching directories.
@@ -374,7 +394,8 @@ For release build and signing details, see
 - 🎵 **Local audio import and scanning**:
   supports system `VIEW / SEND / SEND_MULTIPLE` for `audio/*`, device music
   scanning, authorized-folder scanning, and nearby sidecar lyrics/covers.
-  Large scans can show a quick preview first, then continue background metadata hydration.
+  Large scans can show a quick preview first, then continue background metadata hydration;
+  an empty SAF listing cannot accidentally clear an existing directory index.
 - 👤 **Local artist grouping and detail pages**:
   local songs are grouped by display artist automatically, including common
   `feat.`, `with`, Chinese conjunction, punctuation, and slash-separated artist
@@ -399,7 +420,8 @@ For release build and signing details, see
 - 📊 **Playback stats**:
   records play count, accumulated listen time, first/last played time, and daily
   stat buckets by stable track identity. Day/week/month/year/all-time views are
-  available, and stats can be synced through GitHub/WebDAV when configured.
+  available, and stats can be synced through GitHub/WebDAV when configured. Writes are
+  debounced and flushed at important lifecycle points, with a retention bound on daily buckets.
 - 📶 **Traffic stats and download risk prompts**:
   tracks playback/download bytes, Wi-Fi/mobile/roaming distribution, and cache
   hits, and can warn before downloads on mobile data or roaming.
@@ -410,7 +432,9 @@ For release build and signing details, see
   create or join rooms, sync playback state over WebSocket, support host/listener
   permissions, member-control toggles, auto-pause on member changes,
   repeat/shuffle mode sync, optional sharing of controller-resolved stream URLs,
-  invite links, deep links, custom server URLs, and host-offline detection.
+  invite links, deep links, custom server URLs, and host-offline detection. Invites carry
+  a room join secret, member reconnects use member secrets, outdated client control events
+  are filtered, and `REQUEST_SET_TRACK` can only choose a song already in the current queue.
 - 🌈 **Personalization and themes**:
   auto/light/dark mode, dynamic color, seed colors, theme styles, UI scaling,
   custom background image, haptic feedback, lyric font size, lyric blur,
@@ -542,10 +566,13 @@ For release build and signing details, see
 - Bilibili playback uses `ConditionalHttpDataSourceFactory` to append
   `Referer / User-Agent / Cookie`.
 - YouTube Music playback includes Google Video Range support, seek refresh policy,
-  and prefetching.
+  and prefetching. Login cookies, anonymous sessions, bootstrap, `player.js`, and
+  PoToken caches are reused, with EJS/HLS fallback after direct-link rejection.
+  Large seeks in long YouTube audio use a shorter startup-recovery window instead
+  of waiting for the normal stream watchdog timeout.
 - NetEase playback automatically tries lower quality when the current quality is
-  unavailable, and can switch to a matched Bilibili fallback source for
-  restricted or preview-only tracks.
+  unavailable, and can switch to a matched Bilibili or local-audio fallback source
+  for restricted or preview-only tracks.
 - Playback state is persisted periodically for queue and state recovery.
 - Player code is split by responsibility across `playback/`, `url/`, `resolver/`,
   `service/`, `effects/`, `lifecycle/`, `watchdog/`, and `usb/`. Shared song
@@ -568,7 +595,10 @@ For release build and signing details, see
   stuck states, the player layer also includes startup watchdogs,
   foreground/background health audits, keep-alive checks, generation-coordinated
   AudioSink reconfiguration, dynamic transfer scaling, native-transfer
-  backpressure recovery, and system-output fallback.
+  backpressure recovery, and system-output fallback. A deferred native runtime
+  refresh is retried only within a bounded budget. Wake behavior follows the
+  network or local source, foreground recovery can restore USB-exclusive playback,
+  and bit-perfect volume keeps software gain at 0 dB.
 
 ### Search and data sources
 
@@ -583,7 +613,10 @@ For release build and signing details, see
   word timing, lyric sharing, and manual editing.
 - **Lyricon integration**:
   `LyriconManager` outputs the current song, playback state, position,
-  word-level lyrics, and translated lyrics to Lyricon and SuperLyric.
+  word-level lyrics, and translated lyrics to Lyricon and SuperLyric. Position is
+  sent through an independent 200 ms feed loop anchored to elapsed realtime. Translation
+  lines are matched by timing, lyric-card caching is retained, and song sharing can produce
+  Xiaomi Super Island URLs.
   Status-bar lyrics depend on vendor support and currently target select devices.
 - **Artist entry points**:
   NetEase search, Home, playlist/album detail pages, and Now Playing try to keep
@@ -611,6 +644,8 @@ For release build and signing details, see
   most merge policies currently remain under `sync/github/`.
 - GitHub/WebDAV sync uses a locally generated UUID as the device identifier,
   not `ANDROID_ID`.
+- GitHub large-file reads prefer the raw content endpoint to avoid the inline
+  Contents API size limit.
 
 ### Downloads, local import, and backups
 
@@ -641,13 +676,17 @@ For release build and signing details, see
 - Manual cancellation is different from pause/resume: it cleans up working files
   and rolls back partially committed audio/sidecar artifacts.
 - Download indexes keep snapshot caches and sidecar references to reduce SAF
-  directory walks. Android SAF access is still much slower than the app-private
-  directory, so custom directories are recommended only when they are really needed.
+  directory walks. An empty SAF listing cannot clear an existing directory index.
+  Android SAF access is still much slower than the app-private directory, so custom
+  directories are recommended only when they are really needed.
 - `StorageUsageAnalyzer` groups storage into cleanable cache, downloaded content,
   diagnostics, and app data. Cache cleanup removes regenerable cache/staging files,
   not user-saved downloaded songs.
 - `LocalAudioImportManager` imports external audio, scans device music, and copies
   nearby `lrc/txt` lyrics and `cover/folder/front` images.
+- Local-song sharing exposes a controlled directory URI directly when possible;
+  SAF/content URIs that cannot be exposed are staged under
+  `cache/shared_local_media`, which is cleanable cache.
 - Local scan previews can filter to tracks that already have metadata. After a
   local playlist is created or enriched, the app can continue hydrating titles,
   artists, albums, and covers in the background while preserving edited local metadata.
@@ -722,8 +761,12 @@ Current sync targets:
   fields, filter malformed records without resolvable track identity or valid
   deletion time, and keep songs with missing `addedAt` behind dated songs so bad
   snapshots cannot jump ahead in playlists.
-- 🪶 **Data Saver**: uses `ProtoBuf + GZIP` as `backup.bin`; JSON is used when
-  Data Saver is disabled.
+- 🪶 **Data Saver**: `backup.bin` currently writes legacy-compatible
+  `Base64(GZIP(ProtoBuf))` text. The reader also accepts raw GZIP, JSON, and legacy
+  Base64 formats; JSON is used when Data Saver is disabled.
+- GitHub large-file reads prefer the raw content endpoint. WebDAV servers without
+  ETag/Last-Modified allow an unconditional write only when the remote SHA-256
+  fingerprint is unchanged; otherwise the sync reports a concurrency conflict.
 - 📦 **Remote format**: a GitHub repository is not end-to-end encryption.
   You are responsible for protecting remote files.
 - 🚫 **Sync boundary**: audio caches, downloaded files, local media files, cookies,
@@ -746,6 +789,9 @@ NeriPlayer also supports storing the same sync data in a WebDAV remote file.
 - Automatic sync and manual sync are supported.
 - `WorkManager` handles delayed sync, periodic sync, network checks, and retries.
 - WebDAV URL, username, and password are stored in local encrypted storage.
+- WebDAV prefers ETag/Last-Modified conditional writes. If a server exposes neither,
+  an unconditional write is allowed only after the remote SHA-256 fingerprint still
+  matches the snapshot that was read; otherwise the sync fails as a conflict.
 - The remote WebDAV file is not an end-to-end encrypted backup.
 
 ---
@@ -768,12 +814,16 @@ and community feedback. They are not fixed-date commitments.
   advanced-glass owner handoff, and drawer-style detail feedback by default
 - [x] Listen Together repeat/shuffle sync, stable-track-key target validation,
   server clock-offset estimation, and authoritative stream recovery
+- [x] Listen Together invite/member secrets, ordered control events, and queue-only
+  member track selection
 - [x] 32-bit high-resolution system output, PCM-float channel balance, and thread-safe loudness-normalization state
+- [x] USB-exclusive foreground/background recovery, playback wake policies, and bit-perfect volume mode
 - [x] UAC2 explicit feedback, long-gap clock reacquisition, coordinated AudioSink
   reconfiguration, and Runtime Report v2 for USB exclusive playback
 - [x] Three native USB host warning/sanitizer gates plus four-ABI Android native CI
 - [x] USB exclusive 32-bit PCM, in-place reconfiguration, dynamic transfer scaling, and backpressure stall recovery
 - [x] GitHub/WebDAV cleanup for malformed sync snapshots, missing-field songs, and deletion records
+- [x] Compatible reading of JSON, raw GZIP, and legacy Base64 sync payloads
 - [x] Responsibility-based package splits for player, download storage, startup,
   lyric UI, and Listen Together
 - [x] Versioned local-playlist display order with compatible migration of older
@@ -783,6 +833,7 @@ and community feedback. They are not fixed-date commitments.
 - [x] Listen Together stream-link sharing toggles, asynchronous stream resolution, and more stable room sync
 - [x] Long-press lyric selection, copy, song sharing, and lyric card generation
 - [x] Phonetic lyric display and the lyric behavior sheet
+- [x] Independent 200 ms Lyricon/SuperLyric position feed, safer lyric matching, and Super Island share URLs
 - [x] Mini Player horizontal swipe for previous/next
 - [x] NetEase playlist detail cache with network-failure fallback
 - [x] Grouped storage usage analysis and expanded cache cleanup
@@ -806,6 +857,7 @@ and community feedback. They are not fixed-date commitments.
 - [x] Bilibili adaptation
 - [x] YouTube Music basic adaptation
 - [x] YouTube Music search
+- [x] Anonymous YouTube playback, cookie-rotation protection, PoToken/EJS/bootstrap caching, and direct/HLS fallback
 - [x] WebDAV sync
 - [x] Playback stats
 - [x] Playback sound effects
@@ -880,6 +932,8 @@ We will keep improving the project over time.
 - QQ Music is only a playback metadata/lyrics completion source.
 - GitHub/WebDAV sync is not end-to-end encrypted. Full config export files may
   contain auth data and must be protected by the user.
+- Data Saver still writes legacy-compatible Base64 text for mixed-version clients;
+  switching writes to raw GZIP requires every sync peer to support read-both first.
 
 ---
 

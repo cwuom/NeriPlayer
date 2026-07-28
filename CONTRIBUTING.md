@@ -34,6 +34,9 @@
     外部贡献所需的显式双授权声明。
 - `app/src/main/cpp/tests/usb/config/host-gate-contract.md`
   - 说明公开 Native USB host 门禁、CI 覆盖与真实设备验证边界。
+- `app/src/main/cpp/tests/usb/corpus/README.md` 与
+  `app/src/main/cpp/tests/usb/fixtures/README.md`
+  - 说明公开测试语料/夹具只能使用合成或可审计资料，真实设备证据留在私有目录。
 - `np-submodule/NeriPlayer-LTW/README.md`
   - 面向一起听服务端部署者，说明 Worker API、事件模型、部署和本地检查。
 
@@ -76,7 +79,7 @@
   `DownloadTaskStore`、`DownloadLifecyclePolicies`、`ManagedDownloadStorage`、
   续传检查点、sidecar 文件、任务队列恢复、取消清理和 SAF 目录迁移。
 - **同步链路**：GitHub / WebDAV 的三路合并、删除记录、播放统计、
-  缺字段快照清洗和远端格式兼容。
+  缺字段快照清洗、JSON/ProtoBuf/Base64 格式兼容和 WebDAV 并发保护。
 - **本地数据**：歌单 JSON 原子写入、本地元信息补全、配置导入导出、
   授权加密存储和 DataStore 设置。
 - **歌词与播放页 UI**：`AdvancedLyricsView`、`SyncedLyricsView`、
@@ -87,6 +90,8 @@
 - **一起听**：Android 客户端、Worker 协议字段、角色权限、队列、
   版本门控更新、直链共享开关和房主离线恢复。
 - **诊断恢复**：安全模式、JVM/Native 崩溃日志、ANR 记录和 Debug 探针。
+- **本地持久化**：播放/流量统计的批量写入、生命周期 flush、原子文件替换和
+  SAF/本地歌单初始化就绪状态。
 
 对应测试已分布在 `app/src/test/` 与 `app/src/androidTest/`。
 修改上述链路时，优先搜索同名目录或相邻测试类，再补新的覆盖。
@@ -329,7 +334,11 @@
 - 网易云艺术家详情依赖网易云 artist 元数据和接口；
   关注状态会保存到本地收藏分类。
 - `Bilibili` 已支持搜索、收藏夹和音频播放/下载，但不是完整视频发现流或评论区。
-- `YouTube Music` 已支持登录、首页/歌单浏览、详情、搜索、播放与下载。
+- `YouTube Music` 已支持登录、匿名播放、首页/歌单浏览、详情、搜索、播放与下载；
+  有效身份 Cookie 会保留并支持轮换，取流会复用 bootstrap/player.js/PoToken 与挑战
+  结果缓存，签名或直链失败时可回退 EJS/HLS，
+  不能把缓存命中或本地单测当作真实账号/网络稳定性证明；长音频大幅 Seek 会走
+  更短的启动恢复窗口，仍需验证真实网络下的体验。
 - 状态栏歌词依赖厂商私有能力，当前仅适用于部分支持设备。
 - `RuntimeShader` 流体/音频响应背景只在 Android 13+ 启用；封面模糊与高级模糊
   只在 Android 12+ 启用，修改动效时必须保留低版本降级路径。
@@ -337,8 +346,10 @@
   当前没有音译数据时，不应强行合成或展示空的第二行。
 - 歌词分享会通过 `FileProvider` 分享缓存目录中的歌词卡片文件；
   这类分享产物属于可清理缓存，不是用户下载内容。
+- Lyricon/SuperLyric 的位置 feed 独立按 200 ms 推送并使用 elapsed realtime 锚点；
+  修改播放器进度刷新间隔时，必须同时检查前后台歌词时序和 SuperLyric 对齐。
 - 网易云播放会在当前音质不可用时自动尝试更低音质；
-  无权限、无直链或仅返回试听片段时，可按设置自动匹配 Bilibili 音源兜底。
+  无权限、无直链或仅返回试听片段时，可按设置自动匹配 Bilibili 或本地音频兜底。
 - 网易云歌单详情缓存只服务歌单详情页快速展示和失败回退；
   专辑详情仍保持实时刷新，避免和歌单缓存混用。
 - 本地「我喜欢的音乐」支持将可识别的网易云歌曲同步到网易云我喜欢的音乐；
@@ -349,14 +360,19 @@
   修改恢复流程时要避免旧请求把新请求的任务状态清掉。
 - 续传按传输类型分别处理：
   - 直链下载通过工作文件大小 + `Range` 头续传
-  - 显式分块下载按字节偏移续传
+  - `googlevideo` 显式分块下载按字节偏移续传
   - HLS 下载通过 `.hls.json` 检查点按 segment 恢复
 - 工作文件位于 `cache/download_staging/`，并额外保存 `.resume.json`
   恢复元数据；应用启动和网络恢复后会尝试自动找回未完成下载。
 - 手动取消会回滚半成品并删除工作文件；只有网络策略暂停与可恢复错误重试
   才会保留断点。
+- 音频本体完整后，标签或 SAF 可写句柄失败也按无标签完成并保留已落盘音频，
+  不应为标签重试而删除音频。
 - 应用私有下载目录通常比 SAF 自定义目录更快；
-  SAF 快照和索引用于减少遍历，但不能假设 SAF 操作成本和普通文件系统一致。
+  SAF 快照和索引用于减少遍历；空目录扫描不能覆盖已有索引，且不能假设 SAF 操作成本
+  和普通文件系统一致。
+- 分享受控目录中的本地音频时优先直接暴露可读 URI；无法直接分享的 content URI
+  才复制到缓存 staging，分享暂存属于可清理缓存。
 - 存储清理只能删除可再生成缓存、下载暂存和分享暂存；
   不要通过“清缓存”删除用户主动下载的音频、歌词和封面。
 - 流媒体缓存与下载是两套能力：
@@ -369,6 +385,13 @@
 - 同步快照可能来自旧版 JSON/ProtoBuf 或异常远端文件；读取时要用安全默认值，
   过滤缺少可解析歌曲身份、无有效删除时间或无效歌单 ID 的记录，
   缺失 `addedAt` 的歌曲不能排到已有时间歌曲之前。
+- 省流模式当前写入 `backup.bin` 时仍使用旧端可读的
+  `Base64(GZIP(ProtoBuf))` 文本；读取必须兼容原始 GZIP、JSON 和历史 Base64，
+  不要在 Android 与 Desktop 尚未同时支持 read-both 前单独切换 raw 写入。
+- WebDAV 优先使用 ETag/Last-Modified 条件写入；没有条件令牌时只能在远端 SHA-256
+  指纹与已读快照一致的情况下回退无条件写入，否则必须按并发冲突失败。
+- 播放统计与流量统计采用延迟批量写入；播放统计在播放器/Activity 关键生命周期
+  flush，流量累积器在请求或下载尝试结束时 flush，播放每日桶按保留窗口和数量上限裁剪。
 - 平台 Cookie / 鉴权信息、GitHub Token、WebDAV 密码使用
   `Android Keystore + EncryptedSharedPreferences` 加密保存。
 - `DataStore` 只承担常规设置与非敏感状态，不承载平台登录凭据。
@@ -377,12 +400,17 @@
 - USB 独占依赖兼容 **UAC1.0** 或 **UAC2.0 Type I PCM** 的 DAC、
   前台服务、唤醒锁和系统后台策略；
   设置页的后台权限提示不是装饰，改动相关逻辑时要同时考虑息屏场景。
+- USB 设置还包含比特完美音量模式；启用后软件增益保持 0 dB，音量由 DAC 硬件控制，
+  不能把它与普通系统音量或应用内响度处理混为一谈。
+- 前后台 USB runtime report 若返回 `native_refresh_deferred`，播放器只在有限次数内
+  延迟重试；其他无效报告仍按 fail-closed 处理。
 - 本地扫描结果可能先用快速元数据返回，再由后台任务补全歌曲名、歌手、
   专辑和封面；不要假设首次扫描结果已经是最终形态。
 - 一起听在 `shareAudioLinks=false` 时，房间快照和队列不应暴露 `streamUrl`；
   关闭该开关时还要立即清空已缓存直链，`REQUEST_LINK` 也应直接拒绝。
 - 一起听循环/随机模式通过 `PLAYBACK_MODE` / `REQUEST_PLAYBACK_MODE` 同步；
-  成员控制必须校验目标 stable track key，避免旧请求控制已经切换的歌曲。
+  成员控制必须校验目标 stable track key，过滤 `clientInstanceId`、`clientSequence`、
+  `clientTimeMs` 之前的事件，且 `REQUEST_SET_TRACK` 只能选当前队列曲目。
 
 ---
 
@@ -448,8 +476,8 @@
    如要扩到更复杂的 UAC2.0 拓扑或非 Type I PCM 设备，需要把文档、能力边界、
    诊断和兼容性假设一起更新。
 3. 同时考虑设备选择、采样率/位深策略、32-bit PCM、PCM float 软件转换、
-   UAC2 时钟拓扑、显式反馈端点、前后台缓冲区、唤醒锁、后台权限提示
-   和系统回退链路；隐式反馈目前仍不是可用候选。
+   比特完美音量、UAC2 时钟拓扑、显式反馈端点、前后台缓冲区、唤醒锁、
+   后台权限提示和系统回退链路；隐式反馈目前仍不是可用候选。
 4. 修改自动恢复、keep-alive 或后台审计时，要验证前台播放、息屏后台、
    USB 拔插和 system fallback 四条路径。
 5. 改动反馈时钟、长调度间隙重捕获、协调式重配置、动态传输缩放、
@@ -469,6 +497,8 @@
    `data/sync/github/SyncDataSerializer.kt` 的兼容策略；共享载荷模型不得
    重新放回 GitHub provider 包。
 2. 同步对象包含歌单、收藏歌单、最近播放、删除记录和播放统计。
+   `backup.bin` 写侧仍是 `Base64(GZIP(ProtoBuf))` 文本，读侧必须兼容原始
+   GZIP、JSON 和历史 Base64；GitHub Contents API 只在传输层再做一次 Base64。
 3. `songOrderVersion=0` 表示旧版顺序，`songOrderVersion=1` 表示当前展示顺序；
    序列化、合并和落回本地歌单时必须保留旧数据迁移。
 4. 歌单成员使用 `syncMembershipTokens` / `removedMembershipTokens` 表达
@@ -534,7 +564,9 @@
 2. 开关状态由设置项 `lyricon_enabled` 控制，并由播放器生命周期同步。
 3. 歌词数据使用 `LyricEntry`，逐字信息来自 `WordTiming`；
    翻译行按时间容差匹配到原文行。
-4. 修改时要保持 Lyricon、SuperLyric、状态栏歌词、播放页高级歌词
+4. Lyricon/SuperLyric 位置 feed 独立按 200 ms 推送，使用 elapsed realtime
+   做死区重算；修改进度节奏时，必须保持前后台时序一致。
+5. 修改时要保持 Lyricon、SuperLyric、状态栏歌词、播放页高级歌词
    和外部蓝牙歌词的歌词结构兼容。
 
 #### 13. 修改一起听
@@ -549,9 +581,14 @@
    要一起看，避免旧状态覆盖新状态。
 6. 循环/随机模式使用 `PLAYBACK_MODE` / `REQUEST_PLAYBACK_MODE`；成员请求与
    `LINK_READY` 都要校验目标 stable track key，避免异步结果落到错误歌曲。
-7. 房间号 6 位、昵称 1-24、队列上限 2000 和请求去重要视为协议边界，
+7. 首次加入需要 `joinSecret`，已有成员重连需要 `memberSecret`；这些密钥不得写入
+   脱敏房间状态或日志，邀请 URI 的 `secret` 参数也要按敏感输入处理。
+8. 控制事件可携带 `clientInstanceId`、`clientSequence` 和 `clientTimeMs`；Worker
+   会拒绝过期顺序，`REQUEST_SET_TRACK` 只能选择当前队列已有曲目，客户端兼容路径
+   也必须保持一致。
+9. 房间号 6 位、昵称 1-24、队列上限 2000 和请求去重要视为协议边界，
    不要只改 UI 校验而忘记服务端约束。
-8. 设置页支持自定义服务端地址和可用性测试，不要硬编码单一地址。
+10. 设置页支持自定义服务端地址和可用性测试，不要硬编码单一地址。
 
 #### 14. 修改主导航与玻璃转场
 
@@ -643,28 +680,29 @@ adb logcat | grep NeriPlayer
    npm ci --prefix np-submodule/NeriPlayer-LTW
    npm run check --prefix np-submodule/NeriPlayer-LTW
    ```
-   这里的 `npm run check` 只做 `node --check` 语法检查；
-   协议或房间状态改动还需要实际验证 create/join/ws 流程。
+   这里的 `npm run check` 会依次执行 `node --check`、协议测试和
+   `wrangler deploy --dry-run`；协议或房间状态改动还需要实际验证 create/join/ws 流程。
 8. 新增单元测试放到 `app/src/test/`；
    新增设备或 Compose UI 测试放到 `app/src/androidTest/`。
 9. 行为变更涉及 README、设置文案、用户流程或同步格式时，请同步更新文档。
 
 当前已有测试覆盖的重点包括：
 
-- YouTube 登录、挑战解析、PoToken、取流、Range/Seek 策略与预取
+- YouTube 登录、Cookie 轮换、匿名会话、挑战解析、PoToken、取流、Range/Seek 策略与预取
+  （含长音频大幅 Seek 的快速恢复）
 - 网易云歌词、本地 smoke test、自动换源和播放响应解析
 - USB 独占 keep-alive、启动看门狗、前后台恢复、32-bit/float 输出、
   UAC2 显式反馈、长调度间隙重捕获、协调式重配置、Runtime Report v2、
-  背压恢复和音频焦点策略
+  背压恢复、延迟 runtime 刷新重试、比特完美音量和音频焦点策略
 - 主标签双 scene 转场、快速反向切换、抽屉/连贯详情反馈、玻璃 owner 隔离
   和未布局 scene 几何过滤
 - 下载元数据、命名、目录迁移、快照缓存、`.nomedia`、删除语义和启动恢复
 - 启动阶段、通知权限、播放服务启动、历史记录与安全模式恢复规划
 - 本地扫描、元信息补全、封面回退、系统歌单去重和歌单顺序稳定性
 - GitHub/WebDAV 同步序列化、缺字段快照清洗、旧歌单顺序迁移、删除策略、
-  播放统计合并和上传重试
+  播放统计合并、WebDAV 并发回退、原子文件写入和上传重试
 - 一起听地址校验、版本门控、循环/随机模式、stable track key 目标校验、
-  播放同步规划、Session 控制/取消与协议兼容
+  播放同步规划、邀请/成员密钥、事件排序、Session 控制/取消与协议兼容
 - 歌词视图、逐词时间、外部蓝牙歌词、播放音效和播放策略
 - 配置备份、设置生成、安全守卫、崩溃日志文件和安全模式相关逻辑
 

@@ -38,6 +38,10 @@ When maintaining docs, split them by audience:
     for external contributions to enter that scope.
 - `app/src/main/cpp/tests/usb/config/host-gate-contract.md`
   - Defines the public native USB host gate, CI coverage, and real-device boundary.
+- `app/src/main/cpp/tests/usb/corpus/README.md` and
+  `app/src/main/cpp/tests/usb/fixtures/README.md`
+  - Define the synthetic/auditable boundary for public USB test corpus and fixtures;
+    device-derived evidence stays in the private evidence tree.
 - `np-submodule/NeriPlayer-LTW/README.md`
   - For Listen Together server deployers: Worker API, event model, deployment,
     and local checks.
@@ -84,7 +88,8 @@ NeriPlayer covers a broad product surface. Protect these paths first:
   `DownloadTaskStore`, `DownloadLifecyclePolicies`, `ManagedDownloadStorage`,
   resume checkpoints, sidecar files, queue recovery, cancellation cleanup, and SAF migration.
 - **Sync**: GitHub / WebDAV three-way merge, deletion records, playback stats,
-  missing-field snapshot cleanup, and remote format compatibility.
+  missing-field snapshot cleanup, JSON/ProtoBuf/Base64 compatibility, and WebDAV
+  concurrency protection.
 - **Local data**: atomic playlist JSON writes, local metadata hydration,
   config import/export, encrypted auth storage, and DataStore settings.
 - **Lyrics and Now Playing UI**: `AdvancedLyricsView`, `SyncedLyricsView`,
@@ -98,6 +103,8 @@ NeriPlayer covers a broad product surface. Protect these paths first:
 - **Listen Together**: Android client, Worker protocol fields, roles, queues,
   version-gated updates, stream-link sharing toggles, and controller-offline recovery.
 - **Diagnostics**: safe mode, JVM/native crash logs, ANR capture, and Debug probes.
+- **Local persistence**: debounced playback/traffic-stat writes, lifecycle flushes,
+  atomic file replacement, and local-playlist/SAF initialization readiness.
 
 Related tests live under `app/src/test/` and `app/src/androidTest/`.
 When changing these areas, search for neighboring tests first, then add coverage
@@ -363,8 +370,13 @@ Security reminders:
   follow state is saved into the local Favorites category.
 - `Bilibili` supports search, favorites, audio playback, and downloads, but is
   not a full video discovery or comments client.
-- `YouTube Music` supports login, home/playlist browsing, details, search,
-  playback, and downloads.
+- `YouTube Music` supports login, anonymous playback, home/playlist browsing,
+  details, search, playback, and downloads. Valid identity cookies are preserved
+  and rotated when needed; bootstrap, `player.js`, PoToken, and challenge-result
+  caches are reused; signature or direct-link failures can fall through to EJS/HLS.
+  Cache hits and local tests are not proof of real-account or network stability.
+  Large seeks in long audio use an expedited startup-recovery window and still
+  need real-network qualification.
 - Status-bar lyrics depend on private vendor support and only work on select devices.
 - The RuntimeShader fluid/audio-reactive background is enabled only on Android 13+.
   Cover blur and advanced blur require Android 12+, so animation changes must
@@ -374,9 +386,12 @@ Security reminders:
   do not synthesize it or render an empty second line.
 - Lyric sharing uses `FileProvider` to share lyric card files from the app cache.
   These generated share files are cleanable cache, not user-downloaded content.
+- Lyricon/SuperLyric position updates use an independent 200 ms feed anchored to
+  elapsed realtime. Changes to playback progress intervals must preserve foreground
+  and background lyric timing.
 - NetEase playback tries lower qualities when the current quality is unavailable.
   For restricted, missing-URL, or preview-only tracks, it can auto-match a
-  Bilibili fallback source when enabled.
+  Bilibili or local-audio fallback source when enabled.
 - NetEase playlist detail cache is only for playlist detail fast display and
   failure fallback. Album details still refresh live and should not reuse playlist cache.
 - Local "My Favorite Music" can sync recognizable NetEase songs to NetEase
@@ -389,16 +404,21 @@ Security reminders:
   clear task state for newer requests.
 - Resume behavior depends on transport type:
   - direct downloads resume through working-file size plus `Range`
-  - explicit chunked downloads resume by byte offset
+  - `googlevideo` explicit chunked downloads resume by byte offset
   - HLS downloads resume from a saved segment checkpoint in `.hls.json`
 - Working files live under `cache/download_staging/` and also keep `.resume.json`
   metadata so unfinished downloads can be reconstructed after app restart or
   network recovery.
 - Manual cancellation rolls back partial artifacts and removes working files.
   Partial data is preserved only for network-policy pauses and recoverable retry paths.
+- When the audio body is complete, tag-writing or an unwritable SAF handle still
+  finalizes the download without tags; the completed audio must not be deleted.
 - The app-private download directory is usually faster than custom SAF directories.
-  SAF snapshots and indexes reduce directory walking, but SAF access should not be
-  treated as having the same cost as normal file IO.
+  SAF snapshots and indexes reduce directory walking, and an empty scan must not
+  overwrite an existing index. SAF access should not be treated as having the same
+  cost as normal file IO.
+- Local audio sharing exposes a controlled URI directly when possible; content URIs
+  that cannot be shared directly are copied to cache staging, which is cleanable.
 - Storage cleanup must only delete regenerable cache, download staging, and share
   staging. Do not delete user-saved audio, downloaded lyrics/covers, or auth data
   through normal cache cleanup.
@@ -414,6 +434,16 @@ Security reminders:
   files. Use safe defaults, filter records without resolvable track identity,
   valid deletion time, or valid playlist id, and never let songs with missing
   `addedAt` sort ahead of songs that already have timestamps.
+- Data Saver writes `backup.bin` as legacy-compatible `Base64(GZIP(ProtoBuf))` text;
+  reads must accept raw GZIP, JSON, and legacy Base64. Do not switch raw writing on
+  one client before Android and Desktop both support read-both.
+- WebDAV prefers ETag/Last-Modified conditional writes. Without condition tokens,
+  only an unchanged remote SHA-256 fingerprint permits an unconditional retry;
+  otherwise return a concurrency conflict.
+- Playback and traffic statistics use delayed batch writes. Playback stats flush at
+  important player/activity lifecycle points, while traffic accumulators flush when
+  a request or download attempt ends; playback daily buckets are bounded by retention
+  window and count.
 - Platform cookies/auth data, GitHub tokens, and WebDAV passwords are encrypted
   with `Android Keystore + EncryptedSharedPreferences`.
 - `DataStore` stores regular settings and non-sensitive state, not platform login credentials.
@@ -425,6 +455,11 @@ Security reminders:
   **UAC2.0 Type I PCM** DAC, the foreground service, wake locks, and the system
   background policy. The in-app background-permission prompt is not decorative,
   so screen-off behavior must stay in scope.
+- USB settings include bit-perfect volume mode: software gain remains at 0 dB and
+  the DAC hardware controls volume. Do not treat it as ordinary app/system volume.
+- If a foreground/background USB runtime report returns `native_refresh_deferred`,
+  the player retries it only within a bounded budget; other invalid reports remain
+  fail-closed.
 - Local scan results may return quick metadata first and then hydrate richer
   title/artist/album/cover data in the background. Do not assume the first scan
   result is the final local metadata shape.
@@ -433,7 +468,8 @@ Security reminders:
   shared links immediately, and `REQUEST_LINK` must be rejected.
 - Listen Together repeat/shuffle changes use `PLAYBACK_MODE` /
   `REQUEST_PLAYBACK_MODE`. Member controls must validate the target stable track
-  key so stale requests cannot control a track that has already changed.
+  key, reject older `clientInstanceId`/`clientSequence`/`clientTimeMs` events, and
+  limit `REQUEST_SET_TRACK` to the current queue.
 
 ---
 
@@ -531,7 +567,9 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    `data/sync/github/SyncDataSerializer.kt` compatibility first. Shared payload
    models must not move back into the GitHub provider package.
 2. Sync data includes playlists, favorite playlists, recent plays, deletion records,
-   and playback stats.
+   and playback stats. Data Saver writes legacy-compatible
+   `Base64(GZIP(ProtoBuf))` text; the reader must accept raw GZIP, JSON, and legacy
+   Base64, while GitHub Contents API adds only its transport-level Base64 layer.
 3. `songOrderVersion=0` represents legacy order, while `songOrderVersion=1`
    represents current display order. Serialization, merging, and local restoration
    must preserve the migration path for older data.
@@ -547,6 +585,8 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    the merge behavior.
 7. Do not break the delayed sync, periodic sync, validated-network checks, or retry
    behavior in `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt`.
+   GitHub large-file reads should use the raw content path, and WebDAV writes without
+   ETag/Last-Modified must revalidate the remote fingerprint before an unconditional retry.
 8. Sensitive data must go through `SecureTokenStorage.kt` or `WebDavStorage.kt`.
    Do not store it in `DataStore` or plaintext JSON.
 
@@ -608,7 +648,9 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 2. The setting key is `lyricon_enabled`, and playback lifecycle keeps it in sync.
 3. Lyrics use `LyricEntry`; word-level data comes from `WordTiming`, and
    translations are matched to original lines by timestamp tolerance.
-4. Keep Lyricon, SuperLyric, status-bar lyrics, advanced Now Playing lyrics,
+4. Lyricon/SuperLyric position updates use an independent 200 ms feed anchored to
+   elapsed realtime; preserve foreground/background timing when changing progress.
+5. Keep Lyricon, SuperLyric, status-bar lyrics, advanced Now Playing lyrics,
    and external Bluetooth lyrics compatible when changing lyric structures.
 
 #### 13. Modify Listen Together
@@ -626,9 +668,15 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 6. Repeat/shuffle mode uses `PLAYBACK_MODE` / `REQUEST_PLAYBACK_MODE`. Member
    requests and `LINK_READY` must validate the target stable track key so async
    results cannot land on the wrong track.
-7. Treat the 6-character room ID, 1-24 character nickname, queue limit 2000,
+7. First joins require `joinSecret`; member reconnects require `memberSecret`.
+   Never persist either secret in sanitized room state or logs, and treat invite URI
+   `secret` values as sensitive input.
+8. Control events may carry `clientInstanceId`, `clientSequence`, and `clientTimeMs`.
+   The Worker filters stale order, and `REQUEST_SET_TRACK` can only select an item
+   already in the current queue. Keep the Android compatibility path aligned.
+9. Treat the 6-character room ID, 1-24 character nickname, queue limit 2000,
    and request de-duplication as protocol boundaries, not just UI validation details.
-8. Settings support custom server URLs and availability tests. Do not hard-code a single server.
+10. Settings support custom server URLs and availability tests. Do not hard-code a single server.
 
 #### 14. Modify main navigation and glass transitions
 
@@ -727,8 +775,9 @@ Before submitting, consider at least these checks:
    npm ci --prefix np-submodule/NeriPlayer-LTW
    npm run check --prefix np-submodule/NeriPlayer-LTW
    ```
-   `npm run check` only runs `node --check` syntax validation. Protocol or room-state
-   changes still need real create/join/WebSocket flow verification.
+   `npm run check` runs `node --check`, protocol tests, and
+   `wrangler deploy --dry-run`. Protocol or room-state changes still need real
+   create/join/WebSocket flow verification.
 8. Add unit tests under `app/src/test/`.
    Add device or Compose UI tests under `app/src/androidTest/`.
 9. If behavior changes affect README, settings copy, user flows, or sync formats,
@@ -736,11 +785,13 @@ Before submitting, consider at least these checks:
 
 Existing focused tests cover areas such as:
 
-- YouTube login, challenge parsing, PoToken, playback, Range/Seek policy, and prefetching
+- YouTube login, cookie rotation, anonymous sessions, challenge parsing, PoToken,
+  playback, Range/Seek policy, expedited long-seek recovery, and prefetching
 - NetEase lyrics, local smoke tests, auto source switching, and playback response parsing
 - USB-exclusive keep-alive, startup watchdogs, foreground/background recovery,
   32-bit/float output, UAC2 explicit feedback, long-gap clock reacquisition,
-  coordinated reconfiguration, Runtime Report v2, backpressure recovery, and
+  coordinated reconfiguration, Runtime Report v2, deferred-refresh retry,
+  backpressure recovery, and
   audio-focus policies
 - Dual-scene main-tab transitions, rapid reverse switching, drawer/coherent
   detail feedback, glass-owner isolation, and unlaid-out scene geometry filtering
@@ -748,9 +799,11 @@ Existing focused tests cover areas such as:
 - Startup stages, notification permission, playback-service startup, history recording, and safe-mode recovery planning
 - Local scanning, metadata hydration, cover fallback resolution, system-playlist de-duplication, and stable playlist order
 - GitHub/WebDAV sync serialization, missing-field snapshot cleanup,
-  legacy playlist-order migration, deletion policy, playback-stat merging, and upload retry
+  legacy playlist-order migration, deletion policy, playback-stat merging,
+  WebDAV concurrency fallback, atomic writes, and upload retry
 - Listen Together base URL validation, version gating, repeat/shuffle modes,
-  stable-track-key target validation, playback sync planning, session control/cancellation, and protocol compatibility
+  stable-track-key target validation, invite/member secrets, event ordering,
+  playback sync planning, session control/cancellation, and protocol compatibility
 - Lyrics UI, word timing, external Bluetooth lyrics, playback sound controls, and playback policies
 - Config backup, generated settings, security guards, crash log files, and safe-mode behavior
 

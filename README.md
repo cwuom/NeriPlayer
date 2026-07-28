@@ -73,8 +73,6 @@ NeriPlayer
 └── 可恢复运行：安全模式、崩溃日志、ANR 记录、调试探针
 ```
 
----
-
 ## 项目简介 / About
 
 NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
@@ -116,6 +114,10 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   只返回试听片段时，会先尝试音质降级，再由
   `PlayerManagerNeteaseAutoSourceSwitch` 按歌名、歌手和时长评分自动匹配
   Bilibili 音源兜底；播放异常时还会刷新当前链接，连续失败再跳过或停止。
+- **YouTube 取流有多级回退**：
+  登录态会保留有效身份 Cookie，并与匿名 visitor 分别维护 bootstrap 和 PoToken
+  会话；Cookie 轮换、签名/n 参数、`player.js` 和挑战结果会优先复用缓存，失效的
+  `player.js` 或被 CDN 拒绝的直链会进入 EJS/HLS 回退，避免在同一条 URL 上反复重试。
 - **GLSL/AGSL 高性能流体背景**：
   播放页动态背景由 `BgEffectPainter` 加载
   `assets/shaders/hyper_background_effect.glsl` 并通过 `RuntimeShader` 逐帧渲染；
@@ -154,14 +156,17 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   当前面向 **UAC1.0** 和兼容 **UAC2.0 Type I PCM** 设备，设备选择、
   采样率/位深/缓冲策略、32-bit PCM、PCM float 软件转换、后台运行提醒、
   UAC2 时钟拓扑与显式反馈端点解析、启动看门狗、前后台健康审计、
-  动态传输扩缩容和卡死自动恢复也都补齐了；长调度间隙后会重新捕获反馈时钟，
-  避免继续使用陈旧的速率估计。
+  动态传输扩缩容和卡死自动恢复也都补齐了；前后台切换会按网络或本地来源选择
+  唤醒策略，USB 独占播放可在回到前台后恢复；长调度间隙后会重新捕获反馈时钟，
+  避免继续使用陈旧的速率估计。比特完美音量模式保持软件增益为 0 dB，交给 DAC
+  硬件控制音量。
 - **下载链路已从“能下”进化到“能恢复”**：
   下载不走系统 `DownloadManager`，而是用共享 `OkHttpClient`、
   可调并发、工作文件和 sidecar 元数据管理完整落盘流程；
-  直链、YouTube Range 分块和 HLS 都有对应续传策略，网络策略暂停后可继续，
+  直链、`googlevideo` 分块 Range 和 HLS 都有对应续传策略，网络策略暂停后可继续，
   启动时会恢复未完成队列，已落盘的缓存命中会直接结算，
-  手动取消则会清理半成品，语义边界很清楚。
+  手动取消则会清理半成品，语义边界很清楚；下载完成后即使标签写入失败，已落盘
+  音频仍会保留。
 - **存储占用能看清，也能有边界地清理**：
   `StorageUsageAnalyzer` 会把音频缓存、图片缓存、下载暂存、分享暂存、
   平台歌单缓存、下载内容、日志、崩溃报告和核心应用数据分组统计；
@@ -170,12 +175,13 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   NeriPlayer 不提供公共云端曲库或开发者托管账号数据；
   GitHub/WebDAV 同步只在用户自己的远端保存歌单、收藏、最近播放和
   播放统计等元数据。`PlaybackStatsRepository` 按歌曲稳定身份记录播放次数、
-  收听时长、最近播放和每日桶，并参与同步合并。
+  收听时长、最近播放和每日桶，并参与同步合并；播放和流量统计采用延迟批量写入，
+  在关键生命周期阶段 flush，并限制每日统计桶数量。
   远端同步快照读取时会兼容旧字段和异常缺字段数据，过滤缺少可解析歌曲身份的记录。
 - **流量管理不是事后看数字**：
   `TrafficStatsRepository` 会区分播放流量、下载流量、Wi‑Fi、移动网络、
   漫游和缓存命中；批量或单曲下载在高风险网络下还能主动弹出提示，
-  避免把“省流量”只做成设置页里的摆设。
+  避免把“省流量”只做成设置页里的摆设；统计写入同样使用批量累积和生命周期 flush。
 - **高个性化，不只是换主题色**：
   设置 schema 由 `AutoSettingsSchema` 管理，覆盖动态取色、种子色、
   主题风格、自动/浅色/深色模式、UI 缩放、自定义背景、歌词字号、
@@ -195,6 +201,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   循环/随机模式、房主离线恢复、成员控制请求、播放链接共享、版本门控更新和自定义服务端地址；
   客户端还会估算服务端时钟偏移、按漂移阈值校正进度，并在共享直链异步返回后
   重载权威音源，避免本地待启动状态覆盖房间的暂停或播放指令；
+  邀请链接包含一次加入所需的房间密钥，成员密钥不会出现在公开房间状态中；
   服务端使用 Durable Objects 持久化房间状态，并通过 WebSocket 做实时同步。
 
 ---
@@ -266,9 +273,12 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - 🧠 **Media3 播放核心**：
   `PlayerManager` 管理音源解析、队列、随机/循环、状态恢复、失败重试、
   播放链接刷新、YouTube 预取与平台特殊请求策略。
+- YouTube 登录态会保留有效 Cookie，并支持 Cookie 轮换、匿名取流、bootstrap/
+  `player.js`/PoToken 缓存和优先级预取；签名或直链被拒时可回退 EJS/HLS。
 - 🔁 **网易云自动换源**：
   网易云歌曲无权限、无可用直链或仅返回试听片段时，会先尝试降低音质，
-  再按歌曲名、歌手和时长匹配 Bilibili 音源兜底。
+  再按歌曲名、歌手和时长匹配 Bilibili 音源；开启本地兜底时，还会按稳定元数据匹配
+  可读的本地音频。
 - 🧯 **播放失败兜底**：
   播放异常时优先刷新当前播放链接；Bilibili 取流支持 DASH 音频重试和
   html5/mp4 渐进流回退，连续失败时自动跳过或停止避免卡死。
@@ -290,7 +300,8 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   根据设备反馈调度音频包，并在长调度间隙后重新进入反馈时钟捕获；
   播放启动卡住、Native 传输背压卡住或前后台切换异常时，会通过原地重配置、
   协调式 AudioSink 重建、动态传输扩缩容和软恢复尽量拉回，
-  必要时回退到系统播放避免整条链路卡死。
+  必要时回退到系统播放避免整条链路卡死；播放器会按网络或本地来源选择唤醒策略，
+  前后台切换后可恢复 USB 独占，启用比特完美音量时软件增益固定为 0 dB。
 - 💾 **可配置流媒体缓存**：
   使用 `SimpleCache + LRU` 缓存音频，默认上限 **1 GB**，
   支持分别清理音频缓存、图片缓存、下载暂存、分享暂存和平台歌单缓存，
@@ -303,7 +314,8 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   支持多平台音频下载、本地下载列表、任务进度、取消/重试，
   并保存歌词、封面、元数据和音频标签；默认下载并发为 **6**，
   可在设置中调整，最高 **8**。下载队列会持久化，应用重启后可恢复
-  未完成任务，已存在的完整下载会直接结算为完成状态。
+  未完成任务，已存在的完整下载会直接结算为完成状态；`googlevideo` 直链使用分块
+  Range 并支持续传，下载完成后标签写入失败也不会删除已落盘音频。
 - 📁 **可迁移下载目录**：
   下载文件默认在应用管理目录，也可通过 SAF 选择自定义目录；
   切换目录时会迁移已有下载，并支持自定义文件名模板。
@@ -312,7 +324,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   支持系统 `VIEW / SEND / SEND_MULTIPLE` 的 `audio/*`，
   也支持扫描设备本地音乐、按授权文件夹定向扫描，
   并自动识别附近歌词与封面 sidecar 文件；大批量扫描会先快速预览，
-  再在后台补全更完整的本地元信息。
+  再在后台补全更完整的本地元信息；SAF 空目录结果不会误清理已有目录索引。
 - 👤 **本地歌手分类与详情**：
   本地歌曲会按展示艺术家自动分组，并识别 `feat.`、`with`、`和/与`、
   顿号、分号和常见斜杠分隔；本地歌手页支持播放全部、多选、
@@ -332,7 +344,8 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   使用 `WorkManager` 做延迟与周期同步，数据保存在用户自己的远端。
 - 📊 **播放统计**：
   按歌曲稳定身份记录播放次数、累计收听时长、首次/最近播放时间和每日统计桶；
-  支持按日/周/月/年/总计查看，并可参与 GitHub/WebDAV 同步。
+  支持按日/周/月/年/总计查看，并可参与 GitHub/WebDAV 同步；写入采用延迟批量策略，
+  在关键生命周期 flush，且每日桶有保留上限。
 - 📶 **流量统计与高风险提示**：
   记录播放/下载流量、Wi‑Fi/移动/漫游分布和缓存命中；
   在移动网络或漫游环境下下载时可主动提示风险。
@@ -342,7 +355,9 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - 🎧 **一起听**：
   支持创建房间或加入他人房间，通过 WebSocket 实时同步播放状态，
   支持房主/听众权限、成员控制开关、成员进出自动暂停、循环/随机模式同步、
-  可选共享房主解析直链、邀请链接、深链加入、自定义服务端和房主离线检测。
+  可选共享房主解析直链、邀请链接、深链加入、自定义服务端和房主离线检测；邀请携带
+  加入密钥，成员重连使用成员密钥，控制事件按客户端顺序过滤，`REQUEST_SET_TRACK`
+  只能选择当前队列歌曲，并继续校验稳定曲目键和服务端时钟。
 - 🌈 **个性化与主题**：
   支持自动/浅色/深色模式、动态取色、种子色、主题风格、UI 缩放、
   自定义背景图、触感反馈、歌词字号、歌词模糊、默认启动页和首页卡片开关；
@@ -364,7 +379,8 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - 🔌 **外部歌词/设备联动**：
   支持词幕适配（Lyricon Provider）、SuperLyric、外部蓝牙歌词、
   蓝牙断连暂停和 USB 独占播放开关；外部歌词链路会同步当前歌曲、
-  播放状态、进度、逐字歌词和翻译。
+  播放状态、进度、逐字歌词和翻译；Lyricon/SuperLyric 进度由独立 200 ms 推送，
+  翻译行按时间匹配，歌词卡片使用缓存，歌曲分享支持 Xiaomi Super Island 链接。
 - 🛠️ **开发者模式与调试工具**：
   设置页连续点击版本号 **7 次** 后，底栏出现 `Debug` 页，
   包含 YouTube / Bili / Netease / Search / Listen Together 探针、
@@ -458,9 +474,12 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - `AudioPlayerService` 提供前台播放服务、媒体通知、MediaSession 和基础传输控制。
 - Bilibili 播放通过 `ConditionalHttpDataSourceFactory`
   动态附加 `Referer / User-Agent / Cookie`。
-- YouTube Music 播放包含 Google Video Range 支持、Seek 刷新策略和预取逻辑。
+- YouTube Music 播放包含 Google Video Range 支持、Seek 刷新策略和预取逻辑；取流
+  会复用登录 Cookie、匿名会话、bootstrap、`player.js` 和 PoToken 缓存，并在直链
+  被拒时回退 EJS/HLS；长音频的大幅 Seek 会进入更短的启动恢复窗口，避免等待普通
+  取流看门狗超时。
 - 网易云播放会在无权限、无可用直链或试听片段场景下自动降级音质；
-  仍不可播时可根据设置自动搜索并切换到 Bilibili 音源。
+  仍不可播时可根据设置自动匹配 Bilibili 音源或本地音频。
 - 播放状态会定期持久化，用于进程重启后的队列和状态恢复。
 - 播放器实现已按 `playback/`、`url/`、`resolver/`、`service/`、`effects/`、
   `lifecycle/`、`watchdog/` 与 `usb/` 等职责分包；共享歌曲模型位于 `data/model/`，
@@ -475,7 +494,9 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   Runtime Report v2 会暴露反馈状态、端点、速率、holdover 和长间隙重捕获计数；
   播放器层还包含启动看门狗、前后台健康审计、keep-alive 检查、
   带代次协调的 AudioSink 重配置、动态传输扩缩容、Native 传输背压恢复，
-  以及必要时的系统播放回退。
+  以及必要时的系统播放回退；前后台读取到 Native 延迟刷新状态时会在有限次数内
+  重试。播放器会按网络或本地来源选择唤醒策略，前后台切换后可恢复 USB 独占，
+  启用比特完美音量时软件增益固定为 0 dB。
 
 ### 搜索与数据来源
 
@@ -489,7 +510,8 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   播放页支持原文歌词、翻译歌词、音译歌词、逐词歌词、歌词分享和手动编辑。
 - **词幕适配**：
   `LyriconManager` 向 Lyricon 与 SuperLyric 输出当前歌曲、播放状态、进度、
-  逐字歌词与翻译歌词；状态栏歌词依赖厂商能力，当前面向部分支持设备。
+  逐字歌词与翻译歌词；进度通过独立的 200 ms feed loop 推送并使用时间锚点校准，
+  状态栏歌词依赖厂商能力，当前面向部分支持设备。
 - **艺术家入口**：
   网易云搜索、首页、歌单/专辑详情和播放页都会尽量保留 `neteaseArtists`
   元数据，用于进入网易云艺术家详情。
@@ -510,6 +532,7 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   封面映射位于 `data/sync/`；GitHub/WebDAV 管理器与传输仍在各自 provider 包，
   现有兼容序列化和多数合并策略继续位于 `sync/github/`。
 - GitHub/WebDAV 同步使用本地生成的 UUID 作为设备标识，不依赖 `ANDROID_ID`。
+- GitHub 大文件读取优先走 raw 内容接口，避免内联 Contents API 的大小限制。
 
 ### 下载、本地导入与备份
 
@@ -534,11 +557,14 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - 手动取消则会清理工作文件，并回滚已写入的半成品音频与 sidecar，
   不是“暂停后随时继续”的语义。
 - 下载目录索引会维护快照缓存和 sidecar 引用，减少 SAF 目录遍历；
-  但 Android 的 SAF 访问仍明显慢于应用私有目录，只有确实需要外部目录时才建议切换。
+  但 Android 的 SAF 访问仍明显慢于应用私有目录，且空目录读取不会清除已有索引；
+  只有确实需要外部目录时才建议切换。
 - `StorageUsageAnalyzer` 会按可清理缓存、下载内容、诊断文件和应用数据分组统计占用；
   清理缓存只覆盖可再生成的缓存和暂存文件，不会删除用户主动保存的下载歌曲。
 - `LocalAudioImportManager` 支持导入外部音频、扫描设备音乐，
   并复制附近的 `lrc/txt` 歌词文件与 `cover/folder/front` 封面图。
+- 分享本地歌曲时会优先直接分享受控目录 URI；SAF/content URI 无法直接暴露时，
+  才复制到 `cache/shared_local_media` 暂存后分享，该目录属于可清理缓存。
 - 本地扫描预览支持只看带元信息的歌曲；创建或补充本地歌单后，
   应用会按需在后台继续补全歌曲名、歌手、专辑和封面信息，并尽量保留已编辑的本地元数据。
 - 下载的“元信息后处理”可单独开关；关闭后仍会保留下载管理所需的元数据，
@@ -606,8 +632,11 @@ NeriPlayer 支持将本地元数据同步到 **用户自己的 GitHub 仓库**�
 - 🧹 **远端容错**：读取 JSON/ProtoBuf 同步快照时会兼容缺字段旧数据，
   过滤无可解析歌曲身份或无有效删除时间的异常记录；
   缺失 `addedAt` 的歌曲会排在已有时间的歌曲之后，避免异常快照打乱歌单。
-- 🪶 **省流模式**：可使用 `ProtoBuf + GZIP` 的 `backup.bin`；
+- 🪶 **省流模式**：`backup.bin` 当前写入旧客户端可读的
+  `Base64(GZIP(ProtoBuf))` 文本；读取侧同时兼容原始 GZIP、JSON 和历史 Base64，
   关闭省流模式时使用 JSON。
+- GitHub 大文件读取优先使用 raw 内容接口；WebDAV 没有 ETag/Last-Modified 时，
+  只有远端 SHA-256 指纹未变化才会回退无条件写入，否则按并发冲突失败。
 - 📦 **远端格式**：GitHub 仓库不等于端到端加密，
   远端文件仍由用户自行保管。
 - 🚫 **同步边界**：不会上传音频缓存、下载文件、本地音频文件、
@@ -630,6 +659,8 @@ NeriPlayer 支持将本地元数据同步到 **用户自己的 GitHub 仓库**�
 - 支持自动同步和手动立即同步。
 - 使用 `WorkManager` 做延迟同步、周期同步、网络检查和失败重试。
 - WebDAV URL、用户名和密码保存在本地加密存储中。
+- WebDAV 优先使用 ETag/Last-Modified 做条件写入；服务器不提供条件令牌时，只有在
+  远端 SHA-256 指纹未变化的情况下才允许回退到无条件写入，否则按冲突失败。
 - WebDAV 远端文件同样不是端到端加密备份。
 
 ---
@@ -649,11 +680,14 @@ NeriPlayer 支持将本地元数据同步到 **用户自己的 GitHub 仓库**�
 
 - [x] 主标签双场景横向转场、可打断反向切换、玻璃 owner 接力和默认抽屉式详情反馈
 - [x] 一起听循环/随机模式同步、服务端时钟偏移估算与权威直链恢复
+- [x] 一起听邀请/成员密钥、控制事件顺序过滤和队列内曲目选择约束
 - [x] 32-bit 高解析普通输出、PCM float 声道平衡和响度均衡线程安全状态
+- [x] USB 独占前后台恢复、播放唤醒策略和比特完美音量设置
 - [x] USB 独占 UAC2 显式反馈、长调度间隙重捕获、协调式 AudioSink 重配和 Runtime Report v2
 - [x] Native USB 三组 host sanitizer/警告门禁与四 ABI Android 编译 CI
 - [x] USB 独占 32-bit PCM、UAC2.0 Type I PCM 兼容路径、原地重配置、动态传输扩缩容和背压卡顿恢复
 - [x] GitHub/WebDAV 异常同步快照、缺字段歌曲和删除记录兼容清洗
+- [x] GitHub/WebDAV JSON、原始 GZIP 与历史 Base64 同步格式兼容读取
 - [x] 播放器、下载存储、启动流程、歌词组件和一起听客户端按职责拆分子包
 - [x] 本地歌单显示顺序版本化及 GitHub/WebDAV 旧同步数据兼容迁移
 - [x] USB 独占播放的设备选择、质量策略、后台运行提醒和多层自动恢复
@@ -661,6 +695,7 @@ NeriPlayer 支持将本地元数据同步到 **用户自己的 GitHub 仓库**�
 - [x] 一起听直链共享开关、异步直链解析和更稳的房间同步
 - [x] 歌词长按选择、复制、歌曲分享和歌词卡片生成
 - [x] 歌词音译显示与歌词行为面板
+- [x] Lyricon/SuperLyric 独立 200 ms 进度推送、歌词翻译匹配和 Super Island 分享链接
 - [x] Mini Player 横向滑动切换上一首/下一首
 - [x] 网易云歌单详情缓存与网络失败回退
 - [x] 存储占用分组分析和扩展缓存清理
@@ -684,6 +719,7 @@ NeriPlayer 支持将本地元数据同步到 **用户自己的 GitHub 仓库**�
 - [x] Bilibili 适配
 - [x] YouTube Music 基础适配
 - [x] YouTube Music 搜索能力
+- [x] YouTube 匿名取流、Cookie 轮换保护、PoToken/EJS/bootstrap 缓存和直链/HLS 回退
 - [x] WebDAV 同步
 - [x] 播放统计
 - [x] 播放音效
@@ -745,6 +781,8 @@ NeriPlayer 支持将本地元数据同步到 **用户自己的 GitHub 仓库**�
 - QQ 音乐当前仅作为播放页元数据/歌词补全源。
 - GitHub/WebDAV 同步不是端到端加密；完整配置导出文件可能包含授权信息，
   请自行妥善保管。
+- 省流同步写入仍使用兼容旧客户端的 Base64 文本；切换到原始 GZIP 写入前，
+  所有同步端都必须支持 read-both。
 
 ---
 
