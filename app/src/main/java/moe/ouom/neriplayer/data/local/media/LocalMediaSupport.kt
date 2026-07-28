@@ -46,6 +46,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.network.isFileInsideDirectory
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.io.RandomAccessFile
 import java.nio.charset.Charset
@@ -181,11 +182,19 @@ private fun SongItem.resolveShareableLocalUri(context: Context): Uri? {
         LocalMediaSupport.resolveLocalFile(context, localUri)
     }.getOrNull()
     if (resolvedFile != null) {
-        return buildShareableFileUri(context, resolvedFile) ?: contentFallbackUri
+        return buildShareableFileUri(context, resolvedFile)
+            ?: contentFallbackUri?.takeUnless {
+                localUri.scheme.equals("content", ignoreCase = true)
+            }
     }
 
     if (localUri.scheme.equals("content", ignoreCase = true)) {
-        return localUri
+        val stagedFile = LocalMediaSupport.prepareShareableContentFile(
+            context = context,
+            sourceUri = localUri,
+            suggestedName = localFileName ?: name
+        ) ?: return null
+        return buildShareableFileUri(context, stagedFile)
     }
 
     val path = when {
@@ -1051,6 +1060,46 @@ object LocalMediaSupport {
             sourceFile = sourceFile,
             shareDir = File(context.cacheDir, SHARED_LOCAL_MEDIA_DIR)
         )
+    }
+
+    internal fun prepareShareableContentFile(
+        context: Context,
+        sourceUri: Uri,
+        suggestedName: String
+    ): File? {
+        val shareDir = File(context.cacheDir, SHARED_LOCAL_MEDIA_DIR).apply { mkdirs() }
+        val extension = suggestedName.substringAfterLast('.', "")
+            .takeIf { it.length in 1..10 && it.all(Char::isLetterOrDigit) }
+            ?.let { ".${it.lowercase()}" }
+            .orEmpty()
+        val target = File(
+            shareDir,
+            "content-${stableKey(sourceUri.toString())}$extension"
+        )
+        val partial = File(shareDir, ".${target.name}.partial")
+        partial.delete()
+        return runCatching {
+            val input = context.contentResolver.openInputStream(sourceUri)
+                ?: throw IOException("Unable to open content URI for sharing: $sourceUri")
+            input.use { source ->
+                partial.outputStream().use { output ->
+                    source.copyTo(output)
+                }
+            }
+            if (target.exists() && !target.delete()) {
+                throw IOException("Unable to replace staged share file: ${target.name}")
+            }
+            if (!partial.renameTo(target)) {
+                throw IOException("Unable to commit staged share file: ${target.name}")
+            }
+            target
+        }.onFailure { error ->
+            partial.delete()
+            NPLogger.w(
+                LOCAL_MEDIA_SHARE_TAG,
+                "Failed to stage content URI for sharing: $sourceUri: ${error.message}"
+            )
+        }.getOrNull()
     }
 
     internal fun prepareShareableFileInDirectory(sourceFile: File, shareDir: File): File {
