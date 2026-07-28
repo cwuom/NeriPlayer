@@ -35,3 +35,16 @@ internal fun shouldRestoreUsbExclusiveForegroundPlaybackIntent(
 ): Boolean {
     return action != UsbExclusiveForegroundRecoveryAction.NONE && !transportActive
 }
+
+internal const val USB_EXCLUSIVE_DEFERRED_RUNTIME_REFRESH_MAX_RETRIES = 4
+internal const val USB_EXCLUSIVE_DEFERRED_RUNTIME_REFRESH_RETRY_DELAY_MS = 150L
+
+internal fun shouldRetryUsbExclusiveDeferredRuntimeRefresh(
+    runtimeReportValid: Boolean,
+    runtimeReportInvalidReason: String?,
+    retryAttempt: Int
+): Boolean {
+    return !runtimeReportValid &&
+        runtimeReportInvalidReason == "native_refresh_deferred" &&
+        retryAttempt < USB_EXCLUSIVE_DEFERRED_RUNTIME_REFRESH_MAX_RETRIES
+}

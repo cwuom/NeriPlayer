@@ -102,7 +102,9 @@ internal fun PlayerManager.schedulePlaybackStartupWatchdog(reason: String) {
             "NERI-PlayerManager",
             "playback startup stalled: reason=$reason, elapsedMs=${SystemClock.elapsedRealtime() - startedAtMs}, " +
                 "state=${playbackStateName(player.playbackState)}, positionMs=${player.currentPosition.coerceAtLeast(0L)}, " +
-                "urlIndex=$activePlaybackUrlIndex/${activePlaybackCandidates.size}, attempts=$startupStallRecoveryAttempts"
+                "urlIndex=$activePlaybackUrlIndex/${activePlaybackCandidates.size}, " +
+                "expeditedYoutubeSeek=$expeditedYouTubeSeekRecoveryPending, " +
+                "attempts=$startupStallRecoveryAttempts"
         )
         recoverPlaybackStartupStall(requestToken)
     }
@@ -129,7 +131,15 @@ private fun PlayerManager.shouldWatchPlaybackStartup(): Boolean {
 private fun PlayerManager.startupWatchdogTimeoutMs(): Long {
     val song = _currentSongFlow.value ?: return STARTUP_STALL_REMOTE_TIMEOUT_MS
     if (isLocalSong(song)) return STARTUP_STALL_LOCAL_TIMEOUT_MS
-    if (isYouTubeMusicTrack(song)) return STARTUP_STALL_YOUTUBE_TIMEOUT_MS
+    if (isYouTubeMusicTrack(song)) {
+        return if (
+            expeditedYouTubeSeekRecoveryPending && pendingSeekPositionOrNull() != null
+        ) {
+            STARTUP_STALL_YOUTUBE_DEEP_SEEK_TIMEOUT_MS
+        } else {
+            STARTUP_STALL_YOUTUBE_TIMEOUT_MS
+        }
+    }
     return STARTUP_STALL_REMOTE_TIMEOUT_MS
 }
 

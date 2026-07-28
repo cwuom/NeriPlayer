@@ -445,6 +445,7 @@ object PlayerManager {
     internal const val STARTUP_STALL_LOCAL_TIMEOUT_MS = 5_000L
     internal const val STARTUP_STALL_REMOTE_TIMEOUT_MS = 12_000L
     internal const val STARTUP_STALL_YOUTUBE_TIMEOUT_MS = 25_000L
+    internal const val STARTUP_STALL_YOUTUBE_DEEP_SEEK_TIMEOUT_MS = 5_000L
     internal const val STARTUP_STALL_READY_EARLY_TIMEOUT_MS = 5_000L
     internal const val STARTUP_STALL_USB_EARLY_TIMEOUT_MS = 4_000L
     internal const val STARTUP_STALL_MAX_RECOVERY_ATTEMPTS = 3
@@ -461,6 +462,7 @@ object PlayerManager {
     internal val urlRefreshController = RefreshInFlightController<UrlRefreshOperation>()
     @Volatile
     internal var pendingSeekPositionMs: Long = C.TIME_UNSET
+    internal var expeditedYouTubeSeekRecoveryPending = false
     internal var playbackPositionGeneration: Long = 0L
     internal var lastUrlRefreshKey: String? = null
     internal var lastUrlRefreshAtMs: Long = 0L
@@ -1047,6 +1049,7 @@ object PlayerManager {
 
     internal fun clearPendingSeekPosition() {
         pendingSeekPositionMs = C.TIME_UNSET
+        expeditedYouTubeSeekRecoveryPending = false
     }
 
     internal fun resolveDisplayedPlaybackPosition(actualPositionMs: Long): Long {

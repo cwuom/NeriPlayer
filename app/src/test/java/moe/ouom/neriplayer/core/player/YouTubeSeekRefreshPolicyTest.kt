@@ -49,6 +49,44 @@ class YouTubeSeekRefreshPolicyTest {
     }
 
     @Test
+    fun shouldUseExpeditedRecoveryAfterSeek_returnsTrueForDeepSeekInLongResolvedStream() {
+        val song = createSong(mediaUri = "https://music.youtube.com/watch?v=fbvvS8e1KgI")
+        val url =
+            "https://rr1---sn-aigl6ney.googlevideo.com/videoplayback" +
+                "?source=youtube&mime=audio%2Fwebm&clen=124615180&n=resolved-n" +
+                "&sig=resolved-signature&pot=po-token-123"
+
+        assertTrue(
+            YouTubeSeekRefreshPolicy.shouldUseExpeditedRecoveryAfterSeek(
+                song = song,
+                currentUrl = url,
+                previousPositionMs = 2L * 60L * 1000L,
+                targetPositionMs = 95L * 60L * 1000L,
+                durationMs = 139L * 60L * 1000L
+            )
+        )
+    }
+
+    @Test
+    fun shouldUseExpeditedRecoveryAfterSeek_returnsFalseForShortTrack() {
+        val song = createSong(mediaUri = "https://music.youtube.com/watch?v=fbvvS8e1KgI")
+        val url =
+            "https://rr1---sn-aigl6ney.googlevideo.com/videoplayback" +
+                "?source=youtube&mime=audio%2Fwebm&clen=3586688&n=resolved-n" +
+                "&sig=resolved-signature&pot=po-token-123"
+
+        assertFalse(
+            YouTubeSeekRefreshPolicy.shouldUseExpeditedRecoveryAfterSeek(
+                song = song,
+                currentUrl = url,
+                previousPositionMs = 5_000L,
+                targetPositionMs = 180_000L,
+                durationMs = 223_041L
+            )
+        )
+    }
+
+    @Test
     fun shouldRefreshUrlBeforeSeek_returnsTrueWhenWebRemixPoTokenMissing() {
         val song = createSong(mediaUri = "https://music.youtube.com/watch?v=fbvvS8e1KgI")
         val url =

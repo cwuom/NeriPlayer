@@ -1326,13 +1326,27 @@ internal fun PlayerManager.seekToImpl(
         "NERI-PlayerManager",
         "seekTo requested: positionMs=$resolvedPositionMs, source=$commandSource, currentSong=${_currentSongFlow.value?.name}, currentUrl=${_currentMediaUrl.value}, stack=[${debugStackHint()}]"
     )
-    if (
-        YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeSeek(
-            _currentSongFlow.value,
-            _currentMediaUrl.value
+    val currentSong = _currentSongFlow.value
+    val currentUrl = _currentMediaUrl.value
+    val currentPositionMs = player.currentPosition.coerceAtLeast(0L)
+    val knownDurationMs = maxOf(
+        player.duration.coerceAtLeast(0L),
+        currentSong?.durationMs?.coerceAtLeast(0L) ?: 0L
+    )
+    val shouldExpediteYouTubeSeekRecovery =
+        YouTubeSeekRefreshPolicy.shouldUseExpeditedRecoveryAfterSeek(
+            song = currentSong,
+            currentUrl = currentUrl,
+            previousPositionMs = currentPositionMs,
+            targetPositionMs = resolvedPositionMs,
+            durationMs = knownDurationMs
         )
+    if (
+        YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeSeek(currentSong, currentUrl) ||
+        shouldExpediteYouTubeSeekRecovery
     ) {
         rememberPendingSeekPosition(resolvedPositionMs)
+        expeditedYouTubeSeekRecoveryPending = shouldExpediteYouTubeSeekRecovery
     } else {
         clearPendingSeekPosition()
     }

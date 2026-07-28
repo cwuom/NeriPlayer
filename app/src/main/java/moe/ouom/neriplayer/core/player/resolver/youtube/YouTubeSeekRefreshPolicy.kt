@@ -58,6 +58,32 @@ internal object YouTubeSeekRefreshPolicy {
         return shouldRefreshForMissingPoToken(resolvedUrl) || isNearExpiry(resolvedUrl)
     }
 
+    fun shouldUseExpeditedRecoveryAfterSeek(
+        song: SongItem?,
+        currentUrl: String?,
+        previousPositionMs: Long,
+        targetPositionMs: Long,
+        durationMs: Long
+    ): Boolean {
+        if (song == null || !isYouTubeMusicSong(song)) {
+            return false
+        }
+        val resolvedUrl = currentUrl?.takeIf { it.isNotBlank() } ?: return false
+        if (resolvedUrl.startsWith("file://") || resolvedUrl.startsWith("http://offline.cache/")) {
+            return false
+        }
+        if (!YouTubeGoogleVideoRangeSupport.supportsSeekingWithoutUrlRefresh(resolvedUrl)) {
+            return false
+        }
+        val seekDistanceMs = kotlin.math.abs(
+            targetPositionMs.coerceAtLeast(0L) - previousPositionMs.coerceAtLeast(0L)
+        )
+        val knownDurationMs = maxOf(durationMs.coerceAtLeast(0L), targetPositionMs.coerceAtLeast(0L))
+        return seekDistanceMs >= EXPEDITED_RECOVERY_MIN_SEEK_DISTANCE_MS &&
+            targetPositionMs >= EXPEDITED_RECOVERY_MIN_TARGET_POSITION_MS &&
+            knownDurationMs >= EXPEDITED_RECOVERY_MIN_LONG_VIDEO_DURATION_MS
+    }
+
     private fun shouldRefreshForMissingPoToken(url: String): Boolean {
         val host = runCatching { URI(url).host }
             .getOrNull()
@@ -111,4 +137,7 @@ internal object YouTubeSeekRefreshPolicy {
     }
 
     private const val URL_EXPIRY_GRACE_MS = 2L * 60L * 1000L
+    private const val EXPEDITED_RECOVERY_MIN_SEEK_DISTANCE_MS = 60L * 1000L
+    private const val EXPEDITED_RECOVERY_MIN_TARGET_POSITION_MS = 5L * 60L * 1000L
+    private const val EXPEDITED_RECOVERY_MIN_LONG_VIDEO_DURATION_MS = 20L * 60L * 1000L
 }

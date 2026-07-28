@@ -8,6 +8,49 @@ import org.junit.Test
 class UsbExclusiveForegroundRecoveryPolicyTest {
 
     @Test
+    fun `deferred runtime refresh retries only within its bounded budget`() {
+        assertTrue(
+            shouldRetryUsbExclusiveDeferredRuntimeRefresh(
+                runtimeReportValid = false,
+                runtimeReportInvalidReason = "native_refresh_deferred",
+                retryAttempt = 0
+            )
+        )
+        assertTrue(
+            shouldRetryUsbExclusiveDeferredRuntimeRefresh(
+                runtimeReportValid = false,
+                runtimeReportInvalidReason = "native_refresh_deferred",
+                retryAttempt = USB_EXCLUSIVE_DEFERRED_RUNTIME_REFRESH_MAX_RETRIES - 1
+            )
+        )
+        assertFalse(
+            shouldRetryUsbExclusiveDeferredRuntimeRefresh(
+                runtimeReportValid = false,
+                runtimeReportInvalidReason = "native_refresh_deferred",
+                retryAttempt = USB_EXCLUSIVE_DEFERRED_RUNTIME_REFRESH_MAX_RETRIES
+            )
+        )
+    }
+
+    @Test
+    fun `non deferred invalid runtime refresh is not retried`() {
+        assertFalse(
+            shouldRetryUsbExclusiveDeferredRuntimeRefresh(
+                runtimeReportValid = false,
+                runtimeReportInvalidReason = "runtime_report_v2_invalid",
+                retryAttempt = 0
+            )
+        )
+        assertFalse(
+            shouldRetryUsbExclusiveDeferredRuntimeRefresh(
+                runtimeReportValid = true,
+                runtimeReportInvalidReason = "native_refresh_deferred",
+                retryAttempt = 0
+            )
+        )
+    }
+
+    @Test
     fun `streaming native path probes progress after foreground resume`() {
         assertEquals(
             UsbExclusiveForegroundRecoveryAction.PROBE_PROGRESS,
