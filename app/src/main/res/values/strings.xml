@@ -1534,7 +1534,10 @@
     <string name="listen_together_leave_room">离开</string>
     <string name="listen_together_copy_invite">复制邀请信息</string>
     <string name="listen_together_invite_copied">邀请信息已复制</string>
-    <string name="listen_together_invite_share_text">%1$s 邀请你在 NeriPlayer 中加入房间 %2$s。请点击下面的链接打开 App 加入。</string>
+    <string name="listen_together_copy_join_secret">复制邀请密钥</string>
+    <string name="listen_together_join_secret_copied">邀请密钥已复制</string>
+    <string name="listen_together_clipboard_invite_missing">剪贴板中没有有效的一起听邀请信息</string>
+    <string name="listen_together_invite_share_text">%1$s 邀请你在 NeriPlayer 中加入房间 %2$s。复制后打开 App 加入。</string>
     <string name="listen_together_creating_room">正在创建房间</string>
     <string name="listen_together_joining_room">正在加入房间</string>
     <string name="listen_together_refreshing_room_state">正在刷新房间状态</string>

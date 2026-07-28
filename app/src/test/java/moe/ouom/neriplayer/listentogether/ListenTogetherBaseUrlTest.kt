@@ -56,7 +56,7 @@ class ListenTogetherBaseUrlTest {
     @Test
     fun `invite parser keeps encoded worker base url from shared text`() {
         val invite = parseListenTogetherInvite(
-            "Neri5458C5 邀请你在 NeriPlayer 中加入房间 GTV42X。复制后打开 App 即可识别，或直接使用下面的链接。\n" +
+            "Neri5458C5 邀请你在 NeriPlayer 中加入房间 GTV42X。复制后打开 App 加入。\n" +
                 "neriplayer://listen-together/join?roomId=GTV42X&inviter=Neri5458C5&baseUrl=https%3A%2F%2Fneriplayerltw.cwuomcwuom.workers.dev&secret=secret-value"
         )
 
@@ -79,6 +79,14 @@ class ListenTogetherBaseUrlTest {
     fun `invite parser rejects missing room join secret`() {
         assertNull(
             parseListenTogetherInvite("neriplayer://listen-together/join?roomId=GTV42X")
+        )
+    }
+
+    @Test
+    fun `clipboard text without an invitation cannot be parsed for a room join`() {
+        assertNull(parseListenTogetherInvite(null as String?))
+        assertNull(
+            parseListenTogetherInvite("roomId=GTV42X&secret=secret-value")
         )
     }
 

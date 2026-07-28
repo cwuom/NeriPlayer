@@ -76,7 +76,9 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
 import moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager
 import moe.ouom.neriplayer.listentogether.invite.buildListenTogetherInviteUri
+import moe.ouom.neriplayer.listentogether.invite.parseListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherBaseUrl
+import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherInviteJoinBaseUrl
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherConnectionState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherMember
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomSettings
@@ -88,10 +90,8 @@ import moe.ouom.neriplayer.listentogether.playback.indexOfTrack
 import moe.ouom.neriplayer.listentogether.validation.ListenTogetherValidationError
 import moe.ouom.neriplayer.listentogether.validation.normalizeListenTogetherRoomId
 import moe.ouom.neriplayer.listentogether.validation.sanitizeListenTogetherJoinSecretOrNull
-import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherJoinSecret
 import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherNickname
 import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherRoomCreation
-import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherRoomId
 import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherUserUuid
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.data.model.SongItem
@@ -157,7 +157,6 @@ fun ListenTogetherRoomPanel(
 
     var baseUrl by rememberSaveable { mutableStateOf("") }
     var roomIdInput by rememberSaveable { mutableStateOf("") }
-    var joinSecretInput by rememberSaveable { mutableStateOf("") }
     var userUuid by rememberSaveable { mutableStateOf("") }
     var nickname by rememberSaveable { mutableStateOf("") }
     var allowMemberControl by rememberSaveable { mutableStateOf(true) }
@@ -184,7 +183,6 @@ fun ListenTogetherRoomPanel(
         currentIndex = currentSongIndex,
         currentSong = currentSong
     )
-    val joinSecretError = validateListenTogetherJoinSecret(joinSecretInput)
     val inviteUri = remember(
         sessionState.roomId,
         sessionState.nickname,
@@ -263,33 +261,21 @@ fun ListenTogetherRoomPanel(
                         singleLine = true
                     )
                 }
-                Row(
+                OutlinedTextField(
+                    value = nickname,
+                    onValueChange = { nickname = it.trim().take(24) },
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    OutlinedTextField(
-                        value = nickname,
-                        onValueChange = { nickname = it.trim().take(24) },
-                        modifier = Modifier.weight(1f),
-                        label = { Text(stringResource(R.string.listen_together_nickname)) },
-                        singleLine = true
-                    )
+                    label = { Text(stringResource(R.string.listen_together_nickname)) },
+                    singleLine = true
+                )
+                if (isInRoom) {
                     OutlinedTextField(
                         value = roomIdInput,
-                        onValueChange = { roomIdInput = normalizeListenTogetherRoomId(it).take(6) },
-                        modifier = Modifier.weight(1f),
+                        onValueChange = {},
+                        modifier = Modifier.fillMaxWidth(),
                         label = { Text(stringResource(R.string.listen_together_room_id)) },
                         singleLine = true,
-                        readOnly = isInRoom
-                    )
-                }
-                if (!isInRoom) {
-                    OutlinedTextField(
-                        value = joinSecretInput,
-                        onValueChange = { joinSecretInput = it.trim().take(256) },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.listen_together_join_secret)) },
-                        singleLine = true
+                        readOnly = true
                     )
                 }
                 runningActionResId?.let { resId ->
@@ -304,9 +290,7 @@ fun ListenTogetherRoomPanel(
                 }
                 validateListenTogetherNickname(nickname)?.let { ErrorText(it) }
                 if (!isInRoom) {
-                    validateListenTogetherRoomId(roomIdInput)?.takeIf { roomIdInput.isNotBlank() }?.let { ErrorText(it) }
-                    joinSecretError?.takeIf { roomIdInput.isNotBlank() }?.let { ErrorText(it) }
-                    roomCreationError?.takeIf { roomIdInput.isBlank() }?.let { ErrorText(it) }
+                    roomCreationError?.let { ErrorText(it) }
                 }
                 QuickActionSection(
                     activity = activity,
@@ -326,8 +310,6 @@ fun ListenTogetherRoomPanel(
                         activity = activity,
                         userUuid = userUuid,
                         nickname = nickname,
-                        roomIdInput = roomIdInput,
-                        joinSecretInput = joinSecretInput,
                         baseUrlInput = baseUrl,
                         effectiveBaseUrl = effectiveBaseUrl,
                         roomSettings = ListenTogetherRoomSettings(allowMemberControl, autoPauseOnMemberChange, shareAudioLinks),
@@ -350,23 +332,12 @@ fun ListenTogetherRoomPanel(
                     )
                 }
                 if (isController) {
-                    TextButton(
-                        onClick = {
-                            val roomId = sessionState.roomId ?: return@TextButton
-                            val inviteText = buildString {
-                                append(context.getString(R.string.listen_together_invite_share_text, sessionState.nickname ?: context.getString(R.string.listen_together_title), roomId))
-                                inviteUri?.let {
-                                    append("\n")
-                                    append(it)
-                                }
-                            }
-                            clipboard.copyText(clipboardScope, inviteText)
-                            Toast.makeText(context, context.getString(R.string.listen_together_invite_copied), Toast.LENGTH_SHORT).show()
-                        },
-                        enabled = inviteUri != null
-                    ) {
-                        Text(stringResource(R.string.listen_together_copy_invite))
-                    }
+                    InviteCopyActions(
+                        sessionState = sessionState,
+                        inviteUri = inviteUri,
+                        clipboard = clipboard,
+                        clipboardScope = clipboardScope
+                    )
                 }
                 if (isController || !isInRoom) {
                     HorizontalDivider()
@@ -444,25 +415,16 @@ fun ListenTogetherRoomPanel(
                     label = { Text(stringResource(R.string.listen_together_nickname)) },
                     singleLine = true
                 )
-                OutlinedTextField(
-                    value = roomIdInput,
-                    onValueChange = { roomIdInput = normalizeListenTogetherRoomId(it).take(6) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp),
-                    label = { Text(stringResource(R.string.listen_together_room_id)) },
-                    singleLine = true,
-                    readOnly = isInRoom
-                )
-                if (!isInRoom) {
+                if (isInRoom) {
                     OutlinedTextField(
-                        value = joinSecretInput,
-                        onValueChange = { joinSecretInput = it.trim().take(256) },
+                        value = roomIdInput,
+                        onValueChange = {},
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp),
-                        label = { Text(stringResource(R.string.listen_together_join_secret)) },
-                        singleLine = true
+                        label = { Text(stringResource(R.string.listen_together_room_id)) },
+                        singleLine = true,
+                        readOnly = true
                     )
                 }
                 runningActionResId?.let { resId ->
@@ -478,9 +440,7 @@ fun ListenTogetherRoomPanel(
                 }
                 validateListenTogetherNickname(nickname)?.let { SimpleErrorText(it) }
                 if (!isInRoom) {
-                    validateListenTogetherRoomId(roomIdInput)?.takeIf { roomIdInput.isNotBlank() }?.let { SimpleErrorText(it) }
-                    joinSecretError?.takeIf { roomIdInput.isNotBlank() }?.let { SimpleErrorText(it) }
-                    roomCreationError?.takeIf { roomIdInput.isBlank() }?.let { SimpleErrorText(it) }
+                    roomCreationError?.let { SimpleErrorText(it) }
                 }
                 if (!isInRoom) {
                     RoomActions(
@@ -493,8 +453,6 @@ fun ListenTogetherRoomPanel(
                         activity = activity,
                         userUuid = userUuid,
                         nickname = nickname,
-                        roomIdInput = roomIdInput,
-                        joinSecretInput = joinSecretInput,
                         baseUrlInput = baseUrl,
                         effectiveBaseUrl = effectiveBaseUrl,
                         roomSettings = ListenTogetherRoomSettings(allowMemberControl, autoPauseOnMemberChange, shareAudioLinks),
@@ -519,22 +477,13 @@ fun ListenTogetherRoomPanel(
                     )
                 }
                 if (isController) {
-                    TextButton(
-                        onClick = {
-                            val roomId = sessionState.roomId ?: return@TextButton
-                            val inviteText = buildString {
-                                append(context.getString(R.string.listen_together_invite_share_text, sessionState.nickname ?: context.getString(R.string.listen_together_title), roomId))
-                                inviteUri?.let {
-                                    append("\n")
-                                    append(it)
-                                }
-                            }
-                            clipboard.copyText(clipboardScope, inviteText)
-                            Toast.makeText(context, context.getString(R.string.listen_together_invite_copied), Toast.LENGTH_SHORT).show()
-                        },
-                        enabled = inviteUri != null,
-                        modifier = Modifier.padding(horizontal = 12.dp)
-                    ) { Text(stringResource(R.string.listen_together_copy_invite)) }
+                    InviteCopyActions(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        sessionState = sessionState,
+                        inviteUri = inviteUri,
+                        clipboard = clipboard,
+                        clipboardScope = clipboardScope
+                    )
                 }
                 if (isController || !isInRoom) {
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
@@ -673,8 +622,6 @@ private fun RoomActions(
     activity: ComponentActivity?,
     userUuid: String,
     nickname: String,
-    roomIdInput: String,
-    joinSecretInput: String,
     baseUrlInput: String,
     effectiveBaseUrl: String,
     roomSettings: ListenTogetherRoomSettings,
@@ -684,10 +631,9 @@ private fun RoomActions(
     onRunningActionChange: (Int?) -> Unit
 ) {
     val context = LocalContext.current
+    val clipboard = LocalClipboard.current
     val userUuidError = validateListenTogetherUserUuid(userUuid)
     val nicknameError = validateListenTogetherNickname(nickname)
-    val roomIdError = validateListenTogetherRoomId(roomIdInput)
-    val joinSecretError = validateListenTogetherJoinSecret(joinSecretInput)
     val currentIndex = currentQueue.indexOfTrack(currentSong)
     val roomCreationError = validateListenTogetherRoomCreation(
         queue = currentQueue,
@@ -736,21 +682,54 @@ private fun RoomActions(
         Button(
             onClick = {
                 activity?.lifecycleScope?.launch {
+                    val invite = parseListenTogetherInvite(
+                        clipboard.getClipEntry()
+                            ?.clipData
+                            ?.takeIf { it.itemCount > 0 }
+                            ?.getItemAt(0)
+                            ?.coerceToText(context)
+                            ?.toString()
+                    )
+                    if (invite == null) {
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.listen_together_clipboard_invite_missing),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        return@launch
+                    }
+                    val joinUserUuid = userUuid.takeIf {
+                        validateListenTogetherUserUuid(it) == null
+                    } ?: preferences.getOrCreateUserUuid()
+                    val joinNickname = nickname.takeIf {
+                        validateListenTogetherNickname(it) == null
+                    } ?: preferences.getOrCreateNickname()
                     onRunningActionChange(R.string.listen_together_joining_room)
                     runCatching {
-                        val targetRoomId = normalizeListenTogetherRoomId(roomIdInput)
+                        val targetRoomId = invite.roomId
                         val currentRoomId = sessionState.roomId?.let(::normalizeListenTogetherRoomId)
                         if (currentRoomId != null && currentRoomId == targetRoomId) {
                             Toast.makeText(context, context.getString(R.string.listen_together_same_room_join_ignored, targetRoomId), Toast.LENGTH_SHORT).show()
                             return@runCatching
                         }
-                        persistSettings(preferences, baseUrlInput, effectiveBaseUrl, userUuid, nickname, roomSettings)
+                        persistSettings(
+                            preferences,
+                            baseUrlInput,
+                            effectiveBaseUrl,
+                            joinUserUuid,
+                            joinNickname,
+                            roomSettings
+                        )
                         sessionManager.joinRoom(
-                            baseUrl = effectiveBaseUrl,
+                            baseUrl = resolveListenTogetherInviteJoinBaseUrl(
+                                invite = invite,
+                                savedBaseUrlInput = baseUrlInput,
+                                savedBaseUrl = effectiveBaseUrl
+                            ),
                             roomId = targetRoomId,
-                            userUuid = userUuid,
-                            nickname = nickname,
-                            joinSecret = joinSecretInput
+                            userUuid = joinUserUuid,
+                            nickname = joinNickname,
+                            joinSecret = invite.joinSecret
                         )
                         sessionManager.connectWebSocket()
                     }.onFailure {
@@ -760,15 +739,73 @@ private fun RoomActions(
                 } ?: Toast.makeText(context, context.getString(R.string.listen_together_action_unavailable), Toast.LENGTH_SHORT).show()
             },
             enabled = runningActionResId == null &&
-                roomIdInput.isNotBlank() &&
-                userUuidError == null &&
-                nicknameError == null &&
-                roomIdError == null &&
-                joinSecretError == null,
+                (userUuid.isBlank() || userUuidError == null) &&
+                (nickname.isBlank() || nicknameError == null),
             modifier = Modifier.weight(1f)
         ) {
             Icon(Icons.Outlined.Link, contentDescription = null)
             Text(stringResource(R.string.listen_together_join_and_connect))
+        }
+    }
+}
+
+@Composable
+private fun InviteCopyActions(
+    modifier: Modifier = Modifier,
+    sessionState: ListenTogetherSessionState,
+    inviteUri: String?,
+    clipboard: Clipboard,
+    clipboardScope: CoroutineScope
+) {
+    val context = LocalContext.current
+    val joinSecret = sanitizeListenTogetherJoinSecretOrNull(sessionState.joinSecret)
+
+    FlowRow(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        TextButton(
+            onClick = {
+                val roomId = sessionState.roomId ?: return@TextButton
+                val inviteText = buildString {
+                    append(
+                        context.getString(
+                            R.string.listen_together_invite_share_text,
+                            sessionState.nickname ?: context.getString(R.string.listen_together_title),
+                            roomId
+                        )
+                    )
+                    inviteUri?.let {
+                        append("\n")
+                        append(it)
+                    }
+                }
+                clipboard.copyText(clipboardScope, inviteText)
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.listen_together_invite_copied),
+                    Toast.LENGTH_SHORT
+                ).show()
+            },
+            enabled = inviteUri != null
+        ) {
+            Text(stringResource(R.string.listen_together_copy_invite))
+        }
+        TextButton(
+            onClick = {
+                val secret = joinSecret ?: return@TextButton
+                clipboard.copyText(clipboardScope, secret)
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.listen_together_join_secret_copied),
+                    Toast.LENGTH_SHORT
+                ).show()
+            },
+            enabled = joinSecret != null
+        ) {
+            Icon(Icons.Outlined.ContentCopy, contentDescription = null)
+            Text(stringResource(R.string.listen_together_copy_join_secret))
         }
     }
 }

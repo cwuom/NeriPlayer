@@ -436,11 +436,12 @@ For release build and signing details, see
   permissions, member-control toggles, auto-pause on member changes,
   repeat/shuffle mode sync, optional sharing of controller-resolved stream URLs,
   invite links, deep links, custom server URLs, and host-offline detection. A first join
-  requires the invite secret and member reconnects use member secrets. Local tracks cannot
-  create a room or replace its current track. When sharing is enabled, the Worker caches and
-  exposes only the current controller URL; disabling sharing clears that cache. Outdated client
-  control events are filtered, and `REQUEST_SET_TRACK` can only choose a song already in the
-  current queue.
+  requires the invite secret and member reconnects use member secrets. Controllers can copy the
+  complete invite or its secret separately; tapping Join reads a valid invite from the clipboard
+  and does not enter a room when none is present. Local tracks cannot create a room or replace
+  its current track. When sharing is enabled, the Worker caches and exposes only the current
+  controller URL; disabling sharing clears that cache. Outdated client control events are filtered,
+  and `REQUEST_SET_TRACK` can only choose a song already in the current queue.
 - 🌈 **Personalization and themes**:
   auto/light/dark mode, dynamic color, seed colors, theme styles, UI scaling,
   custom background image, haptic feedback, lyric font size, lyric blur,
