@@ -40,6 +40,7 @@ import moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi
 import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicClient
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicPlaybackRepository
+import moe.ouom.neriplayer.core.api.youtube.YouTubePlaybackBootstrapCoordinator
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.listentogether.ListenTogetherPreferences
@@ -49,6 +50,7 @@ import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthAutoRefreshManager
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRotationWorker
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.platform.bili.BiliFavoriteFolderCacheRepository
@@ -207,8 +209,12 @@ private fun moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle.toWarmBootst
  */
 object AppContainer {
     private lateinit var application: Application
+    @Volatile
+    private var initialized = false
     val applicationContext: Application
         get() = application
+
+    internal fun isInitialized(): Boolean = initialized
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private const val YOUTUBE_DOWNLOAD_PLAYBACK_CALL_TIMEOUT_MS = 20_000L
@@ -219,14 +225,17 @@ object AppContainer {
     val neteaseCookieRepo by lazy { NeteaseCookieRepository(application) }
     val biliCookieRepo by lazy { BiliCookieRepository(application) }
     val youtubeAuthRepo by lazy { YouTubeAuthRepository(application) }
-    private val youtubeAuthAutoRefreshManager by lazy {
+    internal val youtubeAuthAutoRefreshManager by lazy {
         YouTubeAuthAutoRefreshManager(
             context = application,
             authProvider = youtubeAuthRepo::getAuthOnce,
             authHealthProvider = youtubeAuthRepo::getAuthHealthOnce,
-            authUpdater = youtubeAuthRepo::saveAuth
+            authUpdater = youtubeAuthRepo::saveAuth,
+            rotatedCookieUpdater = youtubeAuthRepo::mergeRotatedCookies
         )
     }
+
+    private val youtubePlaybackBootstrapCoordinator = YouTubePlaybackBootstrapCoordinator()
 
 
     val playHistoryRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -347,7 +356,8 @@ object AppContainer {
             settings = settingsRepo,
             authProvider = youtubeAuthRepo::getAuthOnce,
             authAutoRefreshManager = youtubeAuthAutoRefreshManager,
-            applicationContext = application
+            applicationContext = application,
+            bootstrapCoordinator = youtubePlaybackBootstrapCoordinator
         )
     }
     val youtubeMusicPlaybackRepository: YouTubeMusicPlaybackRepository
@@ -360,7 +370,8 @@ object AppContainer {
             settings = settingsRepo,
             authProvider = youtubeAuthRepo::getAuthOnce,
             authAutoRefreshManager = youtubeAuthAutoRefreshManager,
-            applicationContext = application
+            applicationContext = application,
+            bootstrapCoordinator = youtubePlaybackBootstrapCoordinator
         )
     }
     val youtubeMusicDownloadPlaybackRepository: YouTubeMusicPlaybackRepository
@@ -404,6 +415,7 @@ object AppContainer {
 
     fun initialize(app: Application) {
         this.application = app
+        initialized = true
         AudioDownloadManager.initialize(app)
         warmLocalPlaylistRepository()
         primeProxySetting()
@@ -517,6 +529,7 @@ object AppContainer {
                 val wasEnabled = YouTubeFeatureGate.isEnabled()
                 YouTubeFeatureGate.update(enabled)
                 if (wasEnabled && !enabled) {
+                    YouTubeAuthRotationWorker.cancelPeriodicRotation(application)
                     if (youtubeMusicClientDelegate.isInitialized()) {
                         youtubeMusicClientDelegate.value.clearBootstrapCache()
                     }
@@ -529,6 +542,7 @@ object AppContainer {
                     AudioDownloadManager.cancelActiveYouTubeDownloads()
                     cancelYouTubeCalls()
                 } else if (!wasEnabled && enabled) {
+                    YouTubeAuthRotationWorker.schedulePeriodicRotation(application)
                     warmYouTubePlaybackOnAppStart()
                 }
             }

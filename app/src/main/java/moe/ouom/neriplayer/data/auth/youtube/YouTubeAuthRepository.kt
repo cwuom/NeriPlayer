@@ -24,7 +24,6 @@ package moe.ouom.neriplayer.data.auth.youtube
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.core.content.edit
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,9 +31,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
+import java.io.IOException
 
 const val YOUTUBE_MUSIC_ORIGIN: String = "https://music.youtube.com"
 private const val YOUTUBE_AUTH_PREFS = "youtube_auth_secure_prefs"
+private const val YOUTUBE_AUTH_RECOVERY_PREFS = "youtube_auth_secure_prefs_recovery"
+private const val YOUTUBE_AUTH_RECOVERY_MASTER_KEY_ALIAS =
+    "youtube_auth_recovery_master_key"
 private const val KEY_YOUTUBE_AUTH_BUNDLE = "youtube_auth_bundle"
 
 data class YouTubeAuthBundle(
@@ -202,8 +205,10 @@ internal fun parseCookieHeader(raw: String): LinkedHashMap<String, String> {
 
 class YouTubeAuthRepository(private val context: Context) {
     private var encryptedPrefs: SharedPreferences
+    private var usingRecoveryStorage = false
     private val _authFlow: MutableStateFlow<YouTubeAuthBundle>
     private val _authHealthFlow: MutableStateFlow<YouTubeAuthHealth>
+    private val authMutationLock = Any()
 
     val authFlow: StateFlow<YouTubeAuthBundle>
         get() = _authFlow.asStateFlow()
@@ -229,32 +234,73 @@ class YouTubeAuthRepository(private val context: Context) {
     ): YouTubeAuthHealth = evaluateYouTubeAuthHealth(_authFlow.value, now)
 
     fun saveAuth(bundle: YouTubeAuthBundle) {
+        synchronized(authMutationLock) {
+            saveAuthLocked(bundle)
+        }
+    }
+
+    /** 在现有快照上合并轮换值, 防止并发页面刷新覆盖其它最新字段 */
+    fun mergeRotatedCookies(rotatedCookies: Map<String, String>): YouTubeAuthBundle {
+        synchronized(authMutationLock) {
+            val merged = mergeYouTubeAuthBundle(
+                base = _authFlow.value,
+                observedCookies = rotatedCookies,
+                savedAt = System.currentTimeMillis()
+            )
+            saveAuthLocked(merged)
+            return merged
+        }
+    }
+
+    private fun saveAuthLocked(bundle: YouTubeAuthBundle) {
         val normalized = bundle.normalized(
             savedAt = bundle.savedAt.takeIf { it > 0L } ?: System.currentTimeMillis()
         )
-        encryptedPrefs.edit {
-            putString(KEY_YOUTUBE_AUTH_BUNDLE, normalized.toJson())
-        }
+        persistAuthBundle(normalized)
         _authFlow.value = normalized
         _authHealthFlow.value = evaluateYouTubeAuthHealth(normalized)
     }
 
     fun mergeCookieUpdates(setCookieHeaders: Iterable<String>): Boolean {
-        val merged = mergeYouTubeAuthCookieUpdates(
-            base = _authFlow.value,
-            setCookieHeaders = setCookieHeaders
-        ) ?: return false
-        saveAuth(merged)
-        return true
+        synchronized(authMutationLock) {
+            val merged = mergeYouTubeAuthCookieUpdates(
+                base = _authFlow.value,
+                setCookieHeaders = setCookieHeaders
+            ) ?: return false
+            saveAuthLocked(merged)
+            return true
+        }
     }
 
     fun clear() {
-        encryptedPrefs.edit {
-            remove(KEY_YOUTUBE_AUTH_BUNDLE)
+        synchronized(authMutationLock) {
+            clearStoredAuth(encryptedPrefs, "active")
+            // 恢复存储可能保留着上一次加密异常时写入的凭据, 显式清除不能留下第二份
+            if (usingRecoveryStorage) {
+                runCatching { createEncryptedPrefs(YOUTUBE_AUTH_PREFS) }
+                    .onSuccess { clearStoredAuth(it, "primary") }
+                    .onFailure { error ->
+                        NPLogger.w(
+                            "NERI-YouTubeAuthRepo",
+                            "Failed to clear primary YouTube secure prefs.",
+                            error
+                        )
+                    }
+            } else {
+                runCatching { createRecoveryEncryptedPrefs() }
+                    .onSuccess { clearStoredAuth(it, "recovery") }
+                    .onFailure { error ->
+                        NPLogger.w(
+                            "NERI-YouTubeAuthRepo",
+                            "Failed to clear recovery YouTube secure prefs.",
+                            error
+                        )
+                    }
+            }
+            val cleared = YouTubeAuthBundle()
+            _authFlow.value = cleared
+            _authHealthFlow.value = evaluateYouTubeAuthHealth(cleared)
         }
-        val cleared = YouTubeAuthBundle()
-        _authFlow.value = cleared
-        _authHealthFlow.value = evaluateYouTubeAuthHealth(cleared)
     }
 
     fun refreshHealth(now: Long = System.currentTimeMillis()) {
@@ -265,47 +311,192 @@ class YouTubeAuthRepository(private val context: Context) {
     }
 
     private fun loadAuthBundle(): YouTubeAuthBundle {
-        val raw = encryptedPrefs.getString(KEY_YOUTUBE_AUTH_BUNDLE, null).orEmpty()
+        val primaryRead = runCatching {
+            encryptedPrefs.getString(KEY_YOUTUBE_AUTH_BUNDLE, null)
+        }
+        if (primaryRead.isFailure && !usingRecoveryStorage) {
+            NPLogger.w(
+                "NERI-YouTubeAuthRepo",
+                "Failed to read primary YouTube secure prefs, preserving it and switching to recovery storage.",
+                primaryRead.exceptionOrNull()
+            )
+            if (switchToRecoveryStorage()) {
+                return readRecoveryAuthBundle()
+            }
+        }
+
+        val raw = primaryRead.getOrNull().orEmpty()
+        if (raw.isBlank() && !usingRecoveryStorage) {
+            // 旧的恢复存储可能是在一次加密异常后写入的, 优先取它以免恢复成功后又显示游客态
+            runCatching { createRecoveryEncryptedPrefs() }
+                .onSuccess { recoveryPrefs ->
+                    val recoveryRaw = runCatching {
+                        recoveryPrefs.getString(KEY_YOUTUBE_AUTH_BUNDLE, null).orEmpty()
+                    }.getOrDefault("")
+                    if (recoveryRaw.isNotBlank()) {
+                        encryptedPrefs = recoveryPrefs
+                        usingRecoveryStorage = true
+                    }
+                }
+        }
+        if (usingRecoveryStorage) {
+            return readRecoveryAuthBundle()
+        }
         if (raw.isBlank()) {
             return YouTubeAuthBundle()
         }
         return YouTubeAuthBundle.fromJson(raw)
     }
 
-    private fun openEncryptedPrefsWithRecovery(): SharedPreferences {
-        return runCatching {
-            createEncryptedPrefs()
-        }.getOrElse { error ->
+    private fun readRecoveryAuthBundle(): YouTubeAuthBundle {
+        val raw = runCatching {
+            encryptedPrefs.getString(KEY_YOUTUBE_AUTH_BUNDLE, null).orEmpty()
+        }.onFailure { error ->
             NPLogger.w(
                 "NERI-YouTubeAuthRepo",
-                "Failed to open YouTube secure prefs, clearing storage and recreating.",
+                "Failed to read YouTube recovery secure prefs.",
                 error
             )
-            clearEncryptedStorage()
-            createEncryptedPrefs()
+        }.getOrDefault("")
+        return raw.takeIf(String::isNotBlank)?.let(YouTubeAuthBundle::fromJson)
+            ?: YouTubeAuthBundle()
+    }
+
+    private fun switchToRecoveryStorage(): Boolean {
+        val recoveryPrefs = runCatching { createRecoveryEncryptedPrefs() }
+            .onFailure { error ->
+                NPLogger.e(
+                    "NERI-YouTubeAuthRepo",
+                    "Failed to open YouTube recovery secure prefs; original storage was preserved.",
+                    error
+                )
+            }
+            .getOrNull()
+            ?: return false
+        encryptedPrefs = recoveryPrefs
+        usingRecoveryStorage = true
+        return true
+    }
+
+    private fun persistAuthBundle(bundle: YouTubeAuthBundle) {
+        val serialized = bundle.toJson()
+        val primaryWrite = runCatching {
+            commitAuthBundle(encryptedPrefs, serialized)
+        }
+        if (primaryWrite.getOrNull() != true) {
+            if (usingRecoveryStorage) {
+                throw primaryWrite.exceptionOrNull()
+                    ?: IOException("Failed to commit YouTube recovery secure prefs")
+            }
+            NPLogger.w(
+                "NERI-YouTubeAuthRepo",
+                "Failed to commit primary YouTube secure prefs, preserving it and switching to recovery storage.",
+                primaryWrite.exceptionOrNull()
+            )
+            if (!switchToRecoveryStorage()) {
+                throw primaryWrite.exceptionOrNull()
+                    ?: IOException("Failed to commit YouTube primary secure prefs")
+            }
+            if (!commitAuthBundle(encryptedPrefs, serialized)) {
+                throw IOException("Failed to commit YouTube recovery secure prefs")
+            }
+            return
+        }
+
+        // 主存储正常时也保留独立加密副本, 主文件损坏后仍能恢复最近一次登录
+        runCatching {
+            val recoveryPrefs = createRecoveryEncryptedPrefs()
+            if (!commitAuthBundle(recoveryPrefs, serialized)) {
+                NPLogger.w(
+                    "NERI-YouTubeAuthRepo",
+                    "Failed to commit YouTube recovery backup; primary auth remains available"
+                )
+            }
+        }.onFailure { error ->
+            NPLogger.w(
+                "NERI-YouTubeAuthRepo",
+                "Failed to update YouTube recovery backup; primary auth remains available.",
+                error
+            )
         }
     }
 
-    private fun createEncryptedPrefs(): SharedPreferences {
-        val masterKey = MasterKey.Builder(context)
+    private fun commitAuthBundle(
+        prefs: SharedPreferences,
+        serialized: String
+    ): Boolean = prefs.edit()
+        .putString(KEY_YOUTUBE_AUTH_BUNDLE, serialized)
+        .commit()
+
+    private fun openEncryptedPrefsWithRecovery(): SharedPreferences {
+        return runCatching {
+            createEncryptedPrefs(YOUTUBE_AUTH_PREFS)
+        }.getOrElse { error ->
+            NPLogger.w(
+                "NERI-YouTubeAuthRepo",
+                "Failed to open primary YouTube secure prefs, preserving it and using recovery storage.",
+                error
+            )
+            switchToRecoveryStorageOrThrow()
+        }
+    }
+
+    private fun switchToRecoveryStorageOrThrow(): SharedPreferences {
+        val recoveryPrefs = runCatching { createRecoveryEncryptedPrefs() }
+            .onFailure { recoveryError ->
+                NPLogger.e(
+                    "NERI-YouTubeAuthRepo",
+                    "Unable to open either YouTube secure storage; original storage was preserved.",
+                    recoveryError
+                )
+            }
+            .getOrElse { recoveryError ->
+                throw IllegalStateException(
+                    "Unable to open YouTube secure storage without deleting credentials",
+                    recoveryError
+                )
+            }
+        usingRecoveryStorage = true
+        return recoveryPrefs
+    }
+
+    private fun createRecoveryEncryptedPrefs(): SharedPreferences {
+        return createEncryptedPrefs(
+            name = YOUTUBE_AUTH_RECOVERY_PREFS,
+            masterKeyAlias = YOUTUBE_AUTH_RECOVERY_MASTER_KEY_ALIAS
+        )
+    }
+
+    private fun createEncryptedPrefs(
+        name: String,
+        masterKeyAlias: String? = null
+    ): SharedPreferences {
+        val masterKeyBuilder = if (masterKeyAlias.isNullOrBlank()) {
+            MasterKey.Builder(context)
+        } else {
+            MasterKey.Builder(context, masterKeyAlias)
+        }
+        val masterKey = masterKeyBuilder
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
         return EncryptedSharedPreferences.create(
             context,
-            YOUTUBE_AUTH_PREFS,
+            name,
             masterKey,
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
     }
 
-    private fun clearEncryptedStorage() {
+    private fun clearStoredAuth(prefs: SharedPreferences, label: String) {
         runCatching {
-            context.deleteSharedPreferences(YOUTUBE_AUTH_PREFS)
+            if (!prefs.edit().remove(KEY_YOUTUBE_AUTH_BUNDLE).commit()) {
+                throw IOException("SharedPreferences commit returned false")
+            }
         }.onFailure { error ->
             NPLogger.w(
                 "NERI-YouTubeAuthRepo",
-                "Failed to delete corrupted YouTube secure prefs file.",
+                "Failed to clear $label YouTube secure prefs.",
                 error
             )
         }

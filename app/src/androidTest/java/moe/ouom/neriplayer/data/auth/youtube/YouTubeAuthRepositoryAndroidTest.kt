@@ -12,6 +12,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 private const val TestYouTubeAuthPrefs = "youtube_auth_secure_prefs"
+private const val TestYouTubeAuthRecoveryPrefs = "youtube_auth_secure_prefs_recovery"
 
 @RunWith(AndroidJUnit4::class)
 class YouTubeAuthRepositoryAndroidTest {
@@ -75,7 +76,8 @@ class YouTubeAuthRepositoryAndroidTest {
                 cookies = linkedMapOf(
                     "SAPISID" to "old-sapisid",
                     "LOGIN_INFO" to "login-token",
-                    "__Secure-1PSIDTS" to "session-token"
+                    "__Secure-1PSIDTS" to "session-token",
+                    "VISITOR_INFO1_LIVE" to "visitor-token"
                 ),
                 savedAt = 1_000L
             )
@@ -86,6 +88,7 @@ class YouTubeAuthRepositoryAndroidTest {
                 listOf(
                     "SAPISID=new-sapisid; Path=/; Secure; HttpOnly",
                     "LOGIN_INFO=; Max-Age=0; Path=/; Secure",
+                    "VISITOR_INFO1_LIVE=; Max-Age=0; Path=/; Secure",
                     "__Secure-1PAPISID=papisid-token; Path=/; Secure"
                 )
             )
@@ -95,12 +98,35 @@ class YouTubeAuthRepositoryAndroidTest {
         val mergedAuth = recreatedRepository.getAuthOnce()
         assertEquals("new-sapisid", mergedAuth.cookies["SAPISID"])
         assertEquals("papisid-token", mergedAuth.cookies["__Secure-1PAPISID"])
-        assertFalse(mergedAuth.cookies.containsKey("LOGIN_INFO"))
+        assertEquals("login-token", mergedAuth.cookies["LOGIN_INFO"])
+        assertFalse(mergedAuth.cookies.containsKey("VISITOR_INFO1_LIVE"))
         assertTrue(mergedAuth.savedAt >= 1_000L)
         assertEquals(YouTubeAuthState.Valid, recreatedRepository.getAuthHealthOnce().state)
     }
 
+    @Test
+    fun saveAuth_recoversFromEncryptedBackupWhenPrimaryStorageIsMissing() {
+        val repository = YouTubeAuthRepository(context)
+        repository.saveAuth(
+            YouTubeAuthBundle(
+                cookies = linkedMapOf(
+                    "SAPISID" to "backup-sapisid",
+                    "__Secure-1PSID" to "backup-session"
+                ),
+                savedAt = 2_000L
+            )
+        )
+
+        context.deleteSharedPreferences(TestYouTubeAuthPrefs)
+
+        val recovered = YouTubeAuthRepository(context).getAuthOnce()
+        assertEquals("backup-sapisid", recovered.cookies["SAPISID"])
+        assertEquals("backup-session", recovered.cookies["__Secure-1PSID"])
+        assertEquals(2_000L, recovered.savedAt)
+    }
+
     private fun clearStorage() {
         context.deleteSharedPreferences(TestYouTubeAuthPrefs)
+        context.deleteSharedPreferences(TestYouTubeAuthRecoveryPrefs)
     }
 }

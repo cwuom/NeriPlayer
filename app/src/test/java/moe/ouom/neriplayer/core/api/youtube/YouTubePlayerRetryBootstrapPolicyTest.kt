@@ -1,10 +1,29 @@
 package moe.ouom.neriplayer.core.api.youtube
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class YouTubePlayerRetryBootstrapPolicyTest {
+
+    @Test
+    fun requestUsesFreshBootstrapTimestampBeforeBackgroundCache() {
+        assertEquals(
+            20529,
+            resolveYouTubeSignatureTimestamp(
+                bootstrapTimestamp = null,
+                cachedTimestamp = 20529
+            )
+        )
+        assertEquals(
+            20530,
+            resolveYouTubeSignatureTimestamp(
+                bootstrapTimestamp = 20530,
+                cachedTimestamp = 20529
+            )
+        )
+    }
 
     @Test
     fun keepsTheBootstrapWhenEveryClientAnsweredOk() {
@@ -30,12 +49,36 @@ class YouTubePlayerRetryBootstrapPolicyTest {
     }
 
     @Test
+    fun keepsBootstrapWhenAnyClientAlreadyAnsweredOk() {
+        assertFalse(
+            shouldRefreshBootstrapBeforePlayerRetry(
+                refreshRequestedByFallback = false,
+                sawUndecipherableOkResponse = false,
+                sawBootstrapSuspectOutcome = true,
+                sawOkResponse = true
+            )
+        )
+    }
+
+    @Test
     fun refreshesWhenTheFallbackPathAlreadyAskedForIt() {
         assertTrue(
             shouldRefreshBootstrapBeforePlayerRetry(
                 refreshRequestedByFallback = true,
                 sawUndecipherableOkResponse = true,
                 sawBootstrapSuspectOutcome = false
+            )
+        )
+    }
+
+    @Test
+    fun doesNotRefreshAfterOkClientAndTerminalFallback() {
+        assertFalse(
+            shouldRefreshBootstrapBeforePlayerRetry(
+                refreshRequestedByFallback = true,
+                sawUndecipherableOkResponse = true,
+                sawBootstrapSuspectOutcome = false,
+                sawOkResponse = true
             )
         )
     }
@@ -59,6 +102,85 @@ class YouTubePlayerRetryBootstrapPolicyTest {
                 refreshRequestedByFallback = false,
                 sawUndecipherableOkResponse = false,
                 sawBootstrapSuspectOutcome = true
+            )
+        )
+    }
+
+    @Test
+    fun ignoresTvUnplayableAfterAnOkClientResponse() {
+        assertFalse(
+            shouldMarkBootstrapSuspectOutcome(
+                playabilityStatus = "UNPLAYABLE",
+                sawUndecipherableOkResponse = true
+            )
+        )
+        assertTrue(
+            shouldMarkBootstrapSuspectOutcome(
+                playabilityStatus = "UNPLAYABLE",
+                sawUndecipherableOkResponse = false
+            )
+        )
+        assertTrue(
+            shouldMarkBootstrapSuspectOutcome(
+                playabilityStatus = "LOGIN_REQUIRED",
+                sawUndecipherableOkResponse = true
+            )
+        )
+    }
+
+    @Test
+    fun stopsRetryingWhenTvFallbackIsTerminalAfterAnOkClient() {
+        assertTrue(
+            shouldAbortPlayerRetryAfterTerminalFallback(
+                sawUndecipherableOkResponse = true,
+                sawTerminalFallbackOutcome = true,
+                sawPlayerRequestFailure = false
+            )
+        )
+        assertFalse(
+            shouldAbortPlayerRetryAfterTerminalFallback(
+                sawUndecipherableOkResponse = false,
+                sawTerminalFallbackOutcome = true,
+                sawPlayerRequestFailure = false
+            )
+        )
+        assertFalse(
+            shouldAbortPlayerRetryAfterTerminalFallback(
+                sawUndecipherableOkResponse = true,
+                sawTerminalFallbackOutcome = true,
+                sawPlayerRequestFailure = true
+            )
+        )
+    }
+
+    @Test
+    fun stopsAllTvFallbackVariantsAfterUnplayableResponseFollowingOkClient() {
+        assertTrue(
+            shouldStopRemainingPlayerFallbackRequests(
+                clientName = "TVHTML5",
+                playabilityStatus = "UNPLAYABLE",
+                sawUndecipherableOkResponse = true
+            )
+        )
+        assertTrue(
+            shouldStopRemainingPlayerFallbackRequests(
+                clientName = "TVHTML5",
+                playabilityStatus = "LOGIN_REQUIRED",
+                sawUndecipherableOkResponse = true
+            )
+        )
+        assertFalse(
+            shouldStopRemainingPlayerFallbackRequests(
+                clientName = "TVHTML5",
+                playabilityStatus = "UNPLAYABLE",
+                sawUndecipherableOkResponse = false
+            )
+        )
+        assertFalse(
+            shouldStopRemainingPlayerFallbackRequests(
+                clientName = "WEB_REMIX",
+                playabilityStatus = "UNPLAYABLE",
+                sawUndecipherableOkResponse = true
             )
         )
     }

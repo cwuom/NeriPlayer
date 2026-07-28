@@ -1,7 +1,8 @@
 package moe.ouom.neriplayer.core.player.prefetch
 
-import androidx.core.net.toUri
 import androidx.annotation.OptIn
+import androidx.annotation.VisibleForTesting
+import androidx.core.net.toUri
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
@@ -30,6 +31,7 @@ private const val YOUTUBE_WARMUP_FIRST_TRACK_PREFETCH_BYTES = 1536L * 1024L
 private const val YOUTUBE_WARMUP_SECOND_TRACK_PREFETCH_BYTES = 1024L * 1024L
 private const val YOUTUBE_WARMUP_FOLLOWING_TRACK_PREFETCH_BYTES = 512L * 1024L
 private const val YOUTUBE_PREFETCH_MAX_CONCURRENCY = 2
+private const val YOUTUBE_PLAYABLE_URL_WARMUP_MAX_IDS = 2
 
 private data class YouTubePrefetchSpec(
     val videoId: String,
@@ -38,6 +40,18 @@ private data class YouTubePrefetchSpec(
     val windowSize: Int,
     val source: String
 )
+
+@VisibleForTesting
+internal fun selectYouTubePrefetchVideoIds(
+    videoIds: List<String>,
+    maxIds: Int = YOUTUBE_PLAYABLE_URL_WARMUP_MAX_IDS
+): List<String> = videoIds.take(maxIds.coerceAtLeast(0))
+
+@VisibleForTesting
+internal fun selectYouTubePlayableUrlWarmupIds(
+    videoIds: List<String>,
+    maxIds: Int = YOUTUBE_PLAYABLE_URL_WARMUP_MAX_IDS
+): List<String> = selectYouTubePrefetchVideoIds(videoIds, maxIds)
 
 internal fun PlayerManager.replacePlaybackDemandCacheKey(
     cacheKey: String?,
@@ -83,33 +97,35 @@ internal fun PlayerManager.prefetchYouTubeQueueWindowImpl(
         return
     }
     youtubeMusicPlaybackRepository.warmBootstrapAsync()
+    // 地址解析会触发 player API 和签名解码, 先保证当前曲目与下一首, 后续曲目交给字节预取按需推进
+    val priorityVideoIds = selectYouTubePrefetchVideoIds(targets.prefetchVideoIds)
     kickoffYouTubePlayableAudioPrefetches(
-        videoIds = targets.prefetchVideoIds,
+        videoIds = priorityVideoIds,
         preferredQuality = targets.preferredQuality,
         source = source
     )
     NPLogger.d(
         "NERI-PlayerManager",
-        "prefetchYouTubeQueueWindow: source=$source, startIndex=$startIndex, ids=${targets.prefetchVideoIds.joinToString()}, preferredQuality=${targets.preferredQuality}"
+        "prefetchYouTubeQueueWindow: source=$source, startIndex=$startIndex, ids=${priorityVideoIds.joinToString()}, windowIds=${targets.prefetchVideoIds.joinToString()}, preferredQuality=${targets.preferredQuality}"
     )
-    val specs = targets.prefetchVideoIds.mapIndexed { slot, videoId ->
+    val specs = priorityVideoIds.mapIndexed { slot, videoId ->
         YouTubePrefetchSpec(
             videoId = videoId,
             preferredQuality = targets.preferredQuality,
             slot = slot,
-            windowSize = targets.prefetchVideoIds.size,
+            windowSize = priorityVideoIds.size,
             source = source
         )
     }.associateBy { it.videoId }
     currentYouTubePrefetchJob?.cancel()
-    currentYouTubePrefetchVideoIds = targets.prefetchVideoIds.toSet()
+    currentYouTubePrefetchVideoIds = priorityVideoIds.toSet()
     val launchedJob = YouTubePrefetchRunner(
         task = YouTubePrefetchTask { videoId ->
             val spec = specs[videoId] ?: return@YouTubePrefetchTask
             prefetchYouTubePlayableAudio(spec)
         },
         maxConcurrency = YOUTUBE_PREFETCH_MAX_CONCURRENCY
-    ).launch(ioScope, targets.prefetchVideoIds)
+    ).launch(ioScope, priorityVideoIds)
     currentYouTubePrefetchJob = launchedJob
     launchedJob.invokeOnCompletion {
         if (currentYouTubePrefetchJob === launchedJob) {
@@ -136,10 +152,16 @@ internal fun PlayerManager.prefetchYouTubePlayableUrlWindowImpl(
         return
     }
     youtubeMusicPlaybackRepository.warmBootstrapAsync()
+    val priorityVideoIds = selectYouTubePlayableUrlWarmupIds(targets.prefetchVideoIds)
     kickoffYouTubePlayableAudioPrefetches(
-        videoIds = targets.prefetchVideoIds,
+        videoIds = priorityVideoIds,
         preferredQuality = targets.preferredQuality,
         source = source
+    )
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "prefetchYouTubePlayableUrlWindow: source=$source, ids=${priorityVideoIds.joinToString()}, " +
+            "windowIds=${targets.prefetchVideoIds.joinToString()}, preferredQuality=${targets.preferredQuality}"
     )
 }
 

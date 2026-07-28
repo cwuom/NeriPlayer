@@ -33,6 +33,7 @@ import java.util.LinkedHashMap
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import kotlinx.coroutines.CancellationException
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -132,6 +133,8 @@ internal class YouTubeEjsChallengeSolver(
 
     private val appContext = context.applicationContext
     private val solverLock = YouTubeJsSolveQueue()
+    private val playerScriptCacheLock = Any()
+    private val challengeCacheLock = Any()
     private val playerScriptCache = linkedMapOf<String, String>()
     private val playerScriptStore = runCatching { YouTubePlayerScriptStore(appContext) }.getOrNull()
     private val signatureCache = linkedMapOf<String, String>()
@@ -268,6 +271,7 @@ internal class YouTubeEjsChallengeSolver(
                     val playerScript = runCatching {
                         getPlayerScript(resolvedPlayerJsUrl)
                     }.getOrElse { error ->
+                        propagateYouTubeJsChallengeCancellation(error)
                         return@withNewestFirst YouTubeJsChallengeSolveResult(
                             status = YouTubeJsChallengeSolveStatus.PLAYER_SCRIPT_FETCH_FAILED,
                             detail = "playerJsUrl=$resolvedPlayerJsUrl",
@@ -294,6 +298,7 @@ internal class YouTubeEjsChallengeSolver(
                             )
                         ).get(SCRIPT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                     }.getOrElse { error ->
+                        propagateYouTubeJsChallengeCancellation(error)
                         return@withNewestFirst sandboxFailureResult(
                             status = if (error.isTimeoutFailure()) {
                                 YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_TIMEOUT
@@ -341,6 +346,20 @@ internal class YouTubeEjsChallengeSolver(
         return resolved
     }
 
+    suspend fun solveDetailedAsync(
+        playerJsUrl: String,
+        encryptedSignature: String? = null,
+        throttlingParameter: String? = null
+    ): YouTubeJsChallengeSolveResult {
+        return solverLock.withNewestFirstCancellable {
+            solveDetailed(
+                playerJsUrl = playerJsUrl,
+                encryptedSignature = encryptedSignature,
+                throttlingParameter = throttlingParameter
+            )
+        }
+    }
+
     fun warmPlayerScript(playerJsUrl: String): Boolean {
         val resolvedPlayerJsUrl = playerJsUrl.trim()
         if (resolvedPlayerJsUrl.isBlank()) {
@@ -348,6 +367,19 @@ internal class YouTubeEjsChallengeSolver(
         }
         return runCatching {
             solverLock.withNewestFirst {
+                getPlayerScript(resolvedPlayerJsUrl)
+            }
+            true
+        }.getOrDefault(false)
+    }
+
+    suspend fun warmPlayerScriptAsync(playerJsUrl: String): Boolean {
+        val resolvedPlayerJsUrl = playerJsUrl.trim()
+        if (resolvedPlayerJsUrl.isBlank()) {
+            return false
+        }
+        return runCatching {
+            solverLock.withNewestFirstCancellable {
                 getPlayerScript(resolvedPlayerJsUrl)
             }
             true
@@ -436,16 +468,19 @@ internal class YouTubeEjsChallengeSolver(
         """.trimIndent()
     }
 
-    @Synchronized
     private fun getPlayerScript(playerJsUrl: String): String {
-        playerScriptCache[playerJsUrl]?.let { cached ->
-            playerScriptCache.remove(playerJsUrl)
-            playerScriptCache[playerJsUrl] = cached
-            return cached
+        synchronized(playerScriptCacheLock) {
+            playerScriptCache[playerJsUrl]?.let { cached ->
+                playerScriptCache.remove(playerJsUrl)
+                playerScriptCache[playerJsUrl] = cached
+                return cached
+            }
         }
-        // 地址带版本哈希, 存档命中就是同一份脚本, 冷启动省掉这 2MB 的往返
+        // 存档读取与网络请求都放在锁外, 不阻塞 sig/n 的缓存命中
         playerScriptStore?.read(playerJsUrl)?.let { persisted ->
-            putCached(playerScriptCache, playerJsUrl, persisted)
+            synchronized(playerScriptCacheLock) {
+                putPlayerScriptCacheLocked(playerJsUrl, persisted)
+            }
             return persisted
         }
         val request = Request.Builder()
@@ -458,25 +493,38 @@ internal class YouTubeEjsChallengeSolver(
             }
             response.body.readTextWithLimit(YOUTUBE_TEXT_RESPONSE_MAX_BYTES)
         }
-        putCached(playerScriptCache, playerJsUrl, script)
+        synchronized(playerScriptCacheLock) {
+            putPlayerScriptCacheLocked(playerJsUrl, script)
+        }
         playerScriptStore?.write(playerJsUrl, script)
         return script
     }
 
-    @Synchronized
     private fun getCached(cache: LinkedHashMap<String, String>, key: String): String? {
-        val value = cache.remove(key) ?: return null
-        cache[key] = value
-        return value
+        synchronized(challengeCacheLock) {
+            val value = cache.remove(key) ?: return null
+            cache[key] = value
+            return value
+        }
     }
 
-    @Synchronized
     private fun putCached(cache: LinkedHashMap<String, String>, key: String, value: String) {
-        cache.remove(key)
-        cache[key] = value
-        while (cache.size > CACHE_CAPACITY) {
-            val eldestKey = cache.entries.firstOrNull()?.key ?: break
-            cache.remove(eldestKey)
+        synchronized(challengeCacheLock) {
+            cache.remove(key)
+            cache[key] = value
+            while (cache.size > CACHE_CAPACITY) {
+                val eldestKey = cache.entries.firstOrNull()?.key ?: break
+                cache.remove(eldestKey)
+            }
+        }
+    }
+
+    private fun putPlayerScriptCacheLocked(playerJsUrl: String, script: String) {
+        playerScriptCache.remove(playerJsUrl)
+        playerScriptCache[playerJsUrl] = script
+        while (playerScriptCache.size > CACHE_CAPACITY) {
+            val eldestKey = playerScriptCache.entries.firstOrNull()?.key ?: break
+            playerScriptCache.remove(eldestKey)
         }
     }
 
@@ -557,6 +605,16 @@ internal class YouTubeEjsChallengeSolver(
 
     private fun closeQuietly(sandbox: JavaScriptSandbox) {
         runCatching { sandbox.close() }
+    }
+}
+
+internal fun propagateYouTubeJsChallengeCancellation(error: Throwable) {
+    when (error) {
+        is CancellationException -> throw error
+        is InterruptedException -> {
+            Thread.currentThread().interrupt()
+            throw error
+        }
     }
 }
 

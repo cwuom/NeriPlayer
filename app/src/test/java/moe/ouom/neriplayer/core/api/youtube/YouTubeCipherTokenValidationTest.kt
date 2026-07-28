@@ -57,6 +57,19 @@ class YouTubeCipherTokenValidationTest {
     }
 
     @Test
+    fun `accepts base64 punctuation after url decoding`() {
+        assertTrue(isPlausibleCipherToken("ab+c/12="))
+    }
+
+    @Test
+    fun `rejects control characters and query separators`() {
+        assertFalse(isPlausibleCipherToken("abc\n123"))
+        assertFalse(isPlausibleCipherToken("abc?next=value"))
+        assertFalse(isPlausibleCipherToken("abc#fragment"))
+        assertFalse(isPlausibleCipherToken("abc%20def"))
+    }
+
+    @Test
     fun `detects implausible n parameter inside resolved url`() {
         val poisoned = "https://rr5.googlevideo.com/videoplayback?expire=1785098966" +
             "&itag=140&n=[object Object]&sig=abc"

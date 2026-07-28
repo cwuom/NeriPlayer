@@ -68,6 +68,7 @@ private const val YOUTUBE_MUSIC_HOME_PAGE_LIMIT = 2
 private const val YOUTUBE_MUSIC_HOME_SHELF_CONTINUATION_LIMIT = 2
 private const val YOUTUBE_MUSIC_SEARCH_ITEM_LIMIT = 30
 private const val YOUTUBE_MUSIC_LIBRARY_TRACK_COUNT_RESOLVE_LIMIT = 8
+private const val YOUTUBE_MUSIC_AUTH_REFRESH_RETRY_LIMIT = 1
 private val YOUTUBE_MUSIC_BOOTSTRAP_PAGE_ORIGINS = listOf(
     YOUTUBE_MUSIC_MUSIC_ORIGIN,
     YOUTUBE_WEB_ORIGIN
@@ -202,6 +203,10 @@ internal fun shouldRefreshYouTubeAuthAfterBootstrapFailure(
     hasCookieHeader: Boolean
 ): Boolean {
     return hasCookieHeader && shouldStartYouTubeWebAuthRecovery(error)
+}
+
+internal fun shouldRetryYouTubeMusicAuthRefresh(authRefreshRetryCount: Int): Boolean {
+    return authRefreshRetryCount < YOUTUBE_MUSIC_AUTH_REFRESH_RETRY_LIMIT
 }
 
 internal data class YouTubeMusicRequestLocale(
@@ -2002,6 +2007,14 @@ class YouTubeMusicClient(
 
     suspend fun getLibraryPlaylists(
         resolveMissingTrackCounts: Boolean = true
+    ): List<YouTubeMusicLibraryPlaylist> = getLibraryPlaylistsInternal(
+        resolveMissingTrackCounts = resolveMissingTrackCounts,
+        authRefreshRetryCount = 0
+    )
+
+    private suspend fun getLibraryPlaylistsInternal(
+        resolveMissingTrackCounts: Boolean,
+        authRefreshRetryCount: Int
     ): List<YouTubeMusicLibraryPlaylist> = withContext(Dispatchers.IO) {
         NPLogger.d(TAG, "getLibraryPlaylists start")
         var bootstrap = authenticatedBootstrap(reason = "library_playlists")
@@ -2080,11 +2093,15 @@ class YouTubeMusicClient(
                 reason = "library_playlists_empty",
                 force = true
             )
-            if (refreshResult?.refreshed == true) {
+            if (
+                refreshResult?.refreshed == true &&
+                shouldRetryYouTubeMusicAuthRefresh(authRefreshRetryCount)
+            ) {
                 NPLogger.w(TAG, "getLibraryPlaylists empty, retry after auth refresh")
                 bootstrapCache = null
-                return@withContext getLibraryPlaylists(
-                    resolveMissingTrackCounts = resolveMissingTrackCounts
+                return@withContext getLibraryPlaylistsInternal(
+                    resolveMissingTrackCounts = resolveMissingTrackCounts,
+                    authRefreshRetryCount = authRefreshRetryCount + 1
                 )
             }
         }
@@ -2141,6 +2158,16 @@ class YouTubeMusicClient(
     suspend fun getHomeFeed(
         fillShelfContinuations: Boolean = true,
         requireLogin: Boolean = false
+    ): List<YouTubeMusicHomeShelf> = getHomeFeedInternal(
+        fillShelfContinuations = fillShelfContinuations,
+        requireLogin = requireLogin,
+        authRefreshRetryCount = 0
+    )
+
+    private suspend fun getHomeFeedInternal(
+        fillShelfContinuations: Boolean,
+        requireLogin: Boolean,
+        authRefreshRetryCount: Int
     ): List<YouTubeMusicHomeShelf> = withContext(Dispatchers.IO) {
         NPLogger.d(TAG, "getHomeFeed start")
         if (requireLogin) {
@@ -2238,12 +2265,16 @@ class YouTubeMusicClient(
                 reason = "home_feed_empty",
                 force = true
             )
-            if (refreshResult?.refreshed == true) {
+            if (
+                refreshResult?.refreshed == true &&
+                shouldRetryYouTubeMusicAuthRefresh(authRefreshRetryCount)
+            ) {
                 NPLogger.w(TAG, "getHomeFeed empty, retry after auth refresh")
                 bootstrapCache = null
-                return@withContext getHomeFeed(
+                return@withContext getHomeFeedInternal(
                     fillShelfContinuations = fillShelfContinuations,
-                    requireLogin = requireLogin
+                    requireLogin = requireLogin,
+                    authRefreshRetryCount = authRefreshRetryCount + 1
                 )
             }
         }

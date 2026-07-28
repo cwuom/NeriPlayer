@@ -149,11 +149,27 @@ internal fun resolveObservedYouTubeAuthUser(
     return capturedAuthUser.trim().ifBlank { pageSessionIndex.trim() }
 }
 
+private fun createCookieRotationStateStore(
+    context: Context
+): YouTubeCookieRotationStateStore {
+    return runCatching {
+        SharedPreferencesYouTubeCookieRotationStateStore(context)
+    }.onFailure { error ->
+        // 纯 JVM 测试或受限进程没有可用 Context 时, 轮换仍可工作但不持久化节流状态
+        NPLogger.w(
+            "YouTubeAuthRefresh",
+            "Cookie rotation state storage unavailable; using in-memory state.",
+            error
+        )
+    }.getOrElse { NoOpYouTubeCookieRotationStateStore }
+}
+
 class YouTubeAuthAutoRefreshManager(
     context: Context,
     private val authProvider: () -> YouTubeAuthBundle = { YouTubeAuthBundle() },
     private val authHealthProvider: () -> YouTubeAuthHealth = { YouTubeAuthHealth() },
-    private val authUpdater: (YouTubeAuthBundle) -> Unit = {}
+    private val authUpdater: (YouTubeAuthBundle) -> Unit = {},
+    private val rotatedCookieUpdater: ((Map<String, String>) -> Unit)? = null
 ) {
     companion object {
         private const val TAG = "YouTubeAuthRefresh"
@@ -202,7 +218,9 @@ class YouTubeAuthAutoRefreshManager(
 
     private val applicationContext = context.applicationContext
     private val accessMutex = Mutex()
-    private val cookieRotator = YouTubeCookieRotator()
+    private val cookieRotator = YouTubeCookieRotator(
+        stateStore = createCookieRotationStateStore(applicationContext)
+    )
 
     @Volatile
     private var webView: WebView? = null
@@ -253,22 +271,37 @@ class YouTubeAuthAutoRefreshManager(
             val currentHealth = authHealthProvider()
             val now = System.currentTimeMillis()
 
-            // *PSIDTS 十分钟就换一次, 先走一次轻量轮换, 成了就完全不必起 WebView
-            val rotatedCookies = cookieRotator.rotate(
-                cookies = currentAuth.cookies,
-                userAgent = currentAuth.userAgent.ifBlank { webViewUserAgent },
+            val gateDecision = shouldAttemptRefresh(
+                auth = currentAuth,
+                health = currentHealth,
+                now = now,
                 force = force
             )
-            if (rotatedCookies.isNotEmpty()) {
-                authUpdater(
-                    mergeYouTubeAuthBundle(
-                        base = currentAuth,
-                        observedCookies = rotatedCookies
-                    )
+            if (!gateDecision.allowed) {
+                return@withLock YouTubeAuthAutoRefreshResult(reason = gateDecision.reason)
+            }
+
+            // *PSIDTS 十分钟就换一次, 先走一次轻量轮换, 成了就完全不必起 WebView
+            val rotationOutcome = youtubeAuthRotationMutex.withLock {
+                val outcome = cookieRotator.rotateDetailed(
+                    cookies = currentAuth.cookies,
+                    userAgent = currentAuth.userAgent.ifBlank { webViewUserAgent },
+                    force = force
                 )
-                syncRotatedCookiesToWebView(rotatedCookies)
-                consecutiveFailures = 0
-                circuitOpenUntilMs = 0L
+                if (outcome is YouTubeCookieRotationOutcome.Rotated) {
+                    rotatedCookieUpdater?.invoke(outcome.cookies) ?: authUpdater(
+                        mergeYouTubeAuthBundle(
+                            base = authProvider().normalized(),
+                            observedCookies = outcome.cookies,
+                            savedAt = System.currentTimeMillis()
+                        )
+                    )
+                    syncRotatedCookiesToWebView(outcome.cookies)
+                }
+                outcome
+            }
+            if (rotationOutcome is YouTubeCookieRotationOutcome.Rotated) {
+                val rotatedCookies = rotationOutcome.cookies
                 NPLogger.i(
                     TAG,
                     "refresh rotated cookies reason=$reason keys=${rotatedCookies.keys.joinToString()} nextIntervalMs=${cookieRotator.nextRotationIntervalMs()}"
@@ -279,16 +312,6 @@ class YouTubeAuthAutoRefreshManager(
                     authChanged = true,
                     reason = "rotated"
                 )
-            }
-
-            val gateDecision = shouldAttemptRefresh(
-                auth = currentAuth,
-                health = currentHealth,
-                now = now,
-                force = force
-            )
-            if (!gateDecision.allowed) {
-                return@withLock YouTubeAuthAutoRefreshResult(reason = gateDecision.reason)
             }
 
             lastAttemptAtMs = now
@@ -619,6 +642,7 @@ class YouTubeAuthAutoRefreshManager(
             applyYouTubeWebCookies(
                 cookieManager = CookieManager.getInstance(),
                 cookies = rotatedCookies,
+                urls = YouTubeCookieSupport.webCookieReadUrls,
                 skipExisting = false
             )
         }.onFailure { error ->
@@ -708,7 +732,9 @@ class YouTubeAuthAutoRefreshManager(
         activeWebView.evaluateJavascript(script) { raw ->
             result.complete(decodeEvaluateJavascriptValue(raw))
         }
-        result.await()
+        withTimeoutOrNull(PAGE_LOAD_TIMEOUT_MS) {
+            result.await()
+        }
     }
 
     private fun decodeEvaluateJavascriptValue(raw: String?): String? {

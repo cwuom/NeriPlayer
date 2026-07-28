@@ -23,9 +23,14 @@ class YouTubeBootstrapHtmlSourceTest {
             """.trimIndent()
         )
 
-        // 跳过实验开关子树后, bootstrap 真正要的字段一个都不能丢
+        val startedAtMs = System.currentTimeMillis()
+        // 局部读取字段后, bootstrap 真正要的字段一个都不能丢
         assertEquals("real-api-key", source.optionalString("INNERTUBE_API_KEY"))
         assertEquals("visitor-data", source.optionalString("VISITOR_DATA"))
+        assertTrue(
+            "large ytcfg scalar lookup took ${System.currentTimeMillis() - startedAtMs}ms",
+            System.currentTimeMillis() - startedAtMs < 2_000L
+        )
     }
 
     @Test
@@ -231,6 +236,31 @@ class YouTubeBootstrapHtmlSourceTest {
     }
 
     @Test
+    fun optionalString_readsFallbackFieldsLocallyInLargeHtml() {
+        val filler = "<div>unrelated content</div>".repeat(120_000)
+        val source = YouTubeBootstrapHtmlSource(
+            """
+                <script>
+                var bootstrap = {
+                  "jsUrl": "/s/player/fallback/base.js",
+                  "signatureTimestamp": 20655,
+                  "LOGGED_IN": true
+                };
+                </script>
+                $filler
+            """.trimIndent()
+        )
+
+        val startedAtMs = System.currentTimeMillis()
+        assertEquals("/s/player/fallback/base.js", source.optionalString("jsUrl"))
+        assertEquals("20655", source.optionalNumber("signatureTimestamp"))
+        assertEquals("true", source.optionalBoolean("LOGGED_IN"))
+        val elapsedMs = System.currentTimeMillis() - startedAtMs
+
+        assertTrue("fallback 字段解析耗时 ${elapsedMs}ms", elapsedMs < 2_000L)
+    }
+
+    @Test
     fun optionalString_stillMatchesWhenAnEarlierMentionOfTheFieldDoesNotMatch() {
         // 字段名先在别处出现且不构成匹配, 起点前移不能把后面真正的赋值漏掉
         val source = YouTubeBootstrapHtmlSource(
@@ -260,5 +290,49 @@ class YouTubeBootstrapHtmlSourceTest {
         val source = YouTubeBootstrapHtmlSource("<script>var unrelated = 1;</script>")
 
         assertTrue(source.optionalString("jsUrl").isEmpty())
+    }
+
+    @Test
+    fun optionalString_decodesEscapedFieldLocallyInLargePage() {
+        val filler = "<div>unrelated</div>\\x20".repeat(300_000)
+        val source = YouTubeBootstrapHtmlSource(
+            """
+                <script>
+                ytcfg.set(\x7b\x22INNERTUBE_API_KEY\x22:\x22api-key\x22,\x22VISITOR_DATA\x22:\x22visitor-data\x22\x7d);
+                </script>
+                $filler
+            """.trimIndent()
+        )
+
+        val startedAtMs = System.currentTimeMillis()
+        assertEquals("api-key", source.optionalString("INNERTUBE_API_KEY"))
+        assertEquals("visitor-data", source.optionalString("VISITOR_DATA"))
+        val elapsedMs = System.currentTimeMillis() - startedAtMs
+
+        assertTrue("escaped bootstrap lookup took ${elapsedMs}ms", elapsedMs < 2_000L)
+    }
+
+    @Test
+    fun optionalString_readsFieldsFromTheTailOfALargeYtcfgObject() {
+        val experimentFlags = "x".repeat(600_000)
+        val source = YouTubeBootstrapHtmlSource(
+            """
+                <script>
+                ytcfg.set({
+                  "EXPERIMENT_FLAGS": "$experimentFlags",
+                  "INNERTUBE_API_KEY": "large-api-key",
+                  "VISITOR_DATA": "large-visitor-data"
+                });
+                </script>
+            """.trimIndent()
+        )
+
+        val startedAtMs = System.currentTimeMillis()
+        assertEquals("large-api-key", source.optionalString("INNERTUBE_API_KEY"))
+        assertEquals("large-visitor-data", source.optionalString("VISITOR_DATA"))
+        assertTrue(
+            "large ytcfg lookup took ${System.currentTimeMillis() - startedAtMs}ms",
+            System.currentTimeMillis() - startedAtMs < 2_000L
+        )
     }
 }

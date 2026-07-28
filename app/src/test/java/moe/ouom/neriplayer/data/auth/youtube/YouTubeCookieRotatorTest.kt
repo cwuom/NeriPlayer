@@ -7,6 +7,30 @@ import org.junit.Test
 
 class YouTubeCookieRotatorTest {
 
+    @Test
+    fun restoresRotationIntervalFromSharedStateAcrossRotatorInstances() {
+        val state = YouTubeCookieRotationState(
+            lastRotatedAtMs = 123_000L,
+            rotationIntervalMs = 900_000L,
+            consecutiveRejections = 4
+        )
+        val store = object : YouTubeCookieRotationStateStore {
+            private var current = state
+
+            override fun read(): YouTubeCookieRotationState = current
+
+            override fun write(state: YouTubeCookieRotationState) {
+                current = state
+            }
+        }
+
+        val first = YouTubeCookieRotator(stateStore = store)
+        val second = YouTubeCookieRotator(stateStore = store)
+
+        assertEquals(state.rotationIntervalMs, first.nextRotationIntervalMs())
+        assertEquals(state.rotationIntervalMs, second.nextRotationIntervalMs())
+    }
+
     private val validSession = mapOf(
         "__Secure-1PSID" to "1psid-value",
         "__Secure-3PSID" to "3psid-value",
@@ -100,6 +124,19 @@ class YouTubeCookieRotatorTest {
     }
 
     @Test
+    fun handlesAlternativeCookieExpiryForms() {
+        val rotated = collectRotatedYouTubeCookies(
+            listOf(
+                "__Secure-1PSIDTS=stale; Max-Age=-1; Path=/",
+                "__Secure-3PSIDTS=stale; Max-Age= 0; Path=/",
+                "__Secure-1PSIDTS=stale; Expires=Wed, 31 Dec 1969 23:59:59 GMT; Path=/"
+            )
+        )
+
+        assertTrue(rotated.isEmpty())
+    }
+
+    @Test
     fun throttlesRepeatRotationsButAlwaysAllowsTheFirstOne() {
         assertTrue(shouldRotateYouTubeCookies(lastRotatedAtMs = 0L, nowMs = 1_000L))
         assertFalse(shouldRotateYouTubeCookies(lastRotatedAtMs = 1_000L, nowMs = 30_000L))
@@ -167,6 +204,55 @@ class YouTubeCookieRotatorTest {
         )
         assertTrue(
             shouldRotateYouTubeCookies(
+                lastRotatedAtMs = 1_000L,
+                nowMs = 1_000L + backoffMs,
+                minIntervalMs = backoffMs
+            )
+        )
+    }
+
+    @Test
+    fun forceRotationStillKeepsAMinimumInterval() {
+        assertTrue(
+            shouldThrottleYouTubeCookieRotation(
+                force = false,
+                lastRotatedAtMs = 1_000L,
+                nowMs = 1_000L + ROTATION_MIN_INTERVAL_MS - 1L,
+                minIntervalMs = ROTATION_MIN_INTERVAL_MS
+            )
+        )
+        assertFalse(
+            shouldThrottleYouTubeCookieRotation(
+                force = true,
+                lastRotatedAtMs = 1_000L,
+                nowMs = 1_000L + ROTATION_FORCE_MIN_INTERVAL_MS,
+                minIntervalMs = ROTATION_MIN_INTERVAL_MS
+            )
+        )
+        assertTrue(
+            shouldThrottleYouTubeCookieRotation(
+                force = true,
+                lastRotatedAtMs = 1_000L,
+                nowMs = 1_000L + ROTATION_FORCE_MIN_INTERVAL_MS - 1L,
+                minIntervalMs = ROTATION_MIN_INTERVAL_MS
+            )
+        )
+    }
+
+    @Test
+    fun forceRotationDoesNotBypassExponentialBackoff() {
+        val backoffMs = nextYouTubeRotationBackoffMs(ROTATION_REJECTIONS_BEFORE_BACKOFF)
+        assertTrue(
+            shouldThrottleYouTubeCookieRotation(
+                force = true,
+                lastRotatedAtMs = 1_000L,
+                nowMs = 1_000L + backoffMs - 1L,
+                minIntervalMs = backoffMs
+            )
+        )
+        assertFalse(
+            shouldThrottleYouTubeCookieRotation(
+                force = true,
                 lastRotatedAtMs = 1_000L,
                 nowMs = 1_000L + backoffMs,
                 minIntervalMs = backoffMs

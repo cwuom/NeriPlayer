@@ -51,6 +51,13 @@ class YouTubeMusicClientParserTest {
     }
 
     @Test
+    fun authRefreshRetryIsAllowedOnlyOncePerRequest() {
+        assertTrue(shouldRetryYouTubeMusicAuthRefresh(authRefreshRetryCount = 0))
+        assertFalse(shouldRetryYouTubeMusicAuthRefresh(authRefreshRetryCount = 1))
+        assertFalse(shouldRetryYouTubeMusicAuthRefresh(authRefreshRetryCount = 2))
+    }
+
+    @Test
     fun unauthorizedBootstrapTriggersWebAuthRefreshWithCookies() {
         assertTrue(
             shouldRefreshYouTubeAuthAfterBootstrapFailure(

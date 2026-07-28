@@ -179,6 +179,9 @@ internal class YouTubeWebPoTokenProvider(
     private var preparedUrl: String = YOUTUBE_WEB_PO_WARM_BOOTSTRAP_URL
 
     @Volatile
+    private var sessionGeneration: Long = 0L
+
+    @Volatile
     private var lastUnavailableLogAtMs: Long = 0L
 
     override suspend fun warmSession() {
@@ -219,6 +222,7 @@ internal class YouTubeWebPoTokenProvider(
     }
 
     override fun clearSession() {
+        sessionGeneration += 1L
         synchronized(tokenCache) {
             tokenCache.clear()
             cacheKeyIndex.clear()
@@ -237,6 +241,7 @@ internal class YouTubeWebPoTokenProvider(
         forceRefresh: Boolean
     ): String? {
         val auth = authProvider().normalized()
+        val requestGeneration = sessionGeneration
         val startedAtMs = System.currentTimeMillis()
         if (ForegroundWebLoginGuard.isActive) {
             NPLogger.d(TAG, "GVS PO token skipped because ${ForegroundWebLoginGuard.SKIP_REASON} videoId=$videoId")
@@ -259,6 +264,9 @@ internal class YouTubeWebPoTokenProvider(
         }
         return accessMutex.withLock {
             try {
+                if (requestGeneration != sessionGeneration) {
+                    return@withLock null
+                }
                 if (ForegroundWebLoginGuard.isActive) {
                     NPLogger.d(TAG, "GVS PO token skipped because ${ForegroundWebLoginGuard.SKIP_REASON} videoId=$videoId")
                     return@withLock null
@@ -298,6 +306,9 @@ internal class YouTubeWebPoTokenProvider(
                     },
                     bootstrapUrls = resolveWebPoBootstrapUrls(backgroundWarmup = false)
                 ) ?: return@withLock null
+                if (requestGeneration != sessionGeneration) {
+                    return@withLock null
+                }
                 if (!pageSnapshot.hasWebPoClient) {
                     return@withLock null
                 }
@@ -330,6 +341,9 @@ internal class YouTubeWebPoTokenProvider(
 
                 var rebuiltPageForMint = false
                 repeat(MINT_ATTEMPTS) { attempt ->
+                    if (requestGeneration != sessionGeneration) {
+                        return@withLock null
+                    }
                     val result = mintPoToken(contentBinding)
                     when {
                         result?.status == "ok" && result.token.isNotBlank() -> {
@@ -702,12 +716,16 @@ internal class YouTubeWebPoTokenProvider(
 
     private suspend fun evaluateJavascript(script: String): String? {
         val activeWebView = webView ?: return null
+        val requestGeneration = sessionGeneration
         val result = CompletableDeferred<String?>()
         synchronized(pendingEvaluateResults) {
             pendingEvaluateResults.add(result)
         }
         return try {
             withContext(Dispatchers.Main) {
+                if (requestGeneration != sessionGeneration || webView !== activeWebView) {
+                    return@withContext
+                }
                 activeWebView.evaluateJavascript(script) { raw ->
                     result.complete(decodeEvaluateJavascriptValue(raw))
                 }
@@ -722,6 +740,7 @@ internal class YouTubeWebPoTokenProvider(
 
     private suspend fun runAsyncJavascript(script: String): String? {
         val activeWebView = webView ?: return null
+        val requestGeneration = sessionGeneration
         val requestId = UUID.randomUUID().toString()
         val deferred = CompletableDeferred<String>()
         synchronized(pendingBridgeResults) {
@@ -730,6 +749,9 @@ internal class YouTubeWebPoTokenProvider(
 
         return try {
             withContext(Dispatchers.Main) {
+                if (requestGeneration != sessionGeneration || webView !== activeWebView) {
+                    return@withContext
+                }
                 activeWebView.evaluateJavascript(
                     """
                         (async () => {

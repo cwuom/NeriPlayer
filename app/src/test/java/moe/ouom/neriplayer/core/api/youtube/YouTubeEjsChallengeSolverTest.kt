@@ -1,10 +1,40 @@
 package moe.ouom.neriplayer.core.api.youtube
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
+import kotlinx.coroutines.CancellationException
 
 class YouTubeEjsChallengeSolverTest {
+
+    @Test
+    fun propagateYouTubeJsChallengeCancellationRestoresInterruptedStatus() {
+        val interrupted = InterruptedException("cancelled")
+
+        try {
+            propagateYouTubeJsChallengeCancellation(interrupted)
+            fail("interruption must be rethrown")
+        } catch (error: InterruptedException) {
+            assertSame(interrupted, error)
+            assertTrue(Thread.currentThread().isInterrupted)
+        } finally {
+            Thread.interrupted()
+        }
+    }
+
+    @Test
+    fun propagateYouTubeJsChallengeCancellationRethrowsCoroutineCancellation() {
+        val cancellation = CancellationException("cancelled")
+
+        try {
+            propagateYouTubeJsChallengeCancellation(cancellation)
+            fail("cancellation must be rethrown")
+        } catch (error: CancellationException) {
+            assertSame(cancellation, error)
+        }
+    }
 
     @Test
     fun parseYouTubeJsChallengeSolveResponse_returnsSuccessWhenSignatureIsResolved() {

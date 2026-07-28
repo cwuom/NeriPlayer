@@ -32,6 +32,9 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.util.concurrent.TimeUnit
@@ -81,29 +84,59 @@ class YouTubeAuthRotationWorker(
 
     override suspend fun doWork(): Result {
         return try {
+            if (!AppContainer.isInitialized()) {
+                NPLogger.d(TAG, "skip rotation: app container is not initialized")
+                return Result.success()
+            }
+            if (!AppContainer.settingsRepo.youtubeEnabledFlow.first()) {
+                NPLogger.d(TAG, "skip rotation: YouTube is disabled")
+                return Result.success()
+            }
             val auth = AppContainer.youtubeAuthRepo.getAuthOnce().normalized()
             if (!hasYouTubeRotationPrerequisites(auth.cookies)) {
                 NPLogger.d(TAG, "skip rotation: no usable session cookies")
                 return Result.success()
             }
 
-            val rotated = YouTubeCookieRotator().rotate(
-                cookies = auth.cookies,
-                userAgent = auth.userAgent,
-                force = true
-            )
-            if (rotated.isEmpty()) {
-                NPLogger.d(TAG, "rotation produced no change")
-                // 网络抖动导致的失败交给 WorkManager 退避重试, 下个周期还会再来
-                return Result.retry()
-            }
+            when (val outcome = youtubeAuthRotationMutex.withLock {
+                val result = YouTubeCookieRotator(
+                    stateStore = SharedPreferencesYouTubeCookieRotationStateStore(
+                        applicationContext
+                    )
+                ).rotateDetailed(
+                    cookies = auth.cookies,
+                    userAgent = auth.userAgent,
+                    force = true
+                )
+                if (result is YouTubeCookieRotationOutcome.Rotated) {
+                    AppContainer.youtubeAuthRepo.mergeRotatedCookies(result.cookies)
+                    syncRotatedCookiesToWebView(result.cookies)
+                }
+                result
+            }) {
+                is YouTubeCookieRotationOutcome.Rotated -> {
+                    NPLogger.i(
+                        TAG,
+                        "rotation persisted keys=${outcome.cookies.keys.joinToString()}"
+                    )
+                    Result.success()
+                }
 
-            AppContainer.youtubeAuthRepo.saveAuth(
-                mergeYouTubeAuthBundle(base = auth, observedCookies = rotated)
-            )
-            syncRotatedCookiesToWebView(rotated)
-            NPLogger.i(TAG, "rotation persisted keys=${rotated.keys.joinToString()}")
-            Result.success()
+                YouTubeCookieRotationOutcome.NetworkError -> {
+                    NPLogger.w(TAG, "rotation failed because the network request failed")
+                    Result.retry()
+                }
+
+                is YouTubeCookieRotationOutcome.Rejected,
+                YouTubeCookieRotationOutcome.Unchanged,
+                YouTubeCookieRotationOutcome.Throttled,
+                YouTubeCookieRotationOutcome.Skipped -> {
+                    NPLogger.d(TAG, "rotation completed without a new cookie")
+                    Result.success()
+                }
+            }
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             NPLogger.w(TAG, "rotation worker failed: ${error.message}")
             Result.retry()
@@ -120,6 +153,7 @@ class YouTubeAuthRotationWorker(
             applyYouTubeWebCookies(
                 cookieManager = CookieManager.getInstance(),
                 cookies = rotatedCookies,
+                urls = YouTubeCookieSupport.webCookieReadUrls,
                 skipExisting = false
             )
         }.onFailure { error ->

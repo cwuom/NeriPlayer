@@ -202,13 +202,13 @@ fun mergeYouTubeAuthCookieUpdates(
     ).normalized(savedAt = savedAt)
 }
 
-private data class ParsedSetCookieUpdate(
+internal data class ParsedSetCookieUpdate(
     val name: String,
     val value: String,
     val shouldRemove: Boolean
 )
 
-private fun parseSetCookieUpdate(rawHeader: String): ParsedSetCookieUpdate? {
+internal fun parseSetCookieUpdate(rawHeader: String): ParsedSetCookieUpdate? {
     val segments = rawHeader
         .split(';')
         .map(String::trim)

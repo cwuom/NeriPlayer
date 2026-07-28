@@ -23,8 +23,12 @@ package moe.ouom.neriplayer.data.auth.youtube
  * Created: 2026/7/27
  */
 
+import android.content.Context
+import android.content.SharedPreferences
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -34,6 +38,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.concurrent.TimeUnit
 
 private const val ROTATE_COOKIES_URL = "https://accounts.google.com/RotateCookies"
 private const val ROTATE_COOKIES_ORIGIN = "https://accounts.google.com"
@@ -43,6 +48,9 @@ private const val ROTATE_COOKIES_PAYLOAD = "[000,\"-0000000000000000000\"]"
 
 /** 连续两次轮换之间的最小间隔, 防止刷新风暴把端点打炮 */
 internal const val ROTATION_MIN_INTERVAL_MS = 60_000L
+
+/** 强制刷新也要留出间隔, 避免失败重试把轮换端点打成请求风暴 */
+internal const val ROTATION_FORCE_MIN_INTERVAL_MS = 10_000L
 
 /** 服务端没告诉我们周期时的兜底, 与它自己声明的 600 秒一致 */
 internal const val ROTATION_DEFAULT_INTERVAL_MS = 600_000L
@@ -54,6 +62,66 @@ internal const val ROTATION_REJECTIONS_BEFORE_BACKOFF = 3
 internal const val ROTATION_MAX_BACKOFF_MS = 6L * 60L * 60L * 1000L
 
 private const val ROTATION_MAX_BACKOFF_EXPONENT = 16
+
+internal data class YouTubeCookieRotationState(
+    val lastRotatedAtMs: Long = 0L,
+    val rotationIntervalMs: Long = ROTATION_DEFAULT_INTERVAL_MS,
+    val consecutiveRejections: Int = 0
+)
+
+internal interface YouTubeCookieRotationStateStore {
+    fun read(): YouTubeCookieRotationState
+
+    fun write(state: YouTubeCookieRotationState)
+}
+
+internal object NoOpYouTubeCookieRotationStateStore : YouTubeCookieRotationStateStore {
+    override fun read(): YouTubeCookieRotationState = YouTubeCookieRotationState()
+
+    override fun write(state: YouTubeCookieRotationState) = Unit
+}
+
+internal class SharedPreferencesYouTubeCookieRotationStateStore(
+    context: Context
+) : YouTubeCookieRotationStateStore {
+    private val preferences: SharedPreferences = context.applicationContext
+        .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+
+    override fun read(): YouTubeCookieRotationState {
+        return YouTubeCookieRotationState(
+            lastRotatedAtMs = preferences.getLong(LAST_ROTATED_AT_KEY, 0L)
+                .coerceAtLeast(0L),
+            rotationIntervalMs = preferences.getLong(
+                ROTATION_INTERVAL_KEY,
+                ROTATION_DEFAULT_INTERVAL_MS
+            ).takeIf { it > 0L } ?: ROTATION_DEFAULT_INTERVAL_MS,
+            consecutiveRejections = preferences.getInt(CONSECUTIVE_REJECTIONS_KEY, 0)
+                .coerceAtLeast(0)
+        )
+    }
+
+    override fun write(state: YouTubeCookieRotationState) {
+        val committed = preferences.edit()
+            .putLong(LAST_ROTATED_AT_KEY, state.lastRotatedAtMs.coerceAtLeast(0L))
+            .putLong(
+                ROTATION_INTERVAL_KEY,
+                state.rotationIntervalMs.takeIf { it > 0L } ?: ROTATION_DEFAULT_INTERVAL_MS
+            )
+            .putInt(CONSECUTIVE_REJECTIONS_KEY, state.consecutiveRejections.coerceAtLeast(0))
+            .commit()
+        if (!committed) {
+            NPLogger.w(TAG, "failed to persist cookie rotation state")
+        }
+    }
+
+    private companion object {
+        const val TAG = "YouTubeCookieRotator"
+        const val PREFERENCES_NAME = "youtube_cookie_rotation_state"
+        const val LAST_ROTATED_AT_KEY = "last_rotated_at_ms"
+        const val ROTATION_INTERVAL_KEY = "rotation_interval_ms"
+        const val CONSECUTIVE_REJECTIONS_KEY = "consecutive_rejections"
+    }
+}
 
 /** 轮换真正会换掉的两项, 其余 Set-Cookie 一律不收 */
 internal val ROTATED_COOKIE_KEYS = listOf("__Secure-1PSIDTS", "__Secure-3PSIDTS")
@@ -126,24 +194,15 @@ internal fun parseYouTubeRotationIntervalMs(responseBody: String): Long {
 internal fun collectRotatedYouTubeCookies(setCookieHeaders: List<String>): Map<String, String> {
     val rotated = linkedMapOf<String, String>()
     setCookieHeaders.forEach { header ->
-        val attributes = header.split(';')
-        val pair = attributes.firstOrNull().orEmpty()
-        val key = pair.substringBefore('=').trim()
-        if (key !in ROTATED_COOKIE_KEYS) {
+        val update = parseSetCookieUpdate(header) ?: return@forEach
+        if (update.name !in ROTATED_COOKIE_KEYS || update.shouldRemove) {
             return@forEach
         }
-        val value = pair.substringAfter('=', "").trim().removeSurrounding("\"")
+        val value = update.value.removeSurrounding("\"")
         if (value.isBlank()) {
             return@forEach
         }
-        val isExpiryInstruction = attributes.drop(1).any { attribute ->
-            val normalized = attribute.trim().lowercase()
-            normalized == "max-age=0" || normalized.startsWith("expires=thu, 01 jan 1970")
-        }
-        if (isExpiryInstruction) {
-            return@forEach
-        }
-        rotated[key] = value
+        rotated[update.name] = value
     }
     return rotated
 }
@@ -184,6 +243,21 @@ internal fun shouldRotateYouTubeCookies(
     return nowMs - lastRotatedAtMs >= minIntervalMs
 }
 
+internal fun shouldThrottleYouTubeCookieRotation(
+    force: Boolean,
+    lastRotatedAtMs: Long,
+    nowMs: Long,
+    minIntervalMs: Long
+): Boolean {
+    // force 只放宽正常节流, 不能绕过已经生效的指数退避
+    val effectiveMinIntervalMs = if (force && minIntervalMs <= ROTATION_MIN_INTERVAL_MS) {
+        minOf(minIntervalMs, ROTATION_FORCE_MIN_INTERVAL_MS)
+    } else {
+        minIntervalMs
+    }
+    return !shouldRotateYouTubeCookies(lastRotatedAtMs, nowMs, effectiveMinIntervalMs)
+}
+
 /**
  * 只有值真的变了才算轮换成功
  *
@@ -196,6 +270,23 @@ internal fun collectChangedRotatedCookies(
     return rotatedCookies.filter { (key, value) -> currentCookies[key] != value }
 }
 
+internal sealed interface YouTubeCookieRotationOutcome {
+    data class Rotated(val cookies: Map<String, String>) : YouTubeCookieRotationOutcome
+
+    data object Unchanged : YouTubeCookieRotationOutcome
+
+    data object Throttled : YouTubeCookieRotationOutcome
+
+    data class Rejected(val code: Int) : YouTubeCookieRotationOutcome
+
+    data object NetworkError : YouTubeCookieRotationOutcome
+
+    data object Skipped : YouTubeCookieRotationOutcome
+}
+
+/** 轮换请求和凭据合并必须共用同一把锁, 否则前台和 Worker 会互相覆盖新值 */
+internal val youtubeAuthRotationMutex = Mutex()
+
 /**
  * 显式向 Google 申请轮换 *PSIDTS
  *
@@ -204,10 +295,14 @@ internal fun collectChangedRotatedCookies(
  */
 internal class YouTubeCookieRotator(
     private val httpClientProvider: () -> OkHttpClient = { AppContainer.sharedOkHttpClient },
-    private val nowMsProvider: () -> Long = { System.currentTimeMillis() }
+    private val nowMsProvider: () -> Long = { System.currentTimeMillis() },
+    private val stateStore: YouTubeCookieRotationStateStore =
+        NoOpYouTubeCookieRotationStateStore
 ) {
     companion object {
         private const val TAG = "YouTubeCookieRotator"
+
+        private val rotationMutex = Mutex()
     }
 
     @Volatile
@@ -216,9 +311,12 @@ internal class YouTubeCookieRotator(
     @Volatile
     private var rotationIntervalMs: Long = ROTATION_DEFAULT_INTERVAL_MS
 
-    /** 端点对部分账号恒回 403, 记着连续失败次数好把重试拉开 */
     @Volatile
     private var consecutiveRejections: Int = 0
+
+    init {
+        restoreRotationState()
+    }
 
     /** 轮换请求自带 Cookie 头, 客户端再插一手只会把两份 cookie 混在一起 */
     private val rotationClient: OkHttpClient by lazy {
@@ -226,6 +324,7 @@ internal class YouTubeCookieRotator(
             .newBuilder()
             .cookieJar(CookieJar.NO_COOKIES)
             .followRedirects(false)
+            .callTimeout(10L, TimeUnit.SECONDS)
             .build()
     }
 
@@ -240,27 +339,54 @@ internal class YouTubeCookieRotator(
         cookies: Map<String, String>,
         userAgent: String,
         force: Boolean = false
-    ): Map<String, String> = withContext(Dispatchers.IO) {
+    ): Map<String, String> {
+        return when (
+            val outcome = rotateDetailed(
+                cookies = cookies,
+                userAgent = userAgent,
+                force = force
+            )
+        ) {
+            is YouTubeCookieRotationOutcome.Rotated -> outcome.cookies
+            else -> emptyMap()
+        }
+    }
+
+    suspend fun rotateDetailed(
+        cookies: Map<String, String>,
+        userAgent: String,
+        force: Boolean = false
+    ): YouTubeCookieRotationOutcome = withContext(Dispatchers.IO) {
+        rotationMutex.withLock {
+            rotateLocked(cookies, userAgent, force)
+        }
+    }
+
+    private suspend fun rotateLocked(
+        cookies: Map<String, String>,
+        userAgent: String,
+        force: Boolean
+    ): YouTubeCookieRotationOutcome {
         if (!hasYouTubeRotationPrerequisites(cookies)) {
             NPLogger.d(TAG, "rotate skipped: missing session or binding cookie")
-            return@withContext emptyMap()
+            return YouTubeCookieRotationOutcome.Skipped
         }
+        restoreRotationState()
         val now = nowMsProvider()
         val retryIntervalMs = nextYouTubeRotationBackoffMs(consecutiveRejections)
-        // 退避期内连 force 也不放行, 否则后台任务每次醒来都会去撞同一堵墙
-        if (!shouldRotateYouTubeCookies(lastRotatedAtMs, now, retryIntervalMs) &&
-            (!force || retryIntervalMs > ROTATION_MIN_INTERVAL_MS)
-        ) {
+        if (shouldThrottleYouTubeCookieRotation(force, lastRotatedAtMs, now, retryIntervalMs)) {
             NPLogger.d(
                 TAG,
-                "rotate throttled: sinceLastMs=${now - lastRotatedAtMs} retryIntervalMs=$retryIntervalMs rejections=$consecutiveRejections"
+                "rotate throttled: sinceLastMs=${now - lastRotatedAtMs} " +
+                    "retryIntervalMs=$retryIntervalMs rejections=$consecutiveRejections " +
+                    "force=$force"
             )
-            return@withContext emptyMap()
+            return YouTubeCookieRotationOutcome.Throttled
         }
 
         val cookieHeader = buildYouTubeRotationCookieHeader(cookies)
         if (cookieHeader.isBlank()) {
-            return@withContext emptyMap()
+            return YouTubeCookieRotationOutcome.Skipped
         }
 
         val request = Request.Builder()
@@ -276,7 +402,7 @@ internal class YouTubeCookieRotator(
             }
             .build()
 
-        try {
+        return try {
             val outcome = rotationClient.newCall(request).awaitResponse { response ->
                 val setCookieHeaders = response.headers("Set-Cookie")
                 val body = response.body.string()
@@ -286,28 +412,61 @@ internal class YouTubeCookieRotator(
             lastRotatedAtMs = nowMsProvider()
             if (code != 200) {
                 consecutiveRejections += 1
+                persistRotationState()
                 NPLogger.w(
                     TAG,
                     "rotate rejected: code=$code rejections=$consecutiveRejections nextRetryMs=${nextYouTubeRotationBackoffMs(consecutiveRejections)}"
                 )
-                return@withContext emptyMap()
+                return YouTubeCookieRotationOutcome.Rejected(code)
             }
             consecutiveRejections = 0
             rotationIntervalMs = parseYouTubeRotationIntervalMs(body)
+            persistRotationState()
             val rotated = collectRotatedYouTubeCookies(setCookieHeaders)
             val changed = collectChangedRotatedCookies(cookies, rotated)
             NPLogger.i(
                 TAG,
                 "rotate ok: rotated=${rotated.keys.joinToString()} changed=${changed.keys.joinToString()} nextIntervalMs=$rotationIntervalMs"
             )
-            changed
+            if (changed.isEmpty()) {
+                YouTubeCookieRotationOutcome.Unchanged
+            } else {
+                YouTubeCookieRotationOutcome.Rotated(changed)
+            }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
             lastRotatedAtMs = nowMsProvider()
             consecutiveRejections += 1
+            persistRotationState()
             NPLogger.w(TAG, "rotate failed: ${error.message} rejections=$consecutiveRejections")
-            emptyMap()
+            YouTubeCookieRotationOutcome.NetworkError
+        }
+    }
+
+    private fun restoreRotationState() {
+        val state = runCatching { stateStore.read() }
+            .onFailure { error ->
+                NPLogger.w(TAG, "failed to read cookie rotation state", error)
+            }
+            .getOrDefault(YouTubeCookieRotationState())
+        lastRotatedAtMs = state.lastRotatedAtMs.coerceAtLeast(0L)
+        rotationIntervalMs = state.rotationIntervalMs.takeIf { it > 0L }
+            ?: ROTATION_DEFAULT_INTERVAL_MS
+        consecutiveRejections = state.consecutiveRejections.coerceAtLeast(0)
+    }
+
+    private fun persistRotationState() {
+        runCatching {
+            stateStore.write(
+                YouTubeCookieRotationState(
+                    lastRotatedAtMs = lastRotatedAtMs,
+                    rotationIntervalMs = rotationIntervalMs,
+                    consecutiveRejections = consecutiveRejections
+                )
+            )
+        }.onFailure { error ->
+            NPLogger.w(TAG, "failed to write cookie rotation state", error)
         }
     }
 }
