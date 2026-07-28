@@ -96,6 +96,9 @@ import moe.ouom.neriplayer.core.player.model.PlaybackSoundState
 import moe.ouom.neriplayer.core.player.model.PlaybackUrlCandidate
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
+import moe.ouom.neriplayer.core.player.policy.progress.LONG_FORM_PLAYBACK_MIN_DURATION_MS
+import moe.ouom.neriplayer.core.player.policy.progress.resolveLongFormPlaybackPositionForPersistence
+import moe.ouom.neriplayer.core.player.policy.progress.resolveLongFormPlaybackResumePosition
 import moe.ouom.neriplayer.core.player.metadata.NeteaseLyricsCacheEntry
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
@@ -397,6 +400,7 @@ object PlayerManager {
     internal var cloudMusicLyricDefaultOffsetMs = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
     internal var qqMusicLyricDefaultOffsetMs = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
     internal var keepLastPlaybackProgressEnabled = true
+    internal var rememberLongFormPlaybackProgressEnabled = true
     internal var keepPlaybackModeStateEnabled = true
     @Volatile
     internal var neteaseAutoSourceSwitchEnabled = true
@@ -474,6 +478,7 @@ object PlayerManager {
     internal var lastPersistedPlaylistReference: List<SongItem>? = null
     internal var lastPersistedPlaybackState: PersistedPlaybackState? = null
     internal var scheduledStatePersistJob: Job? = null
+    internal var lastLongFormPlaybackProgressPersistAtMs: Long = 0L
     internal var lastAutoTrackAdvanceAtMs: Long = 0L
     @Volatile
     internal var lastUsbExclusiveFocusDisruptionAtMs: Long = 0L
@@ -656,6 +661,14 @@ object PlayerManager {
 
     internal fun setCurrentSongForPlayback(song: SongItem?, syncLyricon: Boolean = true) {
         val previousSong = _currentSongFlow.value
+        if (previousSong != null && !previousSong.sameIdentityAs(song)) {
+            persistLongFormPlaybackProgress(
+                song = previousSong,
+                positionMs = _playbackPositionMs.value,
+                durationMs = _playbackDurationMs.value
+            )
+            lastLongFormPlaybackProgressPersistAtMs = 0L
+        }
         _currentSongFlow.value = song
         _playbackDurationMs.value = song?.durationMs?.coerceAtLeast(0L) ?: 0L
         if (previousSong === song) return
@@ -667,6 +680,68 @@ object PlayerManager {
             synchronized(playbackStatsTracker) {
                 playbackStatsTracker.onSongChanged(song)
             }
+        )
+    }
+
+    internal fun resolveRememberedLongFormPlaybackStartPosition(
+        song: SongItem,
+        requestedPositionMs: Long,
+        allowRememberedPosition: Boolean
+    ): Long {
+        val normalizedRequestedPositionMs = requestedPositionMs.coerceAtLeast(0L)
+        if (
+            !allowRememberedPosition ||
+            !rememberLongFormPlaybackProgressEnabled ||
+            song.durationMs < LONG_FORM_PLAYBACK_MIN_DURATION_MS
+        ) {
+            return normalizedRequestedPositionMs
+        }
+        return resolveLongFormPlaybackResumePosition(
+            enabled = true,
+            durationMs = song.durationMs,
+            requestedPositionMs = normalizedRequestedPositionMs,
+            rememberedPositionMs = AppContainer.playHistoryRepo.rememberedPlaybackPosition(song),
+            allowRememberedPosition = allowRememberedPosition
+        )
+    }
+
+    internal fun persistLongFormPlaybackProgress(
+        song: SongItem?,
+        positionMs: Long,
+        durationMs: Long
+    ) {
+        val songToPersist = song ?: return
+        val effectiveDurationMs = maxOf(
+            songToPersist.durationMs.coerceAtLeast(0L),
+            durationMs.coerceAtLeast(0L)
+        )
+        val rememberedPositionMs = resolveLongFormPlaybackPositionForPersistence(
+            enabled = rememberLongFormPlaybackProgressEnabled,
+            durationMs = effectiveDurationMs,
+            positionMs = positionMs
+        ) ?: return
+        AppContainer.playHistoryRepo.updateRememberedPlaybackPosition(
+            song = songToPersist,
+            positionMs = rememberedPositionMs
+        )
+    }
+
+    internal fun persistCurrentLongFormPlaybackProgress() {
+        val song = _currentSongFlow.value ?: return
+        val playerPositionMs = if (isPlayerInitialized()) {
+            runCatching { player.currentPosition.coerceAtLeast(0L) }.getOrDefault(0L)
+        } else {
+            0L
+        }
+        val playerDurationMs = if (isPlayerInitialized()) {
+            runCatching { player.duration.coerceAtLeast(0L) }.getOrDefault(0L)
+        } else {
+            0L
+        }
+        persistLongFormPlaybackProgress(
+            song = song,
+            positionMs = maxOf(_playbackPositionMs.value, playerPositionMs),
+            durationMs = maxOf(_playbackDurationMs.value, playerDurationMs)
         )
     }
 
@@ -1021,6 +1096,7 @@ object PlayerManager {
         restoredResumePositionMs = 0L
         stopProgressUpdates()
         cancelVolumeFade(resetToFull = true)
+        persistCurrentLongFormPlaybackProgress()
         runCatching { player.stop() }
         runCatching { player.clearMediaItems() }
         _isPlayingFlow.value = false
@@ -1142,6 +1218,7 @@ object PlayerManager {
         clearActivePlaybackCandidates()
         stopProgressUpdates()
         cancelVolumeFade(resetToFull = true)
+        persistCurrentLongFormPlaybackProgress()
         runCatching { player.stop() }
         runCatching { player.clearMediaItems() }
         _isPlayingFlow.value = false

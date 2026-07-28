@@ -1483,6 +1483,19 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
+            key = "remember_long_form_playback_progress",
+            type = SettingValueType.Boolean,
+            defaultBoolean = true,
+            order = 131,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val rememberLongFormPlaybackProgress = autoSetting(
+            titleRes = R.string.settings_remember_long_form_playback_progress,
+            descriptionRes = R.string.settings_remember_long_form_playback_progress_desc
+        )
+
+        @AutoSetting(
             key = "netease_auto_source_switch",
             type = SettingValueType.Boolean,
             defaultBoolean = true,

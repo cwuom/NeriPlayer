@@ -107,6 +107,8 @@ internal fun SettingsPlaybackSection(
     onPlaybackVolumeBalanceChange: (Float) -> Unit,
     keepLastPlaybackProgress: Boolean,
     onKeepLastPlaybackProgressChange: (Boolean) -> Unit,
+    rememberLongFormPlaybackProgress: Boolean,
+    onRememberLongFormPlaybackProgressChange: (Boolean) -> Unit,
     keepPlaybackModeState: Boolean,
     onKeepPlaybackModeStateChange: (Boolean) -> Unit,
     stopOnBluetoothDisconnect: Boolean,
@@ -300,6 +302,29 @@ internal fun SettingsPlaybackSection(
                 },
                 onToggle = { onKeepLastPlaybackProgressChange(!keepLastPlaybackProgress) },
                 onCheckedChange = onKeepLastPlaybackProgressChange
+            )
+
+            PlaybackSwitchItem(
+                setting = AutoSettingsMetadata.requireSetting(
+                    AutoSettingsKeys.REMEMBER_LONG_FORM_PLAYBACK_PROGRESS
+                ),
+                checked = rememberLongFormPlaybackProgress,
+                icon = {
+                    Icon(
+                        imageVector = Icons.Outlined.History,
+                        contentDescription = stringResource(
+                            R.string.settings_remember_long_form_playback_progress
+                        ),
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                },
+                onToggle = {
+                    onRememberLongFormPlaybackProgressChange(
+                        !rememberLongFormPlaybackProgress
+                    )
+                },
+                onCheckedChange = onRememberLongFormPlaybackProgressChange
             )
 
             PlaybackSwitchItem(

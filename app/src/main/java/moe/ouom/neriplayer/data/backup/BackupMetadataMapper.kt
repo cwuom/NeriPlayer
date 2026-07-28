@@ -55,7 +55,8 @@ internal object BackupMetadataMapper {
                 syncMetadataVersion = CURRENT_SYNC_METADATA_VERSION
             ),
             playedAt = entry.playedAt,
-            deviceId = BACKUP_DEVICE_ID
+            deviceId = BACKUP_DEVICE_ID,
+            resumePositionMs = entry.resumePositionMs
         )
     }
 
@@ -83,6 +84,7 @@ internal object BackupMetadataMapper {
             originalCoverUrl = song.originalCoverUrl,
             originalLyric = song.originalLyric,
             originalTranslatedLyric = song.originalTranslatedLyric,
+            resumePositionMs = syncPlay.resumePositionMs,
             playedAt = syncPlay.playedAt
         )
     }

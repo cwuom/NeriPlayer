@@ -362,6 +362,8 @@ fun SettingsScreen(
     onPlaybackVolumeBalanceChange: (Float) -> Unit,
     keepLastPlaybackProgress: Boolean,
     onKeepLastPlaybackProgressChange: (Boolean) -> Unit,
+    rememberLongFormPlaybackProgress: Boolean,
+    onRememberLongFormPlaybackProgressChange: (Boolean) -> Unit,
     keepPlaybackModeState: Boolean,
     onKeepPlaybackModeStateChange: (Boolean) -> Unit,
     neteaseAutoSourceSwitch: Boolean,
@@ -1314,6 +1316,9 @@ fun SettingsScreen(
                             onPlaybackVolumeBalanceChange = onPlaybackVolumeBalanceChange,
                             keepLastPlaybackProgress = keepLastPlaybackProgress,
                             onKeepLastPlaybackProgressChange = onKeepLastPlaybackProgressChange,
+                            rememberLongFormPlaybackProgress = rememberLongFormPlaybackProgress,
+                            onRememberLongFormPlaybackProgressChange =
+                                onRememberLongFormPlaybackProgressChange,
                             keepPlaybackModeState = keepPlaybackModeState,
                             onKeepPlaybackModeStateChange = onKeepPlaybackModeStateChange,
                             stopOnBluetoothDisconnect = stopOnBluetoothDisconnect,

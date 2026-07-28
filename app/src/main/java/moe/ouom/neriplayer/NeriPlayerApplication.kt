@@ -103,6 +103,9 @@ class NeriPlayerApplication : Application() {
             AppContainer.launchBackgroundIo {
                 FavoritePlaylistRepository.getInstance(this@NeriPlayerApplication)
             }
+            AppContainer.launchBackgroundIo {
+                AppContainer.playHistoryRepo
+            }
 
             // 提前注册前后台回调, 避免等播放器初始化后才开始统计 Activity 状态
             FloatingLyricsOverlayManager.initialize(this)

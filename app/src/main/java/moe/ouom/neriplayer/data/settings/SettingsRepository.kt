@@ -435,6 +435,11 @@ class SettingsRepository(private val context: Context) {
     val keepLastPlaybackProgressFlow: Flow<Boolean> =
         dataStoreSettingFlow { it[SettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS] ?: true }
 
+    val rememberLongFormPlaybackProgressFlow: Flow<Boolean> =
+        dataStoreSettingFlow {
+            it[SettingsKeys.REMEMBER_LONG_FORM_PLAYBACK_PROGRESS] ?: true
+        }
+
     val keepPlaybackModeStateFlow: Flow<Boolean> =
         dataStoreSettingFlow { it[SettingsKeys.KEEP_PLAYBACK_MODE_STATE] ?: true }
 
@@ -1076,6 +1081,15 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[SettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS] = enabled }
         updatePlaybackPreferenceSnapshot(context) {
             it.copy(keepLastPlaybackProgress = enabled)
+        }
+    }
+
+    suspend fun setRememberLongFormPlaybackProgress(enabled: Boolean) {
+        context.dataStore.edit {
+            it[SettingsKeys.REMEMBER_LONG_FORM_PLAYBACK_PROGRESS] = enabled
+        }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(rememberLongFormPlaybackProgress = enabled)
         }
     }
 

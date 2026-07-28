@@ -879,6 +879,8 @@
     <string name="settings_playback_source_desc">配置自动换源与音源兜底策略</string>
     <string name="settings_keep_last_playback_progress">保留上次播放进度</string>
     <string name="settings_keep_last_playback_progress_desc">应用重启后继续记住当前歌曲的播放进度</string>
+    <string name="settings_remember_long_form_playback_progress">记忆长视频播放进度</string>
+    <string name="settings_remember_long_form_playback_progress_desc">自动保存 15 分钟及以上内容的位置，并在下次播放时续播</string>
     <string name="settings_keep_playback_mode_state">保留播放状态</string>
     <string name="settings_keep_playback_mode_state_desc">应用重启后恢复单曲循环、列表循环和随机播放状态</string>
     <string name="settings_stop_on_bluetooth_disconnect">蓝牙断开自动停止</string>

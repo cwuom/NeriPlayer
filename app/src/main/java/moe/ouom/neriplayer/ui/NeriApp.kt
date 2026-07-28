@@ -1384,6 +1384,10 @@ private fun NeriAppContent(
         initialValue = startupPlaybackPreferences.playbackVolumeBalance
     )
     val keepLastPlaybackProgress by repo.keepLastPlaybackProgressFlow.collectAsStateWithLifecycle(initialValue = true)
+    val rememberLongFormPlaybackProgress by repo.rememberLongFormPlaybackProgressFlow
+        .collectAsStateWithLifecycle(
+            initialValue = startupPlaybackPreferences.rememberLongFormPlaybackProgress
+        )
     val keepPlaybackModeState by repo.keepPlaybackModeStateFlow.collectAsStateWithLifecycle(initialValue = true)
     val neteaseAutoSourceSwitch by repo.neteaseAutoSourceSwitchFlow.collectAsStateWithLifecycle(
         initialValue = startupPlaybackPreferences.neteaseAutoSourceSwitch
@@ -2549,6 +2553,12 @@ private fun NeriAppContent(
                         keepLastPlaybackProgress = keepLastPlaybackProgress,
                         onKeepLastPlaybackProgressChange = { enabled ->
                             scope.launch { repo.setKeepLastPlaybackProgress(enabled) }
+                        },
+                        rememberLongFormPlaybackProgress = rememberLongFormPlaybackProgress,
+                        onRememberLongFormPlaybackProgressChange = { enabled ->
+                            scope.launch {
+                                repo.setRememberLongFormPlaybackProgress(enabled)
+                            }
                         },
                         keepPlaybackModeState = keepPlaybackModeState,
                         onKeepPlaybackModeStateChange = { enabled ->

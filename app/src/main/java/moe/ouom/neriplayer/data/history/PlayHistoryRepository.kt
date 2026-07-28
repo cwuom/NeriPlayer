@@ -57,6 +57,7 @@ data class PlayedEntry(
     val album: String,
     val albumId: Long = 0L,
     val durationMs: Long,
+    val resumePositionMs: Long = 0L,
     val coverUrl: String?,
     val mediaUri: String? = null,
     val matchedLyric: String? = null,
@@ -276,6 +277,68 @@ class PlayHistoryRepository private constructor(private val app: Context) {
                 _history.value = updated
                 persistToDisk(updated)
 
+                if (!LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, app)) {
+                    storage.removeRecentPlayDeletion(song.identityKey())
+                }
+                triggerSyncIfNeeded(
+                    urgency = PlayHistorySyncUrgency.SETTLED,
+                    markMutation = false
+                )
+            }
+        }
+    }
+
+    fun rememberedPlaybackPosition(song: SongItem): Long {
+        val songIdentityKey = song.identityKey()
+        return _history.value
+            .firstOrNull { it.identityKey() == songIdentityKey }
+            ?.resumePositionMs
+            ?.coerceAtLeast(0L)
+            ?: 0L
+    }
+
+    fun updateRememberedPlaybackPosition(
+        song: SongItem,
+        positionMs: Long,
+        now: Long = System.currentTimeMillis()
+    ) {
+        val normalizedPositionMs = positionMs.coerceAtLeast(0L)
+        scope.launch {
+            historyMutex.withLock {
+                val current = _history.value
+                val songIdentityKey = song.identityKey()
+                val existingIndex = current.indexOfFirst { it.identityKey() == songIdentityKey }
+                val existingEntry = current.getOrNull(existingIndex)
+                if (existingEntry != null && existingEntry.playedAt > now) {
+                    return@withLock
+                }
+                if (existingEntry == null && normalizedPositionMs == 0L) {
+                    return@withLock
+                }
+                if (existingEntry?.resumePositionMs == normalizedPositionMs) {
+                    return@withLock
+                }
+
+                val latestEntry = (existingEntry?.mergeSongMetadata(song, playedAt = now)
+                    ?: song.toPlayedEntry(now)).copy(
+                    resumePositionMs = normalizedPositionMs,
+                    playedAt = now
+                )
+                val updated = buildList {
+                    add(latestEntry)
+                    current.forEachIndexed { index, entry ->
+                        if (index != existingIndex) {
+                            add(entry)
+                        }
+                    }
+                }
+                    .sortedByDescending { it.playedAt }
+                    .distinctBy { it.identityKey() }
+                    .take(1000)
+
+                markSyncMutation()
+                _history.value = updated
+                persistToDisk(updated)
                 if (!LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, app)) {
                     storage.removeRecentPlayDeletion(song.identityKey())
                 }

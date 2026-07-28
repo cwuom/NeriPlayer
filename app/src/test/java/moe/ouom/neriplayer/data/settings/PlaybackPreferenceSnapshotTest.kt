@@ -34,6 +34,15 @@ class PlaybackPreferenceSnapshotTest {
     }
 
     @Test
+    fun `preferences restore long form playback progress setting`() {
+        val snapshot = preferencesOf(
+            SettingsKeys.REMEMBER_LONG_FORM_PLAYBACK_PROGRESS to false
+        ).toPlaybackPreferenceSnapshot()
+
+        assertFalse(snapshot.rememberLongFormPlaybackProgress)
+    }
+
+    @Test
     fun `sanitized normalizes playback runtime values`() {
         val snapshot = PlaybackPreferenceSnapshot(
             playbackFadeInDurationMs = -100L,
@@ -88,6 +97,7 @@ class PlaybackPreferenceSnapshotTest {
         val snapshot = PlaybackPreferenceSnapshot()
 
         assertTrue(snapshot.keepLastPlaybackProgress)
+        assertTrue(snapshot.rememberLongFormPlaybackProgress)
         assertTrue(snapshot.keepPlaybackModeState)
         assertFalse(snapshot.allowMixedPlayback)
         assertFalse(snapshot.playbackFadeIn)

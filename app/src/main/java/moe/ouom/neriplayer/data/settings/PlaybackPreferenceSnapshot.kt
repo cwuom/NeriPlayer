@@ -45,7 +45,7 @@ import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
 import androidx.core.content.edit
 
 private const val PLAYBACK_SNAPSHOT_PREFS = "playback_snapshot_cache"
-private const val PLAYBACK_SNAPSHOT_SCHEMA_VERSION = 3
+private const val PLAYBACK_SNAPSHOT_SCHEMA_VERSION = 4
 private const val PLAYBACK_SNAPSHOT_SCHEMA_VERSION_KEY = "schema_version"
 private const val PLAYBACK_SNAPSHOT_READY_KEY = "ready"
 private const val PLAYBACK_AUDIO_QUALITY_KEY = "audio_quality"
@@ -61,6 +61,8 @@ private const val PLAYBACK_MOBILE_DATA_YOUTUBE_AUDIO_QUALITY_KEY =
 private const val PLAYBACK_MOBILE_DATA_BILI_AUDIO_QUALITY_KEY =
     "mobile_data_bili_audio_quality"
 private const val PLAYBACK_KEEP_PROGRESS_KEY = "keep_last_playback_progress"
+private const val PLAYBACK_REMEMBER_LONG_FORM_PROGRESS_KEY =
+    "remember_long_form_playback_progress"
 private const val PLAYBACK_KEEP_MODE_STATE_KEY = "keep_playback_mode_state"
 private const val PLAYBACK_NETEASE_AUTO_SOURCE_SWITCH_KEY = "netease_auto_source_switch"
 private const val PLAYBACK_NETEASE_LOCAL_SOURCE_FALLBACK_KEY = "netease_local_source_fallback"
@@ -109,6 +111,7 @@ data class PlaybackPreferenceSnapshot(
     val mobileDataYouTubeAudioQuality: String = DEFAULT_MOBILE_DATA_YOUTUBE_AUDIO_QUALITY,
     val mobileDataBiliAudioQuality: String = DEFAULT_MOBILE_DATA_BILI_AUDIO_QUALITY,
     val keepLastPlaybackProgress: Boolean = true,
+    val rememberLongFormPlaybackProgress: Boolean = true,
     val keepPlaybackModeState: Boolean = true,
     val neteaseAutoSourceSwitch: Boolean = true,
     val neteaseLocalSourceFallback: Boolean = true,
@@ -309,6 +312,10 @@ internal fun persistPlaybackPreferenceSnapshot(
                     normalizedSnapshot.mobileDataBiliAudioQuality
                 )
                 .putBoolean(PLAYBACK_KEEP_PROGRESS_KEY, normalizedSnapshot.keepLastPlaybackProgress)
+                .putBoolean(
+                    PLAYBACK_REMEMBER_LONG_FORM_PROGRESS_KEY,
+                    normalizedSnapshot.rememberLongFormPlaybackProgress
+                )
                 .putBoolean(PLAYBACK_KEEP_MODE_STATE_KEY, normalizedSnapshot.keepPlaybackModeState)
                 .putBoolean(
                     PLAYBACK_NETEASE_AUTO_SOURCE_SWITCH_KEY,
@@ -420,6 +427,8 @@ internal fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnaps
                 ?: resolveLegacyMobileDataBiliAudioQuality(legacyMobileDataQuality)
         ),
         keepLastPlaybackProgress = this[SettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS] ?: true,
+        rememberLongFormPlaybackProgress =
+            this[SettingsKeys.REMEMBER_LONG_FORM_PLAYBACK_PROGRESS] ?: true,
         keepPlaybackModeState = this[SettingsKeys.KEEP_PLAYBACK_MODE_STATE] ?: true,
         neteaseAutoSourceSwitch = this[SettingsKeys.NETEASE_AUTO_SOURCE_SWITCH] ?: true,
         neteaseLocalSourceFallback = this[SettingsKeys.NETEASE_LOCAL_SOURCE_FALLBACK] ?: true,
@@ -559,6 +568,10 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
             }
         ),
         keepLastPlaybackProgress = prefs.getBoolean(PLAYBACK_KEEP_PROGRESS_KEY, true),
+        rememberLongFormPlaybackProgress = prefs.getBoolean(
+            PLAYBACK_REMEMBER_LONG_FORM_PROGRESS_KEY,
+            true
+        ),
         keepPlaybackModeState = prefs.getBoolean(PLAYBACK_KEEP_MODE_STATE_KEY, true),
         neteaseAutoSourceSwitch =
             prefs.getBoolean(PLAYBACK_NETEASE_AUTO_SOURCE_SWITCH_KEY, true),

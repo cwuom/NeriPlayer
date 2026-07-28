@@ -170,6 +170,7 @@ internal fun PlayerManager.initializeImpl(
         lastPersistedPlaylistReference = null
         lastPersistedPlaybackState = null
         lastStatePersistAtMs = 0L
+        lastLongFormPlaybackProgressPersistAtMs = 0L
         playbackStatsTracker = PlaybackStatsTracker()
         playbackStatsPersistJob = null
         val initialPlaybackPreferences =
@@ -187,6 +188,8 @@ internal fun PlayerManager.initializeImpl(
             initialPlaybackPreferences.mobileDataBiliAudioQuality
         keepLastPlaybackProgressEnabled =
             initialPlaybackPreferences.keepLastPlaybackProgress
+        rememberLongFormPlaybackProgressEnabled =
+            initialPlaybackPreferences.rememberLongFormPlaybackProgress
         keepPlaybackModeStateEnabled =
             initialPlaybackPreferences.keepPlaybackModeState
         neteaseAutoSourceSwitchEnabled =
@@ -228,7 +231,7 @@ internal fun PlayerManager.initializeImpl(
             initialPlaybackPreferences.playbackHighResolutionOutputEnabled
         NPLogger.d(
             "NERI-PlayerManager",
-            "initialize(): prefs quality=$preferredQuality, youtubeQuality=$youtubePreferredQuality, biliQuality=$biliPreferredQuality, mobileDataFollowDefault=$mobileDataFollowDefaultAudioQuality, mobileDataQuality=$mobileDataNeteaseAudioQuality/$mobileDataYouTubeAudioQuality/$mobileDataBiliAudioQuality, keepProgress=$keepLastPlaybackProgressEnabled, keepMode=$keepPlaybackModeStateEnabled, neteaseAutoSourceSwitch=$neteaseAutoSourceSwitchEnabled, neteaseLocalSourceFallback=$neteaseLocalSourceFallbackEnabled, fadeIn=$playbackFadeInEnabled/${playbackFadeInDurationMs}ms, crossfade=$playbackCrossfadeNextEnabled/${playbackCrossfadeInDurationMs}ms, highResolutionOutput=$playbackHighResolutionOutputEnabled, stopOnBluetoothDisconnect=$stopOnBluetoothDisconnectEnabled, usbExclusivePlayback=$usbExclusivePlaybackEnabled, allowMixedPlayback=$allowMixedPlaybackEnabled"
+            "initialize(): prefs quality=$preferredQuality, youtubeQuality=$youtubePreferredQuality, biliQuality=$biliPreferredQuality, mobileDataFollowDefault=$mobileDataFollowDefaultAudioQuality, mobileDataQuality=$mobileDataNeteaseAudioQuality/$mobileDataYouTubeAudioQuality/$mobileDataBiliAudioQuality, keepProgress=$keepLastPlaybackProgressEnabled, rememberLongFormProgress=$rememberLongFormPlaybackProgressEnabled, keepMode=$keepPlaybackModeStateEnabled, neteaseAutoSourceSwitch=$neteaseAutoSourceSwitchEnabled, neteaseLocalSourceFallback=$neteaseLocalSourceFallbackEnabled, fadeIn=$playbackFadeInEnabled/${playbackFadeInDurationMs}ms, crossfade=$playbackCrossfadeNextEnabled/${playbackCrossfadeInDurationMs}ms, highResolutionOutput=$playbackHighResolutionOutputEnabled, stopOnBluetoothDisconnect=$stopOnBluetoothDisconnectEnabled, usbExclusivePlayback=$usbExclusivePlaybackEnabled, allowMixedPlayback=$allowMixedPlaybackEnabled"
         )
         val okHttpClient = AppContainer.sharedOkHttpClient
         val upstreamFactory: HttpDataSource.Factory = OkHttpDataSource.Factory(okHttpClient)
@@ -875,6 +878,11 @@ internal fun PlayerManager.initializeImpl(
                 if (changed && initialized && currentPlaylist.isNotEmpty()) {
                     persistState()
                 }
+            }
+        }
+        ioScope.launch {
+            settingsRepo.rememberLongFormPlaybackProgressFlow.collect { enabled ->
+                rememberLongFormPlaybackProgressEnabled = enabled
             }
         }
         ioScope.launch {
