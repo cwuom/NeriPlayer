@@ -11,7 +11,7 @@ internal object UsbExclusivePcmWritePlanner {
     private const val TRANSFERS_PER_WRITE = 4L
     private const val RECOVERY_TRANSFERS_PER_WRITE = 10L
     private const val RUNNING_TARGET_QUEUE_MIN_MS = 120L
-    private const val RUNNING_TARGET_QUEUE_MAX_MS = 1_000L
+    private const val RUNNING_TARGET_QUEUE_MAX_MS = 1_500L
     private const val RUNNING_TARGET_QUEUE_CAPACITY_DIVISOR = 2L
     private const val RUNNING_LOW_WATERMARK_QUEUE_MS = 40L
     private const val RUNNING_TARGET_TRANSFERS = 6L
@@ -194,7 +194,7 @@ internal object UsbExclusivePcmWritePlanner {
     ): Long {
         val outputSampleRate = metrics.sampleRate?.takeIf { it > 0 } ?: inputSampleRate
         val bytesPerSecond = outputSampleRate.toLong() * outputFrameBytes
-        // A large background ring must retain a PCM reserve, not only a few USB transfers.
+        // retain half of the bounded background ring so scheduler gaps do not drain PCM
         val targetQueueMs = if (bytesPerSecond > 0L) {
             (capacity * 1_000L / bytesPerSecond / RUNNING_TARGET_QUEUE_CAPACITY_DIVISOR)
                 .coerceIn(RUNNING_TARGET_QUEUE_MIN_MS, RUNNING_TARGET_QUEUE_MAX_MS)

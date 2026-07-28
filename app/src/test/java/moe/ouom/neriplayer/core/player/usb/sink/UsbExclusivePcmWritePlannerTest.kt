@@ -231,6 +231,33 @@ class UsbExclusivePcmWritePlannerTest {
     }
 
     @Test
+    fun `maximum background ring keeps filling past one second reserve`() {
+        val writeSize = UsbExclusivePcmWritePlanner.chooseWriteSize(
+            remainingBytes = 65_536,
+            inputSampleRate = 192_000,
+            inputFrameBytes = 8,
+            nativeTransportStarted = true,
+            playing = true,
+            prerollMs = 80L,
+            metrics = UsbExclusiveRuntimeMetrics(
+                sampleRate = 192_000,
+                channelCount = 2,
+                subslotBytes = 4,
+                transferBytes = 12_288,
+                lastTransferBytes = 12_288,
+                pcmLevelBytes = 1_536_000L,
+                pcmCapacityBytes = 4_608_000L,
+                pcmFreeBytes = 3_072_000L,
+                transportFailed = false,
+                running = true,
+                lastError = "none"
+            )
+        )
+
+        assertEquals(49_152, writeSize)
+    }
+
+    @Test
     fun `does not probe when full queue has transport error`() {
         val writeSize = UsbExclusivePcmWritePlanner.chooseWriteSize(
             remainingBytes = 65_536,
