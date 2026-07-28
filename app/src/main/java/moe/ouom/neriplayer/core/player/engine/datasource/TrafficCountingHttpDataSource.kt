@@ -16,6 +16,9 @@ internal class TrafficCountingHttpDataSource(
     private val trafficStatsRepository: TrafficStatsRepository,
     private val usageSource: TrafficUsageSource = TrafficUsageSource.PLAYBACK
 ) : HttpDataSource {
+    private val trafficLock = Any()
+
+    @Volatile
     private var active = false
     private var accumulator = newAccumulator()
 
@@ -24,15 +27,25 @@ internal class TrafficCountingHttpDataSource(
     }
 
     override fun open(dataSpec: DataSpec): Long {
-        active = true
-        accumulator = newAccumulator()
-        return delegate.open(dataSpec)
+        val nextAccumulator = newAccumulator()
+        val length = delegate.open(dataSpec)
+        synchronized(trafficLock) {
+            accumulator.flush()
+            accumulator = nextAccumulator
+            active = true
+        }
+        return length
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        val readAccumulator = synchronized(trafficLock) {
+            accumulator.takeIf { active }
+        }
         val read = delegate.read(buffer, offset, length)
-        if (active && read > 0) {
-            accumulator.add(read.toLong())
+        if (readAccumulator != null && read > 0) {
+            synchronized(trafficLock) {
+                readAccumulator.add(read.toLong())
+            }
         }
         return read
     }
@@ -43,10 +56,12 @@ internal class TrafficCountingHttpDataSource(
 
     override fun close() {
         try {
-            accumulator.flush()
-        } finally {
-            active = false
             delegate.close()
+        } finally {
+            synchronized(trafficLock) {
+                active = false
+                accumulator.flush()
+            }
         }
     }
 

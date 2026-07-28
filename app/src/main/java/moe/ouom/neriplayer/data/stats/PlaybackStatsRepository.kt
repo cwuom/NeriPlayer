@@ -6,7 +6,9 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -58,6 +60,11 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
     private val dailyFile: File by lazy { File(app.filesDir, "playback_stats_daily.json") }
     private val metadataFile: File by lazy { File(app.filesDir, "playback_stats_meta.json") }
     private val mutex = Mutex()
+    private val persistFileMutex = Mutex()
+    private var persistJob: Job? = null
+    private var persistGeneration = 0L
+    private var pendingPersistence: PlaybackStatsPersistenceSnapshot? = null
+    private var persistenceDirty = false
     private val counterStore by lazy { PlaybackStatsCounterStore(app, gson) }
     private val _stats = MutableStateFlow(loadFromDisk())
     private val _statsClearedAt = MutableStateFlow(loadMetadata().clearedAt)
@@ -101,26 +108,28 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
             }
             val raw = dailyFile.readText()
             val type = object : TypeToken<List<PlaybackStatBucket>>() {}.type
-            gson.fromJson<List<PlaybackStatBucket>>(raw, type).orEmpty()
+            trimPlaybackStatBuckets(gson.fromJson<List<PlaybackStatBucket>>(raw, type).orEmpty())
         } catch (_: Throwable) {
             emptyList()
         }
     }
 
-    private fun persistToDisk(list: List<TrackStat>) {
-        runCatching {
+    private fun persistToDisk(list: List<TrackStat>): Boolean {
+        return runCatching {
             file.writeTextAtomically(gson.toJson(list))
+            true
         }.onFailure { error ->
             NPLogger.e("PlaybackStatsRepo", "Failed to persist stats", error)
-        }
+        }.getOrDefault(false)
     }
 
-    private fun persistDailyStatsToDisk(list: List<PlaybackStatBucket>) {
-        runCatching {
+    private fun persistDailyStatsToDisk(list: List<PlaybackStatBucket>): Boolean {
+        return runCatching {
             dailyFile.writeTextAtomically(gson.toJson(list))
+            true
         }.onFailure { error ->
             NPLogger.e("PlaybackStatsRepo", "Failed to persist daily stats", error)
-        }
+        }.getOrDefault(false)
     }
 
     private fun persistMetadata(clearedAt: Long) {
@@ -128,6 +137,83 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
             metadataFile.writeTextAtomically(gson.toJson(PlaybackStatsMetadata(clearedAt)))
         }.onFailure { error ->
             NPLogger.e("PlaybackStatsRepo", "Failed to persist stats metadata", error)
+        }
+    }
+
+    private data class PlaybackStatsPersistenceSnapshot(
+        val stats: List<TrackStat>,
+        val dailyStats: List<PlaybackStatBucket>
+    )
+
+    private fun schedulePersistenceLocked() {
+        pendingPersistence = PlaybackStatsPersistenceSnapshot(
+            stats = _stats.value,
+            dailyStats = _dailyStats.value
+        )
+        persistenceDirty = true
+        persistGeneration += 1L
+        val generation = persistGeneration
+        persistJob?.cancel()
+        persistJob = scope.launch {
+            delay(PERSIST_DEBOUNCE_MS)
+            val snapshot = synchronized(this@PlaybackStatsRepository) {
+                if (generation != persistGeneration) {
+                    null
+                } else {
+                    pendingPersistence.also {
+                        pendingPersistence = null
+                        persistJob = null
+                    }
+                }
+            }
+            snapshot?.let { persistSnapshot(it, generation) }
+        }
+    }
+
+    private fun cancelScheduledPersistenceLocked() {
+        persistGeneration += 1L
+        persistJob?.cancel()
+        persistJob = null
+        pendingPersistence = null
+    }
+
+    private suspend fun persistSnapshot(
+        snapshot: PlaybackStatsPersistenceSnapshot,
+        expectedGeneration: Long? = null
+    ) {
+        val succeeded = persistFileMutex.withLock {
+            persistToDisk(snapshot.stats) && persistDailyStatsToDisk(snapshot.dailyStats)
+        }
+        if (succeeded) {
+            synchronized(this) {
+                if (expectedGeneration == null || expectedGeneration == persistGeneration) {
+                    persistenceDirty = false
+                }
+            }
+        }
+    }
+
+    fun hasPendingWrites(): Boolean {
+        return synchronized(this) {
+            persistenceDirty || pendingPersistence != null || persistJob?.isActive == true
+        }
+    }
+
+    suspend fun flushPendingWrites() {
+        mutex.withLock {
+            val shouldPersist = synchronized(this@PlaybackStatsRepository) {
+                persistenceDirty || pendingPersistence != null || persistJob?.isActive == true
+            }
+            cancelScheduledPersistenceLocked()
+            if (shouldPersist) {
+                persistSnapshot(
+                    PlaybackStatsPersistenceSnapshot(
+                        stats = _stats.value,
+                        dailyStats = _dailyStats.value
+                    )
+                )
+            }
+            counterStore.flushPendingWrites()
         }
     }
 
@@ -246,16 +332,14 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
             }
 
             _stats.value = updated
-            persistToDisk(updated)
-            val dailyStats = recordPlaybackStatBucket(
+            val dailyStats = trimPlaybackStatBuckets(recordPlaybackStatBucket(
                 current = _dailyStats.value,
                 stat = sessionStat,
                 listenedMs = safeListenedMs,
                 playCountIncrement = sessionCountIncrement,
                 playedAt = now
-            )
+            ))
             _dailyStats.value = dailyStats
-            persistDailyStatsToDisk(dailyStats)
             counterStore.recordLocalDelta(
                 identityKey = key,
                 dayStartAt = playbackStatsDayStartAt(now),
@@ -264,6 +348,7 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                 playedAt = now,
                 epochStartedAt = _statsClearedAt.value.coerceAtLeast(0L)
             )
+            schedulePersistenceLocked()
             if (scheduleSync) {
                 triggerSync()
             }
@@ -324,8 +409,10 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                 _stats.value = emptyList()
                 _dailyStats.value = emptyList()
                 _statsClearedAt.value = clearedAt
-                persistToDisk(emptyList())
-                persistDailyStatsToDisk(emptyList())
+                cancelScheduledPersistenceLocked()
+                val statsSaved = persistToDisk(emptyList())
+                val dailyStatsSaved = persistDailyStatsToDisk(emptyList())
+                persistenceDirty = !(statsSaved && dailyStatsSaved)
                 persistMetadata(clearedAt)
                 counterStore.reset(clearedAt)
                 triggerSync()
@@ -341,8 +428,10 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                 val updatedDailyStats = _dailyStats.value.filterNot { it.identityKey in keys }
                 _stats.value = updated
                 _dailyStats.value = updatedDailyStats
-                persistToDisk(updated)
-                persistDailyStatsToDisk(updatedDailyStats)
+                cancelScheduledPersistenceLocked()
+                val statsSaved = persistToDisk(updated)
+                val dailyStatsSaved = persistDailyStatsToDisk(updatedDailyStats)
+                persistenceDirty = !(statsSaved && dailyStatsSaved)
                 counterStore.removeTracks(keys)
                 triggerSync()
             }
@@ -450,7 +539,7 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                 }
             }
 
-            val updatedDailyStats = if (
+            val updatedDailyStats = trimPlaybackStatBuckets(if (
                 currentDailyStats.isEmpty() &&
                 normalizedRemoteDailyStats.isEmpty() &&
                 _dailyStats.value.isEmpty() &&
@@ -459,10 +548,12 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                 buildLegacyDailyStats(updated, effectiveClearedAt)
             } else {
                 currentDailyStats.values.toList()
-            }
+            })
             _dailyStats.value = updatedDailyStats
-            persistDailyStatsToDisk(updatedDailyStats)
-            persistToDisk(updated)
+            cancelScheduledPersistenceLocked()
+            val statsSaved = persistToDisk(updated)
+            val dailyStatsSaved = persistDailyStatsToDisk(updatedDailyStats)
+            persistenceDirty = !(statsSaved && dailyStatsSaved)
             counterStore.replaceFromSync(
                 syncStats = normalizedRemoteStats,
                 syncDailyStats = normalizedRemoteDailyStats,
@@ -476,6 +567,8 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
     }
 
     companion object {
+        private const val PERSIST_DEBOUNCE_MS = 5_000L
+
         @SuppressLint("StaticFieldLeak")
         @Volatile
         private var INSTANCE: PlaybackStatsRepository? = null

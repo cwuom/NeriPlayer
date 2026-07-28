@@ -9,6 +9,12 @@ import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
 import moe.ouom.neriplayer.data.sync.model.SyncTrackStat
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.io.writeTextAtomically
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.File
 
 data class PlaybackStatsSyncCounterSnapshot(
@@ -44,8 +50,12 @@ internal class PlaybackStatsCounterStore(
         File(context.filesDir, "playback_stats_counters.json")
     }
     private val lock = Any()
+    private val persistScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val syncStorage by lazy { SecureTokenStorage(context) }
     private var state = load()
+    private var persistJob: Job? = null
+    private var persistGeneration = 0L
+    private var pendingState: PlaybackStatsCounterState? = null
 
     fun snapshot(): PlaybackStatsSyncCounterSnapshot {
         val current = synchronized(lock) { state }
@@ -97,12 +107,16 @@ internal class PlaybackStatsCounterStore(
             current.copy(
                 trackShardsByIdentity = updatedTrackShards,
                 dailyShardsByBucketKey = updatedDailyShards
-            )
+            ),
+            immediate = false
         )
     }
 
     fun reset(epochStartedAt: Long) {
-        persist(PlaybackStatsCounterState(epochStartedAt = epochStartedAt.coerceAtLeast(0L)))
+        persist(
+            PlaybackStatsCounterState(epochStartedAt = epochStartedAt.coerceAtLeast(0L)),
+            immediate = true
+        )
     }
 
     fun removeTracks(keys: Set<String>) {
@@ -115,7 +129,8 @@ internal class PlaybackStatsCounterStore(
                     val identityKey = key.substringAfter('|', missingDelimiterValue = key)
                     identityKey !in keys
                 }
-            )
+            ),
+            immediate = true
         )
     }
 
@@ -142,8 +157,20 @@ internal class PlaybackStatsCounterStore(
                 epochStartedAt = epochStartedAt.coerceAtLeast(0L),
                 trackShardsByIdentity = trackShards,
                 dailyShardsByBucketKey = dailyShards
-            )
+            ),
+            immediate = true
         )
+    }
+
+    suspend fun flushPendingWrites() {
+        val snapshot = synchronized(lock) {
+            persistGeneration += 1L
+            persistJob?.cancel()
+            persistJob = null
+            pendingState = null
+            state
+        }
+        persistToDisk(snapshot)
     }
 
     private fun load(): PlaybackStatsCounterState {
@@ -156,15 +183,52 @@ internal class PlaybackStatsCounterStore(
         }
     }
 
-    private fun persist(nextState: PlaybackStatsCounterState) {
+    private fun persist(nextState: PlaybackStatsCounterState, immediate: Boolean) {
         synchronized(lock) {
             state = nextState
+            pendingState = nextState
+            persistGeneration += 1L
+            persistJob?.cancel()
+            persistJob = null
+            if (immediate) {
+                pendingState = null
+            }
+            if (!immediate) {
+                val generation = persistGeneration
+                persistJob = persistScope.launch {
+                    delay(PERSIST_DEBOUNCE_MS)
+                    val snapshot = synchronized(lock) {
+                        if (generation != persistGeneration) {
+                            null
+                        } else {
+                            pendingState.also {
+                                pendingState = null
+                                persistJob = null
+                            }
+                        }
+                    }
+                    snapshot?.let { persistToDisk(it) }
+                }
+                return
+            }
         }
-        runCatching {
-            counterFile.writeTextAtomically(gson.toJson(nextState))
-        }.onFailure { error ->
-            NPLogger.e("PlaybackStatsRepo", "Failed to persist stats counters", error)
+        persistToDisk(nextState)
+    }
+
+    private fun persistToDisk(nextState: PlaybackStatsCounterState) {
+        synchronized(persistFileLock) {
+            runCatching {
+                counterFile.writeTextAtomically(gson.toJson(nextState))
+            }.onFailure { error ->
+                NPLogger.e("PlaybackStatsRepo", "Failed to persist stats counters", error)
+            }
         }
+    }
+
+    private val persistFileLock = Any()
+
+    private companion object {
+        const val PERSIST_DEBOUNCE_MS = 5_000L
     }
 
     private fun updateShardList(

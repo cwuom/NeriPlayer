@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.data.stats
 
+private const val PLAYBACK_STATS_DAILY_RETENTION_DAYS = 400L
+private const val PLAYBACK_STATS_MAX_DAILY_BUCKETS = 8_000
+private const val MILLIS_PER_DAY = 86_400_000L
+
 internal fun buildLegacyDailyStats(
     stats: List<TrackStat>,
     clearedAt: Long
@@ -51,6 +55,23 @@ internal fun recordPlaybackStatBucket(
     return current.toMutableList().apply {
         this[existingIndex] = updatedBucket
     }
+}
+
+internal fun trimPlaybackStatBuckets(
+    buckets: List<PlaybackStatBucket>
+): List<PlaybackStatBucket> {
+    if (buckets.isEmpty()) return buckets
+    val maxDayStartAt = buckets.maxOf { it.dayStartAt }
+    val cutoff = maxDayStartAt - PLAYBACK_STATS_DAILY_RETENTION_DAYS * MILLIS_PER_DAY
+    val windowed = buckets.filter { it.dayStartAt >= cutoff }
+    if (windowed.size <= PLAYBACK_STATS_MAX_DAILY_BUCKETS) return windowed
+    return windowed
+        .sortedWith(
+            compareByDescending<PlaybackStatBucket> { it.dayStartAt }
+                .thenByDescending { it.playCount }
+                .thenBy { it.identityKey }
+        )
+        .take(PLAYBACK_STATS_MAX_DAILY_BUCKETS)
 }
 
 private fun TrackStat.toPlaybackStatBucket(
