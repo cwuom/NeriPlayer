@@ -1497,7 +1497,6 @@
     <string name="listen_together_title">一起听</string>
     <string name="listen_together_worker_base_url">Worker Base URL</string>
     <string name="listen_together_nickname">当前昵称</string>
-    <string name="listen_together_join_secret">邀请密钥</string>
     <string name="listen_together_user_uuid">身份 UUID</string>
     <string name="listen_together_reset_uuid">重置唯一身份标识符</string>
     <string name="listen_together_reset_uuid_confirm">重置后旧的唯一身份标识符将失效，并替换为新的身份标识，是否继续？</string>

@@ -1497,7 +1497,6 @@
     <string name="listen_together_title">Listen Together</string>
     <string name="listen_together_worker_base_url">Worker Base URL</string>
     <string name="listen_together_nickname">Current Nickname</string>
-    <string name="listen_together_join_secret">Invite Secret</string>
     <string name="listen_together_user_uuid">Identity UUID</string>
     <string name="listen_together_reset_uuid">Reset Unique Identity</string>
     <string name="listen_together_reset_uuid_confirm">Resetting the unique identity will invalidate the old identity and replace it with a new one. Continue?</string>
