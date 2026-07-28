@@ -1576,6 +1576,15 @@ object AutoSettingsSchema {
         val usbExclusiveBitDepthMode = Unit
 
         @AutoSetting(
+            key = "usb_exclusive_bit_perfect",
+            type = SettingValueType.Boolean,
+            defaultBoolean = DEFAULT_USB_EXCLUSIVE_BIT_PERFECT,
+            order = 172,
+            access = SettingAccessMode.KeyOnly
+        )
+        val usbExclusiveBitPerfect = Unit
+
+        @AutoSetting(
             key = "usb_exclusive_buffer_profile",
             type = SettingValueType.String,
             defaultString = DEFAULT_USB_EXCLUSIVE_BUFFER_PROFILE,

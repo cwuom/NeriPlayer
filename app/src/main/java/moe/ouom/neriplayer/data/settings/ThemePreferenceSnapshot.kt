@@ -24,14 +24,20 @@ package moe.ouom.neriplayer.data.settings
  */
 
 import android.content.Context
+import android.os.Looper
 import androidx.core.content.edit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
 private const val THEME_SNAPSHOT_PREFS = "theme_snapshot_cache"
 private const val THEME_DYNAMIC_COLOR_KEY = "dynamic_color"
 private const val THEME_FORCE_DARK_KEY = "force_dark"
 private const val THEME_FOLLOW_SYSTEM_DARK_KEY = "follow_system_dark"
+private val themeSnapshotWarmupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 data class ThemePreferenceSnapshot(
     val dynamicColor: Boolean = true,
@@ -50,6 +56,11 @@ data class ThemePreferenceSnapshot(
 fun readThemePreferenceSnapshotSync(context: Context): ThemePreferenceSnapshot {
     readCachedThemePreferenceSnapshot(context)?.let { return it }
 
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+        warmThemePreferenceSnapshot(context)
+        return ThemePreferenceSnapshot()
+    }
+
     return runCatching {
         runBlocking {
             val prefs = context.dataStore.data.first()
@@ -63,6 +74,22 @@ fun readThemePreferenceSnapshotSync(context: Context): ThemePreferenceSnapshot {
         ThemePreferenceSnapshot()
     }.also { snapshot ->
         persistThemePreferenceSnapshot(context, snapshot)
+    }
+}
+
+private fun warmThemePreferenceSnapshot(context: Context) {
+    val appContext = context.applicationContext
+    themeSnapshotWarmupScope.launch {
+        runCatching {
+            val prefs = appContext.dataStore.data.first()
+            ThemePreferenceSnapshot(
+                dynamicColor = prefs[SettingsKeys.DYNAMIC_COLOR] ?: true,
+                forceDark = prefs[SettingsKeys.FORCE_DARK] ?: false,
+                followSystemDark = prefs[SettingsKeys.FOLLOW_SYSTEM_DARK] ?: true
+            )
+        }.onSuccess { snapshot ->
+            persistThemePreferenceSnapshot(appContext, snapshot)
+        }
     }
 }
 

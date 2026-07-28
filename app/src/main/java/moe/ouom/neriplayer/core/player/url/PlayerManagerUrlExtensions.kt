@@ -31,6 +31,7 @@ import moe.ouom.neriplayer.core.player.policy.refresh.RefreshResultKind
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshSideEffectGate
 import moe.ouom.neriplayer.core.player.policy.command.resolvePlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.refresh.resolveRefreshApplyAction
+import moe.ouom.neriplayer.core.player.policy.refresh.resolveRefreshedMediaStartPosition
 import moe.ouom.neriplayer.core.player.policy.refresh.shouldApplyRefreshResult
 import moe.ouom.neriplayer.core.player.policy.refresh.YouTubePlaybackRecoveryStrategy
 import moe.ouom.neriplayer.core.player.playback.advanceAfterPlaybackFailure
@@ -52,7 +53,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
 
-private const val OFFLINE_CACHE_URL_PREFIX = "http://offline.cache/"
+internal const val OFFLINE_CACHE_URL_PREFIX = "http://offline.cache/"
 internal const val YOUTUBE_PLAYBACK_PREFER_M4A = false
 internal const val YOUTUBE_STABLE_RECOVERY_QUALITY = "high"
 
@@ -106,7 +107,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
         youtubeQualityOverride = youtubeRecoveryStrategy?.preferredQualityOverride,
         youtubePreferM4aOverride = youtubeRecoveryStrategy?.preferM4a
     )
-    val bypassCompleteCache = forceRefresh && isYouTubeTrack
+    val bypassCompleteCache = forceRefresh
     val hasCachedData = if (bypassCompleteCache) {
         NPLogger.d(
             "NERI-PlayerManager",
@@ -116,16 +117,20 @@ internal suspend fun PlayerManager.resolveSongUrl(
     } else {
         checkExoPlayerCache(cacheKey)
     }
-    if (hasCachedData && isYouTubeTrack) {
+    if (hasCachedData) {
         NPLogger.d(
             "NERI-PlayerManager",
-            "命中完整 YouTube 缓存，直接走离线缓存地址: $cacheKey"
+            "命中完整缓存，直接走离线缓存地址: $cacheKey"
         )
         val cachedAudioInfo = _currentPlaybackAudioInfo.value
             ?.takeIf { _currentSongFlow.value?.sameIdentityAs(song) == true }
             ?.takeIf { youtubeRecoveryStrategy == null }
-            ?: buildYouTubeOfflineCacheAudioInfo(resolvedYouTubeQuality) {
-                getLocalizedString(it)
+            ?: if (isYouTubeTrack) {
+                buildYouTubeOfflineCacheAudioInfo(resolvedYouTubeQuality) {
+                    getLocalizedString(it)
+                }
+            } else {
+                null
             }
         return SongUrlResult.Success(
             url = "$OFFLINE_CACHE_URL_PREFIX$cacheKey",
@@ -157,12 +162,15 @@ internal suspend fun PlayerManager.resolveSongUrl(
         )
     }
 
-    return if (result is SongUrlResult.Failure && hasCachedData && !isYouTubeTrack) {
+    return if (result is SongUrlResult.Failure && hasCachedData) {
         NPLogger.d("NERI-PlayerManager", "远端解析失败但缓存完整，回退到离线缓存地址: $cacheKey")
         val fallbackAudioInfo = _currentPlaybackAudioInfo.value
+            ?.takeIf { _currentSongFlow.value?.sameIdentityAs(song) == true }
         SongUrlResult.Success(
-            url = "http://offline.cache/$cacheKey",
-            audioInfo = fallbackAudioInfo
+            url = "$OFFLINE_CACHE_URL_PREFIX$cacheKey",
+            audioInfo = fallbackAudioInfo,
+            cacheKeyOverride = cacheKey,
+            durationMs = song.durationMs.takeIf { it > 0L }
         )
     } else {
         result
@@ -346,6 +354,7 @@ internal fun PlayerManager.cancelUrlRefreshIfNotReusableForPendingLoad(
         songKey = computeCacheKey(song),
         requestGeneration = requestGeneration,
         resumePositionMs = resumePositionMs,
+        positionGeneration = playbackPositionGeneration,
         allowFallback = false,
         reason = "playAtIndex_pending_load",
         fallbackSeekPositionMs = null,
@@ -383,6 +392,7 @@ internal fun PlayerManager.refreshCurrentSongUrlImpl(
         songKey = cacheKey,
         requestGeneration = playbackRequestToken,
         resumePositionMs = resumePositionMs,
+        positionGeneration = playbackPositionGeneration,
         allowFallback = allowFallback,
         reason = reason,
         fallbackSeekPositionMs = fallbackSeekPositionMs,
@@ -622,6 +632,7 @@ private fun buildRefreshRequestSemantics(
     songKey: String,
     requestGeneration: Long,
     resumePositionMs: Long,
+    positionGeneration: Long,
     allowFallback: Boolean,
     reason: String,
     fallbackSeekPositionMs: Long?,
@@ -633,6 +644,7 @@ private fun buildRefreshRequestSemantics(
     songKey = songKey,
     requestGeneration = requestGeneration,
     resumePositionMs = resumePositionMs.coerceAtLeast(0L),
+    positionGeneration = positionGeneration,
     fallbackSeekPositionMs = fallbackSeekPositionMs?.coerceAtLeast(0L),
     resumePlaybackAfterRefresh = resumePlaybackAfterRefresh,
     allowFallback = allowFallback,
@@ -691,8 +703,13 @@ private suspend fun PlayerManager.applyResolvedMediaItem(
         if (!gate.runMutation { loadedMediaRequestToken = semantics.requestGeneration }) return@withContext
         if (!gate.runMutation { pendingMediaLoadActive = false }) return@withContext
         if (!gate.runMutation { syncExoRepeatMode() }) return@withContext
-        val startPositionMs = pendingSeekPositionOrNull()
-            ?: resumePositionMs.coerceAtLeast(0L)
+        val startPositionMs = resolveRefreshedMediaStartPosition(
+            pendingSeekPositionMs = pendingSeekPositionOrNull(),
+            requestedResumePositionMs = resumePositionMs,
+            observedPlaybackPositionMs = _playbackPositionMs.value,
+            requestedPositionGeneration = semantics.positionGeneration,
+            currentPositionGeneration = playbackPositionGeneration
+        )
         if (startPositionMs > 0) {
             if (!gate.runMutation {
                     player.seekTo(startPositionMs)

@@ -29,6 +29,28 @@ class PlaybackAudioOffloadPolicyTest {
         assertFalse(resolveRequiresPcmAudioProcessing(audioReactiveActive = false))
     }
 
+    @Test
+    fun `disabling reactive output during playback does not request a pipeline rebuild`() {
+        assertFalse(
+            shouldUpdateAudioOffloadForReactiveChange(
+                audioReactiveEnabled = false,
+                playbackActive = true
+            )
+        )
+        assertTrue(
+            shouldUpdateAudioOffloadForReactiveChange(
+                audioReactiveEnabled = true,
+                playbackActive = true
+            )
+        )
+        assertTrue(
+            shouldUpdateAudioOffloadForReactiveChange(
+                audioReactiveEnabled = false,
+                playbackActive = false
+            )
+        )
+    }
+
     private fun resolveRequiresPcmAudioProcessing(
         usbExclusivePlaybackEnabled: Boolean = false,
         playbackSpeed: Float = 1f,

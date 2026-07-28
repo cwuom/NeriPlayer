@@ -60,6 +60,7 @@ internal fun UsbExclusiveQualityContent(
     preferences: UsbExclusivePreferences,
     onSampleRateModeChange: (UsbExclusiveSampleRateMode) -> Unit,
     onBitDepthModeChange: (UsbExclusiveBitDepthMode) -> Unit,
+    onBitPerfectChange: (Boolean) -> Unit,
     onBufferProfileChange: (UsbExclusiveBufferProfile) -> Unit,
     onUnsupportedFormatPolicyChange: (UsbExclusiveUnsupportedFormatPolicy) -> Unit,
     onSampleRateCompatibilityChange: (Boolean) -> Unit,
@@ -88,6 +89,13 @@ internal fun UsbExclusiveQualityContent(
         value = bitDepthLabel(bitDepthMode),
         detail = bitDepthDescription(bitDepthMode),
         onClick = { activeDialog = UsbQualityDialog.BitDepth }
+    )
+    SettingsDivider()
+    UsbCompatibilitySwitchItem(
+        title = stringResource(R.string.settings_usb_exclusive_bit_perfect),
+        detail = stringResource(R.string.settings_usb_exclusive_bit_perfect_desc),
+        checked = preferences.bitPerfect,
+        onCheckedChange = onBitPerfectChange
     )
     SettingsDivider()
     UsbQualityChoiceItem(

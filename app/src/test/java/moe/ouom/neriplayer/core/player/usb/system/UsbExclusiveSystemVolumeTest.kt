@@ -20,6 +20,19 @@ class UsbExclusiveSystemVolumeTest {
     }
 
     @Test
+    fun `bit perfect volume keeps native gain at unity`() {
+        assertEquals(
+            1f,
+            usbExclusiveEffectiveNativeVolume(
+                playerVolume = 0.2f,
+                systemVolumeFraction = 0.1f,
+                bitPerfect = true
+            ),
+            0.0001f
+        )
+    }
+
+    @Test
     fun `float conversion preserves signal for native realtime gain`() {
         assertEquals(0.75f, usbExclusiveFloatSampleForNativePipeline(0.75f), 0.0001f)
         assertEquals(1f, usbExclusiveFloatSampleForNativePipeline(2f), 0.0001f)

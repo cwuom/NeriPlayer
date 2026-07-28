@@ -43,6 +43,22 @@ class UsbExclusiveLoudPlaybackWarningPolicyTest {
     }
 
     @Test
+    fun `bit perfect mode estimates full scale regardless of software volume`() {
+        val estimate = estimateUsbExclusiveLoudness(
+            systemVolumePercent = 10,
+            playerVolume = 0.1f,
+            bitPerfect = true,
+            uacVersion = "2.0",
+            outputSampleRate = 96_000,
+            outputBitDepth = 24,
+            observedOutputPeak = null
+        )
+
+        assertEquals(0.0, estimate.estimatedPeakDbfs, 0.01)
+        assertEquals(UsbExclusiveLoudPlaybackRisk.Critical, estimate.risk)
+    }
+
+    @Test
     fun `UAC1 and UAC2 retain distinct conservative thresholds`() {
         val uac1 = estimateUsbExclusiveLoudness(
             systemVolumePercent = 65,

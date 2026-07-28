@@ -41,7 +41,6 @@ import moe.ouom.neriplayer.core.player.playback.rebuildShuffleBag
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.source.toSongItem
-import moe.ouom.neriplayer.core.player.state.blockingIo
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.settings.rebaseLyricUserOffsetMs
@@ -966,8 +965,19 @@ internal fun PlayerManager.suppressFutureAutoResumeForCurrentSessionImpl(
         "suppressFutureAutoResumeForCurrentSession(): forcePersist=$forcePersist, positionMs=$positionMs, queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, currentSong=${_currentSongFlow.value?.name}, stack=[${debugStackHint()}]"
     )
     if (forcePersist) {
-        blockingIo {
-            persistState(positionMs = positionMs, shouldResumePlayback = false)
+        ioScope.launch {
+            runCatching {
+                persistState(positionMs = positionMs, shouldResumePlayback = false)
+            }.onFailure { error ->
+                if (error is CancellationException) {
+                    throw error
+                }
+                NPLogger.w(
+                    "NERI-PlayerManager",
+                    "forced auto-resume suppression persistence failed",
+                    error
+                )
+            }
         }
     } else {
         ioScope.launch {

@@ -45,7 +45,7 @@ import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
 import androidx.core.content.edit
 
 private const val PLAYBACK_SNAPSHOT_PREFS = "playback_snapshot_cache"
-private const val PLAYBACK_SNAPSHOT_SCHEMA_VERSION = 2
+private const val PLAYBACK_SNAPSHOT_SCHEMA_VERSION = 3
 private const val PLAYBACK_SNAPSHOT_SCHEMA_VERSION_KEY = "schema_version"
 private const val PLAYBACK_SNAPSHOT_READY_KEY = "ready"
 private const val PLAYBACK_AUDIO_QUALITY_KEY = "audio_quality"
@@ -85,6 +85,7 @@ private const val PLAYBACK_EQUALIZER_LEVELS_KEY = "playback_equalizer_custom_ban
 private const val PLAYBACK_STOP_ON_BLUETOOTH_KEY = "stop_on_bluetooth_disconnect"
 private const val PLAYBACK_USB_EXCLUSIVE_KEY = "usb_exclusive_playback"
 private const val PLAYBACK_USB_EXCLUSIVE_DEVICE_KEY = "usb_exclusive_device_key"
+private const val PLAYBACK_USB_EXCLUSIVE_BIT_PERFECT_KEY = "usb_exclusive_bit_perfect"
 private const val PLAYBACK_ALLOW_MIXED_KEY = "allow_mixed_playback"
 private const val PLAYBACK_PREEMPT_AUDIO_FOCUS_KEY = "preempt_audio_focus"
 private const val PLAYBACK_MAX_CACHE_SIZE_BYTES_KEY = "max_cache_size_bytes"
@@ -132,6 +133,7 @@ data class PlaybackPreferenceSnapshot(
     val usbExclusiveDeviceKey: String = DEFAULT_USB_EXCLUSIVE_DEVICE_KEY,
     val usbExclusiveSampleRateMode: String = DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_MODE,
     val usbExclusiveBitDepthMode: String = DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_MODE,
+    val usbExclusiveBitPerfect: Boolean = DEFAULT_USB_EXCLUSIVE_BIT_PERFECT,
     val usbExclusiveBufferProfile: String = DEFAULT_USB_EXCLUSIVE_BUFFER_PROFILE,
     val usbExclusiveUnsupportedFormatPolicy: String =
         DEFAULT_USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY,
@@ -181,6 +183,7 @@ data class PlaybackPreferenceSnapshot(
             usbExclusiveBitDepthMode = UsbExclusiveBitDepthMode
                 .fromStorageValue(usbExclusiveBitDepthMode)
                 .storageValue,
+            usbExclusiveBitPerfect = usbExclusiveBitPerfect,
             usbExclusiveBufferProfile = UsbExclusiveBufferProfile
                 .fromStorageValue(usbExclusiveBufferProfile)
                 .storageValue,
@@ -367,6 +370,10 @@ internal fun persistPlaybackPreferenceSnapshot(
                     PLAYBACK_USB_EXCLUSIVE_DEVICE_KEY,
                     normalizedSnapshot.usbExclusiveDeviceKey
                 )
+                .putBoolean(
+                    PLAYBACK_USB_EXCLUSIVE_BIT_PERFECT_KEY,
+                    normalizedSnapshot.usbExclusiveBitPerfect
+                )
                 .putUsbExclusivePreferences(normalizedSnapshot.toUsbExclusivePreferences())
                 .putBoolean(PLAYBACK_ALLOW_MIXED_KEY, normalizedSnapshot.allowMixedPlayback)
                 .putBoolean(
@@ -453,6 +460,9 @@ internal fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnaps
         usbExclusiveBitDepthMode =
             this[SettingsKeys.USB_EXCLUSIVE_BIT_DEPTH_MODE]
                 ?: DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_MODE,
+        usbExclusiveBitPerfect =
+            this[SettingsKeys.USB_EXCLUSIVE_BIT_PERFECT]
+                ?: DEFAULT_USB_EXCLUSIVE_BIT_PERFECT,
         usbExclusiveBufferProfile =
             this[SettingsKeys.USB_EXCLUSIVE_BUFFER_PROFILE]
                 ?: DEFAULT_USB_EXCLUSIVE_BUFFER_PROFILE,
@@ -602,6 +612,7 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
         ),
         usbExclusiveSampleRateMode = usbExclusivePreferences.sampleRateMode.storageValue,
         usbExclusiveBitDepthMode = usbExclusivePreferences.bitDepthMode.storageValue,
+        usbExclusiveBitPerfect = usbExclusivePreferences.bitPerfect,
         usbExclusiveBufferProfile = usbExclusivePreferences.bufferProfile.storageValue,
         usbExclusiveUnsupportedFormatPolicy =
             usbExclusivePreferences.unsupportedFormatPolicy.storageValue,

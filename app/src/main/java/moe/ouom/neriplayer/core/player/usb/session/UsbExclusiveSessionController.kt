@@ -2019,7 +2019,6 @@ object UsbExclusiveSessionController {
                         PlayerManager.usbExclusivePlaybackEnabled &&
                         PlayerManager.isTransportActiveWithoutInitialization()
             } finally {
-                UsbExclusiveWakeLock.release(request.reason)
                 if (shouldRetryOpenAfterClose) {
                     pendingPlayerPcmReopen.request("open_player_pcm_reconfigure")
                 }
@@ -2029,6 +2028,18 @@ object UsbExclusiveSessionController {
                         clearCompletedNativeCloseGateLocked()
                     }
                     trySchedulePendingPlayerPcmReopen()
+                }
+                runCatching {
+                    maintainWakeLock(
+                        PlayerManager.application,
+                        "${request.reason}:close_complete"
+                    )
+                }.onFailure { error ->
+                    NPLogger.w(
+                        TAG,
+                        "failed to re-evaluate USB WakeLock after native close",
+                        error
+                    )
                 }
             }
         }
@@ -2104,14 +2115,18 @@ object UsbExclusiveSessionController {
         val current = _state.value
         _state.value = current.copy(
             transitioning = true,
-            runtimeReport = runtimeReport
+            runtimeReport = runtimeReport,
+            runtimeReportValid = false,
+            runtimeReportInvalidReason = runtimeReport
         )
     }
 
     private fun markNativeRefreshDeferred() {
         val current = _state.value
         _state.value = current.copy(
-            runtimeReport = "native_refresh_deferred"
+            runtimeReport = "native_refresh_deferred",
+            runtimeReportValid = false,
+            runtimeReportInvalidReason = "native_refresh_deferred"
         )
     }
 

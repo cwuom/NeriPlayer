@@ -49,6 +49,7 @@ internal sealed class SongUrlResult {
         val expectedContentLength: Long? = null,
         val audioInfo: PlaybackAudioInfo? = null,
         val cacheKeyOverride: String? = null,
+        val isNeteaseLocalFallback: Boolean = false,
         val fallbackCandidates: List<PlaybackUrlCandidate> = emptyList()
     ) : SongUrlResult() {
         fun playbackUrls(): List<String> = buildList {

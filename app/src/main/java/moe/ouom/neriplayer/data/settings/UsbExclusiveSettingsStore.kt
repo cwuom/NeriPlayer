@@ -17,6 +17,7 @@ internal class UsbExclusiveSettingsStore(private val context: Context) {
                 unsupportedFormatPolicy =
                     preferences[SettingsKeys.USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY],
                 selectedDeviceKey = preferences[SettingsKeys.USB_EXCLUSIVE_DEVICE_KEY],
+                bitPerfect = preferences[SettingsKeys.USB_EXCLUSIVE_BIT_PERFECT],
                 sampleRateCompatibilityEnabled =
                     preferences[SettingsKeys.USB_EXCLUSIVE_SAMPLE_RATE_COMPATIBILITY],
                 bitDepthCompatibilityEnabled =
@@ -102,6 +103,15 @@ internal class UsbExclusiveSettingsStore(private val context: Context) {
             value = mode.storageValue
         ) {
             copy(usbExclusiveBitDepthMode = mode.storageValue)
+        }
+    }
+
+    suspend fun setBitPerfect(enabled: Boolean) {
+        setStoredPreference(
+            key = SettingsKeys.USB_EXCLUSIVE_BIT_PERFECT,
+            value = enabled
+        ) {
+            copy(usbExclusiveBitPerfect = enabled)
         }
     }
 
@@ -199,6 +209,8 @@ internal class UsbExclusiveSettingsStore(private val context: Context) {
                 normalizedPreferences.sampleRateMode.storageValue
             mutablePreferences[SettingsKeys.USB_EXCLUSIVE_BIT_DEPTH_MODE] =
                 normalizedPreferences.bitDepthMode.storageValue
+            mutablePreferences[SettingsKeys.USB_EXCLUSIVE_BIT_PERFECT] =
+                normalizedPreferences.bitPerfect
             mutablePreferences[SettingsKeys.USB_EXCLUSIVE_BUFFER_PROFILE] =
                 normalizedPreferences.bufferProfile.storageValue
             mutablePreferences[SettingsKeys.USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY] =
@@ -221,6 +233,7 @@ internal class UsbExclusiveSettingsStore(private val context: Context) {
                 usbExclusiveDeviceKey = normalizedPreferences.selectedDeviceKey,
                 usbExclusiveSampleRateMode = normalizedPreferences.sampleRateMode.storageValue,
                 usbExclusiveBitDepthMode = normalizedPreferences.bitDepthMode.storageValue,
+                usbExclusiveBitPerfect = normalizedPreferences.bitPerfect,
                 usbExclusiveBufferProfile = normalizedPreferences.bufferProfile.storageValue,
                 usbExclusiveUnsupportedFormatPolicy =
                     normalizedPreferences.unsupportedFormatPolicy.storageValue,

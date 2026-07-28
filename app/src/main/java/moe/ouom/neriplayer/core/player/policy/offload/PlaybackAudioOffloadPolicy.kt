@@ -27,3 +27,10 @@ internal fun requiresPcmAudioProcessing(
         audioReactiveActive ||
         abs(listenTogetherPlaybackRate - 1f) > PLAYBACK_PARAMETER_EPSILON
 }
+
+internal fun shouldUpdateAudioOffloadForReactiveChange(
+    audioReactiveEnabled: Boolean,
+    playbackActive: Boolean,
+): Boolean {
+    return audioReactiveEnabled || !playbackActive
+}

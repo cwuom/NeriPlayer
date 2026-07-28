@@ -47,6 +47,7 @@ import moe.ouom.neriplayer.core.player.policy.pending.shouldApplyResolvedMedia
 import moe.ouom.neriplayer.core.player.policy.pending.shouldApplyResolvedMediaSideEffects
 import moe.ouom.neriplayer.core.player.policy.command.shouldPausePlaybackWhenToggling
 import moe.ouom.neriplayer.core.player.policy.progress.shouldRunPlaybackProgressUpdates
+import moe.ouom.neriplayer.core.player.policy.wake.PlaybackTransitionWakeLock
 import moe.ouom.neriplayer.core.player.prefetch.cancelYouTubePrefetchForPlaybackDemand
 import moe.ouom.neriplayer.core.player.prefetch.cancelGenericUrlPrefetchUnlessReusableForSong
 import moe.ouom.neriplayer.core.player.prefetch.clearPlaybackDemandCacheKey
@@ -624,6 +625,11 @@ internal fun PlayerManager.playAtIndex(
     cancelGenericUrlPrefetchUnlessReusableForSong(song, reason = "play_at_index")
     playbackRequestToken += 1
     val requestToken = playbackRequestToken
+    PlaybackTransitionWakeLock.acquire(
+        context = application,
+        requestToken = requestToken,
+        reason = "play_at_index"
+    )
     maybeHydrateLocalSongForPlayback(index, song, requestToken)
     cancelUrlRefreshIfNotReusableForPendingLoad(
         song = song,
@@ -634,6 +640,7 @@ internal fun PlayerManager.playAtIndex(
     clearPendingSeekPosition()
     enterPendingMediaLoad(resumePositionMs)
     playJob = ioScope.launch {
+        try {
         val result = resolveSongUrl(song)
         if (!shouldApplyResolvedMedia(requestToken, playbackRequestToken) || !isActive) {
             NPLogger.d(
@@ -740,6 +747,7 @@ internal fun PlayerManager.playAtIndex(
                         player.playWhenReady = false
                         player.pause()
                     }
+                    PlaybackTransitionWakeLock.release(requestToken, "media_started")
                     appliedResolvedMedia = true
                 }
                 if (!appliedResolvedMedia) {
@@ -790,6 +798,9 @@ internal fun PlayerManager.playAtIndex(
                     )
                 }
             }
+        }
+        } finally {
+            PlaybackTransitionWakeLock.release(requestToken, "play_request_finished")
         }
     }
 }
@@ -1256,9 +1267,26 @@ private fun PlayerManager.pauseInternal(
     }
     clearAudioRouteMuteSuppression(reason = debugReason)
     if (forcePersist) {
-        moe.ouom.neriplayer.core.player.state.blockingIo {
-            drainPlaybackStatsPersistJobBlocking(debugReason)
-            persistState(positionMs = currentPosition, shouldResumePlayback = false)
+        ioScope.launch {
+            try {
+                runCatching { drainPlaybackStatsPersistJobBlocking(debugReason) }
+                    .onFailure { error ->
+                        NPLogger.w(
+                            "NERI-PlayerManager",
+                            "pause persistence could not drain playback stats: reason=$debugReason",
+                            error
+                        )
+                    }
+                persistState(positionMs = currentPosition, shouldResumePlayback = false)
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.w(
+                    "NERI-PlayerManager",
+                    "pause persistence failed: reason=$debugReason",
+                    error
+                )
+            }
         }
     } else {
         scheduleStatePersist(
@@ -1293,6 +1321,7 @@ internal fun PlayerManager.seekToImpl(
     if (!initialized) return
     if (commandSource == PlaybackCommandSource.LOCAL && shouldBlockLocalRoomControl(commandSource)) return
     val resolvedPositionMs = positionMs.coerceAtLeast(0L)
+    playbackPositionGeneration += 1L
     NPLogger.d(
         "NERI-PlayerManager",
         "seekTo requested: positionMs=$resolvedPositionMs, source=$commandSource, currentSong=${_currentSongFlow.value?.name}, currentUrl=${_currentMediaUrl.value}, stack=[${debugStackHint()}]"

@@ -426,6 +426,7 @@ class UsbExclusivePreferencesTest {
             SettingsKeys.USB_EXCLUSIVE_DEVICE_KEY to "usb:31:2849:ab13x_usb_audio",
             SettingsKeys.USB_EXCLUSIVE_SAMPLE_RATE_MODE to "176400",
             SettingsKeys.USB_EXCLUSIVE_BIT_DEPTH_MODE to "24",
+            SettingsKeys.USB_EXCLUSIVE_BIT_PERFECT to true,
             SettingsKeys.USB_EXCLUSIVE_BUFFER_PROFILE to "stable",
             SettingsKeys.USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY to "closest_supported",
             SettingsKeys.USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS to -9
@@ -436,6 +437,7 @@ class UsbExclusivePreferencesTest {
                 selectedDeviceKey = "usb:31:2849:ab13x_usb_audio",
                 sampleRateMode = UsbExclusiveSampleRateMode.RATE_176400,
                 bitDepthMode = UsbExclusiveBitDepthMode.BIT_24,
+                bitPerfect = true,
                 bufferProfile = UsbExclusiveBufferProfile.STABLE,
                 unsupportedFormatPolicy =
                     UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED,

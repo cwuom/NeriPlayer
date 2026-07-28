@@ -91,6 +91,7 @@ class RefreshMediaLoadPolicyTest {
             owner.copy(songKey = "other-song"),
             owner.copy(requestGeneration = owner.requestGeneration + 1),
             owner.copy(resumePositionMs = owner.resumePositionMs + 1),
+            owner.copy(positionGeneration = owner.positionGeneration + 1),
             owner.copy(fallbackSeekPositionMs = owner.fallbackSeekPositionMs?.plus(1)),
             owner.copy(resumePlaybackAfterRefresh = !owner.resumePlaybackAfterRefresh),
             owner.copy(allowFallback = !owner.allowFallback),
@@ -222,6 +223,48 @@ class RefreshMediaLoadPolicyTest {
             resolveRefreshInFlightDecision(
                 owner = RefreshInFlightOwner(oldIntent, isActive = true),
                 incoming = currentIntent
+            )
+        )
+    }
+
+    @Test
+    fun `refresh media start retains later reported playback progress`() {
+        assertEquals(
+            48_000L,
+            resolveRefreshedMediaStartPosition(
+                pendingSeekPositionMs = null,
+                requestedResumePositionMs = 45_000L,
+                observedPlaybackPositionMs = 48_000L,
+                requestedPositionGeneration = 8L,
+                currentPositionGeneration = 8L
+            )
+        )
+    }
+
+    @Test
+    fun `refresh media start preserves an explicit seek made during resolution`() {
+        assertEquals(
+            12_000L,
+            resolveRefreshedMediaStartPosition(
+                pendingSeekPositionMs = null,
+                requestedResumePositionMs = 45_000L,
+                observedPlaybackPositionMs = 12_000L,
+                requestedPositionGeneration = 8L,
+                currentPositionGeneration = 9L
+            )
+        )
+    }
+
+    @Test
+    fun `pending seek takes precedence over refresh position snapshots`() {
+        assertEquals(
+            18_000L,
+            resolveRefreshedMediaStartPosition(
+                pendingSeekPositionMs = 18_000L,
+                requestedResumePositionMs = 45_000L,
+                observedPlaybackPositionMs = 48_000L,
+                requestedPositionGeneration = 8L,
+                currentPositionGeneration = 8L
             )
         )
     }

@@ -1351,6 +1351,11 @@ fun SettingsScreen(
                                     AppContainer.settingsRepo.setUsbExclusiveBitDepthMode(mode)
                                 }
                             },
+                            onBitPerfectChange = { enabled ->
+                                scope.launch {
+                                    AppContainer.settingsRepo.setUsbExclusiveBitPerfect(enabled)
+                                }
+                            },
                             onBufferProfileChange = { profile ->
                                 scope.launch {
                                     AppContainer.settingsRepo.setUsbExclusiveBufferProfile(profile)

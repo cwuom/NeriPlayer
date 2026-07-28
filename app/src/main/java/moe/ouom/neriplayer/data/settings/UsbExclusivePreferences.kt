@@ -4,6 +4,7 @@ import kotlin.math.abs
 
 const val DEFAULT_USB_EXCLUSIVE_SAMPLE_RATE_MODE = "follow_source"
 const val DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_MODE = "auto"
+const val DEFAULT_USB_EXCLUSIVE_BIT_PERFECT = false
 const val DEFAULT_USB_EXCLUSIVE_BUFFER_PROFILE = "stable"
 const val DEFAULT_USB_EXCLUSIVE_UNSUPPORTED_FORMAT_POLICY = "closest_supported"
 const val DEFAULT_USB_EXCLUSIVE_DEVICE_KEY = "auto"
@@ -104,6 +105,7 @@ data class UsbExclusivePreferences(
     val selectedDeviceKey: String = DEFAULT_USB_EXCLUSIVE_DEVICE_KEY,
     val sampleRateMode: UsbExclusiveSampleRateMode = UsbExclusiveSampleRateMode.FOLLOW_SOURCE,
     val bitDepthMode: UsbExclusiveBitDepthMode = UsbExclusiveBitDepthMode.AUTO,
+    val bitPerfect: Boolean = DEFAULT_USB_EXCLUSIVE_BIT_PERFECT,
     val bufferProfile: UsbExclusiveBufferProfile = UsbExclusiveBufferProfile.STABLE,
     val unsupportedFormatPolicy: UsbExclusiveUnsupportedFormatPolicy =
         UsbExclusiveUnsupportedFormatPolicy.CLOSEST_SUPPORTED,
@@ -221,6 +223,7 @@ data class UsbExclusivePreferences(
             bitDepthMode: String?,
             bufferProfile: String?,
             unsupportedFormatPolicy: String?,
+            bitPerfect: Boolean? = null,
             selectedDeviceKey: String? = null,
             sampleRateCompatibilityEnabled: Boolean? = null,
             bitDepthCompatibilityEnabled: Boolean? = null,
@@ -242,6 +245,7 @@ data class UsbExclusivePreferences(
                 selectedDeviceKey = normalizeUsbExclusiveDeviceKey(selectedDeviceKey),
                 sampleRateMode = UsbExclusiveSampleRateMode.fromStorageValue(sampleRateMode),
                 bitDepthMode = UsbExclusiveBitDepthMode.fromStorageValue(bitDepthMode),
+                bitPerfect = bitPerfect ?: DEFAULT_USB_EXCLUSIVE_BIT_PERFECT,
                 bufferProfile = parsedBufferProfile,
                 unsupportedFormatPolicy = UsbExclusiveUnsupportedFormatPolicy.fromStorageValue(
                     unsupportedFormatPolicy
@@ -288,6 +292,7 @@ fun PlaybackPreferenceSnapshot.toUsbExclusivePreferences(): UsbExclusivePreferen
         selectedDeviceKey = normalizedSnapshot.usbExclusiveDeviceKey,
         sampleRateMode = normalizedSnapshot.usbExclusiveSampleRateMode,
         bitDepthMode = normalizedSnapshot.usbExclusiveBitDepthMode,
+        bitPerfect = normalizedSnapshot.usbExclusiveBitPerfect,
         bufferProfile = normalizedSnapshot.usbExclusiveBufferProfile,
         unsupportedFormatPolicy = normalizedSnapshot.usbExclusiveUnsupportedFormatPolicy,
         sampleRateCompatibilityEnabled =

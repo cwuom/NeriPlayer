@@ -37,10 +37,10 @@ internal fun PlayerManager.tryResolveNeteaseMatchedLocalSource(song: SongItem): 
         )
         val playableAudioInfo = runCatching { playableUrl.toUri() }.getOrNull()
             ?.let { buildLocalPlaybackAudioInfo(it, application) }
-            ?: buildLocalPlaybackAudioInfo(candidate, application)
         return SongUrlResult.Success(
             url = playableUrl,
             audioInfo = playableAudioInfo,
+            isNeteaseLocalFallback = true,
             noticeMessage = getLocalizedString(R.string.player_netease_local_fallback_notice)
         )
     }
@@ -62,15 +62,27 @@ internal fun selectNeteaseLocalFallbackCandidates(
     if (matchedLocals.isEmpty()) return emptyList()
 
     val targetId = song.id.toString()
-    val (exact, rest) = matchedLocals.partition { candidate ->
+    val exact = matchedLocals.filter { candidate ->
         candidate.matchedLyricSource == MusicPlatform.CLOUD_MUSIC &&
-            candidate.matchedSongId == targetId
+            candidate.matchedSongId == targetId &&
+            isNeteaseLocalFallbackDurationCompatible(song, candidate)
     }
+    val exactKeys = exact.mapTo(mutableSetOf()) { it.stableKey() }
+    val rest = matchedLocals.filterNot { it.stableKey() in exactKeys }
     val fuzzy = rest.filter { candidate ->
         matchesNeteaseLocalFallbackMetadata(song, candidate)
     }
     return (sortByDurationCloseness(song, exact) + sortByDurationCloseness(song, fuzzy))
         .distinctBy { it.stableKey() }
+}
+
+private fun isNeteaseLocalFallbackDurationCompatible(
+    song: SongItem,
+    candidate: SongItem
+): Boolean {
+    if (song.durationMs <= 0L || candidate.durationMs <= 0L) return true
+    return (candidate.durationMs - song.durationMs).absoluteValue <=
+        NETEASE_LOCAL_FALLBACK_DURATION_TOLERANCE_MS
 }
 
 internal fun matchesNeteaseLocalFallbackMetadata(song: SongItem, candidate: SongItem): Boolean {

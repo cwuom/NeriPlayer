@@ -29,14 +29,25 @@ import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.runInterruptible
+
+private val blockingIoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 internal fun <T> blockingIo(timeoutMs: Long = DEFAULT_BLOCKING_IO_TIMEOUT_MS, block: suspend () -> T): T {
     val resultRef = AtomicReference<Result<T>?>(null)
     val latch = CountDownLatch(1)
-    val job = CoroutineScope(Dispatchers.IO).launch {
+    val job = blockingIoScope.launch {
         try {
-            resultRef.set(runCatching { block() })
+            resultRef.set(
+                runCatching {
+                    runInterruptible {
+                        runBlocking { block() }
+                    }
+                }
+            )
         } finally {
             latch.countDown()
         }

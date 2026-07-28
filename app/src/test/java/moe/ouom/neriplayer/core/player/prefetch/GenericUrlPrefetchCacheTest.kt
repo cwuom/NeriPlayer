@@ -10,6 +10,13 @@ import org.junit.Test
 
 class GenericUrlPrefetchCacheTest {
     @Test
+    fun durationBasedTtlCoversTheCurrentTrackWithAnUpperBound() {
+        assertEquals(210_000L, resolveGenericUrlPrefetchTtlMs(180_000L))
+        assertEquals(GENERIC_URL_PREFETCH_MAX_TTL_MS, resolveGenericUrlPrefetchTtlMs(900_000L))
+        assertEquals(GENERIC_URL_PREFETCH_TTL_MS, resolveGenericUrlPrefetchTtlMs(0L))
+    }
+
+    @Test
     fun consume_returnsFreshEntryOnlyOnce() {
         val cache = GenericUrlPrefetchCache(ttlMs = 90L)
         val result = SongUrlResult.Success(url = "https://audio.example/track")

@@ -9,9 +9,21 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshResolverSideEffects
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshSideEffectGate
+import moe.ouom.neriplayer.core.player.url.OFFLINE_CACHE_URL_PREFIX
 import moe.ouom.neriplayer.core.player.url.resolveSongUrl
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
+
+internal fun resolveGenericUrlPrefetchTtlMs(
+    currentTrackDurationMs: Long,
+    defaultTtlMs: Long = GENERIC_URL_PREFETCH_TTL_MS,
+    maxTtlMs: Long = GENERIC_URL_PREFETCH_MAX_TTL_MS
+): Long {
+    val durationBasedTtl = currentTrackDurationMs
+        .takeIf { it > 0L }
+        ?.plus(30_000L)
+    return (durationBasedTtl ?: defaultTtlMs).coerceIn(1L, maxTtlMs)
+}
 
 internal fun PlayerManager.prefetchNextGenericTrackUrl() {
     if (!isApplicationInitialized()) return
@@ -54,12 +66,19 @@ internal fun PlayerManager.prefetchNextGenericTrackUrl() {
             )
             // 本地兜底命中的受限歌曲同样值得预取, 否则消费方会白等一个不落盘的任务
             if (result is SongUrlResult.Success &&
+                !result.url.startsWith(OFFLINE_CACHE_URL_PREFIX) &&
                 (isDirectStreamUrl(result.url) || LocalSongSupport.isLocalMediaUri(result.url))
             ) {
                 genericUrlPrefetchCache.put(
                     key = cacheKey,
                     result = result,
-                    nowMs = SystemClock.elapsedRealtime()
+                    nowMs = SystemClock.elapsedRealtime(),
+                    ttlMsOverride = resolveGenericUrlPrefetchTtlMs(
+                        currentTrackDurationMs = maxOf(
+                            playbackDurationFlow.value,
+                            currentSongFlow.value?.durationMs ?: 0L
+                        )
+                    )
                 )
                 NPLogger.d(
                     "NERI-PlayerManager",
@@ -132,7 +151,8 @@ internal suspend fun PlayerManager.consumeGenericUrlPrefetch(
 private fun PlayerManager.consumeValidGenericUrlPrefetch(cacheKey: String): SongUrlResult.Success? {
     val result = genericUrlPrefetchCache.consume(cacheKey, SystemClock.elapsedRealtime()) ?: return null
     // 预取到消费之间开关可能被关掉或文件失效, 复验不过就丢弃走全新解析
-    if (LocalSongSupport.isLocalMediaUri(result.url) &&
+    if (result.isNeteaseLocalFallback &&
+        LocalSongSupport.isLocalMediaUri(result.url) &&
         (!neteaseLocalSourceFallbackEnabled || !isReadableLocalMediaUri(result.url))
     ) {
         NPLogger.d(

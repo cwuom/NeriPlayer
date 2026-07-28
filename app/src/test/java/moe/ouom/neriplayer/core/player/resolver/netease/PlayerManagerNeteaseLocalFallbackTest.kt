@@ -16,7 +16,7 @@ class PlayerManagerNeteaseLocalFallbackTest {
             path = "/music/exact.flac",
             name = "晴天(备份)",
             artist = "周杰伦",
-            durationMs = 300_000L,
+            durationMs = 270_000L,
             matchedSongId = "123",
             matchedSource = MusicPlatform.CLOUD_MUSIC
         )
@@ -32,6 +32,32 @@ class PlayerManagerNeteaseLocalFallbackTest {
         val candidates = selectNeteaseLocalFallbackCandidates(song, listOf(fuzzy, exact))
 
         assertEquals(listOf(exact, fuzzy), candidates)
+    }
+
+    @Test
+    fun select_rejectsExactMatchedSongIdWhenDurationIsTooFarOff() {
+        val song = neteaseSong(id = 123L, name = "晴天", artist = "周杰伦", durationMs = 269_000L)
+        val wrongExact = localSong(
+            path = "/music/wrong-exact.flac",
+            name = "晴天",
+            artist = "周杰伦",
+            durationMs = 300_000L,
+            matchedSongId = "123",
+            matchedSource = MusicPlatform.CLOUD_MUSIC
+        )
+        val fuzzy = localSong(
+            path = "/music/fuzzy-duration.flac",
+            name = "晴天",
+            artist = "周杰伦",
+            durationMs = 269_000L,
+            matchedSongId = "456",
+            matchedSource = MusicPlatform.CLOUD_MUSIC
+        )
+
+        assertEquals(
+            listOf(fuzzy),
+            selectNeteaseLocalFallbackCandidates(song, listOf(wrongExact, fuzzy))
+        )
     }
 
     @Test
@@ -101,7 +127,7 @@ class PlayerManagerNeteaseLocalFallbackTest {
             path = "/music/far.mp3",
             name = "晴天",
             artist = "周杰伦",
-            durationMs = 500_000L,
+            durationMs = 275_000L,
             matchedSongId = "123",
             matchedSource = MusicPlatform.CLOUD_MUSIC
         )

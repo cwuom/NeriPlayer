@@ -68,7 +68,13 @@ import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
+import moe.ouom.neriplayer.core.player.policy.audio.BLUETOOTH_DISCONNECT_CONFIRMATION_SAMPLE_COUNT
+import moe.ouom.neriplayer.core.player.policy.audio.BLUETOOTH_DISCONNECT_CONFIRM_INITIAL_DELAY_MS
+import moe.ouom.neriplayer.core.player.policy.audio.BLUETOOTH_DISCONNECT_CONFIRM_SAMPLE_INTERVAL_MS
+import moe.ouom.neriplayer.core.player.policy.audio.shouldConfirmBluetoothDisconnect
 import moe.ouom.neriplayer.core.player.policy.offload.requiresPcmAudioProcessing
+import moe.ouom.neriplayer.core.player.policy.offload.shouldUpdateAudioOffloadForReactiveChange
+import moe.ouom.neriplayer.core.player.policy.wake.PlaybackTransitionWakeLock
 import moe.ouom.neriplayer.core.player.policy.usb.evaluateUsbExclusiveKeepAliveProgress
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveForegroundRecoveryAction
 import moe.ouom.neriplayer.core.player.policy.usb.resolveUsbExclusiveForegroundRecoveryAction
@@ -91,6 +97,7 @@ import moe.ouom.neriplayer.core.player.playback.clearAudioRouteMuteSuppression
 import moe.ouom.neriplayer.core.player.playback.pauseForAudioRouteLoss
 import moe.ouom.neriplayer.core.player.playback.pauseImpl
 import moe.ouom.neriplayer.core.player.playback.playAtIndex
+import moe.ouom.neriplayer.core.player.playback.playImpl
 import moe.ouom.neriplayer.core.player.playback.restorePlaybackAfterTransientAudioRouteLoss
 import moe.ouom.neriplayer.core.player.playback.startProgressUpdates
 import moe.ouom.neriplayer.core.player.playback.suppressPlaybackForAudioRouteLoss
@@ -286,7 +293,21 @@ internal fun PlayerManager.initializeImpl(
 
         AudioReactive.onEnabledChanged = { enabled ->
             mainScope.launch {
-                updateAudioOffloadPreferences("audio_reactive_$enabled")
+                val playbackActive = isTransportActiveWithoutInitialization()
+                if (
+                    shouldUpdateAudioOffloadForReactiveChange(
+                        audioReactiveEnabled = enabled,
+                        playbackActive = playbackActive
+                    )
+                ) {
+                    updateAudioOffloadPreferences("audio_reactive_$enabled")
+                } else {
+                    NPLogger.d(
+                        "NERI-PlayerManager",
+                        "keep audio offload pipeline during active playback: " +
+                            "audioReactive=$enabled"
+                    )
+                }
             }
         }
         updateAudioOffloadPreferences("player_initialize")
@@ -358,7 +379,10 @@ internal fun PlayerManager.initializeImpl(
                             )
                         ) || cacheKeyToInvalidateBeforeResolve != null
                     val resumePositionMs = pendingSeekPositionOrNull()
-                        ?: player.currentPosition.coerceAtLeast(0L)
+                        ?: maxOf(
+                            player.currentPosition.coerceAtLeast(0L),
+                            _playbackPositionMs.value.coerceAtLeast(0L)
+                        )
                     val resumePlaybackAfterRefresh = player.playWhenReady || player.isPlaying
                     refreshCurrentSongUrl(
                         resumePositionMs = resumePositionMs,
@@ -2486,6 +2510,14 @@ internal fun PlayerManager.recoverUsbExclusivePlaybackOnForeground(reason: Strin
         applyUsbExclusivePlaybackPolicy(reconfigureAudioSink = false)
         UsbExclusiveSessionController.refresh(application)
         val nativeState = UsbExclusiveSessionController.state.value
+        if (!nativeState.runtimeReportValid) {
+            NPLogger.d(
+                "NERI-UsbExclusive",
+                "skip foreground USB recovery because native sample is invalid: " +
+                    "reason=$reason invalidReason=${nativeState.runtimeReportInvalidReason}"
+            )
+            return@launch
+        }
         if (nativeState.transitioning || UsbExclusiveSessionController.playerPcmOpenGateReason() != null) {
             NPLogger.i(
                 "NERI-UsbExclusive",
@@ -2517,6 +2549,14 @@ internal fun PlayerManager.recoverUsbExclusivePlaybackOnForeground(reason: Strin
         if (!usbExclusivePlaybackEnabled || !isPlayerInitialized()) return@launch
         UsbExclusiveSessionController.refresh(application)
         val refreshedNativeState = UsbExclusiveSessionController.state.value
+        if (!refreshedNativeState.runtimeReportValid) {
+            NPLogger.d(
+                "NERI-UsbExclusive",
+                "skip foreground USB recovery because follow-up sample is invalid: " +
+                    "reason=$reason invalidReason=${refreshedNativeState.runtimeReportInvalidReason}"
+            )
+            return@launch
+        }
         val refreshedPathState = UsbExclusiveAudioPathTracker.state.value
         val refreshedAction = resolveUsbExclusiveForegroundRecoveryAction(
             nativePathActive =
@@ -2567,7 +2607,7 @@ internal fun PlayerManager.recoverUsbExclusivePlaybackOnForeground(reason: Strin
             outputFrameBytes = metrics.outputFrameBytes ?: 0,
             currentPcmLevelBytes = metrics.pcmLevelBytes ?: -1L,
             previousStallTicks = 0,
-            recoveryTicks = 1
+            recoveryTicks = 2
         )
         if (progress.shouldRecover) {
             NPLogger.w(
@@ -2595,10 +2635,13 @@ internal fun PlayerManager.recoverUsbExclusivePlaybackOnForeground(reason: Strin
 
 private fun PlayerManager.restoreUsbExclusiveForegroundPlaybackIntent(reason: String) {
     if (isTransportActiveWithoutInitialization()) return
-    updateResumePlaybackRequested(true)
     NPLogger.i(
         "NERI-UsbExclusive",
-        "restore USB playback intent for foreground recovery: reason=$reason"
+        "restore USB playback for foreground recovery: reason=$reason"
+    )
+    playImpl(
+        commandSource = PlaybackCommandSource.LOCAL,
+        bypassLoudVolumeWarning = true
     )
 }
 
@@ -2837,7 +2880,7 @@ private const val USB_EXCLUSIVE_OPEN_GATE_RETRY_DELAY_MS = 3_800L
 private const val USB_EXCLUSIVE_OPEN_GATE_WAIT_TIMEOUT_MS = 8_000L
 private const val USB_EXCLUSIVE_OPEN_GATE_WAIT_POLL_MS = 100L
 private const val USB_EXCLUSIVE_SAFE_SWITCH_POLL_MS = 800L
-private const val USB_EXCLUSIVE_FOREGROUND_STALL_CHECK_MS = 360L
+private const val USB_EXCLUSIVE_FOREGROUND_STALL_CHECK_MS = 1_000L
 private const val USB_EXCLUSIVE_ROUTE_JITTER_REOPEN_COOLDOWN_MS = 4_000L
 private const val USB_EXCLUSIVE_RELEASE_REOPEN_COOLDOWN_MS = 3_500L
 private const val USB_EXCLUSIVE_SYSTEM_AUDIO_RELEASE_DELAY_MS = 650L
@@ -2863,41 +2906,65 @@ private fun PlayerManager.schedulePauseForBluetoothDisconnect(
 ) {
     if (previousDevice == null || !requiresDisconnectConfirmation(previousDevice.type)) return
     bluetoothDisconnectPauseJob?.cancel()
-    suppressPlaybackForAudioRouteLoss(reason = "bluetooth_disconnect_pending:$reason")
     NPLogger.d(
         "NERI-PlayerManager",
-        "schedulePauseForBluetoothDisconnect(): device=${previousDevice.type}:${previousDevice.name}, reason=$reason, delayMs=$BLUETOOTH_DISCONNECT_CONFIRM_DELAY_MS"
+        "schedulePauseForBluetoothDisconnect(): device=${previousDevice.type}:${previousDevice.name}, reason=$reason, samples=$BLUETOOTH_DISCONNECT_CONFIRMATION_SAMPLE_COUNT"
     )
     bluetoothDisconnectPauseJob = mainScope.launch {
-        delay(BLUETOOTH_DISCONNECT_CONFIRM_DELAY_MS)
-        if (!stopOnBluetoothDisconnectEnabled || !_isPlayingFlow.value) {
+        val sampledRoutesAreBluetooth = mutableListOf<Boolean>()
+        repeat(BLUETOOTH_DISCONNECT_CONFIRMATION_SAMPLE_COUNT) { sampleIndex ->
+            delay(
+                if (sampleIndex == 0) {
+                    BLUETOOTH_DISCONNECT_CONFIRM_INITIAL_DELAY_MS
+                } else {
+                    BLUETOOTH_DISCONNECT_CONFIRM_SAMPLE_INTERVAL_MS
+                }
+            )
+            if (!stopOnBluetoothDisconnectEnabled || !_isPlayingFlow.value) {
+                restorePlaybackAfterTransientAudioRouteLoss(
+                    reason = "bluetooth_disconnect_canceled:$reason"
+                )
+                bluetoothDisconnectPauseJob = null
+                return@launch
+            }
+            val audioManager: AudioManager =
+                application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val confirmedDevice = getCurrentAudioDevice(audioManager)
+            _currentAudioDevice.value = confirmedDevice
+            if (!isBluetoothOutputType(confirmedDevice.type) &&
+                confirmedDevice.type != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+            ) {
+                restorePlaybackAfterTransientAudioRouteLoss(
+                    reason = "bluetooth_disconnect_rerouted:${confirmedDevice.type}"
+                )
+                bluetoothDisconnectPauseJob = null
+                return@launch
+            }
+            sampledRoutesAreBluetooth += isBluetoothOutputType(confirmedDevice.type)
+        }
+        if (!shouldConfirmBluetoothDisconnect(
+                stopOnBluetoothDisconnectEnabled = stopOnBluetoothDisconnectEnabled,
+                playbackActive = _isPlayingFlow.value,
+                previousRouteWasBluetooth = requiresDisconnectConfirmation(previousDevice.type),
+                sampledRoutesAreBluetooth = sampledRoutesAreBluetooth
+            )
+        ) {
             NPLogger.d(
                 "NERI-PlayerManager",
-                "schedulePauseForBluetoothDisconnect(): canceled after delay, enabled=$stopOnBluetoothDisconnectEnabled, isPlaying=${_isPlayingFlow.value}, reason=$reason"
+                "Ignored transient bluetooth route change ($reason): samples=$sampledRoutesAreBluetooth"
             )
-            restorePlaybackAfterTransientAudioRouteLoss(reason = "bluetooth_disconnect_canceled:$reason")
+            restorePlaybackAfterTransientAudioRouteLoss(
+                reason = "bluetooth_disconnect_transient:$reason"
+            )
             bluetoothDisconnectPauseJob = null
             return@launch
         }
-
-        val audioManager: AudioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val confirmedDevice = getCurrentAudioDevice(audioManager)
-        _currentAudioDevice.value = confirmedDevice
-        if (confirmedDevice.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
-            NPLogger.d(
-                "NERI-PlayerManager",
-                "Confirmed bluetooth disconnect ($reason), pausing playback."
-            )
-            pauseForAudioRouteLoss(reason = "bluetooth_disconnect_confirmed:$reason")
-        } else {
-            NPLogger.d(
-                "NERI-PlayerManager",
-                "Ignored transient bluetooth route change ($reason): ${confirmedDevice.type}"
-            )
-            restorePlaybackAfterTransientAudioRouteLoss(
-                reason = "bluetooth_disconnect_transient:${confirmedDevice.type}"
-            )
-        }
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "Confirmed bluetooth disconnect ($reason), pausing playback."
+        )
+        suppressPlaybackForAudioRouteLoss(reason = "bluetooth_disconnect_confirmed:$reason")
+        pauseForAudioRouteLoss(reason = "bluetooth_disconnect_confirmed:$reason")
         bluetoothDisconnectPauseJob = null
     }
 }
@@ -3405,6 +3472,7 @@ internal fun PlayerManager.releaseImpl() {
         usbExclusiveDeviceReattachRecoveryJob?.cancel()
         usbExclusiveDeviceReattachRecoveryJob = null
         UsbExclusiveSessionController.forceStopAllSessions("player_release")
+        PlaybackTransitionWakeLock.releaseAll("player_release")
         UsbExclusiveSystemSoundGuard.releaseWhenNativeIdle(application, "player_release")
         playJob?.cancel()
         playJob = null
@@ -3418,6 +3486,7 @@ internal fun PlayerManager.releaseImpl() {
         externalBluetoothLyricsLoadJob = null
         externalBluetoothLyrics = emptyList()
         floatingTranslatedLyrics = emptyList()
+        floatingTranslationMatchesByIndex = emptyMap()
         externalBluetoothLyricsSongKey = null
         externalBluetoothLyricsEnabled = false
         floatingLyricsEnabled = false

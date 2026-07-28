@@ -23,12 +23,14 @@ package moe.ouom.neriplayer.core.player.timer
  * Created: 2026/1/6
  */
 
+import android.os.SystemClock
+import java.util.Locale
+import kotlin.math.min
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import java.util.Locale
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -62,7 +64,8 @@ data class SleepTimerState(
 class SleepTimerManager(
     private val scope: CoroutineScope,
     private val onTimerExpired: () -> Unit,
-    private val onTimerStateChanged: (SleepTimerState) -> Unit = {}
+    private val onTimerStateChanged: (SleepTimerState) -> Unit = {},
+    private val nowMsProvider: () -> Long = { SystemClock.elapsedRealtime() }
 ) {
     private var timerJob: Job? = null
 
@@ -82,7 +85,7 @@ class SleepTimerManager(
         finishCurrentOnExpiry: Boolean = false
     ) {
         cancel(notifyStateChanged = false)
-        val totalMillis = minutes * 60 * 1000L
+        val totalMillis = minutes.coerceAtLeast(0).toLong() * 60_000L
         val timerMode = if (finishCurrentOnExpiry) {
             SleepTimerMode.COUNTDOWN_FINISH_CURRENT
         } else {
@@ -96,13 +99,17 @@ class SleepTimerManager(
                 totalMillis = totalMillis
             )
         )
+        val deadlineMs = nowMsProvider() + totalMillis
 
         timerJob = scope.launch {
             var remaining = totalMillis
-            while (isActive && remaining > 0) {
-                delay(1000)
-                remaining -= 1000
+            while (isActive && remaining > 0L) {
+                delay(min(1000L, remaining))
+                remaining = (deadlineMs - nowMsProvider()).coerceAtLeast(0L)
                 _timerState.value = _timerState.value.copy(remainingMillis = remaining)
+            }
+            if (!isActive) {
+                return@launch
             }
             if (remaining <= 0) {
                 if (timerMode == SleepTimerMode.COUNTDOWN_FINISH_CURRENT) {

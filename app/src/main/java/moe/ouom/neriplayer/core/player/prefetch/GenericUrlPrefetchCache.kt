@@ -4,6 +4,7 @@ import java.util.concurrent.ConcurrentHashMap
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
 
 internal const val GENERIC_URL_PREFETCH_TTL_MS = 90_000L
+internal const val GENERIC_URL_PREFETCH_MAX_TTL_MS = 10L * 60L * 1000L
 private const val GENERIC_URL_PREFETCH_MAX_ENTRIES = 16
 
 internal class GenericUrlPrefetchCache(
@@ -24,7 +25,12 @@ internal class GenericUrlPrefetchCache(
         assert(maxEntries > 0) { "maxEntries must be positive" }
     }
 
-    fun put(key: String, result: SongUrlResult.Success, nowMs: Long) {
+    fun put(
+        key: String,
+        result: SongUrlResult.Success,
+        nowMs: Long,
+        ttlMsOverride: Long? = null
+    ) {
         require(key.isNotBlank()) { "prefetch cache key must not be blank" }
         assert(key.isNotBlank()) { "prefetch cache key must not be blank" }
         entries.entries.removeIf { (_, entry) -> nowMs >= entry.expiresAtMs }
@@ -33,7 +39,9 @@ internal class GenericUrlPrefetchCache(
                 entries.remove(oldest.key, oldest.value)
             }
         }
-        entries[key] = Entry(result, expiresAtMs = nowMs + ttlMs)
+        val effectiveTtlMs = (ttlMsOverride ?: ttlMs)
+            .coerceIn(1L, GENERIC_URL_PREFETCH_MAX_TTL_MS)
+        entries[key] = Entry(result, expiresAtMs = nowMs + effectiveTtlMs)
     }
 
     fun containsFresh(key: String, nowMs: Long): Boolean {

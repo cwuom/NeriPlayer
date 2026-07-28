@@ -53,6 +53,7 @@ internal fun predictedUsbExclusivePlaybackGain(
 internal fun estimateUsbExclusiveLoudness(
     systemVolumePercent: Int,
     playerVolume: Float,
+    bitPerfect: Boolean = false,
     uacVersion: String?,
     outputSampleRate: Int,
     outputBitDepth: Int?,
@@ -62,8 +63,12 @@ internal fun estimateUsbExclusiveLoudness(
     val normalizedPercent = systemVolumePercent.coerceIn(0, 100)
     val normalizedPlayerVolume = playerVolume.coerceIn(0f, 1f)
     val deviceClass = usbExclusiveOutputDeviceClass(uacVersion)
-    val systemGain = usbExclusiveSystemVolumeGain(normalizedPercent / 100f)
-    val digitalGain = systemGain.toDouble() * normalizedPlayerVolume.toDouble()
+    val digitalGain = if (bitPerfect) {
+        1.0
+    } else {
+        val systemGain = usbExclusiveSystemVolumeGain(normalizedPercent / 100f)
+        systemGain.toDouble() * normalizedPlayerVolume.toDouble()
+    }
     val ceilingPeakDbfs = amplitudeToDbfs(digitalGain)
     val observedPeakDbfs = observedOutputPeak
         ?.takeIf { it.isFinite() && it > 0f }

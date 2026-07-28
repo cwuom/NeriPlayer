@@ -33,9 +33,11 @@ class SleepTimerManagerTest {
     @Test
     fun `countdown can finish current song after expiry`() = runTest {
         var timerExpired = false
+        var nowMs = 0L
         val manager = SleepTimerManager(
             scope = this,
-            onTimerExpired = { timerExpired = true }
+            onTimerExpired = { timerExpired = true },
+            nowMsProvider = { nowMs }
         )
 
         manager.startCountdown(minutes = 1, finishCurrentOnExpiry = true)
@@ -44,6 +46,7 @@ class SleepTimerManagerTest {
             SleepTimerMode.COUNTDOWN_FINISH_CURRENT,
             manager.timerState.value.mode
         )
+        nowMs = 60_000L
         advanceTimeBy(60_000)
         runCurrent()
 
@@ -55,17 +58,38 @@ class SleepTimerManagerTest {
     @Test
     fun `countdown still stops immediately after expiry`() = runTest {
         var timerExpired = false
+        var nowMs = 0L
         val manager = SleepTimerManager(
             scope = this,
-            onTimerExpired = { timerExpired = true }
+            onTimerExpired = { timerExpired = true },
+            nowMsProvider = { nowMs }
         )
 
         manager.startCountdown(minutes = 1)
+        nowMs = 60_000L
         advanceTimeBy(60_000)
         runCurrent()
 
         assertTrue(timerExpired)
         assertFalse(manager.timerState.value.isActive)
+    }
+
+    @Test
+    fun `countdown uses elapsed time after a delayed wakeup`() = runTest {
+        var nowMs = 0L
+        val manager = SleepTimerManager(
+            scope = this,
+            onTimerExpired = {},
+            nowMsProvider = { nowMs }
+        )
+
+        manager.startCountdown(minutes = 1, finishCurrentOnExpiry = true)
+        advanceTimeBy(1_000)
+        nowMs = 60_000L
+        advanceTimeBy(1_000)
+        runCurrent()
+
+        assertEquals(SleepTimerMode.FINISH_CURRENT, manager.timerState.value.mode)
     }
 
     @Test

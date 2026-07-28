@@ -24,9 +24,14 @@ package moe.ouom.neriplayer.data.settings
  */
 
 import android.content.Context
+import android.os.Looper
 import androidx.core.content.edit
 import androidx.datastore.preferences.core.Preferences
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.normalizeDownloadFileNameTemplate
 
@@ -37,6 +42,7 @@ private const val BOOTSTRAP_YOUTUBE_ENABLED_KEY = "youtube_enabled"
 private const val BOOTSTRAP_DOWNLOAD_DIRECTORY_URI_KEY = "download_directory_uri"
 private const val BOOTSTRAP_DOWNLOAD_DIRECTORY_LABEL_KEY = "download_directory_label"
 private const val BOOTSTRAP_DOWNLOAD_FILE_NAME_TEMPLATE_KEY = "download_file_name_template"
+private val bootstrapSnapshotWarmupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 data class BootstrapSettingsSnapshot(
     val bypassProxy: Boolean = true,
@@ -57,6 +63,11 @@ data class BootstrapSettingsSnapshot(
 fun readBootstrapSettingsSnapshotSync(context: Context): BootstrapSettingsSnapshot {
     readCachedBootstrapSettingsSnapshot(context)?.let { return it }
 
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+        warmBootstrapSettingsSnapshot(context)
+        return BootstrapSettingsSnapshot()
+    }
+
     return runCatching {
         runBlocking {
             context.dataStore.data.first().toBootstrapSettingsSnapshot()
@@ -65,6 +76,17 @@ fun readBootstrapSettingsSnapshotSync(context: Context): BootstrapSettingsSnapsh
         BootstrapSettingsSnapshot()
     }.also { snapshot ->
         persistBootstrapSettingsSnapshot(context, snapshot)
+    }
+}
+
+private fun warmBootstrapSettingsSnapshot(context: Context) {
+    val appContext = context.applicationContext
+    bootstrapSnapshotWarmupScope.launch {
+        runCatching {
+            appContext.dataStore.data.first().toBootstrapSettingsSnapshot()
+        }.onSuccess { snapshot ->
+            persistBootstrapSettingsSnapshot(appContext, snapshot)
+        }
     }
 }
 

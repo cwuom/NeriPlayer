@@ -85,6 +85,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.PlayerManager.externalBluetoothLyricLineFlow
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackIfUnhealthy
+import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbExclusivePlaybackResumeAfterDeviceAttach
 import moe.ouom.neriplayer.core.player.lifecycle.stopPlaybackAfterUsbExclusiveNativeFailure
 import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothMetadataText
 import moe.ouom.neriplayer.core.player.metadata.shouldUseExternalBluetoothLyrics
@@ -1231,6 +1232,9 @@ class AudioPlayerService : Service() {
                             "NERI-APS",
                             "USB audio device attached after active route detach " +
                                 "id=${attachedDevice?.deviceId} name=${attachedDevice?.deviceName}"
+                        )
+                        PlayerManager.scheduleUsbExclusivePlaybackResumeAfterDeviceAttach(
+                            "usb_device_attached"
                         )
                         updatePlaybackState(force = true)
                         updateNotification()

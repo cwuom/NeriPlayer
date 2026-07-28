@@ -1451,7 +1451,8 @@ internal class UsbExclusiveAudioSink(
     private fun effectiveNativeVolume(): Float {
         return usbExclusiveEffectiveNativeVolume(
             playerVolume = volume,
-            systemVolumeFraction = cachedMusicVolumeFraction
+            systemVolumeFraction = cachedMusicVolumeFraction,
+            bitPerfect = PlayerManager.usbExclusivePreferences.bitPerfect
         )
     }
 

@@ -398,7 +398,9 @@ object PlayerManager {
     internal var qqMusicLyricDefaultOffsetMs = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
     internal var keepLastPlaybackProgressEnabled = true
     internal var keepPlaybackModeStateEnabled = true
+    @Volatile
     internal var neteaseAutoSourceSwitchEnabled = true
+    @Volatile
     internal var neteaseLocalSourceFallbackEnabled = true
     internal var stopOnBluetoothDisconnectEnabled = true
     @Volatile
@@ -435,7 +437,6 @@ object PlayerManager {
     internal const val STATE_PERSIST_INTERVAL_MS = 15 * 1000L
     internal const val STATE_PERSIST_DEBOUNCE_MS = 250L
     internal const val DEFAULT_FADE_DURATION_MS = 500L
-    internal const val BLUETOOTH_DISCONNECT_CONFIRM_DELAY_MS = 1200L
     internal const val AUTO_TRANSITION_EXTERNAL_PAUSE_GUARD_MS = 2_000L
     internal const val AUTO_TRANSITION_BUFFER_POSITION_GUARD_MS = 1_500L
     internal const val USB_EXCLUSIVE_FOCUS_PAUSE_GUARD_MS = 3_000L
@@ -460,6 +461,7 @@ object PlayerManager {
     internal val urlRefreshController = RefreshInFlightController<UrlRefreshOperation>()
     @Volatile
     internal var pendingSeekPositionMs: Long = C.TIME_UNSET
+    internal var playbackPositionGeneration: Long = 0L
     internal var lastUrlRefreshKey: String? = null
     internal var lastUrlRefreshAtMs: Long = 0L
     internal var currentMediaUrlResolvedAtMs: Long = 0L
@@ -529,9 +531,14 @@ object PlayerManager {
     val currentAudioDeviceFlow: StateFlow<AudioDevice?> = _currentAudioDevice
     internal var audioDeviceCallback: AudioDeviceCallback? = null
 
+    @Volatile
     internal var externalBluetoothLyricsSongKey: String? = null
+    @Volatile
     internal var externalBluetoothLyrics: List<LyricEntry> = emptyList()
+    @Volatile
     internal var floatingTranslatedLyrics: List<LyricEntry> = emptyList()
+    @Volatile
+    internal var floatingTranslationMatchesByIndex: Map<Int, LyricEntry> = emptyMap()
     internal val _externalBluetoothLyricLineFlow = MutableStateFlow<String?>(null)
     val externalBluetoothLyricLineFlow: StateFlow<String?> = _externalBluetoothLyricLineFlow
     internal val _floatingTranslatedLyricLineFlow = MutableStateFlow<String?>(null)
@@ -1861,6 +1868,7 @@ object PlayerManager {
         estimateUsbExclusiveLoudness(
             systemVolumePercent = systemVolumePercent,
             playerVolume = playerVolume,
+            bitPerfect = usbExclusivePreferences.bitPerfect,
             uacVersion = metrics.uacVersion,
             outputSampleRate = metrics.sampleRate ?: nativeState.outputSampleRate,
             outputBitDepth = metrics.subslotBytes?.times(8),
@@ -1956,16 +1964,18 @@ object PlayerManager {
         val pendingJob = synchronized(playbackStatsPersistLock) {
             playbackStatsPersistJob
         }
-        if (pendingJob == null || pendingJob.isCompleted) return
+        val hasPendingRepositoryWrites = AppContainer.playbackStatsRepo.hasPendingWrites()
+        if ((pendingJob == null || pendingJob.isCompleted) && !hasPendingRepositoryWrites) return
         NPLogger.d(
             "NERI-PlayerManager",
             "drainPlaybackStatsPersistJobBlocking: reason=$reason"
         )
         moe.ouom.neriplayer.core.player.state.blockingIo {
-            pendingJob.join()
+            pendingJob?.join()
+            AppContainer.playbackStatsRepo.flushPendingWrites()
         }
         synchronized(playbackStatsPersistLock) {
-            if (playbackStatsPersistJob === pendingJob && pendingJob.isCompleted) {
+            if (playbackStatsPersistJob === pendingJob && pendingJob?.isCompleted == true) {
                 playbackStatsPersistJob = null
             }
         }
@@ -1991,7 +2001,9 @@ object PlayerManager {
                 playbackStatsTracker.onSongChanged(null)
             }
         }
-        val hasPendingWork = (pendingJob != null && !pendingJob.isCompleted)
+        val hasPendingWork =
+            (pendingJob != null && !pendingJob.isCompleted) ||
+                AppContainer.playbackStatsRepo.hasPendingWrites()
         if (!hasPendingWork && currentSnapshot == null) return
         if (currentSnapshot != null) {
             NPLogger.d(
@@ -2005,6 +2017,7 @@ object PlayerManager {
             if (currentSnapshot != null) {
                 recordPlaybackStatsSnapshot(currentSnapshot)
             }
+            AppContainer.playbackStatsRepo.flushPendingWrites()
         }
         synchronized(playbackStatsPersistLock) {
             if (playbackStatsPersistJob === pendingJob && pendingJob?.isCompleted == true) {

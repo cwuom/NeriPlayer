@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 private const val SAMPLE_RATE_MODE_KEY = "usb_exclusive_sample_rate_mode"
 private const val DEVICE_KEY = "usb_exclusive_device_key"
 private const val BIT_DEPTH_MODE_KEY = "usb_exclusive_bit_depth_mode"
+private const val BIT_PERFECT_KEY = "usb_exclusive_bit_perfect"
 private const val BUFFER_PROFILE_KEY = "usb_exclusive_buffer_profile"
 private const val UNSUPPORTED_FORMAT_POLICY_KEY = "usb_exclusive_unsupported_format_policy"
 private const val SAMPLE_RATE_COMPATIBILITY_KEY = "usb_exclusive_sample_rate_compatibility"
@@ -20,6 +21,7 @@ internal fun SharedPreferences.Editor.putUsbExclusivePreferences(
     return putString(SAMPLE_RATE_MODE_KEY, preferences.sampleRateMode.storageValue)
         .putString(DEVICE_KEY, preferences.selectedDeviceKey)
         .putString(BIT_DEPTH_MODE_KEY, preferences.bitDepthMode.storageValue)
+        .putBoolean(BIT_PERFECT_KEY, preferences.bitPerfect)
         .putString(BUFFER_PROFILE_KEY, preferences.bufferProfile.storageValue)
         .putString(
             UNSUPPORTED_FORMAT_POLICY_KEY,
@@ -50,6 +52,7 @@ internal fun SharedPreferences.readUsbExclusivePreferences(): UsbExclusivePrefer
             BIT_DEPTH_MODE_KEY,
             DEFAULT_USB_EXCLUSIVE_BIT_DEPTH_MODE
         ),
+        bitPerfect = getBoolean(BIT_PERFECT_KEY, DEFAULT_USB_EXCLUSIVE_BIT_PERFECT),
         bufferProfile = getString(
             BUFFER_PROFILE_KEY,
             DEFAULT_USB_EXCLUSIVE_BUFFER_PROFILE

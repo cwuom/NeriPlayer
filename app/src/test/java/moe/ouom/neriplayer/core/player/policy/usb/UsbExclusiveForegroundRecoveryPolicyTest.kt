@@ -53,7 +53,7 @@ class UsbExclusiveForegroundRecoveryPolicyTest {
     }
 
     @Test
-    fun `active native path restores a lost playback intent`() {
+    fun `active native path requests playback recovery only when transport is inactive`() {
         assertTrue(
             shouldRestoreUsbExclusiveForegroundPlaybackIntent(
                 action = UsbExclusiveForegroundRecoveryAction.PROBE_PROGRESS,

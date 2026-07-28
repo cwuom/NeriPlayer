@@ -8,6 +8,7 @@ internal data class RefreshRequestSemantics(
     val songKey: String,
     val requestGeneration: Long,
     val resumePositionMs: Long,
+    val positionGeneration: Long = 0L,
     val fallbackSeekPositionMs: Long?,
     val resumePlaybackAfterRefresh: Boolean,
     val allowFallback: Boolean,
@@ -172,6 +173,23 @@ internal fun shouldApplyRefreshResult(
     return ownerActive &&
         owner == current &&
         owner.requestGeneration == currentRequestGeneration
+}
+
+internal fun resolveRefreshedMediaStartPosition(
+    pendingSeekPositionMs: Long?,
+    requestedResumePositionMs: Long,
+    observedPlaybackPositionMs: Long,
+    requestedPositionGeneration: Long,
+    currentPositionGeneration: Long
+): Long {
+    pendingSeekPositionMs?.let { return it.coerceAtLeast(0L) }
+    val requestedPosition = requestedResumePositionMs.coerceAtLeast(0L)
+    val observedPosition = observedPlaybackPositionMs.coerceAtLeast(0L)
+    return if (requestedPositionGeneration == currentPositionGeneration) {
+        maxOf(requestedPosition, observedPosition)
+    } else {
+        observedPosition
+    }
 }
 
 internal fun resolveRefreshApplyAction(

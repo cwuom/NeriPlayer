@@ -1132,6 +1132,10 @@ class SettingsRepository(private val context: Context) {
         usbExclusiveSettingsStore.setBitDepthMode(mode)
     }
 
+    suspend fun setUsbExclusiveBitPerfect(enabled: Boolean) {
+        usbExclusiveSettingsStore.setBitPerfect(enabled)
+    }
+
     suspend fun setUsbExclusiveBufferProfile(profile: UsbExclusiveBufferProfile) {
         usbExclusiveSettingsStore.setBufferProfile(profile)
     }

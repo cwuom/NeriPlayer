@@ -929,6 +929,8 @@
     <string name="settings_usb_exclusive_bit_depth_auto_desc">Match the track and device</string>
     <string name="settings_usb_exclusive_bit_depth_fixed">%1$d-bit</string>
     <string name="settings_usb_exclusive_bit_depth_fixed_desc">Use %1$d-bit PCM</string>
+    <string name="settings_usb_exclusive_bit_perfect">Bit-perfect volume</string>
+    <string name="settings_usb_exclusive_bit_perfect_desc">Keep software gain at 0 dB and use the DAC hardware volume; system and app volume will not attenuate PCM</string>
     <string name="settings_usb_exclusive_buffer_profile">Buffer Profile</string>
     <string name="settings_usb_exclusive_buffer_low_latency">Low latency</string>
     <string name="settings_usb_exclusive_buffer_low_latency_desc">Faster response, less stable</string>
@@ -1494,6 +1496,7 @@
     <string name="listen_together_title">Listen Together</string>
     <string name="listen_together_worker_base_url">Worker Base URL</string>
     <string name="listen_together_nickname">Current Nickname</string>
+    <string name="listen_together_join_secret">Invite Secret</string>
     <string name="listen_together_user_uuid">Identity UUID</string>
     <string name="listen_together_reset_uuid">Reset Unique Identity</string>
     <string name="listen_together_reset_uuid_confirm">Resetting the unique identity will invalidate the old identity and replace it with a new one. Continue?</string>
@@ -1530,7 +1533,7 @@
     <string name="listen_together_leave_room">Leave</string>
     <string name="listen_together_copy_invite">Copy Invite</string>
     <string name="listen_together_invite_copied">Invite copied</string>
-    <string name="listen_together_invite_share_text">%1$s invites you to join room %2$s in NeriPlayer. Open the app after copying this message, or use the link below.</string>
+    <string name="listen_together_invite_share_text">%1$s invites you to join room %2$s in NeriPlayer. Tap the link below to open the app and join.</string>
     <string name="listen_together_creating_room">Creating room</string>
     <string name="listen_together_joining_room">Joining room</string>
     <string name="listen_together_refreshing_room_state">Refreshing room state</string>
