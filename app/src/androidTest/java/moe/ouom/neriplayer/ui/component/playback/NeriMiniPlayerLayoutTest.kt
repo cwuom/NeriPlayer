@@ -67,6 +67,53 @@ class NeriMiniPlayerLayoutTest {
     }
 
     @Test
+    fun miniPlayerUsesSymmetricHorizontalInsets() {
+        composeRule.setContent {
+            MaterialTheme(
+                colorScheme = lightColorScheme(
+                    background = Color.Red,
+                    secondaryContainer = Color.Blue
+                )
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(TestWidth, NeriMiniPlayerDefaults.Height)
+                        .background(Color.Red)
+                        .testTag(RootTag)
+                ) {
+                    NeriMiniPlayer(
+                        title = "Song",
+                        artist = "Artist",
+                        coverUrl = null,
+                        isPlaying = false,
+                        onPlayPause = {},
+                        onPrevious = {},
+                        onNext = {},
+                        onExpand = {},
+                        enableBlur = false
+                    )
+                }
+            }
+        }
+
+        val image = composeRule.onNodeWithTag(RootTag).captureToImage()
+        val pixels = image.toPixelMap()
+        val centerY = image.height / 2
+        val surfacePixels = (0 until image.width).filter { x ->
+            val pixel = pixels[x, centerY]
+            pixel.blue > 0.8f && pixel.red < 0.2f
+        }
+
+        assertTrue("MiniPlayer surface was not rendered", surfacePixels.isNotEmpty())
+        val leftInset = surfacePixels.first()
+        val rightInset = image.width - surfacePixels.last() - 1
+        assertTrue(
+            "MiniPlayer horizontal insets differ: left=$leftInset, right=$rightInset",
+            kotlin.math.abs(leftInset - rightInset) <= 1
+        )
+    }
+
+    @Test
     fun miniPlayerKeepsSquareBottomCornersForBottomBarConnection() {
         composeRule.setContent {
             MaterialTheme(
@@ -113,6 +160,7 @@ class NeriMiniPlayerLayoutTest {
 
     private companion object {
         const val MiniPlayerTag = "mini_player"
+        const val RootTag = "mini_player_root"
         val TestWidth = 240.dp
     }
 }

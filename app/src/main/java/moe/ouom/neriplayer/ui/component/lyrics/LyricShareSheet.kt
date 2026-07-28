@@ -89,12 +89,14 @@ import java.io.File
 import kotlin.math.roundToInt
 import android.graphics.Color as AndroidColor
 
-private const val MaxLyricShareCharacters = 150
 private const val LyricShareCardSizePx = 1080
 private const val LyricShareCardCacheDir = "lyric_share_cards"
 private const val LyricShareCardBrand = "NeriPlayer"
 private const val LyricShareCardCacheMaxFiles = 8
 private const val LyricShareCardCacheMinAgeMs = 5 * 60 * 1000L
+private const val LyricShareCardPreferredTextSizePx = 66f
+private const val LyricShareCardMinimumTextSizePx = 44f
+private const val LyricShareCardTextSizeStepPx = 4f
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -169,8 +171,7 @@ fun LyricShareSheet(
                 title = stringResource(R.string.lyric_share_selected_lines, selectedLines.size),
                 subtitle = stringResource(
                     R.string.lyric_share_character_count,
-                    selectedCharCount,
-                    MaxLyricShareCharacters
+                    selectedCharCount
                 )
             )
 
@@ -195,22 +196,9 @@ fun LyricShareSheet(
                         onToggle = {
                             val nextKeys = toggleShareLine(
                                 currentKeys = selectedKeys,
-                                toggledKey = key,
-                                line = line,
-                                shareableLyrics = shareableLyrics
+                                toggledKey = key
                             )
-                            if (nextKeys == selectedKeys && !selected) {
-                                Toast.makeText(
-                                    context,
-                                    context.getString(
-                                        R.string.lyric_share_character_limit,
-                                        MaxLyricShareCharacters
-                                    ),
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            } else {
-                                selectedKeys = nextKeys
-                            }
+                            selectedKeys = nextKeys
                         }
                     )
                 }
@@ -406,26 +394,14 @@ private fun LyricShareActions(
     }
 }
 
-private fun toggleShareLine(
+internal fun toggleShareLine(
     currentKeys: Set<String>,
-    toggledKey: String,
-    line: LyricEntry,
-    shareableLyrics: List<LyricEntry>
+    toggledKey: String
 ): Set<String> {
     if (toggledKey in currentKeys) {
         return if (currentKeys.size > 1) currentKeys - toggledKey else currentKeys
     }
-
-    val currentText = shareableLyrics
-        .filterIndexed { index, item -> shareLineKey(index, item) in currentKeys }
-        .joinToString(separator = "\n") { it.text }
-    val extraSeparator = if (currentText.isBlank()) 0 else 1
-    val nextCharCount = currentText.length + extraSeparator + line.text.length
-    return if (nextCharCount <= MaxLyricShareCharacters) {
-        currentKeys + toggledKey
-    } else {
-        currentKeys
-    }
+    return currentKeys + toggledKey
 }
 
 private fun resolveInitialShareLineKey(
@@ -622,36 +598,83 @@ private fun buildLyricCardLayout(
     width: Int,
     maxHeight: Int
 ): StaticLayout {
-    var textSize = 66f
-    while (textSize >= 44f) {
-        val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = AndroidColor.WHITE
-            this.textSize = textSize
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        }
+    var textSize = LyricShareCardPreferredTextSizePx
+    var truncatedLayout: StaticLayout? = null
+    while (textSize >= LyricShareCardMinimumTextSizePx) {
+        val lineSpacingExtra = lyricShareCardLineSpacing(textSize)
+        val layout = buildLyricCardLayoutWithinHeight(
+            text = text,
+            paint = lyricShareCardTextPaint(textSize),
+            width = width,
+            maxHeight = maxHeight,
+            lineSpacingExtra = lineSpacingExtra
+        )
+        if (!layout.isEllipsized()) return layout
+        truncatedLayout = layout
+        textSize -= LyricShareCardTextSizeStepPx
+    }
+    return checkNotNull(truncatedLayout)
+}
+
+private fun lyricShareCardTextPaint(textSize: Float): TextPaint {
+    return TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = AndroidColor.WHITE
+        this.textSize = textSize
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+    }
+}
+
+private fun lyricShareCardLineSpacing(textSize: Float): Float {
+    return if (textSize > LyricShareCardMinimumTextSizePx) 16f else 12f
+}
+
+private fun buildLyricCardLayoutWithinHeight(
+    text: String,
+    paint: TextPaint,
+    width: Int,
+    maxHeight: Int,
+    lineSpacingExtra: Float
+): StaticLayout {
+    var maxLines = lyricShareCardMaxLinesForHeight(
+        maxHeight = maxHeight,
+        lineHeight = paint.fontMetrics.descent - paint.fontMetrics.ascent,
+        lineSpacingExtra = lineSpacingExtra
+    )
+    while (maxLines > 1) {
         val layout = buildStaticLayout(
             text = text,
             paint = paint,
             width = width,
-            maxLines = 5,
-            lineSpacingExtra = 16f
+            maxLines = maxLines,
+            lineSpacingExtra = lineSpacingExtra
         )
         if (layout.height <= maxHeight) return layout
-        textSize -= 4f
-    }
-
-    val fallbackPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = AndroidColor.WHITE
-        this.textSize = 44f
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        maxLines -= 1
     }
     return buildStaticLayout(
         text = text,
-        paint = fallbackPaint,
+        paint = paint,
         width = width,
-        maxLines = 5,
-        lineSpacingExtra = 12f
+        maxLines = 1,
+        lineSpacingExtra = lineSpacingExtra
     )
+}
+
+internal fun lyricShareCardMaxLinesForHeight(
+    maxHeight: Int,
+    lineHeight: Float,
+    lineSpacingExtra: Float
+): Int {
+    require(maxHeight > 0) { "Maximum lyric card height must be positive" }
+    require(lineHeight > 0f) { "Lyric card line height must be positive" }
+    require(lineSpacingExtra >= 0f) { "Lyric card line spacing must not be negative" }
+    return ((maxHeight + lineSpacingExtra) / (lineHeight + lineSpacingExtra))
+        .toInt()
+        .coerceAtLeast(1)
+}
+
+private fun StaticLayout.isEllipsized(): Boolean {
+    return lineCount > 0 && getEllipsisCount(lineCount - 1) > 0
 }
 
 private fun buildStaticLayout(

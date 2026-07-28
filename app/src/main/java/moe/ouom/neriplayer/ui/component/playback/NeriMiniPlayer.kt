@@ -132,7 +132,7 @@ fun NeriMiniPlayer(
         modifier = modifier
             .fillMaxWidth()
             .height(NeriMiniPlayerDefaults.Height)
-            .padding(start = 16.dp, end = 8.dp)
+            .padding(horizontal = 8.dp)
             .clip(shape)
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(

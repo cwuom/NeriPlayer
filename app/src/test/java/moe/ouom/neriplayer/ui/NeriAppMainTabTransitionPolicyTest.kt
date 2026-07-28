@@ -11,6 +11,35 @@ import org.junit.Test
 
 class NeriAppMainTabTransitionPolicyTest {
     @Test
+    fun `startup waits for the persisted default route before selecting a tab`() {
+        assertNull(
+            resolveMainStartDestination(
+                preferredRoute = null,
+                showHomeTab = true,
+                devModeEnabled = false
+            )
+        )
+    }
+
+    @Test
+    fun `persisted non home routes are valid startup destinations`() {
+        listOf(
+            Destinations.Explore.route,
+            Destinations.Library.route,
+            Destinations.Settings.route
+        ).forEach { route ->
+            assertEquals(
+                route,
+                resolveMainStartDestination(
+                    preferredRoute = route,
+                    showHomeTab = true,
+                    devModeEnabled = false
+                )
+            )
+        }
+    }
+
+    @Test
     fun `later tabs enter from the right`() {
         assertEquals(
             1,

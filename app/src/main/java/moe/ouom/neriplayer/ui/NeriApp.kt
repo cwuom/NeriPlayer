@@ -708,12 +708,12 @@ private fun debugNavigationDurationMs(direction: Int): Int {
     }
 }
 
-private fun resolveMainStartDestination(
-    preferredRoute: String,
+internal fun resolveMainStartDestination(
+    preferredRoute: String?,
     showHomeTab: Boolean,
     devModeEnabled: Boolean
-): String {
-    return when (preferredRoute) {
+): String? {
+    return when (preferredRoute ?: return null) {
         Destinations.Home.route -> if (showHomeTab) Destinations.Home.route else Destinations.Explore.route
         Destinations.Explore.route -> Destinations.Explore.route
         Destinations.Library.route -> Destinations.Library.route
@@ -1357,7 +1357,8 @@ private fun NeriAppContent(
     val showNowPlayingProgressAudioCodec by repo.nowPlayingProgressShowAudioCodecFlow.collectAsStateWithLifecycle(initialValue = true)
     val showNowPlayingProgressAudioSpec by repo.nowPlayingProgressShowAudioSpecFlow.collectAsStateWithLifecycle(initialValue = true)
     val showLyricTranslation by repo.showLyricTranslationFlow.collectAsStateWithLifecycle(initialValue = true)
-    val defaultStartDestination by repo.defaultStartDestinationFlow.collectAsStateWithLifecycle(initialValue = Destinations.Home.route)
+    val defaultStartDestination: String? by repo.defaultStartDestinationFlow
+        .collectAsStateWithLifecycle(initialValue = null)
     val showHomeContinueCard by repo.homeCardContinueFlow.collectAsStateWithLifecycle(initialValue = true)
     val showHomeTrendingCard by repo.homeCardTrendingFlow.collectAsStateWithLifecycle(initialValue = true)
     val showHomeRadarCard by repo.homeCardRadarFlow.collectAsStateWithLifecycle(initialValue = true)
@@ -1410,6 +1411,11 @@ private fun NeriAppContent(
         initialValue = startupPlaybackPreferences.maxCacheSizeBytes
     )
     val homeUsageEntries by AppContainer.playlistUsageRepo.frequentPlaylistsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val showHomeTab =
+        (showHomeContinueCard && homeUsageEntries.isNotEmpty()) ||
+            showHomeTrendingCard ||
+            showHomeRadarCard ||
+            showHomeRecommendedCard
     var pendingFollowSystemDark by remember { mutableStateOf<Boolean?>(null) }
     var pendingForceDark by remember { mutableStateOf<Boolean?>(null) }
     var themeRevealSnapshot by remember { mutableStateOf<ImageBitmap?>(null) }
@@ -1648,6 +1654,20 @@ private fun NeriAppContent(
         mode = themeMode,
         systemDark = systemDark
     )
+    val initialMainStartDestination = resolveMainStartDestination(
+        preferredRoute = defaultStartDestination,
+        showHomeTab = showHomeTab,
+        devModeEnabled = devModeEnabled
+    ) ?: run {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(if (isDark) Color(0xFF101010) else Color(0xFFF4EFE7))
+        )
+        return
+    }
+    val currentDefaultStartDestination =
+        defaultStartDestination ?: initialMainStartDestination
     val backgroundGlassBackdrop = rememberAdvancedGlassBackdrop()
     val contentGlassBackdrop = rememberAdvancedGlassBackdrop()
     val advancedGlassController = remember(
@@ -1936,6 +1956,8 @@ private fun NeriAppContent(
             colorSpec = themeColorSpec,
             systemDark = systemDark
         ) {
+            // changing NavHost's start destination rebuilds its graph and clears the live stack
+            val navHostStartDestination = remember { initialMainStartDestination }
             val navController = rememberNavController()
             val backEntry by navController.currentBackStackEntryAsState()
             // Keep every NavHost entry that is still participating in the transition active
@@ -2020,24 +2042,17 @@ private fun NeriAppContent(
                     alpha = 1f
                 )
             }
-            val showHomeTab =
-                (showHomeContinueCard && homeUsageEntries.isNotEmpty()) ||
-                    showHomeTrendingCard ||
-                    showHomeRadarCard ||
-                    showHomeRecommendedCard
             val effectiveStartDestination = remember(
-                defaultStartDestination,
+                currentDefaultStartDestination,
                 showHomeTab,
                 devModeEnabled
             ) {
                 resolveMainStartDestination(
-                    preferredRoute = defaultStartDestination,
+                    preferredRoute = currentDefaultStartDestination,
                     showHomeTab = showHomeTab,
                     devModeEnabled = devModeEnabled
-                )
+                ) ?: navHostStartDestination
             }
-            // Changing NavHost's start destination rebuilds its graph and clears the live stack
-            val navHostStartDestination = remember { effectiveStartDestination }
             var selectedMainTabRoute by rememberSaveable(navHostStartDestination) {
                 mutableStateOf(navHostStartDestination)
             }
@@ -2478,7 +2493,7 @@ private fun NeriAppContent(
                             pendingBackgroundImageAlpha = alpha
                             scope.launch { repo.setBackgroundImageAlpha(alpha) }
                         },
-                        defaultStartDestination = defaultStartDestination,
+                        defaultStartDestination = currentDefaultStartDestination,
                         onDefaultStartDestinationChange = { route ->
                             scope.launch { repo.setDefaultStartDestination(route) }
                         },
