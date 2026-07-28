@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.sync.model.SyncRecentPlay
 import moe.ouom.neriplayer.data.sync.model.SyncRecentPlayDeletion
 import moe.ouom.neriplayer.data.sync.model.SyncSong
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -22,6 +23,31 @@ class SyncDataChangeDetectorTest {
         val merged = syncData(recentPlays = mergedRecent)
 
         assertTrue(SyncDataChangeDetector.hasDataChanged(remote, merged))
+    }
+
+    @Test
+    fun `detects remembered position change in recent play`() {
+        val remote = syncData(recentPlays = listOf(recentPlay(1)))
+        val merged = remote.copy(
+            recentPlays = listOf(remote.recentPlays.single().copy(resumePositionMs = 75_000L))
+        )
+
+        assertTrue(SyncDataChangeDetector.hasDataChanged(remote, merged))
+    }
+
+    @Test
+    fun `sync serialization preserves remembered position`() {
+        val data = syncData(
+            recentPlays = listOf(recentPlay(1).copy(resumePositionMs = 75_000L))
+        )
+
+        listOf(false, true).forEach { useDataSaver ->
+            val decoded = SyncDataSerializer.deserialize(
+                SyncDataSerializer.serialize(data, useDataSaver)
+            )
+
+            assertEquals(75_000L, decoded.recentPlays.single().resumePositionMs)
+        }
     }
 
     @Test

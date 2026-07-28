@@ -78,6 +78,7 @@ internal object SyncDataChangeDetector {
             if (remoteRecent[i].song.identity() != mergedRecent[i].song.identity()) return true
             if (!sameSongMetadata(remoteRecent[i].song, mergedRecent[i].song)) return true
             if (remoteRecent[i].playedAt != mergedRecent[i].playedAt) return true
+            if (remoteRecent[i].resumePositionMs != mergedRecent[i].resumePositionMs) return true
         }
         return false
     }

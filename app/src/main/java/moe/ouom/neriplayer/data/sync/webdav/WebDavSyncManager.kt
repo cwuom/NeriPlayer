@@ -324,7 +324,8 @@ class WebDavSyncManager private constructor(context: Context) {
                         syncMetadataVersion = CURRENT_SYNC_METADATA_VERSION
                     ),
                     playedAt = playedEntry.playedAt,
-                    deviceId = getDeviceId()
+                    deviceId = getDeviceId(),
+                    resumePositionMs = playedEntry.resumePositionMs
                 )
             }
         val syncRecentPlayDeletions = storage.getRecentPlayDeletions()
@@ -659,7 +660,11 @@ class WebDavSyncManager private constructor(context: Context) {
     ): List<SyncRecentPlay> {
         val deletionByIdentity = deletions.associateBy { it.identity().stableKey() }
         return (local + remote)
-            .sortedByDescending { it.playedAt }
+            .sortedWith(
+                compareByDescending<SyncRecentPlay> { it.playedAt }
+                    .thenByDescending { it.resumePositionMs }
+                    .thenByDescending { it.deviceId }
+            )
             .distinctBy { it.song.identity().stableKey() }
             .filter { recentPlay ->
                 val deletion = deletionByIdentity[recentPlay.song.identity().stableKey()]
@@ -837,6 +842,7 @@ class WebDavSyncManager private constructor(context: Context) {
                     originalCoverUrl = syncPlay.song.originalCoverUrl,
                     originalLyric = syncPlay.song.originalLyric,
                     originalTranslatedLyric = syncPlay.song.originalTranslatedLyric,
+                    resumePositionMs = syncPlay.resumePositionMs,
                     playedAt = syncPlay.playedAt
                 )
             }
@@ -1073,9 +1079,9 @@ class WebDavSyncManager private constructor(context: Context) {
         val localizedContext = LanguageManager.applyLanguage(appContext)
         val useDataSaver = storage.isDataSaverMode()
         val content = SyncDataSerializer.serialize(data, useDataSaver)
-        // 省流传 Base64(GZIP(ProtoBuf)) 文本字节 (老端可读) ; 非省流传 UTF-8 JSON 字节
+        // 省流传原始 GZIP(ProtoBuf) 字节; 非省流传 UTF-8 JSON 字节
         val mediaType = if (useDataSaver) {
-            "text/plain; charset=utf-8"
+            "application/octet-stream"
         } else {
             "application/json; charset=utf-8"
         }

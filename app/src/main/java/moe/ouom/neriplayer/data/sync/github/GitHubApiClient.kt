@@ -36,7 +36,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
-import java.util.Base64
 
 /**
  * Token过期异常
@@ -59,7 +58,7 @@ class GitHubSyncInProgressException(message: String) : IOException(message)
 
 /**
  * GitHub API客户端
- * 使用GitHub Contents API进行文件读写
+ * 使用 GitHub API 管理仓库与二进制同步载体
  */
 @Suppress("unused")
 class GitHubApiClient(
@@ -74,26 +73,7 @@ class GitHubApiClient(
     companion object {
         private const val TAG = "GitHubApiClient"
         private const val GITHUB_API_BASE = "https://api.github.com"
-        private const val MAX_SYNC_FILE_BYTES = 12 * 1024 * 1024
     }
-
-    /** GitHub API响应 - 文件内容 */
-    data class GitHubFileResponse(
-        val name: String,
-        val path: String,
-        val sha: String,
-        val size: Int,
-        val content: String,
-        val encoding: String
-    )
-
-    /** GitHub API请求 - 创建/更新文件 */
-    data class GitHubFileRequest(
-        val message: String,
-        val content: String,
-        val sha: String? = null,
-        val branch: String = "main"
-    )
 
     /** GitHub API响应 - 仓库信息 */
     data class GitHubRepoResponse(
@@ -210,141 +190,18 @@ class GitHubApiClient(
     }
 
     /**
-     * 读取文件内容
+     * 读取同步正文; 优先读取二进制 Release Asset, 不存在清单时只读兼容旧文件
      */
-    suspend fun getFileContent(owner: String, repo: String, path: String): Result<Pair<ByteArray, String>> = withContext(Dispatchers.IO) {
-        try {
-            val request = Request.Builder()
-                .url("$GITHUB_API_BASE/repos/$owner/$repo/contents/$path")
-                .header("Authorization", "Bearer $token")
-                .header("Accept", "application/vnd.github+json")
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string()
-                        ?: return@withContext Result.failure(IOException("Empty response"))
-                    val fileResponse = gson.fromJson(body, GitHubFileResponse::class.java)
-                    // 打印实际体积, 便于确认备份大小与是否触发 raw 通道
-                    NPLogger.d(
-                        TAG,
-                        "getFileContent path=$path size=${fileResponse.size} " +
-                            "inlineContentEmpty=${fileResponse.content.isEmpty()} encoding=${fileResponse.encoding}"
-                    )
-                    if (fileResponse.size > MAX_SYNC_FILE_BYTES) {
-                        return@withContext Result.failure(IOException("Remote backup file is too large"))
-                    }
-
-                    // GitHub Contents API 对 >1MB 文件返回空 content 且 encoding=none
-                    // 需改走 raw 通道读取原始字节; sha 仍取自当前 JSON 响应
-                    if (fileResponse.content.isEmpty() && fileResponse.size > 0) {
-                        val rawContent = fetchRawFileContent(owner, repo, path)
-                            ?: return@withContext Result.failure(
-                                IOException("Failed to read large remote backup via raw channel: $path")
-                            )
-                        return@withContext Result.success(Pair(rawContent, fileResponse.sha))
-                    }
-
-                    // 单次 Base64 解码得到原始文件字节 (GitHub 内联 content 为带换行的 base64, MIME 解码器可直接处理)
-                    val decodedBytes = Base64.getMimeDecoder().decode(fileResponse.content)
-                    return@withContext Result.success(Pair(decodedBytes, fileResponse.sha))
-                }
-                // 404 表示文件不存在, 返回空字节对; ">1MB content 为空"已在上方走 raw 通道, 二者不再混淆
-                if (response.code == 404) {
-                    return@withContext Result.success(Pair(ByteArray(0), ""))
-                }
-                Result.failure(IOException("Failed to get file: ${response.code}"))
-            }
-        } catch (e: Exception) {
-            NPLogger.e(TAG, "Get file content error", e)
-            Result.failure(e)
-        }
+    suspend fun getFileContent(owner: String, repo: String, path: String): Result<Pair<ByteArray, String>> {
+        return syncTransport().getFileContent(owner, repo, path, strict = false)
     }
 
-    suspend fun getFileContentStrict(owner: String, repo: String, path: String): Result<Pair<ByteArray, String>> = withContext(Dispatchers.IO) {
-        try {
-            val request = Request.Builder()
-                .url("$GITHUB_API_BASE/repos/$owner/$repo/contents/$path")
-                .header("Authorization", "Bearer $token")
-                .header("Accept", "application/vnd.github+json")
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string()
-                        ?: return@withContext Result.failure(IOException("Empty response"))
-                    val fileResponse = gson.fromJson(body, GitHubFileResponse::class.java)
-                    // 打印实际体积, 桌面端据此确认实际备份大小
-                    NPLogger.d(
-                        TAG,
-                        "getFileContentStrict path=$path size=${fileResponse.size} " +
-                            "inlineContentEmpty=${fileResponse.content.isEmpty()} encoding=${fileResponse.encoding}"
-                    )
-                    if (fileResponse.size > MAX_SYNC_FILE_BYTES) {
-                        return@withContext Result.failure(IOException("Remote backup file is too large"))
-                    }
-                    // >1MB 文件 content 为空, encoding=none, 改走 raw 通道; sha 仍取自 JSON 响应
-                    if (fileResponse.content.isEmpty() && fileResponse.size > 0) {
-                        val rawContent = fetchRawFileContent(owner, repo, path)
-                            ?: return@withContext Result.failure(
-                                IOException("Failed to read large remote backup via raw channel: $path")
-                            )
-                        return@withContext Result.success(rawContent to fileResponse.sha)
-                    }
-                    val decodedBytes = Base64.getMimeDecoder().decode(fileResponse.content)
-                    return@withContext Result.success(decodedBytes to fileResponse.sha)
-                }
-
-                if (response.code == 401) {
-                    return@withContext Result.failure(
-                        TokenExpiredException(appContext.getString(R.string.github_token_expired_message))
-                    )
-                }
-
-                if (response.code == 404) {
-                    return@withContext Result.failure(
-                        GitHubFileNotFoundException("Remote backup file not found: $path")
-                    )
-                }
-
-                val errorBody = response.body?.string()?.takeIf { it.isNotBlank() }
-                return@withContext Result.failure(
-                    GitHubApiException(
-                        statusCode = response.code,
-                        message = "Failed to get file: ${response.code}${errorBody?.let { " - $it" } ?: ""}"
-                    )
-                )
-            }
-        } catch (e: Exception) {
-            NPLogger.e(TAG, "Get file content strict error", e)
-            Result.failure(e)
-        }
+    suspend fun getFileContentStrict(owner: String, repo: String, path: String): Result<Pair<ByteArray, String>> {
+        return syncTransport().getFileContent(owner, repo, path, strict = true)
     }
 
     /**
-     * 通过 raw 媒体类型读取文件原始字节
-     * GitHub Contents API 对 >1MB 文件不再内联 base64 content (encoding=none)
-     * 必须用单独的 Accept: application/vnd.github.raw 请求获取原始内容 (raw 上限约 100MB)
-     * 该方法在 Dispatchers.IO 上下文内被调用, 直接执行阻塞请求
-     */
-    private fun fetchRawFileContent(owner: String, repo: String, path: String): ByteArray? {
-        val request = Request.Builder()
-            .url("$GITHUB_API_BASE/repos/$owner/$repo/contents/$path")
-            .header("Authorization", "Bearer $token")
-            .header("Accept", "application/vnd.github.raw")
-            .build()
-        return client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                NPLogger.e(TAG, "Raw content fetch failed for $path: ${response.code}")
-                null
-            } else {
-                response.body?.bytes()
-            }
-        }
-    }
-
-    /**
-     * 创建或更新文件
+     * 上传同步正文为 Release Asset, 再以 UTF-8 清单的 Git 提交原子发布版本
      */
     suspend fun updateFileContent(
         owner: String,
@@ -354,77 +211,11 @@ class GitHubApiClient(
         path: String,
         message: String = "Update backup data",
         branch: String? = null
-    ): Result<String> = withContext(Dispatchers.IO) {
-        try {
-            // 如果没有指定分支, 先获取仓库的默认分支
-            val targetBranch = branch ?: run {
-                val repoResult = checkRepository(owner, repo)
-                if (repoResult.isSuccess) {
-                    repoResult.getOrNull()?.defaultBranch ?: "main"
-                } else {
-                    return@withContext Result.failure(
-                        repoResult.exceptionOrNull() ?: IOException("Failed to resolve default branch")
-                    )
-                }
-            }
+    ): Result<String> {
+        return syncTransport().updateFileContent(owner, repo, content, sha, path, message, branch)
+    }
 
-            // 对原始字节做"一次"Base64 (Contents API 硬性要求) , 不再叠加历史的第二层
-            val encodedContent = Base64.getEncoder().encodeToString(content)
-
-            // 使用JSONObject构建请求体, 确保sha为null或空字符串时不包含该字段
-            val jsonObject = org.json.JSONObject().apply {
-                put("message", message)
-                put("content", encodedContent)
-                put("branch", targetBranch)
-                if (!sha.isNullOrEmpty()) {
-                    put("sha", sha)
-                }
-            }
-            val json = jsonObject.toString()
-
-            val request = Request.Builder()
-                .url("$GITHUB_API_BASE/repos/$owner/$repo/contents/$path")
-                .header("Authorization", "Bearer $token")
-                .header("Accept", "application/vnd.github+json")
-                .put(json.toRequestBody("application/json".toMediaType()))
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string()
-                        ?: return@withContext Result.failure(IOException("Empty response"))
-                    val result = gson.fromJson(body, Map::class.java)
-                    val newSha = (result["content"] as? Map<*, *>)?.get("sha") as? String ?: ""
-                    return@withContext Result.success(newSha)
-                }
-                if (response.code == 401) {
-                    return@withContext Result.failure(
-                        TokenExpiredException(appContext.getString(R.string.github_token_expired_message))
-                    )
-                }
-                val errorBody = response.body?.string() ?: "Unknown error"
-                val error = when {
-                    response.code == 409 -> {
-                        GitHubContentConflictException(
-                            statusCode = response.code,
-                            message = "Failed to update file: ${response.code} - $errorBody"
-                        )
-                    }
-
-                    response.code == 422 && errorBody.contains("sha", ignoreCase = true) -> {
-                        GitHubContentConflictException(
-                            statusCode = response.code,
-                            message = "Failed to update file: ${response.code} - $errorBody"
-                        )
-                    }
-
-                    else -> IOException("Failed to update file: ${response.code} - $errorBody")
-                }
-                Result.failure(error)
-            }
-        } catch (e: Exception) {
-            NPLogger.e(TAG, "Update file content error", e)
-            Result.failure(e)
-        }
+    private fun syncTransport(): GitHubReleaseSyncTransport {
+        return GitHubReleaseSyncTransport(appContext, client, token, GITHUB_API_BASE)
     }
 }

@@ -332,7 +332,8 @@ class GitHubSyncManager private constructor(context: Context) {
                         syncMetadataVersion = CURRENT_SYNC_METADATA_VERSION
                     ),
                     playedAt = playedEntry.playedAt,
-                    deviceId = getDeviceId()
+                    deviceId = getDeviceId(),
+                    resumePositionMs = playedEntry.resumePositionMs
                 )
             }
         val syncRecentPlayDeletions = storage.getRecentPlayDeletions()
@@ -667,7 +668,11 @@ class GitHubSyncManager private constructor(context: Context) {
     ): List<SyncRecentPlay> {
         val deletionByIdentity = deletions.associateBy { it.identity().stableKey() }
         return (local + remote)
-            .sortedByDescending { it.playedAt }
+            .sortedWith(
+                compareByDescending<SyncRecentPlay> { it.playedAt }
+                    .thenByDescending { it.resumePositionMs }
+                    .thenByDescending { it.deviceId }
+            )
             .distinctBy { it.song.identity().stableKey() }
             .filter { recentPlay ->
                 val deletion = deletionByIdentity[recentPlay.song.identity().stableKey()]
@@ -845,6 +850,7 @@ class GitHubSyncManager private constructor(context: Context) {
                     originalCoverUrl = syncPlay.song.originalCoverUrl,
                     originalLyric = syncPlay.song.originalLyric,
                     originalTranslatedLyric = syncPlay.song.originalTranslatedLyric,
+                    resumePositionMs = syncPlay.resumePositionMs,
                     playedAt = syncPlay.playedAt
                 )
             }
@@ -1035,8 +1041,8 @@ class GitHubSyncManager private constructor(context: Context) {
         }
 
         val (remoteContent, remoteSha) = remoteResult.getOrThrow()
-        // 至此 size > 0 且内联 content 为空的 >1MB 文件已在 GitHubApiClient 走 raw 通道读回
-        // 因此此处 content 为空只可能是 size == 0 的真空文件, 按无效备份处理
+        // 新格式的正文来自 Release Asset, 清单或资产损坏都不会被当作空快照处理
+        // 因此此处 content 为空只可能是无效远端文件, 必须中止同步避免覆盖本地数据
         if (remoteContent.isEmpty()) {
             return Result.failure(
                 IOException(LanguageManager.applyLanguage(appContext).getString(R.string.github_backup_file_invalid))
@@ -1072,7 +1078,7 @@ class GitHubSyncManager private constructor(context: Context) {
         val playlistsAdded = localData.playlists.count { !it.isDeleted }
         val playlistsDeleted = localData.playlists.count(SyncPlaylist::isDeleted)
         val songsAdded = localData.playlists.sumOf { playlist -> playlist.songs.size }
-        // 首次同步同样走收尾 (顺序与桌面一致: 先用"未裁剪"桶抬升, 再裁剪) , 避免首个备份文件就撑过 GitHub 1MB 内联上限
+        // 首次同步同样走收尾 (顺序与桌面一致: 先用"未裁剪"桶抬升, 再裁剪) , 避免初始快照突破同步正文安全上限
         val finalizedInitialStats = SyncPlaybackStatsMergePolicy.finalizeMergedStats(
             mergedStats = localData.playbackStats,
             mergedBuckets = localData.playbackStatBuckets

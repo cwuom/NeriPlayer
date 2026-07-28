@@ -46,12 +46,9 @@ import java.util.zip.GZIPOutputStream
 /**
  * 同步数据序列化工具
  *
- * 写路径 (迁移期保活) : 产物与旧客户端逐字节兼容, 保证老端仍能读新端写的备份
+ * 写路径使用原始字节, 避免 Base64 扩容并让二进制传输保持二进制:
  * - 非省流 (backup.json) : UTF-8 编码的 JSON 文本字节
- * - 省流 (backup.bin) : Base64(GZIP(ProtoBuf)) 文本字节 (老端可读的历史格式)
- *
- * 写侧暂不切 raw GZIP: 旧端把 backup.bin 当 UTF-8 文本再 Base64 解码, raw 二进制必抛异常
- * 导致旧端 fail-stop 断同步; 等全端更新后再由后续开关切到 write-raw
+ * - 省流 (backup.bin) : 原始 GZIP(ProtoBuf) 字节
  *
  * 读路径按内容自动识别 (read-both) , 三种在野格式都不失败:
  * - 以 GZIP 魔数 0x1F 0x8B 开头 -> 直接解压 -> ProtoBuf (为将来 write-raw 预留)
@@ -77,15 +74,26 @@ object SyncDataSerializer {
      * 序列化数据为上传字节 (同时用于体积统计)
      * @param data 同步数据
      * @param useDataSaver 是否使用省流模式
-     * @return useDataSaver=true 时为 Base64(GZIP(ProtoBuf)) 文本字节 (老端可读) ; 否则为 UTF-8 JSON 字节
+     * @return useDataSaver=true 时为原始 GZIP(ProtoBuf) 字节; 否则为 UTF-8 JSON 字节
      */
     fun serialize(data: SyncData, useDataSaver: Boolean): ByteArray {
-        return if (useDataSaver) {
-            // 迁移期保活: 写老端可读的 Base64 文本, 而非原始 GZIP 字节
-            val rawGzip = compress(protoBuf.encodeToByteArray(data))
-            Base64.getEncoder().encodeToString(rawGzip).toByteArray(Charsets.UTF_8)
+        val content = if (useDataSaver) {
+            val protoBytes = protoBuf.encodeToByteArray(data)
+            require(protoBytes.size <= MAX_DECOMPRESSED_BYTES) {
+                "Sync data is too large to upload"
+            }
+            compress(protoBytes)
         } else {
             serializeJson(data).toByteArray(Charsets.UTF_8)
+        }
+        ensureUploadContentSize(content, useDataSaver)
+        return content
+    }
+
+    private fun ensureUploadContentSize(content: ByteArray, useDataSaver: Boolean) {
+        val maxBytes = if (useDataSaver) MAX_COMPRESSED_BYTES else MAX_JSON_BYTES
+        require(content.size <= maxBytes) {
+            "Sync data is too large to upload"
         }
     }
 

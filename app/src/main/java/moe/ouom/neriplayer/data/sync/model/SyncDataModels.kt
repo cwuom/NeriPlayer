@@ -317,7 +317,8 @@ data class SyncRecentPlay(
     @ProtoNumber(1) val songId: Long = 0L,
     @ProtoNumber(2) val song: SyncSong = SyncSong(),
     @ProtoNumber(3) val playedAt: Long = 0L,
-    @ProtoNumber(4) val deviceId: String = ""
+    @ProtoNumber(4) val deviceId: String = "",
+    @ProtoNumber(5) val resumePositionMs: Long = 0L
 )
 
 @Serializable
