@@ -249,9 +249,12 @@ Current positioning:
   position drift by threshold, and reloads the authoritative stream after an
   asynchronous shared link arrives so pending local startup cannot override
   the room's pause/play command.
-  Invites carry the room secret needed for a first join, while member secrets are
-  kept out of public room state. Durable Objects persist room state while WebSocket
-  keeps active members in sync.
+  Invites must carry the room secret needed for a first join, while member secrets
+  are kept out of public room state. Local tracks cannot create or replace a room
+  track. When stream sharing is enabled, Durable Objects cache the controller's
+  current URL so listeners can retrieve it without waiting for another controller
+  response. Durable Objects persist room state while WebSocket keeps active members
+  in sync.
 
 ---
 
@@ -432,9 +435,12 @@ For release build and signing details, see
   create or join rooms, sync playback state over WebSocket, support host/listener
   permissions, member-control toggles, auto-pause on member changes,
   repeat/shuffle mode sync, optional sharing of controller-resolved stream URLs,
-  invite links, deep links, custom server URLs, and host-offline detection. Invites carry
-  a room join secret, member reconnects use member secrets, outdated client control events
-  are filtered, and `REQUEST_SET_TRACK` can only choose a song already in the current queue.
+  invite links, deep links, custom server URLs, and host-offline detection. A first join
+  requires the invite secret and member reconnects use member secrets. Local tracks cannot
+  create a room or replace its current track. When sharing is enabled, the Worker caches and
+  exposes only the current controller URL; disabling sharing clears that cache. Outdated client
+  control events are filtered, and `REQUEST_SET_TRACK` can only choose a song already in the
+  current queue.
 - 🌈 **Personalization and themes**:
   auto/light/dark mode, dynamic color, seed colors, theme styles, UI scaling,
   custom background image, haptic feedback, lyric font size, lyric blur,
@@ -644,8 +650,9 @@ For release build and signing details, see
   most merge policies currently remain under `sync/github/`.
 - GitHub/WebDAV sync uses a locally generated UUID as the device identifier,
   not `ANDROID_ID`.
-- GitHub large-file reads prefer the raw content endpoint to avoid the inline
-  Contents API size limit.
+- GitHub sync payloads use raw binary private Draft Release Assets, while the
+  repository only commits a small UTF-8 manifest. This avoids both the Contents
+  API Base64 body and its 1 MB inline-content limit.
 
 ### Downloads, local import, and backups
 
@@ -725,6 +732,8 @@ Additional notes:
 
 - Room IDs use a 6-character readable charset, and nicknames must be 1-24
   characters long using Chinese characters, letters, or digits
+- A first join requires the invite secret, and local tracks cannot create a
+  Listen Together room
 - For full protocol, event, and deployment details, see
   [np-submodule/NeriPlayer-LTW/README.md](./np-submodule/NeriPlayer-LTW/README.md)
 
@@ -761,12 +770,15 @@ Current sync targets:
   fields, filter malformed records without resolvable track identity or valid
   deletion time, and keep songs with missing `addedAt` behind dated songs so bad
   snapshots cannot jump ahead in playlists.
-- 🪶 **Data Saver**: `backup.bin` currently writes legacy-compatible
-  `Base64(GZIP(ProtoBuf))` text. The reader also accepts raw GZIP, JSON, and legacy
-  Base64 formats; JSON is used when Data Saver is disabled.
-- GitHub large-file reads prefer the raw content endpoint. WebDAV servers without
+- 🪶 **Data Saver**: `backup.bin` writes raw `GZIP(ProtoBuf)` bytes. The reader still
+  accepts JSON and legacy Base64 formats; JSON is used when Data Saver is disabled.
+- GitHub sync uploads payloads as binary Release Assets and coordinates versions with a
+  UTF-8 manifest commit, avoiding the Contents API 1 MB inline-content limit. WebDAV servers without
   ETag/Last-Modified allow an unconditional write only when the remote SHA-256
   fingerprint is unchanged; otherwise the sync reports a concurrency conflict.
+- Upgrade every sync client for a repository before its first GitHub Release Asset
+  sync. Older clients that only understand Contents API `backup.*` files cannot be
+  mixed with this protocol.
 - 📦 **Remote format**: a GitHub repository is not end-to-end encryption.
   You are responsible for protecting remote files.
 - 🚫 **Sync boundary**: audio caches, downloaded files, local media files, cookies,
@@ -932,8 +944,8 @@ We will keep improving the project over time.
 - QQ Music is only a playback metadata/lyrics completion source.
 - GitHub/WebDAV sync is not end-to-end encrypted. Full config export files may
   contain auth data and must be protected by the user.
-- Data Saver still writes legacy-compatible Base64 text for mixed-version clients;
-  switching writes to raw GZIP requires every sync peer to support read-both first.
+- Data Saver writes raw GZIP bytes. New Android and Desktop builds retain legacy Base64
+  reads during migration, while new GitHub uploads use binary Release Assets.
 
 ---
 
