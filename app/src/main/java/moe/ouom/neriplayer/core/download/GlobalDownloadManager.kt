@@ -56,6 +56,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.core.download.policy.TagPostProcessingAction
 import moe.ouom.neriplayer.core.download.policy.tagPostProcessingAction
+import moe.ouom.neriplayer.core.download.policy.shouldPreserveCompletedAudioAfterFinalizationFailure
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
@@ -856,12 +857,23 @@ object GlobalDownloadManager {
             ) {
                 return
             }
-            rollbackFailedCompletedDownloadFinalization(
-                context = context,
-                song = song,
-                storedAudio = resolvedStoredAudio,
-                sidecarReferences = finalization.sidecarReferences
+            val audioStillExists = ManagedDownloadStorage.exists(
+                context.applicationContext,
+                resolvedStoredAudio.reference
             )
+            if (shouldPreserveCompletedAudioAfterFinalizationFailure(audioStillExists, cancelled = false)) {
+                NPLogger.w(
+                    TAG,
+                    "下载元信息收尾失败但音频已完整落盘，保留文件等待后续重试: ${song.name}"
+                )
+            } else {
+                rollbackFailedCompletedDownloadFinalization(
+                    context = context,
+                    song = song,
+                    storedAudio = resolvedStoredAudio,
+                    sidecarReferences = finalization.sidecarReferences
+                )
+            }
             updateTaskStatus(
                 songKey,
                 DownloadStatus.FAILED,

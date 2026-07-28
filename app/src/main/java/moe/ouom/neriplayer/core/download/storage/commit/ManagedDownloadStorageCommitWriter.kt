@@ -291,15 +291,13 @@ internal class ManagedDownloadStorageCommitWriter(
             return target
         }
         val targetFile = File(root.dir, target.entry.name)
-        var copiedBytes = 0L
-        targetFile.outputStream().use { output ->
-            copiedBytes = ManagedDownloadCommitIo.copyStreamWithProgress(
-                input = input,
-                output = output,
-                bufferSizeBytes = STREAM_COPY_BUFFER_SIZE_BYTES,
-                onProgress = onProgress
-            )
-        }
+        val copiedBytes = ManagedDownloadCommitIo.copyFileAtomically(
+            parent = root.dir,
+            targetName = target.entry.name,
+            input = input,
+            bufferSizeBytes = STREAM_COPY_BUFFER_SIZE_BYTES,
+            onProgress = onProgress
+        )
         val verifiedSize = ManagedDownloadCommitIo.verifyFileCommittedLength(
             target = targetFile,
             expectedSizeBytes = copiedBytes,
@@ -384,15 +382,13 @@ internal class ManagedDownloadStorageCommitWriter(
             return target
         }
         val targetFile = File(dir, target.entry.name)
-        var copiedBytes = 0L
-        targetFile.outputStream().use { output ->
-            copiedBytes = ManagedDownloadCommitIo.copyStreamWithProgress(
-                input = input,
-                output = output,
-                bufferSizeBytes = STREAM_COPY_BUFFER_SIZE_BYTES,
-                onProgress = onProgress
-            )
-        }
+        val copiedBytes = ManagedDownloadCommitIo.copyFileAtomically(
+            parent = dir,
+            targetName = target.entry.name,
+            input = input,
+            bufferSizeBytes = STREAM_COPY_BUFFER_SIZE_BYTES,
+            onProgress = onProgress
+        )
         val verifiedSize = ManagedDownloadCommitIo.verifyFileCommittedLength(
             target = targetFile,
             expectedSizeBytes = copiedBytes,

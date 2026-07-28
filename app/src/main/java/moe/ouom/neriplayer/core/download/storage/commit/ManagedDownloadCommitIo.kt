@@ -4,11 +4,45 @@ import android.content.ContentResolver
 import android.net.Uri
 import android.provider.DocumentsContract
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 
 internal object ManagedDownloadCommitIo {
+    fun copyFileAtomically(
+        parent: File,
+        targetName: String,
+        input: InputStream,
+        bufferSizeBytes: Int,
+        onProgress: ((Long) -> Unit)? = null
+    ): Long {
+        val target = File(parent, targetName)
+        val partial = File.createTempFile(".np-migration-", ".partial", parent)
+        var committed = false
+        try {
+            val copiedBytes = FileOutputStream(partial).use { output ->
+                val copied = copyStreamWithProgress(
+                    input = input,
+                    output = output,
+                    bufferSizeBytes = bufferSizeBytes,
+                    onProgress = onProgress
+                )
+                output.fd.sync()
+                copied
+            }
+            if (!partial.renameTo(target)) {
+                throw IOException("无法原子提交迁移文件: $targetName")
+            }
+            committed = true
+            return copiedBytes
+        } finally {
+            if (!committed) {
+                runCatching { partial.delete() }
+            }
+        }
+    }
+
     fun copyStreamWithProgress(
         input: InputStream,
         output: OutputStream,

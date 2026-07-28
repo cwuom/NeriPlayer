@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.policy.shouldPreserveCompletedAudioAfterFinalizationFailure
 import moe.ouom.neriplayer.data.model.SongItem
 
 /**
@@ -31,6 +32,28 @@ class DownloadMetadataValidationTest {
             )
         )
         assertFalse(isUnfinalizedDownloadedMetadata(null))
+    }
+
+    @Test
+    fun `metadata finalization failure preserves a complete audio file`() {
+        assertTrue(
+            shouldPreserveCompletedAudioAfterFinalizationFailure(
+                hasStoredAudio = true,
+                cancelled = false
+            )
+        )
+        assertFalse(
+            shouldPreserveCompletedAudioAfterFinalizationFailure(
+                hasStoredAudio = false,
+                cancelled = false
+            )
+        )
+        assertFalse(
+            shouldPreserveCompletedAudioAfterFinalizationFailure(
+                hasStoredAudio = true,
+                cancelled = true
+            )
+        )
     }
 
     @Test

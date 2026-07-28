@@ -143,6 +143,14 @@ internal fun resolvePreExistingDownloadedAudioAction(
     }
 }
 
+/** 完整音频已经落盘时, 元信息收尾失败也不能删除音频本体 */
+internal fun shouldPreserveCompletedAudioAfterFinalizationFailure(
+    hasStoredAudio: Boolean,
+    cancelled: Boolean
+): Boolean {
+    return hasStoredAudio && !cancelled
+}
+
 internal fun shouldUseImmediateDownloadedPlaybackHydration(
     originalSong: SongItem,
     hydratedSong: SongItem

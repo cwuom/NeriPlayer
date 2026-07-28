@@ -1,11 +1,16 @@
 package moe.ouom.neriplayer.core.download
 
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationFinalizer
+import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitIo
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
+import java.io.IOException
+import java.io.InputStream
+import java.nio.file.Files
 
 class ManagedDownloadStorageMigrationCompatTest {
 
@@ -332,5 +337,40 @@ class ManagedDownloadStorageMigrationCompatTest {
                 copiedSize = 1L
             )
         )
+    }
+
+    @Test
+    fun `atomic migration copy removes partial file after source failure`() {
+        val directory = Files.createTempDirectory("neriplayer-migration-test").toFile()
+        try {
+            val failingInput = object : InputStream() {
+                private var readCalls = 0
+
+                override fun read(): Int {
+                    throw IOException("single-byte read should not be used")
+                }
+
+                override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                    if (readCalls++ == 0) {
+                        buffer[offset] = 1
+                        return 1
+                    }
+                    throw IOException("injected source failure")
+                }
+            }
+            runCatching {
+                ManagedDownloadCommitIo.copyFileAtomically(
+                    parent = directory,
+                    targetName = "song.mp3",
+                    input = failingInput,
+                    bufferSizeBytes = 8,
+                    onProgress = {}
+                )
+            }
+            assertFalse(File(directory, "song.mp3").exists())
+            assertTrue(directory.listFiles().orEmpty().none { it.name.endsWith(".partial") })
+        } finally {
+            directory.deleteRecursively()
+        }
     }
 }
