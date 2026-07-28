@@ -182,6 +182,7 @@ import moe.ouom.neriplayer.data.storage.clearExtraStorageCaches
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.component.navigation.NeriBottomBar
+import moe.ouom.neriplayer.ui.component.navigation.resolveBottomBarSelectionAlpha
 import moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayer
 import moe.ouom.neriplayer.ui.component.playback.resolvePlaybackWaiting
 import moe.ouom.neriplayer.ui.component.common.ThemeRevealOverlay
@@ -1359,6 +1360,8 @@ private fun NeriAppContent(
     val showLyricTranslation by repo.showLyricTranslationFlow.collectAsStateWithLifecycle(initialValue = true)
     val defaultStartDestination: String? by repo.defaultStartDestinationFlow
         .collectAsStateWithLifecycle(initialValue = null)
+    val alwaysUseNewTabStyle by repo.alwaysUseNewTabStyleFlow
+        .collectAsStateWithLifecycle(initialValue = true)
     val showHomeContinueCard by repo.homeCardContinueFlow.collectAsStateWithLifecycle(initialValue = true)
     val showHomeTrendingCard by repo.homeCardTrendingFlow.collectAsStateWithLifecycle(initialValue = true)
     val showHomeRadarCard by repo.homeCardRadarFlow.collectAsStateWithLifecycle(initialValue = true)
@@ -2804,7 +2807,10 @@ private fun NeriAppContent(
 
                 val containerColor = Color.Transparent
 
-                val selectAlpha = if (backgroundImageUri == null) 1f else 0f
+                val selectAlpha = resolveBottomBarSelectionAlpha(
+                    hasCustomBackground = backgroundImageUri != null,
+                    alwaysUseNewTabStyle = alwaysUseNewTabStyle
+                )
 
                 val isMiniPlayerVisible = currentSong != null && !showNowPlaying
                 val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsStateWithLifecycle()

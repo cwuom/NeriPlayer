@@ -42,7 +42,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.TextSnippet
 import androidx.compose.material.icons.outlined.DeleteForever
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.SdStorage
@@ -180,6 +182,14 @@ internal fun SettingsStorageCacheSection(
         ) {
             AutoSettingsListItem(
                 setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DOWNLOAD_DIRECTORY_URI),
+                leadingContent = {
+                    Icon(
+                        imageVector = Icons.Outlined.Folder,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                },
                 supportingContent = {
                     Column {
                         Text(stringResource(R.string.settings_download_directory_desc))
@@ -246,6 +256,14 @@ internal fun SettingsStorageCacheSection(
 
             AutoSettingsListItem(
                 setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE),
+                leadingContent = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.TextSnippet,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                },
                 supportingContent = {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(stringResource(R.string.settings_download_file_name_format_desc))

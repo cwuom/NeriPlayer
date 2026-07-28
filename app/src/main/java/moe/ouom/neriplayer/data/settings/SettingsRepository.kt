@@ -350,6 +350,9 @@ class SettingsRepository(private val context: Context) {
     val autoShowKeyboardFlow: Flow<Boolean> =
         autoSettingsRepository.autoShowKeyboardFlow
 
+    val alwaysUseNewTabStyleFlow: Flow<Boolean> =
+        autoSettingsRepository.alwaysUseNewTabStyleFlow
+
     val homeCardContinueFlow: Flow<Boolean> =
         autoSettingsRepository.homeCardContinueFlow
 

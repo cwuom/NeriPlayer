@@ -31,6 +31,10 @@ class AutoSettingsGeneratedTest {
             "haptic_feedback_enabled" in booleanKeyNames
         )
         assertTrue(
+            "personalization switch should be exportable",
+            "always_use_new_tab_style" in booleanKeyNames
+        )
+        assertTrue(
             "general idle shutdown duration should be exportable",
             "playback_service_idle_shutdown_minutes" in intKeyNames
         )
@@ -264,6 +268,22 @@ class AutoSettingsGeneratedTest {
     }
 
     @Test
+    fun alwaysUseNewTabStyleDefaultsOnAndUsesPersonalizationSwitch() {
+        val setting = AutoSettingsSchema.personalization.alwaysUseNewTabStyle
+        val metadata = AutoSettingsMetadata.setting("always_use_new_tab_style")
+
+        assertEquals(true, setting.defaultValue)
+        assertEquals(SettingValueType.Boolean, metadata?.valueType)
+        assertEquals(SettingUiType.Switch, metadata?.ui)
+        assertEquals(AutoSettingsSections.personalization, metadata?.section)
+        assertEquals(AutoSettingIcon.Tab, metadata?.icon)
+        assertEquals(
+            1,
+            AutoSettingsMetadata.settings.count { it.icon == AutoSettingIcon.Tab }
+        )
+    }
+
+    @Test
     fun enhancedAdvancedBlurDefaultsOffAndUsesCustomUi() {
         val setting = AutoSettingsSchema.motion.enhancedAdvancedBlurEnabled
         val metadata = AutoSettingsMetadata.setting("enhanced_advanced_blur_enabled")
@@ -304,6 +324,23 @@ class AutoSettingsGeneratedTest {
         assertTrue(
             "coherent feedback icon must be unique within motion settings",
             metadata?.icon !in otherMotionIcons
+        )
+    }
+
+    @Test
+    fun visibleDisplaySwitchesUseDistinctIcons() {
+        val icons = AutoSettingsMetadata.settingsIn(AutoSettingsSections.display)
+            .filter { it.ui == SettingUiType.Switch && it.icon != AutoSettingIcon.None }
+            .map { it.icon }
+
+        assertEquals(icons.size, icons.toSet().size)
+        assertEquals(
+            AutoSettingIcon.Audiotrack,
+            AutoSettingsSchema.display.nowPlayingProgressShowAudioCodec.icon
+        )
+        assertEquals(
+            AutoSettingIcon.Analytics,
+            AutoSettingsSchema.display.nowPlayingProgressShowAudioSpec.icon
         )
     }
 

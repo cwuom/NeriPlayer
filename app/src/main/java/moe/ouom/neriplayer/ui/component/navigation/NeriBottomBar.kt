@@ -47,13 +47,24 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassController
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 
+internal const val DEFAULT_BOTTOM_BAR_SELECTION_ALPHA = 0.72f
+
+internal fun resolveBottomBarSelectionAlpha(
+    hasCustomBackground: Boolean,
+    alwaysUseNewTabStyle: Boolean
+): Float = if (hasCustomBackground || alwaysUseNewTabStyle) {
+    0f
+} else {
+    DEFAULT_BOTTOM_BAR_SELECTION_ALPHA
+}
+
 @Composable
 fun NeriBottomBar(
     items: List<Pair<Destinations, ImageVector>>,
     currentDestination: NavDestination?,
     onItemSelected: (Destinations) -> Unit,
     modifier: Modifier = Modifier,
-    selectAlpha: Float = 1f
+    selectAlpha: Float = DEFAULT_BOTTOM_BAR_SELECTION_ALPHA
 ) {
     val context = LocalContext.current
     val alwaysShowLabel = selectAlpha != 0f

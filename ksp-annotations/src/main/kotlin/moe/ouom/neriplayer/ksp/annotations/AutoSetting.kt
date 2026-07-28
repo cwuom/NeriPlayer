@@ -228,6 +228,7 @@ enum class AutoSettingIcon {
     Storage,
     Subtitles,
     Sync,
+    Tab,
     Tune,
     Wallpaper
 }

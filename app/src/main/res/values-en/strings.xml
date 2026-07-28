@@ -842,6 +842,8 @@
     <string name="settings_default_start_screen_desc">Current: %1$s</string>
     <string name="settings_auto_show_keyboard">Auto-Open Keyboard</string>
     <string name="settings_auto_show_keyboard_desc">Auto focus inputs and try to show the keyboard</string>
+    <string name="settings_always_use_new_tab_style">Always Use the New Tab Style</string>
+    <string name="settings_always_use_new_tab_style_desc">Use the new tab style even without a background image.</string>
     <string name="settings_home_cards">Home Cards</string>
     <string name="settings_home_cards_desc">You can hide any home card. Hide all cards to hide Home.</string>
     <string name="settings_home_cards_desc_international">When internationalization is enabled, these toggles switch to YouTube Music home sections.</string>

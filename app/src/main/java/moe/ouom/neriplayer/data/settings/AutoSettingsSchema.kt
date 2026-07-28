@@ -397,6 +397,15 @@ object AutoSettingsSchema {
             icon = AutoSettingIcon.Keyboard
         )
 
+        @AutoSetting(order = 25)
+        val alwaysUseNewTabStyle = autoSwitchSetting(
+            key = "always_use_new_tab_style",
+            defaultValue = true,
+            titleRes = R.string.settings_always_use_new_tab_style,
+            descriptionRes = R.string.settings_always_use_new_tab_style_desc,
+            icon = AutoSettingIcon.Tab
+        )
+
         @AutoSetting(
             key = "home_card_continue",
             type = SettingValueType.Boolean,
@@ -533,7 +542,7 @@ object AutoSettingsSchema {
         val nowPlayingProgressShowAudioCodec = autoSetting(
             titleRes = R.string.settings_nowplaying_progress_audio_codec,
             descriptionRes = R.string.settings_nowplaying_progress_audio_codec_desc,
-            icon = AutoSettingIcon.Info
+            icon = AutoSettingIcon.Audiotrack
         )
 
         @AutoSetting(
@@ -546,7 +555,7 @@ object AutoSettingsSchema {
         val nowPlayingProgressShowAudioSpec = autoSetting(
             titleRes = R.string.settings_nowplaying_progress_audio_spec,
             descriptionRes = R.string.settings_nowplaying_progress_audio_spec_desc,
-            icon = AutoSettingIcon.LibraryMusic
+            icon = AutoSettingIcon.Analytics
         )
 
         @AutoSetting(

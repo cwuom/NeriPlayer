@@ -5,6 +5,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavDestination
 import moe.ouom.neriplayer.navigation.Destinations
+import moe.ouom.neriplayer.ui.component.navigation.DEFAULT_BOTTOM_BAR_SELECTION_ALPHA
 
 @Composable
 fun NeriBottomBar(
@@ -12,7 +13,7 @@ fun NeriBottomBar(
     currentDestination: NavDestination?,
     onItemSelected: (Destinations) -> Unit,
     modifier: Modifier = Modifier,
-    selectAlpha: Float = 1f
+    selectAlpha: Float = DEFAULT_BOTTOM_BAR_SELECTION_ALPHA
 ) {
     moe.ouom.neriplayer.ui.component.navigation.NeriBottomBar(
         items = items,
@@ -22,4 +23,3 @@ fun NeriBottomBar(
         selectAlpha = selectAlpha
     )
 }
-

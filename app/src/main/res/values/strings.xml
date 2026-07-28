@@ -842,6 +842,8 @@
     <string name="settings_default_start_screen_desc">当前：%1$s</string>
     <string name="settings_auto_show_keyboard">自动弹出软键盘</string>
     <string name="settings_auto_show_keyboard_desc">输入框出现时自动聚焦并尝试打开软键盘</string>
+    <string name="settings_always_use_new_tab_style">始终使用新版 TAB 样式</string>
+    <string name="settings_always_use_new_tab_style_desc">无背景图时也使用新版 TAB 样式</string>
     <string name="settings_home_cards">首页卡片</string>
     <string name="settings_home_cards_desc">可分别关闭首页卡片，全部关闭后首页会隐藏</string>
     <string name="settings_home_cards_desc_international">国际化开启后，这里的开关会切换为 YouTube Music 首页栏目</string>

@@ -39,6 +39,7 @@ import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.BarChart
+import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.BluetoothAudio
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Headphones
@@ -311,7 +312,7 @@ internal fun SettingsPlaybackSection(
                 checked = rememberLongFormPlaybackProgress,
                 icon = {
                     Icon(
-                        imageVector = Icons.Outlined.History,
+                        imageVector = Icons.Outlined.Bookmark,
                         contentDescription = stringResource(
                             R.string.settings_remember_long_form_playback_progress
                         ),

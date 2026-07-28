@@ -8,11 +8,13 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.Colorize
+import androidx.compose.material.icons.outlined.BorderOuter
 import androidx.compose.material.icons.outlined.BorderColor
 import androidx.compose.material.icons.outlined.FormatAlignCenter
+import androidx.compose.material.icons.outlined.FormatColorFill
 import androidx.compose.material.icons.outlined.FormatColorText
 import androidx.compose.material.icons.outlined.LineWeight
+import androidx.compose.material.icons.outlined.Opacity
 import androidx.compose.material.icons.outlined.PictureInPictureAlt
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.SwapVert
@@ -253,7 +255,7 @@ internal fun SettingsFloatingLyricsSection(
                 R.string.settings_floating_lyrics_outline_width_value,
                 pendingTranslationOutlineWidthDp
             ),
-            icon = Icons.Outlined.LineWeight,
+            icon = Icons.Outlined.BorderOuter,
             value = pendingTranslationOutlineWidthDp,
             valueRange = MIN_FLOATING_LYRICS_OUTLINE_WIDTH_DP..MAX_FLOATING_LYRICS_OUTLINE_WIDTH_DP,
             steps = 0,
@@ -274,7 +276,7 @@ internal fun SettingsFloatingLyricsSection(
                 R.string.settings_floating_lyrics_alpha_value,
                 (pendingLyricAlpha * 100f).roundToInt()
             ),
-            icon = Icons.Outlined.Colorize,
+            icon = Icons.Outlined.Opacity,
             value = pendingLyricAlpha,
             valueRange = MIN_FLOATING_LYRICS_ALPHA..MAX_FLOATING_LYRICS_ALPHA,
             steps = 19,
@@ -293,7 +295,7 @@ internal fun SettingsFloatingLyricsSection(
                 R.string.settings_floating_lyrics_alpha_value,
                 (pendingTranslationAlpha * 100f).roundToInt()
             ),
-            icon = Icons.Outlined.Colorize,
+            icon = Icons.Outlined.FormatColorFill,
             value = pendingTranslationAlpha,
             valueRange = MIN_FLOATING_LYRICS_ALPHA..MAX_FLOATING_LYRICS_ALPHA,
             steps = 19,
