@@ -155,7 +155,8 @@ private fun List<SyncSong>.migrateLegacySongsToDisplayOrder(
     ).coerceAtLeast(1L)
     return asReversed().mapIndexed { index, song ->
         song.copyWithNormalizedMembershipTokens(
-            addedAt = (newestAddedAt - index).coerceAtLeast(1L)
+            addedAt = (newestAddedAt - index).coerceAtLeast(1L),
+            legacyAddedAt = song.legacyAddedAt ?: song.addedAt
         )
     }
 }
@@ -202,7 +203,9 @@ data class SyncSong(
     @ProtoNumber(25) val subAudioId: String? = null,
     @ProtoNumber(26) val playlistContextId: String? = null,
     @ProtoNumber(27) val syncMembershipTokens: List<SyncCausalToken> = emptyList(),
-    @ProtoNumber(28) val syncMetadataVersion: Int = LEGACY_SYNC_METADATA_VERSION
+    @ProtoNumber(28) val syncMetadataVersion: Int = LEGACY_SYNC_METADATA_VERSION,
+    // legacy 快照迁移会重写 addedAt 以恢复展示顺序, 删除判定仍需保留原始值
+    @ProtoNumber(29) val legacyAddedAt: Long? = null
 ) {
     companion object {
         fun fromSongItemOrNull(song: SongItem, context: Context? = null): SyncSong? {
@@ -289,11 +292,13 @@ data class SyncSong(
 
 internal fun SyncSong.copyWithNormalizedMembershipTokens(
     mediaUri: String? = this.mediaUri,
-    addedAt: Long = this.addedAt
+    addedAt: Long = this.addedAt,
+    legacyAddedAt: Long? = this.legacyAddedAt
 ): SyncSong {
     return copy(
         mediaUri = mediaUri,
         addedAt = addedAt,
+        legacyAddedAt = legacyAddedAt,
         syncMembershipTokens = syncMembershipTokens.normalizedSyncCausalTokens()
     )
 }

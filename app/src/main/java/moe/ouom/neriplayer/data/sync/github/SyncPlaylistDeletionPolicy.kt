@@ -4,12 +4,15 @@ import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
+import moe.ouom.neriplayer.data.sync.model.SyncFavoritePlaylist
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.sync.model.SyncSong
 import moe.ouom.neriplayer.data.sync.model.normalizedSyncCausalTokens
 
 internal object SyncPlaylistDeletionPolicy {
+    internal const val MAX_PLAYLIST_SONG_DELETIONS = 5_000
+
     private val deletionMirrorComparator =
         compareBy<SyncPlaylistSongDeletion> { it.deletedAt }
             .thenBy { it.deviceId }
@@ -27,6 +30,45 @@ internal object SyncPlaylistDeletionPolicy {
         return (local + remote)
             .groupBy(SyncPlaylistSongDeletion::stableKey)
             .flatMap { (_, snapshots) -> mergeDeletionSnapshots(snapshots) }
+            .sortedWith(deletionOrderComparator)
+    }
+
+    /** 在有限容量内保留两类墓碑，避免 causal 墓碑无限增长或挤掉全部 legacy 墓碑 */
+    fun limitDeletions(
+        deletions: List<SyncPlaylistSongDeletion>,
+        maxCount: Int = MAX_PLAYLIST_SONG_DELETIONS
+    ): List<SyncPlaylistSongDeletion> {
+        require(maxCount >= 0) { "Deletion capacity must not be negative" }
+        if (deletions.isEmpty() || maxCount == 0) {
+            return emptyList()
+        }
+
+        val merged = mergeDeletions(deletions, emptyList())
+        if (merged.size <= maxCount) {
+            return merged
+        }
+
+        val causal = merged.filter { it.removedMembershipTokens.orEmpty().isNotEmpty() }
+        val legacy = merged.filter { it.removedMembershipTokens.orEmpty().isEmpty() }
+        val preferredLegacyCapacity = when {
+            causal.isEmpty() -> maxCount
+            legacy.isEmpty() -> 0
+            else -> maxCount / 2
+        }
+        var legacyCapacity = minOf(legacy.size, preferredLegacyCapacity)
+        var causalCapacity = minOf(causal.size, maxCount - legacyCapacity)
+
+        var remainingCapacity = maxCount - legacyCapacity - causalCapacity
+        if (remainingCapacity > 0) {
+            val extraLegacy = minOf(legacy.size - legacyCapacity, remainingCapacity)
+            legacyCapacity += extraLegacy
+            remainingCapacity -= extraLegacy
+        }
+        if (remainingCapacity > 0) {
+            causalCapacity += minOf(causal.size - causalCapacity, remainingCapacity)
+        }
+
+        return (causal.take(causalCapacity) + legacy.take(legacyCapacity))
             .sortedWith(deletionOrderComparator)
     }
 
@@ -88,7 +130,8 @@ internal object SyncPlaylistDeletionPolicy {
                 }
         }
 
-        return normalizedDeletions
+        return limitDeletions(
+            normalizedDeletions
             .filterNot { deletion ->
                 deletion.removedMembershipTokens.orEmpty().isEmpty() &&
                     activeSongsByKey[deletion.stableKey()]?.let { activeSong ->
@@ -99,7 +142,7 @@ internal object SyncPlaylistDeletionPolicy {
                             effectiveAddedAt(activeSong) > deletion.deletedAt
                     } == true
             }
-            .sortedWith(deletionOrderComparator)
+        )
     }
 
     fun clearLegacyDeletionsForReaddedSongs(
@@ -116,6 +159,60 @@ internal object SyncPlaylistDeletionPolicy {
             deletion.stableKey() in readdedKeys &&
                 deletion.removedMembershipTokens.orEmpty().isEmpty()
         }
+    }
+
+    fun mergeFavoritePlaylists(
+        left: SyncFavoritePlaylist,
+        right: SyncFavoritePlaylist
+    ): SyncFavoritePlaylist {
+        val newer = if (right.modifiedAt > left.modifiedAt) right else left
+        val older = if (newer === left) right else left
+
+        if (left.isDeleted != right.isDeleted) {
+            if (left.modifiedAt == right.modifiedAt) {
+                val deleted = if (left.isDeleted) left else right
+                return deleted.copy(
+                    songs = emptyList(),
+                    trackCount = 0,
+                    addedTime = maxOf(left.addedTime, right.addedTime),
+                    modifiedAt = maxOf(left.modifiedAt, right.modifiedAt),
+                    sortOrder = maxOf(left.sortOrder, right.sortOrder)
+                )
+            }
+            return if (newer.isDeleted) {
+                newer.copy(
+                    songs = emptyList(),
+                    trackCount = 0,
+                    sortOrder = maxOf(left.sortOrder, right.sortOrder)
+                )
+            } else {
+                newer.copy(
+                    songs = (left.songs + right.songs).distinctBy { it.identity() },
+                    trackCount = maxOf(left.trackCount, right.trackCount, left.songs.size, right.songs.size),
+                    sortOrder = newer.sortOrder.takeIf { it > 0L } ?: older.sortOrder
+                )
+            }
+        }
+
+        if (newer.isDeleted) {
+            return newer.copy(
+                songs = emptyList(),
+                trackCount = 0,
+                addedTime = maxOf(left.addedTime, right.addedTime),
+                sortOrder = maxOf(left.sortOrder, right.sortOrder)
+            )
+        }
+
+        val mergedSongs = (left.songs + right.songs).distinctBy { it.identity() }
+        return newer.copy(
+            coverUrl = newer.coverUrl ?: older.coverUrl,
+            songs = mergedSongs,
+            trackCount = maxOf(left.trackCount, right.trackCount, mergedSongs.size),
+            addedTime = maxOf(left.addedTime, right.addedTime),
+            modifiedAt = maxOf(left.modifiedAt, right.modifiedAt),
+            sortOrder = newer.sortOrder.takeIf { it > 0L } ?: older.sortOrder,
+            isDeleted = false
+        )
     }
 
     private fun mergeDeletionSnapshots(
@@ -171,7 +268,9 @@ internal object SyncPlaylistDeletionPolicy {
     }
 
     private fun effectiveAddedAt(song: SyncSong): Long {
-        return song.addedAt.takeIf { it > 0L } ?: Long.MIN_VALUE
+        return (song.legacyAddedAt ?: song.addedAt)
+            .takeIf { it > 0L }
+            ?: Long.MIN_VALUE
     }
 
     private fun SyncSong.identityStableKeys(): Set<String> {

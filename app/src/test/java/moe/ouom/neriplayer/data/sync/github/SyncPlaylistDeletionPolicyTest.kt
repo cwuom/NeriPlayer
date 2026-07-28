@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.data.sync.github
 import com.google.gson.Gson
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
+import moe.ouom.neriplayer.data.sync.model.SyncFavoritePlaylist
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.sync.model.SyncSong
@@ -374,6 +375,45 @@ class SyncPlaylistDeletionPolicyTest {
     }
 
     @Test
+    fun `legacy migration keeps the original addedAt for deletion comparisons`() {
+        val legacyPlaylist = SyncPlaylist(
+            id = 7L,
+            name = "legacy",
+            songs = listOf(syncSong(id = 11L, addedAt = 0L)),
+            modifiedAt = 500L
+        )
+        val migrated = legacyPlaylist.normalizedForDisplayOrder().songs.single()
+
+        assertEquals(0L, migrated.legacyAddedAt)
+        assertTrue(migrated.addedAt > 0L)
+        assertTrue(
+            SyncPlaylistDeletionPolicy.applyDeletions(
+                playlistId = 7L,
+                songs = listOf(migrated),
+                deletions = listOf(deletion(7L, 11L, deletedAt = 200L))
+            ).isEmpty()
+        )
+    }
+
+    @Test
+    fun `favorite playlist deletion wins equal timestamp ties`() {
+        val active = SyncFavoritePlaylist(
+            id = 1L,
+            source = "netease",
+            modifiedAt = 100L,
+            songs = listOf(syncSong(id = 11L, addedAt = 100L)),
+            trackCount = 1
+        )
+        val deleted = active.copy(isDeleted = true, songs = emptyList(), trackCount = 0)
+
+        val merged = SyncPlaylistDeletionPolicy.mergeFavoritePlaylists(active, deleted)
+
+        assertTrue(merged.isDeleted)
+        assertTrue(merged.songs.isEmpty())
+        assertEquals(0, merged.trackCount)
+    }
+
+    @Test
     fun `observed token deletion is retained after a new membership appears`() {
         val deletion = deletion(
             playlistId = 7L,
@@ -484,6 +524,62 @@ class SyncPlaylistDeletionPolicyTest {
 
         assertTrue(merged.isEmpty())
         assertEquals(emptyList<SyncCausalToken>(), normalizedDeletion.removedMembershipTokens)
+    }
+
+    @Test
+    fun `bounded deletion retention keeps recent legacy and causal tombstones`() {
+        val legacy = (1L..6L).map { id ->
+            deletion(playlistId = 7L, songId = id, deletedAt = id, deviceId = "legacy")
+        }
+        val causal = (11L..16L).map { id ->
+            deletion(
+                playlistId = 7L,
+                songId = id,
+                deletedAt = id,
+                deviceId = "causal",
+                removedTokens = listOf(token("causal", id))
+            )
+        }
+
+        val retained = SyncPlaylistDeletionPolicy.limitDeletions(
+            deletions = legacy + causal,
+            maxCount = 6
+        )
+
+        assertEquals(6, retained.size)
+        assertEquals(3, retained.count { it.removedMembershipTokens.isEmpty() })
+        assertEquals(3, retained.count { it.removedMembershipTokens.isNotEmpty() })
+        assertEquals(setOf(4L, 5L, 6L), retained.filter {
+            it.removedMembershipTokens.isEmpty()
+        }.map { it.songId }.toSet())
+        assertEquals(setOf(14L, 15L, 16L), retained.filter {
+            it.removedMembershipTokens.isNotEmpty()
+        }.map { it.songId }.toSet())
+    }
+
+    @Test
+    fun `bounded deletion retention fills unused class capacity`() {
+        val legacy = (1L..2L).map { id ->
+            deletion(playlistId = 7L, songId = id, deletedAt = id, deviceId = "legacy")
+        }
+        val causal = (11L..16L).map { id ->
+            deletion(
+                playlistId = 7L,
+                songId = id,
+                deletedAt = id,
+                deviceId = "causal",
+                removedTokens = listOf(token("causal", id))
+            )
+        }
+
+        val retained = SyncPlaylistDeletionPolicy.limitDeletions(
+            deletions = legacy + causal,
+            maxCount = 6
+        )
+
+        assertEquals(6, retained.size)
+        assertEquals(2, retained.count { it.removedMembershipTokens.isEmpty() })
+        assertEquals(4, retained.count { it.removedMembershipTokens.isNotEmpty() })
     }
 
     private fun syncSong(

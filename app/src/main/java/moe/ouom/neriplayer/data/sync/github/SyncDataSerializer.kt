@@ -105,8 +105,18 @@ object SyncDataSerializer {
             deserializeJson(text)
         } else {
             // 旧 backup.bin: 先 Base64 解码得到 GZIP 字节, 再解压
-            decodeGzipProto(Base64.getMimeDecoder().decode(text.trim()))
+            decodeGzipProto(decodeLegacyBase64(text))
         }
+    }
+
+    private fun decodeLegacyBase64(text: String): ByteArray {
+        val compact = text.filterNot(Char::isWhitespace)
+        require(
+            compact.isNotEmpty() &&
+                compact.length % 4 == 0 &&
+                compact.all { it.isLetterOrDigit() || it == '+' || it == '/' || it == '=' }
+        ) { "Invalid legacy Base64 sync data" }
+        return Base64.getDecoder().decode(compact)
     }
 
     /**

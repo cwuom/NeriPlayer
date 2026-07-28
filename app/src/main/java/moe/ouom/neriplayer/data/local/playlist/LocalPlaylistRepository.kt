@@ -450,10 +450,6 @@ class LocalPlaylistRepository private constructor(
             return
         }
 
-        // 先推进本地 epoch，避免同步回写在文件已更新但版本未变化的窗口覆盖本地修改
-        if (markLocalMutation) {
-            syncMutationStore.markSyncMutation()
-        }
         val currentPrimaryText = storage.readPrimary()
         val serialized = if (stateChanged || currentPrimaryText == null) {
             gson.toJson(normalized)
@@ -465,6 +461,10 @@ class LocalPlaylistRepository private constructor(
             nextPrimaryDigest = primaryDigest(serialized),
             syncMutation = syncMutation
         )
+        // 没有墓碑要提交时可以先推进版本, 含墓碑的变更由存储层和版本一起提交
+        if (markLocalMutation && syncMutation.isEmpty && pendingOutbox == null) {
+            syncMutationStore.markSyncMutation()
+        }
         writePendingSyncMutation(pendingOutbox)
         if (stateChanged || currentPrimaryText == null) {
             persistToDisk(normalized, serialized)
@@ -576,7 +576,7 @@ class LocalPlaylistRepository private constructor(
         try {
             outbox.mutations.forEach { mutation ->
                 if (!mutation.isEmpty) {
-                    syncMutationStore.apply(mutation)
+                    syncMutationStore.applyAndMarkMutation(mutation)
                 }
             }
             if ((triggerSync || hasSyncMutation) && autoSyncEnabled && !scheduleAutoSync()) {

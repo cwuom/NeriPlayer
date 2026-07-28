@@ -275,14 +275,14 @@ class WebDavSyncManager private constructor(context: Context) {
             SyncPlaylist.fromLocalPlaylist(playlist, playlist.modifiedAt, localizedContext)
         }.toMutableList()
 
-        storage.getDeletedPlaylistIds().forEach { deletedId ->
+        storage.getDeletedPlaylistTimestamps().forEach { (deletedId, deletedAt) ->
             if (playlists.none { it.id == deletedId }) {
                 syncPlaylists += SyncPlaylist(
                     id = deletedId,
                     name = "",
                     songs = emptyList(),
                     createdAt = 0L,
-                    modifiedAt = System.currentTimeMillis(),
+                    modifiedAt = deletedAt,
                     isDeleted = true,
                     songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                 )
@@ -551,7 +551,7 @@ class WebDavSyncManager private constructor(context: Context) {
         playlists: List<SyncPlaylist>,
         lastSyncTime: Long
     ): Boolean {
-        return playlists.any { it.modifiedAt > lastSyncTime }
+        return playlists.any { !it.isDeleted && it.modifiedAt > lastSyncTime }
     }
 
     private fun mergePlaylist(
@@ -704,51 +704,7 @@ class WebDavSyncManager private constructor(context: Context) {
         left: SyncFavoritePlaylist,
         right: SyncFavoritePlaylist
     ): SyncFavoritePlaylist {
-        val newer = if (right.modifiedAt > left.modifiedAt) right else left
-        val older = if (newer === left) right else left
-
-        if (left.isDeleted != right.isDeleted) {
-            return if (left.modifiedAt == right.modifiedAt) {
-                newer.copy(
-                    songs = if (newer.isDeleted) emptyList() else (left.songs + right.songs).distinctBy { it.identity() },
-                    trackCount = if (newer.isDeleted) 0 else maxOf(left.trackCount, right.trackCount, left.songs.size, right.songs.size)
-                )
-            } else {
-                if (newer.isDeleted) {
-                    newer.copy(
-                        songs = emptyList(),
-                        trackCount = 0,
-                        sortOrder = maxOf(left.sortOrder, right.sortOrder)
-                    )
-                } else {
-                    newer.copy(
-                        songs = (left.songs + right.songs).distinctBy { it.identity() },
-                        trackCount = maxOf(left.trackCount, right.trackCount, left.songs.size, right.songs.size),
-                        sortOrder = newer.sortOrder.takeIf { it > 0L } ?: older.sortOrder
-                    )
-                }
-            }
-        }
-
-        if (newer.isDeleted) {
-            return newer.copy(
-                songs = emptyList(),
-                trackCount = 0,
-                addedTime = maxOf(left.addedTime, right.addedTime),
-                sortOrder = maxOf(left.sortOrder, right.sortOrder)
-            )
-        }
-
-        val mergedSongs = (left.songs + right.songs).distinctBy { it.identity() }
-        return newer.copy(
-            coverUrl = newer.coverUrl ?: older.coverUrl,
-            songs = mergedSongs,
-            trackCount = maxOf(left.trackCount, right.trackCount, mergedSongs.size),
-            addedTime = maxOf(left.addedTime, right.addedTime),
-            modifiedAt = maxOf(left.modifiedAt, right.modifiedAt),
-            sortOrder = newer.sortOrder.takeIf { it > 0L } ?: older.sortOrder,
-            isDeleted = false
-        )
+        return SyncPlaylistDeletionPolicy.mergeFavoritePlaylists(left, right)
     }
 
     private fun mergeDeletedPlaylist(
@@ -1128,12 +1084,12 @@ class WebDavSyncManager private constructor(context: Context) {
             "Upload data size: ${SyncDataSerializer.getDataSize(data, useDataSaver)} bytes (DataSaver: $useDataSaver, WebDAV)"
         )
 
-        val uploadResult = apiClient.updateFileContent(
+        val uploadResult = uploadFileWithConcurrencyFallback(
+            apiClient = apiClient,
             remoteUrl = remoteUrl,
             content = content,
             mediaType = mediaType,
-            expectedVersion = version.token,
-            createOnly = version.createOnly
+            version = version
         )
         return if (uploadResult.isSuccess) {
             val writeResult = uploadResult.getOrThrow()
@@ -1150,6 +1106,59 @@ class WebDavSyncManager private constructor(context: Context) {
                     ?: Exception(localizedContext.getString(R.string.sync_upload_failed))
             )
         }
+    }
+
+    private fun uploadFileWithConcurrencyFallback(
+        apiClient: WebDavApiClient,
+        remoteUrl: String,
+        content: ByteArray,
+        mediaType: String,
+        version: WebDavRemoteVersion
+    ): Result<WebDavApiClient.WriteResult> {
+        val directResult = apiClient.updateFileContent(
+            remoteUrl = remoteUrl,
+            content = content,
+            mediaType = mediaType,
+            expectedVersion = version.token,
+            createOnly = version.createOnly
+        )
+        if (version.createOnly || directResult.exceptionOrNull() !is WebDavMissingConcurrencyTokenException) {
+            return directResult
+        }
+
+        val expectedFingerprint = version.lastKnownFingerprint
+        if (expectedFingerprint.isNullOrBlank()) {
+            return directResult
+        }
+        val currentSnapshot = apiClient.getFileContentStrict(remoteUrl)
+        if (currentSnapshot.isFailure) {
+            return Result.failure(
+                currentSnapshot.exceptionOrNull()
+                    ?: IOException("无法重新读取 WebDAV 文件以确认并发状态")
+            )
+        }
+        val currentFingerprint = currentSnapshot.getOrThrow().fingerprint
+        if (!shouldAllowUnconditionalWebDavWrite(expectedFingerprint, currentFingerprint)) {
+            return Result.failure(
+                WebDavContentConflictException(
+                    statusCode = 412,
+                    message = "WebDAV remote content changed while conditional tokens were unavailable"
+                )
+            )
+        }
+
+        NPLogger.w(
+            TAG,
+            "WebDAV server has no conditional token; writing after fingerprint revalidation"
+        )
+        return apiClient.updateFileContent(
+            remoteUrl = remoteUrl,
+            content = content,
+            mediaType = mediaType,
+            expectedVersion = null,
+            createOnly = false,
+            allowUnconditionalWrite = true
+        )
     }
 
     private fun getDeviceId(): String {

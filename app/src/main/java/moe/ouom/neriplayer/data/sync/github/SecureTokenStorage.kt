@@ -61,6 +61,7 @@ class SecureTokenStorage(private val context: Context) {
         private const val KEY_LAST_REMOTE_SHA = "last_remote_sha"
         private const val KEY_PLAY_HISTORY_UPDATE_MODE = "play_history_update_mode"
         private const val KEY_DELETED_PLAYLIST_IDS = "deleted_playlist_ids"
+        private const val KEY_DELETED_PLAYLIST_TIMESTAMPS = "deleted_playlist_timestamps"
         private const val KEY_RECENT_PLAY_DELETIONS = "recent_play_deletions"
         private const val KEY_PLAYLIST_SONG_DELETIONS = "playlist_song_deletions"
         private const val KEY_TOKEN_WARNING_DISMISSED = "token_warning_dismissed"
@@ -68,7 +69,6 @@ class SecureTokenStorage(private val context: Context) {
         private const val KEY_SYNC_MUTATION_VERSION = "sync_mutation_version"
         private const val KEY_SYNC_CAUSAL_COUNTER = "sync_causal_counter"
         private const val MAX_RECENT_PLAY_DELETIONS = 500
-        private const val MAX_PLAYLIST_SONG_DELETIONS = 5000
         private val syncMutationLock = Any()
         private val syncCausalTokenLock = Any()
     }
@@ -259,15 +259,149 @@ class SecureTokenStorage(private val context: Context) {
 
     /** 添加已删除的歌单ID */
     fun addDeletedPlaylistId(playlistId: Long) {
-        val current = getDeletedPlaylistIds().toMutableSet()
-        current.add(playlistId)
-        encryptedPrefs.edit {
-            putString(KEY_DELETED_PLAYLIST_IDS, current.joinToString(","))
+        synchronized(syncMutationLock) {
+            val current = readDeletedPlaylistIdsLocked().toMutableSet()
+            val timestamps = readDeletedPlaylistTimestampsLocked().toMutableMap()
+            current.add(playlistId)
+            timestamps.putIfAbsent(playlistId, System.currentTimeMillis().coerceAtLeast(1L))
+            val editor = encryptedPrefs.edit()
+                .putString(KEY_DELETED_PLAYLIST_IDS, current.joinToString(","))
+                .putString(KEY_DELETED_PLAYLIST_TIMESTAMPS, gson.toJson(timestamps))
+            bumpSyncMutationVersion(editor)
+            check(editor.commit()) { "Failed to persist deleted playlist state" }
         }
     }
 
     /** 获取所有已删除的歌单ID */
     fun getDeletedPlaylistIds(): Set<Long> {
+        return synchronized(syncMutationLock) {
+            readDeletedPlaylistIdsLocked()
+        }
+    }
+
+    fun getDeletedPlaylistTimestamps(): Map<Long, Long> {
+        return synchronized(syncMutationLock) {
+            val ids = readDeletedPlaylistIdsLocked()
+            if (ids.isEmpty()) {
+                return@synchronized emptyMap()
+            }
+            val timestamps = readDeletedPlaylistTimestampsLocked().toMutableMap()
+            val missingIds = ids.filterNot { timestamps.containsKey(it) }
+            if (missingIds.isNotEmpty()) {
+                val fallbackTimestamp = System.currentTimeMillis().coerceAtLeast(1L)
+                missingIds.forEach { id -> timestamps[id] = fallbackTimestamp }
+                val editor = encryptedPrefs.edit()
+                    .putString(KEY_DELETED_PLAYLIST_TIMESTAMPS, gson.toJson(timestamps))
+                bumpSyncMutationVersion(editor)
+                check(editor.commit()) { "Failed to migrate deleted playlist timestamps" }
+            }
+            timestamps
+                .filterKeys(ids::contains)
+                .mapValues { (_, timestamp) -> timestamp.coerceAtLeast(1L) }
+        }
+    }
+
+    /** 清除已删除的歌单ID列表 */
+    fun clearDeletedPlaylistIds() {
+        synchronized(syncMutationLock) {
+            if (readDeletedPlaylistIdsLocked().isEmpty()) {
+                return
+            }
+            val editor = encryptedPrefs.edit()
+                .remove(KEY_DELETED_PLAYLIST_IDS)
+                .remove(KEY_DELETED_PLAYLIST_TIMESTAMPS)
+            bumpSyncMutationVersion(editor)
+            check(editor.commit()) { "Failed to clear deleted playlist state" }
+        }
+    }
+
+    fun removeDeletedPlaylistIds(playlistIds: Set<Long>) {
+        if (playlistIds.isEmpty()) {
+            return
+        }
+        synchronized(syncMutationLock) {
+            val current = readDeletedPlaylistIdsLocked()
+            val remaining = current - playlistIds
+            if (remaining == current) {
+                return
+            }
+            val timestamps = readDeletedPlaylistTimestampsLocked()
+                .filterKeys(remaining::contains)
+            val editor = encryptedPrefs.edit()
+            if (remaining.isEmpty()) {
+                editor.remove(KEY_DELETED_PLAYLIST_IDS)
+                    .remove(KEY_DELETED_PLAYLIST_TIMESTAMPS)
+            } else {
+                editor.putString(KEY_DELETED_PLAYLIST_IDS, remaining.joinToString(","))
+                    .putString(KEY_DELETED_PLAYLIST_TIMESTAMPS, gson.toJson(timestamps))
+            }
+            bumpSyncMutationVersion(editor)
+            check(editor.commit()) { "Failed to remove deleted playlist state" }
+        }
+    }
+
+    /** 一次提交歌单墓碑及版本, 避免同步读到已升级但尚未落盘的版本 */
+    fun applyPlaylistSyncMutation(
+        addedSongDeletions: List<SyncPlaylistSongDeletion>,
+        removedSongDeletions: List<Pair<Long, Collection<SongIdentity>>>,
+        deletedPlaylistIds: List<Long>,
+        clearedPlaylistDeletionIds: List<Long>,
+        restoredPlaylistIds: Set<Long>
+    ): Long {
+        synchronized(syncMutationLock) {
+            var playlistDeletions = getPlaylistSongDeletions()
+            if (addedSongDeletions.isNotEmpty()) {
+                playlistDeletions = SyncPlaylistDeletionPolicy.mergeDeletions(
+                    playlistDeletions,
+                    addedSongDeletions
+                )
+            }
+            removedSongDeletions.forEach { (playlistId, identities) ->
+                playlistDeletions = SyncPlaylistDeletionPolicy.clearLegacyDeletionsForReaddedSongs(
+                    deletions = playlistDeletions,
+                    playlistId = playlistId,
+                    identities = identities
+                )
+            }
+            clearedPlaylistDeletionIds.forEach { playlistId ->
+                playlistDeletions = playlistDeletions.filterNot { it.playlistId == playlistId }
+            }
+            playlistDeletions = normalizePlaylistSongDeletions(playlistDeletions)
+
+            val deletedIds = readDeletedPlaylistIdsLocked().toMutableSet()
+            val deletedTimestamps = readDeletedPlaylistTimestampsLocked().toMutableMap()
+            deletedPlaylistIds.forEach { playlistId ->
+                deletedIds += playlistId
+                deletedTimestamps.putIfAbsent(
+                    playlistId,
+                    System.currentTimeMillis().coerceAtLeast(1L)
+                )
+            }
+            restoredPlaylistIds.forEach { playlistId ->
+                deletedIds -= playlistId
+                deletedTimestamps -= playlistId
+            }
+
+            val editor = encryptedPrefs.edit()
+            if (playlistDeletions.isEmpty()) {
+                editor.remove(KEY_PLAYLIST_SONG_DELETIONS)
+            } else {
+                editor.putString(KEY_PLAYLIST_SONG_DELETIONS, gson.toJson(playlistDeletions))
+            }
+            if (deletedIds.isEmpty()) {
+                editor.remove(KEY_DELETED_PLAYLIST_IDS)
+                    .remove(KEY_DELETED_PLAYLIST_TIMESTAMPS)
+            } else {
+                editor.putString(KEY_DELETED_PLAYLIST_IDS, deletedIds.joinToString(","))
+                    .putString(KEY_DELETED_PLAYLIST_TIMESTAMPS, gson.toJson(deletedTimestamps))
+            }
+            val nextVersion = bumpSyncMutationVersion(editor)
+            check(editor.commit()) { "Failed to persist playlist sync mutation" }
+            return nextVersion
+        }
+    }
+
+    private fun readDeletedPlaylistIdsLocked(): Set<Long> {
         val idsString = encryptedPrefs.getString(KEY_DELETED_PLAYLIST_IDS, "") ?: ""
         return if (idsString.isEmpty()) {
             emptySet()
@@ -276,23 +410,14 @@ class SecureTokenStorage(private val context: Context) {
         }
     }
 
-    /** 清除已删除的歌单ID列表 */
-    fun clearDeletedPlaylistIds() {
-        encryptedPrefs.edit { remove(KEY_DELETED_PLAYLIST_IDS) }
-    }
-
-    fun removeDeletedPlaylistIds(playlistIds: Set<Long>) {
-        if (playlistIds.isEmpty()) {
-            return
+    private fun readDeletedPlaylistTimestampsLocked(): Map<Long, Long> {
+        val raw = encryptedPrefs.getString(KEY_DELETED_PLAYLIST_TIMESTAMPS, null).orEmpty()
+        if (raw.isBlank()) {
+            return emptyMap()
         }
-        val remaining = getDeletedPlaylistIds() - playlistIds
-        if (remaining.isEmpty()) {
-            clearDeletedPlaylistIds()
-            return
-        }
-        encryptedPrefs.edit {
-            putString(KEY_DELETED_PLAYLIST_IDS, remaining.joinToString(","))
-        }
+        val type = object : TypeToken<Map<Long, Long>>() {}.type
+        return runCatching { gson.fromJson<Map<Long, Long>>(raw, type).orEmpty() }
+            .getOrDefault(emptyMap())
     }
 
     fun getRecentPlayDeletions(): List<SyncRecentPlayDeletion> {
@@ -311,14 +436,10 @@ class SecureTokenStorage(private val context: Context) {
 
     fun setRecentPlayDeletions(deletions: List<SyncRecentPlayDeletion>) {
         synchronized(syncMutationLock) {
-            val normalized = normalizeRecentPlayDeletions(deletions)
-            encryptedPrefs.edit {
-                if (normalized.isEmpty()) {
-                    remove(KEY_RECENT_PLAY_DELETIONS)
-                } else {
-                    putString(KEY_RECENT_PLAY_DELETIONS, gson.toJson(normalized))
-                }
-            }
+            persistRecentPlayDeletionsLocked(
+                deletions = normalizeRecentPlayDeletions(deletions),
+                bumpVersion = false
+            )
         }
     }
 
@@ -327,15 +448,21 @@ class SecureTokenStorage(private val context: Context) {
             return
         }
         synchronized(syncMutationLock) {
-            setRecentPlayDeletions(getRecentPlayDeletions() + deletions)
+            persistRecentPlayDeletionsLocked(
+                deletions = normalizeRecentPlayDeletions(getRecentPlayDeletions() + deletions),
+                bumpVersion = true
+            )
         }
     }
 
     fun removeRecentPlayDeletion(identity: SongIdentity) {
         synchronized(syncMutationLock) {
-            val remaining = getRecentPlayDeletions()
+            val current = getRecentPlayDeletions()
+            val remaining = current
                 .filterNot { it.identity() == identity }
-            setRecentPlayDeletions(remaining)
+            if (remaining != current) {
+                persistRecentPlayDeletionsLocked(remaining, bumpVersion = true)
+            }
         }
     }
 
@@ -355,14 +482,10 @@ class SecureTokenStorage(private val context: Context) {
 
     fun setPlaylistSongDeletions(deletions: List<SyncPlaylistSongDeletion>) {
         synchronized(syncMutationLock) {
-            val normalized = normalizePlaylistSongDeletions(deletions)
-            encryptedPrefs.edit {
-                if (normalized.isEmpty()) {
-                    remove(KEY_PLAYLIST_SONG_DELETIONS)
-                } else {
-                    putString(KEY_PLAYLIST_SONG_DELETIONS, gson.toJson(normalized))
-                }
-            }
+            persistPlaylistSongDeletionsLocked(
+                deletions = normalizePlaylistSongDeletions(deletions),
+                bumpVersion = false
+            )
         }
     }
 
@@ -371,7 +494,10 @@ class SecureTokenStorage(private val context: Context) {
             return
         }
         synchronized(syncMutationLock) {
-            setPlaylistSongDeletions(getPlaylistSongDeletions() + deletions)
+            persistPlaylistSongDeletionsLocked(
+                deletions = normalizePlaylistSongDeletions(getPlaylistSongDeletions() + deletions),
+                bumpVersion = true
+            )
         }
     }
 
@@ -383,20 +509,26 @@ class SecureTokenStorage(private val context: Context) {
             return
         }
         synchronized(syncMutationLock) {
+            val current = getPlaylistSongDeletions()
             val remaining = SyncPlaylistDeletionPolicy.clearLegacyDeletionsForReaddedSongs(
-                deletions = getPlaylistSongDeletions(),
+                deletions = current,
                 playlistId = playlistId,
                 identities = identities
             )
-            setPlaylistSongDeletions(remaining)
+            if (remaining != current) {
+                persistPlaylistSongDeletionsLocked(remaining, bumpVersion = true)
+            }
         }
     }
 
     fun removePlaylistSongDeletionsForPlaylist(playlistId: Long) {
         synchronized(syncMutationLock) {
-            val remaining = getPlaylistSongDeletions()
+            val current = getPlaylistSongDeletions()
+            val remaining = current
                 .filterNot { it.playlistId == playlistId }
-            setPlaylistSongDeletions(remaining)
+            if (remaining != current) {
+                persistPlaylistSongDeletionsLocked(remaining, bumpVersion = true)
+            }
         }
     }
 
@@ -455,10 +587,50 @@ class SecureTokenStorage(private val context: Context) {
 
     fun markSyncMutation(): Long {
         return synchronized(syncMutationLock) {
-            val nextVersion = encryptedPrefs.getLong(KEY_SYNC_MUTATION_VERSION, 0L) + 1L
-            encryptedPrefs.edit { putLong(KEY_SYNC_MUTATION_VERSION, nextVersion) }
+            val editor = encryptedPrefs.edit()
+            val nextVersion = bumpSyncMutationVersion(editor)
+            check(editor.commit()) { "Failed to persist sync mutation version" }
             nextVersion
         }
+    }
+
+    private fun bumpSyncMutationVersion(editor: SharedPreferences.Editor): Long {
+        val nextVersion = encryptedPrefs.getLong(KEY_SYNC_MUTATION_VERSION, 0L) + 1L
+        editor.putLong(KEY_SYNC_MUTATION_VERSION, nextVersion)
+        return nextVersion
+    }
+
+    private fun persistRecentPlayDeletionsLocked(
+        deletions: List<SyncRecentPlayDeletion>,
+        bumpVersion: Boolean
+    ) {
+        val editor = encryptedPrefs.edit()
+        if (deletions.isEmpty()) {
+            editor.remove(KEY_RECENT_PLAY_DELETIONS)
+        } else {
+            editor.putString(KEY_RECENT_PLAY_DELETIONS, gson.toJson(deletions))
+        }
+        if (bumpVersion) {
+            bumpSyncMutationVersion(editor)
+        }
+        check(editor.commit()) { "Failed to persist recent play deletion state" }
+    }
+
+    private fun persistPlaylistSongDeletionsLocked(
+        deletions: List<SyncPlaylistSongDeletion>,
+        bumpVersion: Boolean
+    ) {
+        val normalized = normalizePlaylistSongDeletions(deletions)
+        val editor = encryptedPrefs.edit()
+        if (normalized.isEmpty()) {
+            editor.remove(KEY_PLAYLIST_SONG_DELETIONS)
+        } else {
+            editor.putString(KEY_PLAYLIST_SONG_DELETIONS, gson.toJson(normalized))
+        }
+        if (bumpVersion) {
+            bumpSyncMutationVersion(editor)
+        }
+        check(editor.commit()) { "Failed to persist playlist deletion state" }
     }
 
     fun snapshot(): GitHubSyncConfigSnapshot {
@@ -507,22 +679,6 @@ class SecureTokenStorage(private val context: Context) {
     private fun normalizePlaylistSongDeletions(
         deletions: List<SyncPlaylistSongDeletion>
     ): List<SyncPlaylistSongDeletion> {
-        val merged = SyncPlaylistDeletionPolicy.mergeDeletions(deletions, emptyList())
-        val causalDeletions = merged.filter { deletion ->
-            deletion.removedMembershipTokens.orEmpty().isNotEmpty()
-        }
-        val remainingLegacyCapacity =
-            (MAX_PLAYLIST_SONG_DELETIONS - causalDeletions.size).coerceAtLeast(0)
-        val retainedLegacyDeletions = merged
-            .asSequence()
-            .filter { deletion -> deletion.removedMembershipTokens.orEmpty().isEmpty() }
-            .take(remainingLegacyCapacity)
-            .toList()
-        return (causalDeletions + retainedLegacyDeletions)
-            .sortedWith(
-                compareByDescending<SyncPlaylistSongDeletion> { it.deletedAt }
-                    .thenByDescending { it.deviceId }
-                    .thenBy(SyncPlaylistSongDeletion::stableKey)
-            )
+        return SyncPlaylistDeletionPolicy.limitDeletions(deletions)
     }
 }

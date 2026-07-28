@@ -165,10 +165,16 @@ class WebDavApiClient(
         content: ByteArray,
         mediaType: String = "application/octet-stream",
         expectedVersion: ConcurrencyToken? = null,
-        createOnly: Boolean = false
+        createOnly: Boolean = false,
+        allowUnconditionalWrite: Boolean = false
     ): Result<WriteResult> {
         return runCatching {
-            if (!createOnly && expectedVersion != null && !expectedVersion.hasConditionToken()) {
+            if (
+                !createOnly &&
+                expectedVersion != null &&
+                !expectedVersion.hasConditionToken() &&
+                !allowUnconditionalWrite
+            ) {
                 throw WebDavMissingConcurrencyTokenException(
                     "WebDAV server does not expose ETag or Last-Modified for conditional sync"
                 )

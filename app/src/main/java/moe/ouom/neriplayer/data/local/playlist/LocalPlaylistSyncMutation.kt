@@ -64,6 +64,12 @@ internal interface LocalPlaylistSyncMutationStore {
     fun markSyncMutation(): Long
 
     fun apply(mutation: LocalPlaylistSyncMutation)
+
+    /** 将墓碑落盘和本地版本推进绑定到同一次存储提交 */
+    fun applyAndMarkMutation(mutation: LocalPlaylistSyncMutation): Long {
+        apply(mutation)
+        return markSyncMutation()
+    }
 }
 
 internal class SecureLocalPlaylistSyncMutationStore(
@@ -90,6 +96,18 @@ internal class SecureLocalPlaylistSyncMutationStore(
         mutation.clearedPlaylistDeletionIds.forEach(storage::removePlaylistSongDeletionsForPlaylist)
         storage.removeDeletedPlaylistIds(mutation.restoredPlaylistIds.orEmpty().toSet())
     }
+
+    override fun applyAndMarkMutation(mutation: LocalPlaylistSyncMutation): Long {
+        return storage.applyPlaylistSyncMutation(
+            addedSongDeletions = mutation.addedSongDeletions,
+            removedSongDeletions = mutation.removedSongDeletions.map { removal ->
+                removal.playlistId to removal.identities
+            },
+            deletedPlaylistIds = mutation.deletedPlaylistIds,
+            clearedPlaylistDeletionIds = mutation.clearedPlaylistDeletionIds,
+            restoredPlaylistIds = mutation.restoredPlaylistIds.orEmpty().toSet()
+        )
+    }
 }
 
 internal class InMemoryLocalPlaylistSyncMutationStore : LocalPlaylistSyncMutationStore {
@@ -113,4 +131,8 @@ internal class InMemoryLocalPlaylistSyncMutationStore : LocalPlaylistSyncMutatio
     override fun markSyncMutation(): Long = mutationVersion.incrementAndGet()
 
     override fun apply(mutation: LocalPlaylistSyncMutation) = Unit
+
+    override fun applyAndMarkMutation(mutation: LocalPlaylistSyncMutation): Long {
+        return markSyncMutation()
+    }
 }

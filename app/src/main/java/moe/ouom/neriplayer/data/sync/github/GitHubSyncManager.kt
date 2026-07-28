@@ -283,14 +283,14 @@ class GitHubSyncManager private constructor(context: Context) {
             SyncPlaylist.fromLocalPlaylist(playlist, playlist.modifiedAt, localizedContext)
         }.toMutableList()
 
-        storage.getDeletedPlaylistIds().forEach { deletedId ->
+        storage.getDeletedPlaylistTimestamps().forEach { (deletedId, deletedAt) ->
             if (playlists.none { it.id == deletedId }) {
                 syncPlaylists += SyncPlaylist(
                     id = deletedId,
                     name = "",
                     songs = emptyList(),
                     createdAt = 0L,
-                    modifiedAt = System.currentTimeMillis(),
+                    modifiedAt = deletedAt,
                     isDeleted = true,
                     songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                 )
@@ -559,7 +559,7 @@ class GitHubSyncManager private constructor(context: Context) {
         playlists: List<SyncPlaylist>,
         lastSyncTime: Long
     ): Boolean {
-        return playlists.any { it.modifiedAt > lastSyncTime }
+        return playlists.any { !it.isDeleted && it.modifiedAt > lastSyncTime }
     }
 
     private fun mergePlaylist(
@@ -728,51 +728,7 @@ class GitHubSyncManager private constructor(context: Context) {
         left: SyncFavoritePlaylist,
         right: SyncFavoritePlaylist
     ): SyncFavoritePlaylist {
-        val newer = if (right.modifiedAt > left.modifiedAt) right else left
-        val older = if (newer === left) right else left
-
-        if (left.isDeleted != right.isDeleted) {
-            return if (left.modifiedAt == right.modifiedAt) {
-                newer.copy(
-                    songs = if (newer.isDeleted) emptyList() else (left.songs + right.songs).distinctBy { it.identity() },
-                    trackCount = if (newer.isDeleted) 0 else maxOf(left.trackCount, right.trackCount, left.songs.size, right.songs.size)
-                )
-            } else {
-                if (newer.isDeleted) {
-                    newer.copy(
-                        songs = emptyList(),
-                        trackCount = 0,
-                        sortOrder = maxOf(left.sortOrder, right.sortOrder)
-                    )
-                } else {
-                    newer.copy(
-                        songs = (left.songs + right.songs).distinctBy { it.identity() },
-                        trackCount = maxOf(left.trackCount, right.trackCount, left.songs.size, right.songs.size),
-                        sortOrder = newer.sortOrder.takeIf { it > 0L } ?: older.sortOrder
-                    )
-                }
-            }
-        }
-
-        if (newer.isDeleted) {
-            return newer.copy(
-                songs = emptyList(),
-                trackCount = 0,
-                addedTime = maxOf(left.addedTime, right.addedTime),
-                sortOrder = maxOf(left.sortOrder, right.sortOrder)
-            )
-        }
-
-        val mergedSongs = (left.songs + right.songs).distinctBy { it.identity() }
-        return newer.copy(
-            coverUrl = newer.coverUrl ?: older.coverUrl,
-            songs = mergedSongs,
-            trackCount = maxOf(left.trackCount, right.trackCount, mergedSongs.size),
-            addedTime = maxOf(left.addedTime, right.addedTime),
-            modifiedAt = maxOf(left.modifiedAt, right.modifiedAt),
-            sortOrder = newer.sortOrder.takeIf { it > 0L } ?: older.sortOrder,
-            isDeleted = false
-        )
+        return SyncPlaylistDeletionPolicy.mergeFavoritePlaylists(left, right)
     }
 
     private fun mergeDeletedPlaylist(

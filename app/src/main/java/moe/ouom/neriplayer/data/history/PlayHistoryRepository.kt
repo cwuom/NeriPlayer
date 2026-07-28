@@ -337,9 +337,10 @@ class PlayHistoryRepository private constructor(private val app: Context) {
                 val deletions = current
                     .filterNot { LocalSongSupport.isLocalSong(it.album, it.mediaUri, it.albumId, app) }
                     .map { it.toRecentPlayDeletion(deletedAt, deviceId) }
-                markSyncMutation()
                 if (deletions.isNotEmpty()) {
                     storage.addRecentPlayDeletions(deletions)
+                } else {
+                    markSyncMutation()
                 }
 
                 _history.value = emptyList()
@@ -368,9 +369,10 @@ class PlayHistoryRepository private constructor(private val app: Context) {
                 val deletions = removedEntries
                     .filterNot { LocalSongSupport.isLocalSong(it.album, it.mediaUri, it.albumId, app) }
                     .map { it.toRecentPlayDeletion(deletedAt, deviceId) }
-                markSyncMutation()
                 if (deletions.isNotEmpty()) {
                     storage.addRecentPlayDeletions(deletions)
+                } else {
+                    markSyncMutation()
                 }
 
                 val updated = current.filterNot { it.identityKey() in removalKeys }

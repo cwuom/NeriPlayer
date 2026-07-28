@@ -114,6 +114,13 @@ class SyncDataSerializerBinaryStreamTest {
         }
     }
 
+    @Test
+    fun `legacy base64 rejects illegal characters before decompression`() {
+        assertThrowsAny {
+            SyncDataSerializer.deserialize("H4sI!invalid".toByteArray(Charsets.UTF_8))
+        }
+    }
+
     private fun isGzip(bytes: ByteArray): Boolean =
         bytes.size >= 2 && bytes[0] == gzipMagic0 && bytes[1] == gzipMagic1
 
