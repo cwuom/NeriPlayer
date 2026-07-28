@@ -84,9 +84,13 @@ import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomStatuses
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSessionState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
+import moe.ouom.neriplayer.listentogether.playback.indexOfTrack
 import moe.ouom.neriplayer.listentogether.validation.ListenTogetherValidationError
 import moe.ouom.neriplayer.listentogether.validation.normalizeListenTogetherRoomId
+import moe.ouom.neriplayer.listentogether.validation.sanitizeListenTogetherJoinSecretOrNull
+import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherJoinSecret
 import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherNickname
+import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherRoomCreation
 import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherRoomId
 import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherUserUuid
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
@@ -174,19 +178,28 @@ fun ListenTogetherRoomPanel(
         autoPauseOnMemberChange = autoPauseOnMemberChange,
         shareAudioLinks = shareAudioLinks
     )
+    val currentSongIndex = currentQueue.indexOfTrack(currentSong)
+    val roomCreationError = validateListenTogetherRoomCreation(
+        queue = currentQueue,
+        currentIndex = currentSongIndex,
+        currentSong = currentSong
+    )
+    val joinSecretError = validateListenTogetherJoinSecret(joinSecretInput)
     val inviteUri = remember(
         sessionState.roomId,
         sessionState.nickname,
         sessionState.joinSecret,
         effectiveBaseUrl
     ) {
-        sessionState.roomId?.let {
-            buildListenTogetherInviteUri(
-                roomId = it,
-                inviterNickname = sessionState.nickname,
-                baseUrl = effectiveBaseUrl,
-                joinSecret = sessionState.joinSecret
-            )
+        sessionState.roomId?.let { roomId ->
+            sanitizeListenTogetherJoinSecretOrNull(sessionState.joinSecret)?.let { joinSecret ->
+                buildListenTogetherInviteUri(
+                    roomId = roomId,
+                    inviterNickname = sessionState.nickname,
+                    baseUrl = effectiveBaseUrl,
+                    joinSecret = joinSecret
+                )
+            }
         }
     }
 
@@ -292,6 +305,8 @@ fun ListenTogetherRoomPanel(
                 validateListenTogetherNickname(nickname)?.let { ErrorText(it) }
                 if (!isInRoom) {
                     validateListenTogetherRoomId(roomIdInput)?.takeIf { roomIdInput.isNotBlank() }?.let { ErrorText(it) }
+                    joinSecretError?.takeIf { roomIdInput.isNotBlank() }?.let { ErrorText(it) }
+                    roomCreationError?.takeIf { roomIdInput.isBlank() }?.let { ErrorText(it) }
                 }
                 QuickActionSection(
                     activity = activity,
@@ -348,7 +363,7 @@ fun ListenTogetherRoomPanel(
                             clipboard.copyText(clipboardScope, inviteText)
                             Toast.makeText(context, context.getString(R.string.listen_together_invite_copied), Toast.LENGTH_SHORT).show()
                         },
-                        enabled = !sessionState.roomId.isNullOrBlank()
+                        enabled = inviteUri != null
                     ) {
                         Text(stringResource(R.string.listen_together_copy_invite))
                     }
@@ -464,6 +479,8 @@ fun ListenTogetherRoomPanel(
                 validateListenTogetherNickname(nickname)?.let { SimpleErrorText(it) }
                 if (!isInRoom) {
                     validateListenTogetherRoomId(roomIdInput)?.takeIf { roomIdInput.isNotBlank() }?.let { SimpleErrorText(it) }
+                    joinSecretError?.takeIf { roomIdInput.isNotBlank() }?.let { SimpleErrorText(it) }
+                    roomCreationError?.takeIf { roomIdInput.isBlank() }?.let { SimpleErrorText(it) }
                 }
                 if (!isInRoom) {
                     RoomActions(
@@ -515,7 +532,7 @@ fun ListenTogetherRoomPanel(
                             clipboard.copyText(clipboardScope, inviteText)
                             Toast.makeText(context, context.getString(R.string.listen_together_invite_copied), Toast.LENGTH_SHORT).show()
                         },
-                        enabled = !sessionState.roomId.isNullOrBlank(),
+                        enabled = inviteUri != null,
                         modifier = Modifier.padding(horizontal = 12.dp)
                     ) { Text(stringResource(R.string.listen_together_copy_invite)) }
                 }
@@ -670,6 +687,13 @@ private fun RoomActions(
     val userUuidError = validateListenTogetherUserUuid(userUuid)
     val nicknameError = validateListenTogetherNickname(nickname)
     val roomIdError = validateListenTogetherRoomId(roomIdInput)
+    val joinSecretError = validateListenTogetherJoinSecret(joinSecretInput)
+    val currentIndex = currentQueue.indexOfTrack(currentSong)
+    val roomCreationError = validateListenTogetherRoomCreation(
+        queue = currentQueue,
+        currentIndex = currentIndex,
+        currentSong = currentSong
+    )
 
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -682,14 +706,15 @@ private fun RoomActions(
                     runCatching {
                         persistSettings(preferences, baseUrlInput, effectiveBaseUrl, userUuid, nickname, roomSettings)
                         sessionManager.createRoom(
-                            effectiveBaseUrl,
-                            userUuid,
-                            nickname,
-                            currentQueue,
-                            currentQueue.indexOfFirst { it == currentSong }.takeIf { it >= 0 } ?: 0,
-                            positionMs,
-                            isPlaying,
-                            roomSettings
+                            baseUrl = effectiveBaseUrl,
+                            userUuid = userUuid,
+                            nickname = nickname,
+                            queue = currentQueue,
+                            currentIndex = currentIndex,
+                            positionMs = positionMs,
+                            isPlaying = isPlaying,
+                            roomSettings = roomSettings,
+                            currentSong = currentSong
                         )
                         sessionManager.connectWebSocket()
                     }.onFailure {
@@ -701,7 +726,8 @@ private fun RoomActions(
             enabled = runningActionResId == null &&
                 currentQueue.isNotEmpty() &&
                 userUuidError == null &&
-                nicknameError == null,
+                nicknameError == null &&
+                roomCreationError == null,
             modifier = Modifier.weight(1f)
         ) {
             Icon(Icons.Outlined.PlayArrow, contentDescription = null)
@@ -724,7 +750,7 @@ private fun RoomActions(
                             roomId = targetRoomId,
                             userUuid = userUuid,
                             nickname = nickname,
-                            joinSecret = joinSecretInput.takeIf { it.isNotBlank() }
+                            joinSecret = joinSecretInput
                         )
                         sessionManager.connectWebSocket()
                     }.onFailure {
@@ -737,7 +763,8 @@ private fun RoomActions(
                 roomIdInput.isNotBlank() &&
                 userUuidError == null &&
                 nicknameError == null &&
-                roomIdError == null,
+                roomIdError == null &&
+                joinSecretError == null,
             modifier = Modifier.weight(1f)
         ) {
             Icon(Icons.Outlined.Link, contentDescription = null)

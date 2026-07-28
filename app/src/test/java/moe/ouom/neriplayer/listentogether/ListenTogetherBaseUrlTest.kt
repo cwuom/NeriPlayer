@@ -46,7 +46,7 @@ class ListenTogetherBaseUrlTest {
     @Test
     fun `invite parser normalizes valid custom server`() {
         val invite = parseListenTogetherInvite(
-            "neriplayer://listen-together/join?roomId=P8BAEV&baseUrl=https%3A%2F%2Fexample.com%2F"
+            "neriplayer://listen-together/join?roomId=P8BAEV&baseUrl=https%3A%2F%2Fexample.com%2F&secret=secret-value"
         )
 
         assertEquals("https://example.com", invite?.baseUrl)
@@ -57,7 +57,7 @@ class ListenTogetherBaseUrlTest {
     fun `invite parser keeps encoded worker base url from shared text`() {
         val invite = parseListenTogetherInvite(
             "Neri5458C5 邀请你在 NeriPlayer 中加入房间 GTV42X。复制后打开 App 即可识别，或直接使用下面的链接。\n" +
-                "neriplayer://listen-together/join?roomId=GTV42X&inviter=Neri5458C5&baseUrl=https%3A%2F%2Fneriplayerltw.cwuomcwuom.workers.dev"
+                "neriplayer://listen-together/join?roomId=GTV42X&inviter=Neri5458C5&baseUrl=https%3A%2F%2Fneriplayerltw.cwuomcwuom.workers.dev&secret=secret-value"
         )
 
         assertEquals("GTV42X", invite?.roomId)
@@ -73,6 +73,13 @@ class ListenTogetherBaseUrlTest {
         )
 
         assertEquals("secret-value", invite?.joinSecret)
+    }
+
+    @Test
+    fun `invite parser rejects missing room join secret`() {
+        assertNull(
+            parseListenTogetherInvite("neriplayer://listen-together/join?roomId=GTV42X")
+        )
     }
 
     @Test
@@ -109,7 +116,7 @@ class ListenTogetherBaseUrlTest {
     @Test
     fun `invite parser decodes encoded inviter`() {
         val invite = parseListenTogetherInvite(
-            "neriplayer://listen-together/join?roomId=P8BAEV&inviter=Neri%E7%8C%AB"
+            "neriplayer://listen-together/join?roomId=P8BAEV&inviter=Neri%E7%8C%AB&secret=secret-value"
         )
 
         assertEquals("Neri猫", invite?.inviterNickname)
@@ -125,7 +132,7 @@ class ListenTogetherBaseUrlTest {
     @Test
     fun `invite parser flags invalid custom server`() {
         val invite = parseListenTogetherInvite(
-            "neriplayer://listen-together/join?roomId=P8BAEV&baseUrl=example.com"
+            "neriplayer://listen-together/join?roomId=P8BAEV&baseUrl=example.com&secret=secret-value"
         )
 
         assertNull(invite?.baseUrl)
@@ -135,7 +142,7 @@ class ListenTogetherBaseUrlTest {
     @Test
     fun `invite parser rejects cleartext http server`() {
         val invite = parseListenTogetherInvite(
-            "neriplayer://listen-together/join?roomId=P8BAEV&baseUrl=http%3A%2F%2F192.168.1.10%3A8787%2F"
+            "neriplayer://listen-together/join?roomId=P8BAEV&baseUrl=http%3A%2F%2F192.168.1.10%3A8787%2F&secret=secret-value"
         )
 
         assertNull(invite?.baseUrl)

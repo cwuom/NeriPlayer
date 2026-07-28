@@ -6,7 +6,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 
 fun SongItem.toListenTogetherTrackOrNull(includeLocal: Boolean = false): ListenTogetherTrack? {
     val channel = resolvedChannelId() ?: return null
-    if (channel == ListenTogetherChannels.LOCAL && !includeLocal) {
+    if (channel.equals(ListenTogetherChannels.LOCAL, ignoreCase = true) && !includeLocal) {
         return null
     }
 

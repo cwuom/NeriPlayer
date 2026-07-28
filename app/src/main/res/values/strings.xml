@@ -1619,6 +1619,11 @@
     <string name="listen_together_error_room_id_chars">房间 ID 仅支持大写字母和数字</string>
     <string name="listen_together_error_user_uuid_required">用户 UUID 不能为空</string>
     <string name="listen_together_error_user_uuid_invalid">用户 UUID 格式无效</string>
+    <string name="listen_together_error_join_secret_required">邀请密钥不能为空</string>
+    <string name="listen_together_error_join_secret_length">邀请密钥不能超过 %1$d 个字符</string>
+    <string name="listen_together_error_current_track_missing">当前没有正在播放的歌曲，无法创建一起听</string>
+    <string name="listen_together_error_current_track_not_shareable">本地或无法分享的歌曲不能创建一起听，请切换到在线歌曲</string>
+    <string name="listen_together_error_current_track_unavailable">当前歌曲不在播放队列中，无法创建一起听</string>
     <string name="listen_together_error_nickname_length">当前昵称长度需要为 %1$d-%2$d 位</string>
     <string name="listen_together_error_nickname_chars">当前昵称仅支持汉字、英文字母和数字</string>
     <string name="settings_listen_together_server_test">测试可用性</string>

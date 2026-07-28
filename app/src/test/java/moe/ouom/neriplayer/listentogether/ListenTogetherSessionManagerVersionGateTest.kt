@@ -57,7 +57,8 @@ class ListenTogetherSessionManagerVersionGateTest {
             baseUrl = BASE_URL,
             roomId = ROOM_ID,
             userUuid = USER_UUID,
-            nickname = "Tester"
+            nickname = "Tester",
+            joinSecret = JOIN_SECRET
         )
 
         val refreshJob = async(Dispatchers.IO) {
@@ -117,7 +118,8 @@ class ListenTogetherSessionManagerVersionGateTest {
             baseUrl = BASE_URL,
             roomId = ROOM_ID,
             userUuid = USER_UUID,
-            nickname = "Tester"
+            nickname = "Tester",
+            joinSecret = JOIN_SECRET
         )
 
         val freshSocketState = roomState(
@@ -171,7 +173,8 @@ class ListenTogetherSessionManagerVersionGateTest {
             baseUrl = BASE_URL,
             roomId = ROOM_ID,
             userUuid = USER_UUID,
-            nickname = "Tester"
+            nickname = "Tester",
+            joinSecret = JOIN_SECRET
         )
 
         val refreshJob = async(Dispatchers.IO) {
@@ -333,6 +336,7 @@ class ListenTogetherSessionManagerVersionGateTest {
         private const val BASE_URL = "http://listen.test"
         private const val ROOM_ID = "ABCD23"
         private const val USER_UUID = "123e4567-e89b-12d3-a456-426614174000"
+        private const val JOIN_SECRET = "test-secret"
 
         private val json = Json {
             encodeDefaults = true

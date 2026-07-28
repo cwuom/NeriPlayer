@@ -51,6 +51,7 @@ import moe.ouom.neriplayer.listentogether.network.ws.buildListenTogetherWsUrl
 import moe.ouom.neriplayer.listentogether.network.ws.redactListenTogetherWsUrlForLog
 import moe.ouom.neriplayer.listentogether.playback.currentStableKey
 import moe.ouom.neriplayer.listentogether.playback.expectedPositionMs
+import moe.ouom.neriplayer.listentogether.playback.isShareableForListenTogether
 import moe.ouom.neriplayer.listentogether.playback.ListenTogetherListenerStallRecovery
 import moe.ouom.neriplayer.listentogether.playback.ListenTogetherPlayerStateApplier
 import moe.ouom.neriplayer.listentogether.playback.ListenTogetherPlayerStateApplierConfig
@@ -96,6 +97,8 @@ import moe.ouom.neriplayer.listentogether.session.shouldIgnoreListenTogetherInco
 import moe.ouom.neriplayer.listentogether.session.shouldRejectForwardedListenTogetherMemberControl
 import moe.ouom.neriplayer.listentogether.session.shouldRepairListenTogetherListenerState
 import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherNickname
+import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherJoinSecret
+import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherRoomCreation
 import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherRoomId
 import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherUserUuid
 import java.util.UUID
@@ -227,10 +230,12 @@ class ListenTogetherSessionManager(
         currentIndex: Int,
         positionMs: Long,
         isPlaying: Boolean,
-        roomSettings: ListenTogetherRoomSettings = ListenTogetherRoomSettings()
+        roomSettings: ListenTogetherRoomSettings = ListenTogetherRoomSettings(),
+        currentSong: SongItem? = queue.getOrNull(currentIndex)
     ): ListenTogetherRoomResponse {
         val validatedUserUuid = requireValidListenTogetherUserUuid(userUuid)
         val validatedNickname = requireValidListenTogetherNickname(nickname)
+        requireValidListenTogetherRoomCreation(queue, currentIndex, currentSong)
         val (queueTracks, resolvedCurrentIndex) = queue.toShareableQueueSnapshot(
             currentIndex = currentIndex,
             roomSettings = roomSettings
@@ -280,13 +285,25 @@ class ListenTogetherSessionManager(
             session.roomId.equals(validatedRoomId, ignoreCase = true) &&
                 session.userUuid.equals(validatedUserUuid, ignoreCase = true)
         }
+        val resolvedMemberSecret = memberSecret ?: reusableCredential?.memberSecret
+        val explicitJoinSecret = joinSecret
+            ?.takeIf { it.isNotBlank() }
+            ?.let(::requireValidListenTogetherJoinSecret)
+        val resolvedJoinSecret = explicitJoinSecret ?: reusableCredential?.joinSecret
+        val hasReusableMembership = !resolvedMemberSecret.isNullOrBlank() ||
+            !reusableCredential?.token.isNullOrBlank()
+        val validatedJoinSecret = if (hasReusableMembership) {
+            resolvedJoinSecret
+        } else {
+            requireValidListenTogetherJoinSecret(resolvedJoinSecret)
+        }
         val response = api.joinRoom(
             baseUrl = baseUrl,
             roomId = validatedRoomId,
             userUuid = validatedUserUuid,
             nickname = validatedNickname,
-            memberSecret = memberSecret ?: reusableCredential?.memberSecret,
-            joinSecret = joinSecret ?: reusableCredential?.joinSecret,
+            memberSecret = resolvedMemberSecret,
+            joinSecret = validatedJoinSecret,
             bearerToken = reusableCredential?.token
         )
         updateSession(baseUrl, response)
@@ -438,12 +455,20 @@ class ListenTogetherSessionManager(
                                     TAG,
                                     "websocket.controlResult(): apply committed state locally, type=${applied.causedBy?.type}, version=${applied.version}"
                                 )
+                                val previousState = _roomState.value
                                 val accepted = acceptRoomState(
                                     state = applied.state,
                                     expectedPositionMs = applied.expectedPositionMs,
                                     source = RoomStateSource.WEB_SOCKET_CONTROL_RESULT,
                                     cause = applied.causedBy
                                 )
+                                if (accepted != null) {
+                                    maybePublishControllerLinkAfterAudioSharingEnabled(
+                                        previousState = previousState,
+                                        currentState = accepted.state,
+                                        reason = "control_result:${applied.causedBy?.type}"
+                                    )
+                                }
                                 if (accepted != null && applied.causedBy?.type == "TRACK_FINISHED") {
                                     awaitingTrackFinishStableKey = null
                                 }
@@ -816,12 +841,14 @@ class ListenTogetherSessionManager(
     fun buildRequestLinkEvent(
         stableKey: String,
         currentIndex: Int? = null,
-        track: ListenTogetherTrack? = null
+        track: ListenTogetherTrack? = null,
+        forceRefresh: Boolean = false
     ): ListenTogetherEvent {
         return eventFactory.buildRequestLinkEvent(
             stableKey = stableKey,
             currentIndex = currentIndex,
-            track = track
+            track = track,
+            forceRefresh = forceRefresh
         )
     }
 
@@ -1129,12 +1156,18 @@ class ListenTogetherSessionManager(
             markInboundEvent(message.causedBy?.eventId)
             return
         }
+        val previousState = _roomState.value
         val accepted = acceptRoomState(
             state = state,
             expectedPositionMs = message.expectedPositionMs,
             source = RoomStateSource.WEB_SOCKET_STATE,
             cause = message.causedBy
         ) ?: return
+        maybePublishControllerLinkAfterAudioSharingEnabled(
+            previousState = previousState,
+            currentState = accepted.state,
+            reason = "room_state:${message.causedBy?.type ?: message.type}"
+        )
         if (message.causedBy?.type == "TRACK_FINISHED") {
             awaitingTrackFinishStableKey = null
         }
@@ -1540,6 +1573,11 @@ class ListenTogetherSessionManager(
                     snapshot.connectionState != ListenTogetherConnectionState.CONNECTED ||
                     !isCurrentUserController(snapshot)
                 ) {
+                    delay(HEARTBEAT_STATE_RECHECK_INTERVAL_MS)
+                    continue
+                }
+                if (!PlayerManager.currentSongFlow.value.isShareableForListenTogether()) {
+                    NPLogger.d(TAG, "heartbeat(): skip non-shareable current track")
                     delay(HEARTBEAT_STATE_RECHECK_INTERVAL_MS)
                     continue
                 }
@@ -2218,6 +2256,10 @@ class ListenTogetherSessionManager(
         if (!isCurrentUserController(snapshot)) return
         val state = _roomState.value ?: return
         if (state.roomStatus == ListenTogetherRoomStatuses.CLOSED) return
+        if (!PlayerManager.currentSongFlow.value.isShareableForListenTogether()) {
+            NPLogger.d(TAG, "publishControllerHeartbeatIfNeeded(): skip non-shareable current track, reason=$reason")
+            return
+        }
         val heartbeat = buildHeartbeatEvent(
             state = currentLocalPlaybackStateName(),
             positionMs = PlayerManager.playbackPositionFlow.value.coerceAtLeast(0L),
@@ -2233,6 +2275,30 @@ class ListenTogetherSessionManager(
         sendControlEventPureWebSocket(heartbeat, "publish_controller_heartbeat:$reason")
     }
 
+    private fun maybePublishControllerLinkAfterAudioSharingEnabled(
+        previousState: ListenTogetherRoomState?,
+        currentState: ListenTogetherRoomState,
+        reason: String
+    ) {
+        if (previousState?.settings.normalized()?.shareAudioLinks != false) return
+        if (!currentState.settings.normalized().shareAudioLinks) return
+        val currentStableKey = PlayerManager.currentSongFlow.value
+            ?.toListenTogetherTrackOrNull()
+            ?.stableKey
+        val roomStableKey = currentState.currentStableKey()
+        if (currentStableKey.isNullOrBlank() || currentStableKey != roomStableKey) {
+            NPLogger.d(
+                TAG,
+                "maybePublishControllerLinkAfterAudioSharingEnabled(): skip current=$currentStableKey room=$roomStableKey, reason=$reason"
+            )
+            return
+        }
+        if (publishControllerLinkReadyIfPossible(currentStableKey, "audio_links_enabled:$reason")) {
+            return
+        }
+        resolveAndPublishControllerLink(currentStableKey, "audio_links_enabled:$reason")
+    }
+
     private fun publishControllerLinkReadyIfPossible(
         stableKey: String,
         reason: String,
@@ -2242,6 +2308,16 @@ class ListenTogetherSessionManager(
         if (snapshot.connectionState != ListenTogetherConnectionState.CONNECTED) return false
         if (!isCurrentUserController(snapshot)) return false
         if (!_roomState.value?.settings.normalized().shareAudioLinks) return false
+        val currentStableKey = PlayerManager.currentSongFlow.value
+            ?.toListenTogetherTrackOrNull()
+            ?.stableKey
+        if (currentStableKey != stableKey) {
+            NPLogger.d(
+                TAG,
+                "publishControllerLinkReadyIfPossible(): skip stale or non-shareable current track, expected=$stableKey, actual=$currentStableKey, reason=$reason"
+            )
+            return false
+        }
         val event = buildLinkReadyEvent(
             stableKey = stableKey,
             positionMs = PlayerManager.playbackPositionFlow.value.coerceAtLeast(0L),
@@ -2382,7 +2458,8 @@ class ListenTogetherSessionManager(
         val event = buildRequestLinkEvent(
             stableKey = stableKey,
             currentIndex = state.currentIndex,
-            track = targetTrack.withStreamUrl(null)
+            track = targetTrack.withStreamUrl(null),
+            forceRefresh = force
         )
         lastRequestedLinkStableKey = stableKey
         lastRequestedLinkAtElapsedMs = nowElapsedMs

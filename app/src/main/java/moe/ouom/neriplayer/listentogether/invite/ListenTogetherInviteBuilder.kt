@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.listentogether.invite
 
 import android.net.Uri
 import moe.ouom.neriplayer.listentogether.network.http.normalizeBaseUrl
+import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherJoinSecret
 import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherNickname
 import moe.ouom.neriplayer.listentogether.validation.requireValidListenTogetherRoomId
 import java.util.UUID
@@ -22,9 +23,10 @@ fun buildListenTogetherInviteUri(
     roomId: String,
     inviterNickname: String? = null,
     baseUrl: String? = null,
-    joinSecret: String? = null
+    joinSecret: String
 ): String {
     val normalizedRoomId = requireValidListenTogetherRoomId(roomId)
+    val normalizedJoinSecret = requireValidListenTogetherJoinSecret(joinSecret)
     val normalizedBaseUrl = baseUrl
         ?.takeIf { it.isNotBlank() }
         ?.normalizeBaseUrl()
@@ -41,9 +43,7 @@ fun buildListenTogetherInviteUri(
             normalizedBaseUrl?.let {
                 appendQueryParameter("baseUrl", it)
             }
-            joinSecret?.takeIf { it.isNotBlank() }?.let {
-                appendQueryParameter("secret", it)
-            }
+            appendQueryParameter("secret", normalizedJoinSecret)
         }
         .build()
         .toString()

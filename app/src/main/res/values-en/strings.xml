@@ -1619,6 +1619,11 @@
     <string name="listen_together_error_room_id_chars">Room ID only supports uppercase letters and digits.</string>
     <string name="listen_together_error_user_uuid_required">User UUID is required.</string>
     <string name="listen_together_error_user_uuid_invalid">User UUID format is invalid.</string>
+    <string name="listen_together_error_join_secret_required">Invite secret is required.</string>
+    <string name="listen_together_error_join_secret_length">Invite secret length limit: %1$d.</string>
+    <string name="listen_together_error_current_track_missing">No track is playing, so a Listen Together room cannot be created.</string>
+    <string name="listen_together_error_current_track_not_shareable">Local or unshareable tracks cannot create a Listen Together room. Switch to an online track.</string>
+    <string name="listen_together_error_current_track_unavailable">The current track is not in the playback queue and cannot create a Listen Together room.</string>
     <string name="listen_together_error_nickname_length">Nickname length must be %1$d-%2$d characters.</string>
     <string name="listen_together_error_nickname_chars">Nickname only supports Chinese characters, letters, and digits.</string>
     <string name="settings_listen_together_server_test">Test Availability</string>

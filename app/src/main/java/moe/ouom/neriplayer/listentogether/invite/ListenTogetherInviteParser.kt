@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.listentogether.invite
 
 import android.net.Uri
 import moe.ouom.neriplayer.listentogether.validation.normalizeListenTogetherRoomId
+import moe.ouom.neriplayer.listentogether.validation.sanitizeListenTogetherJoinSecretOrNull
 import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherNickname
 import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherRoomId
 import java.net.URI
@@ -44,9 +45,8 @@ private fun parseListenTogetherInviteInternal(rawText: String): ListenTogetherIn
         ?.takeIf { it.isNotBlank() && validateListenTogetherNickname(it) == null }
     val rawBaseUrl = query["baseUrl"]?.trim().orEmpty()
     val normalizedBaseUrl = configuredListenTogetherInviteBaseUrlOrNull(rawBaseUrl)
-    val joinSecret = query["secret"]
-        ?.trim()
-        ?.takeIf { it.isNotBlank() && it.length <= 256 }
+    val joinSecret = sanitizeListenTogetherJoinSecretOrNull(query["secret"])
+        ?: return null
     return ListenTogetherInvite(
         roomId = roomId,
         inviterNickname = inviterNickname,
