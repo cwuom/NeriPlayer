@@ -67,6 +67,15 @@ class ListenTogetherBaseUrlTest {
     }
 
     @Test
+    fun `invite parser carries room join secret`() {
+        val invite = parseListenTogetherInvite(
+            "neriplayer://listen-together/join?roomId=GTV42X&secret=secret-value"
+        )
+
+        assertEquals("secret-value", invite?.joinSecret)
+    }
+
+    @Test
     fun `invite join base url prefers invite server over saved server`() {
         val invite = ListenTogetherInvite(
             roomId = "GTV42X",

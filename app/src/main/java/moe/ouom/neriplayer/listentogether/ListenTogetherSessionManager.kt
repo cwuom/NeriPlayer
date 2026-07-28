@@ -267,13 +267,28 @@ class ListenTogetherSessionManager(
         baseUrl: String,
         roomId: String,
         userUuid: String,
-        nickname: String
+        nickname: String,
+        memberSecret: String? = null,
+        joinSecret: String? = null
     ): ListenTogetherRoomResponse {
         val validatedRoomId = requireValidListenTogetherRoomId(roomId)
         val validatedUserUuid = requireValidListenTogetherUserUuid(userUuid)
         val validatedNickname = requireValidListenTogetherNickname(nickname)
         NPLogger.d(TAG, "joinRoom(): baseUrl=$baseUrl, roomId=$validatedRoomId, userUuid=$validatedUserUuid, nickname=$validatedNickname")
-        val response = api.joinRoom(baseUrl, validatedRoomId, validatedUserUuid, validatedNickname)
+        val previousSession = _sessionState.value
+        val reusableCredential = previousSession.takeIf { session ->
+            session.roomId.equals(validatedRoomId, ignoreCase = true) &&
+                session.userUuid.equals(validatedUserUuid, ignoreCase = true)
+        }
+        val response = api.joinRoom(
+            baseUrl = baseUrl,
+            roomId = validatedRoomId,
+            userUuid = validatedUserUuid,
+            nickname = validatedNickname,
+            memberSecret = memberSecret ?: reusableCredential?.memberSecret,
+            joinSecret = joinSecret ?: reusableCredential?.joinSecret,
+            bearerToken = reusableCredential?.token
+        )
         updateSession(baseUrl, response)
         NPLogger.d(
             TAG,
@@ -287,7 +302,16 @@ class ListenTogetherSessionManager(
         NPLogger.d(TAG, "refreshRoomState(): baseUrl=$baseUrl, roomId=$validatedRoomId")
         val sentAtElapsedMs = SystemClock.elapsedRealtime()
         val sentAtWallMs = System.currentTimeMillis()
-        val response = api.getRoomState(baseUrl, validatedRoomId)
+        val session = _sessionState.value
+        val bearerToken = session.takeIf {
+            it.baseUrl.equals(baseUrl, ignoreCase = true) &&
+                it.roomId.equals(validatedRoomId, ignoreCase = true)
+        }?.token
+        val response = api.getRoomState(
+            baseUrl = baseUrl,
+            roomId = validatedRoomId,
+            bearerToken = bearerToken
+        )
         updateServerClockOffsetFromRoundTrip(
             serverNowMs = response.serverNowMs,
             sentAtWallMs = sentAtWallMs,
@@ -855,6 +879,7 @@ class ListenTogetherSessionManager(
 
     private fun updateSession(baseUrl: String, response: ListenTogetherRoomResponse) {
         val normalizedBaseUrl = resolveListenTogetherBaseUrl(baseUrl)
+        val previousSession = _sessionState.value
         val nextRoomId = response.roomId
         if (!nextRoomId.isNullOrBlank()) {
             synchronized(roomStateLock) {
@@ -898,6 +923,16 @@ class ListenTogetherSessionManager(
                 state = response.state
             ),
             token = response.token,
+            memberSecret = response.memberSecret ?: previousSession.memberSecret.takeIf {
+                previousSession.roomId.equals(response.roomId, ignoreCase = true) &&
+                    previousSession.userUuid.equals(
+                        response.userUuid ?: response.userId,
+                        ignoreCase = true
+                    )
+            },
+            joinSecret = response.joinSecret ?: previousSession.joinSecret.takeIf {
+                previousSession.roomId.equals(response.roomId, ignoreCase = true)
+            },
             wsUrl = resolvedWsUrl,
             lastError = response.error,
             roomNotice = null

@@ -53,22 +53,32 @@ class ListenTogetherApi(
         baseUrl: String,
         roomId: String,
         userUuid: String,
-        nickname: String
+        nickname: String,
+        memberSecret: String? = null,
+        joinSecret: String? = null,
+        bearerToken: String? = null
     ): ListenTogetherRoomResponse {
         return post(
             url = "${baseUrl.normalizeBaseUrl()}/api/rooms/$roomId/join",
             body = ListenTogetherJoinRoomRequest(
                 userUuid = userUuid,
-                nickname = nickname
-            )
+                nickname = nickname,
+                memberSecret = memberSecret,
+                joinSecret = joinSecret
+            ),
+            bearerToken = bearerToken
         )
     }
 
     suspend fun getRoomState(
         baseUrl: String,
-        roomId: String
+        roomId: String,
+        bearerToken: String? = null
     ): ListenTogetherStateResponse {
-        return get("${baseUrl.normalizeBaseUrl()}/api/rooms/$roomId/state")
+        return get(
+            url = "${baseUrl.normalizeBaseUrl()}/api/rooms/$roomId/state",
+            bearerToken = bearerToken
+        )
     }
 
     suspend fun sendControlEvent(
@@ -91,16 +101,16 @@ class ListenTogetherApi(
                 message = "invalid_base_url"
             )
         val request = Request.Builder()
-            .url("$normalizedBaseUrl/api/rooms/ABCDEF/state")
+            .url("$normalizedBaseUrl/healthz")
             .get()
             .build()
         runCatching {
             okHttpClient.newCall(request).execute().use { response ->
                 val body = response.body?.limitedString().orEmpty()
-                val looksLikeListenTogetherService =
-                    body.contains("\"ok\"", ignoreCase = true) ||
-                        body.contains("room not initialized", ignoreCase = true) ||
-                        body.contains("not found", ignoreCase = true)
+                val looksLikeListenTogetherService = body.contains(
+                    "neriplayer-listen-together-worker",
+                    ignoreCase = true
+                )
                 if (looksLikeListenTogetherService) {
                     ListenTogetherServerTestResult(
                         ok = true,
@@ -121,11 +131,17 @@ class ListenTogetherApi(
         }
     }
 
-    private suspend inline fun <reified T> get(url: String): T = withContext(Dispatchers.IO) {
-        val request = Request.Builder()
+    private suspend inline fun <reified T> get(
+        url: String,
+        bearerToken: String? = null
+    ): T = withContext(Dispatchers.IO) {
+        val requestBuilder = Request.Builder()
             .url(url)
             .get()
-            .build()
+        bearerToken?.takeIf { it.isNotBlank() }?.let {
+            requestBuilder.header("Authorization", "Bearer $it")
+        }
+        val request = requestBuilder.build()
         okHttpClient.newCall(request).execute().use { response ->
             val body = response.body?.limitedString().orEmpty()
             if (!response.isSuccessful) {

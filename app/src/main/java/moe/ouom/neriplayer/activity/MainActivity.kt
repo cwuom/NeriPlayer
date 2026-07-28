@@ -209,9 +209,6 @@ class MainActivity : ComponentActivity() {
     private var pendingExternalAudioServiceStart: PendingAudioServiceStart? = null
     private val pendingListenTogetherInvite = MutableStateFlow<ListenTogetherInvite?>(null)
     private val listenTogetherInviteFlow = pendingListenTogetherInvite.asStateFlow()
-    private var lastObservedClipboardInviteSignature: String? = null
-    private var clipboardInviteInspectJob: Job? = null
-    private var hasWindowFocusForClipboardInspection = false
     private val listenTogetherStatusMessage = MutableStateFlow<String?>(null)
     private val listenTogetherStatusFlow = listenTogetherStatusMessage.asStateFlow()
     private val startupSyncWarningCoordinator by lazy {
@@ -370,7 +367,6 @@ class MainActivity : ComponentActivity() {
                         }
                         LaunchedEffect(Unit) {
                             handleIncomingIntent(intent)
-                            inspectClipboardForListenTogetherInvite()
                         }
                         SideEffect {
                             val controller = WindowInsetsControllerCompat(window, window.decorView)
@@ -734,16 +730,14 @@ class MainActivity : ComponentActivity() {
                                                         )
                                                         val userUuid = preferences.getOrCreateUserUuid()
                                                         val nickname = preferences.getOrCreateNickname()
-                                                        preferences.setWorkerBaseUrl(baseUrl)
-                                                        invite.baseUrl?.let {
-                                                            preferences.setWorkerBaseUrlInput(baseUrl)
-                                                        }
+                                                        // 邀请地址只服务于这次入房, 不在用户未察觉时改写默认服务器
                                                         updateListenTogetherStatus(getString(R.string.listen_together_status_syncing))
                                                         sessionManager.joinRoom(
                                                             baseUrl = baseUrl,
                                                             roomId = invite.roomId,
                                                             userUuid = userUuid,
-                                                            nickname = nickname
+                                                            nickname = nickname,
+                                                            joinSecret = invite.joinSecret
                                                         )
                                                         sessionManager.connectWebSocket()
                                                         clearPendingListenTogetherInvite()
@@ -918,7 +912,6 @@ class MainActivity : ComponentActivity() {
         }
         setIntent(intent)
         handleIncomingIntent(intent)
-        scheduleClipboardInviteInspection(immediate = true)
     }
 
     override fun onResume() {
@@ -927,14 +920,6 @@ class MainActivity : ComponentActivity() {
             return
         }
         startPendingExternalAudioServiceIfNeeded()
-        if (hasWindowFocusForClipboardInspection) {
-            scheduleClipboardInviteInspection()
-        }
-    }
-
-    override fun onPause() {
-        clipboardInviteInspectJob?.cancel()
-        super.onPause()
     }
 
     override fun onStop() {
@@ -949,10 +934,8 @@ class MainActivity : ComponentActivity() {
         if (safeModeActive) {
             return
         }
-        hasWindowFocusForClipboardInspection = hasFocus
         if (hasFocus) {
             startPendingExternalAudioServiceIfNeeded()
-            scheduleClipboardInviteInspection()
         }
     }
 
@@ -968,39 +951,11 @@ class MainActivity : ComponentActivity() {
         return true
     }
 
-    private fun inspectClipboardForListenTogetherInvite() {
-        val clipboard = getSystemService(ClipboardManager::class.java) ?: return
-        val clipText = clipboard.primaryClip
-            ?.takeIf { it.itemCount > 0 }
-            ?.getItemAt(0)
-            ?.coerceToText(this)
-            ?.toString()
-        val invite = parseListenTogetherInvite(clipText)
-        if (invite == null) {
-            lastObservedClipboardInviteSignature = null
-            return
-        }
-        if (lastObservedClipboardInviteSignature == invite.signature) return
-        lastObservedClipboardInviteSignature = invite.signature
-        presentListenTogetherInvite(invite)
-    }
-
-    private fun scheduleClipboardInviteInspection(immediate: Boolean = false) {
-        clipboardInviteInspectJob?.cancel()
-        clipboardInviteInspectJob = lifecycleScope.launch {
-            if (!immediate) {
-                delay(180)
-            }
-            inspectClipboardForListenTogetherInvite()
-        }
-    }
-
     private fun clearPendingListenTogetherInvite() {
         pendingListenTogetherInvite.value = null
     }
 
     private fun clearListenTogetherInviteCache() {
-        lastObservedClipboardInviteSignature = null
         clearPendingListenTogetherInvite()
     }
 
@@ -1228,7 +1183,6 @@ class MainActivity : ComponentActivity() {
         if (!safeModeActive) {
             PlayerManager.flushPlaybackStatsAsync("activity_destroy")
         }
-        clipboardInviteInspectJob?.cancel()
         externalAudioImportJob?.cancel()
         externalAudioMetadataHydrationJob?.cancel()
         super.onDestroy()

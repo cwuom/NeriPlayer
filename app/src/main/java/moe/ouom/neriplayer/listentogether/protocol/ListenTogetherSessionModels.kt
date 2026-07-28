@@ -20,6 +20,8 @@ data class ListenTogetherSessionState(
     val nickname: String? = null,
     val role: String? = null,
     val token: String? = null,
+    val memberSecret: String? = null,
+    val joinSecret: String? = null,
     val wsUrl: String? = null,
     val connectionState: ListenTogetherConnectionState = ListenTogetherConnectionState.DISCONNECTED,
     val lastError: String? = null,

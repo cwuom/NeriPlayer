@@ -24,7 +24,9 @@ data class ListenTogetherCreateRoomRequest(
 @Serializable
 data class ListenTogetherJoinRoomRequest(
     val userUuid: String,
-    val nickname: String
+    val nickname: String,
+    val memberSecret: String? = null,
+    val joinSecret: String? = null
 )
 
 @Serializable
@@ -35,6 +37,8 @@ data class ListenTogetherRoomResponse(
     val userId: String? = null,
     val nickname: String? = null,
     val role: String? = null,
+    val memberSecret: String? = null,
+    val joinSecret: String? = null,
     val autoPauseOnJoin: Boolean = false,
     val token: String? = null,
     val state: ListenTogetherRoomState? = null,

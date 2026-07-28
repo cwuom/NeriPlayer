@@ -21,7 +21,8 @@ fun buildDefaultListenTogetherNickname(): String {
 fun buildListenTogetherInviteUri(
     roomId: String,
     inviterNickname: String? = null,
-    baseUrl: String? = null
+    baseUrl: String? = null,
+    joinSecret: String? = null
 ): String {
     val normalizedRoomId = requireValidListenTogetherRoomId(roomId)
     val normalizedBaseUrl = baseUrl
@@ -39,6 +40,9 @@ fun buildListenTogetherInviteUri(
             }
             normalizedBaseUrl?.let {
                 appendQueryParameter("baseUrl", it)
+            }
+            joinSecret?.takeIf { it.isNotBlank() }?.let {
+                appendQueryParameter("secret", it)
             }
         }
         .build()

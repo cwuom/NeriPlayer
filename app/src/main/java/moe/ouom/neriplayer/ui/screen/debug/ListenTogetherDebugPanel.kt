@@ -153,6 +153,7 @@ fun ListenTogetherRoomPanel(
 
     var baseUrl by rememberSaveable { mutableStateOf("") }
     var roomIdInput by rememberSaveable { mutableStateOf("") }
+    var joinSecretInput by rememberSaveable { mutableStateOf("") }
     var userUuid by rememberSaveable { mutableStateOf("") }
     var nickname by rememberSaveable { mutableStateOf("") }
     var allowMemberControl by rememberSaveable { mutableStateOf(true) }
@@ -173,9 +174,19 @@ fun ListenTogetherRoomPanel(
         autoPauseOnMemberChange = autoPauseOnMemberChange,
         shareAudioLinks = shareAudioLinks
     )
-    val inviteUri = remember(sessionState.roomId, sessionState.nickname, effectiveBaseUrl) {
+    val inviteUri = remember(
+        sessionState.roomId,
+        sessionState.nickname,
+        sessionState.joinSecret,
+        effectiveBaseUrl
+    ) {
         sessionState.roomId?.let {
-            buildListenTogetherInviteUri(it, sessionState.nickname, effectiveBaseUrl)
+            buildListenTogetherInviteUri(
+                roomId = it,
+                inviterNickname = sessionState.nickname,
+                baseUrl = effectiveBaseUrl,
+                joinSecret = sessionState.joinSecret
+            )
         }
     }
 
@@ -259,6 +270,15 @@ fun ListenTogetherRoomPanel(
                         readOnly = isInRoom
                     )
                 }
+                if (!isInRoom) {
+                    OutlinedTextField(
+                        value = joinSecretInput,
+                        onValueChange = { joinSecretInput = it.trim().take(256) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.listen_together_join_secret)) },
+                        singleLine = true
+                    )
+                }
                 runningActionResId?.let { resId ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -292,6 +312,7 @@ fun ListenTogetherRoomPanel(
                         userUuid = userUuid,
                         nickname = nickname,
                         roomIdInput = roomIdInput,
+                        joinSecretInput = joinSecretInput,
                         baseUrlInput = baseUrl,
                         effectiveBaseUrl = effectiveBaseUrl,
                         roomSettings = ListenTogetherRoomSettings(allowMemberControl, autoPauseOnMemberChange, shareAudioLinks),
@@ -418,6 +439,17 @@ fun ListenTogetherRoomPanel(
                     singleLine = true,
                     readOnly = isInRoom
                 )
+                if (!isInRoom) {
+                    OutlinedTextField(
+                        value = joinSecretInput,
+                        onValueChange = { joinSecretInput = it.trim().take(256) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp),
+                        label = { Text(stringResource(R.string.listen_together_join_secret)) },
+                        singleLine = true
+                    )
+                }
                 runningActionResId?.let { resId ->
                     Row(
                         modifier = Modifier
@@ -445,6 +477,7 @@ fun ListenTogetherRoomPanel(
                         userUuid = userUuid,
                         nickname = nickname,
                         roomIdInput = roomIdInput,
+                        joinSecretInput = joinSecretInput,
                         baseUrlInput = baseUrl,
                         effectiveBaseUrl = effectiveBaseUrl,
                         roomSettings = ListenTogetherRoomSettings(allowMemberControl, autoPauseOnMemberChange, shareAudioLinks),
@@ -624,6 +657,7 @@ private fun RoomActions(
     userUuid: String,
     nickname: String,
     roomIdInput: String,
+    joinSecretInput: String,
     baseUrlInput: String,
     effectiveBaseUrl: String,
     roomSettings: ListenTogetherRoomSettings,
@@ -685,7 +719,13 @@ private fun RoomActions(
                             return@runCatching
                         }
                         persistSettings(preferences, baseUrlInput, effectiveBaseUrl, userUuid, nickname, roomSettings)
-                        sessionManager.joinRoom(effectiveBaseUrl, targetRoomId, userUuid, nickname)
+                        sessionManager.joinRoom(
+                            baseUrl = effectiveBaseUrl,
+                            roomId = targetRoomId,
+                            userUuid = userUuid,
+                            nickname = nickname,
+                            joinSecret = joinSecretInput.takeIf { it.isNotBlank() }
+                        )
                         sessionManager.connectWebSocket()
                     }.onFailure {
                         Toast.makeText(context, it.message ?: it.javaClass.simpleName, Toast.LENGTH_SHORT).show()
