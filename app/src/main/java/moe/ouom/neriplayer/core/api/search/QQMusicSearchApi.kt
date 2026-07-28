@@ -89,21 +89,85 @@ import java.util.Base64
 )
 
 @Serializable internal data class QQMusicLyricEnvelope(
+    val code: Int = 0,
     val data: QQMusicLyricResponse? = null
+)
+
+private val QQMusicBase64Pattern = Regex("^[A-Za-z0-9+/=]+$")
+private val QQMusicLrcTimestampPattern = Regex(
+    "\\[(\\d{1,3}):(\\d{2})(?:[.:]\\d{1,3})?]"
 )
 
 /**
  * QQ 用一行 // 占位表示这句没有翻译
  *
- * 原样留着会让未翻译的行显示成两条斜杠, 整行删掉时间戳才会匹配落空,
- * 剩下的翻译行仍然各自对准自己那一句
+ * 保留时间戳让翻译 matcher 可以消费这个空槽, 最终显示层会忽略占位文本
  */
 internal fun stripUntranslatedPlaceholderLines(lyric: String?): String? {
     val source = lyric?.takeIf { it.isNotBlank() } ?: return null
     return source.lineSequence()
-        .filterNot { line -> line.substringAfterLast(']').trim() == "//" }
-        .joinToString("\n")
+        .joinToString("\n") { line ->
+            val closingBracket = line.indexOf(']')
+            if (closingBracket < 0) {
+                line
+            } else {
+                val text = line.substring(closingBracket + 1).trim()
+                if (isQQMusicUntranslatedPlaceholder(text)) {
+                    line.substring(0, closingBracket + 1) + "//"
+                } else {
+                    line
+                }
+            }
+        }
         .takeIf { it.isNotBlank() }
+}
+
+private fun isQQMusicUntranslatedPlaceholder(text: String): Boolean {
+    val normalized = text
+        .replace('／', '/')
+        .filterNot(Char::isWhitespace)
+    return normalized.length >= 2 && normalized.all { it == '/' }
+}
+
+internal fun decodeQQMusicLyricPayload(rawValue: String?): String? {
+    val sanitized = rawValue?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val plainText = htmlUnescapeQQMusic(sanitized)
+    if (QQMusicLrcTimestampPattern.containsMatchIn(plainText)) {
+        return plainText
+    }
+    val decoded = decodeQQMusicBase64Lyric(plainText) ?: return null
+    return htmlUnescapeQQMusic(decoded)
+        .takeIf { QQMusicLrcTimestampPattern.containsMatchIn(it) }
+}
+
+internal fun decodeQQMusicBase64Lyric(value: String): String? {
+    val compact = value.filterNot(Char::isWhitespace)
+    if (compact.isEmpty() || compact.length % 4 != 0 || !QQMusicBase64Pattern.matches(compact)) {
+        return null
+    }
+    return runCatching {
+        String(Base64.getDecoder().decode(compact), Charsets.UTF_8)
+    }.getOrNull()?.takeIf { QQMusicLrcTimestampPattern.containsMatchIn(it) }
+}
+
+internal fun chooseQQMusicLyrics(
+    qqLyric: String?,
+    qqTranslatedLyric: String?,
+    amllLyric: String?
+): Pair<String?, String?> {
+    return if (amllLyric.isNullOrBlank()) {
+        qqLyric to qqTranslatedLyric
+    } else {
+        amllLyric to null
+    }
+}
+
+private fun htmlUnescapeQQMusic(value: String): String {
+    return value
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+        .replace("&quot;", "\"")
+        .replace("&amp;", "&")
 }
 
 
@@ -178,15 +242,20 @@ class QQMusicSearchApi(
                     fetchAmllWordLyricIfEnabled(songData)
                 }
 
-                val (lyric, translatedLyric) = lyricDeferred.await()
+                val (qqLyric, qqTranslatedLyric) = lyricDeferred.await()
                 val amllLyric = amllLyricDeferred.await()
+                val (lyric, translatedLyric) = chooseQQMusicLyrics(
+                    qqLyric = qqLyric,
+                    qqTranslatedLyric = qqTranslatedLyric,
+                    amllLyric = amllLyric
+                )
                 SongDetails(
                     id = songData.mid,
                     songName = songData.name,
                     singer = songData.singer.joinToString("/") { it.name },
                     album = songData.album.name,
                     coverUrl = "https://y.qq.com/music/photo_new/T002R800x800M000${songData.album.mid}.jpg",
-                    lyric = amllLyric ?: lyric,
+                    lyric = lyric,
                     translatedLyric = translatedLyric
                 )
             }
@@ -237,6 +306,8 @@ class QQMusicSearchApi(
                             .put("songMID", songMid)
                             // 不显式点名要翻译, 接口只回一个空的 trans
                             .put("trans", 1)
+                            .put("qrc", 0)
+                            .put("crypt", 0)
                     )
             ).toString()
 
@@ -250,47 +321,32 @@ class QQMusicSearchApi(
                 .build()
 
             val responseJson = executeRequest(request) as String
-            val lyricResponse = json.decodeFromString<QQMusicLyricContainer>(responseJson).req?.data
+            val envelope = json.decodeFromString<QQMusicLyricContainer>(responseJson).req
+            if (envelope == null || envelope.code != 0) {
+                if (envelope != null) {
+                    NPLogger.w(
+                        TAG,
+                        "QQ lyric request rejected: songMid=$songMid code=${envelope.code}"
+                    )
+                }
+                Pair(null, null)
+            } else {
+                val lyricResponse = envelope.data
 
-            val lyric = decodeLyricPayload(lyricResponse?.lyric)
+                val lyric = decodeQQMusicLyricPayload(lyricResponse?.lyric)
 
-            val translatedLyric = stripUntranslatedPlaceholderLines(
-                decodeLyricPayload(lyricResponse?.trans)
-            )
+                val translatedLyric = stripUntranslatedPlaceholderLines(
+                    decodeQQMusicLyricPayload(lyricResponse?.trans)
+                )
 
-            Pair(lyric, translatedLyric)
+                Pair(lyric, translatedLyric)
+            }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
             NPLogger.e(TAG, "获取QQ音乐歌词失败", error)
             Pair(null, null)
         }
-    }
-
-    private fun decodeLyricPayload(rawValue: String?): String? {
-        val sanitized = rawValue?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-        val plainText = htmlUnescape(sanitized)
-        val decoded = decodeBase64Lyric(plainText)
-        return htmlUnescape(decoded ?: plainText)
-    }
-
-    private fun decodeBase64Lyric(value: String): String? {
-        if (value.length % 4 != 0) return null
-        if (!value.matches(Regex("^[A-Za-z0-9+/=\\r\\n]+$"))) return null
-
-        return runCatching {
-            String(Base64.getDecoder().decode(value), Charsets.UTF_8)
-        }.getOrNull()?.takeIf { decoded ->
-            decoded.contains('[') || decoded.contains('\n') || decoded.contains('\r')
-        }
-    }
-
-    private fun htmlUnescape(value: String): String {
-        return value
-            .replace("&#39;", "'")
-            .replace("&apos;", "'")
-            .replace("&quot;", "\"")
-            .replace("&amp;", "&")
     }
 
     @Throws(IOException::class)

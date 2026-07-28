@@ -128,7 +128,7 @@ data class LyricEntry(
     val words: List<WordTiming>? = null
 )
 
-private val NeteaseYrcLineRegex = Regex("""\[\d+,\s*\d+]\(\d+,""")
+private val NeteaseYrcLineRegex = Regex("""\[\d{1,19},\s*\d{1,19}]\(\d{1,19},""")
 private val TtmlTagRegex = Regex("""<\s*tt(?:\s|>)""", RegexOption.IGNORE_CASE)
 private val TtmlLayoutWhitespaceRegex = Regex("""[\r\n]\s*""")
 
@@ -137,7 +137,7 @@ fun isNeteaseYrc(content: String): Boolean = content.contains(NeteaseYrcLineRege
 fun parseNeteaseLyricsAuto(content: String): List<LyricEntry> {
     return when {
         TtmlTagRegex.containsMatchIn(content) -> parseTtmlLyrics(content)
-        isNeteaseYrc(content) -> parseNeteaseYrc(content)
+        isNeteaseYrc(content) -> runCatching { parseNeteaseYrc(content) }.getOrDefault(emptyList())
         else -> parseNeteaseLrc(content)
     }
 }
@@ -357,7 +357,12 @@ fun SyncedLyricsView(
     val translationMatchesByIndex = remember(lyrics, translatedLyrics) {
         translatedLyrics
             ?.takeIf { it.isNotEmpty() }
-            ?.let { matchTranslationsToLineIndices(lyrics, it) }
+            ?.let { translations ->
+                matchTranslationsToLineIndices(
+                    lines = lyrics,
+                    translations = translations.filter { it.text.isNotBlank() }
+                )
+            }
             .orEmpty()
     }
 
@@ -620,8 +625,8 @@ internal fun lyricListItemKey(index: Int, line: LyricEntry): String {
 fun parseNeteaseYrc(yrc: String): List<LyricEntry> {
 //    NPLogger.d("parseYrc-N", yrc)
     val out = mutableListOf<LyricEntry>()
-    val headerRegex = Regex("""\[(\d+),\s*(\d+)]""")
-    val segRegex = Regex("""\((\d+),\s*(\d+),\s*[-\d]+\)([^()\n\r]+)""")
+    val headerRegex = Regex("""\[(\d{1,19}),\s*(\d{1,19})]""")
+    val segRegex = Regex("""\((\d{1,19}),\s*(\d{1,19}),\s*[-\d]{1,20}\)([^()\n\r]*)""")
 
     yrc.lineSequence().forEach { raw ->
         val line = raw.trim()
@@ -629,9 +634,9 @@ fun parseNeteaseYrc(yrc: String): List<LyricEntry> {
         if (!line.startsWith("[")) return@forEach
 
         val header = headerRegex.find(line) ?: return@forEach
-        val start = header.groupValues[1].toLong()
-        val dur = header.groupValues[2].toLong()
-        val end = start + dur
+        val start = header.groupValues[1].toLongOrNull() ?: return@forEach
+        val dur = header.groupValues[2].toLongOrNull() ?: return@forEach
+        val end = start.saturatingAdd(dur)
 
         val segs = segRegex.findAll(line).toList()
         if (segs.isEmpty()) {
@@ -641,9 +646,9 @@ fun parseNeteaseYrc(yrc: String): List<LyricEntry> {
             val words = mutableListOf<WordTiming>()
             val sb = StringBuilder()
             for (m in segs) {
-                val ws = m.groupValues[1].toLong()
-                val wd = m.groupValues[2].toLong()
-                val we = ws + wd
+                val ws = m.groupValues[1].toLongOrNull() ?: continue
+                val wd = m.groupValues[2].toLongOrNull() ?: continue
+                val we = ws.saturatingAdd(wd)
                 val t = m.groupValues[3]
                 sb.append(t)
                 words.add(WordTiming(ws, we, charCount = t.length))
@@ -659,6 +664,14 @@ fun parseNeteaseYrc(yrc: String): List<LyricEntry> {
         }
     }
     return out.sortedBy { it.startTimeMs }
+}
+
+private fun Long.saturatingAdd(other: Long): Long {
+    return if (other > 0L && this > Long.MAX_VALUE - other) {
+        Long.MAX_VALUE
+    } else {
+        this + other
+    }
 }
 
 /** 小数字符偏移的多行 reveal */

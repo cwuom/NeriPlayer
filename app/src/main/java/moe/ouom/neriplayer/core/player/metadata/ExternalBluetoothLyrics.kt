@@ -29,7 +29,8 @@ internal fun findFloatingTranslatedLyricLine(
     lyrics: List<LyricEntry>,
     translations: List<LyricEntry>,
     positionMs: Long,
-    lyricOffsetMs: Long = 0L
+    lyricOffsetMs: Long = 0L,
+    translationMatchesByIndex: Map<Int, LyricEntry>? = null
 ): String? {
     if (lyrics.isEmpty() || translations.isEmpty()) return null
     val targetTimeMs = (positionMs + lyricOffsetMs).coerceAtLeast(0L)
@@ -37,8 +38,11 @@ internal fun findFloatingTranslatedLyricLine(
     val lyric = lyrics.getOrNull(lyricIndex)
         ?.takeIf { it.text.isNotBlank() }
         ?: return null
-    val nonBlankTranslations = translations.filter { it.text.isNotBlank() }
-    return matchTranslationsToLineIndices(lyrics, nonBlankTranslations)[lyricIndex]
+    val matches = translationMatchesByIndex ?: matchTranslationsToLineIndices(
+        lines = lyrics,
+        translations = translations.filter { it.text.isNotBlank() }
+    )
+    return matches[lyricIndex]
         ?.text
         ?.trim()
         ?.takeIf { it.isNotEmpty() }

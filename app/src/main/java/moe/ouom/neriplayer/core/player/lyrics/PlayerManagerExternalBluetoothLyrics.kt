@@ -4,6 +4,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.metadata.findExternalBluetoothLyricLine
 import moe.ouom.neriplayer.core.player.metadata.findFloatingTranslatedLyricLine
+import moe.ouom.neriplayer.ui.component.lyrics.matchTranslationsToLineIndices
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.resolveLyricDefaultOffsetMs
@@ -15,6 +16,7 @@ internal fun PlayerManager.syncExternalBluetoothLyrics(song: SongItem?) {
     externalBluetoothLyricsLoadJob = null
     externalBluetoothLyrics = emptyList()
     floatingTranslatedLyrics = emptyList()
+    floatingTranslationMatchesByIndex = emptyMap()
     externalBluetoothLyricsSongKey = song?.stableKey()
     clearExternalBluetoothLyricLine()
 
@@ -59,6 +61,10 @@ internal fun PlayerManager.syncExternalBluetoothLyrics(song: SongItem?) {
         } else {
             emptyList()
         }
+        floatingTranslationMatchesByIndex = matchTranslationsToLineIndices(
+            lines = lyrics,
+            translations = floatingTranslatedLyrics.filter { it.text.isNotBlank() }
+        )
         updateExternalBluetoothLyricLine(_playbackPositionMs.value)
     }
 }
@@ -101,6 +107,10 @@ internal fun PlayerManager.syncFloatingTranslatedLyrics(song: SongItem?) {
         }
 
         floatingTranslatedLyrics = translatedLyrics
+        floatingTranslationMatchesByIndex = matchTranslationsToLineIndices(
+            lines = externalBluetoothLyrics,
+            translations = translatedLyrics.filter { it.text.isNotBlank() }
+        )
         updateExternalBluetoothLyricLine(_playbackPositionMs.value)
     }
 }
@@ -132,7 +142,8 @@ internal fun PlayerManager.updateExternalBluetoothLyricLine(positionMs: Long) {
         lyrics = externalBluetoothLyrics,
         translations = floatingTranslatedLyrics,
         positionMs = positionMs,
-        lyricOffsetMs = lyricOffsetMs
+        lyricOffsetMs = lyricOffsetMs,
+        translationMatchesByIndex = floatingTranslationMatchesByIndex
     )
 
     if (_externalBluetoothLyricLineFlow.value != line) {
@@ -152,6 +163,7 @@ internal fun PlayerManager.clearExternalBluetoothLyricLine() {
 
 private fun PlayerManager.clearFloatingTranslatedLyricLine() {
     floatingTranslatedLyrics = emptyList()
+    floatingTranslationMatchesByIndex = emptyMap()
     if (_floatingTranslatedLyricLineFlow.value != null) {
         _floatingTranslatedLyricLineFlow.value = null
     }

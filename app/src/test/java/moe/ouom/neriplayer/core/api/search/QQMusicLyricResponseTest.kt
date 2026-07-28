@@ -56,6 +56,7 @@ class QQMusicLyricResponseTest {
             """{"req":{"code":0,"data":{"lyric":"bHlyaWM=","trans":"dHJhbnM=","songID":247294300}}}"""
         )
 
+        assertEquals(0, decoded.req?.code)
         assertEquals("bHlyaWM=", decoded.req?.data?.lyric)
         assertEquals("dHJhbnM=", decoded.req?.data?.trans)
     }
@@ -70,11 +71,11 @@ class QQMusicLyricResponseTest {
     }
 
     @Test
-    fun dropsThePlaceholderLinesQqUsesForUntranslatedLyrics() {
-        val stripped = stripUntranslatedPlaceholderLines(
+    fun preservesAndNormalizesPlaceholderLinesForMatcherAlignment() {
+        val normalized = stripUntranslatedPlaceholderLines(
             """
             [ti:夜に駆ける]
-            [00:00.00]//
+            [00:00.00]／／
             [00:01.80]像是沉溺溶化一般
             [00:09.20]//
             [00:31.58]你只留下了一句「再见了」
@@ -84,32 +85,61 @@ class QQMusicLyricResponseTest {
         assertEquals(
             """
             [ti:夜に駆ける]
+            [00:00.00]//
             [00:01.80]像是沉溺溶化一般
+            [00:09.20]//
             [00:31.58]你只留下了一句「再见了」
             """.trimIndent(),
-            stripped
+            normalized
         )
     }
 
     @Test
     fun keepsTranslationLinesThatMerelyContainSlashes() {
-        val stripped = stripUntranslatedPlaceholderLines("[00:01.00]AC//DC 现场")
+        val normalized = stripUntranslatedPlaceholderLines("[00:01.00]AC//DC 现场")
 
-        assertEquals("[00:01.00]AC//DC 现场", stripped)
+        assertEquals("[00:01.00]AC//DC 现场", normalized)
     }
 
     @Test
-    fun returnsNullWhenEveryTranslationLineIsAPlaceholder() {
-        val stripped = stripUntranslatedPlaceholderLines(
+    fun keepsPlaceholderOnlyTranslationForMatcherAlignment() {
+        val normalized = stripUntranslatedPlaceholderLines(
             "[00:00.00]//\n[00:01.00]//"
         )
 
-        assertNull(stripped)
+        assertEquals("[00:00.00]//\n[00:01.00]//", normalized)
     }
 
     @Test
     fun returnsNullForMissingTranslation() {
         assertNull(stripUntranslatedPlaceholderLines(null))
         assertNull(stripUntranslatedPlaceholderLines("   "))
+    }
+
+    @Test
+    fun rejectsInvalidBase64InsteadOfReturningThePayload() {
+        assertNull(decodeQQMusicLyricPayload("not-a-lyric"))
+        assertNull(decodeQQMusicLyricPayload("aGVsbG8="))
+    }
+
+    @Test
+    fun decodesOnlyBase64PayloadsThatContainLrcTimestamps() {
+        assertEquals(
+            "[00:01.00]hello",
+            decodeQQMusicLyricPayload("WzAwOjAxLjAwXWhlbGxv")
+        )
+        assertNull(decodeQQMusicLyricPayload("aGVsbG8gd29ybGQ="))
+    }
+
+    @Test
+    fun amllReplacementDropsTranslationFromAnotherTimeline() {
+        val selected = chooseQQMusicLyrics(
+            qqLyric = "[00:00.00]QQ",
+            qqTranslatedLyric = "[00:00.00]翻译",
+            amllLyric = "[00:00.00]AMLL"
+        )
+
+        assertEquals("[00:00.00]AMLL", selected.first)
+        assertNull(selected.second)
     }
 }

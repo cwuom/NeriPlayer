@@ -117,6 +117,30 @@ class LyricTranslationMatcherTest {
     }
 
     @Test
+    fun `untranslated placeholder consumes its line without showing slashes`() {
+        val lines = listOf(
+            LyricEntry(text = "first", startTimeMs = 1_000L, endTimeMs = 3_000L),
+            LyricEntry(text = "second", startTimeMs = 3_000L, endTimeMs = 5_000L)
+        )
+        val translations = listOf(
+            LyricEntry(text = "//", startTimeMs = 1_000L, endTimeMs = 3_000L),
+            LyricEntry(text = "第二句", startTimeMs = 2_999L, endTimeMs = 5_000L)
+        )
+
+        val matched = matchTranslationsToLineIndices(lines, translations)
+
+        assertNull(matched[0])
+        assertEquals("第二句", matched[1]?.text)
+    }
+
+    @Test
+    fun `placeholder variants are recognized without hiding slash text`() {
+        assertTrue(isUntranslatedPlaceholderText("／／"))
+        assertTrue(isUntranslatedPlaceholderText("/ /"))
+        assertFalse(isUntranslatedPlaceholderText("AC//DC"))
+    }
+
+    @Test
     fun `metadata only translation produces no matches`() {
         // Bug B: 整段翻译只有制作信息时不显示任何翻译
         val lines = listOf(

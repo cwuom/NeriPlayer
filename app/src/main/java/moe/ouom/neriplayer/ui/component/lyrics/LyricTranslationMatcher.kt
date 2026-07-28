@@ -46,7 +46,7 @@ internal fun matchTranslationsToLineIndices(
         val nextLine = lines.getOrNull(groupEndExclusive)
 
         // 收集应归属这一组的翻译, 最多 groupSize 条, 并保持时间顺序
-        val groupTranslations = ArrayList<LyricEntry>(groupSize)
+        val groupTranslations = ArrayList<LyricEntry?>(groupSize)
         while (
             translationIndex < effectiveTranslations.size &&
             groupTranslations.size < groupSize
@@ -60,7 +60,12 @@ internal fun matchTranslationsToLineIndices(
             when (decision) {
                 TranslationLineDecision.SKIP_STALE -> translationIndex++
                 TranslationLineDecision.MATCH -> {
-                    groupTranslations.add(effectiveTranslations[translationIndex])
+                    val translation = effectiveTranslations[translationIndex]
+                    groupTranslations.add(
+                        translation.takeUnless {
+                            isUntranslatedPlaceholderText(it.text)
+                        }
+                    )
                     translationIndex++
                 }
                 TranslationLineDecision.STOP -> break
@@ -70,13 +75,22 @@ internal fun matchTranslationsToLineIndices(
         // 向下对齐: 翻译分配给组内靠后的行, 靠前的元数据行不参与, 避免整体错位一行
         val matchedCount = groupTranslations.size
         for (offset in 0 until matchedCount) {
-            matchesByIndex[groupEndExclusive - matchedCount + offset] = groupTranslations[offset]
+            groupTranslations[offset]?.let { translation ->
+                matchesByIndex[groupEndExclusive - matchedCount + offset] = translation
+            }
         }
 
         lineIndex = groupEndExclusive
     }
 
     return matchesByIndex
+}
+
+internal fun isUntranslatedPlaceholderText(text: String): Boolean {
+    val normalized = text
+        .replace('／', '/')
+        .filterNot(Char::isWhitespace)
+    return normalized.length >= 2 && normalized.all { it == '/' }
 }
 
 private enum class TranslationLineDecision {

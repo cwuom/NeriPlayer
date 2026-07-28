@@ -21,6 +21,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
+import moe.ouom.neriplayer.ui.component.lyrics.matchTranslationsToLineIndices
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 
@@ -31,6 +32,7 @@ object LyriconManager {
     private var lastLyricIndex: Int = -1
     private var lyrics: List<LyricEntry>? = null
     private var translatedLyrics: List<LyricEntry>? = null
+    private var translationMatchesByIndex: Map<Int, LyricEntry> = emptyMap()
     private var currentSong: SongItem? = null
     private var feedScope: CoroutineScope? = null
     private var feedJob: Job? = null
@@ -152,14 +154,21 @@ object LyriconManager {
     fun updateSong(song: SongItem, lyrics: List<LyricEntry>?, translatedLyrics: List<LyricEntry>?) {
         if (!enabled) return
         try {
-            val translationToleranceMs = 1_500L
             LyriconManager.lyrics = lyrics
             LyriconManager.translatedLyrics = translatedLyrics
+            translationMatchesByIndex = if (lyrics.isNullOrEmpty()) {
+                emptyMap()
+            } else {
+                matchTranslationsToLineIndices(
+                    lines = lyrics,
+                    translations = translatedLyrics.orEmpty().filter { it.text.isNotBlank() }
+                )
+            }
             currentSong = song
             songDurationMs = song.durationMs.coerceAtLeast(0L)
             lastLyricIndex = -1
             positionAnchor = positionAnchor?.copy(durationMs = songDurationMs)
-            val lyriconLyrics = lyrics?.map { entry ->
+            val lyriconLyrics = lyrics?.mapIndexed { index, entry ->
                 val words = if (entry.words != null) {
                     var currentIndex = 0
                     entry.words.mapNotNull { wordTiming ->
@@ -182,9 +191,7 @@ object LyriconManager {
                     end = entry.endTimeMs,
                     text = entry.text,
                     words = words,
-                    translation = translatedLyrics
-                        ?.firstOrNull { kotlin.math.abs(it.startTimeMs - entry.startTimeMs) <= translationToleranceMs }
-                        ?.text
+                    translation = translationMatchesByIndex[index]?.text
                 )
             } ?: emptyList()
 
@@ -227,12 +234,7 @@ object LyriconManager {
             val line = lyricList.getOrNull(index) ?: return
 
 
-            val translation = translatedLyrics
-                ?.firstOrNull {
-                    kotlin.math.abs(
-                        it.startTimeMs - line.startTimeMs
-                    ) <= 1500
-                }
+            val translation = translationMatchesByIndex[index]
 
             var currentIndex = 0
             val words = line.words
@@ -282,6 +284,7 @@ object LyriconManager {
         lastLyricIndex = -1
         lyrics = null
         translatedLyrics = null
+        translationMatchesByIndex = emptyMap()
         currentSong = null
         songDurationMs = 0L
     }

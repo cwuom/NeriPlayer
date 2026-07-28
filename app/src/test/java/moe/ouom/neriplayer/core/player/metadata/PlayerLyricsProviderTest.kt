@@ -101,6 +101,27 @@ class PlayerLyricsProviderTest {
     }
 
     @Test
+    fun `parseNeteaseLyricsAuto ignores malformed yrc timestamps`() {
+        val parsed = parseNeteaseLyricsAuto(
+            "[99999999999999999999,10](0,10,0)bad"
+        )
+
+        assertTrue(parsed.isEmpty())
+    }
+
+    @Test
+    fun `parseNeteaseYrc keeps empty word segments without shifting text`() {
+        val parsed = parseNeteaseLyricsAuto(
+            "[100,200](100,50,0)(150,50,0)字"
+        )
+
+        assertEquals("字", parsed.single().text)
+        assertEquals(2, parsed.single().words?.size)
+        assertEquals(0, parsed.single().words?.first()?.charCount)
+        assertEquals(1, parsed.single().words?.last()?.charCount)
+    }
+
+    @Test
     fun `extractRomanizedNeteaseLyricContent reads romalrc`() {
         val payload = """
             {

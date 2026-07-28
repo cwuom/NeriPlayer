@@ -93,6 +93,8 @@ private const val MaxLyricShareCharacters = 150
 private const val LyricShareCardSizePx = 1080
 private const val LyricShareCardCacheDir = "lyric_share_cards"
 private const val LyricShareCardBrand = "NeriPlayer"
+private const val LyricShareCardCacheMaxFiles = 8
+private const val LyricShareCardCacheMinAgeMs = 5 * 60 * 1000L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -496,21 +498,26 @@ private suspend fun createAndShareLyricCard(
     queue: List<SongItem>
 ) {
     val appContext = context.applicationContext
-    val bitmap = withContext(Dispatchers.IO) {
-        val coverBitmap = loadCoverBitmap(appContext, coverUrl)
-        val appIconBitmap = loadAppIconBitmap(appContext)
-        drawLyricShareCard(
-            song = song,
-            lyricsText = lyrics.joinToString(separator = "\n") { it.text },
-            coverBitmap = coverBitmap,
-            appIconBitmap = appIconBitmap
-        )
-    }
     val file = withContext(Dispatchers.IO) {
+        var coverBitmap: Bitmap? = null
+        var appIconBitmap: Bitmap? = null
         try {
-            saveLyricShareCard(appContext, bitmap, song)
+            coverBitmap = loadCoverBitmap(appContext, coverUrl)
+            appIconBitmap = loadAppIconBitmap(appContext)
+            val bitmap = drawLyricShareCard(
+                song = song,
+                lyricsText = lyrics.joinToString(separator = "\n") { it.text },
+                coverBitmap = coverBitmap,
+                appIconBitmap = appIconBitmap
+            )
+            try {
+                saveLyricShareCard(appContext, bitmap, song)
+            } finally {
+                recycleBitmap(bitmap)
+            }
         } finally {
-            bitmap.recycle()
+            recycleBitmap(coverBitmap)
+            recycleBitmap(appIconBitmap)
         }
     }
     val uri = FileProvider.getUriForFile(
@@ -575,34 +582,39 @@ private fun drawLyricShareCard(
     )
 
     val bitmap = createBitmap(size, size)
-    val canvas = Canvas(bitmap)
-    val cardRect = RectF(0f, 0f, width, height)
-    val cardPath = Path().apply {
-        addRoundRect(cardRect, 76f, 76f, Path.Direction.CW)
-    }
-
-    canvas.withClip(cardPath) {
-        drawLyricCardBackground(this, cardRect, coverBitmap)
-        drawLyricCardBrand(this, padding, appIconBitmap)
-        withTranslation(padding, lyricsTop) {
-            lyricsLayout.draw(this)
+    return try {
+        val canvas = Canvas(bitmap)
+        val cardRect = RectF(0f, 0f, width, height)
+        val cardPath = Path().apply {
+            addRoundRect(cardRect, 76f, 76f, Path.Direction.CW)
         }
-        drawBlurredBottomBackdrop(
-            canvas = this,
-            sourceBitmap = bitmap,
-            top = bottomBarTop,
-            height = bottomBarHeight
-        )
-        drawSongInfoBar(
-            canvas = this,
-            song = song,
-            coverBitmap = coverBitmap,
-            top = bottomBarTop,
-            height = bottomBarHeight,
-            padding = padding
-        )
+
+        canvas.withClip(cardPath) {
+            drawLyricCardBackground(this, cardRect, coverBitmap)
+            drawLyricCardBrand(this, padding, appIconBitmap)
+            withTranslation(padding, lyricsTop) {
+                lyricsLayout.draw(this)
+            }
+            drawBlurredBottomBackdrop(
+                canvas = this,
+                sourceBitmap = bitmap,
+                top = bottomBarTop,
+                height = bottomBarHeight
+            )
+            drawSongInfoBar(
+                canvas = this,
+                song = song,
+                coverBitmap = coverBitmap,
+                top = bottomBarTop,
+                height = bottomBarHeight,
+                padding = padding
+            )
+        }
+        bitmap
+    } catch (error: Throwable) {
+        recycleBitmap(bitmap)
+        throw error
     }
-    return bitmap
 }
 
 private fun buildLyricCardLayout(
@@ -666,7 +678,11 @@ private fun drawLyricCardBackground(
     val seedColor = coverBitmap?.averageColor() ?: AndroidColor.rgb(156, 148, 80)
     if (coverBitmap != null) {
         val blurredCover = buildBlurredCardBackground(coverBitmap, rect.width().roundToInt())
-        canvas.drawBitmap(blurredCover, null, rect, Paint(Paint.ANTI_ALIAS_FLAG))
+        try {
+            canvas.drawBitmap(blurredCover, null, rect, Paint(Paint.ANTI_ALIAS_FLAG))
+        } finally {
+            recycleBitmap(blurredCover)
+        }
     } else {
         val startColor = blendColor(seedColor, AndroidColor.WHITE, 0.18f)
         val endColor = blendColor(seedColor, AndroidColor.BLACK, 0.28f)
@@ -751,30 +767,44 @@ private fun drawBlurredBottomBackdrop(
         sourceBitmap.width,
         sourceHeight
     )
-    val smallWidth = (source.width / 8).coerceAtLeast(1)
-    val smallHeight = (source.height / 8).coerceAtLeast(1)
-    val small = Bitmap.createScaledBitmap(source, smallWidth, smallHeight, true)
-    val blurred = small.boxBlur(radius = 6, iterations = 2)
-    val glass = Bitmap.createScaledBitmap(blurred, source.width, source.height, true)
-    val target = RectF(0f, top, sourceBitmap.width.toFloat(), top + height)
-    canvas.drawBitmap(glass, null, target, Paint(Paint.ANTI_ALIAS_FLAG))
+    var small: Bitmap? = null
+    var blurred: Bitmap? = null
+    var glass: Bitmap? = null
+    try {
+        val smallWidth = (source.width / 8).coerceAtLeast(1)
+        val smallHeight = (source.height / 8).coerceAtLeast(1)
+        val smallBitmap = Bitmap.createScaledBitmap(source, smallWidth, smallHeight, true)
+        small = smallBitmap
+        val blurredBitmap = smallBitmap.boxBlur(radius = 6, iterations = 2)
+        blurred = blurredBitmap
+        glass = Bitmap.createScaledBitmap(blurredBitmap, source.width, source.height, true)
+        val target = RectF(0f, top, sourceBitmap.width.toFloat(), top + height)
+        canvas.drawBitmap(glass, null, target, Paint(Paint.ANTI_ALIAS_FLAG))
+    } finally {
+        recycleBitmap(glass)
+        recycleBitmap(blurred)
+        recycleBitmap(small)
+        recycleBitmap(source)
+    }
 }
 
 private fun buildBlurredCardBackground(
     coverBitmap: Bitmap,
     targetSize: Int
 ): Bitmap {
-    val base = createBitmap(targetSize, targetSize)
-    Canvas(base).drawBitmap(
-        coverBitmap,
-        null,
-        RectF(0f, 0f, targetSize.toFloat(), targetSize.toFloat()),
-        Paint(Paint.ANTI_ALIAS_FLAG)
-    )
     val smallSize = (targetSize / 8).coerceAtLeast(1)
-    val small = Bitmap.createScaledBitmap(base, smallSize, smallSize, true)
-    val blurred = small.boxBlur(radius = 7, iterations = 3)
-    return Bitmap.createScaledBitmap(blurred, targetSize, targetSize, true)
+    var small: Bitmap? = null
+    var blurred: Bitmap? = null
+    try {
+        val smallBitmap = Bitmap.createScaledBitmap(coverBitmap, smallSize, smallSize, true)
+        small = smallBitmap
+        val blurredBitmap = smallBitmap.boxBlur(radius = 7, iterations = 3)
+        blurred = blurredBitmap
+        return Bitmap.createScaledBitmap(blurredBitmap, targetSize, targetSize, true)
+    } finally {
+        recycleBitmap(blurred)
+        recycleBitmap(small)
+    }
 }
 
 private fun drawSongInfoBar(
@@ -1028,11 +1058,34 @@ private fun saveLyricShareCard(
     val dir = File(context.cacheDir, LyricShareCardCacheDir).apply {
         if (!exists()) mkdirs()
     }
-    dir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(8)?.forEach { it.delete() }
     val safeId = "${song.id}-${System.currentTimeMillis()}"
     val file = File(dir, "neriplayer-lyrics-$safeId.png")
     file.outputStream().use { output ->
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
     }
+    lyricShareCardFilesToDelete(
+        files = dir.listFiles()?.toList().orEmpty(),
+        nowMs = System.currentTimeMillis()
+    ).forEach { it.delete() }
     return file
+}
+
+internal fun lyricShareCardFilesToDelete(
+    files: List<File>,
+    nowMs: Long,
+    maxFiles: Int = LyricShareCardCacheMaxFiles,
+    minAgeMs: Long = LyricShareCardCacheMinAgeMs
+): List<File> {
+    require(maxFiles >= 0) { "Maximum cached lyric cards must not be negative" }
+    require(minAgeMs >= 0L) { "Minimum lyric card cache age must not be negative" }
+    return files
+        .sortedByDescending { it.lastModified() }
+        .drop(maxFiles)
+        .filter { file -> nowMs - file.lastModified() >= minAgeMs }
+}
+
+private fun recycleBitmap(bitmap: Bitmap?) {
+    if (bitmap != null && !bitmap.isRecycled) {
+        bitmap.recycle()
+    }
 }
