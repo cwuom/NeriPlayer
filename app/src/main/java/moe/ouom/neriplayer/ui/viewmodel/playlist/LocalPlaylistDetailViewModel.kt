@@ -69,8 +69,36 @@ data class LocalScanPreviewState(
     val songs: List<SongItem> = emptyList(),
     val query: String = "",
     val metadataOnly: Boolean = false,
+    val hideExistingLocalFiles: Boolean = false,
+    val existingLocalFileKeys: Set<String> = emptySet(),
     val selectedKeys: Set<String> = emptySet()
 )
+
+internal fun scannedSongKeysAlreadyInLocalFiles(
+    scannedSongs: List<SongItem>,
+    existingLocalFiles: List<SongItem>
+): Set<String> {
+    if (scannedSongs.isEmpty() || existingLocalFiles.isEmpty()) return emptySet()
+
+    val existingIdentities = HashSet<SongIdentity>(existingLocalFiles.size)
+    val existingLocalKeys = HashSet<String>()
+    existingLocalFiles.forEach { song ->
+        existingIdentities += song.identity()
+        existingLocalKeys += LocalSongSupport.localDuplicateKeys(
+            song = song,
+            includeMetadataFallback = true
+        )
+    }
+    return scannedSongs.asSequence()
+        .filter { song ->
+            song.identity() in existingIdentities ||
+                LocalSongSupport.localDuplicateKeys(
+                    song = song,
+                    includeMetadataFallback = true
+                ).any(existingLocalKeys::contains)
+        }
+        .mapTo(LinkedHashSet()) { it.stableKey() }
+}
 
 data class LocalMetadataProcessingState(
     val isProcessing: Boolean = false,
@@ -173,12 +201,20 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                 )
                 _scanPreviewState.value = if (result.completed) {
                     val prepareStartedAt = SystemClock.elapsedRealtime()
+                    val existingLocalFiles = LocalFilesPlaylist.firstOrNull(
+                        repo.playlists.value,
+                        app
+                    )?.songs?.toList().orEmpty()
                     val preparedState = withContext(Dispatchers.Default) {
                         val preparedSongs = prepareScannedSongs(result.songs)
                         LocalScanPreviewState(
                             visible = true,
                             isScanning = false,
                             songs = preparedSongs,
+                            existingLocalFileKeys = scannedSongKeysAlreadyInLocalFiles(
+                                scannedSongs = preparedSongs,
+                                existingLocalFiles = existingLocalFiles
+                            ),
                             selectedKeys = preparedSongs.mapTo(LinkedHashSet(preparedSongs.size)) {
                                 it.stableKey()
                             }
@@ -245,6 +281,19 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         _scanPreviewState.value = current.copy(
             metadataOnly = metadataOnly,
             selectedKeys = selectedKeys
+        )
+    }
+
+    fun updateScanPreviewHideExistingLocalFiles(hideExistingLocalFiles: Boolean) {
+        val current = _scanPreviewState.value
+        if (current.hideExistingLocalFiles == hideExistingLocalFiles) return
+        _scanPreviewState.value = current.copy(
+            hideExistingLocalFiles = hideExistingLocalFiles,
+            selectedKeys = if (hideExistingLocalFiles) {
+                current.selectedKeys - current.existingLocalFileKeys
+            } else {
+                current.selectedKeys
+            }
         )
     }
 
