@@ -267,6 +267,10 @@ class ListenTogetherSessionPoliciesTest {
         )
         assertTrue(LISTEN_TOGETHER_PLAYING_HEARTBEAT_INTERVAL_MS < workerControllerTimeoutMs)
         assertTrue(LISTEN_TOGETHER_PAUSED_HEARTBEAT_INTERVAL_MS < workerControllerTimeoutMs)
+        assertTrue(
+            ListenTogetherSessionManager.LISTEN_TOGETHER_SOCKET_KEEP_ALIVE_INTERVAL_MS <
+                workerControllerTimeoutMs
+        )
     }
 
     @Test

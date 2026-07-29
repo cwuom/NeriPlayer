@@ -881,7 +881,7 @@
     <string name="settings_keep_last_playback_progress">保留上次播放进度</string>
     <string name="settings_keep_last_playback_progress_desc">应用重启后继续记住当前歌曲的播放进度</string>
     <string name="settings_remember_long_form_playback_progress">记忆长视频播放进度</string>
-    <string name="settings_remember_long_form_playback_progress_desc">自动保存 15 分钟及以上内容的位置，并在下次播放时续播</string>
+    <string name="settings_remember_long_form_playback_progress_desc">同步 15 分钟及以上内容的播放位置，并在其他设备续播</string>
     <string name="settings_keep_playback_mode_state">保留播放状态</string>
     <string name="settings_keep_playback_mode_state_desc">应用重启后恢复单曲循环、列表循环和随机播放状态</string>
     <string name="settings_stop_on_bluetooth_disconnect">蓝牙断开自动停止</string>
@@ -1612,6 +1612,11 @@
     <string name="listen_together_action_unavailable">当前页面状态不可执行该操作，请稍后重试</string>
     <string name="settings_listen_together_expand">配置服务器地址和唯一身份标识符</string>
     <string name="settings_listen_together_server_title">一起听服务器</string>
+    <string name="settings_listen_together_default_nickname_title">默认昵称</string>
+    <string name="settings_listen_together_default_nickname_input_label">昵称</string>
+    <string name="settings_listen_together_default_nickname_unset">未设置，将自动生成</string>
+    <string name="settings_listen_together_default_nickname_saved">默认昵称已保存</string>
+    <string name="settings_listen_together_default_nickname_disabled">当前在房间中，需先离开房间后才能修改默认昵称</string>
     <string name="settings_listen_together_server_default_desc">留空即可使用内置默认服务器</string>
     <string name="settings_listen_together_server_custom_desc">当前使用自定义一起听服务器，分享邀请时会附带服务器地址</string>
     <string name="settings_listen_together_server_input_label">服务器地址</string>

@@ -26,11 +26,11 @@ class AudioLoadControlFactoryTest {
     }
 
     @Test
-    fun `audio playback resumes after 1500 milliseconds`() {
+    fun `audio playback resumes after 800 milliseconds`() {
         val loadControl = buildAudioLoadControl()
 
-        assertFalse(loadControl.shouldStart(bufferedDurationMs = 1_499, rebuffering = true))
-        assertTrue(loadControl.shouldStart(bufferedDurationMs = 1_500, rebuffering = true))
+        assertFalse(loadControl.shouldStart(bufferedDurationMs = 799, rebuffering = true))
+        assertTrue(loadControl.shouldStart(bufferedDurationMs = 800, rebuffering = true))
     }
 
     @Test

@@ -10,7 +10,9 @@ import moe.ouom.neriplayer.listentogether.compat.isUnsupportedTrackFinishedEvent
 import moe.ouom.neriplayer.listentogether.compat.resolveListenTogetherLinkReadyState
 import moe.ouom.neriplayer.listentogether.compat.resolveListenTogetherPlaybackCommandShouldPlay
 import moe.ouom.neriplayer.listentogether.compat.shouldSuppressListenerControlWhileAwaitingStream
+import moe.ouom.neriplayer.listentogether.mapping.toSongItem
 import moe.ouom.neriplayer.listentogether.mapping.withStreamUrl
+import moe.ouom.neriplayer.listentogether.mapping.withStreamUrls
 import moe.ouom.neriplayer.listentogether.playback.boundedAroundStableKey
 import moe.ouom.neriplayer.listentogether.playback.currentStableKey
 import moe.ouom.neriplayer.listentogether.playback.expectedPositionMs
@@ -200,6 +202,58 @@ class ListenTogetherEventCompatibilityTest {
         val track = biliTrack().withStreamUrl(url)
 
         assertEquals(url, track.streamUrl)
+    }
+
+    @Test
+    fun `inbound shared stream candidates do not overwrite listener resolver input`() {
+        val primary = "https://m701.music.126.net/primary.mp3"
+        val backup = "https://m702.music.126.net/backup.mp3"
+        val receivedTrack = track("netease:1", "1").copy(
+            streamUrl = primary,
+            streamUrls = listOf(primary, backup)
+        )
+
+        val listenerSong = receivedTrack.toSongItem()
+
+        assertNull(listenerSong.streamUrl)
+        assertEquals(listOf(primary, backup), receivedTrack.streamUrls)
+    }
+
+    @Test
+    fun `stream candidates preserve trusted order and legacy primary`() {
+        val primary = "https://m701.music.126.net/primary.mp3"
+        val backupA = "https://m702.music.126.net/backup-a.mp3"
+        val backupB = "https://m703.music.126.net/backup-b.mp3"
+        val ignored = "https://untrusted.example.com/ignored.mp3"
+
+        val track = track("netease:1", "1").withStreamUrls(
+            listOf(ignored, primary, backupA, primary, backupB)
+        )
+
+        assertEquals(primary, track.streamUrl)
+        assertEquals(listOf(primary, backupA, backupB), track.streamUrls)
+    }
+
+    @Test
+    fun `stream candidates survive protocol serialization and old primary remains optional`() {
+        val primary = "https://m701.music.126.net/primary.mp3"
+        val backup = "https://m702.music.126.net/backup.mp3"
+        val decoded = Json.decodeFromString<ListenTogetherTrack>(
+            Json.encodeToString(
+                track("netease:1", "1").copy(
+                    streamUrl = primary,
+                    streamUrls = listOf(primary, backup)
+                )
+            )
+        )
+        val legacy = Json.decodeFromString<ListenTogetherTrack>(
+            """{"stableKey":"netease:1","channelId":"netease","audioId":"1","streamUrl":"$primary","name":"Song 1","artist":"Artist"}"""
+        )
+
+        assertEquals(listOf(primary, backup), decoded.streamUrls)
+        assertEquals(primary, decoded.streamUrl)
+        assertTrue(legacy.streamUrls.isEmpty())
+        assertEquals(primary, legacy.streamUrl)
     }
 
     @Test

@@ -38,6 +38,7 @@ import moe.ouom.neriplayer.core.player.model.toPlaybackState
 import moe.ouom.neriplayer.core.player.model.withPlaybackState
 import moe.ouom.neriplayer.core.player.playback.playAtIndex
 import moe.ouom.neriplayer.core.player.playback.rebuildShuffleBag
+import moe.ouom.neriplayer.core.player.url.isCurrentListenTogetherFallbackMediaUrl
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.source.toSongItem
@@ -431,6 +432,7 @@ internal suspend fun PlayerManager.persistStateImpl(
     val playlistReference = currentPlaylist
     val currentIndexSnapshot = currentIndex
     val mediaUrlSnapshot = _currentMediaUrl.value
+        .takeUnless { isCurrentListenTogetherFallbackMediaUrl() }
     val persistedShouldResumePlayback =
         shouldResumePlayback && !suppressAutoResumeForCurrentSession
     val persistedPositionMs = if (keepLastPlaybackProgressEnabled) {

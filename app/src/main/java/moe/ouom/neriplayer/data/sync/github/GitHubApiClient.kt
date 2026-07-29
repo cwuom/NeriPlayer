@@ -189,9 +189,7 @@ class GitHubApiClient(
         }
     }
 
-    /**
-     * 读取同步正文; 优先读取二进制 Release Asset, 不存在清单时只读兼容旧文件
-     */
+    /** 读取仓库中的同步文件 */
     suspend fun getFileContent(owner: String, repo: String, path: String): Result<Pair<ByteArray, String>> {
         return syncTransport().getFileContent(owner, repo, path, strict = false)
     }
@@ -200,9 +198,7 @@ class GitHubApiClient(
         return syncTransport().getFileContent(owner, repo, path, strict = true)
     }
 
-    /**
-     * 上传同步正文为 Release Asset, 再以 UTF-8 清单的 Git 提交原子发布版本
-     */
+    /** 上传同步正文为仓库中的实际二进制或 JSON 文件 */
     suspend fun updateFileContent(
         owner: String,
         repo: String,
@@ -215,7 +211,7 @@ class GitHubApiClient(
         return syncTransport().updateFileContent(owner, repo, content, sha, path, message, branch)
     }
 
-    private fun syncTransport(): GitHubReleaseSyncTransport {
-        return GitHubReleaseSyncTransport(appContext, client, token, GITHUB_API_BASE)
+    private fun syncTransport(): GitHubRepositorySyncTransport {
+        return GitHubRepositorySyncTransport(appContext, client, token, GITHUB_API_BASE)
     }
 }

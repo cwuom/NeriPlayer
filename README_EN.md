@@ -252,9 +252,13 @@ Current positioning:
   Invites must carry the room secret needed for a first join, while member secrets
   are kept out of public room state. Local tracks cannot create or replace a room
   track. When stream sharing is enabled, Durable Objects cache the controller's
-  current URL so listeners can retrieve it without waiting for another controller
-  response. Durable Objects persist room state while WebSocket keeps active members
-  in sync.
+  current URLs so listeners can retrieve them without waiting for another controller
+  response. A current track keeps at most three validated candidates; listeners always
+  resolve with their own quality policy first and use those session-only candidates only
+  after local resolution fails, so they never enter song or offline caches. Reconnecting
+  with the same member credential does not trigger member-change auto-pause, and both
+  roles keep their WebSocket connection alive. Durable Objects persist room state while
+  WebSocket keeps active members in sync.
 
 ---
 
@@ -433,7 +437,8 @@ For release build and signing details, see
   language, platform auth, GitHub/WebDAV config, and Listen Together settings.
 - 🎧 **Listen Together**:
   create or join rooms, sync playback state over WebSocket, support host/listener
-  permissions, member-control toggles, auto-pause on member changes,
+  permissions, member-control toggles, optional auto-pause when a new member joins
+  (not when the same member reconnects),
   repeat/shuffle mode sync, optional sharing of controller-resolved stream URLs,
   invite links, deep links, custom server URLs, and host-offline detection. A first join
   requires the invite secret and member reconnects use member secrets. Controllers can copy the

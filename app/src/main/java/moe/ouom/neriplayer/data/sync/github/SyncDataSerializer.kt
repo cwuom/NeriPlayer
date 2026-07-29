@@ -48,12 +48,12 @@ import java.util.zip.GZIPOutputStream
  *
  * 写路径使用原始字节, 避免 Base64 扩容并让二进制传输保持二进制:
  * - 非省流 (backup.json) : UTF-8 编码的 JSON 文本字节
- * - 省流 (backup.bin) : 原始 GZIP(ProtoBuf) 字节
+ * - 省流 (backup-raw.bin) : 原始 GZIP(ProtoBuf) 字节
  *
  * 读路径按内容自动识别 (read-both) , 三种在野格式都不失败:
  * - 以 GZIP 魔数 0x1F 0x8B 开头 -> 直接解压 -> ProtoBuf (为将来 write-raw 预留)
  * - 文本且首个有效字节为 '{' -> JSON (旧/新 backup.json / 旧 WebDAV JSON)
- * - 其余文本 -> Base64(GZIP(ProtoBuf)) -> Base64 解码 -> 解压 -> ProtoBuf (backup.bin)
+ * - 其余文本 -> Base64(GZIP(ProtoBuf)) -> Base64 解码 -> 解压 -> ProtoBuf (旧 backup.bin)
  */
 @OptIn(ExperimentalSerializationApi::class)
 object SyncDataSerializer {
@@ -253,7 +253,16 @@ object SyncDataSerializer {
      * 获取文件名 (根据格式)
      */
     fun getFileName(useDataSaver: Boolean): String {
-        return if (useDataSaver) "backup.bin" else "backup.json"
+        return if (useDataSaver) RAW_BINARY_FILE_NAME else JSON_FILE_NAME
+    }
+
+    /** 返回只读兼容文件，上传始终使用 getFileName 返回的当前文件名 */
+    internal fun getReadFallbackFileNames(useDataSaver: Boolean): List<String> {
+        return if (useDataSaver) {
+            listOf(LEGACY_BINARY_FILE_NAME, JSON_FILE_NAME)
+        } else {
+            listOf(RAW_BINARY_FILE_NAME, LEGACY_BINARY_FILE_NAME)
+        }
     }
 
     /**
@@ -262,6 +271,10 @@ object SyncDataSerializer {
     fun isBinaryFileName(fileName: String): Boolean {
         return fileName.endsWith(".bin")
     }
+
+    private const val RAW_BINARY_FILE_NAME = "backup-raw.bin"
+    private const val LEGACY_BINARY_FILE_NAME = "backup.bin"
+    private const val JSON_FILE_NAME = "backup.json"
 
     /**
      * 兼容旧/错误字段编号的 schema (mediaUri 插入到 addedAt 之前的版本)

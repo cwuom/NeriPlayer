@@ -140,22 +140,32 @@ class GitHubSyncManager private constructor(context: Context) {
                 lastRemoteSha != null &&
                 lastRemoteSha != remoteSnapshot.version.sha
             val lastSyncTime = storage.getLastSyncTime()
-            val uploadResolutionResult = SyncUploadRetryExecutor.execute<SyncData?, MergeResult, GitHubRemoteVersion>(
-                initialRemote = remoteSnapshot?.data,
+            val uploadResolutionResult = SyncUploadRetryExecutor.execute<GitHubRemotePayload, MergeResult, GitHubRemoteVersion>(
+                initialRemote = remoteSnapshot?.let { snapshot ->
+                    GitHubRemotePayload(
+                        data = snapshot.data,
+                        requiresMigrationUpload = snapshot.requiresMigrationUpload
+                    )
+                } ?: GitHubRemotePayload(data = null, requiresMigrationUpload = false),
                 initialVersion = remoteSnapshot?.version ?: GitHubRemoteVersion(
                     sha = null,
                     fileName = preferredFileName
                 ),
                 initialRemoteChangedDuringSync = remoteHasChanged,
-                merge = { remoteData ->
+                merge = { remote ->
+                    val remoteData = remote.data
                     if (remoteData == null) {
                         buildInitialMergeResult(localData, localizedContext)
                     } else {
                         performThreeWayMerge(localData, remoteData, lastSyncTime)
                     }
                 },
-                hasMeaningfulChange = { remoteData, mergeResult ->
-                    remoteData == null || hasDataChanged(remoteData, mergeResult.mergedData)
+                hasMeaningfulChange = { remote, mergeResult ->
+                    GitHubSyncUploadPolicy.shouldUpload(
+                        remoteData = remote.data,
+                        requiresMigrationUpload = remote.requiresMigrationUpload,
+                        mergedData = mergeResult.mergedData
+                    )
                 },
                 upload = { mergeResult, version ->
                     if (storage.getSyncMutationVersion() != startMutationVersion) {
@@ -190,9 +200,13 @@ class GitHubSyncManager private constructor(context: Context) {
                             version = GitHubRemoteVersion(
                                 sha = null,
                                 fileName = version.fileName
-                            )
+                            ),
+                            requiresMigrationUpload = false
                         )
-                        resolvedSnapshot.data to resolvedSnapshot.version
+                        GitHubRemotePayload(
+                            data = resolvedSnapshot.data,
+                            requiresMigrationUpload = resolvedSnapshot.requiresMigrationUpload
+                        ) to resolvedSnapshot.version
                     }
                 },
                 isConflict = { error ->
@@ -1004,10 +1018,6 @@ class GitHubSyncManager private constructor(context: Context) {
         )
     }
 
-    private fun hasDataChanged(remote: SyncData, merged: SyncData): Boolean {
-        return SyncDataChangeDetector.hasDataChanged(remote, merged)
-    }
-
     private suspend fun fetchRemoteSnapshot(
         apiClient: GitHubApiClient,
         owner: String,
@@ -1016,17 +1026,18 @@ class GitHubSyncManager private constructor(context: Context) {
         useDataSaver: Boolean
     ): Result<GitHubRemoteSnapshot?> {
         var remoteResult = apiClient.getFileContentStrict(owner, repo, preferredFileName)
-        var actualFileName = preferredFileName
+        var sourceFileName = preferredFileName
         if (remoteResult.exceptionOrNull() is GitHubFileNotFoundException) {
-            val alternativeFileName = SyncDataSerializer.getFileName(!useDataSaver)
-            val alternativeResult = apiClient.getFileContentStrict(owner, repo, alternativeFileName)
-            if (alternativeResult.isSuccess) {
-                remoteResult = alternativeResult
-                actualFileName = alternativeFileName
-            } else {
-                val alternativeError = alternativeResult.exceptionOrNull()
-                if (alternativeError !is GitHubFileNotFoundException) {
-                    return Result.failure(alternativeError ?: IOException("Failed to fetch remote data"))
+            for (legacyFileName in SyncDataSerializer.getReadFallbackFileNames(useDataSaver)) {
+                val legacyResult = apiClient.getFileContentStrict(owner, repo, legacyFileName)
+                if (legacyResult.isSuccess) {
+                    remoteResult = legacyResult
+                    sourceFileName = legacyFileName
+                    break
+                }
+                val legacyError = legacyResult.exceptionOrNull()
+                if (legacyError !is GitHubFileNotFoundException) {
+                    return Result.failure(legacyError ?: IOException("Failed to fetch remote data"))
                 }
             }
         }
@@ -1041,8 +1052,7 @@ class GitHubSyncManager private constructor(context: Context) {
         }
 
         val (remoteContent, remoteSha) = remoteResult.getOrThrow()
-        // 新格式的正文来自 Release Asset, 清单或资产损坏都不会被当作空快照处理
-        // 因此此处 content 为空只可能是无效远端文件, 必须中止同步避免覆盖本地数据
+        // 远端空文件不能作为初始快照，否则会覆盖本地有效数据
         if (remoteContent.isEmpty()) {
             return Result.failure(
                 IOException(LanguageManager.applyLanguage(appContext).getString(R.string.github_backup_file_invalid))
@@ -1065,8 +1075,10 @@ class GitHubSyncManager private constructor(context: Context) {
                 data = remoteData,
                 version = GitHubRemoteVersion(
                     sha = remoteSha,
-                    fileName = actualFileName
-                )
+                    // 即使读到了旧文件，也只能写入当前格式，避免改动 backup.bin
+                    fileName = preferredFileName
+                ),
+                requiresMigrationUpload = sourceFileName != preferredFileName
             )
         )
     }
@@ -1150,7 +1162,13 @@ class GitHubSyncManager private constructor(context: Context) {
 
     private data class GitHubRemoteSnapshot(
         val data: SyncData?,
-        val version: GitHubRemoteVersion
+        val version: GitHubRemoteVersion,
+        val requiresMigrationUpload: Boolean
+    )
+
+    private data class GitHubRemotePayload(
+        val data: SyncData?,
+        val requiresMigrationUpload: Boolean
     )
 
     private data class PlaylistMergeResult(

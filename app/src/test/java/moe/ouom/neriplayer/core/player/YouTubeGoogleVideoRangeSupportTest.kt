@@ -33,7 +33,6 @@ class YouTubeGoogleVideoRangeSupportTest {
 
         assertFalse(YouTubeGoogleVideoRangeSupport.shouldUseChunkedRange(url))
         assertFalse(YouTubeGoogleVideoRangeSupport.supportsSeekingWithoutUrlRefresh(url))
-        assertFalse(YouTubeGoogleVideoRangeSupport.shouldForceExplicitFullRange(url))
     }
 
     @Test
@@ -53,23 +52,21 @@ class YouTubeGoogleVideoRangeSupportTest {
     }
 
     @Test
-    fun shouldUseChunkedRange_rejectsResolvedWebRemixDirectUrl() {
+    fun shouldUseChunkedRange_matchesResolvedWebRemixDirectUrl() {
         val url =
             "https://rr1---sn-aigl6ney.googlevideo.com/videoplayback" +
                 "?source=youtube&id=audio-demo&n=resolved-n&sig=resolved-signature&mime=audio%2Fwebm"
 
-        assertFalse(YouTubeGoogleVideoRangeSupport.shouldUseChunkedRange(url))
+        assertTrue(YouTubeGoogleVideoRangeSupport.shouldUseChunkedRange(url))
     }
 
     @Test
-    fun shouldUseChunkedRangeForDownload_forcesChunkOnSeekableDirectUrlUnlikePlayback() {
-        // 已解析(n+sig+clen)的 WEB_REMIX 直链: 播放侧可整段 seek 故不分块
-        // 但下载侧必须分块, 否则整档 GET 会被 googlevideo 403
+    fun shouldUseChunkedRangeForDownload_matchesResolvedDirectPlayback() {
         val url =
             "https://rr1---sn-aigl6ney.googlevideo.com/videoplayback" +
                 "?source=youtube&id=audio-demo&n=resolved-n&sig=resolved-signature&mime=audio%2Fwebm&clen=3965665"
 
-        assertFalse(YouTubeGoogleVideoRangeSupport.shouldUseChunkedRange(url))
+        assertTrue(YouTubeGoogleVideoRangeSupport.shouldUseChunkedRange(url))
         assertTrue(YouTubeGoogleVideoRangeSupport.shouldUseChunkedRangeForDownload(url))
     }
 
@@ -99,23 +96,13 @@ class YouTubeGoogleVideoRangeSupportTest {
     }
 
     @Test
-    fun shouldForceExplicitFullRange_matchesResolvedWebRemixDirectUrlWithContentLength() {
-        val url =
-            "https://rr1---sn-aigl6ney.googlevideo.com/videoplayback" +
-                "?source=youtube&id=audio-demo&n=resolved-n&sig=resolved-signature&mime=audio%2Fwebm&clen=3965665"
-
-        assertTrue(YouTubeGoogleVideoRangeSupport.shouldForceExplicitFullRange(url))
-    }
-
-    @Test
     fun supportsSeekingWithoutUrlRefresh_acceptsSigOnlyDirectUrl() {
         val url =
             "https://rr4---sn-3pm7dnes.googlevideo.com/videoplayback" +
                 "?source=youtube&mime=audio%2Fwebm&sig=resolved-signature&clen=3433755"
 
         assertTrue(YouTubeGoogleVideoRangeSupport.supportsSeekingWithoutUrlRefresh(url))
-        assertFalse(YouTubeGoogleVideoRangeSupport.shouldUseChunkedRange(url))
-        assertTrue(YouTubeGoogleVideoRangeSupport.shouldForceExplicitFullRange(url))
+        assertTrue(YouTubeGoogleVideoRangeSupport.shouldUseChunkedRange(url))
     }
 
     @Test
@@ -125,23 +112,6 @@ class YouTubeGoogleVideoRangeSupportTest {
                 "?source=youtube&clen=3965665&mime=audio%2Fwebm"
 
         assertEquals(3_965_665L, YouTubeGoogleVideoRangeSupport.resolveQueryContentLength(url))
-    }
-
-    @Test
-    fun buildFullRangeHeader_buildsInclusiveRange() {
-        assertEquals("bytes=0-3965664", YouTubeGoogleVideoRangeSupport.buildFullRangeHeader(3_965_665L))
-    }
-
-    @Test
-    fun buildRangeHeader_respectsStartPositionAndKnownLength() {
-        assertEquals(
-            "bytes=1048576-2097151",
-            YouTubeGoogleVideoRangeSupport.buildRangeHeader(
-                startPosition = 1_048_576L,
-                requestedLength = 1_048_576L,
-                totalContentLength = 3_965_665L
-            )
-        )
     }
 
     @Test

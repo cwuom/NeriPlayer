@@ -135,6 +135,7 @@ import moe.ouom.neriplayer.data.storage.StorageUsageSummary
 import moe.ouom.neriplayer.listentogether.invite.configuredListenTogetherBaseUrlOrNull
 import moe.ouom.neriplayer.listentogether.invite.isDefaultListenTogetherBaseUrl
 import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherBaseUrl
+import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherNickname
 import moe.ouom.neriplayer.ui.component.settings.LanguageSettingItem
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassScene
@@ -393,6 +394,7 @@ fun SettingsScreen(
     val listenTogetherSessionManager = remember { AppContainer.listenTogetherSessionManager }
     val listenTogetherSessionState by listenTogetherSessionManager.sessionState.collectAsState()
     val listenTogetherWorkerBaseUrlInput by listenTogetherPreferences.workerBaseUrlInputFlow.collectAsState(initial = "")
+    val listenTogetherNickname by listenTogetherPreferences.nicknameFlow.collectAsState(initial = "")
     var pendingBackgroundImageBlur by rememberSaveable(backgroundImageUri) {
         mutableFloatStateOf(backgroundImageBlur)
     }
@@ -471,7 +473,10 @@ fun SettingsScreen(
     var showClearWebDavConfigDialog by remember { mutableStateOf(false) }
     var showListenTogetherResetUuidDialog by remember { mutableStateOf(false) }
     var showListenTogetherServerDialog by remember { mutableStateOf(false) }
+    var showListenTogetherNicknameDialog by remember { mutableStateOf(false) }
     var listenTogetherServerInput by rememberSaveable { mutableStateOf("") }
+    var listenTogetherNicknameInput by rememberSaveable { mutableStateOf("") }
+    var listenTogetherNicknameError by remember { mutableStateOf<String?>(null) }
     var listenTogetherServerTesting by remember { mutableStateOf(false) }
     var listenTogetherServerTestMessage by remember { mutableStateOf<String?>(null) }
     // ------------------------------------
@@ -693,6 +698,12 @@ fun SettingsScreen(
     LaunchedEffect(listenTogetherWorkerBaseUrlInput) {
         if (listenTogetherServerInput != listenTogetherWorkerBaseUrlInput) {
             listenTogetherServerInput = listenTogetherWorkerBaseUrlInput
+        }
+    }
+    LaunchedEffect(listenTogetherNickname, showListenTogetherNicknameDialog) {
+        if (!showListenTogetherNicknameDialog) {
+            listenTogetherNicknameInput = listenTogetherNickname
+            listenTogetherNicknameError = null
         }
     }
 
@@ -1635,6 +1646,7 @@ fun SettingsScreen(
                                     ::isDefaultListenTogetherBaseUrl
                                 ) == true,
                             isInRoom = !listenTogetherSessionState.roomId.isNullOrBlank(),
+                            nickname = listenTogetherNickname,
                             testing = listenTogetherServerTesting,
                             testMessage = listenTogetherServerTestMessage,
                             onOpenServerDialog = {
@@ -1644,6 +1656,13 @@ fun SettingsScreen(
                             onResetIdentity = {
                                 if (listenTogetherSessionState.roomId.isNullOrBlank()) {
                                     showListenTogetherResetUuidDialog = true
+                                }
+                            },
+                            onOpenNicknameDialog = {
+                                if (listenTogetherSessionState.roomId.isNullOrBlank()) {
+                                    listenTogetherNicknameInput = listenTogetherNickname
+                                    listenTogetherNicknameError = null
+                                    showListenTogetherNicknameDialog = true
                                 }
                             }
                         )
@@ -1799,6 +1818,80 @@ fun SettingsScreen(
             },
             dismissButton = {
                 MiuixSettingsTextButton(onClick = { showListenTogetherResetUuidDialog = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+    if (showListenTogetherNicknameDialog) {
+        MiuixSettingsDialog(
+            onDismissRequest = {
+                showListenTogetherNicknameDialog = false
+                listenTogetherNicknameInput = listenTogetherNickname
+                listenTogetherNicknameError = null
+            },
+            title = { Text(stringResource(R.string.settings_listen_together_default_nickname_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MiuixSettingsTextField(
+                        value = listenTogetherNicknameInput,
+                        onValueChange = {
+                            listenTogetherNicknameInput = it.take(24)
+                            listenTogetherNicknameError = validateListenTogetherNickname(
+                                listenTogetherNicknameInput
+                            )?.format(context)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = {
+                            Text(
+                                stringResource(
+                                    R.string.settings_listen_together_default_nickname_input_label
+                                )
+                            )
+                        }
+                    )
+                    listenTogetherNicknameError?.let { message ->
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                MiuixSettingsTextButton(
+                    onClick = {
+                        val nickname = listenTogetherNicknameInput.trim()
+                        val validationError = validateListenTogetherNickname(nickname)
+                        if (validationError != null) {
+                            listenTogetherNicknameError = validationError.format(context)
+                            return@MiuixSettingsTextButton
+                        }
+                        scope.launch {
+                            listenTogetherPreferences.setNickname(nickname)
+                            showListenTogetherNicknameDialog = false
+                            listenTogetherNicknameError = null
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.settings_listen_together_default_nickname_saved),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.action_apply))
+                }
+            },
+            dismissButton = {
+                MiuixSettingsTextButton(
+                    onClick = {
+                        showListenTogetherNicknameDialog = false
+                        listenTogetherNicknameInput = listenTogetherNickname
+                        listenTogetherNicknameError = null
+                    }
+                ) {
                     Text(stringResource(R.string.action_cancel))
                 }
             }
@@ -2725,15 +2818,22 @@ private fun ListenTogetherSettingsSection(
     modifier: Modifier = Modifier,
     isUsingDefaultServer: Boolean,
     isInRoom: Boolean,
+    nickname: String,
     testing: Boolean,
     testMessage: String?,
     onOpenServerDialog: () -> Unit,
-    onResetIdentity: () -> Unit
+    onResetIdentity: () -> Unit,
+    onOpenNicknameDialog: () -> Unit
 ) {
     val identityItemModifier = if (isInRoom) {
         Modifier.alpha(0.5f)
     } else {
         Modifier.settingsItemClickable(onClick = onResetIdentity)
+    }
+    val nicknameItemModifier = if (isInRoom) {
+        Modifier.alpha(0.5f)
+    } else {
+        Modifier.settingsItemClickable(onClick = onOpenNicknameDialog)
     }
     Column(
         modifier = modifier,
@@ -2772,6 +2872,35 @@ private fun ListenTogetherSettingsSection(
                 if (testing) {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 }
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        )
+
+        ListItem(
+            modifier = nicknameItemModifier,
+            leadingContent = {
+                Icon(
+                    imageVector = Icons.Outlined.FormatSize,
+                    contentDescription = stringResource(
+                        R.string.settings_listen_together_default_nickname_title
+                    ),
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            headlineContent = {
+                Text(stringResource(R.string.settings_listen_together_default_nickname_title))
+            },
+            supportingContent = {
+                Text(
+                    if (isInRoom) {
+                        stringResource(R.string.settings_listen_together_default_nickname_disabled)
+                    } else if (nickname.isBlank()) {
+                        stringResource(R.string.settings_listen_together_default_nickname_unset)
+                    } else {
+                        nickname
+                    }
+                )
             },
             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
         )

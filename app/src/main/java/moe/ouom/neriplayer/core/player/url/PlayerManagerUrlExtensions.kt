@@ -51,6 +51,9 @@ import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.listentogether.mapping.MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES
+import moe.ouom.neriplayer.listentogether.mapping.toListenTogetherTrackOrNull
+import moe.ouom.neriplayer.listentogether.mapping.trustedListenTogetherStreamUrls
 import java.io.File
 
 internal const val OFFLINE_CACHE_URL_PREFIX = "http://offline.cache/"
@@ -68,9 +71,6 @@ internal suspend fun PlayerManager.resolveSongUrl(
         "NERI-PlayerManager",
         "resolveSongUrl: song=${song.name}, source=${song.album}, forceRefresh=$forceRefresh, streamUrl=${song.streamUrl}, currentUrl=${_currentMediaUrl.value}, stack=[${debugStackHint()}]"
     )
-    if (shouldWaitForListenTogetherAuthoritativeStream(song)) {
-        return SongUrlResult.WaitingForAuthoritativeStream
-    }
     if (!forceRefresh && isDirectStreamUrl(song.streamUrl)) {
         return SongUrlResult.Success(song.streamUrl.orEmpty())
     }
@@ -142,24 +142,40 @@ internal suspend fun PlayerManager.resolveSongUrl(
     if (!forceRefresh && allowGenericPrefetchCache && !isYouTubeTrack) {
         consumeGenericUrlPrefetch(cacheKey)?.let { return it }
     }
+    val listenTogetherFallback = listenTogetherFallbackResult(song)
+    val resolverSideEffects = if (listenTogetherFallback != null) {
+        RefreshResolverSideEffects(RefreshSideEffectGate { false })
+    } else {
+        sideEffects
+    }
     val result = when {
         isYouTubeTrack -> getYouTubeMusicAudioUrl(
             song = song,
             suppressError = hasCachedData,
             forceRefresh = forceRefresh,
             youtubeRecoveryStrategy = youtubeRecoveryStrategy,
-            sideEffects = sideEffects
+            sideEffects = resolverSideEffects
         )
         isBiliTrack(song) -> getBiliAudioUrl(
             song = song,
             suppressError = hasCachedData,
-            sideEffects = sideEffects
+            sideEffects = resolverSideEffects
         )
         else -> getNeteaseSongUrl(
             song = song,
             suppressError = hasCachedData,
-            sideEffects = sideEffects
+            sideEffects = resolverSideEffects
         )
+    }
+
+    if ((result is SongUrlResult.Failure || result is SongUrlResult.RequiresLogin) &&
+        listenTogetherFallback != null
+    ) {
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "resolveSongUrl: local resolution failed, use isolated listen-together fallback: song=${song.name}, candidates=${listenTogetherFallback.playbackCandidates().size}"
+        )
+        return listenTogetherFallback
     }
 
     return if (result is SongUrlResult.Failure && hasCachedData) {
@@ -223,6 +239,81 @@ internal suspend fun PlayerManager.resolveShareableListenTogetherStreamUrl(
         return SongUrlResult.Failure
     }
     return result
+}
+
+internal suspend fun PlayerManager.resolveShareableListenTogetherStreamUrls(
+    song: SongItem
+): List<String> {
+    val track = song.toListenTogetherTrackOrNull() ?: return emptyList()
+    val urls = linkedSetOf<String>()
+    fun addResult(result: SongUrlResult) {
+        (result as? SongUrlResult.Success)
+            ?.playbackUrls()
+            ?.forEach(urls::add)
+    }
+
+    addResult(resolveShareableListenTogetherStreamUrl(song))
+    when {
+        isBiliTrack(song) -> Unit
+        isYouTubeMusicTrack(song) && urls.size < MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES -> {
+            addResult(
+                getYouTubeMusicAudioUrl(
+                    song = song,
+                    suppressError = true,
+                    forceRefresh = false,
+                    youtubeRecoveryStrategy = YouTubePlaybackRecoveryStrategy(
+                        preferredQualityOverride = YOUTUBE_STABLE_RECOVERY_QUALITY,
+                        requireDirect = false,
+                        preferM4a = true
+                    ),
+                    sideEffects = RefreshResolverSideEffects(RefreshSideEffectGate { false })
+                )
+            )
+        }
+        urls.size < MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES -> {
+            urls += resolveAdditionalNeteaseShareableUrls(
+                song = song,
+                maxCount = MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES - urls.size
+            )
+        }
+    }
+    return trustedListenTogetherStreamUrls(
+        channelId = track.channelId,
+        streamUrls = urls.toList(),
+        maxCount = MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES
+    )
+}
+
+private suspend fun PlayerManager.resolveAdditionalNeteaseShareableUrls(
+    song: SongItem,
+    maxCount: Int
+): List<String> = withContext(Dispatchers.IO) {
+    if (maxCount <= 0 || isLocalSong(song) || isBiliTrack(song) || isYouTubeMusicTrack(song)) {
+        return@withContext emptyList()
+    }
+    val urls = linkedSetOf<String>()
+    for (quality in buildNeteaseQualityCandidates(effectiveNeteaseQuality())) {
+        if (urls.size >= maxCount) break
+        val response = runCatching {
+            neteaseClient.getSongDownloadUrl(song.id, level = quality)
+        }.getOrNull() ?: continue
+        val parsed = NeteasePlaybackResponseParser.parsePlayback(response, song.durationMs)
+        if (parsed !is NeteasePlaybackResponseParser.PlaybackResult.Success ||
+            parsed.notice == NeteasePlaybackResponseParser.Notice.PREVIEW_CLIP
+        ) {
+            continue
+        }
+        val resolvedUrl = buildNeteaseSuccessResult(
+            parsed = parsed,
+            resolvedQualityKey = quality,
+            fallbackDurationMs = song.durationMs,
+            getLocalizedString = { getLocalizedString(it) }
+        ).url
+        if (isDirectStreamUrl(resolvedUrl)) {
+            urls += resolvedUrl
+        }
+    }
+    urls.toList()
 }
 
 private fun String.toLocalPlaybackUri(): Uri? {

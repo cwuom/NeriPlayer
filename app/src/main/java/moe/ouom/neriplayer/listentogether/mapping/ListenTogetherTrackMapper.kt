@@ -9,7 +9,6 @@ import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
 import moe.ouom.neriplayer.data.model.SongItem
 
 fun ListenTogetherTrack.toSongItem(): SongItem {
-    val trustedStreamUrl = trustedListenTogetherStreamUrl(channelId, streamUrl)
     return when (channelId) {
         ListenTogetherChannels.YOUTUBE_MUSIC -> {
             val playlistId = playlistContextId?.takeIf { it.isNotBlank() }
@@ -28,8 +27,7 @@ fun ListenTogetherTrack.toSongItem(): SongItem {
                 channelId = channelId,
                 audioId = audioId,
                 subAudioId = subAudioId,
-                playlistContextId = playlistContextId,
-                streamUrl = trustedStreamUrl
+                playlistContextId = playlistContextId
             )
         }
 
@@ -49,8 +47,7 @@ fun ListenTogetherTrack.toSongItem(): SongItem {
                 channelId = channelId,
                 audioId = audioId,
                 subAudioId = subAudioId,
-                playlistContextId = playlistContextId,
-                streamUrl = trustedStreamUrl
+                playlistContextId = playlistContextId
             )
         }
 
@@ -72,8 +69,7 @@ fun ListenTogetherTrack.toSongItem(): SongItem {
                 channelId = channelId,
                 audioId = audioId,
                 subAudioId = subAudioId,
-                playlistContextId = playlistContextId,
-                streamUrl = trustedStreamUrl
+                playlistContextId = playlistContextId
             )
         }
 
@@ -90,15 +86,26 @@ fun ListenTogetherTrack.toSongItem(): SongItem {
                 channelId = ListenTogetherChannels.NETEASE,
                 audioId = audioId,
                 subAudioId = subAudioId,
-                playlistContextId = playlistContextId,
-                streamUrl = trustedStreamUrl
+                playlistContextId = playlistContextId
             )
         }
     }
 }
 
 fun ListenTogetherTrack.withStreamUrl(streamUrl: String?): ListenTogetherTrack {
-    val normalizedStreamUrl = trustedListenTogetherStreamUrl(channelId, streamUrl)
-    if (normalizedStreamUrl == this.streamUrl) return this
-    return copy(streamUrl = normalizedStreamUrl)
+    return withStreamUrls(listOfNotNull(streamUrl))
+}
+
+fun ListenTogetherTrack.withStreamUrls(streamUrls: List<String>?): ListenTogetherTrack {
+    val trustedStreamUrls = trustedListenTogetherStreamUrls(
+        channelId = channelId,
+        streamUrls = streamUrls,
+        legacyStreamUrl = null
+    )
+    val primaryStreamUrl = trustedStreamUrls.firstOrNull()
+    if (primaryStreamUrl == streamUrl && trustedStreamUrls == this.streamUrls) return this
+    return copy(
+        streamUrl = primaryStreamUrl,
+        streamUrls = trustedStreamUrls
+    )
 }

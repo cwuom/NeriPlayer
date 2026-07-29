@@ -16,9 +16,10 @@ import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
-import java.util.UUID
+import java.util.Base64
 
-internal class GitHubReleaseSyncTransport(
+/** 直接读写仓库中的同步文件 */
+internal class GitHubRepositorySyncTransport(
     context: Context,
     private val client: OkHttpClient,
     private val token: String,
@@ -56,28 +57,15 @@ internal class GitHubReleaseSyncTransport(
             val targetBranch = branch ?: getDefaultBranch(owner, repo)
             val expectedHead = remoteHead?.takeIf(String::isNotBlank)
                 ?: getBranchHead(owner, repo, targetBranch)
-            val previousManifest = readManifestAtRef(owner, repo, expectedHead)
-            val release = getOrCreateSyncRelease(owner, repo, targetBranch)
-            val assetName = buildAssetName(path, content)
-            val asset = uploadReleaseAsset(release, assetName, content)
-            try {
-                val manifest = GitHubReleaseSyncManifest.create(asset.id, asset.name, content)
-                val commitSha = commitManifest(
-                    owner = owner,
-                    repo = repo,
-                    branch = targetBranch,
-                    expectedHead = expectedHead,
-                    manifest = manifest,
-                    message = message
-                )
-                previousManifest
-                    ?.takeIf { it.assetId != asset.id }
-                    ?.let { deleteReleaseAssetSafely(owner, repo, it.assetId, "superseded") }
-                commitSha
-            } catch (error: Throwable) {
-                deleteReleaseAssetSafely(owner, repo, asset.id, "abandoned")
-                throw error
-            }
+            commitSyncFile(
+                owner = owner,
+                repo = repo,
+                branch = targetBranch,
+                expectedHead = expectedHead,
+                path = path,
+                content = content,
+                message = message
+            )
         }.onFailure {
             NPLogger.e(TAG, "Upload GitHub sync content failed", it)
         }
@@ -91,29 +79,15 @@ internal class GitHubReleaseSyncTransport(
     ): Pair<ByteArray, String> {
         val branch = getDefaultBranch(owner, repo)
         val head = getBranchHead(owner, repo, branch)
-        val manifest = readManifestAtRef(owner, repo, head)
-        if (manifest != null) {
-            val content = downloadReleaseAsset(owner, repo, manifest)
-            return content to head
+        val directContent = getRawFileAtRef(owner, repo, path, head)
+        if (directContent != null) {
+            return directContent to head
         }
 
-        val legacyContent = getRawFileAtRef(owner, repo, path, head)
-        if (legacyContent != null) {
-            return legacyContent to head
-        }
         if (strict) {
             throw GitHubFileNotFoundException("Remote backup file not found: $path")
         }
         return ByteArray(0) to ""
-    }
-
-    private fun readManifestAtRef(
-        owner: String,
-        repo: String,
-        ref: String
-    ): GitHubReleaseSyncManifest? {
-        val manifestBytes = getRawFileAtRef(owner, repo, MANIFEST_PATH, ref) ?: return null
-        return GitHubReleaseSyncManifest.parse(manifestBytes.toString(Charsets.UTF_8), gson)
     }
 
     private fun getDefaultBranch(owner: String, repo: String): String {
@@ -171,149 +145,19 @@ internal class GitHubReleaseSyncTransport(
         }
     }
 
-    private fun downloadReleaseAsset(
-        owner: String,
-        repo: String,
-        manifest: GitHubReleaseSyncManifest
-    ): ByteArray {
-        val request = authenticatedRequest(
-            endpoint("repos/$owner/$repo/releases/assets/${manifest.assetId}")
-        )
-            .header("Accept", "application/octet-stream")
-            .get()
-            .build()
-        return client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throwForResponse(response, "download sync asset")
-            }
-            val content = readBoundedBytes(response, "download sync asset")
-            require(content.size.toLong() == manifest.contentSize) {
-                "GitHub sync asset size does not match its manifest"
-            }
-            require(GitHubReleaseSyncManifest.sha256(content) == manifest.contentSha256) {
-                "GitHub sync asset checksum does not match its manifest"
-            }
-            content
-        }
-    }
-
-    private fun getOrCreateSyncRelease(
-        owner: String,
-        repo: String,
-        branch: String
-    ): ReleaseInfo {
-        getReleaseByTag(owner, repo)?.let { return it }
-
-        val requestBody = JSONObject().apply {
-            put("tag_name", RELEASE_TAG)
-            put("target_commitish", branch)
-            put("name", "NeriPlayer sync storage")
-            put("draft", true)
-            put("prerelease", false)
-        }.toString()
-        val request = authenticatedRequest(endpoint("repos/$owner/$repo/releases"))
-            .header("Accept", GITHUB_JSON_MEDIA_TYPE)
-            .post(requestBody.toRequestBody(JSON_MEDIA_TYPE))
-            .build()
-        return client.newCall(request).execute().use { response ->
-            if (response.isSuccessful) {
-                return@use parseRelease(response.body?.string().orEmpty())
-            }
-            val status = response.code
-            val body = response.body?.string().orEmpty()
-            if (status == 422) {
-                return@use getReleaseByTag(owner, repo)
-                    ?: throw GitHubApiException(status, "Failed to create sync release: ${errorMessage(body)}")
-            }
-            throwForResponse(status, body, "create sync release")
-        }
-    }
-
-    private fun getReleaseByTag(owner: String, repo: String): ReleaseInfo? {
-        val request = authenticatedRequest(endpoint("repos/$owner/$repo/releases/tags/$RELEASE_TAG"))
-            .header("Accept", GITHUB_JSON_MEDIA_TYPE)
-            .get()
-            .build()
-        return client.newCall(request).execute().use { response ->
-            when {
-                response.code == 404 -> null
-                response.isSuccessful -> parseRelease(response.body?.string().orEmpty())
-                else -> throwForResponse(response, "read sync release")
-            }
-        }
-    }
-
-    private fun uploadReleaseAsset(
-        release: ReleaseInfo,
-        assetName: String,
-        content: ByteArray
-    ): ReleaseAssetInfo {
-        val uploadUrl = release.uploadUrl.substringBefore('{')
-            .toHttpUrl()
-            .newBuilder()
-            .addQueryParameter("name", assetName)
-            .build()
-        val request = authenticatedRequest(uploadUrl.toString())
-            .header("Accept", GITHUB_JSON_MEDIA_TYPE)
-            .post(content.toRequestBody(OCTET_STREAM_MEDIA_TYPE))
-            .build()
-        return client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throwForResponse(response, "upload sync asset")
-            }
-            val asset = parseObject(response.body?.string().orEmpty(), "release asset")
-            val id = asset.requiredLong("id")
-            val name = asset.requiredString("name")
-            val size = asset.requiredLong("size")
-            require(size == content.size.toLong()) { "GitHub sync asset size mismatch after upload" }
-            ReleaseAssetInfo(id = id, name = name)
-        }
-    }
-
-    private fun deleteReleaseAssetSafely(
-        owner: String,
-        repo: String,
-        assetId: Long,
-        reason: String
-    ) {
-        runCatching {
-            deleteReleaseAsset(owner, repo, assetId)
-        }.onFailure { error ->
-            NPLogger.w(
-                TAG,
-                "Failed to delete $reason GitHub sync asset id=$assetId",
-                error
-            )
-        }
-    }
-
-    private fun deleteReleaseAsset(owner: String, repo: String, assetId: Long) {
-        val request = authenticatedRequest(
-            endpoint("repos/$owner/$repo/releases/assets/$assetId")
-        )
-            .header("Accept", GITHUB_JSON_MEDIA_TYPE)
-            .delete()
-            .build()
-        client.newCall(request).execute().use { response ->
-            when {
-                response.isSuccessful || response.code == 404 -> Unit
-                else -> throwForResponse(response, "delete sync asset")
-            }
-        }
-    }
-
-    private fun commitManifest(
+    private fun commitSyncFile(
         owner: String,
         repo: String,
         branch: String,
         expectedHead: String,
-        manifest: GitHubReleaseSyncManifest,
+        path: String,
+        content: ByteArray,
         message: String
     ): String {
         val treeSha = getCommitTree(owner, repo, expectedHead)
-        val manifestBlobSha = createUtf8Blob(owner, repo, gson.toJson(manifest))
-        val updatedTreeSha = createManifestTree(owner, repo, treeSha, manifestBlobSha)
-        val commitSha = createManifestCommit(owner, repo, updatedTreeSha, expectedHead, message)
+        val contentBlobSha = createBinaryBlob(owner, repo, content)
+        val updatedTreeSha = createSyncFileTree(owner, repo, treeSha, path, contentBlobSha)
+        val commitSha = createSyncFileCommit(owner, repo, updatedTreeSha, expectedHead, message)
         updateBranchRef(owner, repo, branch, commitSha)
         return commitSha
     }
@@ -334,10 +178,11 @@ internal class GitHubReleaseSyncTransport(
         }
     }
 
-    private fun createUtf8Blob(owner: String, repo: String, content: String): String {
+    private fun createBinaryBlob(owner: String, repo: String, content: ByteArray): String {
         val requestBody = JSONObject().apply {
-            put("content", content)
-            put("encoding", "utf-8")
+            // 服务端会解码 API 信封，并在 Git blob 中保存原始字节
+            put("content", Base64.getEncoder().encodeToString(content))
+            put("encoding", "base64")
         }.toString()
         val request = authenticatedRequest(endpoint("repos/$owner/$repo/git/blobs"))
             .header("Accept", GITHUB_JSON_MEDIA_TYPE)
@@ -345,23 +190,24 @@ internal class GitHubReleaseSyncTransport(
             .build()
         return client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throwForResponse(response, "create sync manifest blob")
+                throwForResponse(response, "create sync binary blob")
             }
-            parseObject(response.body?.string().orEmpty(), "sync manifest blob").requiredString("sha")
+            parseObject(response.body?.string().orEmpty(), "sync binary blob").requiredString("sha")
         }
     }
 
-    private fun createManifestTree(
+    private fun createSyncFileTree(
         owner: String,
         repo: String,
         baseTreeSha: String,
-        manifestBlobSha: String
+        path: String,
+        contentBlobSha: String
     ): String {
         val treeEntry = JSONObject().apply {
-            put("path", MANIFEST_PATH)
+            put("path", path)
             put("mode", "100644")
             put("type", "blob")
-            put("sha", manifestBlobSha)
+            put("sha", contentBlobSha)
         }
         val requestBody = JSONObject().apply {
             put("base_tree", baseTreeSha)
@@ -373,13 +219,13 @@ internal class GitHubReleaseSyncTransport(
             .build()
         return client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throwForResponse(response, "create sync manifest tree")
+                throwForResponse(response, "create sync binary tree")
             }
-            parseObject(response.body?.string().orEmpty(), "sync manifest tree").requiredString("sha")
+            parseObject(response.body?.string().orEmpty(), "sync binary tree").requiredString("sha")
         }
     }
 
-    private fun createManifestCommit(
+    private fun createSyncFileCommit(
         owner: String,
         repo: String,
         treeSha: String,
@@ -387,7 +233,7 @@ internal class GitHubReleaseSyncTransport(
         message: String
     ): String {
         val requestBody = JSONObject().apply {
-            put("message", "$message (binary sync manifest)")
+            put("message", message)
             put("tree", treeSha)
             put("parents", JSONArray().put(parentSha))
         }.toString()
@@ -397,9 +243,9 @@ internal class GitHubReleaseSyncTransport(
             .build()
         return client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throwForResponse(response, "create sync manifest commit")
+                throwForResponse(response, "create sync binary commit")
             }
-            parseObject(response.body?.string().orEmpty(), "sync manifest commit").requiredString("sha")
+            parseObject(response.body?.string().orEmpty(), "sync binary commit").requiredString("sha")
         }
     }
 
@@ -439,14 +285,6 @@ internal class GitHubReleaseSyncTransport(
         return content
     }
 
-    private fun parseRelease(body: String): ReleaseInfo {
-        val release = parseObject(body, "sync release")
-        release.requiredLong("id")
-        return ReleaseInfo(
-            uploadUrl = release.requiredString("upload_url")
-        )
-    }
-
     private fun parseObject(body: String, subject: String): JsonObject {
         return runCatching { gson.fromJson(body, JsonObject::class.java) }
             .getOrNull()
@@ -459,13 +297,6 @@ internal class GitHubReleaseSyncTransport(
             ?.asString
             ?.takeIf(String::isNotBlank)
             ?: throw IOException("GitHub response has no $name")
-    }
-
-    private fun JsonObject.requiredLong(name: String): Long {
-        return runCatching { get(name)?.asLong }
-            .getOrNull()
-            ?.takeIf { it > 0L }
-            ?: throw IOException("GitHub response has no valid $name")
     }
 
     private fun throwForResponse(response: Response, operation: String, detectConflict: Boolean = false): Nothing {
@@ -498,30 +329,11 @@ internal class GitHubReleaseSyncTransport(
         return message.take(MAX_ERROR_MESSAGE_LENGTH).ifBlank { "Unknown error" }
     }
 
-    private fun buildAssetName(path: String, content: ByteArray): String {
-        val extension = if (path.endsWith(".json")) ".json" else ".bin"
-        return "$ASSET_NAME_PREFIX${GitHubReleaseSyncManifest.sha256(content).take(16)}-" +
-            "${UUID.randomUUID()}$extension"
-    }
-
-    private data class ReleaseInfo(
-        val uploadUrl: String
-    )
-
-    private data class ReleaseAssetInfo(
-        val id: Long,
-        val name: String
-    )
-
     private companion object {
-        const val TAG = "GitHubReleaseSync"
-        const val MANIFEST_PATH = ".neriplayer/sync-manifest-v1.json"
-        const val RELEASE_TAG = "neriplayer-sync-storage-v1"
-        const val ASSET_NAME_PREFIX = "neriplayer-sync-v1-"
+        const val TAG = "GitHubRepositorySync"
         const val GITHUB_API_VERSION = "2022-11-28"
         const val GITHUB_JSON_MEDIA_TYPE = "application/vnd.github+json"
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
-        val OCTET_STREAM_MEDIA_TYPE = "application/octet-stream".toMediaType()
         const val GITHUB_RAW_MEDIA_TYPE = "application/vnd.github.raw"
         const val MAX_SYNC_FILE_BYTES = 12 * 1024 * 1024
         const val MAX_ERROR_MESSAGE_LENGTH = 240

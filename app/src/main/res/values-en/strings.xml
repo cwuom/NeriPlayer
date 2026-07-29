@@ -881,7 +881,7 @@
     <string name="settings_keep_last_playback_progress">Keep Last Playback Progress</string>
     <string name="settings_keep_last_playback_progress_desc">Remember the current song position after restarting the app</string>
     <string name="settings_remember_long_form_playback_progress">Remember Long Video Progress</string>
-    <string name="settings_remember_long_form_playback_progress_desc">Save positions for content 15 minutes or longer and resume on the next play</string>
+    <string name="settings_remember_long_form_playback_progress_desc">Sync positions for content 15 minutes or longer and resume on other devices</string>
     <string name="settings_keep_playback_mode_state">Keep Playback Mode State</string>
     <string name="settings_keep_playback_mode_state_desc">Restore repeat and shuffle state after restarting the app</string>
     <string name="settings_stop_on_bluetooth_disconnect">Stop On Bluetooth Disconnect</string>
@@ -1612,6 +1612,11 @@
     <string name="listen_together_action_unavailable">This action is temporarily unavailable. Please try again.</string>
     <string name="settings_listen_together_expand">Configure the server address and unique identity</string>
     <string name="settings_listen_together_server_title">Listen Together Server</string>
+    <string name="settings_listen_together_default_nickname_title">Default Nickname</string>
+    <string name="settings_listen_together_default_nickname_input_label">Nickname</string>
+    <string name="settings_listen_together_default_nickname_unset">Not set. A nickname will be generated automatically.</string>
+    <string name="settings_listen_together_default_nickname_saved">Default nickname saved</string>
+    <string name="settings_listen_together_default_nickname_disabled">Leave the room before changing the default nickname.</string>
     <string name="settings_listen_together_server_default_desc">Leave this empty to use the built-in default server. Invite links will not include a server address.</string>
     <string name="settings_listen_together_server_custom_desc">A custom Listen Together server is active. Invite links will include the server address.</string>
     <string name="settings_listen_together_server_input_label">Server Address</string>

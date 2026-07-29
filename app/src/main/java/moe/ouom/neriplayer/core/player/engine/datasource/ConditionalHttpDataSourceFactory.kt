@@ -25,7 +25,6 @@ package moe.ouom.neriplayer.core.player.engine.datasource
 
 
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.common.C
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.DataSpec
 import android.net.Uri
@@ -44,7 +43,16 @@ import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeader
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
 import moe.ouom.neriplayer.data.traffic.TrafficStatsRepository
 import moe.ouom.neriplayer.core.player.resolver.youtube.ConditionalChunkedHttpDataSource
-import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeGoogleVideoRangeSupport
+
+internal fun removeExplicitRangeHeader(headers: Map<String, String>): Map<String, String> {
+    return LinkedHashMap<String, String>().apply {
+        headers.forEach { (name, value) ->
+            if (!name.equals("Range", ignoreCase = true)) {
+                put(name, value)
+            }
+        }
+    }
+}
 
 /**
  * 自定义的 HttpDataSource.Factory:
@@ -170,34 +178,15 @@ class ConditionalHttpDataSourceFactory(
 
     private fun buildYouTubeDataSpec(dataSpec: DataSpec): DataSpec {
         val streamUrl = dataSpec.uri.toString()
-        val headers = buildYouTubeHeaders(
-            original = dataSpec.httpRequestHeaders,
-            streamUrl = streamUrl
-        )
-        if (
-            !YouTubeGoogleVideoRangeSupport.shouldForceExplicitFullRange(streamUrl) ||
-            YouTubeGoogleVideoRangeSupport.hasExplicitRangeHeader(headers)
-        ) {
-            return dataSpec.buildUpon()
-                .setHttpRequestHeaders(headers)
-                .build()
-        }
-        val totalContentLength =
-            YouTubeGoogleVideoRangeSupport.resolveQueryContentLength(streamUrl) ?: return dataSpec
-                .buildUpon()
-                .setHttpRequestHeaders(headers)
-                .build()
-        val rangeHeader = YouTubeGoogleVideoRangeSupport.buildRangeHeader(
-            startPosition = dataSpec.position,
-            requestedLength = dataSpec.length.takeIf { it > 0L } ?: C.LENGTH_UNSET.toLong(),
-            totalContentLength = totalContentLength
+        // media3 derives the only Range header from DataSpec position and length
+        val headers = removeExplicitRangeHeader(
+            buildYouTubeHeaders(
+                original = dataSpec.httpRequestHeaders,
+                streamUrl = streamUrl
+            )
         )
         return dataSpec.buildUpon()
-            .setHttpRequestHeaders(
-                LinkedHashMap(headers).apply {
-                    put("Range", rangeHeader)
-                }
-            )
+            .setHttpRequestHeaders(headers)
             .build()
     }
 }

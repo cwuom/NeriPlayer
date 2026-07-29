@@ -44,3 +44,20 @@ internal fun trustedListenTogetherStreamUrl(
     }
     return candidate
 }
+
+internal fun trustedListenTogetherStreamUrls(
+    channelId: String,
+    streamUrls: List<String>?,
+    legacyStreamUrl: String? = null,
+    maxCount: Int = MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES
+): List<String> {
+    if (maxCount <= 0) return emptyList()
+    return buildList {
+        streamUrls.orEmpty().forEach { candidate ->
+            trustedListenTogetherStreamUrl(channelId, candidate)?.let(::add)
+        }
+        trustedListenTogetherStreamUrl(channelId, legacyStreamUrl)?.let(::add)
+    }.distinct().take(maxCount)
+}
+
+internal const val MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES = 3

@@ -10,7 +10,7 @@ internal data class AudioLoadControlPolicy(
     val minBufferMs: Int = 15_000,
     val maxBufferMs: Int = 30_000,
     val bufferForPlaybackMs: Int = 800,
-    val bufferForPlaybackAfterRebufferMs: Int = 1_500,
+    val bufferForPlaybackAfterRebufferMs: Int = 800,
     /**
      * 往回拖进度条时留着已经下过的那段
      *

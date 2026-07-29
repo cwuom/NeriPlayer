@@ -21,6 +21,7 @@ fun SongItem.toListenTogetherTrackOrNull(includeLocal: Boolean = false): ListenT
         playlistContextId = playlistContext,
         mediaUri = mediaUri,
         streamUrl = streamUrl,
+        streamUrls = listOfNotNull(streamUrl),
         name = customName ?: name,
         artist = customArtist ?: artist,
         album = album,

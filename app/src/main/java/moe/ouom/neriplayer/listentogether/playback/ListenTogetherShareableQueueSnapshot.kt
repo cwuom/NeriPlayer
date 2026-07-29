@@ -2,7 +2,8 @@ package moe.ouom.neriplayer.listentogether.playback
 
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.listentogether.mapping.toListenTogetherTrackOrNull
-import moe.ouom.neriplayer.listentogether.mapping.withStreamUrl
+import moe.ouom.neriplayer.listentogether.mapping.withStreamUrls
+import moe.ouom.neriplayer.core.player.url.currentListenTogetherShareableStreamUrls
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomSettings
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
 import moe.ouom.neriplayer.listentogether.session.normalized
@@ -17,11 +18,13 @@ internal fun List<SongItem>.toShareableQueueSnapshot(
 
     val targetSong = getOrNull(currentIndex.coerceIn(0, lastIndex))
     val targetStableKey = targetSong?.toListenTogetherTrackOrNull()?.stableKey
-    val currentStreamUrl = currentResolvedStreamUrl().takeIf { includeResolvedStreamUrl }
+    val currentStreamUrls = PlayerManager.currentListenTogetherShareableStreamUrls()
+        .takeIf { includeResolvedStreamUrl }
+        .orEmpty()
     val shareableQueue = mapNotNull { song ->
         song.toListenTogetherTrackOrNull()?.let { track ->
             if (roomSettings.normalized().shareAudioLinks && track.stableKey == targetStableKey) {
-                track.withStreamUrl(currentStreamUrl)
+                track.withStreamUrls(currentStreamUrls)
             } else {
                 track
             }
@@ -44,13 +47,4 @@ internal fun List<ListenTogetherTrack>.mergeCurrentTrack(
     if (currentIndex !in indices) return this
     if (this[currentIndex] == replacement) return this
     return toMutableList().also { it[currentIndex] = replacement }
-}
-
-private fun currentResolvedStreamUrl(): String? {
-    val candidate = PlayerManager.currentMediaUrlFlow.value?.trim().orEmpty()
-    if (candidate.isBlank()) return null
-    if (candidate.startsWith("https://", ignoreCase = true) || candidate.startsWith("http://", ignoreCase = true)) {
-        return candidate
-    }
-    return null
 }

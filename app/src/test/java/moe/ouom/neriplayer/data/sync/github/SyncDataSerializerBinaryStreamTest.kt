@@ -67,6 +67,20 @@ class SyncDataSerializerBinaryStreamTest {
     }
 
     @Test
+    fun `data saver writes a new raw file without replacing legacy binary backup`() {
+        assertEquals("backup-raw.bin", SyncDataSerializer.getFileName(useDataSaver = true))
+        assertEquals("backup.json", SyncDataSerializer.getFileName(useDataSaver = false))
+        assertEquals(
+            listOf("backup.bin", "backup.json"),
+            SyncDataSerializer.getReadFallbackFileNames(useDataSaver = true)
+        )
+        assertEquals(
+            listOf("backup-raw.bin", "backup.bin"),
+            SyncDataSerializer.getReadFallbackFileNames(useDataSaver = false)
+        )
+    }
+
+    @Test
     fun `oversized json upload fails before transport`() {
         val data = SyncData(deviceName = "x".repeat(8 * 1024 * 1024))
 

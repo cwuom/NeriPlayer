@@ -6,7 +6,7 @@ import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommand
 import moe.ouom.neriplayer.listentogether.compat.resolveListenTogetherPlaybackCommandShouldPlay
 import moe.ouom.neriplayer.listentogether.compat.resolveListenTogetherLinkReadyState
 import moe.ouom.neriplayer.listentogether.mapping.toListenTogetherTrackOrNull
-import moe.ouom.neriplayer.listentogether.mapping.withStreamUrl
+import moe.ouom.neriplayer.listentogether.mapping.withStreamUrls
 import moe.ouom.neriplayer.listentogether.playback.hasShareableListenTogetherTrackAt
 import moe.ouom.neriplayer.listentogether.playback.indexOfTrack
 import moe.ouom.neriplayer.listentogether.playback.isShareableForListenTogether
@@ -19,6 +19,7 @@ import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSocketEnvelope
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.core.player.url.currentListenTogetherShareableStreamUrls
 import java.util.UUID
 
 internal fun nextListenTogetherEventId(): String {
@@ -148,7 +149,8 @@ internal class ListenTogetherEventFactory(
     fun buildLinkReadyEvent(
         stableKey: String,
         positionMs: Long,
-        streamUrlOverride: String? = null
+        streamUrlOverride: String? = null,
+        streamUrlsOverride: List<String> = emptyList()
     ): ListenTogetherEvent? {
         val queue = PlayerManager.currentQueueFlow.value
         val currentSong = PlayerManager.currentSongFlow.value ?: run {
@@ -186,20 +188,19 @@ internal class ListenTogetherEventFactory(
             )
             return null
         }
-        val resolvedStreamUrl = normalizedDirectStreamUrl(streamUrlOverride)
-            ?: normalizedDirectStreamUrl(shareableTrack.streamUrl)
-            ?: run {
-                NPLogger.w(
-                    TAG,
-                    "buildLinkReadyEvent(): direct stream url missing, stableKey=$stableKey, track=${shareableTrack.name}"
-                )
-                return null
+        val trustedTrack = shareableTrack.withStreamUrls(
+            buildList {
+                addAll(streamUrlsOverride)
+                streamUrlOverride?.let(::add)
+                addAll(PlayerManager.currentListenTogetherShareableStreamUrls())
+                addAll(shareableTrack.streamUrls)
+                shareableTrack.streamUrl?.let(::add)
             }
-        val trustedTrack = shareableTrack.withStreamUrl(resolvedStreamUrl)
-        val trustedStreamUrl = normalizedDirectStreamUrl(trustedTrack.streamUrl) ?: run {
+        )
+        if (trustedTrack.streamUrls.isEmpty()) {
             NPLogger.w(
                 TAG,
-                "buildLinkReadyEvent(): rejected untrusted stream url, stableKey=$stableKey, track=${shareableTrack.name}, url=${resolvedStreamUrl.take(128)}"
+                "buildLinkReadyEvent(): direct stream urls missing, stableKey=$stableKey, track=${shareableTrack.name}"
             )
             return null
         }
@@ -217,7 +218,7 @@ internal class ListenTogetherEventFactory(
             track = trustedTrack,
             queue = shareableQueue.mergeCurrentTrack(
                 currentIndex = resolvedCurrentIndex,
-                currentTrack = trustedTrack.withStreamUrl(trustedStreamUrl)
+                currentTrack = trustedTrack
             ),
             state = resolveListenTogetherLinkReadyState(
                 roomPlaybackState = roomStateProvider()?.playback?.state,
