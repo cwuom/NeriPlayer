@@ -21,6 +21,7 @@ internal object UsbExclusiveBackgroundAudioAnchor {
         val track: AudioTrack,
         val spec: UsbExclusiveBackgroundAudioAnchorSpec,
         val silence: ByteArray,
+        val volumeGuardToken: UsbExclusiveBackgroundAudioAnchorVolumeGuardToken?,
         var streamWriterRunning: AtomicBoolean? = null,
         var streamWriter: Thread? = null
     )
@@ -36,7 +37,12 @@ internal object UsbExclusiveBackgroundAudioAnchor {
             }
             releaseLocked("replace_unusable:$reason")
 
-            val created = createAnchor(context, reason) ?: return false
+            val volumeGuardToken = UsbExclusiveBackgroundAudioAnchorVolumeGuard.acquire(context)
+            val created = createAnchor(context, reason, volumeGuardToken)
+            if (created == null) {
+                UsbExclusiveBackgroundAudioAnchorVolumeGuard.release(volumeGuardToken)
+                return false
+            }
             activeAnchor = created
             return resume(created, reason)
         }
@@ -56,9 +62,13 @@ internal object UsbExclusiveBackgroundAudioAnchor {
         }
     }
 
-    private fun createAnchor(context: Context, reason: String): ActiveAnchor? {
+    private fun createAnchor(
+        context: Context,
+        reason: String,
+        volumeGuardToken: UsbExclusiveBackgroundAudioAnchorVolumeGuardToken?
+    ): ActiveAnchor? {
         for (spec in usbExclusiveBackgroundAudioAnchorSpecs()) {
-            val anchor = createAnchor(context, reason, spec)
+            val anchor = createAnchor(context, reason, spec, volumeGuardToken)
             if (anchor != null) return anchor
         }
         NPLogger.w(TAG, "no compatible silent media anchor reason=$reason")
@@ -68,7 +78,8 @@ internal object UsbExclusiveBackgroundAudioAnchor {
     private fun createAnchor(
         context: Context,
         reason: String,
-        spec: UsbExclusiveBackgroundAudioAnchorSpec
+        spec: UsbExclusiveBackgroundAudioAnchorSpec,
+        volumeGuardToken: UsbExclusiveBackgroundAudioAnchorVolumeGuardToken?
     ): ActiveAnchor? {
         val channelMask = when (spec.channelCount) {
             1 -> AudioFormat.CHANNEL_OUT_MONO
@@ -111,7 +122,12 @@ internal object UsbExclusiveBackgroundAudioAnchor {
             releaseTrack(track)
             return null
         }
-        return ActiveAnchor(track = track, spec = spec, silence = silence)
+        return ActiveAnchor(
+            track = track,
+            spec = spec,
+            silence = silence,
+            volumeGuardToken = volumeGuardToken
+        )
     }
 
     private fun resolveBufferBytes(
@@ -247,6 +263,7 @@ internal object UsbExclusiveBackgroundAudioAnchor {
         anchor.streamWriter = null
         anchor.streamWriterRunning = null
         releaseTrack(anchor.track)
+        UsbExclusiveBackgroundAudioAnchorVolumeGuard.release(anchor.volumeGuardToken)
         NPLogger.i(TAG, "released silent media anchor reason=$reason spec=${anchor.spec.name}")
     }
 

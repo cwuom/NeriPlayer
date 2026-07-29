@@ -52,6 +52,7 @@ import moe.ouom.neriplayer.core.player.lifecycle.stopPlaybackAfterUsbExclusiveNa
 import moe.ouom.neriplayer.core.player.lifecycle.tryRecoverUsbExclusivePlaybackAfterNativeTransferFailure
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
+import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveBackgroundAudioAnchorVolumeGuard
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
 import moe.ouom.neriplayer.core.player.usb.system.usbExclusiveEffectiveNativeVolume
 import moe.ouom.neriplayer.core.player.usb.system.usbExclusiveFloatSampleForNativePipeline
@@ -1498,6 +1499,9 @@ internal class UsbExclusiveAudioSink(
     }
 
     private fun readMusicVolumeFractionFromSystem(): Float {
+        UsbExclusiveBackgroundAudioAnchorVolumeGuard.currentVolumeFractionOrNull()?.let {
+            return it
+        }
         val manager = audioManager ?: return 1f
         return runCatching {
             val minVolume = manager.getStreamMinVolume(AudioManager.STREAM_MUSIC)
