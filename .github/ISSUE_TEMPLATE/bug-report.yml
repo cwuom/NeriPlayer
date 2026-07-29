@@ -77,6 +77,7 @@ body:
       description: 可多选；非播放类问题请选择“不涉及播放” / Multiple selections allowed; choose “Not related to playback” for non-playback issues
       multiple: true
       options:
+        - None / 未选择
         - 网易云音乐 / NetEase Cloud Music
         - Bilibili
         - YouTube Music
@@ -92,6 +93,7 @@ body:
       label: 复现时的音频输出设备 / Audio output during reproduction
       description: 请选择复现问题时实际使用的输出设备 / Select the device that was in use when the issue occurred
       options:
+        - None / 未选择
         - 手机或平板扬声器 / Device speaker
         - 有线耳机或 USB-C 耳机 / Wired or USB-C headphones
         - 蓝牙耳机或音箱 / Bluetooth device
@@ -107,6 +109,7 @@ body:
       label: 是否开启 USB 独占播放 / Is USB exclusive playback enabled
       description: 请按复现问题时的设置选择；这与是否连接 USB DAC 是两个信息 / Choose the setting used during reproduction; this is separate from whether a USB DAC was connected
       options:
+        - None / 未选择
         - 已开启，且正在使用 USB DAC / Enabled, using a USB DAC
         - 已开启，但本次未使用 USB DAC / Enabled, without a USB DAC in this case
         - 未开启 / Disabled
