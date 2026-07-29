@@ -2,15 +2,22 @@ package moe.ouom.neriplayer.core.player.usb.system
 
 import android.content.Context
 import android.media.AudioManager
+import kotlin.math.abs
 
 internal data class UsbExclusiveBackgroundAudioAnchorVolumeGuardToken(
     val generation: Long
 )
 
 internal class UsbExclusiveBackgroundAudioAnchorVolumeGuardState {
+    private companion object {
+        const val VOLUME_EPSILON = 0.0001f
+    }
+
     private data class ActiveSnapshot(
         val token: UsbExclusiveBackgroundAudioAnchorVolumeGuardToken,
-        val volumeFraction: Float
+        val volumeFraction: Float,
+        val routeVolumeFraction: Float? = null,
+        val routeVolumeStable: Boolean = false
     )
 
     private var nextGeneration = 0L
@@ -26,6 +33,45 @@ internal class UsbExclusiveBackgroundAudioAnchorVolumeGuardState {
     }
 
     fun currentVolumeFractionOrNull(): Float? = activeSnapshot?.volumeFraction
+
+    fun beginRouteObservation(token: UsbExclusiveBackgroundAudioAnchorVolumeGuardToken) {
+        val active = activeSnapshot ?: return
+        if (active.token != token) return
+        activeSnapshot = active.copy(
+            routeVolumeFraction = null,
+            routeVolumeStable = false
+        )
+    }
+
+    fun observeRouteVolume(volumeFraction: Float): Float? {
+        val active = activeSnapshot ?: return null
+        val normalized = volumeFraction.coerceIn(0f, 1f)
+        val isStable = active.routeVolumeFraction?.let {
+            abs(it - normalized) <= VOLUME_EPSILON
+        } == true
+        activeSnapshot = active.copy(
+            routeVolumeFraction = normalized,
+            routeVolumeStable = isStable
+        )
+        return active.volumeFraction
+    }
+
+    fun applyUserVolumeChange(volumeFraction: Float): Float? {
+        val active = activeSnapshot ?: return null
+        val normalized = volumeFraction.coerceIn(0f, 1f)
+        val routeVolume = active.routeVolumeFraction
+        val adjustedVolume = if (active.routeVolumeStable && routeVolume != null) {
+            (active.volumeFraction + normalized - routeVolume).coerceIn(0f, 1f)
+        } else {
+            active.volumeFraction
+        }
+        activeSnapshot = active.copy(
+            volumeFraction = adjustedVolume,
+            routeVolumeFraction = normalized,
+            routeVolumeStable = active.routeVolumeStable
+        )
+        return adjustedVolume
+    }
 
     fun release(token: UsbExclusiveBackgroundAudioAnchorVolumeGuardToken) {
         if (activeSnapshot?.token == token) {
@@ -48,6 +94,25 @@ internal object UsbExclusiveBackgroundAudioAnchorVolumeGuard {
     fun currentVolumeFractionOrNull(): Float? {
         return synchronized(lock) {
             state.currentVolumeFractionOrNull()
+        }
+    }
+
+    fun beginRouteObservation(token: UsbExclusiveBackgroundAudioAnchorVolumeGuardToken?) {
+        if (token == null) return
+        synchronized(lock) {
+            state.beginRouteObservation(token)
+        }
+    }
+
+    fun observeRouteVolume(volumeFraction: Float): Float? {
+        return synchronized(lock) {
+            state.observeRouteVolume(volumeFraction)
+        }
+    }
+
+    fun applyUserVolumeChange(volumeFraction: Float): Float? {
+        return synchronized(lock) {
+            state.applyUserVolumeChange(volumeFraction)
         }
     }
 

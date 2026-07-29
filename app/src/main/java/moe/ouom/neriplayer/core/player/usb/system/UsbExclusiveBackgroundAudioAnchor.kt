@@ -187,6 +187,10 @@ internal object UsbExclusiveBackgroundAudioAnchor {
         }.onFailure { error ->
             NPLogger.w(TAG, "play failed reason=$reason", error)
         }.getOrDefault(false)
+        if (playing && !wasPlaying) {
+            UsbExclusiveBackgroundAudioAnchorVolumeGuard
+                .beginRouteObservation(anchor.volumeGuardToken)
+        }
         if (playing) {
             ensureStreamingWriter(anchor)
         }

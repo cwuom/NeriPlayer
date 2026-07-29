@@ -11,11 +11,39 @@ class UsbExclusiveBackgroundAudioAnchorVolumeGuardTest {
         val state = UsbExclusiveBackgroundAudioAnchorVolumeGuardState()
         val token = state.acquire(0.92f)
 
+        state.observeRouteVolume(0.67f)
+
         assertEquals(0.92f, state.currentVolumeFractionOrNull() ?: -1f, 0.0001f)
 
         state.release(token)
 
         assertNull(state.currentVolumeFractionOrNull())
+    }
+
+    @Test
+    fun `stable route volume changes adjust the protected USB snapshot`() {
+        val state = UsbExclusiveBackgroundAudioAnchorVolumeGuardState()
+        val token = state.acquire(0.50f)
+        state.beginRouteObservation(token)
+        state.observeRouteVolume(0.40f)
+        state.observeRouteVolume(0.40f)
+
+        state.applyUserVolumeChange(0.55f)
+
+        assertEquals(0.65f, state.currentVolumeFractionOrNull() ?: -1f, 0.0001f)
+    }
+
+    @Test
+    fun `unstable route transition cannot lower the protected USB snapshot`() {
+        val state = UsbExclusiveBackgroundAudioAnchorVolumeGuardState()
+        val token = state.acquire(0.92f)
+        state.observeRouteVolume(0.92f)
+        state.observeRouteVolume(0.92f)
+        state.beginRouteObservation(token)
+
+        state.applyUserVolumeChange(0.67f)
+
+        assertEquals(0.92f, state.currentVolumeFractionOrNull() ?: -1f, 0.0001f)
     }
 
     @Test
