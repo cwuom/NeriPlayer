@@ -906,7 +906,11 @@ private fun PlayerManager.maybeAutoMatchYouTubeMusicLyrics(song: SongItem, reque
         }
 
         val candidate =
-            SearchManager.findBestSearchCandidate(song.name, song.artist) ?: return@launch
+            SearchManager.findBestSearchCandidate(
+                songName = song.name,
+                songArtist = song.artist,
+                songDurationMs = song.durationMs
+            ) ?: return@launch
         val latestSong = _currentSongFlow.value ?: return@launch
         if (requestToken != playbackRequestToken || !latestSong.sameIdentityAs(song)) {
             return@launch

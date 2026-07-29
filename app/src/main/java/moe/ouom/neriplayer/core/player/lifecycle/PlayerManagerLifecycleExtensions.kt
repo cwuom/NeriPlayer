@@ -2275,6 +2275,7 @@ internal fun PlayerManager.updateUsbExclusiveForegroundState(
         usbExclusiveBackgroundAuditJob?.cancel()
         usbExclusiveBackgroundAuditJob = null
     }
+    AudioPlayerService.updateUsbExclusiveBackgroundAudioAnchor(reason)
     if (!usbExclusivePlaybackEnabled) return
     applyActiveUsbExclusiveBuffer(reason)
 }

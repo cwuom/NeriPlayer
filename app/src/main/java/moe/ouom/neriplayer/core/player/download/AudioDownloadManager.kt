@@ -2639,12 +2639,16 @@ object AudioDownloadManager {
         if (!shouldFetchRemoteLyricForDownload(song.matchedLyric)) return null
         try {
             val lrcLibResult = try {
-                val durationSec = (song.durationMs / 1000).toInt()
+                val durationSec = song.durationMs / 1_000L
                 AppContainer.lrcLibClient.getLyrics(
                     trackName = song.name,
                     artistName = song.artist,
                     durationSeconds = durationSec
-                ) ?: AppContainer.lrcLibClient.searchLyrics("${song.name} ${song.artist}")
+                ) ?: AppContainer.lrcLibClient.searchLyrics(
+                    trackName = song.name,
+                    artistName = song.artist,
+                    durationSeconds = durationSec
+                )
             } catch (_: Exception) { null }
 
             val syncedLyrics = lrcLibResult?.syncedLyrics?.takeIf { it.isNotBlank() }

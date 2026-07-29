@@ -535,12 +535,16 @@ internal object PlayerLyricsProvider {
                 }
 
                 val lrcLibResult = try {
-                    val durationSeconds = (song.durationMs / 1000).toInt()
+                    val durationSeconds = song.durationMs / 1_000L
                     lrcLibClient.getLyrics(
                         trackName = song.name,
                         artistName = song.artist,
                         durationSeconds = durationSeconds
-                    ) ?: lrcLibClient.searchLyrics("${song.name} ${song.artist}")
+                    ) ?: lrcLibClient.searchLyrics(
+                        trackName = song.name,
+                        artistName = song.artist,
+                        durationSeconds = durationSeconds
+                    )
                 } catch (error: Exception) {
                     NPLogger.d("NERI-PlayerManager", "LRCLIB lookup failed: ${error.message}")
                     null

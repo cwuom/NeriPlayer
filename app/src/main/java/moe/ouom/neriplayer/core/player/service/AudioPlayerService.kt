@@ -91,6 +91,7 @@ import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothMetadata
 import moe.ouom.neriplayer.core.player.metadata.shouldUseExternalBluetoothLyrics
 import moe.ouom.neriplayer.core.player.persistence.preloadRestoredStateSnapshot
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
+import moe.ouom.neriplayer.core.player.policy.usb.shouldRunUsbExclusiveBackgroundAudioAnchor
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveKeepAliveProgress
 import moe.ouom.neriplayer.core.player.policy.usb.evaluateUsbExclusiveKeepAliveProgress
 import moe.ouom.neriplayer.core.player.timer.SleepTimerMode
@@ -98,6 +99,7 @@ import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveWakeLock
+import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveBackgroundAudioAnchor
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
@@ -450,6 +452,10 @@ class AudioPlayerService : Service() {
             activeServiceInstance?.requestUsbExclusiveBackgroundForegroundReassert(reason)
         }
 
+        internal fun updateUsbExclusiveBackgroundAudioAnchor(reason: String) {
+            activeServiceInstance?.updateUsbExclusiveBackgroundAudioAnchor(reason)
+        }
+
         fun createSyncIntent(context: Context, source: String): Intent {
             return Intent(context, AudioPlayerService::class.java).apply {
                 action = ACTION_SYNC
@@ -682,6 +688,19 @@ class AudioPlayerService : Service() {
         return PlayerManager.isUsbExclusivePlaybackActiveForForegroundService()
     }
 
+    private fun updateUsbExclusiveBackgroundAudioAnchor(reason: String) {
+        val shouldRun = shouldRunUsbExclusiveBackgroundAudioAnchor(
+            appInForeground = PlayerManager.usbExclusiveAppInForeground,
+            serviceForeground = isForegroundStarted,
+            usbExclusivePlaybackActive = isUsbExclusivePlaybackActiveForServiceKeepAlive()
+        )
+        if (shouldRun) {
+            UsbExclusiveBackgroundAudioAnchor.start(this, reason)
+        } else {
+            UsbExclusiveBackgroundAudioAnchor.stop(reason)
+        }
+    }
+
     private fun ensureUsbExclusiveKeepAliveLoop() {
         if (usbExclusiveKeepAliveJob?.isActive == true) return
         usbExclusiveKeepAliveJob = serviceScope.launch {
@@ -728,6 +747,7 @@ class AudioPlayerService : Service() {
             handleForegroundPromotionFailure("usb_keepalive")
             return
         }
+        updateUsbExclusiveBackgroundAudioAnchor("usb_keepalive")
 
         UsbExclusiveSessionController.refresh(this)
         UsbExclusiveSessionController.maintainWakeLock(this, "service_keepalive")
@@ -747,6 +767,7 @@ class AudioPlayerService : Service() {
         val message = "USB exclusive keepalive tick=$usbExclusiveKeepAliveTick gapMs=$gapMs " +
             "path=${pathState.effectivePath} native=${nativeState.source}/${nativeState.streaming} " +
             "foregroundReasserted=$foregroundReasserted wakeLock=${UsbExclusiveWakeLock.isHeld()} " +
+            "audioAnchor=${UsbExclusiveBackgroundAudioAnchor.isActive()} " +
             "completedFrames=${nativeState.completedAudioFrames} " +
             "$levelLine $signalLine"
         if (gapMs > USB_EXCLUSIVE_KEEPALIVE_STALL_WARN_MS) {
@@ -847,9 +868,11 @@ class AudioPlayerService : Service() {
 
     private fun updateUsbExclusiveServiceKeepAlive(reason: String) {
         if (isUsbExclusivePlaybackActiveForServiceKeepAlive()) {
+            updateUsbExclusiveBackgroundAudioAnchor(reason)
             ensureUsbExclusiveKeepAliveLoop()
             return
         }
+        UsbExclusiveBackgroundAudioAnchor.stop("inactive:$reason")
         usbExclusiveKeepAliveJob?.cancel()
         usbExclusiveKeepAliveJob = null
         usbExclusiveKeepAliveTick = 0L
@@ -878,6 +901,7 @@ class AudioPlayerService : Service() {
                 )
                 return@launch
             }
+            updateUsbExclusiveBackgroundAudioAnchor("usb_background_transition:$reason")
             usbExclusiveKeepAliveJob?.cancel()
             usbExclusiveKeepAliveJob = null
             lastUsbExclusiveKeepAliveAtMs = 0L
@@ -2219,6 +2243,7 @@ class AudioPlayerService : Service() {
             }
             usbExclusiveKeepAliveJob?.cancel()
             usbExclusiveKeepAliveJob = null
+            UsbExclusiveBackgroundAudioAnchor.stop("service_destroy")
             artworkLoadJob?.cancel()
             artworkLoadJob = null
             serviceScope.cancel()

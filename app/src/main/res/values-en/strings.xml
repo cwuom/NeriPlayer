@@ -473,9 +473,9 @@
     <string name="local_playlist_scan_preview_search">Search local files</string>
     <string name="local_playlist_scan_preview_apply">Import Selected Songs</string>
     <string name="local_playlist_scan_filter_metadata">Hide tracks without metadata</string>
-    <string name="local_playlist_scan_filter_existing">Hide tracks already in Local Files</string>
+    <string name="local_playlist_scan_filter_existing">Ignore added tracks</string>
     <string name="local_playlist_scan_metadata_empty">No local audio with metadata</string>
-    <string name="local_playlist_scan_existing_empty">No local audio not already in Local Files</string>
+    <string name="local_playlist_scan_existing_empty">No unadded local audio</string>
     <string name="local_playlist_scan_filtered_empty">No local audio matches the filters</string>
     <string name="local_playlist_import_audio_no_new">No new local tracks to import</string>
     <string name="local_playlist_add_scanned_no_new">Selected tracks are already in the target playlist</string>

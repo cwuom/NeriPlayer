@@ -3,8 +3,10 @@ package moe.ouom.neriplayer.core.api.search
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.api.lyrics.isExternalLyricDurationCompatible
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
+import kotlin.math.abs
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -59,9 +61,18 @@ object SearchManager {
 
     suspend fun findBestSearchCandidate(
         songName: String,
-        songArtist: String
+        songArtist: String,
+        songDurationMs: Long
     ): SongSearchInfo? = withContext(Dispatchers.IO) {
-        NPLogger.d("SearchManager", "try to match $songName / $songArtist")
+        if (songDurationMs <= 0L) {
+            NPLogger.d(
+                "SearchManager",
+                "Skipping automatic lyric match without a known duration: $songName / $songArtist"
+            )
+            return@withContext null
+        }
+
+        NPLogger.d("SearchManager", "try to match $songName / $songArtist / $songDurationMs")
 
         val searchResults = buildList {
             addAll(searchCandidates(songName, searchApi(MusicPlatform.QQ_MUSIC), "qq"))
@@ -71,32 +82,70 @@ object SearchManager {
             return@withContext null
         }
 
+        val candidate = selectBestSearchCandidate(
+            songName = songName,
+            songArtist = songArtist,
+            songDurationMs = songDurationMs,
+            candidates = searchResults
+        )
+        if (candidate == null) {
+            NPLogger.d(
+                "SearchManager",
+                "No duration-compatible lyric match for $songName / $songArtist"
+            )
+        }
+        candidate
+    }
+
+    internal fun selectBestSearchCandidate(
+        songName: String,
+        songArtist: String,
+        songDurationMs: Long,
+        candidates: List<SongSearchInfo>
+    ): SongSearchInfo? {
         val normalizedSongName = normalizeText(songName)
         val normalizedArtist = normalizeText(songArtist)
         val normalizedArtists = normalizeArtists(songArtist)
+        if (
+            normalizedSongName.isBlank() ||
+            normalizedArtist.isBlank() ||
+            normalizedArtists.isEmpty() ||
+            songDurationMs <= 0L
+        ) {
+            return null
+        }
 
-        val scoredResults = searchResults.mapIndexed { index, candidate ->
-            IndexedValue(
-                index = index,
-                value = candidate to scoreCandidate(
+        return candidates.mapNotNull { candidate ->
+            val candidateDurationMs = parseDurationMs(candidate.duration) ?: return@mapNotNull null
+            val candidateSongName = normalizeText(candidate.songName)
+            val candidateArtist = normalizeText(candidate.singer)
+            val candidateArtists = normalizeArtists(candidate.singer)
+            if (
+                candidateSongName != normalizedSongName ||
+                candidateArtist.isBlank() ||
+                candidateArtists != normalizedArtists ||
+                !isExternalLyricDurationCompatible(songDurationMs, candidateDurationMs)
+            ) {
+                return@mapNotNull null
+            }
+
+            SearchCandidateScore(
+                candidate = candidate,
+                score = scoreCandidate(
                     candidate = candidate,
                     targetSongName = normalizedSongName,
                     targetArtist = normalizedArtist,
                     targetArtists = normalizedArtists
-                )
+                ),
+                durationDeltaMs = abs(songDurationMs - candidateDurationMs)
             )
-        }
-
-        val bestScore = scoredResults.maxOfOrNull { it.value.second } ?: return@withContext null
-        if (bestScore < MINIMUM_MATCH_SCORE) {
-            NPLogger.d(
-                "SearchManager",
-                "No confident match for $songName / $songArtist, bestScore=$bestScore"
+        }.filter { it.score >= MINIMUM_MATCH_SCORE }
+            .sortedWith(
+                compareByDescending<SearchCandidateScore> { it.score }
+                    .thenBy { it.durationDeltaMs }
             )
-            return@withContext null
-        }
-
-        scoredResults.firstOrNull { it.value.second == bestScore }?.value?.first
+            .firstOrNull()
+            ?.candidate
     }
 
     private suspend fun searchCandidates(
@@ -154,6 +203,28 @@ object SearchManager {
         return score
     }
 
+    private fun parseDurationMs(value: String): Long? {
+        val parts = value.trim().split(':')
+        if (parts.size !in 2..3) return null
+        val values = parts.map { it.toLongOrNull() ?: return null }
+        val totalSeconds = when (values.size) {
+            2 -> {
+                val (minutes, seconds) = values
+                if (minutes < 0L || seconds !in 0L..59L) return null
+                minutes * 60L + seconds
+            }
+
+            3 -> {
+                val (hours, minutes, seconds) = values
+                if (hours < 0L || minutes !in 0L..59L || seconds !in 0L..59L) return null
+                hours * 3_600L + minutes * 60L + seconds
+            }
+
+            else -> return null
+        }
+        return totalSeconds.takeIf { it > 0L }?.times(1_000L)
+    }
+
     private fun normalizeText(value: String): String {
         return value.trim().lowercase().replace(whitespaceRegex, " ")
     }
@@ -165,4 +236,10 @@ object SearchManager {
             .filter { it.isNotBlank() }
             .toSet()
     }
+
+    private data class SearchCandidateScore(
+        val candidate: SongSearchInfo,
+        val score: Int,
+        val durationDeltaMs: Long
+    )
 }
