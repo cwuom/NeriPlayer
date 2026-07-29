@@ -193,7 +193,8 @@ private const val NOTIFICATION_ARTWORK_SIZE_PX = 256
 private const val MEDIA_ARTWORK_MAX_RETRY_ATTEMPTS = 2
 private const val MEDIA_ARTWORK_RETRY_COOLDOWN_MS = 3_000L
 private const val SERVICE_FLOW_COLLECTOR_RESTART_DELAY_MS = 1_000L
-private const val USB_EXCLUSIVE_KEEPALIVE_INTERVAL_MS = 5_000L
+private const val USB_EXCLUSIVE_FOREGROUND_KEEPALIVE_INTERVAL_MS = 5_000L
+private const val USB_EXCLUSIVE_BACKGROUND_KEEPALIVE_INTERVAL_MS = 1_000L
 private const val USB_EXCLUSIVE_KEEPALIVE_STALL_WARN_MS = 25_000L
 private const val USB_EXCLUSIVE_KEEPALIVE_STALL_RECOVERY_TICKS = 1
 private const val USB_EXCLUSIVE_KEEPALIVE_LOG_INTERVAL_TICKS = 3L
@@ -235,6 +236,22 @@ internal fun shouldUseForegroundServiceStart(
     return sdkInt >= Build.VERSION_CODES.O ||
         forceForeground ||
         shouldRunPlaybackServiceInForeground
+}
+
+internal fun usbExclusiveKeepAliveIntervalMs(appInForeground: Boolean): Long {
+    return if (appInForeground) {
+        USB_EXCLUSIVE_FOREGROUND_KEEPALIVE_INTERVAL_MS
+    } else {
+        USB_EXCLUSIVE_BACKGROUND_KEEPALIVE_INTERVAL_MS
+    }
+}
+
+internal fun shouldReassertUsbExclusiveForegroundService(
+    appInForeground: Boolean,
+    foregroundStarted: Boolean,
+    usbExclusivePlaybackActive: Boolean
+): Boolean {
+    return !appInForeground && foregroundStarted && usbExclusivePlaybackActive
 }
 
 private fun Intent.usbDeviceExtra(): UsbDevice? {
@@ -418,6 +435,8 @@ class AudioPlayerService : Service() {
         private var isServiceInstanceActive: Boolean = false
         @Volatile
         private var isServiceForegroundActive: Boolean = false
+        @Volatile
+        private var activeServiceInstance: AudioPlayerService? = null
 
         fun isReadyForPassiveLocalPlaybackSync(): Boolean {
             return isServiceInstanceActive && isServiceForegroundActive
@@ -426,6 +445,10 @@ class AudioPlayerService : Service() {
         fun isInstanceActiveForDiagnostics(): Boolean = isServiceInstanceActive
 
         fun isForegroundActiveForDiagnostics(): Boolean = isServiceForegroundActive
+
+        internal fun reassertForegroundForActiveUsbExclusivePlayback(reason: String) {
+            activeServiceInstance?.requestUsbExclusiveBackgroundForegroundReassert(reason)
+        }
 
         fun createSyncIntent(context: Context, source: String): Intent {
             return Intent(context, AudioPlayerService::class.java).apply {
@@ -664,7 +687,7 @@ class AudioPlayerService : Service() {
         usbExclusiveKeepAliveJob = serviceScope.launch {
             NPLogger.i("NERI-APS", "USB exclusive keepalive started")
             while (true) {
-                delay(USB_EXCLUSIVE_KEEPALIVE_INTERVAL_MS)
+                delay(usbExclusiveKeepAliveIntervalMs(PlayerManager.usbExclusiveAppInForeground))
                 if (!isUsbExclusivePlaybackActiveForServiceKeepAlive()) {
                     NPLogger.i("NERI-APS", "USB exclusive keepalive stopped because playback is inactive")
                     usbExclusiveKeepAliveTick = 0L
@@ -690,6 +713,17 @@ class AudioPlayerService : Service() {
         usbExclusiveKeepAliveTick += 1L
         lastUsbExclusiveKeepAliveAtMs = nowMs
 
+        val foregroundReasserted = if (
+            shouldReassertUsbExclusiveForegroundService(
+                appInForeground = PlayerManager.usbExclusiveAppInForeground,
+                foregroundStarted = isForegroundStarted,
+                usbExclusivePlaybackActive = isUsbExclusivePlaybackActiveForServiceKeepAlive()
+            )
+        ) {
+            reassertForegroundForUsbExclusiveBackground("usb_keepalive")
+        } else {
+            false
+        }
         if (!ensureForegroundStarted()) {
             handleForegroundPromotionFailure("usb_keepalive")
             return
@@ -712,7 +746,8 @@ class AudioPlayerService : Service() {
             nativeState.lastChannel1OutputPeak
         val message = "USB exclusive keepalive tick=$usbExclusiveKeepAliveTick gapMs=$gapMs " +
             "path=${pathState.effectivePath} native=${nativeState.source}/${nativeState.streaming} " +
-            "wakeLock=${UsbExclusiveWakeLock.isHeld()} completedFrames=${nativeState.completedAudioFrames} " +
+            "foregroundReasserted=$foregroundReasserted wakeLock=${UsbExclusiveWakeLock.isHeld()} " +
+            "completedFrames=${nativeState.completedAudioFrames} " +
             "$levelLine $signalLine"
         if (gapMs > USB_EXCLUSIVE_KEEPALIVE_STALL_WARN_MS) {
             NPLogger.w("NERI-APS", "$message possible_background_freeze=true")
@@ -823,6 +858,32 @@ class AudioPlayerService : Service() {
         lastUsbExclusiveCompletedFrames = -1L
         usbExclusiveKeepAliveStallTicks = 0
         NPLogger.d("NERI-APS", "USB exclusive keepalive idle reason=$reason")
+    }
+
+    private fun requestUsbExclusiveBackgroundForegroundReassert(reason: String) {
+        serviceScope.launch {
+            val usbPlaybackActive = isUsbExclusivePlaybackActiveForServiceKeepAlive()
+            if (PlayerManager.usbExclusiveAppInForeground || !usbPlaybackActive) {
+                return@launch
+            }
+            val foregroundReady = if (isForegroundStarted) {
+                reassertForegroundForUsbExclusiveBackground("usb_background_transition:$reason")
+            } else {
+                ensureForegroundStarted()
+            }
+            if (!foregroundReady) {
+                NPLogger.w(
+                    "NERI-APS",
+                    "USB exclusive background foreground reassert failed: reason=$reason"
+                )
+                return@launch
+            }
+            usbExclusiveKeepAliveJob?.cancel()
+            usbExclusiveKeepAliveJob = null
+            lastUsbExclusiveKeepAliveAtMs = 0L
+            ensureUsbExclusiveKeepAliveLoop()
+            runUsbExclusiveKeepAliveTick()
+        }
     }
 
     private val mediaSessionCallback = object : MediaSessionCompat.Callback() {
@@ -949,6 +1010,7 @@ class AudioPlayerService : Service() {
             return
         }
         isServiceInstanceActive = true
+        activeServiceInstance = this
         NPLogger.d("NERI-APS", "onCreate begin ${buildStateSummary()}")
         ensurePlaybackNotificationChannel()
 
@@ -2183,6 +2245,7 @@ class AudioPlayerService : Service() {
                     .onFailure { NPLogger.w("NERI-APS", "player release failed during destroy", it) }
             }
         } finally {
+            clearActiveServiceReference()
             playerRuntimeReady = false
             favoriteSongKeys = emptySet()
             currentMediaArtwork = null
@@ -2225,6 +2288,20 @@ class AudioPlayerService : Service() {
         return startForegroundImmediately(notification, "ensure_foreground")
     }
 
+    private fun reassertForegroundForUsbExclusiveBackground(reason: String): Boolean {
+        return startForegroundImmediately(
+            notification = buildNotification(),
+            reason = reason,
+            verbose = false
+        )
+    }
+
+    private fun clearActiveServiceReference() {
+        if (activeServiceInstance === this) {
+            activeServiceInstance = null
+        }
+    }
+
     private fun handleForegroundPromotionFailure(
         reason: String,
         startId: Int? = null
@@ -2233,6 +2310,7 @@ class AudioPlayerService : Service() {
         allowServiceRestart = false
         isServiceForegroundActive = false
         isServiceInstanceActive = false
+        clearActiveServiceReference()
         // 前台提升失败仅代表服务无法保持前台, 不代表播放运行时必须销毁
         // 若仍在播放或用户仍有播放诉求, 保留运行时以保住当前播放
         val preservePlayerRuntime = shouldPreservePlayerRuntimeOnForegroundPromotionFailure(
@@ -2293,9 +2371,15 @@ class AudioPlayerService : Service() {
         StartupAudioFocusController.forceRelease(reason)
     }
 
-    private fun startForegroundImmediately(notification: Notification, reason: String): Boolean {
+    private fun startForegroundImmediately(
+        notification: Notification,
+        reason: String,
+        verbose: Boolean = true
+    ): Boolean {
         return try {
-            NPLogger.d("NERI-APS", "startForegroundImmediately reason=$reason ${buildStateSummary()}")
+            if (verbose) {
+                NPLogger.d("NERI-APS", "startForegroundImmediately reason=$reason ${buildStateSummary()}")
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(
                     NOTIFICATION_ID,
@@ -2307,7 +2391,9 @@ class AudioPlayerService : Service() {
             }
             isForegroundStarted = true
             isServiceForegroundActive = true
-            NPLogger.d("NERI-APS", "startForegroundImmediately success reason=$reason")
+            if (verbose) {
+                NPLogger.d("NERI-APS", "startForegroundImmediately success reason=$reason")
+            }
             true
         } catch (e: SecurityException) {
             NPLogger.e("NERI-APS", "Failed to start foreground service, reason=$reason", e)

@@ -122,6 +122,44 @@ class AudioPlayerServicePolicyTest {
     }
 
     @Test
+    fun `USB exclusive background keepalive runs before the vendor freeze window`() {
+        assertEquals(1_000L, usbExclusiveKeepAliveIntervalMs(appInForeground = false))
+        assertEquals(5_000L, usbExclusiveKeepAliveIntervalMs(appInForeground = true))
+    }
+
+    @Test
+    fun `only active background foreground service is reasserted`() {
+        assertTrue(
+            shouldReassertUsbExclusiveForegroundService(
+                appInForeground = false,
+                foregroundStarted = true,
+                usbExclusivePlaybackActive = true
+            )
+        )
+        assertFalse(
+            shouldReassertUsbExclusiveForegroundService(
+                appInForeground = true,
+                foregroundStarted = true,
+                usbExclusivePlaybackActive = true
+            )
+        )
+        assertFalse(
+            shouldReassertUsbExclusiveForegroundService(
+                appInForeground = false,
+                foregroundStarted = false,
+                usbExclusivePlaybackActive = true
+            )
+        )
+        assertFalse(
+            shouldReassertUsbExclusiveForegroundService(
+                appInForeground = false,
+                foregroundStarted = true,
+                usbExclusivePlaybackActive = false
+            )
+        )
+    }
+
+    @Test
     fun `only resumed activity can use direct playback service start`() {
         assertTrue(
             canUseDirectPlaybackServiceStart(
