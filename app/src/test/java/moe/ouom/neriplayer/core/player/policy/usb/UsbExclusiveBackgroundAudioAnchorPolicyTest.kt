@@ -40,20 +40,17 @@ class UsbExclusiveBackgroundAudioAnchorPolicyTest {
     }
 
     @Test
-    fun `anchor candidates prefer a static loop and retain streaming fallbacks`() {
+    fun `anchor candidates use short streaming writes`() {
         val specs = usbExclusiveBackgroundAudioAnchorSpecs()
 
         assertEquals(
-            UsbExclusiveBackgroundAudioAnchorTransferMode.StaticLoop,
+            UsbExclusiveBackgroundAudioAnchorTransferMode.Streaming,
             specs.first().transferMode
         )
-        assertTrue(
-            specs.any {
-                it.transferMode == UsbExclusiveBackgroundAudioAnchorTransferMode.Streaming
-            }
-        )
+        assertTrue(specs.all { it.transferMode == UsbExclusiveBackgroundAudioAnchorTransferMode.Streaming })
         assertTrue(specs.any { it.channelCount == 2 })
         assertTrue(specs.all { it.sampleRateHz > 0 && it.bufferFrames > 0 })
+        assertTrue(specs.all { it.bufferFrames <= it.sampleRateHz / 10 })
         assertEquals(specs.size, specs.map { it.name }.toSet().size)
     }
 
@@ -71,9 +68,41 @@ class UsbExclusiveBackgroundAudioAnchorPolicyTest {
             }
             .map { sample -> sample.toShort().toInt() }
 
-        assertEquals(listOf(1, 1, -1, -1, 1, 1, -1, -1), samples)
+        assertEquals(listOf(256, 256, -256, -256, 256, 256, -256, -256), samples)
         assertEquals(0, samples.sum())
-        assertTrue(samples.all { sample -> kotlin.math.abs(sample) <= 1 })
+        assertTrue(samples.all { sample -> kotlin.math.abs(sample) <= 256 })
+    }
+
+    @Test
+    fun `carrier requires a streaming anchor on the confirmed built in route`() {
+        assertTrue(
+            shouldWriteUsbExclusiveBackgroundAudioAnchorCarrier(
+                transferMode = UsbExclusiveBackgroundAudioAnchorTransferMode.Streaming,
+                builtInOutputRequested = true,
+                routedToRequestedBuiltInOutput = true
+            )
+        )
+        assertFalse(
+            shouldWriteUsbExclusiveBackgroundAudioAnchorCarrier(
+                transferMode = UsbExclusiveBackgroundAudioAnchorTransferMode.StaticLoop,
+                builtInOutputRequested = true,
+                routedToRequestedBuiltInOutput = true
+            )
+        )
+        assertFalse(
+            shouldWriteUsbExclusiveBackgroundAudioAnchorCarrier(
+                transferMode = UsbExclusiveBackgroundAudioAnchorTransferMode.Streaming,
+                builtInOutputRequested = false,
+                routedToRequestedBuiltInOutput = true
+            )
+        )
+        assertFalse(
+            shouldWriteUsbExclusiveBackgroundAudioAnchorCarrier(
+                transferMode = UsbExclusiveBackgroundAudioAnchorTransferMode.Streaming,
+                builtInOutputRequested = true,
+                routedToRequestedBuiltInOutput = false
+            )
+        )
     }
 
     @Test

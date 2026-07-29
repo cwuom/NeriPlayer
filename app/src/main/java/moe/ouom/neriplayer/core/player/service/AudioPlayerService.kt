@@ -770,7 +770,7 @@ class AudioPlayerService : Service() {
         val message = "USB exclusive keepalive tick=$usbExclusiveKeepAliveTick gapMs=$gapMs " +
             "path=${pathState.effectivePath} native=${nativeState.source}/${nativeState.streaming} " +
             "foregroundReasserted=$foregroundReasserted wakeLock=${UsbExclusiveWakeLock.isHeld()} " +
-            "audioAnchor=${UsbExclusiveBackgroundAudioAnchor.isActive()} " +
+            "audioAnchor=${UsbExclusiveBackgroundAudioAnchor.diagnosticSummary()} " +
             "completedFrames=${nativeState.completedAudioFrames} " +
             "$levelLine $signalLine"
         if (gapMs > USB_EXCLUSIVE_KEEPALIVE_STALL_WARN_MS) {

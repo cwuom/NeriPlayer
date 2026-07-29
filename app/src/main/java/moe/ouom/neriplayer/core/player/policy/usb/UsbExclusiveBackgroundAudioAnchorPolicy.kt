@@ -6,7 +6,8 @@ internal enum class UsbExclusiveBackgroundAudioAnchorTransferMode {
 }
 
 private const val USB_EXCLUSIVE_BACKGROUND_ANCHOR_BYTES_PER_SAMPLE = 2
-private const val USB_EXCLUSIVE_BACKGROUND_ANCHOR_CARRIER_AMPLITUDE = 1
+// preserve a nonzero marker after ordinary media-gain quantization
+private const val USB_EXCLUSIVE_BACKGROUND_ANCHOR_CARRIER_AMPLITUDE = 256
 
 internal data class UsbExclusiveBackgroundAudioAnchorSpec(
     val name: String,
@@ -46,55 +47,51 @@ internal fun usbExclusiveBackgroundAudioAnchorCarrier(
     return carrier
 }
 
+internal fun shouldWriteUsbExclusiveBackgroundAudioAnchorCarrier(
+    transferMode: UsbExclusiveBackgroundAudioAnchorTransferMode,
+    builtInOutputRequested: Boolean,
+    routedToRequestedBuiltInOutput: Boolean
+): Boolean {
+    return transferMode == UsbExclusiveBackgroundAudioAnchorTransferMode.Streaming &&
+        builtInOutputRequested &&
+        routedToRequestedBuiltInOutput
+}
+
 internal fun usbExclusiveBackgroundAudioAnchorSpecs(): List<UsbExclusiveBackgroundAudioAnchorSpec> {
     return listOf(
-        UsbExclusiveBackgroundAudioAnchorSpec(
-            name = "static_48k_stereo",
-            sampleRateHz = 48_000,
-            channelCount = 2,
-            bufferFrames = 4_800,
-            transferMode = UsbExclusiveBackgroundAudioAnchorTransferMode.StaticLoop
-        ),
-        UsbExclusiveBackgroundAudioAnchorSpec(
-            name = "static_48k_mono",
-            sampleRateHz = 48_000,
-            channelCount = 1,
-            bufferFrames = 4_800,
-            transferMode = UsbExclusiveBackgroundAudioAnchorTransferMode.StaticLoop
-        ),
-        UsbExclusiveBackgroundAudioAnchorSpec(
-            name = "static_44k_stereo",
-            sampleRateHz = 44_100,
-            channelCount = 2,
-            bufferFrames = 4_410,
-            transferMode = UsbExclusiveBackgroundAudioAnchorTransferMode.StaticLoop
-        ),
-        UsbExclusiveBackgroundAudioAnchorSpec(
-            name = "static_44k_mono",
-            sampleRateHz = 44_100,
-            channelCount = 1,
-            bufferFrames = 4_410,
-            transferMode = UsbExclusiveBackgroundAudioAnchorTransferMode.StaticLoop
-        ),
         UsbExclusiveBackgroundAudioAnchorSpec(
             name = "stream_48k_stereo",
             sampleRateHz = 48_000,
             channelCount = 2,
-            bufferFrames = 12_000,
+            bufferFrames = 4_800,
             transferMode = UsbExclusiveBackgroundAudioAnchorTransferMode.Streaming
         ),
         UsbExclusiveBackgroundAudioAnchorSpec(
             name = "stream_48k_mono",
             sampleRateHz = 48_000,
             channelCount = 1,
-            bufferFrames = 12_000,
+            bufferFrames = 4_800,
+            transferMode = UsbExclusiveBackgroundAudioAnchorTransferMode.Streaming
+        ),
+        UsbExclusiveBackgroundAudioAnchorSpec(
+            name = "stream_44k_stereo",
+            sampleRateHz = 44_100,
+            channelCount = 2,
+            bufferFrames = 4_410,
+            transferMode = UsbExclusiveBackgroundAudioAnchorTransferMode.Streaming
+        ),
+        UsbExclusiveBackgroundAudioAnchorSpec(
+            name = "stream_44k_mono",
+            sampleRateHz = 44_100,
+            channelCount = 1,
+            bufferFrames = 4_410,
             transferMode = UsbExclusiveBackgroundAudioAnchorTransferMode.Streaming
         ),
         UsbExclusiveBackgroundAudioAnchorSpec(
             name = "stream_96k_stereo",
             sampleRateHz = 96_000,
             channelCount = 2,
-            bufferFrames = 24_000,
+            bufferFrames = 9_600,
             transferMode = UsbExclusiveBackgroundAudioAnchorTransferMode.Streaming
         )
     )
