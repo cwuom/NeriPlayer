@@ -5,6 +5,9 @@ internal enum class UsbExclusiveBackgroundAudioAnchorTransferMode {
     Streaming
 }
 
+private const val USB_EXCLUSIVE_BACKGROUND_ANCHOR_BYTES_PER_SAMPLE = 2
+private const val USB_EXCLUSIVE_BACKGROUND_ANCHOR_CARRIER_AMPLITUDE = 1
+
 internal data class UsbExclusiveBackgroundAudioAnchorSpec(
     val name: String,
     val sampleRateHz: Int,
@@ -19,6 +22,28 @@ internal fun shouldRunUsbExclusiveBackgroundAudioAnchor(
     usbExclusivePlaybackActive: Boolean
 ): Boolean {
     return !appInForeground && serviceForeground && usbExclusivePlaybackActive
+}
+
+internal fun usbExclusiveBackgroundAudioAnchorCarrier(
+    bufferBytes: Int,
+    channelCount: Int
+): ByteArray {
+    if (bufferBytes <= 0 || channelCount <= 0) return ByteArray(0)
+
+    val carrier = ByteArray(bufferBytes)
+    val bytesPerFrame = channelCount * USB_EXCLUSIVE_BACKGROUND_ANCHOR_BYTES_PER_SAMPLE
+    var sample = USB_EXCLUSIVE_BACKGROUND_ANCHOR_CARRIER_AMPLITUDE
+    var frameOffset = 0
+    while (frameOffset + bytesPerFrame <= carrier.size) {
+        repeat(channelCount) { channel ->
+            val sampleOffset = frameOffset + channel * USB_EXCLUSIVE_BACKGROUND_ANCHOR_BYTES_PER_SAMPLE
+            carrier[sampleOffset] = sample.toByte()
+            carrier[sampleOffset + 1] = (sample shr 8).toByte()
+        }
+        sample = -sample
+        frameOffset += bytesPerFrame
+    }
+    return carrier
 }
 
 internal fun usbExclusiveBackgroundAudioAnchorSpecs(): List<UsbExclusiveBackgroundAudioAnchorSpec> {
