@@ -159,6 +159,7 @@ import moe.ouom.neriplayer.core.player.effects.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackOnForeground
 import moe.ouom.neriplayer.core.player.lifecycle.updateUsbExclusiveForegroundState
+import moe.ouom.neriplayer.core.player.policy.usb.shouldPromptForUsbExclusiveBackgroundPermission
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.core.startup.player.PlayerStartupBootstrapper
@@ -1431,6 +1432,7 @@ private fun NeriAppContent(
     var pendingBackgroundImageAlpha by remember { mutableStateOf<Float?>(null) }
     var coverArtRefreshToken by remember { mutableIntStateOf(0) }
     var showUsbExclusiveBackgroundPermissionDialog by rememberSaveable { mutableStateOf(false) }
+    var usbExclusiveBackgroundPermissionPromptHandled by remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
     var lifecycleResumed by remember(lifecycleOwner) {
         mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
@@ -1452,6 +1454,40 @@ private fun NeriAppContent(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(
+        lifecycleResumed,
+        usbExclusivePlayback,
+        usbExclusiveBackgroundPermissionPromptSuppressed
+    ) {
+        if (!usbExclusivePlayback) {
+            usbExclusiveBackgroundPermissionPromptHandled = false
+            showUsbExclusiveBackgroundPermissionDialog = false
+            return@LaunchedEffect
+        }
+        val shouldInspectBackgroundBehavior = lifecycleResumed &&
+            !usbExclusiveBackgroundPermissionPromptSuppressed &&
+            !usbExclusiveBackgroundPermissionPromptHandled
+        val backgroundBehaviorAllowed = if (shouldInspectBackgroundBehavior) {
+            context.readBackgroundBehaviorAllowance().fullyAllowed
+        } else {
+            true
+        }
+        if (
+            shouldPromptForUsbExclusiveBackgroundPermission(
+                usbExclusiveEnabled = usbExclusivePlayback,
+                appResumed = lifecycleResumed,
+                promptSuppressed = usbExclusiveBackgroundPermissionPromptSuppressed,
+                backgroundBehaviorAllowed = backgroundBehaviorAllowed,
+                promptHandledInCurrentSession = usbExclusiveBackgroundPermissionPromptHandled
+            )
+        ) {
+            showUsbExclusiveBackgroundPermissionDialog = true
+        }
+        if (shouldInspectBackgroundBehavior) {
+            usbExclusiveBackgroundPermissionPromptHandled = true
         }
     }
 
@@ -2598,14 +2634,6 @@ private fun NeriAppContent(
                         onUsbExclusivePlaybackChange = { enabled ->
                             if (PlayerManager.beginUsbExclusiveToggleTransitionFromUi(enabled)) {
                                 scope.launch { repo.setUsbExclusivePlayback(enabled) }
-                                if (
-                                    enabled &&
-                                    !usbExclusivePlayback &&
-                                    !usbExclusiveBackgroundPermissionPromptSuppressed &&
-                                    !context.readBackgroundBehaviorAllowance().fullyAllowed
-                                ) {
-                                    showUsbExclusiveBackgroundPermissionDialog = true
-                                }
                             }
                         },
                         allowMixedPlayback = allowMixedPlayback,

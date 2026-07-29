@@ -894,6 +894,9 @@
     <string name="settings_usb_exclusive_background_permission_app_settings">打开应用设置</string>
     <string name="settings_usb_exclusive_background_permission_never">不再提示</string>
     <string name="settings_usb_exclusive_background_permission_later">稍后</string>
+    <string name="settings_usb_exclusive_background_behavior">USB 独占后台运行</string>
+    <string name="settings_usb_exclusive_background_behavior_allowed">已允许</string>
+    <string name="settings_usb_exclusive_background_behavior_restricted">需要在系统设置中允许后台运行</string>
     <string name="settings_usb_exclusive_page_desc">USB 独占输出设置</string>
     <string name="settings_usb_exclusive_state_enabled">已开启</string>
     <string name="settings_usb_exclusive_state_disabled">已关闭</string>

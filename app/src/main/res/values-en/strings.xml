@@ -894,6 +894,9 @@
     <string name="settings_usb_exclusive_background_permission_app_settings">Open app settings</string>
     <string name="settings_usb_exclusive_background_permission_never">Don\'t show again</string>
     <string name="settings_usb_exclusive_background_permission_later">Later</string>
+    <string name="settings_usb_exclusive_background_behavior">USB exclusive background playback</string>
+    <string name="settings_usb_exclusive_background_behavior_allowed">Allowed</string>
+    <string name="settings_usb_exclusive_background_behavior_restricted">Allow background activity in system settings</string>
     <string name="settings_usb_exclusive_page_desc">USB exclusive output settings</string>
     <string name="settings_usb_exclusive_state_enabled">On</string>
     <string name="settings_usb_exclusive_state_disabled">Off</string>

@@ -56,6 +56,9 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
+import moe.ouom.neriplayer.util.platform.openAppBackgroundSettings
+import moe.ouom.neriplayer.util.platform.readBackgroundBehaviorAllowance
+import moe.ouom.neriplayer.util.platform.requestIgnoreBatteryOptimizationsCompat
 
 private const val USB_STATUS_REFRESH_INTERVAL_MS = 1_000L
 
@@ -111,6 +114,8 @@ internal fun UsbExclusiveSettingsSection(
                 snapshot = snapshot,
                 nativeState = nativeState
             )
+            SettingsDivider()
+            UsbExclusiveBackgroundBehaviorItem()
         }
 
         MiuixSettingsSectionCard {
@@ -270,6 +275,59 @@ private fun UsbExclusiveRuntimeSummary(
         title = stringResource(R.string.settings_usb_exclusive_error),
         value = errorSummary,
         compact = true
+    )
+}
+
+@Composable
+private fun UsbExclusiveBackgroundBehaviorItem() {
+    val context = LocalContext.current.applicationContext
+    val allowance = context.readBackgroundBehaviorAllowance()
+    val fullyAllowed = allowance.fullyAllowed
+    val status = stringResource(
+        if (fullyAllowed) {
+            R.string.settings_usb_exclusive_background_behavior_allowed
+        } else {
+            R.string.settings_usb_exclusive_background_behavior_restricted
+        }
+    )
+
+    ListItem(
+        modifier = Modifier.settingsItemClickable(enabled = !fullyAllowed) {
+            if (!allowance.ignoringBatteryOptimizations) {
+                context.requestIgnoreBatteryOptimizationsCompat()
+            } else {
+                context.openAppBackgroundSettings()
+            }
+        },
+        leadingContent = {
+            Icon(
+                imageVector = Icons.Outlined.Info,
+                contentDescription = stringResource(
+                    R.string.settings_usb_exclusive_background_behavior
+                ),
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        headlineContent = {
+            Text(stringResource(R.string.settings_usb_exclusive_background_behavior))
+        },
+        supportingContent = {
+            Text(status)
+        },
+        trailingContent = if (!fullyAllowed) {
+            {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.64f)
+                )
+            }
+        } else {
+            null
+        },
+        colors = transparentListItemColors()
     )
 }
 

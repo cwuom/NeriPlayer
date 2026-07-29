@@ -132,6 +132,7 @@ import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.data.settings.toUsbExclusivePreferences
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.platform.readBackgroundBehaviorAllowance
 import java.io.File
 
 internal fun PlayerManager.initializeImpl(
@@ -2301,6 +2302,7 @@ private fun PlayerManager.scheduleUsbExclusiveBackgroundAudit(reason: String) {
                 stage = "background_audit_$checkpointMs"
             )
             val pathState = UsbExclusiveAudioPathTracker.state.value
+            val backgroundAllowance = application.readBackgroundBehaviorAllowance()
             val playerPosition = runCatching { player.currentPosition }.getOrDefault(-1L)
             val playerState = runCatching { player.playbackState }.getOrDefault(Player.STATE_IDLE)
             NPLogger.i(
@@ -2309,6 +2311,8 @@ private fun PlayerManager.scheduleUsbExclusiveBackgroundAudit(reason: String) {
                     "serviceInstance=${AudioPlayerService.isInstanceActiveForDiagnostics()} " +
                     "serviceForeground=${AudioPlayerService.isForegroundActiveForDiagnostics()} " +
                     "wakeLock=${UsbExclusiveWakeLock.isHeld()} path=${pathState.effectivePath} " +
+                    "backgroundAllowance=battery=${backgroundAllowance.ignoringBatteryOptimizations} " +
+                    "appOps=${backgroundAllowance.backgroundAppOpsAllowed} " +
                     "sinkPlaying=${pathState.sinkPlaying} nativeStreaming=${nativeState.streaming} " +
                     "completedFrames=${nativeState.completedAudioFrames} " +
                     "queuedFrames=${nativeState.queuedAudioFrames} " +
