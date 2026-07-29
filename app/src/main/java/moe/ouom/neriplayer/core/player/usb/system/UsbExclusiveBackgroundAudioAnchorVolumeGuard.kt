@@ -61,7 +61,22 @@ internal class UsbExclusiveBackgroundAudioAnchorVolumeGuardState {
         val normalized = volumeFraction.coerceIn(0f, 1f)
         val routeVolume = active.routeVolumeFraction
         val adjustedVolume = if (active.routeVolumeStable && routeVolume != null) {
-            (active.volumeFraction + normalized - routeVolume).coerceIn(0f, 1f)
+            if (normalized <= routeVolume) {
+                if (routeVolume <= VOLUME_EPSILON) {
+                    0f
+                } else {
+                    (active.volumeFraction * normalized / routeVolume).coerceIn(0f, 1f)
+                }
+            } else if (routeVolume >= 1f - VOLUME_EPSILON) {
+                1f
+            } else {
+                (
+                    active.volumeFraction +
+                        (1f - active.volumeFraction) *
+                        (normalized - routeVolume) /
+                        (1f - routeVolume)
+                    ).coerceIn(0f, 1f)
+            }
         } else {
             active.volumeFraction
         }

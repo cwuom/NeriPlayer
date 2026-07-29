@@ -100,6 +100,7 @@ import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveWakeLock
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveBackgroundAudioAnchor
+import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemVolumeBridge
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
@@ -522,6 +523,8 @@ class AudioPlayerService : Service() {
     private lateinit var becomingNoisyReceiver: BroadcastReceiver
 
     private lateinit var mediaSession: MediaSessionCompat
+    private var mediaSessionUsesUsbExclusiveVolumeProvider = false
+    private var usbExclusiveVolumeProvider: UsbExclusiveLockScreenVolumeProvider? = null
 
     private var currentCoverSongKey: String? = null
     private var currentCoverSource: String? = null
@@ -974,6 +977,95 @@ class AudioPlayerService : Service() {
         }
     }
 
+    private fun updateMediaSessionVolumeRouting(pathState: UsbExclusiveAudioPathState) {
+        if (
+            shouldUseUsbExclusiveRemoteVolumeRouting(
+                effectivePath = pathState.effectivePath,
+                bitPerfect = PlayerManager.usbExclusivePreferences.bitPerfect
+            )
+        ) {
+            if (mediaSessionUsesUsbExclusiveVolumeProvider) return
+            enableUsbExclusiveMediaSessionVolumeRouting()
+        } else {
+            disableUsbExclusiveMediaSessionVolumeRouting("path=${pathState.effectivePath}")
+        }
+    }
+
+    private fun enableUsbExclusiveMediaSessionVolumeRouting() {
+        val provider = createUsbExclusiveVolumeProvider()
+        runCatching {
+            mediaSession.setPlaybackToRemote(provider)
+            usbExclusiveVolumeProvider = provider
+            mediaSessionUsesUsbExclusiveVolumeProvider = true
+            UsbExclusiveSystemVolumeBridge.updateSessionVolumeFraction(
+                usbExclusiveVolumeFractionFromProviderIndex(
+                    providerIndex = provider.currentVolume,
+                    providerMaxIndex = provider.maxVolume
+                )
+            )
+            NPLogger.i("NERI-APS", "USB exclusive MediaSession volume routing enabled")
+        }.onFailure { error ->
+            mediaSessionUsesUsbExclusiveVolumeProvider = false
+            usbExclusiveVolumeProvider = null
+            UsbExclusiveSystemVolumeBridge.clearSessionVolumeFraction()
+            runCatching {
+                mediaSession.setPlaybackToLocal(AudioManager.STREAM_MUSIC)
+            }
+            NPLogger.w("NERI-APS", "USB exclusive MediaSession volume routing failed", error)
+        }
+    }
+
+    private fun disableUsbExclusiveMediaSessionVolumeRouting(reason: String) {
+        val wasRemote = mediaSessionUsesUsbExclusiveVolumeProvider
+        mediaSessionUsesUsbExclusiveVolumeProvider = false
+        usbExclusiveVolumeProvider = null
+        if (wasRemote && this::mediaSession.isInitialized) {
+            runCatching {
+                mediaSession.setPlaybackToLocal(AudioManager.STREAM_MUSIC)
+            }.onFailure { error ->
+                NPLogger.w(
+                    "NERI-APS",
+                    "USB exclusive MediaSession volume routing reset failed: reason=$reason",
+                    error
+                )
+            }
+        }
+        UsbExclusiveSystemVolumeBridge.clearSessionVolumeFraction()
+        if (wasRemote) {
+            NPLogger.i(
+                "NERI-APS",
+                "USB exclusive MediaSession volume routing disabled: reason=$reason"
+            )
+        }
+    }
+
+    private fun createUsbExclusiveVolumeProvider(): UsbExclusiveLockScreenVolumeProvider {
+        val streamVolume = runCatching {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            val minVolume = audioManager?.getStreamMinVolume(AudioManager.STREAM_MUSIC) ?: 0
+            val maxVolume = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 100
+            val currentVolume = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: maxVolume
+            Triple(minVolume, maxVolume, currentVolume)
+        }.getOrElse { error ->
+            NPLogger.w("NERI-APS", "failed to read media volume for USB volume routing", error)
+            Triple(0, 100, 100)
+        }
+        val providerMaxIndex = usbExclusiveVolumeProviderMaxIndex(
+            minVolume = streamVolume.first,
+            maxVolume = streamVolume.second
+        )
+        val providerCurrentIndex = usbExclusiveVolumeProviderCurrentIndex(
+            currentVolume = streamVolume.third,
+            minVolume = streamVolume.first,
+            maxVolume = streamVolume.second
+        )
+        return UsbExclusiveLockScreenVolumeProvider(
+            maxVolume = providerMaxIndex,
+            initialVolume = providerCurrentIndex,
+            onVolumeFractionChanged = UsbExclusiveSystemVolumeBridge::updateSessionVolumeFraction
+        )
+    }
+
     private fun handleExternalPauseCommand(source: String, stopService: Boolean = false) {
         NPLogger.d("NERI-APS", "Received external pause command: source=$source")
         if (PlayerManager.shouldIgnoreExternalPauseCommand(source)) {
@@ -1040,8 +1132,10 @@ class AudioPlayerService : Service() {
 
         mediaSession = MediaSessionCompat(this, "NeriPlayerSession").apply {
             setCallback(mediaSessionCallback)
+            setPlaybackToLocal(AudioManager.STREAM_MUSIC)
             isActive = true
         }
+        UsbExclusiveSystemVolumeBridge.clearSessionVolumeFraction()
         if (!startForegroundImmediately(buildBootstrapNotification(), "service_create")) {
             handleForegroundPromotionFailure("service_create")
             return
@@ -1222,7 +1316,8 @@ class AudioPlayerService : Service() {
                 }
         }
         serviceScope.launch {
-            UsbExclusiveAudioPathTracker.state.collectSafely("usbExclusiveAudioPathState") {
+            UsbExclusiveAudioPathTracker.state.collectSafely("usbExclusiveAudioPathState") { pathState ->
+                updateMediaSessionVolumeRouting(pathState)
                 updateUsbExclusiveServiceKeepAlive("usb_path_state")
                 refreshIdleShutdown("usb_path_state")
             }
@@ -2247,6 +2342,7 @@ class AudioPlayerService : Service() {
             artworkLoadJob?.cancel()
             artworkLoadJob = null
             serviceScope.cancel()
+            disableUsbExclusiveMediaSessionVolumeRouting("service_destroy")
             if (this::mediaSession.isInitialized) {
                 runCatching {
                     mediaSession.isActive = false
@@ -2368,6 +2464,7 @@ class AudioPlayerService : Service() {
         usbExclusiveKeepAliveJob?.cancel()
         usbExclusiveKeepAliveJob = null
         serviceScope.coroutineContext.cancelChildren()
+        disableUsbExclusiveMediaSessionVolumeRouting("foreground_promotion_failed:$reason")
         if (this::mediaSession.isInitialized) {
             runCatching {
                 mediaSession.isActive = false

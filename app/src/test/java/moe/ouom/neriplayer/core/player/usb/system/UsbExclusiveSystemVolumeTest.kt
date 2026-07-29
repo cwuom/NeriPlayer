@@ -39,4 +39,21 @@ class UsbExclusiveSystemVolumeTest {
         assertEquals(-1f, usbExclusiveFloatSampleForNativePipeline(-2f), 0.0001f)
         assertEquals(0f, usbExclusiveFloatSampleForNativePipeline(Float.NaN), 0.0001f)
     }
+
+    @Test
+    fun `session bridge forwards direct volume including mute`() {
+        UsbExclusiveSystemVolumeBridge.clearSessionVolumeFraction()
+        val delivered = mutableListOf<Float?>()
+        val subscription = UsbExclusiveSystemVolumeBridge.subscribe(delivered::add)
+
+        try {
+            UsbExclusiveSystemVolumeBridge.updateSessionVolumeFraction(0.75f)
+            UsbExclusiveSystemVolumeBridge.updateSessionVolumeFraction(0f)
+
+            assertEquals(listOf<Float?>(null, 0.75f, 0f), delivered)
+        } finally {
+            UsbExclusiveSystemVolumeBridge.unsubscribe(subscription)
+            UsbExclusiveSystemVolumeBridge.clearSessionVolumeFraction()
+        }
+    }
 }

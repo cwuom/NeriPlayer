@@ -30,7 +30,35 @@ class UsbExclusiveBackgroundAudioAnchorVolumeGuardTest {
 
         state.applyUserVolumeChange(0.55f)
 
-        assertEquals(0.65f, state.currentVolumeFractionOrNull() ?: -1f, 0.0001f)
+        assertEquals(0.625f, state.currentVolumeFractionOrNull() ?: -1f, 0.0001f)
+    }
+
+    @Test
+    fun `volume slider zero mutes the protected USB snapshot`() {
+        val state = UsbExclusiveBackgroundAudioAnchorVolumeGuardState()
+        val token = state.acquire(0.92f)
+        state.beginRouteObservation(token)
+        state.observeRouteVolume(0.67f)
+        state.observeRouteVolume(0.67f)
+
+        state.applyUserVolumeChange(0f)
+        state.observeRouteVolume(0f)
+        state.observeRouteVolume(0f)
+
+        assertEquals(0f, state.currentVolumeFractionOrNull() ?: -1f, 0.0001f)
+    }
+
+    @Test
+    fun `volume slider maximum reaches full protected USB volume`() {
+        val state = UsbExclusiveBackgroundAudioAnchorVolumeGuardState()
+        val token = state.acquire(0.67f)
+        state.beginRouteObservation(token)
+        state.observeRouteVolume(0.40f)
+        state.observeRouteVolume(0.40f)
+
+        state.applyUserVolumeChange(1f)
+
+        assertEquals(1f, state.currentVolumeFractionOrNull() ?: -1f, 0.0001f)
     }
 
     @Test
