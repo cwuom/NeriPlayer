@@ -62,6 +62,80 @@ body:
     validations:
       required: true
 
+  - type: markdown
+    attributes:
+      value: |
+        ### 播放环境 / Playback environment
+        以下信息有助于区分平台、音频输出与 USB 独占链路的问题。
+
+        The following information helps distinguish source, audio-output, and USB-exclusive issues.
+
+  - type: dropdown
+    id: playback-platform
+    attributes:
+      label: 问题涉及的播放平台 / Affected playback platform
+      description: 可多选；非播放类问题请选择“不涉及播放” / Multiple selections allowed; choose “Not related to playback” for non-playback issues
+      multiple: true
+      options:
+        - 网易云音乐 / NetEase Cloud Music
+        - Bilibili
+        - YouTube Music
+        - 本地音频或下载文件 / Local audio or downloaded files
+        - 自动换源或多个平台 / Automatic source switching or multiple platforms
+        - 不涉及播放 / Not related to playback
+    validations:
+      required: true
+
+  - type: dropdown
+    id: audio-output
+    attributes:
+      label: 复现时的音频输出设备 / Audio output during reproduction
+      description: 请选择复现问题时实际使用的输出设备 / Select the device that was in use when the issue occurred
+      options:
+        - 手机或平板扬声器 / Device speaker
+        - 有线耳机或 USB-C 耳机 / Wired or USB-C headphones
+        - 蓝牙耳机或音箱 / Bluetooth device
+        - USB DAC 或 USB 音频接口 / USB DAC or USB audio interface
+        - 其他输出设备 / Other output device
+        - 不涉及播放 / Not related to playback
+    validations:
+      required: true
+
+  - type: dropdown
+    id: usb-exclusive
+    attributes:
+      label: 是否开启 USB 独占播放 / Is USB exclusive playback enabled
+      description: 请按复现问题时的设置选择；这与是否连接 USB DAC 是两个信息 / Choose the setting used during reproduction; this is separate from whether a USB DAC was connected
+      options:
+        - 已开启，且正在使用 USB DAC / Enabled, using a USB DAC
+        - 已开启，但本次未使用 USB DAC / Enabled, without a USB DAC in this case
+        - 未开启 / Disabled
+        - 不确定 / Not sure
+        - 不涉及播放 / Not related to playback
+    validations:
+      required: true
+
+  - type: textarea
+    id: usb-audio-details
+    attributes:
+      label: USB 音频设备与播放设置（如适用） / USB audio device and playback settings (if applicable)
+      description: 如使用 USB DAC 或开启 USB 独占，请填写 DAC/转接器型号、直连或 Hub、采样率/位深、比特完美音量等；请勿提供序列号或其他敏感信息 / For USB DAC or USB-exclusive issues, include the DAC/adapter model, direct or hub connection, sample rate/bit depth, bit-perfect volume, and related settings. Do not include serial numbers or other sensitive data.
+      placeholder: |
+        DAC/转接器型号：
+        连接方式：直连 / Hub
+        采样率与位深：
+        相关播放设置：
+    validations:
+      required: false
+
+  - type: textarea
+    id: playback-context
+    attributes:
+      label: 播放内容与相关设置（如适用） / Playback item and related settings (if applicable)
+      description: 可填写歌曲/视频链接或名称、在线播放或本地/下载文件、音质、自动换源等。链接、账号和个人信息请先脱敏 / Include a song/video link or name, streaming or local/downloaded state, quality, automatic source switching, and related settings. Redact links, account data, and personal information as needed.
+    validations:
+      required: false
+
   - type: checkboxes
     id: latest
     attributes:
