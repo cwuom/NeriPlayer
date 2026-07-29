@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.player.policy.offload
 
+import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -27,6 +28,21 @@ class PlaybackAudioOffloadPolicyTest {
     @Test
     fun `now playing without audio reactive remains offload eligible`() {
         assertFalse(resolveRequiresPcmAudioProcessing(audioReactiveActive = false))
+    }
+
+    @Test
+    fun `netease streams require pcm even when audio reactive is disabled`() {
+        assertTrue(
+            resolveRequiresPcmAudioProcessing(
+                audioReactiveActive = false,
+                audioSource = PlaybackAudioSource.NETEASE
+            )
+        )
+        assertFalse(
+            resolveRequiresPcmAudioProcessing(
+                audioSource = PlaybackAudioSource.BILIBILI
+            )
+        )
     }
 
     @Test
@@ -61,6 +77,7 @@ class PlaybackAudioOffloadPolicyTest {
         volumeNormalizationEnabled: Boolean = false,
         highResolutionOutputEnabled: Boolean = false,
         audioReactiveActive: Boolean = false,
+        audioSource: PlaybackAudioSource? = null,
         listenTogetherPlaybackRate: Float = 1f,
     ): Boolean {
         return requiresPcmAudioProcessing(
@@ -73,6 +90,7 @@ class PlaybackAudioOffloadPolicyTest {
             volumeNormalizationEnabled = volumeNormalizationEnabled,
             highResolutionOutputEnabled = highResolutionOutputEnabled,
             audioReactiveActive = audioReactiveActive,
+            audioSource = audioSource,
             listenTogetherPlaybackRate = listenTogetherPlaybackRate,
         )
     }

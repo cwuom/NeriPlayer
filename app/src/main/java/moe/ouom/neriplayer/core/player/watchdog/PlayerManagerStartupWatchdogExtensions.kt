@@ -6,24 +6,24 @@ import android.os.SystemClock
 import androidx.media3.common.Player
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.player.policy.refresh.YouTubePlaybackRecoveryStrategy
-import moe.ouom.neriplayer.core.player.url.YOUTUBE_STABLE_RECOVERY_QUALITY
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackIfUnhealthy
+import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
+import moe.ouom.neriplayer.core.player.model.PlaybackUrlCandidate
+import moe.ouom.neriplayer.core.player.model.SongUrlResult
+import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.playback.advanceAfterPlaybackFailure
 import moe.ouom.neriplayer.core.player.playback.preparePlayerForManagedStart
 import moe.ouom.neriplayer.core.player.playback.startPlayerPlaybackWithFade
 import moe.ouom.neriplayer.core.player.playback.startProgressUpdates
-import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
-import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedResource
-import moe.ouom.neriplayer.core.player.debug.playbackStateName
-import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
-import moe.ouom.neriplayer.core.player.model.PlaybackUrlCandidate
-import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
-import moe.ouom.neriplayer.core.player.policy.progress.hasPlaybackProgressAdvancedSinceBaseline
 import moe.ouom.neriplayer.core.player.policy.command.resolvePlaybackStartPlan
+import moe.ouom.neriplayer.core.player.policy.progress.hasPlaybackProgressAdvancedSinceBaseline
+import moe.ouom.neriplayer.core.player.policy.refresh.YouTubePlaybackRecoveryStrategy
+import moe.ouom.neriplayer.core.player.url.YOUTUBE_STABLE_RECOVERY_QUALITY
+import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedResource
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
@@ -320,6 +320,8 @@ private suspend fun PlayerManager.applyPlaybackCandidate(
         expectedContentLength = candidate.expectedContentLength
     )
     if (requestToken != playbackRequestToken) return
+    _currentPlaybackAudioInfo.value = candidate.audioInfo
+    updateAudioOffloadPreferences("playback_candidate_source")
     val mediaItem = buildMediaItem(song, candidate.url, cacheKey, candidate.mimeType)
     preparePlayerForManagedStart(resolvePlaybackStartPlan(shouldFadeIn = false, fadeDurationMs = 0L))
     resetTrackEndDeduplicationState()
@@ -335,7 +337,6 @@ private suspend fun PlayerManager.applyPlaybackCandidate(
     resetPlaybackProgressAdvanceBaseline(resumePositionMs)
     clearPendingSeekPosition()
     _currentMediaUrl.value = candidate.url
-    _currentPlaybackAudioInfo.value = candidate.audioInfo
     currentMediaUrlResolvedAtMs = SystemClock.elapsedRealtime()
     player.prepare()
     startPlayerPlaybackWithFade(resolvePlaybackStartPlan(shouldFadeIn = false, fadeDurationMs = 0L))

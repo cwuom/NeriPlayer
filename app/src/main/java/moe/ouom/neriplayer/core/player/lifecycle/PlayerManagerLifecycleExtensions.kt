@@ -1127,6 +1127,7 @@ internal fun PlayerManager.updateAudioOffloadPreferences(reason: String) {
         volumeNormalizationEnabled = playbackSoundConfig.volumeNormalizationEnabled,
         highResolutionOutputEnabled = playbackHighResolutionOutputEnabled,
         audioReactiveActive = AudioReactive.enabled,
+        audioSource = _currentPlaybackAudioInfo.value?.source,
         listenTogetherPlaybackRate = listenTogetherSyncPlaybackRate,
     )
     if (lastRequiresPcmAudioProcessing == requiresPcmProcessing) return

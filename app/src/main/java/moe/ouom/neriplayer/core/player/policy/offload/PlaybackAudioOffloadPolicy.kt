@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.player.policy.offload
 
+import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import kotlin.math.abs
 
 private const val PLAYBACK_PARAMETER_EPSILON = 0.001f
@@ -14,9 +15,12 @@ internal fun requiresPcmAudioProcessing(
     volumeNormalizationEnabled: Boolean,
     highResolutionOutputEnabled: Boolean,
     audioReactiveActive: Boolean,
+    audioSource: PlaybackAudioSource?,
     listenTogetherPlaybackRate: Float,
 ): Boolean {
-    return usbExclusivePlaybackEnabled ||
+    // 网易云直链在部分设备的系统卸载输出会反复重配，保持 PCM 管线避免视觉设置影响播放
+    return audioSource == PlaybackAudioSource.NETEASE ||
+        usbExclusivePlaybackEnabled ||
         abs(playbackSpeed - 1f) > PLAYBACK_PARAMETER_EPSILON ||
         abs(playbackPitch - 1f) > PLAYBACK_PARAMETER_EPSILON ||
         equalizerEnabled ||

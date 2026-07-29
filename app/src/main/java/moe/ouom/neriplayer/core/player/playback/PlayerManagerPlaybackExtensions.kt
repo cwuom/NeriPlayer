@@ -23,6 +23,7 @@ import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.lifecycle.clearUsbExclusiveInterruptedPlaybackIntent
 import moe.ouom.neriplayer.core.player.lifecycle.prepareUsbExclusiveRouteForManualPlayback
+import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
 import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
 import moe.ouom.neriplayer.core.player.metadata.shouldAutoMatchExternalLyrics
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
@@ -739,6 +740,7 @@ internal fun PlayerManager.playAtIndex(
                     syncLyriconSong(_currentSongFlow.value ?: song)
                     _currentMediaUrl.value = selectedUrl
                     _currentPlaybackAudioInfo.value = result.audioInfo
+                    updateAudioOffloadPreferences("resolved_stream_source")
                     currentMediaUrlResolvedAtMs = SystemClock.elapsedRealtime()
                     scheduleStatePersist(
                         positionMs = resolvedResumePositionMs,

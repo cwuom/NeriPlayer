@@ -18,6 +18,7 @@ import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
@@ -782,6 +783,10 @@ private suspend fun PlayerManager.applyResolvedMediaItem(
 
     var applied = false
     withContext(Dispatchers.Main) {
+        if (!gate.runMutation {
+                updateAudioOffloadPreferences("refreshed_stream_source")
+            }
+        ) return@withContext
         if (!gate.runMutation {
                 preparePlayerForManagedStart(
                     resolvePlaybackStartPlan(shouldFadeIn = false, fadeDurationMs = 0L)
