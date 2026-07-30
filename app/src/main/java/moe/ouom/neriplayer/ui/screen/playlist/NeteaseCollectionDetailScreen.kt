@@ -27,6 +27,7 @@ import android.app.Application
 import android.content.ClipData
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.RepeatMode
@@ -85,7 +86,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -105,15 +105,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -125,6 +124,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -156,6 +156,7 @@ import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.format.formatPlayCount
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
+import kotlin.random.Random
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -287,12 +288,17 @@ fun DetailScreen(
     val hasDownloadManagerEntry = downloadTaskSummary.hasPendingTasks
 
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
+    val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsState()
+    val repeatMode by PlayerManager.repeatModeFlow.collectAsState()
     val listState = rememberSaveable(playlistId, saver = LazyListState.Saver) {
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
     val scope = rememberCoroutineScope()
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    val searchFocusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     // 多选与导出到本地歌单
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
@@ -327,10 +333,46 @@ fun DetailScreen(
     }
 
     var showExportSheet by remember { mutableStateOf(false) }
+    var showExportAllSheet by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
-
-    val headerHeight: Dp = 280.dp
+    val playlistChromeColor = rememberPlaylistModernHeroBackgroundColor(
+        coverUrl = ui.header?.coverUrl,
+        offlineMode = offlineMode
+    )
+    val playlistChromeCollapsed = listState.firstVisibleItemIndex > 0
+    val playlistTopBarColor = if (playlistChromeCollapsed) {
+        playlistModernCollapsedTopBarColor()
+    } else {
+        playlistChromeColor
+    }
+    val playlistTopBarContentColor = if (playlistChromeCollapsed) {
+        playlistModernCollapsedTopBarContentColor()
+    } else {
+        Color.White
+    }
+    val playlistHeroHeight by animateDpAsState(
+        targetValue = if (showSearch && !selectionMode && !playlistChromeCollapsed) {
+            PlaylistModernHeroSearchHeight
+        } else {
+            PlaylistModernHeroHeight
+        },
+        label = "netease-playlist-hero-height"
+    )
+    val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsState(
+        initial = false
+    )
+    val backgroundImageUri by AppContainer.settingsRepo.backgroundImageUriFlow.collectAsState(
+        initial = null
+    )
+    val hasCustomBackground = backgroundImageUri != null
+    LaunchedEffect(showSearch, selectionMode, playlistChromeCollapsed, autoShowKeyboard) {
+        if (showSearch && !selectionMode && autoShowKeyboard) {
+            delay(120)
+            searchFocusRequester.requestFocus()
+            keyboardController?.show()
+        }
+    }
 
     AnimatedVisibility(
         visible = true,
@@ -365,7 +407,11 @@ fun DetailScreen(
                             actions = {
                                 HapticIconButton(onClick = {
                                     showSearch = !showSearch
-                                    if (!showSearch) searchQuery = ""
+                                    if (!showSearch) {
+                                        searchQuery = ""
+                                        focusManager.clearFocus()
+                                        keyboardController?.hide()
+                                    }
                                 }) { Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.cd_search_songs)) }
 
                                 // 收藏按钮
@@ -390,7 +436,7 @@ fun DetailScreen(
                                     Icon(
                                         imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                                         contentDescription = if (isFavorite) stringResource(R.string.action_unfavorite) else stringResource(R.string.action_favorite_playlist),
-                                        tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                        tint = playlistTopBarContentColor
                                     )
                                 }
 
@@ -399,17 +445,18 @@ fun DetailScreen(
                                         Icon(
                                             Icons.Outlined.Download,
                                             contentDescription = stringResource(R.string.cd_download_manager),
-                                            tint = MaterialTheme.colorScheme.primary
+                                            tint = playlistTopBarContentColor
                                         )
                                     }
                                 }
                             },
                             windowInsets = WindowInsets.statusBars,
                             colors = TopAppBarDefaults.topAppBarColors(
-                                containerColor = Color.Transparent,
-                                scrolledContainerColor = MaterialTheme.colorScheme.surface,
-                                titleContentColor = MaterialTheme.colorScheme.onSurface,
-                                navigationIconContentColor = MaterialTheme.colorScheme.onSurface
+                                containerColor = playlistTopBarColor,
+                                scrolledContainerColor = playlistTopBarColor,
+                                titleContentColor = playlistTopBarContentColor,
+                                navigationIconContentColor = playlistTopBarContentColor,
+                                actionIconContentColor = playlistTopBarContentColor
                             )
                         )
                     } else {
@@ -481,16 +528,18 @@ fun DetailScreen(
                         )
                     }
 
-                    AnimatedVisibility(showSearch && !selectionMode) {
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            placeholder = { Text(stringResource(R.string.playlist_search_hint)) },
-                            singleLine = true
-                        )
+                    if (showSearch && !selectionMode && playlistChromeCollapsed) {
+                        PlaylistModernVisualColorsProvider(
+                            coverUrl = ui.header?.coverUrl,
+                            offlineMode = offlineMode
+                        ) {
+                            PlaylistModernDockedSearchField(
+                                query = searchQuery,
+                                onQueryChange = { searchQuery = it },
+                                placeholder = stringResource(R.string.playlist_search_hint),
+                                focusRequester = searchFocusRequester
+                            )
+                        }
                     }
 
                     val displayedTracks = remember(ui.tracks, searchQuery) {
@@ -502,6 +551,30 @@ fun DetailScreen(
                             ) || it.artist.contains(searchQuery, true)
                         }
                     }
+                    val trackCount = ui.header?.trackCount ?: ui.tracks.size
+                    val heroTitle = ui.header?.name ?: stringResource(R.string.playlist_title)
+                    val heroSubtitle = if (ui.header?.isAlbum == true) {
+                        stringResource(
+                            R.string.collection_track_count_format,
+                            trackCount
+                        )
+                    } else {
+                        stringResource(
+                            R.string.playlist_play_count_format,
+                            formatPlayCount(context, ui.header?.playCount ?: 0),
+                            trackCount
+                        )
+                    }
+                    fun playCollection(shuffle: Boolean) {
+                        val startIndex = resolvePlaylistPlaybackStartIndex(
+                            songCount = ui.tracks.size,
+                            shuffleEnabled = shuffle,
+                            randomIndex = if (ui.tracks.isEmpty()) 0 else Random.nextInt(ui.tracks.size)
+                        )
+                        if (startIndex < 0) return
+                        PlayerManager.setShuffle(shuffle)
+                        onSongClick(ui.tracks, startIndex)
+                    }
                     val currentIndex = displayedTracks.indexOfFirst { it.sameIdentityAs(currentSong) }
 
                     Box(
@@ -509,93 +582,65 @@ fun DetailScreen(
                             .fillMaxSize()
                             .windowInsetsPadding(WindowInsets.navigationBars)
                     ) {
-                        LazyColumn(
-                            state = listState,
-                            contentPadding = PaddingValues(
-                                bottom = 24.dp + miniPlayerHeight
-                            ),
-                            modifier = Modifier.fillMaxSize()
+                        PlaylistModernVisualColorsProvider(
+                            coverUrl = ui.header?.coverUrl,
+                            offlineMode = offlineMode
                         ) {
-                            item {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(headerHeight)
-                                ) {
-                                    AsyncImage(
-                                        model = offlineCachedImageRequest(
-                                            context = context,
-                                            data = ui.header?.coverUrl.takeUnless { it.isNullOrBlank() }
-                                                ?: "about:blank",
-                                            sizePx = 768,
-                                            allowHardware = false,
-                                            crossfade = true,
-                                            offlineMode = offlineMode
-                                        ),
-                                        contentDescription = ui.header?.name
-                                            ?: stringResource(R.string.playlist_title),
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .drawWithContent {
-                                                drawContent()
-                                                drawRect(
-                                                    brush = Brush.verticalGradient(
-                                                        colors = listOf(
-                                                            Color.Black.copy(alpha = 0.10f),
-                                                            Color.Black.copy(alpha = 0.35f),
-                                                            Color.Transparent
-                                                        ),
-                                                        startY = 0f,
-                                                        endY = size.height
-                                                    )
+                            LazyColumn(
+                                state = listState,
+                                contentPadding = PaddingValues(
+                                    bottom = 24.dp + miniPlayerHeight
+                                ),
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                item {
+                                    PlaylistModernHeroHeader(
+                                        displayName = heroTitle,
+                                        coverUrl = ui.header?.coverUrl,
+                                        subtitle = heroSubtitle,
+                                        offlineMode = offlineMode,
+                                        height = playlistHeroHeight,
+                                        coverContentDescription = heroTitle,
+                                        actions = if (showSearch && !selectionMode && !playlistChromeCollapsed) {
+                                            {
+                                                PlaylistModernHeroSearchField(
+                                                    query = searchQuery,
+                                                    onQueryChange = { searchQuery = it },
+                                                    placeholder = stringResource(R.string.playlist_search_hint),
+                                                    focusRequester = searchFocusRequester
                                                 )
                                             }
+                                        } else {
+                                            null
+                                        }
                                     )
+                                }
 
-                                    Column(
-                                        modifier = Modifier
-                                            .align(Alignment.BottomStart)
-                                            .padding(horizontal = 16.dp, vertical = 12.dp)
-                                    ) {
-                                        Text(
-                                            text = ui.header?.name ?: "Playlist Shuffling",
-                                            style = MaterialTheme.typography.headlineSmall.copy(
-                                                shadow = Shadow(
-                                                    color = Color.Black.copy(alpha = 0.6f),
-                                                    offset = Offset(2f, 2f),
-                                                    blurRadius = 4f
-                                                )
-                                            ),
-                                            color = Color.White,
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Spacer(Modifier.height(4.dp))
-                                        Text(
-                                            // 专辑没有播放量概念(网易云专辑接口不返回 playCount), 只显示曲目数, 避免出现误导性的"播放量 0"
-                                            text = if (ui.header?.isAlbum == true) {
-                                                stringResource(
-                                                    R.string.collection_track_count_format,
-                                                    ui.header?.trackCount ?: 0
-                                                )
-                                            } else {
-                                                stringResource(
-                                                    R.string.playlist_play_count_format,
-                                                    formatPlayCount(context, ui.header?.playCount ?: 0),
-                                                    ui.header?.trackCount ?: 0
-                                                )
+                            item(
+                                key = PLAYLIST_ACTIONS_KEY,
+                                contentType = "playlist_actions"
+                            ) {
+                                PlaylistModernActionSheet(
+                                    coverUrl = ui.header?.coverUrl,
+                                    offlineMode = offlineMode,
+                                    hasCustomBackground = hasCustomBackground
+                                ) {
+                                        PlaylistModernPlaybackActions(
+                                            songCount = ui.tracks.size,
+                                            shuffleEnabled = shuffleEnabled,
+                                            repeatMode = repeatMode,
+                                            onPlayInOrder = { playCollection(shuffle = false) },
+                                            onShufflePlay = { playCollection(shuffle = true) },
+                                            onToggleShuffle = {
+                                                PlayerManager.setShuffle(!shuffleEnabled)
                                             },
-                                            style = MaterialTheme.typography.bodySmall.copy(
-                                                shadow = Shadow(
-                                                    color = Color.Black.copy(alpha = 0.6f),
-                                                    offset = Offset(2f, 2f),
-                                                    blurRadius = 4f
-                                                )
-                                            ),
-                                            color = Color.White.copy(alpha = 0.9f)
+                                            onCycleRepeatMode = {
+                                                PlayerManager.cycleRepeatMode()
+                                            },
+                                            onExportToLocalPlaylist = {
+                                                showExportAllSheet = true
+                                            }
                                         )
-                                    }
                                 }
                             }
 
@@ -603,34 +648,44 @@ fun DetailScreen(
                             when {
                                 ui.loading && ui.tracks.isEmpty() -> {
                                     item {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(20.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.Center
+                                        PlaylistModernListItemSurface(
+                                            coverUrl = ui.header?.coverUrl,
+                                            offlineMode = offlineMode
                                         ) {
-                                            CircularProgressIndicator()
-                                            Spacer(modifier = Modifier.width(12.dp))
-                                            Text(stringResource(R.string.playlist_loading_content))
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(20.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.Center
+                                            ) {
+                                                CircularProgressIndicator()
+                                                Spacer(modifier = Modifier.width(12.dp))
+                                                Text(stringResource(R.string.playlist_loading_content))
+                                            }
                                         }
                                     }
                                 }
 
                                 ui.error != null && ui.tracks.isEmpty() -> {
                                     item {
-                                        Column(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(20.dp),
-                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        PlaylistModernListItemSurface(
+                                            coverUrl = ui.header?.coverUrl,
+                                            offlineMode = offlineMode
                                         ) {
-                                            Text(
-                                                text = stringResource(R.string.playlist_load_failed_format, ui.error ?: ""),
-                                                color = MaterialTheme.colorScheme.error
-                                            )
-                                            Spacer(Modifier.height(8.dp))
-                                            RetryChip(onRetry)
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(20.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally
+                                            ) {
+                                                Text(
+                                                    text = stringResource(R.string.playlist_load_failed_format, ui.error ?: ""),
+                                                    color = MaterialTheme.colorScheme.error
+                                                )
+                                                Spacer(Modifier.height(8.dp))
+                                                RetryChip(onRetry)
+                                            }
                                         }
                                     }
                                 }
@@ -639,43 +694,53 @@ fun DetailScreen(
                                     itemsIndexed(
                                         displayedTracks,
                                         key = { _, it -> it.stableKey() }) { index, item ->
-                                        SongRow(
-                                            index = index + 1,
-                                            song = item,
-                                            showCover = ui.header?.isAlbum == false,
-                                            selectionMode = selectionMode,
-                                            selected = selectedIds.contains(item.id),
-                                            onToggleSelect = { toggleSelect(item.id) },
-                                            onLongPress = {
-                                                if (!selectionMode) {
-                                                    selectionMode = true
-                                                    selectedIds = setOf(item.id)
-                                                } else {
-                                                    toggleSelect(item.id)
-                                                }
-                                            },
-                                            onClick = {
-                                                NPLogger.d(
-                                                    "NERI-UI",
-                                                    "tap song index=$index id=${item.id}"
-                                                )
-                                                val full = ui.tracks
-                                                val itemKey = item.stableKey()
-                                                val pos = full.indexOfFirst { it.stableKey() == itemKey }
-                                                if (pos >= 0) onSongClick(full, pos)
-                                            },
-                                            snackbarHostState = snackbarHostState,
+                                        PlaylistModernListItemSurface(
+                                            coverUrl = ui.header?.coverUrl,
                                             offlineMode = offlineMode
-                                        )
+                                        ) {
+                                            SongRow(
+                                                index = index + 1,
+                                                song = item,
+                                                showCover = ui.header?.isAlbum == false,
+                                                selectionMode = selectionMode,
+                                                selected = selectedIds.contains(item.id),
+                                                onToggleSelect = { toggleSelect(item.id) },
+                                                onLongPress = {
+                                                    if (!selectionMode) {
+                                                        selectionMode = true
+                                                        selectedIds = setOf(item.id)
+                                                    } else {
+                                                        toggleSelect(item.id)
+                                                    }
+                                                },
+                                                onClick = {
+                                                    NPLogger.d(
+                                                        "NERI-UI",
+                                                        "tap song index=$index id=${item.id}"
+                                                    )
+                                                    val full = ui.tracks
+                                                    val itemKey = item.stableKey()
+                                                    val pos = full.indexOfFirst { it.stableKey() == itemKey }
+                                                    if (pos >= 0) onSongClick(full, pos)
+                                                },
+                                                snackbarHostState = snackbarHostState,
+                                                offlineMode = offlineMode
+                                            )
+                                        }
                                     }
                                 }
                             }
+                        }
                         }
 
                         if (currentIndex >= 0) {
                             HapticFloatingActionButton(
                                 onClick = {
-                                    scope.launch { listState.animateScrollToItem(currentIndex + 1) }
+                                    scope.launch {
+                                        listState.animateScrollToItem(
+                                            resolvePlaylistSongItemIndex(currentIndex)
+                                        )
+                                    }
                                 },
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
@@ -715,6 +780,30 @@ fun DetailScreen(
                             scope.launchLocalPlaylistMutation("exportSongsFromNetease") {
                                 repo.addSongsToPlaylist(playlist.id, songs)
                             }
+                        }
+                    )
+                }
+                if (showExportAllSheet) {
+                    PlaylistExportSheet(
+                        title = stringResource(R.string.playlist_export_to_local),
+                        playlists = allPlaylists.filterNot {
+                            LocalFilesPlaylist.isSystemPlaylist(it, context)
+                        },
+                        selectedCount = ui.tracks.size,
+                        onDismissRequest = { showExportAllSheet = false },
+                        onCreateAndExport = { name ->
+                            val songs = ui.tracks
+                            scope.launchLocalPlaylistMutation("createPlaylistFromNeteaseAll") {
+                                repo.createPlaylistWithSongs(name, songs)
+                            }
+                            showExportAllSheet = false
+                        },
+                        onExportToPlaylist = { playlist ->
+                            val songs = ui.tracks
+                            scope.launchLocalPlaylistMutation("exportAllSongsFromNetease") {
+                                repo.addSongsToPlaylist(playlist.id, songs)
+                            }
+                            showExportAllSheet = false
                         }
                     )
                 }
@@ -823,7 +912,7 @@ private fun SongRow(
                 Text(
                     text = index.toString(),
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = playlistModernListTertiaryContentColor(),
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Clip,
@@ -863,7 +952,8 @@ private fun SongRow(
                 text = song.displayName(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium,
+                color = playlistModernListPrimaryContentColor()
             )
             Text(
                 text = listOfNotNull(
@@ -873,7 +963,7 @@ private fun SongRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = playlistModernListSecondaryContentColor()
             )
         }
 
@@ -886,7 +976,7 @@ private fun SongRow(
             Text(
                 text = formatDuration(song.durationMs),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = playlistModernListSecondaryContentColor()
             )
         }
 
@@ -900,7 +990,7 @@ private fun SongRow(
                     Icon(
                         Icons.Filled.MoreVert,
                         contentDescription = stringResource(R.string.cd_more_actions),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = playlistModernListSecondaryContentColor()
                     )
                 }
 

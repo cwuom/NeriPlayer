@@ -36,6 +36,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -122,13 +123,9 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
@@ -203,6 +200,7 @@ import org.burnoutcrew.reorderable.detectReorder
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
 import org.burnoutcrew.reorderable.reorderable
 import java.io.File
+import kotlin.random.Random
 
 private fun hasCachedLocalDownload(song: SongItem): Boolean {
     return GlobalDownloadManager.hasDownloadedSongCached(song) ||
@@ -428,6 +426,8 @@ fun LocalPlaylistDetailScreen(
             val isLocalFilesPlaylist = LocalFilesPlaylist.isSystemPlaylist(playlist, context)
             val isSystemPlaylist = isFavorites || isLocalFilesPlaylist
             val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
+            val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsState()
+            val repeatMode by PlayerManager.repeatModeFlow.collectAsState()
 
             val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
             val allPlaylists by repo.playlists.collectAsState()
@@ -444,6 +444,7 @@ fun LocalPlaylistDetailScreen(
             var showDeletePlaylistConfirm by remember { mutableStateOf(false) }
             var showDeleteMultiConfirm by remember { mutableStateOf(false) }
             var showExportSheet by remember { mutableStateOf(false) }
+            var showExportAllSheet by remember { mutableStateOf(false) }
             var detailSong by remember { mutableStateOf<SongItem?>(null) }
             var pendingSyncConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
             var pendingSyncConfirmLabel by remember { mutableStateOf("") }
@@ -769,14 +770,8 @@ fun LocalPlaylistDetailScreen(
                 showNeteaseSyncConfirm = true
             }
             val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsState(initial = false)
-
-            LaunchedEffect(showSearch, selectionMode) {
-                if (showSearch && !selectionMode && autoShowKeyboard) {
-                    delay(120)
-                    searchFocusRequester.requestFocus()
-                    keyboardController?.show()
-                }
-            }
+            val backgroundImageUri by AppContainer.settingsRepo.backgroundImageUriFlow.collectAsState(initial = null)
+            val hasCustomBackground = backgroundImageUri != null
 
             // 重命名
             var showRename by remember { mutableStateOf(false) }
@@ -861,7 +856,8 @@ fun LocalPlaylistDetailScreen(
             }
 
             // 拖拽
-            val headerKey = "header"
+            val headerKey = LOCAL_PLAYLIST_HEADER_KEY
+            val metadataProcessingVisible = visibleMetadataProcessingState.isProcessing
 
             val reorderState = rememberReorderableLazyListState(
                 onMove = { from: ItemPosition, to: ItemPosition ->
@@ -874,7 +870,9 @@ fun LocalPlaylistDetailScreen(
                         localSongs.add(toIdx, localSongs.removeAt(fromIdx))
                     }
                 },
-                canDragOver = { _, over -> (over.key as? String) != headerKey },
+                canDragOver = { _, over ->
+                    (over.key as? String) !in LOCAL_PLAYLIST_FIXED_ITEM_KEYS
+                },
                 onDragEnd = { _, _ ->
                     val newOrder = localSongs.map { it.identity() }
                     pendingOrderIdentities = newOrder
@@ -952,9 +950,20 @@ fun LocalPlaylistDetailScreen(
                     val targetIndex = when (val key = savedListKey.value) {
                         null -> null
                         headerKey -> 0
+                        LOCAL_PLAYLIST_ACTIONS_KEY -> 1
+                        LOCAL_PLAYLIST_METADATA_PROCESSING_KEY -> {
+                            if (metadataProcessingVisible) 2 else null
+                        }
                         else -> {
                             val idx = displayedSongs.indexOfFirst { it.stableKey() == key }
-                            if (idx >= 0) idx + 1 else null
+                            if (idx >= 0) {
+                                resolveLocalPlaylistSongListIndex(
+                                    songIndex = idx,
+                                    metadataProcessingVisible = metadataProcessingVisible
+                                )
+                            } else {
+                                null
+                            }
                         }
                     }
                     if (targetIndex != null && (targetIndex != 0 || savedListOffset != 0)) {
@@ -967,6 +976,23 @@ fun LocalPlaylistDetailScreen(
             // 统计
             val totalDurationMs by remember(localSongs) {
                 derivedStateOf { localSongs.sumOf { it.durationMs } }
+            }
+            val totalDurationText = formatTotalDuration(context, totalDurationMs)
+            val headerDisplayName = when {
+                isFavorites -> stringResource(R.string.favorite_my_music)
+                isLocalFilesPlaylist -> stringResource(R.string.local_files)
+                else -> playlist.name
+            }
+
+            fun playPlaylist(shuffle: Boolean) {
+                val startIndex = resolvePlaylistPlaybackStartIndex(
+                    songCount = baseQueue.size,
+                    shuffleEnabled = shuffle,
+                    randomIndex = if (baseQueue.isEmpty()) 0 else Random.nextInt(baseQueue.size)
+                )
+                if (startIndex < 0) return
+                PlayerManager.setShuffle(shuffle)
+                onSongClick(baseQueue, startIndex)
             }
 
             // 当前播放 & FAB
@@ -1093,6 +1119,36 @@ fun LocalPlaylistDetailScreen(
                 return@Surface
             }
 
+            val playlistChromeColor = rememberPlaylistModernHeroBackgroundColor(
+                coverUrl = headerCover,
+                offlineMode = offlineMode
+            )
+            val playlistChromeCollapsed = reorderState.listState.firstVisibleItemIndex > 0
+            val playlistTopBarColor = if (playlistChromeCollapsed) {
+                playlistModernCollapsedTopBarColor()
+            } else {
+                playlistChromeColor
+            }
+            val playlistTopBarContentColor = if (playlistChromeCollapsed) {
+                playlistModernCollapsedTopBarContentColor()
+            } else {
+                Color.White
+            }
+            val playlistHeroHeight by animateDpAsState(
+                targetValue = if (showSearch && !selectionMode && !playlistChromeCollapsed) {
+                    PlaylistModernHeroSearchHeight
+                } else {
+                    PlaylistModernHeroHeight
+                },
+                label = "local-playlist-hero-height"
+            )
+            LaunchedEffect(showSearch, selectionMode, playlistChromeCollapsed, autoShowKeyboard) {
+                if (showSearch && !selectionMode && autoShowKeyboard) {
+                    delay(120)
+                    searchFocusRequester.requestFocus()
+                    keyboardController?.show()
+                }
+            }
             Scaffold(
                 containerColor = Color.Transparent,
                 snackbarHost = { 
@@ -1141,7 +1197,7 @@ fun LocalPlaylistDetailScreen(
                                         Icon(
                                             Icons.Outlined.Download,
                                             contentDescription = stringResource(R.string.cd_download_manager),
-                                            tint = MaterialTheme.colorScheme.primary
+                                            tint = playlistTopBarContentColor
                                         )
                                     }
                                 }
@@ -1195,8 +1251,11 @@ fun LocalPlaylistDetailScreen(
                             },
                             windowInsets = WindowInsets.statusBars,
                             colors = TopAppBarDefaults.topAppBarColors(
-                                containerColor = Color.Transparent,
-                                scrolledContainerColor = MaterialTheme.colorScheme.surface
+                                containerColor = playlistTopBarColor,
+                                scrolledContainerColor = playlistTopBarColor,
+                                titleContentColor = playlistTopBarContentColor,
+                                navigationIconContentColor = playlistTopBarContentColor,
+                                actionIconContentColor = playlistTopBarContentColor
                             )
                         )
                     } else {
@@ -1288,119 +1347,107 @@ fun LocalPlaylistDetailScreen(
             ) { padding ->
                 val miniPlayerHeight = LocalMiniPlayerHeight.current
                 Column(Modifier.padding(padding).fillMaxSize()) {
-                    AnimatedVisibility(showSearch && !selectionMode) {
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
-                                .focusRequester(searchFocusRequester),
-                            placeholder = { Text(stringResource(R.string.search_playlist)) },
-                            singleLine = true
-                        )
+                    AnimatedVisibility(showSearch && !selectionMode && playlistChromeCollapsed) {
+                        PlaylistModernVisualColorsProvider(
+                            coverUrl = headerCover,
+                            offlineMode = offlineMode
+                        ) {
+                            PlaylistModernDockedSearchField(
+                                query = searchQuery,
+                                onQueryChange = { searchQuery = it },
+                                placeholder = stringResource(R.string.search_playlist),
+                                focusRequester = searchFocusRequester
+                            )
+                        }
                     }
 
                     Box(Modifier.fillMaxSize()) {
-                        val headerHeight: Dp = 240.dp
-
                         key(playlistId) {
-                            LazyColumn(
-                                state = reorderState.listState,
-                                contentPadding = PaddingValues(bottom = 24.dp + miniPlayerHeight),
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .reorderable(reorderState)
+                            PlaylistModernVisualColorsProvider(
+                                coverUrl = headerCover,
+                                offlineMode = offlineMode
                             ) {
-                            // 头图
-                            item(key = headerKey) {
-                                Box(
+                                LazyColumn(
+                                    state = reorderState.listState,
+                                    contentPadding = PaddingValues(bottom = 24.dp + miniPlayerHeight),
                                     modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(headerHeight)
+                                        .fillMaxSize()
+                                        .reorderable(reorderState)
                                 ) {
-                                    // 头图取"展示顺序"的第一张有封面的
-                                    AsyncImage(
-                                        model = offlineCachedImageRequest(
-                                            context = context,
-                                            data = normalizeLocalPlaylistHeaderCoverModel(headerCover),
-                                            sizePx = 768,
-                                            allowHardware = false,
-                                            crossfade = true,
-                                            offlineMode = offlineMode
-                                        ),
-                                        contentDescription = playlist.name,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .drawWithContent {
-                                                drawContent()
-                                                drawRect(
-                                                    brush = Brush.verticalGradient(
-                                                        colors = listOf(
-                                                            Color.Black.copy(alpha = 0.10f),
-                                                            Color.Black.copy(alpha = 0.35f),
-                                                            Color.Transparent
-                                                        ),
-                                                        startY = 0f, endY = size.height
-                                                    )
+                                item(
+                                    key = headerKey,
+                                    contentType = "playlist_header"
+                                ) {
+                                    LocalPlaylistHeroHeader(
+                                        displayName = headerDisplayName,
+                                        headerCover = headerCover,
+                                        totalDurationText = totalDurationText,
+                                        songCount = localSongs.size,
+                                        offlineMode = offlineMode,
+                                        height = playlistHeroHeight,
+                                        actions = if (showSearch && !selectionMode && !playlistChromeCollapsed) {
+                                            {
+                                                PlaylistModernHeroSearchField(
+                                                    query = searchQuery,
+                                                    onQueryChange = { searchQuery = it },
+                                                    placeholder = stringResource(R.string.search_playlist),
+                                                    focusRequester = searchFocusRequester
                                                 )
                                             }
-                                    )
-                                    Column(
-                                        modifier = Modifier
-                                            .align(Alignment.BottomStart)
-                                            .padding(horizontal = 16.dp, vertical = 12.dp)
-                                    ) {
-                                        val headerDisplayName = when {
-                                            isFavorites -> stringResource(R.string.favorite_my_music)
-                                            isLocalFilesPlaylist -> stringResource(R.string.local_files)
-                                            else -> playlist.name
+                                        } else {
+                                            null
                                         }
-                                        Text(
-                                            text = headerDisplayName,
-                                            style = MaterialTheme.typography.headlineSmall.copy(
-                                                shadow = Shadow(
-                                                    color = Color.Black.copy(alpha = 0.6f),
-                                                    offset = Offset(2f, 2f),
-                                                    blurRadius = 4f
-                                                )
-                                            ),
-                                            color = Color.White,
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Spacer(Modifier.height(4.dp))
-                                        Text(
-                                            text = stringResource(R.string.local_playlist_total_duration, formatTotalDuration(context, totalDurationMs), localSongs.size),
-                                            style = MaterialTheme.typography.bodySmall.copy(
-                                                shadow = Shadow(
-                                                    color = Color.Black.copy(alpha = 0.6f),
-                                                    offset = Offset(2f, 2f),
-                                                    blurRadius = 4f
-                                                )
-                                            ),
-                                            color = Color.White.copy(alpha = 0.92f)
-                                        )
+                                    )
+                                }
+
+                                item(
+                                    key = LOCAL_PLAYLIST_ACTIONS_KEY,
+                                    contentType = "playlist_actions"
+                                ) {
+                                    PlaylistModernActionSheet(
+                                        coverUrl = headerCover,
+                                        offlineMode = offlineMode,
+                                        hasCustomBackground = hasCustomBackground
+                                    ) {
+                                            LocalPlaylistPlaybackActions(
+                                                songCount = baseQueue.size,
+                                                shuffleEnabled = shuffleEnabled,
+                                                repeatMode = repeatMode,
+                                                onPlayInOrder = { playPlaylist(shuffle = false) },
+                                                onShufflePlay = { playPlaylist(shuffle = true) },
+                                                onToggleShuffle = {
+                                                    PlayerManager.setShuffle(!shuffleEnabled)
+                                                },
+                                                onCycleRepeatMode = {
+                                                    PlayerManager.cycleRepeatMode()
+                                                },
+                                                onExportToLocalPlaylist = {
+                                                    showExportAllSheet = true
+                                                }
+                                            )
                                     }
                                 }
-                            }
 
-                            if (visibleMetadataProcessingState.isProcessing) {
-                                item(
-                                    key = "metadata_processing_card",
-                                    contentType = "local_metadata_processing"
-                                ) {
-                                    LocalMetadataProcessingCard(visibleMetadataProcessingState)
+                                if (metadataProcessingVisible) {
+                                    item(
+                                        key = LOCAL_PLAYLIST_METADATA_PROCESSING_KEY,
+                                        contentType = "local_metadata_processing"
+                                    ) {
+                                        PlaylistModernListItemSurface(
+                                            coverUrl = headerCover,
+                                            offlineMode = offlineMode
+                                        ) {
+                                            LocalMetadataProcessingCard(visibleMetadataProcessingState)
+                                        }
+                                    }
                                 }
-                            }
 
-                            // 列表
-                            itemsIndexed(
-                                items = displayedSongs,
-                                key = { _, song -> song.stableKey() },
-                                contentType = { _, _ -> "local_playlist_song" }
-                            ) { revIndex, song ->
+                                // 列表
+                                itemsIndexed(
+                                    items = displayedSongs,
+                                    key = { _, song -> song.stableKey() },
+                                    contentType = { _, _ -> "local_playlist_song" }
+                                ) { revIndex, song ->
                                 ReorderableItem(state = reorderState, key = song.stableKey()) { isDragging ->
                                     val rowScale by animateFloatAsState(
                                         targetValue = if (isDragging) 1.02f else 1f,
@@ -1415,33 +1462,38 @@ fun LocalPlaylistDetailScreen(
                                         Color.Transparent
                                     }
 
-                                    Row(
+                                    PlaylistModernListItemSurface(
+                                        coverUrl = headerCover,
+                                        offlineMode = offlineMode,
                                         modifier = Modifier
                                             .graphicsLayer { scaleX = rowScale; scaleY = rowScale }
-                                            .fillMaxWidth()
-                                            .background(rowContainerColor)
-                                            .combinedClickable(
-                                                onClick = {
-                                                    context.performHapticFeedback()
-                                                    if (selectionMode) {
-                                                        toggleSelect(song)
-                                                    } else {
-                                                        val pos = queueIndexBySongKey[song.stableKey()] ?: -1
-                                                        if (pos >= 0) onSongClick(baseQueue, pos)
-                                                    }
-                                                },
-                                                onLongClick = {
-                                                    if (!selectionMode) {
-                                                        selectionMode = true
-                                                        selectedKeysState.value = setOf(song.stableKey())
-                                                    } else {
-                                                        toggleSelect(song)
-                                                    }
-                                                }
-                                            )
-                                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(rowContainerColor)
+                                                .combinedClickable(
+                                                    onClick = {
+                                                        context.performHapticFeedback()
+                                                        if (selectionMode) {
+                                                            toggleSelect(song)
+                                                        } else {
+                                                            val pos = queueIndexBySongKey[song.stableKey()] ?: -1
+                                                            if (pos >= 0) onSongClick(baseQueue, pos)
+                                                        }
+                                                    },
+                                                    onLongClick = {
+                                                        if (!selectionMode) {
+                                                            selectionMode = true
+                                                            selectedKeysState.value = setOf(song.stableKey())
+                                                        } else {
+                                                            toggleSelect(song)
+                                                        }
+                                                    }
+                                                )
+                                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
                                         Row(
                                             modifier = Modifier.weight(1f),
                                             verticalAlignment = Alignment.CenterVertically
@@ -1460,7 +1512,7 @@ fun LocalPlaylistDetailScreen(
                                                     Text(
                                                         text = (revIndex + 1).toString(),
                                                         style = MaterialTheme.typography.titleSmall,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        color = playlistModernListTertiaryContentColor(),
                                                         maxLines = 1,
                                                         overflow = TextOverflow.Clip
                                                     )
@@ -1499,11 +1551,13 @@ fun LocalPlaylistDetailScreen(
                                                     text = song.displayName(),
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis,
-                                                    style = MaterialTheme.typography.titleMedium
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    color = playlistModernListPrimaryContentColor()
                                                 )
                                                 SongDownloadSubtitle(
                                                     text = song.displayArtist(),
-                                                    downloaded = downloaded
+                                                    downloaded = downloaded,
+                                                    color = playlistModernListSecondaryContentColor()
                                                 )
                                             }
                                         }
@@ -1530,7 +1584,7 @@ fun LocalPlaylistDetailScreen(
                                                     } else {
                                                         Text(
                                                             text = formatDuration(song.durationMs),
-                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            color = playlistModernListSecondaryContentColor(),
                                                             style = MaterialTheme.typography.bodySmall
                                                         )
                                                     }
@@ -1544,7 +1598,7 @@ fun LocalPlaylistDetailScreen(
                                                             Icon(
                                                                 Icons.Filled.MoreVert,
                                                                 contentDescription = stringResource(R.string.cd_more_actions),
-                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                                tint = playlistModernListSecondaryContentColor()
                                                             )
                                                         }
 
@@ -1625,7 +1679,9 @@ fun LocalPlaylistDetailScreen(
                                         }
                                     }
                                 }
+                                }
                             }
+                        }
                         }
                         }
 
@@ -1639,7 +1695,10 @@ fun LocalPlaylistDetailScreen(
                                 onClick = {
                                     scope.launch {
                                         reorderState.listState.animateScrollToItem(
-                                            currentIndexInDisplay + 1
+                                            resolveLocalPlaylistPlayingItemIndex(
+                                                songIndex = currentIndexInDisplay,
+                                                metadataProcessingVisible = metadataProcessingVisible
+                                            )
                                         )
                                     }
                                 },
@@ -1774,6 +1833,41 @@ fun LocalPlaylistDetailScreen(
                                     repo.addPreparedSongsToPlaylist(target.id, songs)
                                 }
                                 exitSelectionMode()
+                            }
+                        }
+                    )
+                }
+
+                if (showExportAllSheet) {
+                    PlaylistExportSheet(
+                        title = stringResource(R.string.playlist_export_to_local),
+                        playlists = allPlaylists.filter {
+                            it.id != playlist.id && !LocalFilesPlaylist.isSystemPlaylist(it, context)
+                        },
+                        selectedCount = baseQueue.size,
+                        onDismissRequest = { showExportAllSheet = false },
+                        onCreateAndExport = { name ->
+                            val songs = baseQueue
+                            launchWithLocalSyncWarning(
+                                songs = songs,
+                                actionLabel = context.getString(R.string.playlist_add_to)
+                            ) {
+                                scope.launchLocalPlaylistMutation("createPlaylistFromLocalPlaylistAll") {
+                                    repo.createPlaylistWithPreparedSongs(name, songs)
+                                }
+                                showExportAllSheet = false
+                            }
+                        },
+                        onExportToPlaylist = { target ->
+                            val songs = baseQueue
+                            launchWithLocalSyncWarning(
+                                songs = songs,
+                                actionLabel = context.getString(R.string.playlist_add_to)
+                            ) {
+                                scope.launchLocalPlaylistMutation("exportAllSongsFromLocalPlaylist") {
+                                    repo.addPreparedSongsToPlaylist(target.id, songs)
+                                }
+                                showExportAllSheet = false
                             }
                         }
                     )
