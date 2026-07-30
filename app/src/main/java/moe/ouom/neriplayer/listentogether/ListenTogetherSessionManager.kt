@@ -700,9 +700,11 @@ class ListenTogetherSessionManager(
     }
 
     fun leaveRoom() {
-        _sessionState.value.toMembershipCredentialOrNull()?.let { credential ->
-            retainedMembershipCredential = credential
-        }
+        val snapshot = _sessionState.value
+        val leaveBaseUrl = snapshot.baseUrl
+        val leaveRoomId = snapshot.roomId
+        val leaveToken = snapshot.token
+        retainedMembershipCredential = null
         reconnectEnabled = false
         resetReconnectAttempt()
         pendingStateRefreshAfterReconnect = false
@@ -710,6 +712,34 @@ class ListenTogetherSessionManager(
         reconnectJob = null
         membershipRecoveryJob = null
         cancelControllerLinkResolve()
+        if (
+            !leaveBaseUrl.isNullOrBlank() &&
+            !leaveRoomId.isNullOrBlank() &&
+            !leaveToken.isNullOrBlank()
+        ) {
+            scope.launch {
+                runCatching {
+                    api.leaveRoom(
+                        baseUrl = leaveBaseUrl,
+                        roomId = leaveRoomId,
+                        token = leaveToken
+                    )
+                }.onSuccess { response ->
+                    if (!response.ok) {
+                        NPLogger.w(
+                            TAG,
+                            "leaveRoom(): server rejected leave, roomId=$leaveRoomId, error=${response.error}"
+                        )
+                    }
+                }.onFailure { error ->
+                    NPLogger.w(
+                        TAG,
+                        "leaveRoom(): server notification failed, roomId=$leaveRoomId, error=${error.message}",
+                        error
+                    )
+                }
+            }
+        }
         stopHeartbeat()
         stopSocketKeepAlive()
         stopSyncWatchdog()
@@ -733,10 +763,9 @@ class ListenTogetherSessionManager(
         resetListenerRecoveryState()
         PlayerManager.clearListenTogetherSafetyPause()
         PlayerManager.resetListenTogetherSyncPlaybackRate()
-        NPLogger.d(TAG, "leaveRoom(): roomId=${_sessionState.value.roomId}, role=${_sessionState.value.role}")
+        NPLogger.d(TAG, "leaveRoom(): roomId=${snapshot.roomId}, role=${snapshot.role}")
         webSocketClient.disconnect()
         recentEventTracker.clear()
-        val snapshot = _sessionState.value
         _sessionState.value = ListenTogetherSessionState(
             baseUrl = snapshot.baseUrl,
             userUuid = snapshot.userUuid,
@@ -1279,6 +1308,11 @@ class ListenTogetherSessionManager(
             source = RoomStateSource.WEB_SOCKET_STATE,
             cause = message.causedBy
         ) ?: return
+        message.message?.takeIf { it.isNotBlank() }?.let { notice ->
+            _sessionState.value = _sessionState.value.copy(
+                roomNotice = roomNoticeForState(accepted.state, notice)
+            )
+        }
         maybePublishControllerLinkAfterAudioSharingEnabled(
             previousState = previousState,
             currentState = accepted.state,

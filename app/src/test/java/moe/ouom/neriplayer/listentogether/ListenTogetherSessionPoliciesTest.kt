@@ -189,6 +189,17 @@ class ListenTogetherSessionPoliciesTest {
     }
 
     @Test
+    fun `room notice keeps member departure broadcast`() {
+        assertEquals(
+            "member_left:Listener",
+            resolveListenTogetherRoomNotice(
+                state = roomState(roomStatus = ListenTogetherRoomStatuses.ACTIVE),
+                fallbackMessage = "member_left:Listener"
+            )
+        )
+    }
+
+    @Test
     fun `player apply requires current matching room and non stale version`() {
         val current = roomState(version = 5L)
 

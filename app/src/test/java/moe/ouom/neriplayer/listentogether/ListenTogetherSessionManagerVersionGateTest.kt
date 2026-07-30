@@ -204,6 +204,10 @@ class ListenTogetherSessionManagerVersionGateTest {
                             joinResponseBody()
                         }
 
+                        request.method == "POST" && request.url.encodedPath.endsWith("/leave") -> {
+                            "{\"ok\":true}"
+                        }
+
                         request.method == "GET" && request.url.encodedPath.endsWith("/state") -> {
                             json.encodeToString(
                                 ListenTogetherStateResponse(
@@ -234,6 +238,10 @@ class ListenTogetherSessionManagerVersionGateTest {
                     val responseBody = when {
                         request.method == "POST" && request.url.encodedPath.endsWith("/join") -> {
                             joinResponseBody()
+                        }
+
+                        request.method == "POST" && request.url.encodedPath.endsWith("/leave") -> {
+                            "{\"ok\":true}"
                         }
 
                         request.method == "GET" && request.url.encodedPath.endsWith("/state") -> {

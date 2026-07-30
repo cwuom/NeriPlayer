@@ -8,6 +8,8 @@ import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherCreateRoomReque
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherInitialSnapshot
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherJoinRoomRequest
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherLeaveRoomRequest
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherLeaveRoomResponse
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomResponse
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherStateResponse
 import okhttp3.MediaType.Companion.toMediaType
@@ -78,6 +80,18 @@ class ListenTogetherApi(
         return get(
             url = "${baseUrl.normalizeBaseUrl()}/api/rooms/$roomId/state",
             bearerToken = bearerToken
+        )
+    }
+
+    suspend fun leaveRoom(
+        baseUrl: String,
+        roomId: String,
+        token: String
+    ): ListenTogetherLeaveRoomResponse {
+        return post(
+            url = "${baseUrl.normalizeBaseUrl()}/api/rooms/$roomId/leave",
+            body = ListenTogetherLeaveRoomRequest,
+            bearerToken = token
         )
     }
 

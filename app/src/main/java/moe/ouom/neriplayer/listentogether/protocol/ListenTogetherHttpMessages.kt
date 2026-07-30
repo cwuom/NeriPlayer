@@ -30,6 +30,9 @@ data class ListenTogetherJoinRoomRequest(
 )
 
 @Serializable
+object ListenTogetherLeaveRoomRequest
+
+@Serializable
 data class ListenTogetherRoomResponse(
     val ok: Boolean,
     val roomId: String? = null,
@@ -58,6 +61,13 @@ data class ListenTogetherStateResponse(
 
 @Serializable
 data class ListenTogetherControlResponse(
+    val ok: Boolean,
+    val applied: ListenTogetherAppliedEvent? = null,
+    val error: String? = null
+)
+
+@Serializable
+data class ListenTogetherLeaveRoomResponse(
     val ok: Boolean,
     val applied: ListenTogetherAppliedEvent? = null,
     val error: String? = null
