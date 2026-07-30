@@ -25,10 +25,12 @@
     <string name="action_more">More</string>
     <string name="action_clear">Clear</string>
     <string name="action_paste">Paste</string>
+    <string name="action_select">Select</string>
     <string name="action_select_all">Select All</string>
     <string name="action_deselect_all">Deselect All</string>
     <string name="action_inverse_select">Invert Selection</string>
     <string name="action_multi_select">Multi-select</string>
+    <string name="action_enter_multi_select">Enter Multi-select</string>
     <string name="action_exit_multi_select">Exit Multi-select</string>
     <string name="action_copy_song_name">Copy Song Name</string>
     <string name="action_copy_artist">Copy Artist</string>
@@ -89,6 +91,8 @@
     <string name="cd_export_playlist">Export to Playlist</string>
     <string name="cd_download_selected">Download Selected</string>
     <string name="cd_locate_playing">Locate Now Playing</string>
+    <string name="cd_open_current_playback_source">Locate Current Playlist</string>
+    <string name="cd_queue_quick_actions">Queue Quick Actions</string>
     <string name="cd_close">Close</string>
     <string name="cd_recent">Recent Plays</string>
     <string name="cd_app_background">App background</string>
@@ -232,6 +236,8 @@
     <string name="nowplaying_font_size_hint">Swipe left to decrease, right to increase</string>
     <string name="nowplaying_lyrics_sample">Sample lyrics: Spring breeze is not as good as you</string>
     <string name="nowplaying_youtube_music">YouTube</string>
+    <string name="nowplaying_queue_count_format">%d songs</string>
+    <string name="nowplaying_queue_current_position">No. %d</string>
 
     <!-- Lyrics -->
     <string name="lyrics_title">Lyrics</string>
@@ -356,6 +362,15 @@
     <string name="playlist_importing">Importing playlists…</string>
     <string name="playlist_import_complete">Import Complete!</string>
     <string name="playlist_export_to_local">Export to Local</string>
+    <string name="playlist_play_in_order">Play in Order</string>
+    <string name="playlist_playback_mode">Playback Mode</string>
+    <string name="playlist_mode_order">Order Mode</string>
+    <string name="playlist_mode_shuffle">Shuffle Mode</string>
+    <string name="playlist_mode_repeat_off">Repeat Off</string>
+    <string name="playlist_mode_repeat_all">Repeat All</string>
+    <string name="playlist_mode_repeat_one">Repeat One</string>
+    <string name="playlist_all_songs">All Songs</string>
+    <string name="playlist_song_count_format" formatted="false">%1$d songs · %2$s</string>
     <string name="playlist_export_to">Export to Playlist</string>
     <string name="playlist_create_and_export">Create and Export</string>
     <string name="playlist_create_and_add">Create and Add</string>
@@ -517,7 +532,7 @@
     <string name="download_empty">No Downloads</string>
     <string name="download_desc">Manage downloads</string>
     <string name="download_manage_desc">Manage downloads</string>
-    <string name="download_expand_hint">Manage downloads</string>
+    <string name="download_expand_hint">Downloads and local files</string>
     <string name="download_select_hint">Select songs and tap download button</string>
     <string name="downloaded">Downloaded</string>
     <string name="downloaded_songs">Downloaded Songs</string>
@@ -733,7 +748,7 @@
     <string name="login_enter_code">Enter verification code</string>
     <string name="login_code_error">Invalid Code</string>
     <string name="login_phone_invalid">Invalid Phone Number</string>
-    <string name="login_expand_platforms">Select platform</string>
+    <string name="login_expand_platforms">NetEase, Bili, and YouTube sign-in</string>
     <string name="login_methods">Browser/SMS/Cookie Import</string>
     <string name="login_confirm_send_code">Confirm send verification code?</string>
     <string name="login_send_code_to">Will send code to &gt;%s&lt;</string>
@@ -759,7 +774,7 @@
     <string name="settings_youtube_status_saved_invalid">Saved YouTube auth information was found, but it may be invalid. Tap to refresh it or sign out</string>
     <string name="settings_youtube_status_missing">No usable YouTube sign-in state detected. Tap to sign in again or import one</string>
     <string name="settings_login_platforms">Third-party Sign-in</string>
-    <string name="settings_login_platforms_expand">Select platform</string>
+    <string name="settings_login_platforms_expand">NetEase, Bili, and YouTube sign-in status</string>
     <string name="settings_login_platforms_collapse">Collapse</string>
     <string name="auth_phone_invalid">Please enter 11-digit phone number</string>
     <string name="auth_phone_format_error">Invalid phone number</string>
@@ -823,7 +838,7 @@
     <string name="settings_bypass_proxy">Bypass Proxy</string>
     <string name="settings_bypass_proxy_desc">Ignore system proxy</string>
     <string name="settings_restart_hint">May need to restart app for best effect</string>
-    <string name="settings_expand_network">Network options</string>
+    <string name="settings_expand_network">Network and proxy options</string>
     <string name="settings_about_desc">Version, project home, and developer mode</string>
     <string name="settings_always_record_logs">Always Record Logs</string>
     <string name="settings_always_record_logs_desc">Keep writing runtime logs even when debug mode is off</string>
@@ -836,14 +851,14 @@
     <string name="settings_ui_scale">UI Scale</string>
     <string name="settings_ui_scale_dpi">UI Scale (DPI)</string>
     <string name="settings_ui_scale_current">Current: %sx (Default 1.00x)</string>
-    <string name="settings_expand_login">Select platform</string>
-    <string name="settings_expand_personalization">Adjust visuals</string>
-    <string name="settings_expand_download">Manage downloads</string>
-    <string name="settings_expand_backup">Manage backups</string>
+    <string name="settings_expand_login">Sign-in methods and account status</string>
+    <string name="settings_expand_personalization">Home, display, and personalization</string>
+    <string name="settings_expand_download">Downloads and local files</string>
+    <string name="settings_expand_backup">Playlist backup and restore</string>
     <string name="settings_bilibili">Bilibili</string>
     <string name="settings_netease">Netease Music</string>
     <string name="settings_qq_music">QQ Music</string>
-    <string name="settings_personalization_expand">Adjust visuals</string>
+    <string name="settings_personalization_expand">Home, display, and personalization</string>
     <string name="settings_default_start_screen">Default Start Screen</string>
     <string name="settings_default_start_screen_desc">Current: %1$s</string>
     <string name="settings_auto_show_keyboard">Auto-Open Keyboard</string>
@@ -861,7 +876,7 @@
     <string name="settings_display_desc">Control cover, lyrics, and background display.</string>
     <string name="settings_home_hidden_notice">All home cards are hidden, so Home will disappear from the bottom bar.</string>
     <string name="settings_playback">Playback Settings</string>
-    <string name="settings_playback_expand">Configure playback behavior</string>
+    <string name="settings_playback_expand">Fades, progress memory, and audio output</string>
     <string name="settings_playback_fade_in">Playback Fade</string>
     <string name="settings_playback_fade_in_desc">Fade audio in when playback starts</string>
     <string name="settings_playback_fade_in_duration">Fade-in Duration</string>
@@ -1024,10 +1039,10 @@
     <string name="settings_custom_background">Custom Background</string>
     <string name="settings_background_change">Change</string>
     <string name="settings_background_select">Select image</string>
-    <string name="settings_network_expand">Configure network</string>
+    <string name="settings_network_expand">Network and proxy options</string>
     <string name="settings_no_cache">No cache</string>
     <string name="settings_download_management">Download Management</string>
-    <string name="settings_download_expand">Manage downloads</string>
+    <string name="settings_download_expand">Location, file format, and download tasks</string>
     <string name="settings_download_progress">Download Progress</string>
     <string name="settings_download_songs_count" formatted="false">%d/%d songs</string>
     <string name="settings_downloading">Downloading: %s</string>
@@ -1074,7 +1089,7 @@
     <string name="settings_download_directory_migrating_current">Current: %1$s</string>
     <string name="settings_download_directory_change_blocked_active_download">Cannot change the download directory while downloads are in progress</string>
     <string name="settings_backup_restore">Backup &amp; Restore</string>
-    <string name="settings_backup_expand">Manage config and playlist backups</string>
+    <string name="settings_backup_expand">Config, playlist backup, and data sync</string>
     <string name="settings_configured">Configured</string>
     <string name="settings_not_configured">Not Configured</string>
     <string name="settings_configure">Configure</string>
@@ -1170,8 +1185,8 @@
     <string name="settings_add_to_palette">Add to Palette</string>
     <string name="settings_delete_color">Delete Color</string>
     <string name="settings_custom_color">Custom Color</string>
-    <string name="settings_expand_visual">Visual effects</string>
-    <string name="settings_expand_more">More</string>
+    <string name="settings_expand_visual">Themes, backgrounds, and visual effects</string>
+    <string name="settings_expand_more">More options</string>
     <string name="settings_nowplaying_cover_blur_background">Now Playing Cover Blur</string>
     <string name="settings_nowplaying_cover_blur_background_desc">Use the current cover as the background of Now Playing</string>
     <string name="settings_nowplaying_cover_blur_amount">Cover Blur Intensity</string>
@@ -1197,7 +1212,7 @@
     <string name="settings_haptic">Haptic Feedback</string>
     <string name="settings_haptic_desc">Vibrate on button press</string>
     <string name="settings_audio_quality">Audio Quality</string>
-    <string name="settings_audio_quality_expand">Configure audio quality</string>
+    <string name="settings_audio_quality_expand">Platform quality and mobile-data settings</string>
     <string name="settings_show_lyric_translation">Show Translation</string>
     <string name="settings_show_lyric_translation_desc">Show translated lyrics</string>
     <string name="settings_advanced_lyrics">Advanced Lyrics</string>
@@ -1226,7 +1241,7 @@
     <string name="settings_audio_quality_low">Low</string>
     <string name="settings_haptic_feedback">Haptic Feedback</string>
     <string name="settings_motion">Motion Settings</string>
-    <string name="settings_motion_expand">Customize motion effects</string>
+    <string name="settings_motion_expand">Now Playing, lyrics, and background motion</string>
     <string name="settings_lyric_api_enabled">Third-party Lyrics API Integration</string>
     <string name="settings_lyric_api_enabled_desc">Provide Lyricon and SuperLyric with the current song, playback state, position, word-level lyrics, and translations</string>
     <string name="settings_amll_lyrics_enabled">Use AMLL Database</string>
@@ -1234,7 +1249,7 @@
     <string name="settings_external_bluetooth_lyrics_enabled">External Bluetooth Lyrics</string>
     <string name="settings_external_bluetooth_lyrics_enabled_desc">When a Bluetooth device is connected, sync the current lyric line to the device song info area</string>
     <string name="settings_lyrics_offset">Lyrics Settings</string>
-    <string name="settings_lyrics_offset_expand">Adjust external lyrics, Lyricon integration, and default lyric offsets</string>
+    <string name="settings_lyrics_offset_expand">External lyrics, Lyricon integration, and default offsets</string>
     <string name="settings_lyrics_offset_cloud_music">Cloud Music default offset</string>
     <string name="settings_lyrics_offset_cloud_music_desc">Default offset applied when loading Cloud Music lyrics</string>
     <string name="settings_lyrics_offset_qq_music">QQ Music default offset</string>
@@ -1352,7 +1367,7 @@
     <string name="cache_clear_complete">Cache cleared</string>
     <string name="settings_cache_manage">Manage cache</string>
     <string name="settings_storage_cache">Storage &amp; Cache</string>
-    <string name="settings_storage_expand">Manage cache</string>
+    <string name="settings_storage_expand">Cache size, cleanup, and storage use</string>
     <string name="settings_cache_notice">Set to 0 MB to disable cache. Restart required after changing limit.</string>
     <string name="settings_cache_size_gb">%.1f GB</string>
     <string name="settings_cache_size_mb">%1$d MB</string>
@@ -1410,7 +1425,7 @@
     <string name="sync_diff_failed">Diff Analysis Failed</string>
     <string name="sync_analysis_progress">Analysis Progress</string>
     <string name="backup_title">Backup &amp; Restore</string>
-    <string name="backup_expand_hint">Manage backups</string>
+    <string name="backup_expand_hint">Playlist backup and restore</string>
     <string name="backup_no_playlist_data">No playlist data in backup</string>
     <string name="backup_import_failed">Playlist import failed</string>
     <string name="backup_export_failed">Playlist export failed</string>
