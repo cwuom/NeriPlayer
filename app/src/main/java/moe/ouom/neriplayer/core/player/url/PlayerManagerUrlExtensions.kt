@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.api.bili.BiliSponsorBlockTarget
 import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -36,6 +37,7 @@ import moe.ouom.neriplayer.core.player.policy.refresh.resolveRefreshedMediaStart
 import moe.ouom.neriplayer.core.player.policy.refresh.shouldApplyRefreshResult
 import moe.ouom.neriplayer.core.player.policy.refresh.YouTubePlaybackRecoveryStrategy
 import moe.ouom.neriplayer.core.player.playback.advanceAfterPlaybackFailure
+import moe.ouom.neriplayer.core.player.playback.BiliSponsorBlockPlaybackController
 import moe.ouom.neriplayer.core.player.playback.preparePlayerForManagedStart
 import moe.ouom.neriplayer.core.player.prefetch.consumeGenericUrlPrefetch
 import moe.ouom.neriplayer.core.player.quality.effectiveBiliQuality
@@ -73,6 +75,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
         "resolveSongUrl: song=${song.name}, source=${song.album}, forceRefresh=$forceRefresh, streamUrl=${song.streamUrl}, currentUrl=${_currentMediaUrl.value}, stack=[${debugStackHint()}]"
     )
     if (!forceRefresh && isDirectStreamUrl(song.streamUrl)) {
+        prepareBiliSponsorBlockForCachedPlayback(song)
         return SongUrlResult.Success(song.streamUrl.orEmpty())
     }
     if (isLocalSong(song)) {
@@ -94,6 +97,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
 
     val localResult = checkLocalCache(song, sideEffects)
     if (localResult != null) {
+        prepareBiliSponsorBlockForCachedPlayback(song)
         NPLogger.d(
             "NERI-PlayerManager",
             "resolveSongUrl: hit local playback cache for song=${song.name}"
@@ -133,6 +137,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
             } else {
                 null
             }
+        prepareBiliSponsorBlockForCachedPlayback(song)
         return SongUrlResult.Success(
             url = "$OFFLINE_CACHE_URL_PREFIX$cacheKey",
             durationMs = song.durationMs.takeIf { it > 0L },
@@ -141,7 +146,10 @@ internal suspend fun PlayerManager.resolveSongUrl(
         )
     }
     if (!forceRefresh && allowGenericPrefetchCache && !isYouTubeTrack) {
-        consumeGenericUrlPrefetch(cacheKey)?.let { return it }
+        consumeGenericUrlPrefetch(cacheKey)?.let { prefetchedResult ->
+            prepareBiliSponsorBlockForCachedPlayback(song)
+            return prefetchedResult
+        }
     }
     val listenTogetherFallback = listenTogetherFallbackResult(song)
     val resolverSideEffects = if (listenTogetherFallback != null) {
@@ -192,6 +200,21 @@ internal suspend fun PlayerManager.resolveSongUrl(
     } else {
         result
     }
+}
+
+private fun PlayerManager.prepareBiliSponsorBlockForCachedPlayback(song: SongItem) {
+    if (
+        !isBiliTrack(song) ||
+        isListenTogetherActive() ||
+        _currentSongFlow.value?.sameIdentityAs(song) != true
+    ) {
+        return
+    }
+    BiliSponsorBlockPlaybackController.prepareActiveBiliTrackTarget(
+        song = song,
+        requestToken = playbackRequestToken,
+        scope = ioScope
+    )
 }
 
 internal suspend fun PlayerManager.resolveShareableListenTogetherStreamUrl(
@@ -1115,6 +1138,24 @@ private suspend fun PlayerManager.getBiliAudioUrl(
                 }
             }
             return@withContext SongUrlResult.Failure
+        }
+
+        if (!isListenTogetherActive() && _currentSongFlow.value?.sameIdentityAs(song) == true) {
+            BiliSponsorBlockPlaybackController.onBiliTrackResolved(
+                song = song,
+                target = BiliSponsorBlockTarget(
+                    bvid = resolved.videoInfo.bvid,
+                    cid = resolved.cid,
+                    durationMs = resolved.pageInfo
+                        ?.durationSec
+                        ?.toLong()
+                        ?.times(1_000L)
+                        ?.takeIf { it > 0L }
+                        ?: song.durationMs
+                ),
+                requestToken = playbackRequestToken,
+                scope = ioScope
+            )
         }
 
         val (availableStreams, audioStream) = biliRepo.getAudioWithDecision(

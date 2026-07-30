@@ -35,6 +35,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.BiliClientAudioDataSource
 import moe.ouom.neriplayer.core.api.bili.BiliPlaybackRepository
+import moe.ouom.neriplayer.core.api.bili.BiliSponsorBlockRepository
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi
 import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
@@ -335,6 +336,7 @@ object AppContainer {
     }
 
     val biliClient by lazy { BiliClient(biliCookieRepo, client = sharedOkHttpClient) }
+    internal val biliSponsorBlockRepository by lazy { BiliSponsorBlockRepository(sharedOkHttpClient) }
     private val youtubeMusicClientDelegate = lazy {
         YouTubeMusicClient(
             authRepo = youtubeAuthRepo,

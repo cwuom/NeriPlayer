@@ -658,6 +658,7 @@ internal fun PlayerManager.playAtIndex(
     cancelGenericUrlPrefetchUnlessReusableForSong(song, reason = "play_at_index")
     playbackRequestToken += 1
     val requestToken = playbackRequestToken
+    BiliSponsorBlockPlaybackController.onPlaybackRequestStarted(song, requestToken)
     PlaybackTransitionWakeLock.acquire(
         context = application,
         requestToken = requestToken,
@@ -1823,6 +1824,31 @@ internal fun PlayerManager.startProgressUpdates() {
                 .getOrDefault(_playbackDurationMs.value)
             if (durationMs > 0L) {
                 _playbackDurationMs.value = durationMs
+            }
+            val currentSong = _currentSongFlow.value
+            if (currentSong != null && !isListenTogetherActive()) {
+                val skipPositionMs = BiliSponsorBlockPlaybackController.nextSkipPosition(
+                    song = currentSong,
+                    currentPositionMs = positionMs,
+                    durationMs = durationMs
+                )
+                if (skipPositionMs != null) {
+                    NPLogger.d(
+                        "BiliSponsorBlock",
+                        "auto skipping segment: from=${positionMs}ms, to=${skipPositionMs}ms"
+                    )
+                    Toast.makeText(
+                        application,
+                        getLocalizedString(R.string.toast_bili_sponsor_block_skipped),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    seekTo(
+                        positionMs = skipPositionMs,
+                        commandSource = PlaybackCommandSource.LOCAL_SAFETY
+                    )
+                    delay(updateIntervalMs)
+                    continue
+                }
             }
             if (lyriconEnabled) {
                 LyriconManager.setPlaybackSpeed(playbackSoundConfig.speed)

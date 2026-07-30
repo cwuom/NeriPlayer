@@ -41,6 +41,7 @@ import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.BluetoothAudio
+import androidx.compose.material.icons.outlined.FastForward
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.HighQuality
@@ -57,6 +58,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +71,8 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.model.MAX_PLAYBACK_VOLUME_BALANCE
 import moe.ouom.neriplayer.core.player.model.MIN_PLAYBACK_VOLUME_BALANCE
@@ -77,6 +81,7 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingInfo
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 
@@ -86,6 +91,8 @@ internal fun SettingsPlaybackSection(
     arrowRotation: Float,
     onExpandedChange: (Boolean) -> Unit,
     showHeader: Boolean = true,
+    autoSettingsRepository: AutoSettingsRepository,
+    scope: CoroutineScope,
     playbackFadeIn: Boolean,
     onPlaybackFadeInChange: (Boolean) -> Unit,
     playbackCrossfadeNext: Boolean,
@@ -121,6 +128,10 @@ internal fun SettingsPlaybackSection(
     preemptAudioFocus: Boolean,
     onPreemptAudioFocusChange: (Boolean) -> Unit
 ) {
+    val biliSponsorBlockEnabled by autoSettingsRepository.biliSponsorBlockEnabledFlow.collectAsState(
+        initial = false
+    )
+
     if (showHeader) {
         ExpandableHeader(
             icon = Icons.AutoMirrored.Outlined.PlaylistPlay,
@@ -326,6 +337,29 @@ internal fun SettingsPlaybackSection(
                     )
                 },
                 onCheckedChange = onRememberLongFormPlaybackProgressChange
+            )
+
+            PlaybackSwitchItem(
+                setting = AutoSettingsMetadata.requireSetting(
+                    AutoSettingsKeys.BILI_SPONSOR_BLOCK_ENABLED
+                ),
+                checked = biliSponsorBlockEnabled,
+                icon = {
+                    Icon(
+                        imageVector = Icons.Outlined.FastForward,
+                        contentDescription = stringResource(R.string.settings_bili_sponsor_block),
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                },
+                onToggle = {
+                    scope.launch {
+                        autoSettingsRepository.setBiliSponsorBlockEnabled(!biliSponsorBlockEnabled)
+                    }
+                },
+                onCheckedChange = { enabled ->
+                    scope.launch { autoSettingsRepository.setBiliSponsorBlockEnabled(enabled) }
+                }
             )
 
             PlaybackSwitchItem(

@@ -1301,6 +1301,8 @@ fun SettingsScreen(
                             arrowRotation = 0f,
                             onExpandedChange = {},
                             showHeader = false,
+                            autoSettingsRepository = autoSettingsRepository,
+                            scope = scope,
                             playbackFadeIn = playbackFadeIn,
                             onPlaybackFadeInChange = onPlaybackFadeInChange,
                             playbackCrossfadeNext = playbackCrossfadeNext,

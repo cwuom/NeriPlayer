@@ -339,6 +339,12 @@ For release build and signing details, see
 - YouTube playback preserves valid login cookies, supports cookie rotation and
   anonymous resolution, reuses bootstrap/`player.js`/PoToken caches with priority
   prefetching, and falls back to EJS/HLS after direct-link rejection.
+- ⏩ **Optional BilibiliSponsorBlock auto-skip**: disabled by default. When enabled,
+  the public API receives only a SHA-256 prefix of the current BV ID; matching
+  page, duration, and `intro`/`outro`/`sponsor`/`music_offtopic`/`filler`/`padding` segments are
+  skipped locally. No account data, playback history, or segment submissions are
+  uploaded, and the feature remains disabled during Listen Together to prevent room
+  state drift.
 - 🔁 **NetEase auto source switch**:
   when a NetEase song is unavailable, has no playable URL, or only returns a
   preview clip, the player first tries lower quality and can then match a

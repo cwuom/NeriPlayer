@@ -780,6 +780,9 @@
     <string name="settings_netease_auto_source_switch_desc">Search Bilibili automatically when a NetEase song is unavailable or only returns a preview clip</string>
     <string name="settings_netease_local_source_fallback">Local Audio Fallback</string>
     <string name="settings_netease_local_source_fallback_desc">Prefer a local audio file matched to the same song when a NetEase song is unavailable or only returns a preview clip</string>
+    <string name="settings_bili_sponsor_block">BilibiliSponsorBlock Auto Skip</string>
+    <string name="settings_bili_sponsor_block_desc">Query public segments for the current video and automatically skip intros, outros, sponsorships, filler, and non-music content</string>
+    <string name="toast_bili_sponsor_block_skipped">BilibiliSponsorBlock skipped a segment</string>
     <string name="settings_netease_quality">Netease Default Quality</string>
     <string name="settings_bili_quality">Bilibili Default Quality</string>
     <string name="netease_web_login">NetEase Login</string>

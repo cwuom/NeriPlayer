@@ -279,6 +279,10 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   播放链接刷新、YouTube 预取与平台特殊请求策略。
 - YouTube 登录态会保留有效 Cookie，并支持 Cookie 轮换、匿名取流、bootstrap/
   `player.js`/PoToken 缓存和优先级预取；签名或直链被拒时可回退 EJS/HLS。
+- ⏩ **可选 BilibiliSponsorBlock 自动跳过**：默认关闭。开启后仅向公开接口发送当前
+  BV 号的 SHA-256 前缀，按分 P 和时长筛选 `intro`、`outro`、`sponsor`、
+  `music_offtopic`、`filler`、`padding` 片段并在本地跳转；不会上传账号、播放历史或新片段。一起听期间保持关闭，
+  避免房间播放状态漂移。
 - 🔁 **网易云自动换源**：
   网易云歌曲无权限、无可用直链或仅返回试听片段时，会先尝试降低音质，
   再按歌曲名、歌手和时长匹配 Bilibili 音源；开启本地兜底时，还会按稳定元数据匹配

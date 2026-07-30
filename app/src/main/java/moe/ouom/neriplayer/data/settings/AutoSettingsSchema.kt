@@ -1531,6 +1531,15 @@ object AutoSettingsSchema {
             descriptionRes = R.string.settings_netease_local_source_fallback_desc
         )
 
+        @AutoSetting(order = 137)
+        val biliSponsorBlockEnabled = autoSwitchSetting(
+            key = "bili_sponsor_block_enabled",
+            defaultValue = false,
+            titleRes = R.string.settings_bili_sponsor_block,
+            descriptionRes = R.string.settings_bili_sponsor_block_desc,
+            icon = AutoSettingIcon.AdsClick
+        )
+
         @AutoSetting(
             key = "keep_playback_mode_state",
             type = SettingValueType.Boolean,
