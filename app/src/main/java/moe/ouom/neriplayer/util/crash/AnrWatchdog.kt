@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
+import androidx.core.content.edit
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
@@ -79,7 +80,7 @@ internal object AnrWatchdog {
             logFile = logFile,
             origin = CrashReportStore.CrashOrigin.Anr
         )
-        prefs.edit().putString(LAST_CAPTURED_EXIT_KEY, captureKey).apply()
+        prefs.edit { putString(LAST_CAPTURED_EXIT_KEY, captureKey) }
     }
 
     @SuppressLint("NewApi")

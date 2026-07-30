@@ -68,6 +68,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.drawable.toBitmap
+import androidx.core.graphics.get
+import androidx.core.graphics.scale
 import androidx.core.graphics.withClip
 import androidx.core.graphics.withTranslation
 import coil.Coil
@@ -832,11 +834,11 @@ private fun drawBlurredBottomBackdrop(
     try {
         val smallWidth = (source.width / 8).coerceAtLeast(1)
         val smallHeight = (source.height / 8).coerceAtLeast(1)
-        val smallBitmap = Bitmap.createScaledBitmap(source, smallWidth, smallHeight, true)
+        val smallBitmap = source.scale(smallWidth, smallHeight)
         small = smallBitmap
         val blurredBitmap = smallBitmap.boxBlur(radius = 6, iterations = 2)
         blurred = blurredBitmap
-        glass = Bitmap.createScaledBitmap(blurredBitmap, source.width, source.height, true)
+        glass = blurredBitmap.scale(source.width, source.height)
         val target = RectF(0f, top, sourceBitmap.width.toFloat(), top + height)
         canvas.drawBitmap(glass, null, target, Paint(Paint.ANTI_ALIAS_FLAG))
     } finally {
@@ -855,11 +857,11 @@ private fun buildBlurredCardBackground(
     var small: Bitmap? = null
     var blurred: Bitmap? = null
     try {
-        val smallBitmap = Bitmap.createScaledBitmap(coverBitmap, smallSize, smallSize, true)
+        val smallBitmap = coverBitmap.scale(smallSize, smallSize)
         small = smallBitmap
         val blurredBitmap = smallBitmap.boxBlur(radius = 7, iterations = 3)
         blurred = blurredBitmap
-        return Bitmap.createScaledBitmap(blurredBitmap, targetSize, targetSize, true)
+        return blurredBitmap.scale(targetSize, targetSize)
     } finally {
         recycleBitmap(blurred)
         recycleBitmap(small)
@@ -977,7 +979,7 @@ private fun Bitmap.averageColor(): Int {
     while (y < height) {
         var x = 0
         while (x < width) {
-            val color = getPixel(x, y)
+            val color = this[x, y]
             val alpha = AndroidColor.alpha(color)
             if (alpha > 24) {
                 red += AndroidColor.red(color)

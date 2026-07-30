@@ -922,8 +922,9 @@ private fun playHistoryUpdateModeSummary(
         else -> {
             val intervalMinutes = mode.intervalMinutes
                 ?: return stringResource(R.string.settings_update_immediate)
-            stringResource(
-                R.string.settings_update_every_minutes,
+            pluralStringResource(
+                R.plurals.settings_update_every_minutes,
+                intervalMinutes,
                 intervalMinutes
             )
         }
@@ -941,8 +942,9 @@ private fun playHistoryUpdateModeTitle(
         else -> {
             val intervalMinutes = mode.intervalMinutes
                 ?: return stringResource(R.string.sync_after_play)
-            stringResource(
-                R.string.sync_every_minutes,
+            pluralStringResource(
+                R.plurals.sync_every_minutes,
+                intervalMinutes,
                 intervalMinutes
             )
         }
@@ -960,8 +962,9 @@ private fun playHistoryUpdateModeDescription(
         else -> {
             val intervalMinutes = mode.intervalMinutes
                 ?: return stringResource(R.string.sync_after_play_desc)
-            stringResource(
-                R.string.sync_every_minutes_desc,
+            pluralStringResource(
+                R.plurals.sync_every_minutes_desc,
+                intervalMinutes,
                 intervalMinutes
             )
         }

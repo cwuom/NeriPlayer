@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.data.auth.youtube
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.annotation.SuppressLint
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -424,9 +425,9 @@ class YouTubeAuthRepository(private val context: Context) {
     private fun commitAuthBundle(
         prefs: SharedPreferences,
         serialized: String
-    ): Boolean = prefs.edit()
-        .putString(KEY_YOUTUBE_AUTH_BUNDLE, serialized)
-        .commit()
+    ): Boolean = prefs.commitEdit {
+        putString(KEY_YOUTUBE_AUTH_BUNDLE, serialized)
+    }
 
     private fun openEncryptedPrefsWithRecovery(): SharedPreferences {
         return runCatching {
@@ -490,7 +491,7 @@ class YouTubeAuthRepository(private val context: Context) {
 
     private fun clearStoredAuth(prefs: SharedPreferences, label: String) {
         runCatching {
-            if (!prefs.edit().remove(KEY_YOUTUBE_AUTH_BUNDLE).commit()) {
+            if (!prefs.commitEdit { remove(KEY_YOUTUBE_AUTH_BUNDLE) }) {
                 throw IOException("SharedPreferences commit returned false")
             }
         }.onFailure { error ->
@@ -501,4 +502,14 @@ class YouTubeAuthRepository(private val context: Context) {
             )
         }
     }
+}
+
+@SuppressLint("UseKtx")
+private inline fun SharedPreferences.commitEdit(
+    action: SharedPreferences.Editor.() -> Unit
+): Boolean {
+    // androidx edit(commit = true) does not expose commit failure
+    val editor = edit()
+    editor.action()
+    return editor.commit()
 }

@@ -41,7 +41,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -53,6 +52,7 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassScene
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassController
 import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassHorizontalTransition
+import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 
 private val MiuixCardShape = RoundedCornerShape(16.dp)
 private val MiuixSettingsContentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
@@ -79,7 +79,7 @@ internal fun MiuixSettingsHomeScaffold(
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
     val miniPlayerHeight = LocalMiniPlayerHeight.current
-    val isTabletLayout = LocalConfiguration.current.screenWidthDp >= 720
+    val isTabletLayout = currentWindowWidthDp() >= 720.dp
     val horizontalPadding = if (isTabletLayout) 28.dp else 18.dp
 
     Scaffold(
@@ -127,8 +127,8 @@ internal fun MiuixSettingsHomeScaffold(
 internal fun MiuixSettingsPageGroupCard(
     pages: List<SettingsPage>,
     onPageClick: (SettingsPage) -> Unit,
-    selectedPage: SettingsPage? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    selectedPage: SettingsPage? = null
 ) {
     if (pages.isEmpty()) {
         return
@@ -251,7 +251,7 @@ internal fun MiuixSettingsDetailScaffold(
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
     val miniPlayerHeight = LocalMiniPlayerHeight.current
-    val isTabletLayout = LocalConfiguration.current.screenWidthDp >= 720
+    val isTabletLayout = currentWindowWidthDp() >= 720.dp
     val horizontalPadding = if (isTabletLayout) 28.dp else 18.dp
 
     Scaffold(
@@ -313,13 +313,13 @@ internal fun MiuixSettingsResponsiveDetailScaffold(
     listState: LazyListState,
     topAppBarState: TopAppBarState,
     splitLayout: Boolean,
+    modifier: Modifier = Modifier,
     showSplitDetailBackButton: Boolean = false,
     selectedPage: SettingsPage? = null,
     homeListState: LazyListState,
     homeTopAppBarState: TopAppBarState,
     homeTitle: @Composable () -> Unit,
     homeContent: LazyListScope.() -> Unit,
-    modifier: Modifier = Modifier,
     detailContent: (LazyListScope.(SettingsPage) -> Unit)? = null,
     content: LazyListScope.() -> Unit
 ) {

@@ -36,6 +36,10 @@
         <item quantity="one">%d song</item>
         <item quantity="other">%d songs</item>
     </plurals>
+    <plurals name="nowplaying_queue_count_format">
+        <item quantity="one">%d song</item>
+        <item quantity="other">%d songs</item>
+    </plurals>
     <plurals name="download_scan_failed">
         <item quantity="one">Scan failed: %d item</item>
         <item quantity="other">Scan failed: %d items</item>

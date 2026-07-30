@@ -116,6 +116,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -830,8 +831,9 @@ private fun TrafficRiskDownloadDialog(
             request.songs.firstOrNull()?.displayName().orEmpty()
         )
     } else {
-        stringResource(
-            R.string.traffic_risk_download_batch_message,
+        pluralStringResource(
+            R.plurals.traffic_risk_download_batch_message,
+            request.songCount,
             networkLabel,
             request.songCount
         )
@@ -877,8 +879,9 @@ internal fun MobileDataDownloadInterruptionDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    stringResource(
-                        R.string.mobile_data_download_interruption_message,
+                    pluralStringResource(
+                        R.plurals.mobile_data_download_interruption_message,
+                        request.taskCount,
                         networkLabel,
                         request.taskCount
                     )

@@ -49,10 +49,10 @@ internal fun LocalArtistLibraryGrid(
     artists: List<LocalArtistSummary>,
     onClick: (LocalArtistSummary) -> Unit,
     offlineMode: Boolean,
+    modifier: Modifier = Modifier,
     emptyTitleResId: Int = R.string.library_local_artist_empty,
     emptyHintResId: Int = R.string.library_local_artist_hint,
-    headerContent: (@Composable () -> Unit)? = null,
-    modifier: Modifier = Modifier
+    headerContent: (@Composable () -> Unit)? = null
 ) {
     val gridState = rememberLazyGridState()
     val miniPlayerHeight = LocalMiniPlayerHeight.current

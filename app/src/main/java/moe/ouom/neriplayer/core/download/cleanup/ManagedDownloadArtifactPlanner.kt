@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.cleanup
 
 import android.content.Context
 import android.net.Uri
+import androidx.core.net.toUri
 import java.io.File
 import moe.ouom.neriplayer.core.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -242,7 +243,7 @@ internal object ManagedDownloadArtifactPlanner {
             return normalizedReference
         }
         return runCatching {
-            Uri.parse(normalizedReference).path
+            normalizedReference.toUri().path
         }.getOrNull()?.takeIf(String::isNotBlank) ?: normalizedReference
     }
 
@@ -250,7 +251,7 @@ internal object ManagedDownloadArtifactPlanner {
         val rawName = if (reference.startsWith("/")) {
             File(reference).name
         } else {
-            runCatching { Uri.parse(reference).lastPathSegment }
+            runCatching { reference.toUri().lastPathSegment }
                 .getOrNull()
                 ?.let(Uri::decode)
                 ?.substringAfterLast('/')

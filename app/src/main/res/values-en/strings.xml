@@ -126,8 +126,8 @@
     <string name="player_loud_volume_warning_message_ceiling">%1$s is at %2$d%% media volume. No current PCM peak sample is available; its digital output ceiling can reach %3$.1f dBFS, with a risk threshold of %4$d dBFS (%5$s). Continue playback?</string>
     <string name="player_loud_volume_warning_calibration">This is a digital-output estimate, not an ear-level dB SPL measurement. The DAC output and headphone sensitivity are not calibrated.</string>
     <string name="player_loud_volume_device_unknown">Unknown USB DAC</string>
-    <string name="player_loud_volume_device_uac1">UAC1 USB DAC (%1$s)</string>
-    <string name="player_loud_volume_device_uac2">UAC2 USB DAC (%1$s)</string>
+    <string name="player_loud_volume_device_uac1">USB Audio Class 1 DAC (%1$s)</string>
+    <string name="player_loud_volume_device_uac2">USB Audio Class 2 DAC (%1$s)</string>
     <string name="player_loud_volume_device_unknown_usb">USB DAC (%1$s)</string>
     <string name="player_loud_volume_risk_elevated">Caution</string>
     <string name="player_loud_volume_risk_high">High risk</string>
@@ -236,7 +236,6 @@
     <string name="nowplaying_font_size_hint">Swipe left to decrease, right to increase</string>
     <string name="nowplaying_lyrics_sample">Sample lyrics: Spring breeze is not as good as you</string>
     <string name="nowplaying_youtube_music">YouTube</string>
-    <string name="nowplaying_queue_count_format">%d songs</string>
     <string name="nowplaying_queue_current_position">No. %d</string>
 
     <!-- Lyrics -->
@@ -846,7 +845,6 @@
     <string name="settings_playback_idle_shutdown_desc">After the selected pause duration, remove the playback notification and stop the foreground playback service to reduce battery use. The queue and progress are kept.</string>
     <string name="settings_playback_idle_shutdown_dialog_title">Exit after being paused for</string>
     <string name="settings_playback_idle_shutdown_off">Never</string>
-    <string name="settings_playback_idle_shutdown_minutes">%1$d minutes</string>
     <string name="settings_clear_config">Clear Configuration</string>
     <string name="settings_ui_scale">UI Scale</string>
     <string name="settings_ui_scale_dpi">UI Scale (DPI)</string>
@@ -1321,7 +1319,6 @@
     <string name="storage_details_subtitle">Actual space used by directories:</string>
     <string name="storage_details_loading">Calculating directory usage, please wait…</string>
     <string name="storage_details_total">Total</string>
-    <string name="storage_details_file_count">%1$d files</string>
     <string name="storage_details_warning_title">⚠️ System Settings Inaccurate?</string>
     <string name="storage_details_warning_message">If system shows much more than here, it\'s an Android cache issue.\n\nSolutions:\n1. Restart device\n2. Wait for system update\n3. Open system settings</string>
     <string name="storage_open_system_settings">Open System Settings</string>
@@ -1435,8 +1432,6 @@
     <string name="sync_last_time">Last sync: %s</string>
     <string name="sync_frequency_desc">Sync frequency:</string>
     <string name="sync_after_play_desc">After each play</string>
-    <string name="sync_every_minutes">Every %1$d minutes</string>
-    <string name="sync_every_minutes_desc">Wait at least %1$d minutes between automatic play history syncs</string>
     <string name="sync_step1_token">Step 1: Enter GitHub Token</string>
     <string name="sync_create_token">Create Token on GitHub</string>
     <string name="sync_step2_repo">Step 2: Select Repository</string>
@@ -1493,7 +1488,6 @@
     <string name="settings_sync_now">Sync Now</string>
     <string name="settings_play_history_update_freq">Play History Update Frequency</string>
     <string name="settings_update_immediate">Immediate Update</string>
-    <string name="settings_update_every_minutes">Update every %1$d minutes</string>
     <string name="settings_data_saver">Data Saver</string>
     <string name="github_auto_sync">GitHub Auto Sync</string>
     <string name="github_sync_warning_title">GitHub Sync Configuration Warning</string>
@@ -1649,7 +1643,7 @@
     <string name="settings_listen_together_server_input_placeholder">Leave empty to use the built-in default server</string>
     <string name="settings_listen_together_server_input_invalid">Invalid server address. Enter a full http:// or https:// address.</string>
     <string name="listen_together_invite_server_invalid">The invite contains an invalid server address, so this room cannot be joined.</string>
-    <string name="listen_together_error_room_id_length">Room ID must be %1$d characters.</string>
+    <string name="listen_together_error_room_id_length">Room ID length must be %1$d.</string>
     <string name="listen_together_error_room_id_chars">Room ID only supports uppercase letters and digits.</string>
     <string name="listen_together_error_user_uuid_required">User UUID is required.</string>
     <string name="listen_together_error_user_uuid_invalid">User UUID format is invalid.</string>
@@ -1658,7 +1652,7 @@
     <string name="listen_together_error_current_track_missing">No track is playing, so a Listen Together room cannot be created.</string>
     <string name="listen_together_error_current_track_not_shareable">Local or unshareable tracks cannot create a Listen Together room. Switch to an online track.</string>
     <string name="listen_together_error_current_track_unavailable">The current track is not in the playback queue and cannot create a Listen Together room.</string>
-    <string name="listen_together_error_nickname_length">Nickname length must be %1$d-%2$d characters.</string>
+    <string name="listen_together_error_nickname_length">Nickname length must be from %1$d to %2$d.</string>
     <string name="listen_together_error_nickname_chars">Nickname only supports Chinese characters, letters, and digits.</string>
     <string name="settings_listen_together_server_test">Test Availability</string>
     <string name="settings_listen_together_server_saved">Listen Together server setting saved.</string>
@@ -1706,10 +1700,8 @@
     <string name="traffic_risk_network_roaming">roaming network</string>
     <string name="traffic_risk_download_title">Confirm download</string>
     <string name="traffic_risk_download_single_message">You are using %1$s. Downloading “%2$s” may use a lot of data.</string>
-    <string name="traffic_risk_download_batch_message">You are using %1$s. Downloading %2$d songs may use a lot of data.</string>
     <string name="traffic_risk_download_confirm">Continue download</string>
     <string name="mobile_data_download_interruption_title">Wi-Fi disconnected</string>
-    <string name="mobile_data_download_interruption_message">You switched to %1$s. %2$d active download tasks are paused. Choose what to do next.</string>
     <string name="mobile_data_download_wait_wifi">Wait for Wi-Fi</string>
     <string name="mobile_data_download_cancel_all">Cancel all tasks</string>
 
@@ -2050,7 +2042,7 @@
     <string name="disclaimer_section5_bullet6">NeriPlayer does not include third-party analytics, crash reporting, or advertising SDKs.</string>
     <string name="disclaimer_section5_bullet7">Access logs created by third-party platforms are handled by those platforms under their own privacy policies.</string>
     <string name="disclaimer_section5_bullet8">GitHub Sync (optional): users may back up playlist data to their own private GitHub repository. Tokens are encrypted with Android Keystore and stored locally, so the developer cannot access them.</string>
-    <string name="disclaimer_section5_bullet9">Last updated: 2025-01-07.</string>
+    <string name="disclaimer_section5_bullet9">Last updated: January 7, 2025.</string>
     <string name="disclaimer_section6_bullet1">NeriPlayer is provided &quot;as is&quot; without warranties, including warranties of stability or uninterrupted availability.</string>
     <string name="disclaimer_section6_bullet2">To the extent permitted by law, the developer is not liable for losses arising from use of the app, including download-related actions.</string>
     <string name="disclaimer_section6_bullet3">The above limitations apply even if the developer has been advised of the possibility of such losses.</string>

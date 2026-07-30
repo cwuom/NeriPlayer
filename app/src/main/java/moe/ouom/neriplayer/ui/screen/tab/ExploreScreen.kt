@@ -99,7 +99,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.pluralStringResource
@@ -142,6 +141,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.SearchSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
+import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
@@ -260,8 +260,8 @@ fun ExploreScreen(
         pageCount = { orderedSearchSources.size }
     )
     val miniPlayerHeight = LocalMiniPlayerHeight.current
-    val configuration = LocalConfiguration.current
-    val isTabletLayout = configuration.screenWidthDp >= 720
+    val windowWidthDp = currentWindowWidthDp()
+    val isTabletLayout = windowWidthDp >= 720.dp
     val searchPanelHorizontalPadding = if (isTabletLayout) 28.dp else 16.dp
     val searchResultHorizontalPadding = if (isTabletLayout) 88.dp else 0.dp
     val tagChipSelectedAlpha = if (backgroundImageUri == null) 1f else 0.86f

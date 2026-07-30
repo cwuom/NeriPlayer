@@ -966,8 +966,9 @@ internal fun NowPlayingQueueSheet(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = stringResource(
-                                    R.string.nowplaying_queue_count_format,
+                                text = pluralStringResource(
+                                    R.plurals.nowplaying_queue_count_format,
+                                    displayedQueue.size,
                                     displayedQueue.size
                                 ),
                                 style = MaterialTheme.typography.bodyMedium,

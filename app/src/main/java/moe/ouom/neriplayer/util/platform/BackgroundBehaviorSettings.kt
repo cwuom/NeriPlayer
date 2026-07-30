@@ -5,10 +5,10 @@ import android.app.AppOpsManager
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.core.net.toUri
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 private const val BACKGROUND_BEHAVIOR_TAG = "NERI-BackgroundBehavior"
@@ -31,7 +31,6 @@ fun Context.readBackgroundBehaviorAllowance(): BackgroundBehaviorAllowance {
 }
 
 fun Context.isIgnoringBatteryOptimizationsCompat(): Boolean {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
     val powerManager = getSystemService(PowerManager::class.java) ?: return false
     return powerManager.isIgnoringBatteryOptimizations(packageName)
 }
@@ -44,10 +43,9 @@ fun Context.areBackgroundAppOpsAllowedCompat(): Boolean {
 
 @SuppressLint("BatteryLife")
 fun Context.requestIgnoreBatteryOptimizationsCompat(): Boolean {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
     if (isIgnoringBatteryOptimizationsCompat()) return true
 
-    val packageUri = Uri.parse("package:$packageName")
+    val packageUri = "package:$packageName".toUri()
     val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, packageUri)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     return startActivitySafely(intent) {
@@ -56,7 +54,7 @@ fun Context.requestIgnoreBatteryOptimizationsCompat(): Boolean {
 }
 
 fun Context.openAppBackgroundSettings(): Boolean {
-    val packageUri = Uri.parse("package:$packageName")
+    val packageUri = "package:$packageName".toUri()
     val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     return startActivitySafely(intent) {

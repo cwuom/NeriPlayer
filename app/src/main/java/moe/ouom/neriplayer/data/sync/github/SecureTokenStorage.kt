@@ -27,6 +27,7 @@ package moe.ouom.neriplayer.data.sync.github
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.annotation.SuppressLint
 import androidx.core.content.edit
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
@@ -150,11 +151,14 @@ class SecureTokenStorage(private val context: Context) {
         require(deviceId.isNotBlank()) { "Device ID must not be blank" }
         synchronized(syncCausalTokenLock) {
             val deviceChanged = getDeviceId() != deviceId
-            val editor = encryptedPrefs.edit().putString(KEY_DEVICE_ID, deviceId)
-            if (deviceChanged) {
-                editor.remove(KEY_SYNC_CAUSAL_COUNTER)
-            }
-            check(editor.commit()) { "Failed to persist sync causal device state" }
+            check(
+                encryptedPrefs.commitEdit {
+                    putString(KEY_DEVICE_ID, deviceId)
+                    if (deviceChanged) {
+                        remove(KEY_SYNC_CAUSAL_COUNTER)
+                    }
+                }
+            ) { "Failed to persist sync causal device state" }
         }
     }
 
@@ -184,9 +188,9 @@ class SecureTokenStorage(private val context: Context) {
             val nextCounter = Math.addExact(currentCounter, count.toLong())
             // token 范围必须先落盘，避免崩溃后重复分配
             check(
-                encryptedPrefs.edit()
-                    .putLong(KEY_SYNC_CAUSAL_COUNTER, nextCounter)
-                    .commit()
+                encryptedPrefs.commitEdit {
+                    putLong(KEY_SYNC_CAUSAL_COUNTER, nextCounter)
+                }
             ) { "Failed to persist sync causal counter" }
 
             List(count) { index ->
@@ -264,11 +268,13 @@ class SecureTokenStorage(private val context: Context) {
             val timestamps = readDeletedPlaylistTimestampsLocked().toMutableMap()
             current.add(playlistId)
             timestamps.putIfAbsent(playlistId, System.currentTimeMillis().coerceAtLeast(1L))
-            val editor = encryptedPrefs.edit()
-                .putString(KEY_DELETED_PLAYLIST_IDS, current.joinToString(","))
-                .putString(KEY_DELETED_PLAYLIST_TIMESTAMPS, gson.toJson(timestamps))
-            bumpSyncMutationVersion(editor)
-            check(editor.commit()) { "Failed to persist deleted playlist state" }
+            check(
+                encryptedPrefs.commitEdit {
+                    putString(KEY_DELETED_PLAYLIST_IDS, current.joinToString(","))
+                    putString(KEY_DELETED_PLAYLIST_TIMESTAMPS, gson.toJson(timestamps))
+                    bumpSyncMutationVersion(this)
+                }
+            ) { "Failed to persist deleted playlist state" }
         }
     }
 
@@ -290,10 +296,12 @@ class SecureTokenStorage(private val context: Context) {
             if (missingIds.isNotEmpty()) {
                 val fallbackTimestamp = System.currentTimeMillis().coerceAtLeast(1L)
                 missingIds.forEach { id -> timestamps[id] = fallbackTimestamp }
-                val editor = encryptedPrefs.edit()
-                    .putString(KEY_DELETED_PLAYLIST_TIMESTAMPS, gson.toJson(timestamps))
-                bumpSyncMutationVersion(editor)
-                check(editor.commit()) { "Failed to migrate deleted playlist timestamps" }
+                check(
+                    encryptedPrefs.commitEdit {
+                        putString(KEY_DELETED_PLAYLIST_TIMESTAMPS, gson.toJson(timestamps))
+                        bumpSyncMutationVersion(this)
+                    }
+                ) { "Failed to migrate deleted playlist timestamps" }
             }
             timestamps
                 .filterKeys(ids::contains)
@@ -307,11 +315,13 @@ class SecureTokenStorage(private val context: Context) {
             if (readDeletedPlaylistIdsLocked().isEmpty()) {
                 return
             }
-            val editor = encryptedPrefs.edit()
-                .remove(KEY_DELETED_PLAYLIST_IDS)
-                .remove(KEY_DELETED_PLAYLIST_TIMESTAMPS)
-            bumpSyncMutationVersion(editor)
-            check(editor.commit()) { "Failed to clear deleted playlist state" }
+            check(
+                encryptedPrefs.commitEdit {
+                    remove(KEY_DELETED_PLAYLIST_IDS)
+                    remove(KEY_DELETED_PLAYLIST_TIMESTAMPS)
+                    bumpSyncMutationVersion(this)
+                }
+            ) { "Failed to clear deleted playlist state" }
         }
     }
 
@@ -327,16 +337,18 @@ class SecureTokenStorage(private val context: Context) {
             }
             val timestamps = readDeletedPlaylistTimestampsLocked()
                 .filterKeys(remaining::contains)
-            val editor = encryptedPrefs.edit()
-            if (remaining.isEmpty()) {
-                editor.remove(KEY_DELETED_PLAYLIST_IDS)
-                    .remove(KEY_DELETED_PLAYLIST_TIMESTAMPS)
-            } else {
-                editor.putString(KEY_DELETED_PLAYLIST_IDS, remaining.joinToString(","))
-                    .putString(KEY_DELETED_PLAYLIST_TIMESTAMPS, gson.toJson(timestamps))
-            }
-            bumpSyncMutationVersion(editor)
-            check(editor.commit()) { "Failed to remove deleted playlist state" }
+            check(
+                encryptedPrefs.commitEdit {
+                    if (remaining.isEmpty()) {
+                        remove(KEY_DELETED_PLAYLIST_IDS)
+                        remove(KEY_DELETED_PLAYLIST_TIMESTAMPS)
+                    } else {
+                        putString(KEY_DELETED_PLAYLIST_IDS, remaining.joinToString(","))
+                        putString(KEY_DELETED_PLAYLIST_TIMESTAMPS, gson.toJson(timestamps))
+                    }
+                    bumpSyncMutationVersion(this)
+                }
+            ) { "Failed to remove deleted playlist state" }
         }
     }
 
@@ -543,18 +555,20 @@ class SecureTokenStorage(private val context: Context) {
             if (encryptedPrefs.getLong(KEY_SYNC_MUTATION_VERSION, 0L) != expectedMutationVersion) {
                 return@synchronized false
             }
-            val editor = encryptedPrefs.edit()
-            if (normalizedRecent.isEmpty()) {
-                editor.remove(KEY_RECENT_PLAY_DELETIONS)
-            } else {
-                editor.putString(KEY_RECENT_PLAY_DELETIONS, gson.toJson(normalizedRecent))
-            }
-            if (normalizedPlaylist.isEmpty()) {
-                editor.remove(KEY_PLAYLIST_SONG_DELETIONS)
-            } else {
-                editor.putString(KEY_PLAYLIST_SONG_DELETIONS, gson.toJson(normalizedPlaylist))
-            }
-            check(editor.commit()) { "Failed to persist guarded sync deletion state" }
+            check(
+                encryptedPrefs.commitEdit {
+                    if (normalizedRecent.isEmpty()) {
+                        remove(KEY_RECENT_PLAY_DELETIONS)
+                    } else {
+                        putString(KEY_RECENT_PLAY_DELETIONS, gson.toJson(normalizedRecent))
+                    }
+                    if (normalizedPlaylist.isEmpty()) {
+                        remove(KEY_PLAYLIST_SONG_DELETIONS)
+                    } else {
+                        putString(KEY_PLAYLIST_SONG_DELETIONS, gson.toJson(normalizedPlaylist))
+                    }
+                }
+            ) { "Failed to persist guarded sync deletion state" }
             true
         }
     }
@@ -587,9 +601,12 @@ class SecureTokenStorage(private val context: Context) {
 
     fun markSyncMutation(): Long {
         return synchronized(syncMutationLock) {
-            val editor = encryptedPrefs.edit()
-            val nextVersion = bumpSyncMutationVersion(editor)
-            check(editor.commit()) { "Failed to persist sync mutation version" }
+            var nextVersion = 0L
+            check(
+                encryptedPrefs.commitEdit {
+                    nextVersion = bumpSyncMutationVersion(this)
+                }
+            ) { "Failed to persist sync mutation version" }
             nextVersion
         }
     }
@@ -604,16 +621,18 @@ class SecureTokenStorage(private val context: Context) {
         deletions: List<SyncRecentPlayDeletion>,
         bumpVersion: Boolean
     ) {
-        val editor = encryptedPrefs.edit()
-        if (deletions.isEmpty()) {
-            editor.remove(KEY_RECENT_PLAY_DELETIONS)
-        } else {
-            editor.putString(KEY_RECENT_PLAY_DELETIONS, gson.toJson(deletions))
-        }
-        if (bumpVersion) {
-            bumpSyncMutationVersion(editor)
-        }
-        check(editor.commit()) { "Failed to persist recent play deletion state" }
+        check(
+            encryptedPrefs.commitEdit {
+                if (deletions.isEmpty()) {
+                    remove(KEY_RECENT_PLAY_DELETIONS)
+                } else {
+                    putString(KEY_RECENT_PLAY_DELETIONS, gson.toJson(deletions))
+                }
+                if (bumpVersion) {
+                    bumpSyncMutationVersion(this)
+                }
+            }
+        ) { "Failed to persist recent play deletion state" }
     }
 
     private fun persistPlaylistSongDeletionsLocked(
@@ -621,16 +640,18 @@ class SecureTokenStorage(private val context: Context) {
         bumpVersion: Boolean
     ) {
         val normalized = normalizePlaylistSongDeletions(deletions)
-        val editor = encryptedPrefs.edit()
-        if (normalized.isEmpty()) {
-            editor.remove(KEY_PLAYLIST_SONG_DELETIONS)
-        } else {
-            editor.putString(KEY_PLAYLIST_SONG_DELETIONS, gson.toJson(normalized))
-        }
-        if (bumpVersion) {
-            bumpSyncMutationVersion(editor)
-        }
-        check(editor.commit()) { "Failed to persist playlist deletion state" }
+        check(
+            encryptedPrefs.commitEdit {
+                if (normalized.isEmpty()) {
+                    remove(KEY_PLAYLIST_SONG_DELETIONS)
+                } else {
+                    putString(KEY_PLAYLIST_SONG_DELETIONS, gson.toJson(normalized))
+                }
+                if (bumpVersion) {
+                    bumpSyncMutationVersion(this)
+                }
+            }
+        ) { "Failed to persist playlist deletion state" }
     }
 
     fun snapshot(): GitHubSyncConfigSnapshot {
@@ -681,4 +702,14 @@ class SecureTokenStorage(private val context: Context) {
     ): List<SyncPlaylistSongDeletion> {
         return SyncPlaylistDeletionPolicy.limitDeletions(deletions)
     }
+}
+
+@SuppressLint("UseKtx")
+private inline fun SharedPreferences.commitEdit(
+    action: SharedPreferences.Editor.() -> Unit
+): Boolean {
+    // androidx edit(commit = true) does not expose commit failure
+    val editor = edit()
+    editor.action()
+    return editor.commit()
 }

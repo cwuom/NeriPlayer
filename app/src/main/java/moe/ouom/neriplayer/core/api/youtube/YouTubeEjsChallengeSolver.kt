@@ -106,28 +106,15 @@ internal class YouTubeEjsChallengeSolver(
         // JavaScriptSandbox 每进程只能绑定一次，而播放与下载各持一个 solver 实例，
         // 各自 createConnectedInstanceAsync 时第二个必抛 Binding to already bound service，
         // 绑定成本高所以常驻复用，只按次创建 isolate
-        private val sharedSandboxLock = Any()
-
-        @Volatile
-        private var sharedSandbox: JavaScriptSandbox? = null
+        private val sharedSandboxHolder = SharedJavaScriptSandboxHolder()
 
         private fun obtainSharedSandbox(context: Context): JavaScriptSandbox {
-            sharedSandbox?.let { return it }
-            return synchronized(sharedSandboxLock) {
-                sharedSandbox ?: JavaScriptSandbox
-                    .createConnectedInstanceAsync(context)
-                    .get(SCRIPT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                    .also { sharedSandbox = it }
-            }
+            return sharedSandboxHolder.obtain(context, SCRIPT_TIMEOUT_SECONDS)
         }
 
         /** 沙箱失效时丢弃，下次 solve 重新绑定 */
         private fun invalidateSharedSandbox() {
-            synchronized(sharedSandboxLock) {
-                val stale = sharedSandbox
-                sharedSandbox = null
-                runCatching { stale?.close() }
-            }
+            sharedSandboxHolder.invalidate()
         }
     }
 
@@ -605,6 +592,32 @@ internal class YouTubeEjsChallengeSolver(
 
     private fun closeQuietly(sandbox: JavaScriptSandbox) {
         runCatching { sandbox.close() }
+    }
+
+    private class SharedJavaScriptSandboxHolder {
+        private val lock = Any()
+
+        @Volatile
+        private var sandbox: JavaScriptSandbox? = null
+
+        fun obtain(context: Context, timeoutSeconds: Long): JavaScriptSandbox {
+            sandbox?.let { return it }
+            val appContext = context.applicationContext
+            return synchronized(lock) {
+                sandbox ?: JavaScriptSandbox
+                    .createConnectedInstanceAsync(appContext)
+                    .get(timeoutSeconds, TimeUnit.SECONDS)
+                    .also { sandbox = it }
+            }
+        }
+
+        fun invalidate() {
+            synchronized(lock) {
+                val stale = sandbox
+                sandbox = null
+                runCatching { stale?.close() }
+            }
+        }
     }
 }
 

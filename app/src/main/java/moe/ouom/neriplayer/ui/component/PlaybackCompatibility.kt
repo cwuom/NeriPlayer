@@ -89,10 +89,10 @@ fun WaveformSlider(
     onValueChange: (Float) -> Unit,
     onValueChangeFinished: () -> Unit,
     isPlaying: Boolean,
+    modifier: Modifier = Modifier,
     onValueChangeStarted: (Float) -> Unit = {},
     onValueChangeCanceled: () -> Unit = {},
     enabled: Boolean = true,
-    modifier: Modifier = Modifier,
     isPlaybackWaiting: Boolean = false
 ) {
     moe.ouom.neriplayer.ui.component.playback.WaveformSlider(

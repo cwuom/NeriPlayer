@@ -12,6 +12,18 @@
     <plurals name="time_minutes_only">
         <item quantity="other">%d分钟</item>
     </plurals>
+    <plurals name="settings_playback_idle_shutdown_minutes">
+        <item quantity="other">%1$d 分钟</item>
+    </plurals>
+    <plurals name="sync_every_minutes">
+        <item quantity="other">每%1$d分钟同步</item>
+    </plurals>
+    <plurals name="sync_every_minutes_desc">
+        <item quantity="other">播放历史变更后，至少间隔%1$d分钟再同步到云端</item>
+    </plurals>
+    <plurals name="settings_update_every_minutes">
+        <item quantity="other">每%1$d分钟更新</item>
+    </plurals>
     <plurals name="time_hours_minutes">
         <item quantity="other">%1$d小时%2$s</item>
     </plurals>

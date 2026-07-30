@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
@@ -71,6 +72,6 @@ private fun playbackServiceIdleShutdownLabel(minutes: Int): String {
     return if (minutes == 0) {
         stringResource(R.string.settings_playback_idle_shutdown_off)
     } else {
-        stringResource(R.string.settings_playback_idle_shutdown_minutes, minutes)
+        pluralStringResource(R.plurals.settings_playback_idle_shutdown_minutes, minutes, minutes)
     }
 }

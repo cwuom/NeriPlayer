@@ -1123,7 +1123,9 @@ fun LocalPlaylistDetailScreen(
                 coverUrl = headerCover,
                 offlineMode = offlineMode
             )
-            val playlistChromeCollapsed = reorderState.listState.firstVisibleItemIndex > 0
+            val playlistChromeCollapsed by remember(reorderState.listState) {
+                derivedStateOf { reorderState.listState.firstVisibleItemIndex > 0 }
+            }
             val playlistTopBarColor = if (playlistChromeCollapsed) {
                 playlistModernCollapsedTopBarColor()
             } else {

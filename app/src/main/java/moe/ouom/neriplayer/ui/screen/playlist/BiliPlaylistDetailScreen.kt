@@ -233,7 +233,9 @@ fun BiliPlaylistDetailScreen(
         coverUrl = displayHeader.coverUrl,
         offlineMode = offlineMode
     )
-    val playlistChromeCollapsed = listState.firstVisibleItemIndex > 0
+    val playlistChromeCollapsed by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 }
+    }
     val playlistTopBarColor = if (playlistChromeCollapsed) {
         playlistModernCollapsedTopBarColor()
     } else {

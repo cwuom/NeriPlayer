@@ -16,6 +16,22 @@
         <item quantity="one">%d minute</item>
         <item quantity="other">%d minutes</item>
     </plurals>
+    <plurals name="settings_playback_idle_shutdown_minutes">
+        <item quantity="one">%1$d minute</item>
+        <item quantity="other">%1$d minutes</item>
+    </plurals>
+    <plurals name="sync_every_minutes">
+        <item quantity="one">Every %1$d minute</item>
+        <item quantity="other">Every %1$d minutes</item>
+    </plurals>
+    <plurals name="sync_every_minutes_desc">
+        <item quantity="one">Wait at least %1$d minute between automatic play history syncs</item>
+        <item quantity="other">Wait at least %1$d minutes between automatic play history syncs</item>
+    </plurals>
+    <plurals name="settings_update_every_minutes">
+        <item quantity="one">Update every %1$d minute</item>
+        <item quantity="other">Update every %1$d minutes</item>
+    </plurals>
     <plurals name="time_hours_minutes">
         <item quantity="one">%1$d hour %2$s</item>
         <item quantity="other">%1$d hours %2$s</item>

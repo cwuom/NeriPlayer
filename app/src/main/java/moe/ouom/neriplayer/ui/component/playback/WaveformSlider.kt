@@ -82,10 +82,10 @@ fun WaveformSlider(
     onValueChange: (Float) -> Unit,
     onValueChangeFinished: () -> Unit,
     isPlaying: Boolean,
+    modifier: Modifier = Modifier,
     onValueChangeStarted: (Float) -> Unit = {},
     onValueChangeCanceled: () -> Unit = {},
     enabled: Boolean = true,
-    modifier: Modifier = Modifier,
     isPlaybackWaiting: Boolean = false
 ) {
     val activeColor = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else 0.55f)

@@ -39,6 +39,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.coordinatorlayout.widget.CoordinatorLayout
+import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -799,7 +800,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
         if (offSiteLoginReturns >= MAX_OFF_SITE_LOGIN_RETURNS) {
             return false
         }
-        val host = runCatching { Uri.parse(url.orEmpty()).host }
+        val host = runCatching { url.orEmpty().toUri().host }
             .getOrNull()
             ?.lowercase()
             .orEmpty()

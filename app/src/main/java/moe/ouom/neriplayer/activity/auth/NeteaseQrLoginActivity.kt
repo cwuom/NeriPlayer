@@ -22,6 +22,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.graphics.ColorUtils
+import androidx.core.graphics.createBitmap
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -455,7 +456,7 @@ class NeteaseQrLoginActivity : ComponentActivity() {
                 pixels[rowOffset + x] = if (matrix[x, y]) Color.BLACK else Color.WHITE
             }
         }
-        return Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888).apply {
+        return createBitmap(sizePx, sizePx).apply {
             setPixels(pixels, 0, sizePx, 0, 0, sizePx, sizePx)
         }
     }

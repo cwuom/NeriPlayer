@@ -19,12 +19,13 @@ import androidx.core.content.ContextCompat
 fun isActualSystemDarkTheme(context: Context): Boolean {
     val applicationContext = context.applicationContext
     val uiModeManager = ContextCompat.getSystemService(applicationContext, UiModeManager::class.java)
-    when (uiModeManager?.nightMode) {
-        UiModeManager.MODE_NIGHT_YES -> return true
-        UiModeManager.MODE_NIGHT_NO -> return false
-        UiModeManager.MODE_NIGHT_AUTO,
-        UiModeManager.MODE_NIGHT_CUSTOM,
-        null -> Unit
+    if (uiModeManager != null) {
+        when (uiModeManager.nightMode) {
+            UiModeManager.MODE_NIGHT_YES -> return true
+            UiModeManager.MODE_NIGHT_NO -> return false
+            UiModeManager.MODE_NIGHT_AUTO,
+            UiModeManager.MODE_NIGHT_CUSTOM -> Unit
+        }
     }
 
     val appNightMode = applicationContext.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK

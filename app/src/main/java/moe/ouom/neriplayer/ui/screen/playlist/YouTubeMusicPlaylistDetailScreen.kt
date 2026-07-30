@@ -78,6 +78,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -231,7 +232,9 @@ fun YouTubeMusicPlaylistDetailScreen(
         coverUrl = resolvedPlaylist.coverUrl,
         offlineMode = offlineMode
     )
-    val playlistChromeCollapsed = listState.firstVisibleItemIndex > 0
+    val playlistChromeCollapsed by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 }
+    }
     val playlistTopBarColor = if (playlistChromeCollapsed) {
         playlistModernCollapsedTopBarColor()
     } else {

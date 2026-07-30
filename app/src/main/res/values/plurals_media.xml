@@ -27,6 +27,9 @@
     <plurals name="nowplaying_song_count_format">
         <item quantity="other">%d 首</item>
     </plurals>
+    <plurals name="nowplaying_queue_count_format">
+        <item quantity="other">共 %d 首</item>
+    </plurals>
     <plurals name="download_scan_failed">
         <item quantity="other">扫描失败 %d 项</item>
     </plurals>

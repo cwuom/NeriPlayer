@@ -23,7 +23,6 @@ package moe.ouom.neriplayer.ui.screen.tab
  * Created: 2025/8/8
  */
 
-import android.annotation.SuppressLint
 import android.app.Application
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -129,6 +128,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
+import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeItem
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicParser
@@ -234,8 +234,8 @@ fun HomeScreen(
     val showNeteaseRadar = showRadarCard && (isInternational || ui.hasLogin)
     val showOnlineFeeds = !offlineMode
     var wasOffline by remember { mutableStateOf(offlineMode) }
-    val configuration = LocalConfiguration.current
-    val isTabletLayout = configuration.screenWidthDp >= 720
+    val windowWidthDp = currentWindowWidthDp()
+    val isTabletLayout = windowWidthDp >= 720.dp
     val pageHorizontalPadding = if (isTabletLayout) 28.dp else 16.dp
     val gridMinCellSize = if (isTabletLayout) 156.dp else 120.dp
     val gridContentPadding = if (isTabletLayout) 14.dp else 8.dp
@@ -1319,14 +1319,13 @@ private fun ContinueCard(
     }
 }
 
-@SuppressLint("ConfigurationScreenWidthHeight")
 @Composable
 private fun ResponsiveSongPagerList(
     songs: List<SongItem>,
     onSongClick: (List<SongItem>, Int) -> Unit,
     offlineMode: Boolean
 ) {
-    val widthDp = LocalConfiguration.current.screenWidthDp
+    val widthDp = currentWindowWidthDp().value
     val columns = when {
         widthDp >= 840 -> 3
         widthDp >= 600 -> 2

@@ -94,7 +94,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -181,6 +180,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.backTargetPage
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.miuixSettingsSectionCardItem
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
+import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.ui.viewmodel.BackupRestoreViewModel
 import moe.ouom.neriplayer.ui.viewmodel.ConfigTransferViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthEvent
@@ -930,7 +930,7 @@ fun SettingsScreen(
         }
     }
 
-    val isSettingsSplitLayout = LocalConfiguration.current.screenWidthDp >= 840
+    val isSettingsSplitLayout = currentWindowWidthDp() >= 840.dp
     var activeSettingsPage by rememberSaveable {
         mutableStateOf<SettingsPage?>(if (isSettingsSplitLayout) SettingsPage.General else null)
     }

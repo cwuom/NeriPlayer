@@ -100,12 +100,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.edit
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
@@ -140,6 +140,7 @@ import moe.ouom.neriplayer.ui.util.rememberPlaylistDisplayCoverUrl
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.util.format.formatPlayCount
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import org.burnoutcrew.reorderable.ItemPosition
@@ -191,9 +192,9 @@ private fun readLocalArtistSortMode(context: Context): LocalArtistSortMode {
 
 private fun persistLocalArtistSortMode(context: Context, sortMode: LocalArtistSortMode) {
     context.getSharedPreferences(LIBRARY_UI_PREFS, Context.MODE_PRIVATE)
-        .edit()
-        .putString(KEY_LOCAL_ARTIST_SORT_MODE, localArtistSortModeStorageValue(sortMode))
-        .apply()
+        .edit {
+            putString(KEY_LOCAL_ARTIST_SORT_MODE, localArtistSortModeStorageValue(sortMode))
+        }
 }
 
 internal fun libraryTabDisplayOrder(
@@ -279,8 +280,8 @@ fun LibraryScreen(
         pageCount = { orderedTabs.size }
     )
     val scope = rememberCoroutineScope()
-    val configuration = LocalConfiguration.current
-    val isTabletLayout = configuration.screenWidthDp >= 720
+    val windowWidthDp = currentWindowWidthDp()
+    val isTabletLayout = windowWidthDp >= 720.dp
     val pageHorizontalPadding = if (isTabletLayout) 28.dp else 0.dp
 
     LaunchedEffect(initialTab, orderedTabs) {
@@ -1050,9 +1051,9 @@ private fun LocalPlaylistList(
         displayedFavoritesPlaylist != null ||
             displayedPlaylists.isNotEmpty() ||
             displayedLocalFilesPlaylist != null
-    val configuration = LocalConfiguration.current
-    val localArtistColumnCount = remember(configuration.screenWidthDp) {
-        ((configuration.screenWidthDp - 16 + 10) / 130).coerceAtLeast(1)
+    val windowWidthDp = currentWindowWidthDp()
+    val localArtistColumnCount = remember(windowWidthDp) {
+        ((windowWidthDp.value - 16f + 10f) / 130f).toInt().coerceAtLeast(1)
     }
     val localArtistRows = remember(displayedLocalArtists, localArtistColumnCount) {
         displayedLocalArtists.chunked(localArtistColumnCount)

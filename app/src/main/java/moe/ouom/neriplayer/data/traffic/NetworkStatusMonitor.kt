@@ -92,8 +92,7 @@ private fun ConnectivityManager.currentTrafficNetworkType(): TrafficNetworkType 
         hasCellularTransport = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR),
         hasWifiTransport = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI),
         hasEthernetTransport = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET),
-        isNotRoaming = Build.VERSION.SDK_INT < Build.VERSION_CODES.P ||
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING),
+        isNotRoaming = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING),
         isNotMetered = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
     )
 }.getOrDefault(TrafficNetworkType.MOBILE)
