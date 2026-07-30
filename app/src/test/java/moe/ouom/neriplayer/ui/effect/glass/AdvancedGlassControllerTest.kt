@@ -95,6 +95,13 @@ class AdvancedGlassControllerTest {
         assertFalse(
             canSampleAdvancedGlassBackdrop(
                 controller,
+                glassDepth = 1,
+                role = AdvancedGlassRole.PlaylistSheet
+            )
+        )
+        assertFalse(
+            canSampleAdvancedGlassBackdrop(
+                controller,
                 glassDepth = 0,
                 role = AdvancedGlassRole.InlineControl
             )
@@ -137,6 +144,10 @@ class AdvancedGlassControllerTest {
         )
         val top = advancedGlassTokens(AdvancedGlassRole.ScreenTopTab, isDarkTheme = false)
         val settings = advancedGlassTokens(AdvancedGlassRole.SettingsSection, isDarkTheme = true)
+        val playlistSheet = advancedGlassTokens(
+            AdvancedGlassRole.PlaylistSheet,
+            isDarkTheme = false
+        )
         val adjustable = advancedGlassTokens(
             role = AdvancedGlassRole.SettingsSection,
             isDarkTheme = false,
@@ -148,8 +159,12 @@ class AdvancedGlassControllerTest {
         assertEquals(0.75f, darkBottom.tintAlpha)
         assertEquals(22f, top.blurRadiusDp)
         assertEquals(0.28f, settings.tintAlpha)
+        assertEquals(24f, playlistSheet.blurRadiusDp)
+        assertEquals(0.18f, playlistSheet.tintAlpha)
+        assertEquals(0.08f, playlistSheet.edgeAlpha)
         assertEquals(52f, adjustable.blurRadiusDp)
         assertTrue(bottom.samplesBackdrop)
+        assertTrue(playlistSheet.samplesBackdrop)
     }
 
     @Test

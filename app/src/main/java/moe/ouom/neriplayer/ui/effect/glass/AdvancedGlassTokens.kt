@@ -46,6 +46,11 @@ internal fun advancedGlassTokens(
             tintAlpha = if (isDarkTheme) 0.28f else 0.32f,
             edgeAlpha = 0.10f
         )
+        AdvancedGlassRole.PlaylistSheet -> AdvancedGlassTokens(
+            blurRadiusDp = adjustableRadiusDp ?: 24f,
+            tintAlpha = if (isDarkTheme) 0.24f else 0.18f,
+            edgeAlpha = 0.08f
+        )
         AdvancedGlassRole.SemanticCard -> AdvancedGlassTokens(
             blurRadiusDp = adjustableRadiusDp ?: 22f,
             tintAlpha = if (isDarkTheme) 0.42f else 0.46f,

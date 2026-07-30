@@ -53,7 +53,7 @@ class NeriBottomBarFallbackPolicyTest {
     }
 
     @Test
-    fun solidThemeOrRequestedBlurKeepsAnOpaqueFailureFallback() {
+    fun solidThemeOrRequestedBlurKeepsATranslucentFailureFallback() {
         assertTrue(
             shouldUseOpaqueBottomBarFallback(
                 selectAlpha = 1f,
@@ -65,6 +65,26 @@ class NeriBottomBarFallbackPolicyTest {
                 selectAlpha = 0f,
                 baseBlurRequested = true
             )
+        )
+    }
+
+    @Test
+    fun fallbackUsesScrimSoBackgroundCanRemainVisible() {
+        assertEquals(
+            BOTTOM_BAR_FALLBACK_SCRIM_ALPHA,
+            resolveBottomBarFallbackScrimAlpha(
+                selectAlpha = 0f,
+                baseBlurRequested = true
+            ),
+            0f
+        )
+        assertEquals(
+            0f,
+            resolveBottomBarFallbackScrimAlpha(
+                selectAlpha = 0f,
+                baseBlurRequested = false
+            ),
+            0f
         )
     }
 }

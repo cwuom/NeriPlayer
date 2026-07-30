@@ -48,6 +48,7 @@ import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassController
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 
 internal const val DEFAULT_BOTTOM_BAR_SELECTION_ALPHA = 0.72f
+internal const val BOTTOM_BAR_FALLBACK_SCRIM_ALPHA = 0.28f
 
 internal fun resolveBottomBarSelectionAlpha(
     hasCustomBackground: Boolean,
@@ -69,10 +70,12 @@ fun NeriBottomBar(
     val context = LocalContext.current
     val alwaysShowLabel = selectAlpha != 0f
     val baseBlurRequested = LocalAdvancedGlassController.current.isBaseBlurRequested
-    val fallbackColor = if (
-        shouldUseOpaqueBottomBarFallback(selectAlpha, baseBlurRequested)
-    ) {
-        MaterialTheme.colorScheme.background
+    val fallbackScrimAlpha = resolveBottomBarFallbackScrimAlpha(
+        selectAlpha = selectAlpha,
+        baseBlurRequested = baseBlurRequested
+    )
+    val fallbackColor = if (fallbackScrimAlpha > 0f) {
+        MaterialTheme.colorScheme.background.copy(alpha = fallbackScrimAlpha)
     } else {
         Color.Transparent
     }
@@ -128,3 +131,12 @@ internal fun shouldUseOpaqueBottomBarFallback(
     selectAlpha: Float,
     baseBlurRequested: Boolean
 ): Boolean = selectAlpha != 0f || baseBlurRequested
+
+internal fun resolveBottomBarFallbackScrimAlpha(
+    selectAlpha: Float,
+    baseBlurRequested: Boolean
+): Float = if (shouldUseOpaqueBottomBarFallback(selectAlpha, baseBlurRequested)) {
+    BOTTOM_BAR_FALLBACK_SCRIM_ALPHA
+} else {
+    0f
+}
