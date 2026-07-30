@@ -72,6 +72,10 @@ private val ExploreSelectedItem?.navigationDepth: Int
 fun ExploreHostScreen(
     offlineMode: Boolean = false,
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
+    onSongClickWithSourceRoute: (List<SongItem>, Int, String?) -> Unit = { songs, index, _ ->
+        onSongClick(songs, index)
+    },
+    neteasePlaylistSourceRoute: (PlaylistSummary) -> String? = { null },
     onSongPlayPreservingQueue: (SongItem) -> Unit = {},
     onSongPlayNext: (SongItem) -> Unit = {},
     onSongAddToQueueEnd: (SongItem) -> Unit = {},
@@ -211,7 +215,13 @@ fun ExploreHostScreen(
                                 NeteasePlaylistDetailScreen(
                                     playlist = current.playlist,
                                     onBack = { selected = null },
-                                    onSongClick = onSongClick,
+                                    onSongClick = { songs, index ->
+                                        onSongClickWithSourceRoute(
+                                            songs,
+                                            index,
+                                            neteasePlaylistSourceRoute(current.playlist)
+                                        )
+                                    },
                                     offlineMode = offlineMode
                                 )
                             }

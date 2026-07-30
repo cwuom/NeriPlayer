@@ -1304,6 +1304,7 @@ private fun NeriAppContent(
     )
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
     var showNowPlayingLyrics by rememberSaveable { mutableStateOf(false) }
+    var currentPlaybackSourceRoute by rememberSaveable { mutableStateOf<String?>(null) }
     var restoreLyricsAfterAlbumBack by rememberSaveable { mutableStateOf(false) }
     var lyricsAlbumRouteObserved by rememberSaveable { mutableStateOf(false) }
     val devModeEnabled by repo.devModeEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
@@ -1909,9 +1910,14 @@ private fun NeriAppContent(
         clearThemeRevealState()
     }
 
-    fun playSongsAndOpenNowPlaying(songs: List<SongItem>, index: Int) {
+    fun playSongsAndOpenNowPlaying(
+        songs: List<SongItem>,
+        index: Int,
+        sourceRoute: String? = null
+    ) {
         restoreLyricsAfterAlbumBack = false
         lyricsAlbumRouteObserved = false
+        currentPlaybackSourceRoute = sourceRoute
         PlayerManager.prefetchYouTubePlayableUrlWindow(
             playlist = songs,
             startIndex = index,
@@ -1929,6 +1935,7 @@ private fun NeriAppContent(
     fun playSongPreservingQueueAndOpenNowPlaying(song: SongItem) {
         restoreLyricsAfterAlbumBack = false
         lyricsAlbumRouteObserved = false
+        currentPlaybackSourceRoute = null
         PlayerManager.prefetchYouTubePlayableUrlWindow(
             playlist = listOf(song),
             startIndex = 0,
@@ -1960,13 +1967,37 @@ private fun NeriAppContent(
         scheduleAudioServiceStart(source, false)
     }
 
-    fun playBiliAudioAndOpenNowPlaying(videos: List<BiliVideoItem>, index: Int) {
+    fun playBiliAudioAndOpenNowPlayingWithSource(
+        videos: List<BiliVideoItem>,
+        index: Int,
+        sourceRoute: String?
+    ) {
         restoreLyricsAfterAlbumBack = false
         lyricsAlbumRouteObserved = false
+        currentPlaybackSourceRoute = sourceRoute
         showNowPlaying = true
         NPLogger.d("NERI-App", "Playing audio from Bili video: ${videos[index].title}")
         PlayerManager.playBiliVideoAsAudio(videos, index)
         ensureAudioServiceStarted(source = "play_bili_audio_and_open_now_playing")
+    }
+
+    fun playBiliAudioAndOpenNowPlaying(videos: List<BiliVideoItem>, index: Int) {
+        playBiliAudioAndOpenNowPlayingWithSource(videos, index, null)
+    }
+
+    fun playBiliPartsAndOpenNowPlayingWithSource(
+        videoInfo: BiliClient.VideoBasicInfo,
+        index: Int,
+        coverUrl: String,
+        sourceRoute: String?
+    ) {
+        restoreLyricsAfterAlbumBack = false
+        lyricsAlbumRouteObserved = false
+        currentPlaybackSourceRoute = sourceRoute
+        showNowPlaying = true
+        NPLogger.d("NERI-App", "Playing parts from Bili video: ${videoInfo.title}")
+        PlayerManager.playBiliVideoParts(videoInfo, index, coverUrl)
+        ensureAudioServiceStarted(source = "play_bili_parts_and_open_now_playing")
     }
 
     fun playBiliPartsAndOpenNowPlaying(
@@ -1974,12 +2005,28 @@ private fun NeriAppContent(
         index: Int,
         coverUrl: String
     ) {
-        restoreLyricsAfterAlbumBack = false
-        lyricsAlbumRouteObserved = false
-        showNowPlaying = true
-        NPLogger.d("NERI-App", "Playing parts from Bili video: ${videoInfo.title}")
-        PlayerManager.playBiliVideoParts(videoInfo, index, coverUrl)
-        ensureAudioServiceStarted(source = "play_bili_parts_and_open_now_playing")
+        playBiliPartsAndOpenNowPlayingWithSource(
+            videoInfo = videoInfo,
+            index = index,
+            coverUrl = coverUrl,
+            null
+        )
+    }
+
+    fun neteasePlaylistSourceRoute(playlist: PlaylistSummary): String {
+        return "playlist_detail/${Uri.encode(navigationGson.toJson(playlist))}"
+    }
+
+    fun neteaseAlbumSourceRoute(album: AlbumSummary): String {
+        return "netease_album_detail/${Uri.encode(navigationGson.toJson(album))}"
+    }
+
+    fun biliPlaylistSourceRoute(playlist: BiliPlaylist): String {
+        return "bili_playlist_detail/${Uri.encode(navigationGson.toJson(playlist))}"
+    }
+
+    fun localPlaylistSourceRoute(id: Long): String {
+        return "local_playlist_detail/$id"
     }
 
     CompositionLocalProvider(LocalDensity provides finalDensity) {
@@ -2283,6 +2330,13 @@ private fun NeriAppContent(
                         showRecommendedCard = showHomeRecommendedCard,
                         offlineMode = offlineMode,
                         onSongClick = ::playSongsAndOpenNowPlaying,
+                        onSongClickWithSourceRoute = ::playSongsAndOpenNowPlaying,
+                        onPlayBiliAudioWithSourceRoute = ::playBiliAudioAndOpenNowPlayingWithSource,
+                        onPlayBiliPartsWithSourceRoute = ::playBiliPartsAndOpenNowPlayingWithSource,
+                        neteasePlaylistSourceRoute = ::neteasePlaylistSourceRoute,
+                        neteaseAlbumSourceRoute = ::neteaseAlbumSourceRoute,
+                        biliPlaylistSourceRoute = ::biliPlaylistSourceRoute,
+                        localPlaylistSourceRoute = ::localPlaylistSourceRoute,
                         coherentFeedbackEnabled = coherentFeedbackEnabled,
                         renderScene = { revealTop, translationY, scale, sceneDepth, sceneContent ->
                             RenderMainTabNavigationScene(
@@ -2298,6 +2352,8 @@ private fun NeriAppContent(
                     Destinations.Explore.route -> ExploreHostScreen(
                         offlineMode = offlineMode,
                         onSongClick = ::playSongsAndOpenNowPlaying,
+                        onSongClickWithSourceRoute = ::playSongsAndOpenNowPlaying,
+                        neteasePlaylistSourceRoute = ::neteasePlaylistSourceRoute,
                         onSongPlayPreservingQueue =
                             ::playSongPreservingQueueAndOpenNowPlaying,
                         onSongPlayNext = ::addSongToQueueNextFromSearch,
@@ -2317,7 +2373,13 @@ private fun NeriAppContent(
 
                     Destinations.Library.route -> LibraryHostScreen(
                         onSongClick = ::playSongsAndOpenNowPlaying,
-                        onPlayParts = ::playBiliPartsAndOpenNowPlaying,
+                        onSongClickWithSourceRoute = ::playSongsAndOpenNowPlaying,
+                        onPlayBiliAudioWithSourceRoute = ::playBiliAudioAndOpenNowPlayingWithSource,
+                        onPlayBiliPartsWithSourceRoute = ::playBiliPartsAndOpenNowPlayingWithSource,
+                        neteasePlaylistSourceRoute = ::neteasePlaylistSourceRoute,
+                        neteaseAlbumSourceRoute = ::neteaseAlbumSourceRoute,
+                        biliPlaylistSourceRoute = ::biliPlaylistSourceRoute,
+                        localPlaylistSourceRoute = ::localPlaylistSourceRoute,
                         onOpenRecent = {
                             navController.navigate(Destinations.Recent.route)
                         },
@@ -3045,7 +3107,13 @@ private fun NeriAppContent(
                                         NeteasePlaylistDetailScreen(
                                             playlist = playlist,
                                             onBack = { navController.popBackStack() },
-                                            onSongClick = ::playSongsAndOpenNowPlaying,
+                                            onSongClick = { songs, index ->
+                                                playSongsAndOpenNowPlaying(
+                                                    songs = songs,
+                                                    index = index,
+                                                    sourceRoute = neteasePlaylistSourceRoute(playlist)
+                                                )
+                                            },
                                             offlineMode = offlineMode
                                         )
                                     }
@@ -3077,7 +3145,13 @@ private fun NeriAppContent(
                                         NeteaseAlbumDetailScreen(
                                             album = album,
                                             onBack = { navController.popBackStack() },
-                                            onSongClick = ::playSongsAndOpenNowPlaying,
+                                            onSongClick = { songs, index ->
+                                                playSongsAndOpenNowPlaying(
+                                                    songs = songs,
+                                                    index = index,
+                                                    sourceRoute = neteaseAlbumSourceRoute(album)
+                                                )
+                                            },
                                             offlineMode = offlineMode
                                         )
                                     }
@@ -3145,8 +3219,21 @@ private fun NeriAppContent(
                                         BiliPlaylistDetailScreen(
                                             playlist = playlist,
                                             onBack = { navController.popBackStack() },
-                                            onPlayAudio = ::playBiliAudioAndOpenNowPlaying,
-                                            onPlayParts = ::playBiliPartsAndOpenNowPlaying,
+                                            onPlayAudio = { videos, index ->
+                                                playBiliAudioAndOpenNowPlayingWithSource(
+                                                    videos = videos,
+                                                    index = index,
+                                                    sourceRoute = biliPlaylistSourceRoute(playlist)
+                                                )
+                                            },
+                                            onPlayParts = { videoInfo, index, coverUrl ->
+                                                playBiliPartsAndOpenNowPlayingWithSource(
+                                                    videoInfo = videoInfo,
+                                                    index = index,
+                                                    coverUrl = coverUrl,
+                                                    sourceRoute = biliPlaylistSourceRoute(playlist)
+                                                )
+                                            },
                                             offlineMode = offlineMode
                                         )
                                     }
@@ -3208,7 +3295,13 @@ private fun NeriAppContent(
                                             playlistId = id,
                                             onBack = { navController.popBackStack() },
                                             onDeleted = { navController.popBackStack() },
-                                            onSongClick = ::playSongsAndOpenNowPlaying,
+                                            onSongClick = { songs, index ->
+                                                playSongsAndOpenNowPlaying(
+                                                    songs = songs,
+                                                    index = index,
+                                                    sourceRoute = localPlaylistSourceRoute(id)
+                                                )
+                                            },
                                             offlineMode = offlineMode
                                         )
                                     }
@@ -3850,8 +3943,18 @@ private fun NeriAppContent(
                             }
 
                             CompositionLocalProvider(LocalMiniPlayerHeight provides 0.dp) {
+                                val currentSourceRoute = currentPlaybackSourceRoute
                                 NowPlayingScreen(
                                     onNavigateUp = { showNowPlaying = false },
+                                    onOpenCurrentPlaybackSource = currentSourceRoute?.let { route ->
+                                        {
+                                            showNowPlayingLyrics = false
+                                            showNowPlaying = false
+                                            navController.navigate(route) {
+                                                launchSingleTop = true
+                                            }
+                                        }
+                                    },
                                     showLyricsScreen = showNowPlayingLyrics,
                                     onShowLyricsScreenChange = { showNowPlayingLyrics = it },
                                     onEnterAlbum = { album ->

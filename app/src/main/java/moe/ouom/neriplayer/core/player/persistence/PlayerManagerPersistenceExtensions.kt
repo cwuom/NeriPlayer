@@ -790,6 +790,105 @@ internal fun remapShuffleStateForInsertNext(
     return ShuffleQueueIndexState(bag = bag, history = history, future = future)
 }
 
+internal fun resolveQueueCurrentIndexAfterMove(
+    currentIndex: Int,
+    fromIndex: Int,
+    toIndex: Int,
+    queueSize: Int
+): Int {
+    if (queueSize <= 0) return -1
+    if (currentIndex !in 0 until queueSize) return currentIndex
+    if (fromIndex !in 0 until queueSize || toIndex !in 0 until queueSize) return currentIndex
+    if (fromIndex == toIndex) return currentIndex
+    return when {
+        currentIndex == fromIndex -> toIndex
+        fromIndex < currentIndex && currentIndex <= toIndex -> currentIndex - 1
+        toIndex <= currentIndex && currentIndex < fromIndex -> currentIndex + 1
+        else -> currentIndex
+    }
+}
+
+internal fun PlayerManager.moveQueueItemImpl(fromIndex: Int, toIndex: Int) {
+    ensureInitialized()
+    if (!initialized) return
+    val queueSize = currentPlaylist.size
+    if (queueSize <= 1) return
+    if (fromIndex !in 0 until queueSize || toIndex !in 0 until queueSize) return
+    if (fromIndex == toIndex) return
+
+    val newPlaylist = currentPlaylist.toMutableList()
+    newPlaylist.add(toIndex, newPlaylist.removeAt(fromIndex))
+    val oldIndex = currentIndex
+    currentPlaylist = newPlaylist
+    _currentQueueFlow.value = currentPlaylist
+    currentIndex = resolveQueueCurrentIndexAfterMove(
+        currentIndex = oldIndex,
+        fromIndex = fromIndex,
+        toIndex = toIndex,
+        queueSize = queueSize
+    )
+
+    if (player.shuffleModeEnabled) {
+        shuffleHistory.clear()
+        shuffleFuture.clear()
+        rebuildShuffleBag(excludeIndex = currentIndex)
+    }
+
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "moveQueueItem(): from=$fromIndex, to=$toIndex, queueSize=$queueSize, oldIndex=$oldIndex, currentIndex=$currentIndex, shuffle=${player.shuffleModeEnabled}, stack=[${debugStackHint()}]"
+    )
+
+    ioScope.launch {
+        persistState()
+    }
+}
+
+private fun queueStableKeyCounts(queue: List<SongItem>): Map<String, Int> {
+    return queue.groupingBy { it.stableKey() }.eachCount()
+}
+
+internal fun PlayerManager.reorderQueueImpl(
+    queue: List<SongItem>,
+    currentIndexInQueue: Int
+) {
+    ensureInitialized()
+    if (!initialized) return
+    if (queue.size != currentPlaylist.size) return
+    if (queue.isEmpty()) return
+    if (queueStableKeyCounts(queue) != queueStableKeyCounts(currentPlaylist)) {
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "reorderQueue(): rejected mismatched queue content, oldSize=${currentPlaylist.size}, newSize=${queue.size}"
+        )
+        return
+    }
+
+    val oldIndex = currentIndex
+    val newIndex = currentIndexInQueue.takeIf { it in queue.indices }
+        ?: _currentSongFlow.value?.let { current -> queue.indexOfFirst { it.sameIdentityAs(current) } }
+        ?: oldIndex.coerceIn(queue.indices)
+
+    currentPlaylist = queue.toList()
+    _currentQueueFlow.value = currentPlaylist
+    currentIndex = newIndex.coerceIn(currentPlaylist.indices)
+
+    if (player.shuffleModeEnabled) {
+        shuffleHistory.clear()
+        shuffleFuture.clear()
+        rebuildShuffleBag(excludeIndex = currentIndex)
+    }
+
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "reorderQueue(): queueSize=${currentPlaylist.size}, oldIndex=$oldIndex, currentIndex=$currentIndex, shuffle=${player.shuffleModeEnabled}, stack=[${debugStackHint()}]"
+    )
+
+    ioScope.launch {
+        persistState()
+    }
+}
+
 internal fun PlayerManager.addToQueueNextImpl(song: SongItem) {
     ensureInitialized()
     if (!initialized) return

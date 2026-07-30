@@ -6,6 +6,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
@@ -230,6 +231,146 @@ class NowPlayingScreenTest {
     }
 
     @Test
+    fun `queue selected songs keep duplicate entries by row key`() {
+        val song = testSong(id = 1L, name = "Song")
+        val queue = listOf(song, song, testSong(id = 2L, name = "Other"))
+        val selectedKeys = setOf(
+            buildNowPlayingQueueItemKey(index = 0, song = song),
+            buildNowPlayingQueueItemKey(index = 1, song = song)
+        )
+
+        val selectedSongs = resolveNowPlayingQueueSelectedSongs(queue, selectedKeys)
+
+        assertEquals(listOf(song, song), selectedSongs)
+    }
+
+    @Test
+    fun `queue invert selection keeps original order for remaining rows`() {
+        val first = testSong(id = 1L, name = "First")
+        val second = testSong(id = 2L, name = "Second")
+        val third = testSong(id = 3L, name = "Third")
+        val queue = listOf(first, second, third)
+        val selectedKeys = setOf(buildNowPlayingQueueItemKey(index = 1, song = second))
+
+        val invertedKeys = invertNowPlayingQueueSelection(queue, selectedKeys)
+
+        assertEquals(
+            setOf(
+                buildNowPlayingQueueItemKey(index = 0, song = first),
+                buildNowPlayingQueueItemKey(index = 2, song = third)
+            ),
+            invertedKeys
+        )
+        assertEquals(
+            listOf(first, third),
+            resolveNowPlayingQueueSelectedSongs(queue, invertedKeys)
+        )
+    }
+
+    @Test
+    fun `queue quick actions only need non empty queue`() {
+        assertFalse(
+            shouldShowNowPlayingQueueQuickActions(
+                queueSize = 0,
+                currentIndex = 0,
+                hasSourceRoute = true
+            )
+        )
+        assertTrue(
+            shouldShowNowPlayingQueueQuickActions(
+                queueSize = 3,
+                currentIndex = -1,
+                hasSourceRoute = false
+            )
+        )
+        assertTrue(
+            shouldShowNowPlayingQueueQuickActions(
+                queueSize = 3,
+                currentIndex = -1,
+                hasSourceRoute = true
+            )
+        )
+    }
+
+    @Test
+    fun `queue reorder current index prefers dragged current row key`() {
+        assertEquals(
+            3,
+            resolveNowPlayingQueueCurrentIndexAfterReorder(
+                queueSize = 5,
+                currentIndex = 1,
+                currentIndexByKey = 3
+            )
+        )
+    }
+
+    @Test
+    fun `queue reorder current index clamps stale current index`() {
+        assertEquals(
+            2,
+            resolveNowPlayingQueueCurrentIndexAfterReorder(
+                queueSize = 3,
+                currentIndex = 9,
+                currentIndexByKey = -1
+            )
+        )
+    }
+
+    @Test
+    fun `queue reorder current index returns missing for empty queue`() {
+        assertEquals(
+            -1,
+            resolveNowPlayingQueueCurrentIndexAfterReorder(
+                queueSize = 0,
+                currentIndex = 2,
+                currentIndexByKey = -1
+            )
+        )
+    }
+
+    @Test
+    fun `artist navigation ignores matched netease metadata for non netease songs`() {
+        val biliSong = testSong(id = 6L, name = "Bili song").copy(
+            album = "Bilibili|123",
+            channelId = "bilibili",
+            coverUrl = "https://music.126.net/netease-cover.jpg",
+            matchedLyricSource = MusicPlatform.CLOUD_MUSIC,
+            matchedSongId = "9876"
+        )
+        val youtubeSong = testSong(id = 9L, name = "YouTube song").copy(
+            channelId = "youtubeMusic",
+            mediaUri = "ytmusic://video/demo",
+            coverUrl = "https://music.126.net/netease-cover.jpg",
+            matchedLyricSource = MusicPlatform.CLOUD_MUSIC,
+            matchedSongId = "9876"
+        )
+        val qqSong = testSong(id = 10L, name = "QQ song").copy(
+            channelId = "qq",
+            coverUrl = "https://music.126.net/netease-cover.jpg",
+            matchedLyricSource = MusicPlatform.CLOUD_MUSIC,
+            matchedSongId = "9876"
+        )
+
+        assertFalse(isNeteaseArtistNavigationSource(biliSong))
+        assertFalse(isNeteaseArtistNavigationSource(youtubeSong))
+        assertFalse(isNeteaseArtistNavigationSource(qqSong))
+    }
+
+    @Test
+    fun `artist navigation keeps explicit netease source without matched lyrics`() {
+        val neteaseSong = testSong(id = 7L, name = "Netease song").copy(
+            channelId = "netease",
+            audioId = "7"
+        )
+        val legacyNeteaseSong = testSong(id = 8L, name = "Legacy Netease song").copy(
+            album = "NeteaseLegacy"
+        )
+
+        assertTrue(isNeteaseArtistNavigationSource(neteaseSong))
+        assertTrue(isNeteaseArtistNavigationSource(legacyNeteaseSong))
+    }
+
+    @Test
     fun `playback source badge uses resolved bili audio source over netease tag`() {
         val sourceType = resolveNowPlayingPlaybackSourceType(
             isLocalSong = false,
@@ -255,5 +396,20 @@ class NowPlayingScreenTest {
         )
 
         assertTrue(sourceType == PlaybackSourceType.NETEASE)
+    }
+
+    private fun testSong(
+        id: Long,
+        name: String
+    ): SongItem {
+        return SongItem(
+            id = id,
+            name = name,
+            artist = "Artist",
+            album = "Album",
+            albumId = id,
+            durationMs = 1_000L,
+            coverUrl = null
+        )
     }
 }

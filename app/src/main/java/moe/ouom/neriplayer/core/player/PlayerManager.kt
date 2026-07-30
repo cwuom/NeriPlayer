@@ -179,6 +179,8 @@ import moe.ouom.neriplayer.core.player.persistence.removeCurrentFromFavoritesImp
 import moe.ouom.neriplayer.core.player.persistence.replaceCurrentInQueueAndPlayImpl
 import moe.ouom.neriplayer.core.player.persistence.replaceMetadataFromSearchImpl
 import moe.ouom.neriplayer.core.player.persistence.resumeRestoredPlaybackIfNeededImpl
+import moe.ouom.neriplayer.core.player.persistence.moveQueueItemImpl
+import moe.ouom.neriplayer.core.player.persistence.reorderQueueImpl
 import moe.ouom.neriplayer.core.player.persistence.suppressFutureAutoResumeForCurrentSessionImpl
 import moe.ouom.neriplayer.core.player.persistence.toggleCurrentFavoriteImpl
 import moe.ouom.neriplayer.core.player.persistence.updateSongCustomInfoImpl
@@ -2490,6 +2492,11 @@ object PlayerManager {
     fun addToQueueNext(song: SongItem) = addToQueueNextImpl(song)
 
     fun addToQueueEnd(song: SongItem) = addToQueueEndImpl(song)
+
+    fun moveQueueItem(fromIndex: Int, toIndex: Int) = moveQueueItemImpl(fromIndex, toIndex)
+
+    fun reorderQueue(queue: List<SongItem>, currentIndexInQueue: Int) =
+        reorderQueueImpl(queue, currentIndexInQueue)
 
     fun resumeRestoredPlaybackIfNeeded(): Long? = resumeRestoredPlaybackIfNeededImpl()
 

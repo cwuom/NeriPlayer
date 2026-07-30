@@ -67,6 +67,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -125,7 +126,24 @@ private enum class LibraryScrollSource {
 @Composable
 fun LibraryHostScreen(
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
-    onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> },
+    onSongClickWithSourceRoute: (List<SongItem>, Int, String?) -> Unit = { songs, index, _ ->
+        onSongClick(songs, index)
+    },
+    onPlayBiliAudioWithSourceRoute: (List<BiliVideoItem>, Int, String?) -> Unit = { videos, index, _ ->
+        PlayerManager.playBiliVideoAsAudio(videos, index)
+    },
+    onPlayBiliPartsWithSourceRoute: (
+        BiliClient.VideoBasicInfo,
+        Int,
+        String,
+        String?
+    ) -> Unit = { videoInfo, index, coverUrl, _ ->
+        PlayerManager.playBiliVideoParts(videoInfo, index, coverUrl)
+    },
+    neteasePlaylistSourceRoute: (PlaylistSummary) -> String? = { null },
+    neteaseAlbumSourceRoute: (AlbumSummary) -> String? = { null },
+    biliPlaylistSourceRoute: (BiliPlaylist) -> String? = { null },
+    localPlaylistSourceRoute: (Long) -> String? = { null },
     onOpenRecent: () -> Unit,
     onOpenStats: () -> Unit = {},
     offlineMode: Boolean = false,
@@ -424,7 +442,13 @@ fun LibraryHostScreen(
                                 playlistId = current.playlistId,
                                 onBack = { closeSelectedDetail() },
                                 onDeleted = { closeDeletedLocalPlaylist() },
-                                onSongClick = onSongClick,
+                                onSongClick = { songs, index ->
+                                    onSongClickWithSourceRoute(
+                                        songs,
+                                        index,
+                                        localPlaylistSourceRoute(current.playlistId)
+                                    )
+                                },
                                 offlineMode = offlineMode
                             )
                         }
@@ -441,7 +465,13 @@ fun LibraryHostScreen(
                         is LibrarySelectedItem.NeteaseAlbum -> {
                             NeteaseAlbumDetailScreen(
                                 onBack = { selected = null },
-                                onSongClick = onSongClick,
+                                onSongClick = { songs, index ->
+                                    onSongClickWithSourceRoute(
+                                        songs,
+                                        index,
+                                        neteaseAlbumSourceRoute(current.album)
+                                    )
+                                },
                                 album = current.album,
                                 offlineMode = offlineMode
                             )
@@ -451,7 +481,13 @@ fun LibraryHostScreen(
                             NeteasePlaylistDetailScreen(
                                 playlist = current.playlist,
                                 onBack = { selected = null },
-                                onSongClick = onSongClick,
+                                onSongClick = { songs, index ->
+                                    onSongClickWithSourceRoute(
+                                        songs,
+                                        index,
+                                        neteasePlaylistSourceRoute(current.playlist)
+                                    )
+                                },
                                 offlineMode = offlineMode
                             )
                         }
@@ -480,7 +516,13 @@ fun LibraryHostScreen(
                                 onBack = {
                                     selected = LibrarySelectedItem.NeteaseArtist(current.artist)
                                 },
-                                onSongClick = onSongClick,
+                                onSongClick = { songs, index ->
+                                    onSongClickWithSourceRoute(
+                                        songs,
+                                        index,
+                                        neteaseAlbumSourceRoute(current.album)
+                                    )
+                                },
                                 album = current.album,
                                 offlineMode = offlineMode
                             )
@@ -500,9 +542,20 @@ fun LibraryHostScreen(
                                 playlist = current.playlist,
                                 onBack = { selected = null },
                                 onPlayAudio = { videos, index ->
-                                    PlayerManager.playBiliVideoAsAudio(videos, index)
+                                    onPlayBiliAudioWithSourceRoute(
+                                        videos,
+                                        index,
+                                        biliPlaylistSourceRoute(current.playlist)
+                                    )
                                 },
-                                onPlayParts = onPlayParts,
+                                onPlayParts = { videoInfo, index, coverUrl ->
+                                    onPlayBiliPartsWithSourceRoute(
+                                        videoInfo,
+                                        index,
+                                        coverUrl,
+                                        biliPlaylistSourceRoute(current.playlist)
+                                    )
+                                },
                                 offlineMode = offlineMode
                             )
                         }

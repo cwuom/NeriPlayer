@@ -138,6 +138,66 @@ class PlayerManagerShuffleQueueRemapTest {
         assertNoDuplicateAcross(result)
     }
 
+    @Test
+    fun `queue current index follows dragged current item`() {
+        val index = resolveQueueCurrentIndexAfterMove(
+            currentIndex = 1,
+            fromIndex = 1,
+            toIndex = 3,
+            queueSize = 5
+        )
+
+        assertEquals(3, index)
+    }
+
+    @Test
+    fun `queue current index shifts when earlier item moves after it`() {
+        val index = resolveQueueCurrentIndexAfterMove(
+            currentIndex = 2,
+            fromIndex = 0,
+            toIndex = 3,
+            queueSize = 5
+        )
+
+        assertEquals(1, index)
+    }
+
+    @Test
+    fun `queue current index shifts when later item moves before it`() {
+        val index = resolveQueueCurrentIndexAfterMove(
+            currentIndex = 2,
+            fromIndex = 4,
+            toIndex = 1,
+            queueSize = 5
+        )
+
+        assertEquals(3, index)
+    }
+
+    @Test
+    fun `queue current index survives invalid move`() {
+        val index = resolveQueueCurrentIndexAfterMove(
+            currentIndex = 2,
+            fromIndex = -1,
+            toIndex = 1,
+            queueSize = 5
+        )
+
+        assertEquals(2, index)
+    }
+
+    @Test
+    fun `queue current index returns missing for empty queue`() {
+        val index = resolveQueueCurrentIndexAfterMove(
+            currentIndex = 0,
+            fromIndex = 0,
+            toIndex = 0,
+            queueSize = 0
+        )
+
+        assertEquals(-1, index)
+    }
+
     private fun assertAllIndicesWithin(state: ShuffleQueueIndexState, size: Int) {
         val all = state.bag + state.history + state.future
         assertTrue(

@@ -66,6 +66,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -73,6 +74,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -91,13 +93,18 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
+import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SpeakerGroup
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Info
@@ -119,6 +126,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -132,6 +140,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
@@ -145,6 +154,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -200,6 +210,8 @@ import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.forSource
 import moe.ouom.neriplayer.core.player.model.PlaybackQualityOption
 import moe.ouom.neriplayer.data.local.media.isLocalSong
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.displayArtist
@@ -243,6 +255,7 @@ import moe.ouom.neriplayer.ui.component.playback.WaveformSlider
 import moe.ouom.neriplayer.ui.component.playback.resolvePlaybackWaiting
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
+import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.ui.component.lyrics.rememberLyricSeekHapticFeedback
 import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricsEditorInitialText
@@ -257,6 +270,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.haptic.HapticFeedbackEffect
 import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton
+import moe.ouom.neriplayer.ui.haptic.HapticFloatingActionButton
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -264,6 +278,11 @@ import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.util.media.saveCoverToPictures
+import org.burnoutcrew.reorderable.ItemPosition
+import org.burnoutcrew.reorderable.ReorderableItem
+import org.burnoutcrew.reorderable.detectReorder
+import org.burnoutcrew.reorderable.rememberReorderableLazyListState
+import org.burnoutcrew.reorderable.reorderable
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -365,6 +384,760 @@ internal fun buildNowPlayingQueueItemKey(index: Int, song: SongItem): String {
     return "$index:${song.stableKey()}"
 }
 
+private data class NowPlayingQueueEntry(
+    val key: String,
+    val song: SongItem
+)
+
+private fun buildNowPlayingQueueEntries(queue: List<SongItem>): List<NowPlayingQueueEntry> {
+    return queue.mapIndexed { index, song ->
+        NowPlayingQueueEntry(
+            key = buildNowPlayingQueueItemKey(index, song),
+            song = song
+        )
+    }
+}
+
+internal fun shouldShowNowPlayingQueueQuickActions(
+    queueSize: Int,
+    currentIndex: Int,
+    hasSourceRoute: Boolean
+): Boolean = queueSize > 0
+
+internal fun resolveNowPlayingQueueCurrentIndexAfterReorder(
+    queueSize: Int,
+    currentIndex: Int,
+    currentIndexByKey: Int
+): Int {
+    if (queueSize <= 0) return -1
+    if (currentIndexByKey in 0 until queueSize) return currentIndexByKey
+    return currentIndex.coerceIn(0, queueSize - 1)
+}
+
+internal fun resolveNowPlayingQueueSelectedSongs(
+    queue: List<SongItem>,
+    selectedKeys: Set<String>
+): List<SongItem> {
+    if (selectedKeys.isEmpty()) return emptyList()
+    return queue.filterIndexed { index, song ->
+        buildNowPlayingQueueItemKey(index, song) in selectedKeys
+    }
+}
+
+internal fun invertNowPlayingQueueSelection(
+    queue: List<SongItem>,
+    selectedKeys: Set<String>
+): Set<String> {
+    return queue.mapIndexedNotNullTo(LinkedHashSet()) { index, song ->
+        buildNowPlayingQueueItemKey(index, song).takeUnless(selectedKeys::contains)
+    }
+}
+
+@Composable
+private fun NowPlayingQueueRow(
+    modifier: Modifier = Modifier,
+    index: Int,
+    song: SongItem,
+    isCurrent: Boolean,
+    offlineMode: Boolean,
+    selectionMode: Boolean,
+    selected: Boolean,
+    onPlay: () -> Unit,
+    onLongPress: () -> Unit,
+    onToggleSelect: () -> Unit,
+    onPlayNext: () -> Unit,
+    onAddToEnd: () -> Unit,
+    dragHandle: @Composable (() -> Unit)? = null
+) {
+    val context = LocalContext.current
+    val coverUrl = remember(song, context) { song.displayCoverUrl(context) }
+    var showMoreMenu by remember { mutableStateOf(false) }
+    val containerColor = when {
+        selected -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.64f)
+        isCurrent -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f)
+        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f)
+    }
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 72.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .combinedClickable(
+                onClick = {
+                    if (selectionMode) {
+                        onToggleSelect()
+                    } else {
+                        onPlay()
+                    }
+                },
+                onLongClick = onLongPress
+            ),
+        shape = RoundedCornerShape(20.dp),
+        color = containerColor
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (selectionMode) {
+                Icon(
+                    imageVector = if (selected) {
+                        Icons.Filled.CheckBox
+                    } else {
+                        Icons.Filled.CheckBoxOutlineBlank
+                    },
+                    contentDescription = if (selected) {
+                        stringResource(R.string.common_selected)
+                    } else {
+                        stringResource(R.string.action_select)
+                    },
+                    tint = if (selected) {
+                        MaterialTheme.colorScheme.secondary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.padding(end = 10.dp)
+                )
+            }
+            Box(
+                modifier = Modifier.width(34.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Text(
+                    text = (index + 1).toString(),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (isCurrent) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    maxLines = 1
+                )
+            }
+            if (!coverUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = offlineCachedImageRequest(
+                        context = context,
+                        data = coverUrl,
+                        sizePx = 128,
+                        allowHardware = false,
+                        crossfade = true,
+                        offlineMode = offlineMode
+                    ),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                )
+            } else {
+                Surface(
+                    modifier = Modifier.size(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.64f)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Outlined.MusicNote,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = song.displayName(),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = song.displayArtist(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (isCurrent && !selectionMode) {
+                Icon(
+                    imageVector = Icons.Outlined.PlayArrow,
+                    contentDescription = stringResource(R.string.player_now_playing),
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
+            }
+            if (!selectionMode) {
+                Box {
+                    IconButton(onClick = { showMoreMenu = true }) {
+                        Icon(
+                            imageVector = Icons.Filled.MoreVert,
+                            contentDescription = stringResource(R.string.common_more_actions),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showMoreMenu,
+                        onDismissRequest = { showMoreMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.local_playlist_play_next)) },
+                            onClick = {
+                                onPlayNext()
+                                showMoreMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.playlist_add_to_end)) },
+                            onClick = {
+                                onAddToEnd()
+                                showMoreMenu = false
+                            }
+                        )
+                    }
+                }
+            } else if (dragHandle != null) {
+                dragHandle()
+            }
+        }
+    }
+}
+
+@Composable
+private fun NowPlayingQueueQuickActionButton(
+    label: String,
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit
+) {
+    val context = LocalContext.current
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(999.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+            tonalElevation = 4.dp
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                maxLines = 1
+            )
+        }
+        SmallFloatingActionButton(
+            onClick = {
+                context.performHapticFeedback(HapticFeedbackEffect.Click)
+                onClick()
+            },
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            elevation = FloatingActionButtonDefaults.elevation()
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription
+            )
+        }
+    }
+}
+
+@Composable
+private fun NowPlayingQueueQuickActionsFab(
+    queueSize: Int,
+    currentIndex: Int,
+    hasSourceRoute: Boolean,
+    onLocateCurrent: () -> Unit,
+    onOpenSource: () -> Unit,
+    onEnterSelection: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (!shouldShowNowPlayingQueueQuickActions(queueSize, currentIndex, hasSourceRoute)) return
+
+    val context = LocalContext.current
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        AnimatedVisibility(
+            visible = expanded,
+            enter = fadeIn() + scaleIn(),
+            exit = fadeOut() + scaleOut()
+        ) {
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (hasSourceRoute) {
+                    NowPlayingQueueQuickActionButton(
+                        label = stringResource(R.string.cd_open_current_playback_source),
+                        icon = Icons.Outlined.LibraryMusic,
+                        contentDescription = stringResource(R.string.cd_open_current_playback_source),
+                        onClick = {
+                            expanded = false
+                            onOpenSource()
+                        }
+                    )
+                }
+
+                if (currentIndex >= 0) {
+                    NowPlayingQueueQuickActionButton(
+                        label = stringResource(R.string.cd_locate_playing),
+                        icon = Icons.AutoMirrored.Outlined.PlaylistPlay,
+                        contentDescription = stringResource(R.string.cd_locate_playing),
+                        onClick = {
+                            expanded = false
+                            onLocateCurrent()
+                        }
+                    )
+                }
+
+                NowPlayingQueueQuickActionButton(
+                    label = stringResource(R.string.action_enter_multi_select),
+                    icon = Icons.Filled.CheckBox,
+                    contentDescription = stringResource(R.string.action_enter_multi_select),
+                    onClick = {
+                        expanded = false
+                        onEnterSelection()
+                    }
+                )
+            }
+        }
+
+        HapticFloatingActionButton(
+            onClick = { expanded = !expanded },
+            hapticEffect = HapticFeedbackEffect.Click
+        ) {
+            Icon(
+                imageVector = if (expanded) Icons.Outlined.Close else Icons.Filled.MoreVert,
+                contentDescription = stringResource(R.string.cd_queue_quick_actions)
+            )
+        }
+    }
+}
+
+@Composable
+private fun NowPlayingQueueSelectionToolbar(
+    selectedCount: Int,
+    allSelected: Boolean,
+    canExport: Boolean,
+    onSelectAll: () -> Unit,
+    onInvertSelection: () -> Unit,
+    onExport: () -> Unit,
+    onExitSelection: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 12.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        HapticIconButton(onClick = onExitSelection) {
+            Icon(
+                imageVector = Icons.Outlined.Close,
+                contentDescription = stringResource(R.string.action_cancel)
+            )
+        }
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.common_selected),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = pluralStringResource(
+                    R.plurals.common_selected_count,
+                    selectedCount,
+                    selectedCount
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        HapticIconButton(onClick = onSelectAll) {
+            Icon(
+                imageVector = if (allSelected) {
+                    Icons.Filled.CheckBox
+                } else {
+                    Icons.Filled.CheckBoxOutlineBlank
+                },
+                contentDescription = if (allSelected) {
+                    stringResource(R.string.action_deselect_all)
+                } else {
+                    stringResource(R.string.action_select_all)
+                }
+            )
+        }
+        HapticTextButton(onClick = onInvertSelection) {
+            Text(stringResource(R.string.action_inverse_select))
+        }
+        HapticIconButton(
+            enabled = canExport,
+            onClick = onExport
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                contentDescription = stringResource(R.string.cd_export_playlist)
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun NowPlayingQueueSheet(
+    displayedQueue: List<SongItem>,
+    currentIndexInDisplay: Int,
+    offlineMode: Boolean,
+    onDismissRequest: () -> Unit,
+    onOpenCurrentPlaybackSource: (() -> Unit)? = null
+) {
+    val context = LocalContext.current
+    val screenScope = rememberCoroutineScope()
+    val localPlaylistRepo = remember(context) { LocalPlaylistRepository.getInstance(context) }
+    val playerPlaylists by PlayerManager.playlistsFlow.collectAsStateWithLifecycle()
+    val allLocalPlaylists by localPlaylistRepo.playlists.collectAsStateWithLifecycle(
+        initialValue = playerPlaylists
+    )
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var selectionMode by remember { mutableStateOf(false) }
+    var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showExportSheet by remember { mutableStateOf(false) }
+    var queueOrderDirty by remember { mutableStateOf(false) }
+    val sourceEntries = remember(displayedQueue) {
+        buildNowPlayingQueueEntries(displayedQueue)
+    }
+    val queueEntries = remember { mutableStateListOf<NowPlayingQueueEntry>() }
+    val currentEntryKey = displayedQueue
+        .getOrNull(currentIndexInDisplay)
+        ?.let { buildNowPlayingQueueItemKey(currentIndexInDisplay, it) }
+    val currentIndexInQueueEntries = currentEntryKey
+        ?.let { key -> queueEntries.indexOfFirst { it.key == key } }
+        ?.takeIf { it >= 0 }
+        ?: currentIndexInDisplay
+    val queueItemKeys = remember(queueEntries.toList()) {
+        queueEntries.mapTo(LinkedHashSet()) { it.key }
+    }
+    val selectedSongs = remember(queueEntries.toList(), selectedKeys) {
+        queueEntries.filter { it.key in selectedKeys }.map { it.song }
+    }
+    val allItemsSelected = queueEntries.isNotEmpty() &&
+        selectedKeys.size == queueItemKeys.size &&
+        selectedKeys.containsAll(queueItemKeys)
+    val reorderState = rememberReorderableLazyListState(
+        onMove = { from: ItemPosition, to: ItemPosition ->
+            if (!selectionMode) return@rememberReorderableLazyListState
+            val fromKey = from.key as? String ?: return@rememberReorderableLazyListState
+            val toKey = to.key as? String ?: return@rememberReorderableLazyListState
+            val fromIndex = queueEntries.indexOfFirst { it.key == fromKey }
+            val toIndex = queueEntries.indexOfFirst { it.key == toKey }
+            if (fromIndex != -1 && toIndex != -1 && fromIndex != toIndex) {
+                queueEntries.add(toIndex, queueEntries.removeAt(fromIndex))
+                queueOrderDirty = true
+            }
+        },
+        onDragEnd = { _, _ ->
+            if (!queueOrderDirty) return@rememberReorderableLazyListState
+            val currentKey = currentEntryKey
+            val currentIndexByKey = currentKey
+                ?.let { key -> queueEntries.indexOfFirst { it.key == key } }
+                ?: -1
+            val currentIndexAfterReorder = resolveNowPlayingQueueCurrentIndexAfterReorder(
+                queueSize = queueEntries.size,
+                currentIndex = currentIndexInQueueEntries,
+                currentIndexByKey = currentIndexByKey
+            )
+            PlayerManager.reorderQueue(
+                queue = queueEntries.map { it.song },
+                currentIndexInQueue = currentIndexAfterReorder
+            )
+            queueOrderDirty = false
+        },
+        maxScrollPerFrame = 8.dp
+    )
+
+    fun exitSelection() {
+        selectionMode = false
+        selectedKeys = emptySet()
+    }
+
+    fun dismissQueue() {
+        showExportSheet = false
+        exitSelection()
+        onDismissRequest()
+    }
+
+    fun toggleItem(key: String) {
+        selectedKeys = if (key in selectedKeys) {
+            selectedKeys - key
+        } else {
+            selectedKeys + key
+        }
+    }
+
+    LaunchedEffect(sourceEntries) {
+        queueEntries.clear()
+        queueEntries.addAll(sourceEntries)
+        queueOrderDirty = false
+    }
+
+    LaunchedEffect(currentIndexInQueueEntries) {
+        if (currentIndexInQueueEntries >= 0) {
+            delay(150)
+            reorderState.listState.animateScrollToItem(currentIndexInQueueEntries)
+        }
+    }
+
+    LaunchedEffect(queueItemKeys, selectedKeys) {
+        val cleanedKeys = selectedKeys.intersect(queueItemKeys)
+        if (cleanedKeys != selectedKeys) selectedKeys = cleanedKeys
+        if (selectionMode && cleanedKeys.isEmpty()) selectionMode = false
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = ::dismissQueue,
+        sheetState = sheetState,
+        sheetGesturesEnabled = false
+    ) {
+        BackHandler(enabled = selectionMode && !showExportSheet) {
+            exitSelection()
+        }
+
+        BackHandler(enabled = showExportSheet) {
+            showExportSheet = false
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxHeight(QueueSheetMaxHeightFraction)
+                .windowInsetsPadding(WindowInsets.navigationBars)
+        ) {
+            Column(Modifier.fillMaxSize()) {
+                if (selectionMode) {
+                    NowPlayingQueueSelectionToolbar(
+                        selectedCount = selectedKeys.size,
+                        allSelected = allItemsSelected,
+                        canExport = selectedSongs.isNotEmpty(),
+                        onSelectAll = {
+                            selectedKeys = if (allItemsSelected) {
+                                emptySet()
+                            } else {
+                                queueItemKeys
+                            }
+                            if (selectedKeys.isEmpty()) selectionMode = false
+                        },
+                        onInvertSelection = {
+                            selectedKeys = invertNowPlayingQueueSelection(
+                                displayedQueue,
+                                selectedKeys
+                            )
+                            if (selectedKeys.isEmpty()) selectionMode = false
+                        },
+                        onExport = {
+                            if (selectedSongs.isNotEmpty()) {
+                                showExportSheet = true
+                            }
+                        },
+                        onExitSelection = ::exitSelection
+                    )
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 24.dp, end = 18.dp, bottom = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.playlist_queue),
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = stringResource(
+                                    R.string.nowplaying_queue_count_format,
+                                    displayedQueue.size
+                                ),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (currentIndexInQueueEntries >= 0) {
+                            Surface(
+                                shape = RoundedCornerShape(999.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.76f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.PlayArrow,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        text = stringResource(
+                                            R.string.nowplaying_queue_current_position,
+                                            currentIndexInQueueEntries + 1
+                                        ),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                LazyColumn(
+                    state = reorderState.listState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .reorderable(reorderState)
+                        .bottomSheetScrollGuard(),
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        end = 16.dp,
+                        top = 4.dp,
+                        bottom = 98.dp
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    itemsIndexed(
+                        items = queueEntries,
+                        key = { _, entry -> entry.key },
+                        contentType = { _, _ -> "queue_song" }
+                    ) { index, entry ->
+                        ReorderableItem(state = reorderState, key = entry.key) { isDragging ->
+                            val rowScale by animateFloatAsState(
+                                targetValue = if (isDragging) 1.008f else 1f,
+                                animationSpec = tween(
+                                    durationMillis = 180,
+                                    easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+                                ),
+                                label = "queue_row_scale"
+                            )
+                            NowPlayingQueueRow(
+                                modifier = Modifier
+                                    .graphicsLayer {
+                                        scaleX = rowScale
+                                        scaleY = rowScale
+                                        shadowElevation = if (isDragging) 8f else 0f
+                                    },
+                                index = index,
+                                song = entry.song,
+                                isCurrent = entry.key == currentEntryKey,
+                                offlineMode = offlineMode,
+                                selectionMode = selectionMode,
+                                selected = entry.key in selectedKeys,
+                                onPlay = {
+                                    PlayerManager.playFromQueue(index)
+                                    dismissQueue()
+                                },
+                                onLongPress = {
+                                    selectionMode = true
+                                    selectedKeys = selectedKeys + entry.key
+                                },
+                                onToggleSelect = { toggleItem(entry.key) },
+                                onPlayNext = { PlayerManager.addToQueueNext(entry.song) },
+                                onAddToEnd = { PlayerManager.addToQueueEnd(entry.song) },
+                                dragHandle = {
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(start = 8.dp)
+                                            .size(44.dp)
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(
+                                                MaterialTheme.colorScheme.surface.copy(alpha = 0.48f)
+                                            )
+                                            .detectReorder(reorderState)
+                                            .padding(10.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.DragHandle,
+                                            contentDescription = stringResource(R.string.common_drag_handle),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (!selectionMode) {
+                NowPlayingQueueQuickActionsFab(
+                    queueSize = displayedQueue.size,
+                    currentIndex = currentIndexInQueueEntries,
+                    hasSourceRoute = onOpenCurrentPlaybackSource != null,
+                    onLocateCurrent = {
+                        if (currentIndexInQueueEntries >= 0) {
+                            screenScope.launch {
+                                reorderState.listState.animateScrollToItem(currentIndexInQueueEntries)
+                            }
+                        }
+                    },
+                    onOpenSource = {
+                        dismissQueue()
+                        onOpenCurrentPlaybackSource?.invoke()
+                    },
+                    onEnterSelection = {
+                        selectionMode = true
+                        selectedKeys = emptySet()
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 20.dp, bottom = 20.dp)
+                )
+            }
+        }
+    }
+
+    if (showExportSheet) {
+        PlaylistExportSheet(
+            title = stringResource(R.string.playlist_export_to_local),
+            playlists = allLocalPlaylists.filterNot {
+                LocalFilesPlaylist.isSystemPlaylist(it, context)
+            },
+            selectedCount = selectedSongs.size,
+            onDismissRequest = { showExportSheet = false },
+            onCreateAndExport = { name ->
+                val songs = selectedSongs
+                screenScope.launchLocalPlaylistMutation("createPlaylistFromNowPlayingQueue") {
+                    localPlaylistRepo.createPlaylistWithSongs(name, songs)
+                }
+                showExportSheet = false
+                dismissQueue()
+            },
+            onExportToPlaylist = { playlist ->
+                val songs = selectedSongs
+                screenScope.launchLocalPlaylistMutation("exportSongsFromNowPlayingQueue") {
+                    localPlaylistRepo.addSongsToPlaylist(playlist.id, songs)
+                }
+                showExportSheet = false
+                dismissQueue()
+            }
+        )
+    }
+}
+
 internal fun resolveNowPlayingPlaybackSourceType(
     isLocalSong: Boolean,
     isYouTubeMusicSong: Boolean,
@@ -431,6 +1204,7 @@ private data class LoadedLyricsState(
 @Suppress("AssignedValueIsNeverRead")
 fun NowPlayingScreen(
     onNavigateUp: () -> Unit,
+    onOpenCurrentPlaybackSource: (() -> Unit)? = null,
     showLyricsScreen: Boolean,
     onShowLyricsScreenChange: (Boolean) -> Unit,
     onEnterAlbum: (AlbumSummary) -> Unit,
@@ -565,7 +1339,6 @@ fun NowPlayingScreen(
     var showArtistMenu by remember { mutableStateOf(false) }
     var showQualitySwitchDialog by remember { mutableStateOf(false) }
     val addSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val queueSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Snackbar状态
     val snackbarHostState = remember { SnackbarHostState() }
@@ -677,11 +1450,7 @@ fun NowPlayingScreen(
 
     val openCurrentNeteaseArtist: () -> Unit = {
         val song = currentSong
-        if (song == null || !isNeteaseArtistNavigationSource(song)) {
-            screenScope.launch {
-                snackbarHostState.showSnackbar(context.getString(R.string.artist_not_available))
-            }
-        } else if (!resolvingArtistNavigation) {
+        if (song != null && isNeteaseArtistNavigationSource(song) && !resolvingArtistNavigation) {
             resolvingArtistNavigation = true
             nowPlayingViewModel.resolveNeteaseArtists(
                 song = song,
@@ -1004,6 +1773,7 @@ fun NowPlayingScreen(
                             lyricFontScale = lyricFontScale,
                             onEnterAlbum = onEnterAlbum,
                             onOpenCurrentNeteaseArtist = openCurrentNeteaseArtist,
+                            onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource,
                             onLyricFontScaleChange = onLyricFontScaleChange,
                             onExitNowPlaying = onNavigateUp,
                             onNavigateBack = { onShowLyricsScreenChange(false) },
@@ -1797,107 +2567,13 @@ fun NowPlayingScreen(
 
             // 播放队列弹窗
             if (showQueueSheet) {
-                val initialIndex = (currentIndexInDisplay - 4).coerceAtLeast(0)
-                val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
-                LaunchedEffect(showQueueSheet, currentIndexInDisplay) {
-                    if (showQueueSheet && currentIndexInDisplay >= 0) {
-                        delay(150)
-                        listState.animateScrollToItem(currentIndexInDisplay)
-                    }
-                }
-
-                ModalBottomSheet(
+                NowPlayingQueueSheet(
+                    displayedQueue = displayedQueue,
+                    currentIndexInDisplay = currentIndexInDisplay,
+                    offlineMode = offlineMode,
                     onDismissRequest = { showQueueSheet = false },
-                    sheetState = queueSheetState,
-                    sheetGesturesEnabled = false
-                ) {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier
-                            .fillMaxHeight(QueueSheetMaxHeightFraction)
-                            .bottomSheetScrollGuard()
-                            .windowInsetsPadding(WindowInsets.navigationBars)
-                    ) {
-                        itemsIndexed(
-                            items = displayedQueue,
-                            key = ::buildNowPlayingQueueItemKey,
-                            contentType = { _, _ -> "queue_song" }
-                        ) { index, song ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        PlayerManager.playFromQueue(index)
-                                        showQueueSheet = false
-                                    }
-                                    .padding(horizontal = 24.dp, vertical = 16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    (index + 1).toString(),
-                                    modifier = Modifier.width(48.dp),
-                                    textAlign = TextAlign.Start,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(song.displayName(), maxLines = 1)
-                                    Text(
-                                        song.displayArtist(),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1
-                                    )
-                                }
-
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    if (index == currentIndexInDisplay) {
-                                        Icon(
-                                            Icons.Outlined.PlayArrow,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-
-                                    // 更多操作菜单
-                                    var showMoreMenu by remember { mutableStateOf(false) }
-                                    Box {
-                                        IconButton(onClick = { showMoreMenu = true }) {
-                                            Icon(
-                                                Icons.Filled.MoreVert,
-                                                contentDescription = stringResource(R.string.common_more_actions),
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-
-                                        DropdownMenu(
-                                            expanded = showMoreMenu,
-                                            onDismissRequest = { showMoreMenu = false }
-                                        ) {
-                                            DropdownMenuItem(
-                                                text = { Text(stringResource(R.string.local_playlist_play_next)) },
-                                                onClick = {
-                                                    PlayerManager.addToQueueNext(song)
-                                                    showMoreMenu = false
-                                                }
-                                            )
-                                            DropdownMenuItem(
-                                                text = { Text(stringResource(R.string.playlist_add_to_end)) },
-                                                onClick = {
-                                                    PlayerManager.addToQueueEnd(song)
-                                                    showMoreMenu = false
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                        }
-                    }
-                }
+                    onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource
+                )
             }
 
             if (showQualitySwitchDialog && currentPlaybackAudioInfo != null) {
@@ -2035,7 +2711,15 @@ fun getCurrentAudioDevice(audioManager: AudioManager, context: Context): Pair<St
     return Pair(context.getString(R.string.nowplaying_phone_speaker), Icons.Default.SpeakerGroup)
 }
 
-private fun isNeteaseArtistNavigationSource(song: SongItem): Boolean {
+internal fun isNeteaseArtistNavigationSource(song: SongItem): Boolean {
+    val channelId = song.channelId?.trim()
+    val isNeteaseChannel = channelId.equals("netease", ignoreCase = true)
+    if (!channelId.isNullOrBlank() && !isNeteaseChannel) return false
+    if (song.album.startsWith(PlayerManager.BILI_SOURCE_TAG, ignoreCase = true)) return false
+    if (channelId.equals("youtubeMusic", ignoreCase = true) || isYouTubeMusicSong(song)) {
+        return false
+    }
+
     val hasCachedArtists = song.neteaseArtists.orEmpty().any { it.id > 0L && it.name.isNotBlank() }
     val hasNeteaseCover = listOfNotNull(
         song.coverUrl,
@@ -2050,13 +2734,16 @@ private fun isNeteaseArtistNavigationSource(song: SongItem): Boolean {
         reference.contains("netease -", ignoreCase = true) ||
             reference.contains("netease%20-", ignoreCase = true)
     }
-    return song.channelId == "netease" ||
-        song.album.startsWith(PlayerManager.NETEASE_SOURCE_TAG) ||
+    if (isNeteaseChannel ||
+        song.album.startsWith(PlayerManager.NETEASE_SOURCE_TAG, ignoreCase = true) ||
         song.mediaUri?.contains("music.163.com", ignoreCase = true) == true ||
-        song.matchedLyricSource == MusicPlatform.CLOUD_MUSIC ||
-        hasCachedArtists ||
-        hasNeteaseCover ||
         isManagedNeteaseDownload
+    ) {
+        return true
+    }
+
+    if (song.isLocalSong()) return false
+    return hasCachedArtists || hasNeteaseCover
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

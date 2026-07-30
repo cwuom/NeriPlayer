@@ -72,7 +72,6 @@ import androidx.compose.material.icons.filled.SpeakerGroup
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.LibraryMusic
-import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Timer
@@ -166,6 +165,7 @@ fun LyricsScreen(
     onEnterAlbum: (AlbumSummary) -> Unit,
     onExitNowPlaying: () -> Unit,
     onOpenCurrentNeteaseArtist: () -> Unit = {},
+    onOpenCurrentPlaybackSource: (() -> Unit)? = null,
     onNavigateBack: () -> Unit,
     onSeekTo: (Long) -> Unit,
     progressSeekEnabled: Boolean = true,
@@ -184,6 +184,10 @@ fun LyricsScreen(
 
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val queue by PlayerManager.currentQueueFlow.collectAsState()
+    val displayedQueue = remember(queue) { queue }
+    val currentIndexInDisplay = remember(displayedQueue, currentSong) {
+        displayedQueue.indexOfFirst { it.sameIdentityAs(currentSong) }
+    }
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsState()
     val usbPlaybackPreparing by PlayerManager.usbExclusivePlaybackPreparingFlow.collectAsState()
@@ -897,105 +901,13 @@ fun LyricsScreen(
 
             // 播放队列弹窗
             if (showQueueSheet) {
-                val queue by PlayerManager.currentQueueFlow.collectAsState()
-                val displayedQueue = remember(queue) { queue }
-                val currentIndexInDisplay = displayedQueue.indexOfFirst {
-                    it.id == currentSong?.id && it.album == currentSong?.album
-                }
-                val initialIndex = (currentIndexInDisplay - 4).coerceAtLeast(0)
-                val listState = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
-
-                LaunchedEffect(showQueueSheet, currentIndexInDisplay) {
-                    if (showQueueSheet && currentIndexInDisplay >= 0) {
-                        kotlinx.coroutines.delay(150)
-                        listState.animateScrollToItem(currentIndexInDisplay)
-                    }
-                }
-
-                androidx.compose.material3.ModalBottomSheet(
+                NowPlayingQueueSheet(
+                    displayedQueue = displayedQueue,
+                    currentIndexInDisplay = currentIndexInDisplay,
+                    offlineMode = offlineMode,
                     onDismissRequest = { showQueueSheet = false },
-                    sheetGesturesEnabled = false
-                ) {
-                    androidx.compose.foundation.lazy.LazyColumn(
-                        state = listState,
-                        modifier = Modifier.bottomSheetScrollGuard()
-                    ) {
-                        itemsIndexed(displayedQueue) { index, song ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        PlayerManager.playFromQueue(index)
-                                        showQueueSheet = false
-                                    }
-                                    .padding(horizontal = 24.dp, vertical = 16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "${index + 1}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.width(48.dp),
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Start,
-                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                                )
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(song.displayName(), maxLines = 1)
-                                    Text(
-                                        song.displayArtist(),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1
-                                    )
-                                }
-
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    if (index == currentIndexInDisplay) {
-                                        Icon(
-                                            Icons.Outlined.PlayArrow,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-
-                                    var showMoreMenu by remember { mutableStateOf(false) }
-                                    Box {
-                                        androidx.compose.material3.IconButton(onClick = { showMoreMenu = true }) {
-                                            Icon(
-                                                Icons.Filled.MoreVert,
-                                                contentDescription = stringResource(R.string.common_more_actions),
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-
-                                        DropdownMenu(
-                                            expanded = showMoreMenu,
-                                            onDismissRequest = { showMoreMenu = false }
-                                        ) {
-                                            DropdownMenuItem(
-                                                text = { Text(stringResource(R.string.local_playlist_play_next)) },
-                                                onClick = {
-                                                    PlayerManager.addToQueueNext(song)
-                                                    showMoreMenu = false
-                                                }
-                                            )
-                                            DropdownMenuItem(
-                                                text = { Text(stringResource(R.string.playlist_add_to_end)) },
-                                                onClick = {
-                                                    PlayerManager.addToQueueEnd(song)
-                                                    showMoreMenu = false
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                        }
-                    }
-                }
+                    onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource
+                )
             }
 
             // 添加到歌单弹窗

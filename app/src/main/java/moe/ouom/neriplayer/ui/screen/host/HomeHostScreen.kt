@@ -48,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.CancellationException
+import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
@@ -68,6 +69,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
 import moe.ouom.neriplayer.ui.util.restoreAlbumSummary
 import moe.ouom.neriplayer.ui.util.restorePlaylistSummary
@@ -96,6 +98,24 @@ fun HomeHostScreen(
     showRecommendedCard: Boolean = true,
     offlineMode: Boolean = false,
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
+    onSongClickWithSourceRoute: (List<SongItem>, Int, String?) -> Unit = { songs, index, _ ->
+        onSongClick(songs, index)
+    },
+    onPlayBiliAudioWithSourceRoute: (List<BiliVideoItem>, Int, String?) -> Unit = { videos, index, _ ->
+        PlayerManager.playBiliVideoAsAudio(videos, index)
+    },
+    onPlayBiliPartsWithSourceRoute: (
+        BiliClient.VideoBasicInfo,
+        Int,
+        String,
+        String?
+    ) -> Unit = { videoInfo, index, coverUrl, _ ->
+        PlayerManager.playBiliVideoParts(videoInfo, index, coverUrl)
+    },
+    neteasePlaylistSourceRoute: (PlaylistSummary) -> String? = { null },
+    neteaseAlbumSourceRoute: (AlbumSummary) -> String? = { null },
+    biliPlaylistSourceRoute: (BiliPlaylist) -> String? = { null },
+    localPlaylistSourceRoute: (Long) -> String? = { null },
     coherentFeedbackEnabled: Boolean = false,
     renderScene: @Composable (
         revealTopFraction: Float,
@@ -255,7 +275,13 @@ fun HomeHostScreen(
                                 NeteaseAlbumDetailScreen(
                                     album = current.album,
                                     onBack = { selected = null },
-                                    onSongClick = onSongClick,
+                                    onSongClick = { songs, index ->
+                                        onSongClickWithSourceRoute(
+                                            songs,
+                                            index,
+                                            neteaseAlbumSourceRoute(current.album)
+                                        )
+                                    },
                                     offlineMode = offlineMode
                                 )
                             }
@@ -264,7 +290,13 @@ fun HomeHostScreen(
                                 NeteasePlaylistDetailScreen(
                                     playlist = current.playlist,
                                     onBack = { selected = null },
-                                    onSongClick = onSongClick,
+                                    onSongClick = { songs, index ->
+                                        onSongClickWithSourceRoute(
+                                            songs,
+                                            index,
+                                            neteasePlaylistSourceRoute(current.playlist)
+                                        )
+                                    },
                                     offlineMode = offlineMode
                                 )
                             }
@@ -274,7 +306,13 @@ fun HomeHostScreen(
                                     playlistId = current.playlistId,
                                     onBack = ::closeSelectedDetail,
                                     onDeleted = ::closeDeletedLocalPlaylist,
-                                    onSongClick = onSongClick,
+                                    onSongClick = { songs, index ->
+                                        onSongClickWithSourceRoute(
+                                            songs,
+                                            index,
+                                            localPlaylistSourceRoute(current.playlistId)
+                                        )
+                                    },
                                     offlineMode = offlineMode
                                 )
                             }
@@ -293,13 +331,18 @@ fun HomeHostScreen(
                                     playlist = current.playlist,
                                     onBack = { selected = null },
                                     onPlayAudio = { videos, index ->
-                                        PlayerManager.playBiliVideoAsAudio(videos, index)
+                                        onPlayBiliAudioWithSourceRoute(
+                                            videos,
+                                            index,
+                                            biliPlaylistSourceRoute(current.playlist)
+                                        )
                                     },
                                     onPlayParts = { videoInfo, index, coverUrl ->
-                                        PlayerManager.playBiliVideoParts(
+                                        onPlayBiliPartsWithSourceRoute(
                                             videoInfo,
                                             index,
-                                            coverUrl
+                                            coverUrl,
+                                            biliPlaylistSourceRoute(current.playlist)
                                         )
                                     },
                                     offlineMode = offlineMode
