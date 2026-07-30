@@ -81,9 +81,10 @@ Additional notes:
 NeriPlayer covers a broad product surface. Protect these paths first:
 
 - **Playback**: `PlayerManager`, stream resolution, cache, URL refresh,
-  auto source switching, state recovery, loudness normalization, channel balance,
-  high-resolution output, the USB-exclusive native path, startup watchdogs, and
-  foreground/background health audits.
+  auto source switching, long-form progress memory, BilibiliSponsorBlock skip
+  policy, state recovery, loudness normalization, channel balance, high-resolution
+  output, the USB-exclusive native path, startup watchdogs, and foreground/background
+  health audits.
 - **Downloads**: `AudioDownloadManager`, `GlobalDownloadManager`,
   `DownloadTaskStore`, `DownloadLifecyclePolicies`, `ManagedDownloadStorage`,
   resume checkpoints, sidecar files, queue recovery, cancellation cleanup, and SAF migration.
@@ -434,9 +435,14 @@ Security reminders:
   files. Use safe defaults, filter records without resolvable track identity,
   valid deletion time, or valid playlist id, and never let songs with missing
   `addedAt` sort ahead of songs that already have timestamps.
-- Data Saver writes `backup.bin` as legacy-compatible `Base64(GZIP(ProtoBuf))` text;
-  reads must accept raw GZIP, JSON, and legacy Base64. Do not switch raw writing on
-  one client before Android and Desktop both support read-both.
+- Data Saver writes raw `GZIP(ProtoBuf)` bytes to `backup-raw.bin`; normal mode writes
+  `backup.json`. Reads must also accept historical `backup.bin` Base64. Do not switch
+  formats on one client before Android and Desktop both support read-both. JSON, compressed,
+  and decompressed payloads are capped at 8 MiB, 12 MiB, and 16 MiB.
+- GitHub sync writes through Git Data API blob/tree/commit calls and advances the branch
+  with a non-force ref update. Base64 in blob requests is only the API transport envelope;
+  raw content reads and repository bodies remain binary. Do not reintroduce the deprecated
+  asset-manifest transport.
 - WebDAV prefers ETag/Last-Modified conditional writes. Without condition tokens,
   only an unchanged remote SHA-256 fingerprint permits an unconditional retry;
   otherwise return a concurrency conflict.
@@ -447,6 +453,13 @@ Security reminders:
 - Platform cookies/auth data, GitHub tokens, and WebDAV passwords are encrypted
   with `Android Keystore + EncryptedSharedPreferences`.
 - `DataStore` stores regular settings and non-sensitive state, not platform login credentials.
+- Long-form progress memory applies only to tracks at least 15 minutes long. Positions
+  below 5 seconds are ignored, positions within 30 seconds of the end are cleared,
+  explicit playback positions win, and the persisted field is `resumePositionMs`.
+  This is not third-party playback history.
+- BilibiliSponsorBlock is disabled by default. It sends only a SHA-256 prefix of the
+  current BV ID and performs skips locally; it stays disabled during Listen Together,
+  and its public results must not enter sync or room state.
 - 32-bit high-resolution system output preserves the high-precision pipeline on
   regular Android system output and bypasses loudness normalization, channel
   balance, audio visualization, and in-app speed processing. Check settings copy
@@ -470,6 +483,11 @@ Security reminders:
   `REQUEST_PLAYBACK_MODE`. Member controls must validate the target stable track
   key, reject older `clientInstanceId`/`clientSequence`/`clientTimeMs` events, and
   limit `REQUEST_SET_TRACK` to the current queue.
+- The current Listen Together track keeps at most three deduplicated HTTP(S) candidates.
+  Listeners resolve their own quality policy first; candidates are only a session-scoped
+  fallback and must never be written to normal song or offline caches. Server position is
+  projected from track duration, with single-track repeat wrapping by duration; rejoining
+  with the same member credential must not trigger new-member auto-pause.
 
 ---
 
@@ -567,9 +585,10 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    `data/sync/github/SyncDataSerializer.kt` compatibility first. Shared payload
    models must not move back into the GitHub provider package.
 2. Sync data includes playlists, favorite playlists, recent plays, deletion records,
-   and playback stats. Data Saver writes legacy-compatible
-   `Base64(GZIP(ProtoBuf))` text; the reader must accept raw GZIP, JSON, and legacy
-   Base64, while GitHub Contents API adds only its transport-level Base64 layer.
+   and playback stats. Data Saver writes raw `GZIP(ProtoBuf)` to `backup-raw.bin`,
+   normal mode writes `backup.json`, and the reader must also accept historical
+   `backup.bin` Base64. GitHub Git Data API blob requests use Base64 only as a
+   transport envelope; the repository body remains raw binary.
 3. `songOrderVersion=0` represents legacy order, while `songOrderVersion=1`
    represents current display order. Serialization, merging, and local restoration
    must preserve the migration path for older data.
@@ -584,9 +603,11 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    lives in `GitHubSyncManager.kt`; WebDAV reuses the same data model and much of
    the merge behavior.
 7. Do not break the delayed sync, periodic sync, validated-network checks, or retry
-   behavior in `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt`.
-   GitHub large-file reads should use the raw content path, and WebDAV writes without
-   ETag/Last-Modified must revalidate the remote fingerprint before an unconditional retry.
+   behavior in `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt`. GitHub writes must use
+   the remote branch head and a non-force update, failing on conflicts rather than
+   overwriting. Large-file reads should use the raw content path, and WebDAV writes
+   without ETag/Last-Modified must revalidate the remote fingerprint before an
+   unconditional retry.
 8. Sensitive data must go through `SecureTokenStorage.kt` or `WebDavStorage.kt`.
    Do not store it in `DataStore` or plaintext JSON.
 
@@ -674,9 +695,13 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 8. Control events may carry `clientInstanceId`, `clientSequence`, and `clientTimeMs`.
    The Worker filters stale order, and `REQUEST_SET_TRACK` can only select an item
    already in the current queue. Keep the Android compatibility path aligned.
-9. Treat the 6-character room ID, 1-24 character nickname, queue limit 2000,
+9. Explicit member departure uses `/api/rooms/:roomId/leave`; the Worker removes
+   the member and broadcasts `MEMBER_LEFT`. A normal WebSocket close is transport
+   churn and must preserve the credential-bound member for reconnects; an explicit
+   controller departure closes the room.
+10. Treat the 6-character room ID, 1-24 character nickname, queue limit 2000,
    and request de-duplication as protocol boundaries, not just UI validation details.
-10. Settings support custom server URLs and availability tests. Do not hard-code a single server.
+11. Settings support custom server URLs and availability tests. Do not hard-code a single server.
 
 #### 14. Modify main navigation and glass transitions
 
@@ -801,9 +826,12 @@ Existing focused tests cover areas such as:
 - GitHub/WebDAV sync serialization, missing-field snapshot cleanup,
   legacy playlist-order migration, deletion policy, playback-stat merging,
   WebDAV concurrency fallback, atomic writes, and upload retry
+- Long-form progress thresholds, explicit-position precedence, BilibiliSponsorBlock
+  local skips, and its Listen Together disable policy
 - Listen Together base URL validation, version gating, repeat/shuffle modes,
-  stable-track-key target validation, invite/member secrets, event ordering,
-  playback sync planning, session control/cancellation, and protocol compatibility
+  stable-track-key target validation, session-only stream candidates, invite/member secrets,
+  explicit leave/reconnect behavior, event ordering, playback sync planning,
+  session control/cancellation, and protocol compatibility
 - Lyrics UI, word timing, external Bluetooth lyrics, playback sound controls, and playback policies
 - Config backup, generated settings, security guards, crash log files, and safe-mode behavior
 

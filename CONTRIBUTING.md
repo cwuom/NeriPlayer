@@ -73,8 +73,8 @@
 这个项目功能面比较宽，提交前请优先保护这些链路：
 
 - **播放链路**：`PlayerManager`、取流策略、缓存、失败刷新、自动换源、
-  状态恢复、响度均衡、声道平衡、高解析输出、USB 独占 Native 链路、
-  启动看门狗和前后台健康审计。
+  长音频进度记忆、BilibiliSponsorBlock 跳过策略、状态恢复、响度均衡、
+  声道平衡、高解析输出、USB 独占 Native 链路、启动看门狗和前后台健康审计。
 - **下载链路**：`AudioDownloadManager`、`GlobalDownloadManager`、
   `DownloadTaskStore`、`DownloadLifecyclePolicies`、`ManagedDownloadStorage`、
   续传检查点、sidecar 文件、任务队列恢复、取消清理和 SAF 目录迁移。
@@ -385,9 +385,13 @@
 - 同步快照可能来自旧版 JSON/ProtoBuf 或异常远端文件；读取时要用安全默认值，
   过滤缺少可解析歌曲身份、无有效删除时间或无效歌单 ID 的记录，
   缺失 `addedAt` 的歌曲不能排到已有时间歌曲之前。
-- 省流模式当前写入 `backup.bin` 时仍使用旧端可读的
-  `Base64(GZIP(ProtoBuf))` 文本；读取必须兼容原始 GZIP、JSON 和历史 Base64，
-  不要在 Android 与 Desktop 尚未同时支持 read-both 前单独切换 raw 写入。
+- 省流模式写入 `backup-raw.bin` 原始 `GZIP(ProtoBuf)` 字节；读取必须兼容
+  `backup.json` 与历史 `backup.bin` Base64，不能在 Android 与 Desktop 尚未同时
+  支持 read-both 前单独切换格式。JSON、压缩正文和解压后正文上限分别为 8 MiB、
+  12 MiB 和 16 MiB。
+- GitHub 同步通过 Git Data API 的 blob/tree/commit 写入仓库，分支 ref 使用非强制更新；
+  blob 请求中的 Base64 只是 API 传输封装。读取优先使用 raw 内容，不能再描述为
+  已废弃的资产清单协议。
 - WebDAV 优先使用 ETag/Last-Modified 条件写入；没有条件令牌时只能在远端 SHA-256
   指纹与已读快照一致的情况下回退无条件写入，否则必须按并发冲突失败。
 - 播放统计与流量统计采用延迟批量写入；播放统计在播放器/Activity 关键生命周期
@@ -395,6 +399,11 @@
 - 平台 Cookie / 鉴权信息、GitHub Token、WebDAV 密码使用
   `Android Keystore + EncryptedSharedPreferences` 加密保存。
 - `DataStore` 只承担常规设置与非敏感状态，不承载平台登录凭据。
+- 长音频进度记忆只针对不少于 15 分钟的内容；小于 5 秒的位置不保存，
+  距离结尾 30 秒以内清零，显式播放位置优先，持久化字段为 `resumePositionMs`。
+  这不是第三方平台播放历史。
+- BilibiliSponsorBlock 默认关闭，只发送当前 BV 号的 SHA-256 前缀并在本地执行跳转；
+  一起听期间保持关闭，不能把公开接口结果写入同步或房间状态。
 - 32-bit 高解析系统输出会优先保留普通系统输出的高精度管线，并旁路响度均衡、
   声道平衡、音频可视化和应用内倍速等处理；改动时必须同时确认设置文案和测试。
 - USB 独占依赖兼容 **UAC1.0** 或 **UAC2.0 Type I PCM** 的 DAC、
@@ -411,6 +420,9 @@
 - 一起听循环/随机模式通过 `PLAYBACK_MODE` / `REQUEST_PLAYBACK_MODE` 同步；
   成员控制必须校验目标 stable track key，过滤 `clientInstanceId`、`clientSequence`、
   `clientTimeMs` 之前的事件，且 `REQUEST_SET_TRACK` 只能选当前队列曲目。
+- 一起听当前曲目最多保留 3 条去重 HTTP(S) 候选；听众先按本机音质策略解析，
+  候选只作为本次会话的失败回退，不能写入普通歌曲或离线缓存。服务端位置按曲目
+  时长推算，单曲循环按时长取模；同一成员凭成员密钥重连不应触发新成员自动暂停。
 
 ---
 
@@ -497,8 +509,9 @@
    `data/sync/github/SyncDataSerializer.kt` 的兼容策略；共享载荷模型不得
    重新放回 GitHub provider 包。
 2. 同步对象包含歌单、收藏歌单、最近播放、删除记录和播放统计。
-   `backup.bin` 写侧仍是 `Base64(GZIP(ProtoBuf))` 文本，读侧必须兼容原始
-   GZIP、JSON 和历史 Base64；GitHub Contents API 只在传输层再做一次 Base64。
+   省流写侧使用 `backup-raw.bin` 原始 `GZIP(ProtoBuf)`，普通模式使用
+   `backup.json`；读侧还必须兼容历史 `backup.bin` Base64。GitHub Git Data API
+   的 blob 请求会使用 Base64 传输封装，但仓库内保存的是原始正文。
 3. `songOrderVersion=0` 表示旧版顺序，`songOrderVersion=1` 表示当前展示顺序；
    序列化、合并和落回本地歌单时必须保留旧数据迁移。
 4. 歌单成员使用 `syncMembershipTokens` / `removedMembershipTokens` 表达
@@ -509,7 +522,9 @@
 6. `CoverUrlMapper.kt` 位于 provider 无关的 `data/sync/`；
    合并策略主要在 `GitHubSyncManager.kt`，WebDAV 复用同一套数据模型和多数合并逻辑。
 7. 不要破坏 `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt` 的延迟同步、
-   周期同步、validated network 检查和失败重试行为。
+   周期同步、validated network 检查和失败重试行为。GitHub 写入按远端分支头做
+   非强制更新，冲突时必须失败而不是覆盖；WebDAV 无 ETag/Last-Modified 时仍需
+   重新验证远端 SHA-256 指纹。
 8. 涉及敏感信息时统一走 `SecureTokenStorage.kt` 或 `WebDavStorage.kt`，
    不要放回 `DataStore` 或明文 JSON。
 
@@ -586,9 +601,12 @@
 8. 控制事件可携带 `clientInstanceId`、`clientSequence` 和 `clientTimeMs`；Worker
    会拒绝过期顺序，`REQUEST_SET_TRACK` 只能选择当前队列已有曲目，客户端兼容路径
    也必须保持一致。
-9. 房间号 6 位、昵称 1-24、队列上限 2000 和请求去重要视为协议边界，
+9. 成员显式离开时调用 `/api/rooms/:roomId/leave`，Worker 删除成员并广播
+   `MEMBER_LEFT`；普通 WebSocket 断线属于传输波动，必须保留成员凭据以支持重连；
+   控制者显式离开则关闭房间。
+10. 房间号 6 位、昵称 1-24、队列上限 2000 和请求去重要视为协议边界，
    不要只改 UI 校验而忘记服务端约束。
-10. 设置页支持自定义服务端地址和可用性测试，不要硬编码单一地址。
+11. 设置页支持自定义服务端地址和可用性测试，不要硬编码单一地址。
 
 #### 14. 修改主导航与玻璃转场
 
@@ -701,8 +719,9 @@ adb logcat | grep NeriPlayer
 - 本地扫描、元信息补全、封面回退、系统歌单去重和歌单顺序稳定性
 - GitHub/WebDAV 同步序列化、缺字段快照清洗、旧歌单顺序迁移、删除策略、
   播放统计合并、WebDAV 并发回退、原子文件写入和上传重试
+- 长音频进度阈值、显式位置优先、BilibiliSponsorBlock 本地跳转与一起听禁用策略
 - 一起听地址校验、版本门控、循环/随机模式、stable track key 目标校验、
-  播放同步规划、邀请/成员密钥、事件排序、Session 控制/取消与协议兼容
+  播放同步规划、候选直链回退、邀请/成员密钥、显式离开/重连、事件排序、Session 控制/取消与协议兼容
 - 歌词视图、逐词时间、外部蓝牙歌词、播放音效和播放策略
 - 配置备份、设置生成、安全守卫、崩溃日志文件和安全模式相关逻辑
 

@@ -152,7 +152,10 @@ Current positioning:
   highlighting, translated lyrics, phonetic display, lyric offset, click-to-seek,
   long-press sharing, depth blur, edge fade, and a full-screen Lyrics page.
   `LyricShareSheet` can select lyric lines, copy text, share the song, or render
-  a 1080px lyric card. Floating lyrics, status-bar lyrics,
+  a 1080px lyric card. The Now Playing cover lyric view and bottom Dock can be
+  disabled independently; narrow or heavily scaled portrait layouts switch to a
+  compact control arrangement with stable touch slots. Long-press selection can
+  select a range from the first line to the target line. Floating lyrics, status-bar lyrics,
   SuperLyric, Lyricon, Bluetooth lyrics, and lyric editing reuse the same
   playback data path.
 - **Complete local music management**:
@@ -192,7 +195,10 @@ Current positioning:
   scheduling gap, the runtime reacquires the feedback clock instead of continuing
   with a stale rate estimate. Foreground/background recovery chooses wake behavior
   from the network or local source, and bit-perfect volume keeps software gain at
-  0 dB so the DAC controls the level.
+  0 dB so the DAC controls the level. Settings report battery-optimization or
+  background-permission limits. While service playback is retained, a background
+  audio anchor selects silence or a zero-mean carrier for the actual output route;
+  MediaSession provides remote volume routing and the carrier is not user content.
 - **Downloads have moved from "can save" to "can recover"**:
   downloads do not use the system `DownloadManager`. They use the shared
   `OkHttpClient`, configurable concurrency, staging files, and sidecar metadata.
@@ -257,8 +263,10 @@ Current positioning:
   resolve with their own quality policy first and use those session-only candidates only
   after local resolution fails, so they never enter song or offline caches. Reconnecting
   with the same member credential does not trigger member-change auto-pause, and both
-  roles keep their WebSocket connection alive. Durable Objects persist room state while
-  WebSocket keeps active members in sync.
+  roles keep their WebSocket connection alive. Explicitly leaving a room removes the
+  member and broadcasts the departure, while a transport-only disconnect remains
+  reconnectable. Durable Objects persist room state while WebSocket keeps active
+  members in sync.
 
 ---
 
@@ -365,7 +373,12 @@ For release build and signing details, see
 - 🎛️ **Fine-grained playback behavior**:
   keep last playback progress, restore playback mode, fade-in/fade-out,
   crossfade-next, pause on Bluetooth disconnect, USB exclusive playback,
-  mixed playback, and preemptive audio focus are configurable.
+  mixed playback, and preemptive audio focus are configurable. Long-form progress
+  memory is enabled by default only for tracks at least 15 minutes long; positions
+  below 5 seconds are ignored, positions within 30 seconds of the end are cleared,
+  and an explicitly requested position wins over remembered progress. The value is
+  stored as `resumePositionMs` for local or optional sync and is not third-party
+  playback history.
 - 🔌 **USB exclusive playback**:
   supports **UAC1.0** and compatible **UAC2.0 Type I PCM** USB DAC devices, with
   device selection, sample-rate/bit-depth/buffer policies, compatibility toggles,
@@ -381,7 +394,11 @@ For release build and signing details, see
   reconfiguration, coordinated AudioSink recreation, dynamic transfer scaling,
   and soft recovery before falling back to Android system output. Foreground/background
   recovery chooses wake behavior for network or local playback, and bit-perfect volume
-  keeps software gain at 0 dB for DAC-side volume control.
+  keeps software gain at 0 dB for DAC-side volume control. Settings report battery-
+  optimization and background-permission limits. A retained service playback uses a
+  route-aware background audio anchor that selects silence or a zero-mean carrier,
+  while MediaSession provides remote volume routing and the carrier remains inaudible
+  user content.
 - 💾 **Configurable streaming cache**:
   audio cache uses `SimpleCache + LRU`, defaults to **1 GB**, and supports
   cleanup for audio cache, image cache, download staging, share staging, and
@@ -407,8 +424,9 @@ For release build and signing details, see
 - 🎵 **Local audio import and scanning**:
   supports system `VIEW / SEND / SEND_MULTIPLE` for `audio/*`, device music
   scanning, authorized-folder scanning, and nearby sidecar lyrics/covers.
-  Large scans can show a quick preview first, then continue background metadata hydration;
-  an empty SAF listing cannot accidentally clear an existing directory index.
+  Large scans can show a quick preview first, filter to tracks with existing metadata,
+  and then continue background metadata hydration; an empty SAF listing cannot
+  accidentally clear an existing directory index.
 - 👤 **Local artist grouping and detail pages**:
   local songs are grouped by display artist automatically, including common
   `feat.`, `with`, Chinese conjunction, punctuation, and slash-separated artist
@@ -451,8 +469,12 @@ For release build and signing details, see
   complete invite or its secret separately; tapping Join reads a valid invite from the clipboard
   and does not enter a room when none is present. Local tracks cannot create a room or replace
   its current track. When sharing is enabled, the Worker caches and exposes only the current
-  controller URL; disabling sharing clears that cache. Outdated client control events are filtered,
-  and `REQUEST_SET_TRACK` can only choose a song already in the current queue.
+  controller URL; disabling sharing clears that cache. The Worker keeps at most three
+  deduplicated HTTP(S) candidates for the current track; listeners resolve their own quality
+  policy first and use candidates only as a session-scoped fallback after local resolution fails.
+  Candidates are never written to normal song or offline caches. Room position is projected from
+  track duration, and single-track repeat wraps it by that duration. Outdated client control events
+  are filtered, and `REQUEST_SET_TRACK` can only choose a song already in the current queue.
 - 🌈 **Personalization and themes**:
   auto/light/dark mode, dynamic color, seed colors, theme styles, UI scaling,
   custom background image, haptic feedback, lyric font size, lyric blur,
@@ -662,9 +684,11 @@ For release build and signing details, see
   most merge policies currently remain under `sync/github/`.
 - GitHub/WebDAV sync uses a locally generated UUID as the device identifier,
   not `ANDROID_ID`.
-- GitHub sync payloads use raw binary private Draft Release Assets, while the
-  repository only commits a small UTF-8 manifest. This avoids both the Contents
-  API Base64 body and its 1 MB inline-content limit.
+- GitHub sync creates a raw binary blob through the Git Data API, writes it through
+  a tree and commit, and advances the default branch with a non-force ref update.
+  Reads use the raw content endpoint; Base64 in blob requests is only the API
+  transport envelope and does not change the stored body. Sync payloads are capped
+  at 12 MiB, with raw `GZIP(ProtoBuf)` in Data Saver mode and UTF-8 JSON otherwise.
 
 ### Downloads, local import, and backups
 
@@ -782,15 +806,18 @@ Current sync targets:
   fields, filter malformed records without resolvable track identity or valid
   deletion time, and keep songs with missing `addedAt` behind dated songs so bad
   snapshots cannot jump ahead in playlists.
-- 🪶 **Data Saver**: `backup.bin` writes raw `GZIP(ProtoBuf)` bytes. The reader still
-  accepts JSON and legacy Base64 formats; JSON is used when Data Saver is disabled.
-- GitHub sync uploads payloads as binary Release Assets and coordinates versions with a
-  UTF-8 manifest commit, avoiding the Contents API 1 MB inline-content limit. WebDAV servers without
-  ETag/Last-Modified allow an unconditional write only when the remote SHA-256
-  fingerprint is unchanged; otherwise the sync reports a concurrency conflict.
-- Upgrade every sync client for a repository before its first GitHub Release Asset
-  sync. Older clients that only understand Contents API `backup.*` files cannot be
-  mixed with this protocol.
+- 🪶 **Data Saver**: `backup-raw.bin` writes raw `GZIP(ProtoBuf)` bytes. The reader still
+  accepts `backup.json` and legacy `backup.bin` Base64 formats; JSON is used when Data Saver
+  is disabled. JSON, compressed, and decompressed payloads are capped at 8 MiB, 12 MiB, and
+  16 MiB respectively.
+- GitHub sync writes the raw payload through Git Data API blob/tree/commit calls and advances
+  the default branch with a non-force ref update. Reads use raw content; Base64 in blob requests
+  is only the API transport envelope. WebDAV servers without ETag/Last-Modified allow an
+  unconditional write only when the remote SHA-256 fingerprint is unchanged; otherwise the
+  sync reports a concurrency conflict.
+- Upgrade Android and Desktop sync clients together before enabling Data Saver writes. New
+  clients read raw GZIP, JSON, and legacy Base64, while older clients may only understand
+  historical Base64 text.
 - 📦 **Remote format**: a GitHub repository is not end-to-end encryption.
   You are responsible for protecting remote files.
 - 🚫 **Sync boundary**: audio caches, downloaded files, local media files, cookies,
@@ -838,6 +865,8 @@ and community feedback. They are not fixed-date commitments.
   advanced-glass owner handoff, and drawer-style detail feedback by default
 - [x] Listen Together repeat/shuffle sync, stable-track-key target validation,
   server clock-offset estimation, and authoritative stream recovery
+- [x] Listen Together duration-based position projection, single-track repeat wrapping,
+  and up to three session-only stream candidates
 - [x] Listen Together invite/member secrets, ordered control events, and queue-only
   member track selection
 - [x] 32-bit high-resolution system output, PCM-float channel balance, and thread-safe loudness-normalization state
@@ -854,6 +883,8 @@ and community feedback. They are not fixed-date commitments.
   GitHub/WebDAV sync data
 - [x] USB exclusive device selection, quality policies, background-playback guidance, and layered automatic recovery
 - [x] Fast local scan previews, background metadata hydration, and cover fallback resolution
+- [x] Existing-metadata scan filtering, long-form progress memory, and completion clearing
+- [x] Optional BilibiliSponsorBlock auto-skip and compact Now Playing lyric-range selection
 - [x] Listen Together stream-link sharing toggles, asynchronous stream resolution, and more stable room sync
 - [x] Long-press lyric selection, copy, song sharing, and lyric card generation
 - [x] Phonetic lyric display and the lyric behavior sheet
@@ -956,8 +987,12 @@ We will keep improving the project over time.
 - QQ Music is only a playback metadata/lyrics completion source.
 - GitHub/WebDAV sync is not end-to-end encrypted. Full config export files may
   contain auth data and must be protected by the user.
-- Data Saver writes raw GZIP bytes. New Android and Desktop builds retain legacy Base64
-  reads during migration, while new GitHub uploads use binary Release Assets.
+- Data Saver writes raw GZIP bytes to `backup-raw.bin`. New Android and Desktop builds
+  retain `backup.json` and legacy `backup.bin` Base64 reads during migration, while
+  GitHub uploads use Git Data API binary blobs and non-force branch updates.
+- Long-form progress memory does not override an explicitly requested position or replace
+  third-party playback history. BilibiliSponsorBlock calls a public API and stays disabled
+  during Listen Together.
 
 ---
 
