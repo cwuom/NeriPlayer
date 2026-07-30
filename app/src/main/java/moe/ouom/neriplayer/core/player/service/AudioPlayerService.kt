@@ -116,7 +116,8 @@ import moe.ouom.neriplayer.data.settings.PlaybackServiceIdleShutdownPreference
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.traffic.isOfflineModeNow
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
-import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherPlaybackState
+import moe.ouom.neriplayer.listentogether.playback.expectedPositionMs
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import moe.ouom.neriplayer.util.media.IsLandHelp
 import moe.ouom.neriplayer.util.media.buildRemoteSongShareUrl
 import moe.ouom.neriplayer.util.media.isShareablePublicHttpUrl
@@ -377,7 +378,7 @@ internal fun shouldRequestArtworkLoad(
         return true
     }
     val elapsed = nowElapsedRealtime - lastFailureAtElapsedRealtime
-    return elapsed < 0L || elapsed >= retryCooldownMs
+    return elapsed !in 0L..<retryCooldownMs
 }
 
 internal fun resolveRemoteMetadataArtworkUri(coverSource: String?): String? {
@@ -2606,8 +2607,7 @@ class AudioPlayerService : Service() {
 
     private fun listenTogetherExpectedPositionMs(): Long {
         return AppContainer.listenTogetherSessionManager.roomState.value
-            ?.playback
-            ?.expectedPositionMs()
+            ?.let(::resolveListenTogetherMediaSessionPosition)
             ?: 0L
     }
 
@@ -2637,10 +2637,13 @@ class AudioPlayerService : Service() {
     }
 }
 
-private fun ListenTogetherPlaybackState.expectedPositionMs(nowMs: Long = System.currentTimeMillis()): Long {
-    return if (state == "playing") {
-        (basePositionMs + ((nowMs - baseTimestampMs) * playbackRate)).toLong().coerceAtLeast(0L)
-    } else {
-        basePositionMs.coerceAtLeast(0L)
-    }
+internal fun resolveListenTogetherMediaSessionPosition(
+    roomState: ListenTogetherRoomState,
+    nowMs: Long = System.currentTimeMillis()
+): Long {
+    val activeTrack = roomState.track ?: roomState.queue.getOrNull(roomState.currentIndex)
+    return roomState.playback.expectedPositionMs(
+        nowMs = nowMs,
+        durationMs = activeTrack?.durationMs ?: 0L
+    )
 }

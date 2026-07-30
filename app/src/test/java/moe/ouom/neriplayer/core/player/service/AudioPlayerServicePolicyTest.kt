@@ -5,7 +5,9 @@ import android.support.v4.media.session.PlaybackStateCompat
 import androidx.lifecycle.Lifecycle
 import moe.ouom.neriplayer.core.player.audio.focus.shouldPauseUsbExclusiveForFocusChange
 import moe.ouom.neriplayer.core.player.audio.focus.shouldSuppressUsbExclusiveForFocusChange
-import moe.ouom.neriplayer.core.player.policy.command.shouldBootstrapPlaybackServiceOnAppLaunch
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherPlaybackState
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -43,6 +45,33 @@ class AudioPlayerServicePolicyTest {
         assertTrue(actions and PlaybackStateCompat.ACTION_SKIP_TO_NEXT != 0L)
         assertTrue(actions and PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS != 0L)
         assertTrue(actions and PlaybackStateCompat.ACTION_SEEK_TO != 0L)
+    }
+
+    @Test
+    fun `media session fallback wraps a single repeat room position`() {
+        val roomState = ListenTogetherRoomState(
+            roomId = "room-1",
+            version = 1L,
+            track = ListenTogetherTrack(
+                stableKey = "netease:1",
+                channelId = "netease",
+                audioId = "1",
+                name = "track",
+                artist = "artist",
+                durationMs = 60_000L
+            ),
+            playback = ListenTogetherPlaybackState(
+                state = "playing",
+                basePositionMs = 58_000L,
+                baseTimestampMs = 1_000L,
+                repeatMode = 1
+            )
+        )
+
+        assertEquals(
+            3_000L,
+            resolveListenTogetherMediaSessionPosition(roomState, nowMs = 6_000L)
+        )
     }
 
     @Test
