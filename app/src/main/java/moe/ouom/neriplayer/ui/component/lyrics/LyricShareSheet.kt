@@ -129,8 +129,14 @@ fun LyricShareSheet(
     val lyricsListState = rememberLazyListState(
         initialFirstVisibleItemIndex = initialScrollIndex
     )
+    val shareLineKeys = remember(shareableLyrics) {
+        shareableLyrics.mapIndexed { index, line -> shareLineKey(index, line) }
+    }
     var selectedKeys by remember(shareableLyrics, initialKey) {
         mutableStateOf(setOfNotNull(initialKey))
+    }
+    var selectionStartKey by remember(shareableLyrics, initialKey) {
+        mutableStateOf(initialKey)
     }
     val selectedLines = remember(shareableLyrics, selectedKeys) {
         shareableLyrics.filterIndexed { index, line ->
@@ -188,17 +194,29 @@ fun LyricShareSheet(
                     items = shareableLyrics,
                     key = { index, line -> shareLineKey(index, line) }
                 ) { index, line ->
-                    val key = shareLineKey(index, line)
+                    val key = shareLineKeys[index]
                     val selected = key in selectedKeys
                     LyricShareLine(
                         line = line,
                         selected = selected,
                         onToggle = {
+                            val previousKeys = selectedKeys
                             val nextKeys = toggleShareLine(
-                                currentKeys = selectedKeys,
+                                currentKeys = previousKeys,
                                 toggledKey = key
                             )
                             selectedKeys = nextKeys
+                            if (key !in previousKeys) {
+                                selectionStartKey = key
+                            }
+                        },
+                        onRangeSelect = {
+                            selectedKeys = selectShareLineRange(
+                                currentKeys = selectedKeys,
+                                lineKeys = shareLineKeys,
+                                selectionStartKey = selectionStartKey,
+                                targetKey = key
+                            )
                         }
                     )
                 }
@@ -312,7 +330,8 @@ private fun LyricShareHeader(
 private fun LyricShareLine(
     line: LyricEntry,
     selected: Boolean,
-    onToggle: () -> Unit
+    onToggle: () -> Unit,
+    onRangeSelect: () -> Unit
 ) {
     val shape = RoundedCornerShape(14.dp)
     val selectedBrush = Brush.horizontalGradient(
@@ -335,7 +354,7 @@ private fun LyricShareLine(
             .then(background)
             .combinedClickable(
                 onClick = onToggle,
-                onLongClick = onToggle
+                onLongClick = onRangeSelect
             )
             .padding(horizontal = 18.dp, vertical = 14.dp)
     ) {
@@ -402,6 +421,23 @@ internal fun toggleShareLine(
         return if (currentKeys.size > 1) currentKeys - toggledKey else currentKeys
     }
     return currentKeys + toggledKey
+}
+
+internal fun selectShareLineRange(
+    currentKeys: Set<String>,
+    lineKeys: List<String>,
+    selectionStartKey: String?,
+    targetKey: String
+): Set<String> {
+    val targetIndex = lineKeys.indexOf(targetKey)
+    if (targetIndex < 0) return currentKeys
+
+    val selectionStartIndex = lineKeys.indexOf(selectionStartKey)
+    if (selectionStartIndex < 0) return currentKeys + targetKey
+
+    val rangeStart = minOf(selectionStartIndex, targetIndex)
+    val rangeEnd = maxOf(selectionStartIndex, targetIndex)
+    return currentKeys + lineKeys.subList(rangeStart, rangeEnd + 1)
 }
 
 private fun resolveInitialShareLineKey(

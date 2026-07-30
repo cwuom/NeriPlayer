@@ -31,7 +31,7 @@ class AutoSettingsGeneratedTest {
             "haptic_feedback_enabled" in booleanKeyNames
         )
         assertTrue(
-            "personalization switch should be exportable",
+            "display tab switch should be exportable",
             "always_use_new_tab_style" in booleanKeyNames
         )
         assertTrue(
@@ -268,18 +268,39 @@ class AutoSettingsGeneratedTest {
     }
 
     @Test
-    fun alwaysUseNewTabStyleDefaultsOnAndUsesPersonalizationSwitch() {
-        val setting = AutoSettingsSchema.personalization.alwaysUseNewTabStyle
+    fun alwaysUseNewTabStyleDefaultsOnAndUsesDisplaySwitch() {
+        val setting = AutoSettingsSchema.display.alwaysUseNewTabStyle
         val metadata = AutoSettingsMetadata.setting("always_use_new_tab_style")
 
         assertEquals(true, setting.defaultValue)
         assertEquals(SettingValueType.Boolean, metadata?.valueType)
         assertEquals(SettingUiType.Switch, metadata?.ui)
-        assertEquals(AutoSettingsSections.personalization, metadata?.section)
+        assertEquals(AutoSettingsSections.display, metadata?.section)
         assertEquals(AutoSettingIcon.Tab, metadata?.icon)
         assertEquals(
             1,
             AutoSettingsMetadata.settings.count { it.icon == AutoSettingIcon.Tab }
+        )
+    }
+
+    @Test
+    fun coverLyricsSwitchUsesAUniqueDisplayIcon() {
+        val setting = AutoSettingsSchema.display.nowPlayingCoverLyricsEnabled
+        val metadata = AutoSettingsMetadata.setting("nowplaying_cover_lyrics_enabled")
+
+        assertEquals(true, setting.defaultValue)
+        assertEquals(SettingValueType.Boolean, metadata?.valueType)
+        assertEquals(SettingUiType.Switch, metadata?.ui)
+        assertEquals(AutoSettingsSections.display, metadata?.section)
+        assertEquals(R.drawable.ic_lyrics_24, metadata?.iconRes)
+        val visualIdentity = metadata?.let { it.iconRes to it.icon }
+        val otherDisplayVisualIdentities = AutoSettingsMetadata
+            .settingsIn(AutoSettingsSections.display)
+            .filter { it.keyName != "nowplaying_cover_lyrics_enabled" }
+            .map { it.iconRes to it.icon }
+        assertTrue(
+            "cover lyrics icon must be unique within display settings",
+            visualIdentity !in otherDisplayVisualIdentities
         )
     }
 

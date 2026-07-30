@@ -45,6 +45,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -79,10 +80,12 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -700,29 +703,51 @@ fun LyricsScreen(
         }
 
         // 底部操作栏 (固定在底部, 与 NowPlayingScreen 完全一致)
-        Row(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth(toolbarWidthFraction)
                 .widthIn(max = 720.dp)
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .clip(RoundedCornerShape(if (isTabletLandscape) 30.dp else 0.dp))
-                .background(
-                    if (isTabletLandscape) {
-                        MaterialTheme.colorScheme.surface.copy(alpha = 0.34f)
-                    } else {
-                        Color.Transparent
-                    }
-                )
-                .padding(
-                    horizontal = if (isTabletLandscape) 18.dp else 16.dp,
-                    vertical = if (isTabletLandscape) 8.dp else 4.dp
-                ),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
         ) {
+            val toolbarLayout = resolvePlaybackActionToolbarLayout(
+                availableWidth = maxWidth,
+                preferredHorizontalPadding = if (isTabletLandscape) 18.dp else 16.dp,
+                defaultIconSize = toolbarIconSize
+            )
+            CompositionLocalProvider(
+                LocalMinimumInteractiveComponentSize provides
+                    toolbarLayout.minimumInteractiveComponentSize
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(if (isTabletLandscape) 30.dp else 0.dp))
+                        .background(
+                            if (isTabletLandscape) {
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.34f)
+                            } else {
+                                Color.Transparent
+                            }
+                        )
+                        .padding(
+                            horizontal = toolbarLayout.horizontalPadding,
+                            vertical = if (isTabletLandscape) 8.dp else 4.dp
+                        ),
+                    horizontalArrangement = if (toolbarLayout.useEqualWidthSlots) {
+                        Arrangement.Start
+                    } else {
+                        Arrangement.SpaceBetween
+                    },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val toolbarActionModifier = if (toolbarLayout.useEqualWidthSlots) {
+                        Modifier.weight(1f)
+                    } else {
+                        Modifier
+                    }
             // 播放队列按钮
             var showQueueSheet by remember { mutableStateOf(false) }
-            HapticIconButton(onClick = { showQueueSheet = true },  modifier = Modifier.then(
+            HapticIconButton(onClick = { showQueueSheet = true },  modifier = toolbarActionModifier.then(
                 if (sharedTransitionScope != null && animatedContentScope != null) {
                     with(sharedTransitionScope) {
                         Modifier.sharedBounds(
@@ -737,7 +762,7 @@ fun LyricsScreen(
                 Icon(
                     Icons.AutoMirrored.Outlined.QueueMusic,
                     contentDescription = stringResource(R.string.lyrics_playlist),
-                    modifier = Modifier.size(toolbarIconSize)
+                    modifier = Modifier.size(toolbarLayout.iconSize)
                 )
             }
 
@@ -745,7 +770,7 @@ fun LyricsScreen(
             val sleepTimerState by PlayerManager.sleepTimerManager.timerState.collectAsState()
             var showSleepTimerDialog by remember { mutableStateOf(false) }
             HapticIconButton(onClick = { showSleepTimerDialog = true },
-                modifier = Modifier.then(
+                modifier = toolbarActionModifier.then(
                     if (sharedTransitionScope != null && animatedContentScope != null) {
                         with(sharedTransitionScope) {
                             Modifier.sharedBounds(
@@ -761,7 +786,7 @@ fun LyricsScreen(
                     Icons.Outlined.Timer,
                     contentDescription = stringResource(R.string.lyrics_timer),
                     tint = if (sleepTimerState.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(toolbarIconSize)
+                    modifier = Modifier.size(toolbarLayout.iconSize)
                 )
             }
 
@@ -778,7 +803,7 @@ fun LyricsScreen(
             }
             var showVolumeSheet by remember { mutableStateOf(false) }
             HapticIconButton(onClick = { showVolumeSheet = true },
-                modifier = Modifier.then(
+                modifier = toolbarActionModifier.then(
                     if (sharedTransitionScope != null && animatedContentScope != null) {
                         with(sharedTransitionScope) {
                             Modifier.sharedBounds(
@@ -793,14 +818,14 @@ fun LyricsScreen(
                 Icon(
                     audioDeviceIcon,
                     contentDescription = stringResource(R.string.cd_audio_device),
-                    modifier = Modifier.size(toolbarIconSize)
+                    modifier = Modifier.size(toolbarLayout.iconSize)
                 )
             }
 
             // 歌词按钮 (返回封面页, 高亮显示)
             @SuppressLint("UnusedContentLambdaTargetStateParameter")
             HapticIconButton(onClick = onNavigateBack,
-                modifier = Modifier.then(
+                modifier = toolbarActionModifier.then(
                 if (sharedTransitionScope != null && animatedContentScope != null) {
                     with(sharedTransitionScope) {
                         Modifier.sharedBounds(
@@ -823,7 +848,7 @@ fun LyricsScreen(
                         imageVector = Icons.Outlined.LibraryMusic,
                         contentDescription = stringResource(R.string.lyrics_back_to_cover),
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(toolbarIconSize)
+                        modifier = Modifier.size(toolbarLayout.iconSize)
                     )
                 }
             }
@@ -834,7 +859,7 @@ fun LyricsScreen(
                 skipPartiallyExpanded = true
             )
             HapticIconButton(onClick = { showAddSheet = true },
-                modifier = Modifier.then(
+                modifier = toolbarActionModifier.then(
                 if (sharedTransitionScope != null && animatedContentScope != null) {
                     with(sharedTransitionScope) {
                         Modifier.sharedBounds(
@@ -849,7 +874,7 @@ fun LyricsScreen(
                 Icon(
                     Icons.AutoMirrored.Outlined.PlaylistAdd,
                     contentDescription = stringResource(R.string.lyrics_add_to_playlist),
-                    modifier = Modifier.size(toolbarIconSize)
+                    modifier = Modifier.size(toolbarLayout.iconSize)
                 )
             }
 
@@ -1018,6 +1043,8 @@ fun LyricsScreen(
                     }
                     Spacer(Modifier.height(12.dp))
                 }
+            }
+        }
             }
         }
 

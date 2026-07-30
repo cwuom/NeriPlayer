@@ -84,6 +84,9 @@ class SettingsRepository(private val context: Context) {
     val showCoverSourceBadgeFlow: Flow<Boolean> =
         autoSettingsRepository.showCoverSourceBadgeFlow
 
+    val nowPlayingCoverLyricsEnabledFlow: Flow<Boolean> =
+        autoSettingsRepository.nowPlayingCoverLyricsEnabledFlow
+
     val nowPlayingToolbarDockEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.nowPlayingToolbarDockEnabledFlow
 

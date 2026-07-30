@@ -125,6 +125,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -170,6 +171,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -270,6 +272,11 @@ private const val CoverSourceBadgeRevealBufferMs = 120
 private const val CoverSourceBadgeRevealDelayMs =
     LyricsPageTransitionDurationMs + CoverSourceBadgeRevealBufferMs
 private const val QueueSheetMaxHeightFraction = 0.9f
+private const val HighUiDensityScaleThreshold = 1.1f
+private const val CompactNowPlayingPortraitMaxHeightDp = 600f
+private const val PlaybackActionToolbarItemCount = 5
+private val PlaybackActionToolbarMinimumTouchTarget = 48.dp
+private val PlaybackActionToolbarSmallSlotThreshold = 40.dp
 private val LyricOffsetStepMsFloat = LYRIC_DEFAULT_OFFSET_STEP_MS.toFloat()
 
 internal enum class NowPlayingWideLyricsMode {
@@ -285,6 +292,68 @@ internal fun resolveNowPlayingWideLyricsMode(
     !hasLyrics -> NowPlayingWideLyricsMode.NO_LYRICS
     advancedLyricsEnabled -> NowPlayingWideLyricsMode.ADVANCED
     else -> NowPlayingWideLyricsMode.SYNCED
+}
+
+internal fun shouldUseCompactNowPlayingPortraitLayout(
+    isLandscape: Boolean,
+    availableHeightDp: Float,
+    uiDensityScale: Float
+): Boolean {
+    if (isLandscape) {
+        return false
+    }
+    return uiDensityScale >= HighUiDensityScaleThreshold ||
+        (availableHeightDp > 0f && availableHeightDp <= CompactNowPlayingPortraitMaxHeightDp)
+}
+
+internal fun shouldShowNowPlayingCoverLyrics(
+    coverLyricsEnabled: Boolean,
+    useCompactPortraitLayout: Boolean
+): Boolean = coverLyricsEnabled && !useCompactPortraitLayout
+
+internal fun shouldUseNowPlayingToolbarDock(
+    toolbarDockEnabled: Boolean,
+    useCompactPortraitLayout: Boolean
+): Boolean = toolbarDockEnabled && !useCompactPortraitLayout
+
+internal data class PlaybackActionToolbarLayout(
+    val horizontalPadding: Dp,
+    val minimumInteractiveComponentSize: Dp,
+    val iconSize: Dp,
+    val useEqualWidthSlots: Boolean
+)
+
+internal fun resolvePlaybackActionToolbarLayout(
+    availableWidth: Dp,
+    preferredHorizontalPadding: Dp,
+    defaultIconSize: Dp
+): PlaybackActionToolbarLayout {
+    val preferredSlotWidth = (
+        (availableWidth - preferredHorizontalPadding * 2) / PlaybackActionToolbarItemCount
+        ).coerceAtLeast(0.dp)
+    if (preferredSlotWidth >= PlaybackActionToolbarMinimumTouchTarget) {
+        return PlaybackActionToolbarLayout(
+            horizontalPadding = preferredHorizontalPadding,
+            minimumInteractiveComponentSize = PlaybackActionToolbarMinimumTouchTarget,
+            iconSize = defaultIconSize,
+            useEqualWidthSlots = false
+        )
+    }
+
+    val compactSlotWidth = (availableWidth / PlaybackActionToolbarItemCount).coerceAtLeast(0.dp)
+    return PlaybackActionToolbarLayout(
+        horizontalPadding = 0.dp,
+        minimumInteractiveComponentSize = minOf(
+            PlaybackActionToolbarMinimumTouchTarget,
+            compactSlotWidth
+        ),
+        iconSize = if (compactSlotWidth < PlaybackActionToolbarSmallSlotThreshold) {
+            18.dp
+        } else {
+            defaultIconSize
+        },
+        useEqualWidthSlots = true
+    )
 }
 
 internal fun shouldHideDownloadActionForSong(
@@ -410,6 +479,12 @@ fun NowPlayingScreen(
     val nowPlayingToolbarDockEnabled by settingsRepo
         .nowPlayingToolbarDockEnabledFlow
         .collectAsStateWithLifecycle(initialValue = true)
+    val nowPlayingCoverLyricsEnabled by settingsRepo
+        .nowPlayingCoverLyricsEnabledFlow
+        .collectAsStateWithLifecycle(initialValue = true)
+    val uiDensityScale by settingsRepo
+        .uiDensityScaleFlow
+        .collectAsStateWithLifecycle(initialValue = 1.0f)
     val showProgressAudioCodec by settingsRepo
         .nowPlayingProgressShowAudioCodecFlow
         .collectAsStateWithLifecycle(initialValue = true)
@@ -816,8 +891,22 @@ fun NowPlayingScreen(
     val density = LocalDensity.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val windowWidthDp = with(density) { windowInfo.containerSize.width.toDp() }
+    val windowHeightDp = with(density) { windowInfo.containerSize.height.toDp() }
     val isWideLayout = windowWidthDp >= 480.dp
     val useWideLandscapeLayout = isWideLayout && isLandscape
+    val useCompactPortraitLayout = shouldUseCompactNowPlayingPortraitLayout(
+        isLandscape = isLandscape,
+        availableHeightDp = windowHeightDp.value,
+        uiDensityScale = uiDensityScale
+    )
+    val showCoverPageLyrics = shouldShowNowPlayingCoverLyrics(
+        coverLyricsEnabled = nowPlayingCoverLyricsEnabled,
+        useCompactPortraitLayout = useCompactPortraitLayout
+    )
+    val useNowPlayingToolbarDock = shouldUseNowPlayingToolbarDock(
+        toolbarDockEnabled = nowPlayingToolbarDockEnabled,
+        useCompactPortraitLayout = useCompactPortraitLayout
+    )
     val isCompactTabletLandscape = useWideLandscapeLayout && windowWidthDp < 720.dp
     val secondaryControlButtonSize = when {
         useWideLandscapeLayout && isCompactTabletLandscape -> 42.dp
@@ -832,6 +921,7 @@ fun NowPlayingScreen(
     val controlButtonSpacing = when {
         useWideLandscapeLayout && isCompactTabletLandscape -> 18.dp
         useWideLandscapeLayout -> 22.dp
+        useCompactPortraitLayout -> 12.dp
         else -> 20.dp
     }
 
@@ -1020,7 +1110,11 @@ fun NowPlayingScreen(
                                 )
                             }
 
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(
+                                modifier = Modifier.width(
+                                    if (useCompactPortraitLayout) 2.dp else 6.dp
+                                )
+                            )
 
                             HapticIconButton(
                                 onClick = { showMoreOptions = true },
@@ -1343,7 +1437,7 @@ fun NowPlayingScreen(
                     }
 
                     // 手机/竖屏, 内嵌迷你歌词
-                    if (!useWideLandscapeLayout && lyrics.isNotEmpty()) {
+                    if (!useWideLandscapeLayout && showCoverPageLyrics && lyrics.isNotEmpty()) {
                         Spacer(Modifier.weight(1f))
 
                         NowPlayingLyricsPane(
@@ -1380,38 +1474,59 @@ fun NowPlayingScreen(
                             Modifier
                                 .fillMaxWidth()
                                 .windowInsetsPadding(WindowInsets.navigationBars)
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
-                                .padding(bottom = if (nowPlayingToolbarDockEnabled) 2.dp else 0.dp)
+                                .padding(
+                                    horizontal = if (useCompactPortraitLayout) 4.dp else 16.dp,
+                                    vertical = 8.dp
+                                )
+                                .padding(bottom = if (useNowPlayingToolbarDock) 2.dp else 0.dp)
                         },
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         val toolbarContainerModifier = Modifier.fillMaxWidth()
                         val toolbarContent: @Composable () -> Unit = {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(
-                                        horizontal = if (nowPlayingToolbarDockEnabled || useWideLandscapeLayout) {
-                                            18.dp
-                                        } else {
-                                            6.dp
+                            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                                val preferredToolbarPadding = when {
+                                    useCompactPortraitLayout -> 0.dp
+                                    useNowPlayingToolbarDock || useWideLandscapeLayout -> 18.dp
+                                    else -> 6.dp
+                                }
+                                val toolbarLayout = resolvePlaybackActionToolbarLayout(
+                                    availableWidth = maxWidth,
+                                    preferredHorizontalPadding = preferredToolbarPadding,
+                                    defaultIconSize = if (useWideLandscapeLayout) 22.dp else 20.dp
+                                )
+                                CompositionLocalProvider(
+                                    LocalMinimumInteractiveComponentSize provides
+                                        toolbarLayout.minimumInteractiveComponentSize
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(
+                                                horizontal = toolbarLayout.horizontalPadding,
+                                                vertical = if (useNowPlayingToolbarDock || useWideLandscapeLayout) {
+                                                    12.dp
+                                                } else {
+                                                    8.dp
+                                                }
+                                            ),
+                                        horizontalArrangement = when {
+                                            toolbarLayout.useEqualWidthSlots -> Arrangement.Start
+                                            useWideLandscapeLayout || useNowPlayingToolbarDock -> {
+                                                Arrangement.SpaceEvenly
+                                            }
+                                            else -> Arrangement.SpaceBetween
                                         },
-                                        vertical = if (nowPlayingToolbarDockEnabled || useWideLandscapeLayout) {
-                                            12.dp
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        val toolbarActionModifier = if (toolbarLayout.useEqualWidthSlots) {
+                                            Modifier.weight(1f)
                                         } else {
-                                            8.dp
+                                            Modifier
                                         }
-                                    ),
-                                horizontalArrangement = if (useWideLandscapeLayout || nowPlayingToolbarDockEnabled) {
-                                    Arrangement.SpaceEvenly
-                                } else {
-                                    Arrangement.SpaceBetween
-                                },
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
                                 // 播放队列
                                 HapticIconButton(onClick = { showQueueSheet = true },
-                                    modifier = Modifier
+                                    modifier = toolbarActionModifier
                                         .sharedBounds(
                                         rememberSharedContentState(key = "btn_queue"),
                                             animatedVisibilityScope = this@AnimatedContent,
@@ -1421,13 +1536,13 @@ fun NowPlayingScreen(
                                     Icon(
                                         Icons.AutoMirrored.Outlined.QueueMusic,
                                         contentDescription = stringResource(R.string.playlist_queue),
-                                        modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
+                                        modifier = Modifier.size(toolbarLayout.iconSize)
                                     )
                                 }
 
                                 // 定时器按钮
                                 HapticIconButton(onClick = { showSleepTimerDialog = true },
-                                    modifier = Modifier
+                                    modifier = toolbarActionModifier
                                     .sharedBounds(
                                         rememberSharedContentState(key = "btn_timer"),
                                         animatedVisibilityScope = this@AnimatedContent,
@@ -1438,15 +1553,15 @@ fun NowPlayingScreen(
                                         Icons.Outlined.Timer,
                                         contentDescription = stringResource(R.string.sleep_timer_short),
                                         tint = if (sleepTimerState.isActive) MaterialTheme.colorScheme.primary else LocalContentColor.current,
-                                        modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
+                                        modifier = Modifier.size(toolbarLayout.iconSize)
                                     )
                                 }
 
                                 // 音量按钮 (根据设备显示不同图标, 居中)
                                 val audioDeviceInfo = rememberAudioDeviceInfo()
                                 HapticIconButton(onClick = { showVolumeSheet = true },
-                                    modifier = Modifier
-                                    .sharedBounds(
+                                    modifier = toolbarActionModifier
+                                        .sharedBounds(
                                         rememberSharedContentState(key = "btn_volume"),
                                         animatedVisibilityScope = this@AnimatedContent,
                                         enter = EnterTransition.None,
@@ -1456,7 +1571,7 @@ fun NowPlayingScreen(
                                     Icon(
                                         audioDeviceInfo.second,
                                         contentDescription = audioDeviceInfo.first,
-                                        modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
+                                        modifier = Modifier.size(toolbarLayout.iconSize)
                                     )
                                 }
 
@@ -1464,7 +1579,7 @@ fun NowPlayingScreen(
                                 HapticIconButton(
                                     onClick = { onShowLyricsScreenChange(!showLyricsScreen) },
                                     enabled = lyrics.isNotEmpty(),
-                                    modifier = Modifier
+                                    modifier = toolbarActionModifier
                                         .sharedBounds(
                                             rememberSharedContentState(key = "btn_lyrics"),
                                             animatedVisibilityScope = this@AnimatedContent,
@@ -1486,14 +1601,14 @@ fun NowPlayingScreen(
                                             } else {
                                                 LocalContentColor.current
                                             },
-                                            modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
+                                            modifier = Modifier.size(toolbarLayout.iconSize)
                                         )
                                     }
                                 }
 
                                 // 添加到歌单
                                 HapticIconButton(onClick = { showAddSheet = true },
-                                    modifier = Modifier
+                                    modifier = toolbarActionModifier
                                         .sharedBounds(
                                             rememberSharedContentState(key = "btn_add"),
                                             animatedVisibilityScope = this@AnimatedContent,
@@ -1504,13 +1619,15 @@ fun NowPlayingScreen(
                                     Icon(
                                         Icons.AutoMirrored.Outlined.PlaylistAdd,
                                         contentDescription = stringResource(R.string.playlist_add_to),
-                                        modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
+                                        modifier = Modifier.size(toolbarLayout.iconSize)
                                     )
+                                }
+                                    }
                                 }
                             }
                         }
 
-                        if (nowPlayingToolbarDockEnabled) {
+                        if (useNowPlayingToolbarDock) {
                             Surface(
                                 modifier = toolbarContainerModifier,
                                 shape = RoundedCornerShape(30.dp),

@@ -1214,7 +1214,8 @@ private fun OfflineModeBottomBanner() {
 @Composable
 fun NeriApp(
     initialThemeSnapshot: ThemePreferenceSnapshot = ThemePreferenceSnapshot(),
-    onIsDarkChanged: (Boolean) -> Unit = {}
+    onIsDarkChanged: (Boolean) -> Unit = {},
+    onNowPlayingVisibilityChanged: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     var appContentReady by rememberSaveable { mutableStateOf(false) }
@@ -1240,7 +1241,8 @@ fun NeriApp(
 
     NeriAppContent(
         initialThemeSnapshot = initialThemeSnapshot,
-        onIsDarkChanged = onIsDarkChanged
+        onIsDarkChanged = onIsDarkChanged,
+        onNowPlayingVisibilityChanged = onNowPlayingVisibilityChanged
     )
 }
 
@@ -1270,9 +1272,13 @@ private fun StartupGlassGateOverlay(
 @Composable
 private fun NeriAppContent(
     initialThemeSnapshot: ThemePreferenceSnapshot = ThemePreferenceSnapshot(),
-    onIsDarkChanged: (Boolean) -> Unit = {}
+    onIsDarkChanged: (Boolean) -> Unit = {},
+    onNowPlayingVisibilityChanged: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val latestOnNowPlayingVisibilityChanged by rememberUpdatedState(
+        onNowPlayingVisibilityChanged
+    )
     val offlineMode by rememberOfflineModeState()
     val rootView = LocalView.current
     val repo = remember { AppContainer.settingsRepo }
@@ -3590,6 +3596,12 @@ private fun NeriAppContent(
                         targetOffsetY = { fullHeight -> fullHeight }
                     ) + fadeOut(animationSpec = tween(durationMillis = 150))
                 ) {
+                    DisposableEffect(Unit) {
+                        latestOnNowPlayingVisibilityChanged(true)
+                        onDispose {
+                            latestOnNowPlayingVisibilityChanged(false)
+                        }
+                    }
                     val currentCoverUrl = playbackVisualCoverUrl
                     val activeCoverSeedHex = if (currentCoverUrl == null) null else coverSeedHex
                     val effectiveSeedHex = if (dynamicColorEnabled) {

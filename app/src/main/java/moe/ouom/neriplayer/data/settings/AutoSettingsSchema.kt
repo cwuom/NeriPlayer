@@ -397,15 +397,6 @@ object AutoSettingsSchema {
             icon = AutoSettingIcon.Keyboard
         )
 
-        @AutoSetting(order = 25)
-        val alwaysUseNewTabStyle = autoSwitchSetting(
-            key = "always_use_new_tab_style",
-            defaultValue = true,
-            titleRes = R.string.settings_always_use_new_tab_style,
-            descriptionRes = R.string.settings_always_use_new_tab_style_desc,
-            icon = AutoSettingIcon.Tab
-        )
-
         @AutoSetting(
             key = "home_card_continue",
             type = SettingValueType.Boolean,
@@ -480,6 +471,15 @@ object AutoSettingsSchema {
             icon = AutoSettingIcon.Info
         )
 
+        @AutoSetting(order = 15)
+        val alwaysUseNewTabStyle = autoSwitchSetting(
+            key = "always_use_new_tab_style",
+            defaultValue = true,
+            titleRes = R.string.settings_always_use_new_tab_style,
+            descriptionRes = R.string.settings_always_use_new_tab_style_desc,
+            icon = AutoSettingIcon.Tab
+        )
+
         @AutoSetting(
             key = "nowplaying_show_title",
             type = SettingValueType.Boolean,
@@ -517,6 +517,15 @@ object AutoSettingsSchema {
             titleRes = R.string.settings_nowplaying_toolbar_dock,
             descriptionRes = R.string.settings_nowplaying_toolbar_dock_desc,
             icon = AutoSettingIcon.Home
+        )
+
+        @AutoSetting(order = 45)
+        val nowPlayingCoverLyricsEnabled = autoSwitchSetting(
+            key = "nowplaying_cover_lyrics_enabled",
+            defaultValue = true,
+            titleRes = R.string.settings_nowplaying_cover_lyrics,
+            descriptionRes = R.string.settings_nowplaying_cover_lyrics_desc,
+            iconRes = R.drawable.ic_lyrics_24
         )
 
         @AutoSetting(

@@ -36,6 +36,7 @@ import android.os.Bundle
 import android.view.Gravity
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -92,7 +93,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.graphics.toColorInt
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -160,6 +160,11 @@ private data class PendingAudioServiceStart(
     val source: String,
     val forceForeground: Boolean
 )
+
+internal fun shouldUseLightSystemBarIcons(
+    isDarkTheme: Boolean,
+    isNowPlayingVisible: Boolean
+): Boolean = isDarkTheme || isNowPlayingVisible
 
 @Composable
 private fun GitHubSyncWarningDialog(
@@ -235,7 +240,7 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         lockPortraitIfPhone()
-        WindowCompat.setDecorFitsSystemWindows(window, false)
+        enableEdgeToEdge()
         applyWindowBackground(
             StartupThemeResolver.resolveSnapshotUseDark(
                 snapshot = startupThemeSnapshot,
@@ -306,6 +311,11 @@ class MainActivity : ComponentActivity() {
                 )
             }
             val useDark = nightModeSyncPlan.useDark
+            var isNowPlayingVisible by remember { mutableStateOf(false) }
+            val useLightSystemBarIcons = shouldUseLightSystemBarIcons(
+                isDarkTheme = useDark,
+                isNowPlayingVisible = isNowPlayingVisible
+            )
             LaunchedEffect(followSystemDark, forceDark, nightModeSyncPlan) {
                 if (nightModeSyncPlan.shouldApplyNightMode) {
                     NightModeHelper.applyNightMode(
@@ -370,8 +380,8 @@ class MainActivity : ComponentActivity() {
                         }
                         SideEffect {
                             val controller = WindowInsetsControllerCompat(window, window.decorView)
-                            controller.isAppearanceLightStatusBars = !useDark
-                            controller.isAppearanceLightNavigationBars = !useDark
+                            controller.isAppearanceLightStatusBars = !useLightSystemBarIcons
+                            controller.isAppearanceLightNavigationBars = !useLightSystemBarIcons
                         }
 
                 // 入场动画状态
@@ -790,8 +800,11 @@ class MainActivity : ComponentActivity() {
                             NeriApp(
                                 initialThemeSnapshot = startupThemeSnapshot,
                                 onIsDarkChanged = { isDark ->
-                                    // 仅调整窗口底色 & 系统栏外观
+                                    // 主题切换时保留窗口底色与内容主题一致
                                     applyWindowBackground(isDark)
+                                },
+                                onNowPlayingVisibilityChanged = { visible ->
+                                    isNowPlayingVisible = visible
                                 }
                             )
                         }
@@ -877,6 +890,9 @@ class MainActivity : ComponentActivity() {
         run {
             window.statusBarColor = Color.TRANSPARENT
             window.navigationBarColor = Color.TRANSPARENT
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isStatusBarContrastEnforced = false
         }
     }
 
