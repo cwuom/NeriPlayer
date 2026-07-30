@@ -14,6 +14,7 @@ internal data class ListenTogetherPlayerSyncContext(
     val localPositionMs: Long,
     val ignoreUnexpectedZeroPositionRollback: Boolean,
     val trackSwitchGracePeriodActive: Boolean = false,
+    val forcePositionSync: Boolean = false,
     val causeType: String?,
     val trackSwitchForceSyncMs: Long,
     val heartbeatDriftForceSyncMs: Long,
@@ -52,6 +53,8 @@ internal fun resolveListenTogetherPlayerSyncPlan(
     val driftMs = abs(signedDriftMs)
     val isHeartbeatUpdate = context.causeType == "HEARTBEAT"
     val shouldSeek = when {
+        context.forcePositionSync -> true
+
         shouldDeferPassiveTrackSwitchSync -> false
 
         shouldReloadPlaylist -> {

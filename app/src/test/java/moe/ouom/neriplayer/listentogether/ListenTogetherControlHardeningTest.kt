@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.listentogether
 import moe.ouom.neriplayer.listentogether.control.buildListenTogetherForwardedControlSyntheticState
 import moe.ouom.neriplayer.listentogether.playback.clampListenTogetherPositionMs
 import moe.ouom.neriplayer.listentogether.playback.expectedPositionMs
+import moe.ouom.neriplayer.listentogether.playback.wrapListenTogetherSingleTrackRepeatPosition
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherPlaybackState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
@@ -149,6 +150,36 @@ class ListenTogetherControlHardeningTest {
         )
 
         assertEquals(3_000L, playback.expectedPositionMs(nowMs = nowMs))
+    }
+
+    @Test
+    fun `single repeat expected position wraps at track duration`() {
+        val playback = ListenTogetherPlaybackState(
+            state = "playing",
+            basePositionMs = 58_000L,
+            baseTimestampMs = 1_000L,
+            repeatMode = 1
+        )
+
+        assertEquals(
+            3_000L,
+            playback.expectedPositionMs(
+                nowMs = 6_000L,
+                durationMs = 60_000L
+            )
+        )
+    }
+
+    @Test
+    fun `single repeat wraps a supplied server position at track duration`() {
+        assertEquals(
+            3_000L,
+            wrapListenTogetherSingleTrackRepeatPosition(
+                positionMs = 63_000L,
+                repeatMode = 1,
+                durationMs = 60_000L
+            )
+        )
     }
 
     @Test

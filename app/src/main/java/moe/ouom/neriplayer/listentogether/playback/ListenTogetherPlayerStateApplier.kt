@@ -36,14 +36,21 @@ internal class ListenTogetherPlayerStateApplier(
         state: ListenTogetherRoomState,
         causeType: String?,
         expectedPositionMs: Long?
-    ) {
+    ): Boolean {
         val latestRoomVersion = roomStateProvider()?.version ?: state.version
         if (state.version < latestRoomVersion) {
             NPLogger.d(
                 config.tag,
                 "applyRoomStateToPlayer(): skip stale state, roomId=${state.roomId}, version=${state.version}, latest=$latestRoomVersion, causeType=$causeType"
             )
-            return
+            return false
+        }
+        if (PlayerManager.shouldHoldListenTogetherPlaybackForSafetyPause(causeType)) {
+            NPLogger.d(
+                config.tag,
+                "applyRoomStateToPlayer(): hold listener safety pause, roomId=${state.roomId}, version=${state.version}, causeType=$causeType"
+            )
+            return false
         }
         val queue = state.toSongQueue()
         if (queue.isEmpty()) {
@@ -51,7 +58,7 @@ internal class ListenTogetherPlayerStateApplier(
                 config.tag,
                 "applyRoomStateToPlayer(): skip empty queue, roomId=${state.roomId}, version=${state.version}, causeType=$causeType"
             )
-            return
+            return false
         }
         NPLogger.d(
             config.tag,
@@ -89,10 +96,18 @@ internal class ListenTogetherPlayerStateApplier(
         )
 
         val rawExpectedPositionMs = expectedPositionMs
-            ?: state.playback.expectedPositionMs(serverClockOffsetMs = serverClockOffsetProvider())
+            ?: state.playback.expectedPositionMs(
+                serverClockOffsetMs = serverClockOffsetProvider(),
+                durationMs = targetSong.durationMs
+            )
+        val repeatAwareExpectedPositionMs = wrapListenTogetherSingleTrackRepeatPosition(
+            positionMs = rawExpectedPositionMs,
+            repeatMode = state.playback.repeatMode,
+            durationMs = targetSong.durationMs
+        )
         // 用目标曲目时长钳上限, 防止异常大的 position 把播放器推到曲末造成误切/卡顿
         val resolvedExpectedPositionMs = clampListenTogetherPositionMs(
-            positionMs = rawExpectedPositionMs,
+            positionMs = repeatAwareExpectedPositionMs,
             durationMs = targetSong.durationMs
         )
         val localPositionMs = PlayerManager.playbackPositionFlow.value.coerceAtLeast(0L)
@@ -129,7 +144,8 @@ internal class ListenTogetherPlayerStateApplier(
                 trackSwitchForceSyncMs = config.trackSwitchForceSyncMs,
                 heartbeatDriftForceSyncMs = config.heartbeatDriftForceSyncMs,
                 playingDriftForceSyncMs = config.playingDriftForceSyncMs,
-                pausedDriftForceSyncMs = config.pausedDriftForceSyncMs
+                pausedDriftForceSyncMs = config.pausedDriftForceSyncMs,
+                forcePositionSync = causeType == LISTEN_TOGETHER_LISTENER_SAFETY_RESUME_CAUSE
             )
         )
         NPLogger.d(
@@ -137,6 +153,7 @@ internal class ListenTogetherPlayerStateApplier(
             "applyRoomStateToPlayer(): causeType=$causeType, desiredPlaying=$desiredPlaying, localPlaying=$localPlaying, localPlaybackAlreadyStarting=$localPlaybackAlreadyStarting, awaitingAuthoritativeStream=$awaitingAuthoritativeStream, localCurrentIndex=$localCurrentIndex, targetIndex=$targetIndex, playbackContextChanged=$playbackContextChanged, targetIndexChanged=$targetIndexChanged, trackSwitchGracePeriodActive=$trackSwitchGracePeriodActive, shouldReloadPlaylist=${syncPlan.shouldReloadPlaylist}, effectiveExpectedPositionMs=${syncPlan.effectiveExpectedPositionMs}, driftMs=${syncPlan.driftMs}, signedDriftMs=${syncPlan.signedDriftMs}, shouldSeek=${syncPlan.shouldSeek}, shouldIssuePlay=${syncPlan.shouldIssuePlay}, shouldIssuePause=${syncPlan.shouldIssuePause}, needsAuthoritativeStreamReload=$needsAuthoritativeStreamReload, forcePlaybackStallReload=$forcePlaybackStallReload, ignoreUnexpectedZeroPositionRollback=$ignoreUnexpectedZeroPositionRollback, shouldForcePauseAfterRemoteLoad=${syncPlan.shouldForcePauseAfterRemoteLoad}"
         )
         applySyncPlan(syncPlan)
+        return true
     }
 
     private fun isTrackSwitchGracePeriodActive(): Boolean {

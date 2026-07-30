@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 
 enum class PlaybackCommandSource {
     LOCAL,
+    LOCAL_SAFETY,
     REMOTE_SYNC
 }
 

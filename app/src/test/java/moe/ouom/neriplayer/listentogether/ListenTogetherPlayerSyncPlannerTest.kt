@@ -193,6 +193,32 @@ class ListenTogetherPlayerSyncPlannerTest {
     }
 
     @Test
+    fun `listener safety resume always seeks before playback resumes`() {
+        val plan = resolveListenTogetherPlayerSyncPlan(
+            ListenTogetherPlayerSyncContext(
+                playbackContextChanged = false,
+                targetIndexChanged = false,
+                desiredPlaying = true,
+                localPlaying = false,
+                localPlaybackAlreadyStarting = false,
+                awaitingAuthoritativeStream = false,
+                expectedPositionMs = 1_050L,
+                localPositionMs = 1_000L,
+                ignoreUnexpectedZeroPositionRollback = false,
+                forcePositionSync = true,
+                causeType = "LISTENER_SAFETY_RESUME",
+                trackSwitchForceSyncMs = 500L,
+                heartbeatDriftForceSyncMs = 5_000L,
+                playingDriftForceSyncMs = 2_500L,
+                pausedDriftForceSyncMs = 800L
+            )
+        )
+
+        assertTrue(plan.shouldSeek)
+        assertTrue(plan.shouldIssuePlay)
+    }
+
+    @Test
     fun `playlist reload waiting for link does not issue play again`() {
         val plan = resolveListenTogetherPlayerSyncPlan(
             ListenTogetherPlayerSyncContext(

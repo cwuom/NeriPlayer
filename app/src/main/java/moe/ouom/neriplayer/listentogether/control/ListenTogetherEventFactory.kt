@@ -307,14 +307,20 @@ internal class ListenTogetherEventFactory(
     fun buildEventForPlaybackCommand(
         command: PlaybackCommand
     ): ListenTogetherEvent? {
-        val queue = PlayerManager.currentQueueFlow.value
+        val commandSnapshot = resolveListenTogetherPlaybackCommandSnapshot(
+            commandQueue = command.queue,
+            commandPositionMs = command.positionMs,
+            currentQueue = PlayerManager.currentQueueFlow.value,
+            currentPositionMs = PlayerManager.playbackPositionFlow.value
+        )
+        val queue = commandSnapshot.queue
         val currentSong = PlayerManager.currentSongFlow.value
         val currentIndex = command.currentIndex
             ?: queue.indexOfFirst { song ->
                 currentSong != null && song.sameTrackAs(currentSong)
             }.takeIf { it >= 0 }
             ?: 0
-        val positionMs = command.positionMs ?: PlayerManager.playbackPositionFlow.value.coerceAtLeast(0L)
+        val positionMs = commandSnapshot.positionMs
         val shouldPlay = resolveListenTogetherPlaybackCommandShouldPlay(
             commandType = command.type,
             commandShouldPlay = command.shouldPlay,

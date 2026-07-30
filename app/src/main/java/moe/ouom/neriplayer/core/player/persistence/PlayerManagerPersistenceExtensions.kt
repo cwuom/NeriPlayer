@@ -658,7 +658,9 @@ internal fun PlayerManager.playFromQueueImpl(
     emitPlaybackCommand(
         type = "PLAY_FROM_QUEUE",
         source = commandSource,
-        currentIndex = currentIndex
+        queue = currentPlaylist.toList(),
+        currentIndex = currentIndex,
+        positionMs = _playbackPositionMs.value
     )
 }
 
@@ -732,8 +734,9 @@ internal fun PlayerManager.replaceCurrentInQueueAndPlayImpl(
     emitPlaybackCommand(
         type = "PLAY_FROM_QUEUE",
         source = commandSource,
-        queue = currentPlaylist,
-        currentIndex = currentIndex
+        queue = currentPlaylist.toList(),
+        currentIndex = currentIndex,
+        positionMs = _playbackPositionMs.value
     )
 }
 

@@ -214,7 +214,10 @@ import moe.ouom.neriplayer.listentogether.mapping.resolvedAudioId
 import moe.ouom.neriplayer.listentogether.mapping.resolvedChannelId
 import moe.ouom.neriplayer.listentogether.mapping.resolvedPlaylistContextId
 import moe.ouom.neriplayer.listentogether.mapping.resolvedSubAudioId
+import moe.ouom.neriplayer.listentogether.playback.shouldHoldListenTogetherPlaybackForSafetyPause
+import moe.ouom.neriplayer.listentogether.playback.shouldUseListenTogetherListenerSafetyPause
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherChannels
+import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherSessionRole
 import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
@@ -303,6 +306,10 @@ object PlayerManager {
     internal var playbackStartupWatchdogToken = 0L
     internal var bluetoothDisconnectPauseJob: Job? = null
     internal var audioRouteMuteRestoreVolume: Float? = null
+    @Volatile
+    internal var listenTogetherSafetyPausePendingResume = false
+    @Volatile
+    internal var listenTogetherSafetyResumeInFlight = false
     internal var playbackSoundPersistJob: Job? = null
     internal var playbackSoundApplyJob: Job? = null
     internal var lastRequiresPcmAudioProcessing: Boolean? = null
@@ -1082,6 +1089,7 @@ object PlayerManager {
             "resetForListenTogetherJoin(): currentSong=${_currentSongFlow.value?.name}, queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, isPlaying=${_isPlayingFlow.value}, stack=[${debugStackHint()}]"
         )
         cancelPendingPauseRequest(resetVolumeToFull = true)
+        clearListenTogetherSafetyPause()
         playbackRequestToken += 1
         cancelPlaybackStartupWatchdog(reason = "listen_together_reset")
         clearActivePlaybackCandidates()
@@ -1169,10 +1177,58 @@ object PlayerManager {
     internal fun isCurrentUserControllerInListenTogether(): Boolean {
         val session = activeListenTogetherSessionState()
         val room = activeListenTogetherRoomState()
-        val sessionUserId = session.userUuid?.trim()?.takeIf { it.isNotBlank() }
-        val controllerUserId = room?.controllerUserUuid?.trim()?.takeIf { it.isNotBlank() }
-            ?: room?.controllerUserId?.trim()?.takeIf { it.isNotBlank() }
-        return sessionUserId != null && controllerUserId != null && sessionUserId == controllerUserId
+        return resolveListenTogetherSessionRole(
+            sessionUserId = session.userUuid,
+            fallbackRole = session.role,
+            state = room
+        ) == "controller"
+    }
+
+    internal fun shouldUseListenTogetherListenerSafetyPause(): Boolean {
+        val room = activeListenTogetherRoomState()
+        return shouldUseListenTogetherListenerSafetyPause(
+            listenTogetherActive = isListenTogetherActive(),
+            isCurrentUserController = isCurrentUserControllerInListenTogether(),
+            allowMemberControl = room?.settings?.allowMemberControl
+        )
+    }
+
+    internal fun markListenTogetherSafetyPausePendingResume() {
+        listenTogetherSafetyPausePendingResume = true
+        listenTogetherSafetyResumeInFlight = false
+    }
+
+    internal fun shouldHoldListenTogetherPlaybackForSafetyPause(causeType: String?): Boolean {
+        return shouldHoldListenTogetherPlaybackForSafetyPause(
+            safetyPausePendingResume = listenTogetherSafetyPausePendingResume,
+            causeType = causeType
+        )
+    }
+
+    internal fun requestListenTogetherSafetyPauseResume(): Boolean {
+        if (!listenTogetherSafetyPausePendingResume) return false
+        if (!isListenTogetherActive() || isCurrentUserControllerInListenTogether()) {
+            clearListenTogetherSafetyPause()
+            return false
+        }
+        if (listenTogetherSafetyResumeInFlight) return true
+        listenTogetherSafetyResumeInFlight = true
+        AppContainer.listenTogetherSessionManager.resumeListenerAfterSafetyPause()
+        return true
+    }
+
+    internal fun completeListenTogetherSafetyPauseResume() {
+        listenTogetherSafetyPausePendingResume = false
+        listenTogetherSafetyResumeInFlight = false
+    }
+
+    internal fun retryListenTogetherSafetyPauseResume() {
+        listenTogetherSafetyResumeInFlight = false
+    }
+
+    internal fun clearListenTogetherSafetyPause() {
+        listenTogetherSafetyPausePendingResume = false
+        listenTogetherSafetyResumeInFlight = false
     }
 
     internal fun currentListenTogetherTargetStableKey(): String? {

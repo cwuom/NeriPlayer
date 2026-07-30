@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.listentogether.compat.isUnsupportedTrackFinishedEvent
 import moe.ouom.neriplayer.listentogether.compat.resolveListenTogetherLinkReadyState
 import moe.ouom.neriplayer.listentogether.compat.resolveListenTogetherPlaybackCommandShouldPlay
 import moe.ouom.neriplayer.listentogether.compat.shouldSuppressListenerControlWhileAwaitingStream
+import moe.ouom.neriplayer.listentogether.control.resolveListenTogetherPlaybackCommandSnapshot
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
 import moe.ouom.neriplayer.listentogether.mapping.withStreamUrl
 import moe.ouom.neriplayer.listentogether.mapping.withStreamUrls
@@ -148,6 +149,19 @@ class ListenTogetherEventCompatibilityTest {
                 localPlaying = true
             )
         )
+    }
+
+    @Test
+    fun `rapid track commands retain their queue and position snapshot`() {
+        val snapshot = resolveListenTogetherPlaybackCommandSnapshot(
+            commandQueue = listOf("first-target"),
+            commandPositionMs = 0L,
+            currentQueue = listOf("second-target"),
+            currentPositionMs = 8_000L
+        )
+
+        assertEquals(listOf("first-target"), snapshot.queue)
+        assertEquals(0L, snapshot.positionMs)
     }
 
     @Test

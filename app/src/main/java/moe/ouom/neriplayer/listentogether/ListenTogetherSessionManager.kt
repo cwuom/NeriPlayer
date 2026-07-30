@@ -52,6 +52,7 @@ import moe.ouom.neriplayer.listentogether.playback.currentStableKey
 import moe.ouom.neriplayer.listentogether.playback.expectedPositionMs
 import moe.ouom.neriplayer.listentogether.playback.isShareableForListenTogether
 import moe.ouom.neriplayer.listentogether.playback.ListenTogetherListenerStallRecovery
+import moe.ouom.neriplayer.listentogether.playback.LISTEN_TOGETHER_LISTENER_SAFETY_RESUME_CAUSE
 import moe.ouom.neriplayer.listentogether.playback.ListenTogetherPlayerStateApplier
 import moe.ouom.neriplayer.listentogether.playback.ListenTogetherPlayerStateApplierConfig
 import moe.ouom.neriplayer.listentogether.playback.normalizedDirectStreamUrl
@@ -324,7 +325,11 @@ class ListenTogetherSessionManager(
         return response
     }
 
-    suspend fun refreshRoomState(baseUrl: String, roomId: String): ListenTogetherStateResponse {
+    suspend fun refreshRoomState(
+        baseUrl: String,
+        roomId: String,
+        causeType: String? = null
+    ): ListenTogetherStateResponse {
         val validatedRoomId = requireValidListenTogetherRoomId(roomId)
         NPLogger.d(TAG, "refreshRoomState(): baseUrl=$baseUrl, roomId=$validatedRoomId")
         val sentAtElapsedMs = SystemClock.elapsedRealtime()
@@ -354,7 +359,7 @@ class ListenTogetherSessionManager(
             if (accepted != null && !isCurrentUserController()) {
                 applyRoomStateToPlayer(
                     accepted.state,
-                    causeType = null,
+                    causeType = causeType,
                     expectedPositionMs = accepted.expectedPositionMs
                 )
                 maybeRequestControllerLink(accepted.state, "refresh_room_state")
@@ -365,6 +370,76 @@ class ListenTogetherSessionManager(
             "refreshRoomState(): ok=${response.ok}, version=${response.state?.version}, expectedPositionMs=${response.expectedPositionMs}"
         )
         return response
+    }
+
+    fun resumeListenerAfterSafetyPause() {
+        val snapshot = _sessionState.value
+        val baseUrl = snapshot.baseUrl
+        val roomId = snapshot.roomId
+        if (
+            baseUrl.isNullOrBlank() ||
+            roomId.isNullOrBlank() ||
+            isCurrentUserController(snapshot)
+        ) {
+            PlayerManager.retryListenTogetherSafetyPauseResume()
+            return
+        }
+        scope.launch {
+            runCatching {
+                refreshRoomState(
+                    baseUrl = baseUrl,
+                    roomId = roomId
+                )
+            }.onSuccess { response ->
+                if (response.ok && response.state != null) {
+                    mainScope.launch {
+                        val currentSession = _sessionState.value
+                        if (
+                            currentSession.roomId != roomId ||
+                            isCurrentUserController(currentSession)
+                        ) {
+                            PlayerManager.clearListenTogetherSafetyPause()
+                            return@launch
+                        }
+                        val latestRoomState = _roomState.value
+                        val stateToApply = latestRoomState
+                            ?.takeIf { it.roomId == roomId }
+                            ?: response.state
+                        val expectedPositionMs = response.expectedPositionMs
+                            .takeIf { stateToApply.version == response.state.version }
+                        if (
+                            playerStateApplier.apply(
+                                state = stateToApply,
+                                causeType = LISTEN_TOGETHER_LISTENER_SAFETY_RESUME_CAUSE,
+                                expectedPositionMs = expectedPositionMs
+                            )
+                        ) {
+                            PlayerManager.completeListenTogetherSafetyPauseResume()
+                            NPLogger.d(
+                                TAG,
+                                "resumeListenerAfterSafetyPause(): synchronized roomId=$roomId, version=${stateToApply.version}"
+                            )
+                        } else {
+                            PlayerManager.retryListenTogetherSafetyPauseResume()
+                        }
+                    }
+                    return@onSuccess
+                }
+                PlayerManager.retryListenTogetherSafetyPauseResume()
+                _sessionState.value = _sessionState.value.copy(
+                    lastError = response.error ?: "listener_safety_resume_state_unavailable"
+                )
+            }.onFailure { error ->
+                PlayerManager.retryListenTogetherSafetyPauseResume()
+                val message = error.message ?: error.javaClass.simpleName
+                NPLogger.w(
+                    TAG,
+                    "resumeListenerAfterSafetyPause(): state refresh failed, roomId=$roomId, error=$message",
+                    error
+                )
+                _sessionState.value = _sessionState.value.copy(lastError = message)
+            }
+        }
     }
 
     fun connectWebSocket() {
@@ -656,6 +731,7 @@ class ListenTogetherSessionManager(
         lastWebSocketMessageAtElapsedMs = 0L
         clockSyncPingSupported = null
         resetListenerRecoveryState()
+        PlayerManager.clearListenTogetherSafetyPause()
         PlayerManager.resetListenTogetherSyncPlaybackRate()
         NPLogger.d(TAG, "leaveRoom(): roomId=${_sessionState.value.roomId}, role=${_sessionState.value.role}")
         webSocketClient.disconnect()
@@ -1807,7 +1883,8 @@ class ListenTogetherSessionManager(
         if (isCurrentUserController()) return
         if (state.roomStatus != ListenTogetherRoomStatuses.ACTIVE) return
         val expectedPositionMs = state.playback.expectedPositionMs(
-            serverClockOffsetMs = estimatedServerClockOffsetMs
+            serverClockOffsetMs = estimatedServerClockOffsetMs,
+            durationMs = state.targetSongItem()?.durationMs ?: 0L
         )
         val needsStallRecovery = listenerStallRecovery.shouldRecover(
             state = state,
@@ -2287,6 +2364,7 @@ class ListenTogetherSessionManager(
         lastWebSocketMessageAtElapsedMs = 0L
         clockSyncPingSupported = null
         resetListenerRecoveryState()
+        PlayerManager.clearListenTogetherSafetyPause()
         PlayerManager.resetListenTogetherSyncPlaybackRate()
         webSocketClient.disconnect(code = 1000, reason = "room_closed")
         _sessionState.value = ListenTogetherSessionState(
