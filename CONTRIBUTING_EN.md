@@ -55,11 +55,12 @@ If it affects extension paths, tests, or module boundaries, update CONTRIBUTING.
 
 - **Android Studio**: latest stable version
 - **JDK**: 17
-- **Kotlin**: 2.2.x, JVM target 17
-- **AGP**: 8.13.x
-- **compileSdk / targetSdk / minSdk**: 36 / 36 / 28
+- **Kotlin**: 2.4.10, JVM target 17
+- **AGP**: 9.2.1
+- **Gradle**: 9.4.1
+- **compileSdk / targetSdk / minSdk**: 37 / 36 / 28
 - **NDK**: `27.0.12077973`
-- **CMake**: `3.22.1`
+- **CMake**: `3.28.0+`
 - **Node.js**: 20, for Listen Together Worker checks
 - **Version name format**: `<git_short_hash>.<MMddHHmm>`
 - **Release APK filename**: `NeriPlayer-<versionName>[-abi].apk`

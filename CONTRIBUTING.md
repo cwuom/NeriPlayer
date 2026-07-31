@@ -49,11 +49,12 @@
 
 - **Android Studio**：最新稳定版
 - **JDK**：17
-- **Kotlin**：2.2.x，JVM target 17
-- **AGP**：8.13.x
-- **compileSdk / targetSdk / minSdk**：36 / 36 / 28
+- **Kotlin**：2.4.10，JVM target 17
+- **AGP**：9.2.1
+- **Gradle**：9.4.1
+- **compileSdk / targetSdk / minSdk**：37 / 36 / 28
 - **NDK**：`27.0.12077973`
-- **CMake**：`3.22.1`
+- **CMake**：`3.28.0+`
 - **Node.js**：20，用于一起听 Worker 检查
 - **版本名格式**：`<git短哈希>.<MMddHHmm>`
 - **Release APK 文件名**：`NeriPlayer-<versionName>[-abi].apk`

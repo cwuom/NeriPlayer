@@ -543,12 +543,12 @@ For release build and signing details, see
 
 ### Build and versions
 
-- `compileSdk = 36`
+- `compileSdk = 37`
 - `targetSdk = 36`
 - `minSdk = 28`
 - Java 17 / Kotlin JVM 17
 - NDK `27.0.12077973`
-- CMake `3.22.1`
+- CMake `3.28.0+`
 - Version name format: `<git_short_hash>.<MMddHHmm>`
 - Release APK filename: `NeriPlayer-<versionName>[-abi].apk`
 - Release builds are `arm64-v8a` by default. Use `-PbuildAllReleaseAbis=true`

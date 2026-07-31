@@ -441,12 +441,12 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 
 ### 构建与版本
 
-- `compileSdk = 36`
+- `compileSdk = 37`
 - `targetSdk = 36`
 - `minSdk = 28`
 - Java 17 / Kotlin JVM 17
 - NDK `27.0.12077973`
-- CMake `3.22.1`
+- CMake `3.28.0+`
 - 版本名格式：`<git短哈希>.<MMddHHmm>`
 - Release APK 文件名：`NeriPlayer-<versionName>[-abi].apk`
 - 默认 Release 只构建 `arm64-v8a`；多 ABI 构建需加
