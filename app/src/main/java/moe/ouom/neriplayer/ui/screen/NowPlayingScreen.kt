@@ -2854,6 +2854,7 @@ fun MoreOptionsSheet(
     ModalBottomSheet(
         onDismissRequest = { dismissSheet() },
         sheetState = sheetState,
+        sheetGesturesEnabled = page != MoreOptionsPage.LISTEN_TOGETHER,
         containerColor = MaterialTheme.colorScheme.surface
     ) {
         BackHandler(
@@ -2917,6 +2918,7 @@ fun MoreOptionsSheet(
                     Column(
                         Modifier
                             .fillMaxWidth()
+                            .bottomSheetScrollGuard()
                             .verticalScroll(listenTogetherScrollState)
                             .padding(horizontal = 16.dp, vertical = 8.dp)
                             .windowInsetsPadding(WindowInsets.navigationBars)

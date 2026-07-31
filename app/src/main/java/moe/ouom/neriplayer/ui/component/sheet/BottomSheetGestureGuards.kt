@@ -31,7 +31,10 @@ private fun rememberBottomSheetNestedScrollConnection(
                 available: Offset,
                 source: NestedScrollSource
             ): Offset {
-                val shouldPassToParent = available.y > 0f && currentAllowDownwardToParent()
+                val shouldPassToParent = shouldPassBottomSheetMotionToParent(
+                    availableY = available.y,
+                    allowDownwardToParent = currentAllowDownwardToParent()
+                )
                 return if (shouldPassToParent) Offset.Zero else available
             }
 
@@ -41,12 +44,20 @@ private fun rememberBottomSheetNestedScrollConnection(
                 consumed: Velocity,
                 available: Velocity
             ): Velocity {
-                val shouldPassToParent = available.y > 0f && currentAllowDownwardToParent()
+                val shouldPassToParent = shouldPassBottomSheetMotionToParent(
+                    availableY = available.y,
+                    allowDownwardToParent = currentAllowDownwardToParent()
+                )
                 return if (shouldPassToParent) Velocity.Zero else available
             }
         }
     }
 }
+
+internal fun shouldPassBottomSheetMotionToParent(
+    availableY: Float,
+    allowDownwardToParent: Boolean
+): Boolean = availableY > 0f && allowDownwardToParent
 
 fun Modifier.bottomSheetScrollGuard(
     allowDownwardToParent: () -> Boolean = { false }
