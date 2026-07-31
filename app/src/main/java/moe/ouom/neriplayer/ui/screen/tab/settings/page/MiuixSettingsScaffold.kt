@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.page
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +21,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -36,14 +40,22 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
@@ -55,6 +67,7 @@ import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassHorizontalTransi
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 
 private val MiuixCardShape = RoundedCornerShape(16.dp)
+private val MiuixHighlightShape = RoundedCornerShape(18.dp)
 private val MiuixSettingsContentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
 private val MiuixPageRowPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
 private val MiuixSettingsTabletMaxWidth = 920.dp
@@ -120,6 +133,76 @@ internal fun MiuixSettingsHomeScaffold(
                 content = content
             )
         }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun Modifier.settingsHighlightTarget(
+    targetId: String,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)? = null
+): Modifier {
+    val highlighted = targetId == highlightTargetId && highlightPulse > 0
+    val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    var highlightActive by remember(targetId) { mutableStateOf(false) }
+
+    LaunchedEffect(highlighted, highlightPulse) {
+        if (!highlighted) {
+            highlightActive = false
+            return@LaunchedEffect
+        }
+        repeat(2) {
+            bringIntoViewRequester.bringIntoView()
+            withFrameNanos { }
+        }
+        delay(80)
+        repeat(4) { index ->
+            highlightActive = index % 2 == 0
+            delay(180)
+        }
+        highlightActive = false
+        onHighlightFinished?.invoke()
+    }
+
+    val highlightColor by animateColorAsState(
+        targetValue = if (highlightActive) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+        } else {
+            Color.Transparent
+        },
+        label = "settings_item_highlight"
+    )
+
+    return this
+        .bringIntoViewRequester(bringIntoViewRequester)
+        .clip(MiuixHighlightShape)
+        .background(highlightColor)
+}
+
+@Composable
+internal fun MiuixSettingsSectionIntro(
+    title: String,
+    description: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.76f)
+        )
     }
 }
 
@@ -457,15 +540,43 @@ internal fun MiuixSettingsHeader(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun MiuixSettingsSectionCard(
     modifier: Modifier = Modifier,
+    highlighted: Boolean = false,
+    highlightPulse: Int = 0,
+    onHighlightFinished: (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     val fallbackColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.56f)
+    var highlightActive by remember { mutableStateOf(false) }
+
+    LaunchedEffect(highlighted, highlightPulse) {
+        if (!highlighted || highlightPulse <= 0) {
+            highlightActive = false
+            return@LaunchedEffect
+        }
+        repeat(4) { index ->
+            highlightActive = index % 2 == 0
+            delay(180)
+        }
+        highlightActive = false
+        onHighlightFinished?.invoke()
+    }
+
+    val highlightColor by animateColorAsState(
+        targetValue = if (highlightActive) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+        } else {
+            Color.Transparent
+        },
+        label = "settings_section_highlight"
+    )
 
     ElevatedCard(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth(),
         shape = MiuixCardShape,
         colors = CardDefaults.elevatedCardColors(
             containerColor = Color.Transparent
@@ -482,6 +593,7 @@ internal fun MiuixSettingsSectionCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .background(highlightColor)
                     .padding(MiuixSettingsContentPadding)
             ) {
                 content()
@@ -492,11 +604,17 @@ internal fun MiuixSettingsSectionCard(
 
 internal fun LazyListScope.miuixSettingsSectionCardItem(
     key: Any,
+    highlighted: Boolean = false,
+    highlightPulse: Int = 0,
+    onHighlightFinished: (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     item(key = key) {
         MiuixSettingsSectionCard(
             modifier = Modifier.animateItem(),
+            highlighted = highlighted,
+            highlightPulse = highlightPulse,
+            onHighlightFinished = onHighlightFinished,
             content = content
         )
     }

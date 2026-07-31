@@ -92,6 +92,9 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedBut
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionIntro
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
 import moe.ouom.neriplayer.util.format.formatFileSize
 
 @Composable
@@ -126,7 +129,11 @@ internal fun SettingsStorageCacheSection(
     clearPlatformListCache: Boolean,
     onClearPlatformListCacheChange: (Boolean) -> Unit,
     downloadStagingClearEnabled: Boolean,
-    onClearCacheClick: (StorageCacheClearOptions) -> Unit
+    onClearCacheClick: (StorageCacheClearOptions) -> Unit,
+    cardIndex: Int? = null,
+    highlightTargetId: String? = null,
+    highlightPulse: Int = 0,
+    onHighlightFinished: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val composeResources = LocalResources.current
@@ -156,6 +163,7 @@ internal fun SettingsStorageCacheSection(
         template = effectiveTemplate
     )
     val canApplyDownloadFileNameTemplate = effectiveTemplate != currentSavedTemplate
+    fun shouldShowCard(index: Int): Boolean = cardIndex == null || cardIndex == index
 
     if (showHeader) {
         ExpandableHeader(
@@ -183,205 +191,272 @@ internal fun SettingsStorageCacheSection(
                     bottom = if (showHeader) 8.dp else 0.dp
                 )
         ) {
-            AutoSettingsListItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DOWNLOAD_DIRECTORY_URI),
-                leadingContent = {
-                    Icon(
-                        imageVector = Icons.Outlined.Folder,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                supportingContent = {
-                    Column {
-                        Text(stringResource(R.string.settings_download_directory_desc))
-                        Text(
-                            text = stringResource(
-                                R.string.settings_download_directory_current,
-                                currentDownloadDirectorySummary
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = stringResource(R.string.settings_download_directory_hint),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.outline
-                        )
-                        if (!downloadDirectoryChangeEnabled) {
-                            Text(
-                                text = stringResource(
-                                    R.string.settings_download_directory_change_blocked_active_download
-                                ),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                },
-                trailingContent = {
-                    MiuixSettingsTextButton(
-                        onClick = onPickDownloadDirectory,
-                        enabled = downloadDirectoryChangeEnabled
-                    ) {
-                        Text(stringResource(R.string.settings_download_directory_choose))
-                    }
-                },
-                modifier = Modifier
-                    .alpha(if (downloadDirectoryChangeEnabled) 1f else 0.6f),
-                enabled = downloadDirectoryChangeEnabled,
-                onClick = onPickDownloadDirectory
-            )
-
-            AnimatedVisibility(visible = isCustomDownloadDirectory) {
-                ListItem(
+            if (shouldShowCard(0)) StorageDetailCard(
+                showCard = !showHeader,
+                highlighted = false,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            ) {
+                MiuixSettingsSectionIntro(
+                    title = stringResource(R.string.settings_storage_download_section),
+                    description = stringResource(R.string.settings_storage_download_section_desc)
+                )
+                AutoSettingsListItem(
+                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DOWNLOAD_DIRECTORY_URI),
                     leadingContent = {
                         Icon(
-                            Icons.Outlined.Restore,
-                            contentDescription = stringResource(R.string.settings_download_directory_reset),
+                            imageVector = Icons.Outlined.Folder,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     },
-                    headlineContent = { Text(stringResource(R.string.settings_download_directory_reset)) },
                     supportingContent = {
-                        Text(stringResource(R.string.settings_download_directory_reset_desc))
+                        Column {
+                            Text(stringResource(R.string.settings_download_directory_desc))
+                            Text(
+                                text = stringResource(
+                                    R.string.settings_download_directory_current,
+                                    currentDownloadDirectorySummary
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = stringResource(R.string.settings_download_directory_hint),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                            if (!downloadDirectoryChangeEnabled) {
+                                Text(
+                                    text = stringResource(
+                                        R.string.settings_download_directory_change_blocked_active_download
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    },
+                    trailingContent = {
+                        MiuixSettingsTextButton(
+                            onClick = onPickDownloadDirectory,
+                            enabled = downloadDirectoryChangeEnabled
+                        ) {
+                            Text(stringResource(R.string.settings_download_directory_choose))
+                        }
                     },
                     modifier = Modifier
-                        .alpha(if (downloadDirectoryChangeEnabled) 1f else 0.6f)
-                        .settingsItemClickable(
-                            enabled = downloadDirectoryChangeEnabled,
-                            onClick = onResetDownloadDirectory
-                        ),
+                        .settingsHighlightTarget(
+                            targetId = "setting:download_directory_uri",
+                            highlightTargetId = highlightTargetId,
+                            highlightPulse = highlightPulse,
+                            onHighlightFinished = onHighlightFinished
+                        )
+                        .alpha(if (downloadDirectoryChangeEnabled) 1f else 0.6f),
+                    enabled = downloadDirectoryChangeEnabled,
+                    onClick = onPickDownloadDirectory
+                )
+
+                AnimatedVisibility(visible = isCustomDownloadDirectory) {
+                    ListItem(
+                        leadingContent = {
+                            Icon(
+                                Icons.Outlined.Restore,
+                                contentDescription = stringResource(R.string.settings_download_directory_reset),
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        },
+                        headlineContent = { Text(stringResource(R.string.settings_download_directory_reset)) },
+                        supportingContent = {
+                            Text(stringResource(R.string.settings_download_directory_reset_desc))
+                        },
+                        modifier = Modifier
+                            .alpha(if (downloadDirectoryChangeEnabled) 1f else 0.6f)
+                            .settingsItemClickable(
+                                enabled = downloadDirectoryChangeEnabled,
+                                onClick = onResetDownloadDirectory
+                            ),
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+                }
+            }
+            if (cardIndex == null) StorageDetailGap(showHeader)
+
+            if (shouldShowCard(1)) StorageDetailCard(
+                showCard = !showHeader,
+                highlighted = false,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            ) {
+                MiuixSettingsSectionIntro(
+                    title = stringResource(R.string.settings_storage_filename_section),
+                    description = stringResource(R.string.settings_storage_filename_section_desc)
+                )
+                AutoSettingsListItem(
+                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE),
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.TextSnippet,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    supportingContent = {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(stringResource(R.string.settings_download_file_name_format_desc))
+                            Text(
+                                text = effectiveTemplate,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = stringResource(
+                                    R.string.settings_download_file_name_format_preview,
+                                    samplePreview
+                                ),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    },
+                    trailingContent = {
+                        Text(
+                            text = stringResource(R.string.action_details),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    },
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished,
+                    onClick = { showDownloadFileNameDialog = true }
+                )
+            }
+            if (cardIndex == null) StorageDetailGap(showHeader)
+
+            if (shouldShowCard(2)) StorageDetailCard(
+                showCard = !showHeader,
+                highlighted = false,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            ) {
+                MiuixSettingsSectionIntro(
+                    title = stringResource(R.string.settings_storage_cache_limit_section),
+                    description = stringResource(R.string.settings_storage_cache_limit_section_desc)
+                )
+                AutoSettingsListItem(
+                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.MAX_CACHE_SIZE_BYTES),
+                    showDefaultIcon = false,
+                    supportingContent = {
+                        val sizeMb = maxCacheSizeBytes / (1024 * 1024).toFloat()
+                        var sliderValue by remember(sizeMb) { mutableFloatStateOf(sizeMb) }
+                        val displaySize = if (sliderValue >= 1024) {
+                            composeResources.getString(R.string.settings_cache_size_gb, sliderValue / 1024)
+                        } else {
+                            composeResources.getString(R.string.settings_cache_size_mb, sliderValue.toInt())
+                        }
+
+                        Column {
+                            Text(
+                                text = if (sliderValue < 10f) {
+                                    stringResource(R.string.settings_no_cache)
+                                } else {
+                                    displaySize
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            MiuixSettingsSlider(
+                                value = sliderValue,
+                                onValueChange = { sliderValue = it },
+                                onValueChangeFinished = {
+                                    val newBytes = if (sliderValue < 10f) {
+                                        0L
+                                    } else {
+                                        (sliderValue * 1024 * 1024).toLong()
+                                    }
+                                    onMaxCacheSizeBytesChange(newBytes)
+                                },
+                                valueRange = 0f..(10 * 1024f),
+                                steps = 0
+                            )
+                            Text(
+                                stringResource(R.string.settings_cache_notice),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    },
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+            }
+            if (cardIndex == null) StorageDetailGap(showHeader)
+
+            if (shouldShowCard(3)) StorageDetailCard(
+                showCard = !showHeader,
+                highlighted = false,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            ) {
+                MiuixSettingsSectionIntro(
+                    title = stringResource(R.string.settings_storage_cache_clear_section),
+                    description = stringResource(R.string.settings_storage_cache_clear_section_desc)
+                )
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.settings_clear_cache)) },
+                    supportingContent = { Text(stringResource(R.string.settings_clear_cache_desc)) },
+                    trailingContent = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            MiuixSettingsOutlinedButton(
+                                enabled = !isStorageDetailsLoading,
+                                onClick = {
+                                    onShowStorageDetailsChange(true)
+                                    isStorageDetailsLoading = true
+                                    scope.launch {
+                                        onStorageDetailsChange(analyzeStorageUsage(context))
+                                        isStorageDetailsLoading = false
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Info,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(R.string.action_details))
+                            }
+
+                            MiuixSettingsOutlinedButton(onClick = { onShowClearCacheDialogChange(true) }) {
+                                Icon(
+                                    Icons.Outlined.DeleteForever,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(R.string.action_clear))
+                            }
+                        }
+                    },
+                    modifier = Modifier.settingsHighlightTarget(
+                        targetId = "manual:clear_cache",
+                        highlightTargetId = highlightTargetId,
+                        highlightPulse = highlightPulse,
+                        onHighlightFinished = onHighlightFinished
+                    ),
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
             }
-
-            AutoSettingsListItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE),
-                leadingContent = {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.TextSnippet,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                supportingContent = {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(stringResource(R.string.settings_download_file_name_format_desc))
-                        Text(
-                            text = effectiveTemplate,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = stringResource(
-                                R.string.settings_download_file_name_format_preview,
-                                samplePreview
-                            ),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.outline
-                        )
-                    }
-                },
-                trailingContent = {
-                    Text(
-                        text = stringResource(R.string.action_details),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                },
-                onClick = { showDownloadFileNameDialog = true }
-            )
-
-            AutoSettingsListItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.MAX_CACHE_SIZE_BYTES),
-                showDefaultIcon = false,
-                supportingContent = {
-                    val sizeMb = maxCacheSizeBytes / (1024 * 1024).toFloat()
-                    var sliderValue by remember(sizeMb) { mutableFloatStateOf(sizeMb) }
-                    val displaySize = if (sliderValue >= 1024) {
-                        composeResources.getString(R.string.settings_cache_size_gb, sliderValue / 1024)
-                    } else {
-                        composeResources.getString(R.string.settings_cache_size_mb, sliderValue.toInt())
-                    }
-
-                    Column {
-                        Text(
-                            text = if (sliderValue < 10f) {
-                                stringResource(R.string.settings_no_cache)
-                            } else {
-                                displaySize
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        MiuixSettingsSlider(
-                            value = sliderValue,
-                            onValueChange = { sliderValue = it },
-                            onValueChangeFinished = {
-                                val newBytes = if (sliderValue < 10f) {
-                                    0L
-                                } else {
-                                    (sliderValue * 1024 * 1024).toLong()
-                                }
-                                onMaxCacheSizeBytesChange(newBytes)
-                            },
-                            valueRange = 0f..(10 * 1024f),
-                            steps = 0
-                        )
-                        Text(
-                            stringResource(R.string.settings_cache_notice),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.outline
-                        )
-                    }
-                }
-            )
-
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.settings_clear_cache)) },
-                supportingContent = { Text(stringResource(R.string.settings_clear_cache_desc)) },
-                trailingContent = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MiuixSettingsOutlinedButton(
-                            enabled = !isStorageDetailsLoading,
-                            onClick = {
-                                onShowStorageDetailsChange(true)
-                                isStorageDetailsLoading = true
-                                scope.launch {
-                                    onStorageDetailsChange(analyzeStorageUsage(context))
-                                    isStorageDetailsLoading = false
-                                }
-                            }
-                        ) {
-                            Icon(
-                                Icons.Outlined.Info,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(stringResource(R.string.action_details))
-                        }
-
-                        MiuixSettingsOutlinedButton(onClick = { onShowClearCacheDialogChange(true) }) {
-                            Icon(
-                                Icons.Outlined.DeleteForever,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(stringResource(R.string.action_clear))
-                        }
-                    }
-                },
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-            )
         }
     }
 
-    if (showStorageDetails) {
+    val shouldRenderCacheDialogs = cardIndex == null || cardIndex == 3
+
+    if (shouldRenderCacheDialogs && showStorageDetails) {
         MiuixSettingsDialog(
             onDismissRequest = { onShowStorageDetailsChange(false) },
             title = { Text(stringResource(R.string.storage_details_title)) },
@@ -457,7 +532,7 @@ internal fun SettingsStorageCacheSection(
         )
     }
 
-    if (showClearCacheDialog) {
+    if (shouldRenderCacheDialogs && showClearCacheDialog) {
         MiuixSettingsDialog(
             onDismissRequest = { onShowClearCacheDialogChange(false) },
             title = { Text(stringResource(R.string.settings_confirm_clear_cache)) },
@@ -623,6 +698,33 @@ internal fun SettingsStorageCacheSection(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun StorageDetailCard(
+    showCard: Boolean,
+    highlighted: Boolean = false,
+    highlightPulse: Int = 0,
+    onHighlightFinished: (() -> Unit)? = null,
+    content: @Composable () -> Unit
+) {
+    if (showCard) {
+        MiuixSettingsSectionCard(
+            highlighted = highlighted,
+            highlightPulse = highlightPulse,
+            onHighlightFinished = if (highlighted) onHighlightFinished else null,
+            content = content
+        )
+    } else {
+        content()
+    }
+}
+
+@Composable
+private fun StorageDetailGap(showHeader: Boolean) {
+    if (!showHeader) {
+        Spacer(Modifier.height(12.dp))
     }
 }
 

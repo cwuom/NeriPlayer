@@ -67,12 +67,16 @@ import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsPosition
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSegmentedTabs
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
 import kotlin.math.roundToInt
 
 @Composable
 internal fun SettingsFloatingLyricsSection(
     preferences: FloatingLyricsPreferences,
-    onPreferencesChange: (FloatingLyricsPreferences) -> Unit
+    onPreferencesChange: (FloatingLyricsPreferences) -> Unit,
+    highlightTargetId: String? = null,
+    highlightPulse: Int = 0,
+    onHighlightFinished: (() -> Unit)? = null
 ) {
     val normalizedPreferences = remember(preferences) { preferences.normalized() }
     var pendingFontSizeSp by remember { mutableFloatStateOf(normalizedPreferences.fontSizeSp) }
@@ -179,6 +183,10 @@ internal fun SettingsFloatingLyricsSection(
             },
             icon = Icons.Outlined.PictureInPictureAlt,
             checked = normalizedPreferences.enabled,
+            targetId = "setting:floating_lyrics_enabled",
+            highlightTargetId = highlightTargetId,
+            highlightPulse = highlightPulse,
+            onHighlightFinished = onHighlightFinished,
             onCheckedChange = { enabled ->
                 if (enabled && !overlayPermissionGranted) {
                     FloatingLyricsOverlayManager.openOverlayPermissionSettings(context)
@@ -400,10 +408,22 @@ private fun FloatingLyricsSwitchListItem(
     description: String,
     icon: ImageVector,
     checked: Boolean,
+    targetId: String? = null,
+    highlightTargetId: String? = null,
+    highlightPulse: Int = 0,
+    onHighlightFinished: (() -> Unit)? = null,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    val highlightedModifier = targetId?.let { id ->
+        Modifier.settingsHighlightTarget(
+            targetId = id,
+            highlightTargetId = highlightTargetId,
+            highlightPulse = highlightPulse,
+            onHighlightFinished = onHighlightFinished
+        )
+    } ?: Modifier
     ListItem(
-        modifier = Modifier.settingsItemClickable { onCheckedChange(!checked) },
+        modifier = highlightedModifier.settingsItemClickable { onCheckedChange(!checked) },
         leadingContent = {
             Icon(
                 imageVector = icon,

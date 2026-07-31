@@ -31,15 +31,16 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -128,7 +129,7 @@ internal fun SettingsBiliAuthDialogs(
             defaultBrowserLogin
         }
 
-        TwoTabCookieLoginSheet(
+        SettingsCookieLoginSheet(
             title = stringResource(R.string.platform_bilibili),
             initialTab = initialTab,
             inlineMsg = inlineMsg,
@@ -142,7 +143,6 @@ internal fun SettingsBiliAuthDialogs(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(Modifier.height(12.dp))
             },
             cookieLabel = stringResource(R.string.login_paste_bili_cookie_hint),
             onBrowserLogin = launchBrowserLogin,
@@ -226,7 +226,7 @@ internal fun SettingsYouTubeAuthDialogs(
             defaultBrowserLogin
         }
 
-        TwoTabCookieLoginSheet(
+        SettingsCookieLoginSheet(
             title = stringResource(R.string.common_youtube),
             initialTab = initialTab,
             inlineMsg = inlineMsg,
@@ -240,13 +240,11 @@ internal fun SettingsYouTubeAuthDialogs(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(Modifier.height(8.dp))
                 Text(
                     stringResource(R.string.settings_youtube_login_browser_warning),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(Modifier.height(12.dp))
             },
             cookieLabel = stringResource(R.string.login_paste_youtube_cookie_hint),
             onBrowserLogin = launchBrowserLogin,
@@ -270,7 +268,7 @@ internal fun SettingsYouTubeAuthDialogs(
 }
 
 @Composable
-private fun TwoTabCookieLoginSheet(
+internal fun SettingsCookieLoginSheet(
     title: String,
     initialTab: Int,
     inlineMsg: String?,
@@ -284,23 +282,36 @@ private fun TwoTabCookieLoginSheet(
     onSaveCookie: (String) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab) }
+    var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab.coerceIn(0, 1)) }
     var rawCookie by remember { mutableStateOf("") }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
-        containerColor = MaterialTheme.colorScheme.surface
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 0.dp
     ) {
         Box(
             modifier = Modifier
                 .bottomSheetDragBlocker()
-                .padding(start = 16.dp, end = 16.dp, bottom = 48.dp, top = 12.dp)
+                .padding(start = 20.dp, end = 20.dp, bottom = 48.dp, top = 8.dp)
         ) {
-            Column {
-                Text(title, style = MaterialTheme.typography.titleLarge)
-                Spacer(modifier = Modifier.height(8.dp))
+            Column(
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        stringResource(R.string.login_title),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
 
                 AnimatedVisibility(visible = inlineMsg != null, enter = fadeIn(), exit = fadeOut()) {
                     InlineMessage(
@@ -318,28 +329,44 @@ private fun TwoTabCookieLoginSheet(
                     onSelectedIndexChange = { selectedTab = it }
                 )
 
-                Spacer(Modifier.height(12.dp))
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.72f),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        when (selectedTab) {
+                            0 -> {
+                                browserHintContent()
+                                MiuixSettingsButton(
+                                    onClick = onBrowserLogin,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(browserButtonLabel)
+                                }
+                            }
 
-                when (selectedTab) {
-                    0 -> {
-                        browserHintContent()
-                        MiuixSettingsButton(onClick = onBrowserLogin) {
-                            Text(browserButtonLabel)
-                        }
-                    }
-
-                    else -> {
-                        MiuixSettingsTextField(
-                            value = rawCookie,
-                            onValueChange = { rawCookie = it },
-                            label = { Text(cookieLabel) },
-                            minLines = 6,
-                            maxLines = 10,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        MiuixSettingsButton(onClick = { onSaveCookie(rawCookie) }) {
-                            Text(stringResource(R.string.login_save_cookie))
+                            else -> {
+                                MiuixSettingsTextField(
+                                    value = rawCookie,
+                                    onValueChange = { rawCookie = it },
+                                    label = { Text(cookieLabel) },
+                                    minLines = 6,
+                                    maxLines = 10,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                MiuixSettingsButton(
+                                    onClick = { onSaveCookie(rawCookie) },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(stringResource(R.string.login_save_cookie))
+                                }
+                            }
                         }
                     }
                 }

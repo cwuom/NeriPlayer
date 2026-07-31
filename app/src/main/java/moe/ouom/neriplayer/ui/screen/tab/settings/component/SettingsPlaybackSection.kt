@@ -31,7 +31,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -52,6 +54,7 @@ import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Usb
 import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -84,6 +87,9 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionIntro
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
 
 @Composable
 internal fun SettingsPlaybackSection(
@@ -126,11 +132,16 @@ internal fun SettingsPlaybackSection(
     allowMixedPlayback: Boolean,
     onAllowMixedPlaybackChange: (Boolean) -> Unit,
     preemptAudioFocus: Boolean,
-    onPreemptAudioFocusChange: (Boolean) -> Unit
+    onPreemptAudioFocusChange: (Boolean) -> Unit,
+    cardIndex: Int? = null,
+    highlightTargetId: String? = null,
+    highlightPulse: Int = 0,
+    onHighlightFinished: (() -> Unit)? = null
 ) {
     val biliSponsorBlockEnabled by autoSettingsRepository.biliSponsorBlockEnabledFlow.collectAsState(
         initial = false
     )
+    fun shouldShowCard(index: Int): Boolean = cardIndex == null || cardIndex == index
 
     if (showHeader) {
         ExpandableHeader(
@@ -159,283 +170,418 @@ internal fun SettingsPlaybackSection(
                     bottom = if (showHeader) 8.dp else 0.dp
                 )
         ) {
-            PlaybackSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.PLAYBACK_FADE_IN),
-                checked = playbackFadeIn,
-                icon = {
-                    Icon(
-                        imageVector = Icons.Outlined.GraphicEq,
-                        contentDescription = stringResource(R.string.settings_playback_fade_in),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                onToggle = { onPlaybackFadeInChange(!playbackFadeIn) },
-                onCheckedChange = onPlaybackFadeInChange
-            )
+            if (shouldShowCard(0)) DetailSectionCard(
+                showCard = !showHeader,
+                highlighted = false,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            ) {
+                MiuixSettingsSectionIntro(
+                    title = stringResource(R.string.settings_playback_section_behavior),
+                    description = stringResource(R.string.settings_playback_section_behavior_desc)
+                )
 
-            LazyAnimatedVisibility(visible = playbackFadeIn) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 8.dp, end = 8.dp, bottom = 8.dp)
-                ) {
-                    DurationSliderListItem(
-                        title = stringResource(R.string.settings_playback_fade_in_duration),
-                        durationMs = playbackFadeInDurationMs,
-                        onDurationChange = onPlaybackFadeInDurationMsChange
-                    )
-                    DurationSliderListItem(
-                        title = stringResource(R.string.settings_playback_fade_out_duration),
-                        durationMs = playbackFadeOutDurationMs,
-                        onDurationChange = onPlaybackFadeOutDurationMsChange
-                    )
-                }
+                PlaybackSwitchItem(
+                    setting = AutoSettingsMetadata.requireSetting(
+                        AutoSettingsKeys.PLAYBACK_SLEEP_TIMER_FINISH_CURRENT_ON_EXPIRY
+                    ),
+                    checked = sleepTimerFinishCurrentOnExpiry,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Timer,
+                            contentDescription = stringResource(
+                                R.string.settings_playback_sleep_timer_finish_current_on_expiry
+                            ),
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    onToggle = {
+                        onSleepTimerFinishCurrentOnExpiryChange(
+                            !sleepTimerFinishCurrentOnExpiry
+                        )
+                    },
+                    onCheckedChange = onSleepTimerFinishCurrentOnExpiryChange,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+
+                PlaybackSwitchItem(
+                    setting = AutoSettingsMetadata.requireSetting(
+                        AutoSettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS
+                    ),
+                    checked = keepLastPlaybackProgress,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Outlined.History,
+                            contentDescription = stringResource(R.string.settings_keep_last_playback_progress),
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    onToggle = { onKeepLastPlaybackProgressChange(!keepLastPlaybackProgress) },
+                    onCheckedChange = onKeepLastPlaybackProgressChange,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+
+                PlaybackSwitchItem(
+                    setting = AutoSettingsMetadata.requireSetting(
+                        AutoSettingsKeys.REMEMBER_LONG_FORM_PLAYBACK_PROGRESS
+                    ),
+                    checked = rememberLongFormPlaybackProgress,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Bookmark,
+                            contentDescription = stringResource(
+                                R.string.settings_remember_long_form_playback_progress
+                            ),
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    onToggle = {
+                        onRememberLongFormPlaybackProgressChange(
+                            !rememberLongFormPlaybackProgress
+                        )
+                    },
+                    onCheckedChange = onRememberLongFormPlaybackProgressChange,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+
+                PlaybackSwitchItem(
+                    setting = AutoSettingsMetadata.requireSetting(
+                        AutoSettingsKeys.BILI_SPONSOR_BLOCK_ENABLED
+                    ),
+                    checked = biliSponsorBlockEnabled,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Outlined.FastForward,
+                            contentDescription = stringResource(R.string.settings_bili_sponsor_block),
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    onToggle = {
+                        scope.launch {
+                            autoSettingsRepository.setBiliSponsorBlockEnabled(!biliSponsorBlockEnabled)
+                        }
+                    },
+                    onCheckedChange = { enabled ->
+                        scope.launch { autoSettingsRepository.setBiliSponsorBlockEnabled(enabled) }
+                    },
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+
+                PlaybackSwitchItem(
+                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.KEEP_PLAYBACK_MODE_STATE),
+                    checked = keepPlaybackModeState,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Tune,
+                            contentDescription = stringResource(R.string.settings_keep_playback_mode_state),
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    onToggle = { onKeepPlaybackModeStateChange(!keepPlaybackModeState) },
+                    onCheckedChange = onKeepPlaybackModeStateChange,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+
+                PlaybackSwitchItem(
+                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.STOP_ON_BLUETOOTH_DISCONNECT),
+                    checked = stopOnBluetoothDisconnect,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Outlined.BluetoothAudio,
+                            contentDescription = stringResource(R.string.settings_stop_on_bluetooth_disconnect),
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    onToggle = { onStopOnBluetoothDisconnectChange(!stopOnBluetoothDisconnect) },
+                    onCheckedChange = onStopOnBluetoothDisconnectChange,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
             }
 
-            PlaybackSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.PLAYBACK_CROSSFADE_NEXT),
-                checked = playbackCrossfadeNext,
-                icon = {
-                    Icon(
-                        imageVector = Icons.Outlined.Sync,
-                        contentDescription = stringResource(R.string.settings_playback_crossfade_next),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                onToggle = { onPlaybackCrossfadeNextChange(!playbackCrossfadeNext) },
-                onCheckedChange = onPlaybackCrossfadeNextChange
-            )
+            if (cardIndex == null) DetailSectionGap(showHeader)
+            if (shouldShowCard(1)) DetailSectionCard(
+                showCard = !showHeader,
+                highlighted = false,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            ) {
+                MiuixSettingsSectionIntro(
+                    title = stringResource(R.string.settings_playback_section_audio_output),
+                    description = stringResource(R.string.settings_playback_section_audio_output_desc)
+                )
 
-            LazyAnimatedVisibility(visible = playbackCrossfadeNext) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 8.dp, end = 8.dp, bottom = 8.dp)
-                ) {
-                    DurationSliderListItem(
-                        title = stringResource(R.string.settings_playback_crossfade_in_duration),
-                        durationMs = playbackCrossfadeInDurationMs,
-                        onDurationChange = onPlaybackCrossfadeInDurationMsChange
-                    )
-                    DurationSliderListItem(
-                        title = stringResource(R.string.settings_playback_crossfade_out_duration),
-                        durationMs = playbackCrossfadeOutDurationMs,
-                        onDurationChange = onPlaybackCrossfadeOutDurationMsChange
-                    )
-                }
+                PlaybackSwitchItem(
+                    setting = AutoSettingsMetadata.requireSetting(
+                        AutoSettingsKeys.PLAYBACK_HIGH_RESOLUTION_OUTPUT_ENABLED
+                    ),
+                    checked = playbackHighResolutionOutputEnabled,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Outlined.HighQuality,
+                            contentDescription = stringResource(
+                                R.string.settings_playback_high_resolution_output
+                            ),
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    onToggle = {
+                        onPlaybackHighResolutionOutputEnabledChange(
+                            !playbackHighResolutionOutputEnabled
+                        )
+                    },
+                    onCheckedChange = onPlaybackHighResolutionOutputEnabledChange,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+
+                PlaybackSwitchItem(
+                    setting = AutoSettingsMetadata.requireSetting(
+                        AutoSettingsKeys.PLAYBACK_VOLUME_NORMALIZATION_ENABLED
+                    ),
+                    checked = playbackVolumeNormalizationEnabled,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Outlined.BarChart,
+                            contentDescription = stringResource(
+                                R.string.settings_playback_volume_normalization
+                            ),
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    onToggle = {
+                        onPlaybackVolumeNormalizationEnabledChange(
+                            !playbackVolumeNormalizationEnabled
+                        )
+                    },
+                    onCheckedChange = onPlaybackVolumeNormalizationEnabledChange,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+
+                VolumeBalanceSliderListItem(
+                    balance = playbackVolumeBalance,
+                    onBalanceChange = onPlaybackVolumeBalanceChange,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+
+                UsbExclusiveSettingsEntry(
+                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.USB_EXCLUSIVE_PLAYBACK),
+                    enabled = usbExclusivePlayback,
+                    onClick = onUsbExclusiveSettingsClick,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+
+                PlaybackSwitchItem(
+                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.ALLOW_MIXED_PLAYBACK),
+                    checked = allowMixedPlayback,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.VolumeUp,
+                            contentDescription = stringResource(R.string.settings_allow_mixed_playback),
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    onToggle = { onAllowMixedPlaybackChange(!allowMixedPlayback) },
+                    onCheckedChange = onAllowMixedPlaybackChange,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+
+                PlaybackSwitchItem(
+                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.PREEMPT_AUDIO_FOCUS),
+                    checked = preemptAudioFocus,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Headphones,
+                            contentDescription = stringResource(R.string.settings_preempt_audio_focus),
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    onToggle = { onPreemptAudioFocusChange(!preemptAudioFocus) },
+                    onCheckedChange = onPreemptAudioFocusChange,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
             }
 
-            PlaybackSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(
-                    AutoSettingsKeys.PLAYBACK_SLEEP_TIMER_FINISH_CURRENT_ON_EXPIRY
-                ),
-                checked = sleepTimerFinishCurrentOnExpiry,
-                icon = {
-                    Icon(
-                        imageVector = Icons.Outlined.Timer,
-                        contentDescription = stringResource(
-                            R.string.settings_playback_sleep_timer_finish_current_on_expiry
-                        ),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                onToggle = {
-                    onSleepTimerFinishCurrentOnExpiryChange(
-                        !sleepTimerFinishCurrentOnExpiry
-                    )
-                },
-                onCheckedChange = onSleepTimerFinishCurrentOnExpiryChange
-            )
+            if (cardIndex == null) DetailSectionGap(showHeader)
+            if (shouldShowCard(2)) DetailSectionCard(
+                showCard = !showHeader,
+                highlighted = false,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            ) {
+                MiuixSettingsSectionIntro(
+                    title = stringResource(R.string.settings_playback_fade_in),
+                    description = stringResource(R.string.settings_playback_fade_in_desc)
+                )
 
-            PlaybackSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(
-                    AutoSettingsKeys.PLAYBACK_HIGH_RESOLUTION_OUTPUT_ENABLED
-                ),
-                checked = playbackHighResolutionOutputEnabled,
-                icon = {
-                    Icon(
-                        imageVector = Icons.Outlined.HighQuality,
-                        contentDescription = stringResource(
-                            R.string.settings_playback_high_resolution_output
-                        ),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                onToggle = {
-                    onPlaybackHighResolutionOutputEnabledChange(
-                        !playbackHighResolutionOutputEnabled
-                    )
-                },
-                onCheckedChange = onPlaybackHighResolutionOutputEnabledChange
-            )
+                PlaybackSwitchItem(
+                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.PLAYBACK_FADE_IN),
+                    checked = playbackFadeIn,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Outlined.GraphicEq,
+                            contentDescription = stringResource(R.string.settings_playback_fade_in),
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    onToggle = { onPlaybackFadeInChange(!playbackFadeIn) },
+                    onCheckedChange = onPlaybackFadeInChange,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
 
-            PlaybackSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(
-                    AutoSettingsKeys.PLAYBACK_VOLUME_NORMALIZATION_ENABLED
-                ),
-                checked = playbackVolumeNormalizationEnabled,
-                icon = {
-                    Icon(
-                        imageVector = Icons.Outlined.BarChart,
-                        contentDescription = stringResource(
-                            R.string.settings_playback_volume_normalization
-                        ),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                onToggle = {
-                    onPlaybackVolumeNormalizationEnabledChange(
-                        !playbackVolumeNormalizationEnabled
-                    )
-                },
-                onCheckedChange = onPlaybackVolumeNormalizationEnabledChange
-            )
-
-            VolumeBalanceSliderListItem(
-                balance = playbackVolumeBalance,
-                onBalanceChange = onPlaybackVolumeBalanceChange
-            )
-
-            PlaybackSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS),
-                checked = keepLastPlaybackProgress,
-                icon = {
-                    Icon(
-                        imageVector = Icons.Outlined.History,
-                        contentDescription = stringResource(R.string.settings_keep_last_playback_progress),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                onToggle = { onKeepLastPlaybackProgressChange(!keepLastPlaybackProgress) },
-                onCheckedChange = onKeepLastPlaybackProgressChange
-            )
-
-            PlaybackSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(
-                    AutoSettingsKeys.REMEMBER_LONG_FORM_PLAYBACK_PROGRESS
-                ),
-                checked = rememberLongFormPlaybackProgress,
-                icon = {
-                    Icon(
-                        imageVector = Icons.Outlined.Bookmark,
-                        contentDescription = stringResource(
-                            R.string.settings_remember_long_form_playback_progress
-                        ),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                onToggle = {
-                    onRememberLongFormPlaybackProgressChange(
-                        !rememberLongFormPlaybackProgress
-                    )
-                },
-                onCheckedChange = onRememberLongFormPlaybackProgressChange
-            )
-
-            PlaybackSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(
-                    AutoSettingsKeys.BILI_SPONSOR_BLOCK_ENABLED
-                ),
-                checked = biliSponsorBlockEnabled,
-                icon = {
-                    Icon(
-                        imageVector = Icons.Outlined.FastForward,
-                        contentDescription = stringResource(R.string.settings_bili_sponsor_block),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                onToggle = {
-                    scope.launch {
-                        autoSettingsRepository.setBiliSponsorBlockEnabled(!biliSponsorBlockEnabled)
+                LazyAnimatedVisibility(visible = playbackFadeIn) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 8.dp, end = 8.dp, bottom = 8.dp)
+                    ) {
+                        DurationSliderListItem(
+                            title = stringResource(R.string.settings_playback_fade_in_duration),
+                            durationMs = playbackFadeInDurationMs,
+                            onDurationChange = onPlaybackFadeInDurationMsChange
+                        )
+                        DurationSliderListItem(
+                            title = stringResource(R.string.settings_playback_fade_out_duration),
+                            durationMs = playbackFadeOutDurationMs,
+                            onDurationChange = onPlaybackFadeOutDurationMsChange
+                        )
                     }
-                },
-                onCheckedChange = { enabled ->
-                    scope.launch { autoSettingsRepository.setBiliSponsorBlockEnabled(enabled) }
                 }
-            )
+            }
 
-            PlaybackSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.KEEP_PLAYBACK_MODE_STATE),
-                checked = keepPlaybackModeState,
-                icon = {
-                    Icon(
-                        imageVector = Icons.Outlined.Tune,
-                        contentDescription = stringResource(R.string.settings_keep_playback_mode_state),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                onToggle = { onKeepPlaybackModeStateChange(!keepPlaybackModeState) },
-                onCheckedChange = onKeepPlaybackModeStateChange
-            )
+            if (cardIndex == null) DetailSectionGap(showHeader)
+            if (shouldShowCard(3)) DetailSectionCard(
+                showCard = !showHeader,
+                highlighted = false,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            ) {
+                MiuixSettingsSectionIntro(
+                    title = stringResource(R.string.settings_playback_crossfade_next),
+                    description = stringResource(R.string.settings_playback_crossfade_next_desc)
+                )
 
-            PlaybackSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.STOP_ON_BLUETOOTH_DISCONNECT),
-                checked = stopOnBluetoothDisconnect,
-                icon = {
-                    Icon(
-                        imageVector = Icons.Outlined.BluetoothAudio,
-                        contentDescription = stringResource(R.string.settings_stop_on_bluetooth_disconnect),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                onToggle = { onStopOnBluetoothDisconnectChange(!stopOnBluetoothDisconnect) },
-                onCheckedChange = onStopOnBluetoothDisconnectChange
-            )
+                PlaybackSwitchItem(
+                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.PLAYBACK_CROSSFADE_NEXT),
+                    checked = playbackCrossfadeNext,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Sync,
+                            contentDescription = stringResource(R.string.settings_playback_crossfade_next),
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    onToggle = { onPlaybackCrossfadeNextChange(!playbackCrossfadeNext) },
+                    onCheckedChange = onPlaybackCrossfadeNextChange,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
 
-            UsbExclusiveSettingsEntry(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.USB_EXCLUSIVE_PLAYBACK),
-                enabled = usbExclusivePlayback,
-                onClick = onUsbExclusiveSettingsClick
-            )
-
-            PlaybackSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.ALLOW_MIXED_PLAYBACK),
-                checked = allowMixedPlayback,
-                icon = {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.VolumeUp,
-                        contentDescription = stringResource(R.string.settings_allow_mixed_playback),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                onToggle = { onAllowMixedPlaybackChange(!allowMixedPlayback) },
-                onCheckedChange = onAllowMixedPlaybackChange
-            )
-
-            PlaybackSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.PREEMPT_AUDIO_FOCUS),
-                checked = preemptAudioFocus,
-                icon = {
-                    Icon(
-                        imageVector = Icons.Outlined.Headphones,
-                        contentDescription = stringResource(R.string.settings_preempt_audio_focus),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                onToggle = { onPreemptAudioFocusChange(!preemptAudioFocus) },
-                onCheckedChange = onPreemptAudioFocusChange
-            )
+                LazyAnimatedVisibility(visible = playbackCrossfadeNext) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 8.dp, end = 8.dp, bottom = 8.dp)
+                    ) {
+                        DurationSliderListItem(
+                            title = stringResource(R.string.settings_playback_crossfade_in_duration),
+                            durationMs = playbackCrossfadeInDurationMs,
+                            onDurationChange = onPlaybackCrossfadeInDurationMsChange
+                        )
+                        DurationSliderListItem(
+                            title = stringResource(R.string.settings_playback_crossfade_out_duration),
+                            durationMs = playbackCrossfadeOutDurationMs,
+                            onDurationChange = onPlaybackCrossfadeOutDurationMsChange
+                        )
+                    }
+                }
+            }
         }
     }
+}
+
+@Composable
+private fun DetailSectionCard(
+    showCard: Boolean,
+    highlighted: Boolean = false,
+    highlightPulse: Int = 0,
+    onHighlightFinished: (() -> Unit)? = null,
+    content: @Composable () -> Unit
+) {
+    if (showCard) {
+        MiuixSettingsSectionCard(
+            highlighted = highlighted,
+            highlightPulse = highlightPulse,
+            onHighlightFinished = if (highlighted) onHighlightFinished else null,
+            content = content
+        )
+    } else {
+        content()
+    }
+}
+
+@Composable
+private fun DetailSectionGap(showHeader: Boolean) {
+    if (showHeader) {
+        PlaybackSettingsDivider()
+    } else {
+        Spacer(Modifier.height(12.dp))
+    }
+}
+
+@Composable
+private fun PlaybackSettingsDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f)
+    )
 }
 
 @Composable
 private fun UsbExclusiveSettingsEntry(
     setting: AutoSettingInfo,
     enabled: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
 ) {
     AutoSettingsListItem(
         setting = setting,
@@ -471,6 +617,9 @@ private fun UsbExclusiveSettingsEntry(
                 )
             }
         },
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished,
         onClick = onClick
     )
 }
@@ -478,7 +627,10 @@ private fun UsbExclusiveSettingsEntry(
 @Composable
 private fun VolumeBalanceSliderListItem(
     balance: Float,
-    onBalanceChange: (Float) -> Unit
+    onBalanceChange: (Float) -> Unit,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
 ) {
     val normalizedBalance = normalizePlaybackVolumeBalance(balance)
     var pendingBalance by remember { mutableFloatStateOf(normalizedBalance) }
@@ -490,6 +642,12 @@ private fun VolumeBalanceSliderListItem(
     }
 
     ListItem(
+        modifier = Modifier.settingsHighlightTarget(
+            targetId = "setting:playback_volume_balance",
+            highlightTargetId = highlightTargetId,
+            highlightPulse = highlightPulse,
+            onHighlightFinished = onHighlightFinished
+        ),
         headlineContent = { Text(stringResource(R.string.settings_playback_volume_balance)) },
         supportingContent = {
             Column(Modifier.fillMaxWidth()) {
@@ -541,7 +699,10 @@ private fun PlaybackSwitchItem(
     checked: Boolean,
     icon: @Composable () -> Unit,
     onToggle: () -> Unit,
-    onCheckedChange: (Boolean) -> Unit
+    onCheckedChange: (Boolean) -> Unit,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
 ) {
     AutoSettingsListItem(
         setting = setting,
@@ -552,6 +713,9 @@ private fun PlaybackSwitchItem(
                 onCheckedChange = onCheckedChange
             )
         },
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished,
         onClick = onToggle
     )
 }

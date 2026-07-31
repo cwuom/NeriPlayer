@@ -54,6 +54,9 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSwitchItems
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionIntro
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
 import kotlin.math.roundToLong
 
 private val LYRIC_OFFSET_SLIDER_STEPS =
@@ -74,8 +77,14 @@ internal fun SettingsLyricsSection(
     cloudMusicLyricDefaultOffsetMs: Long,
     onCloudMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
     qqMusicLyricDefaultOffsetMs: Long,
-    onQqMusicLyricDefaultOffsetMsChange: (Long) -> Unit
+    onQqMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
+    cardIndex: Int? = null,
+    highlightTargetId: String? = null,
+    highlightPulse: Int = 0,
+    onHighlightFinished: (() -> Unit)? = null
 ) {
+    fun shouldShowCard(index: Int): Boolean = cardIndex == null || cardIndex == index
+
     if (showHeader) {
         ExpandableHeader(
             icon = Icons.Outlined.Subtitles,
@@ -98,40 +107,118 @@ internal fun SettingsLyricsSection(
                     bottom = if (showHeader) 8.dp else 0.dp
                 )
         ) {
-            SettingsFloatingLyricsSection(
-                preferences = floatingLyricsPreferences,
-                onPreferencesChange = onFloatingLyricsPreferencesChange
-            )
-            Spacer(Modifier.height(4.dp))
-            AutoSettingsSwitchItems(
-                repository = autoSettingsRepository,
-                scope = scope,
-                sectionScope = AutoSettingsScopes.lyrics
-            )
-            Spacer(Modifier.height(4.dp))
-            LyricsOffsetSliderListItem(
-                title = stringResource(R.string.settings_lyrics_offset_cloud_music),
-                description = stringResource(R.string.settings_lyrics_offset_cloud_music_desc),
-                offsetMs = cloudMusicLyricDefaultOffsetMs,
-                onOffsetChange = onCloudMusicLyricDefaultOffsetMsChange
-            )
-            Spacer(Modifier.height(4.dp))
-            LyricsOffsetSliderListItem(
-                title = stringResource(R.string.settings_lyrics_offset_qq_music),
-                description = stringResource(R.string.settings_lyrics_offset_qq_music_desc),
-                offsetMs = qqMusicLyricDefaultOffsetMs,
-                onOffsetChange = onQqMusicLyricDefaultOffsetMsChange
-            )
+            if (shouldShowCard(0)) LyricsDetailCard(
+                showCard = !showHeader,
+                highlighted = false,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            ) {
+                MiuixSettingsSectionIntro(
+                    title = stringResource(R.string.settings_lyrics_floating_section),
+                    description = stringResource(R.string.settings_lyrics_floating_section_desc)
+                )
+                SettingsFloatingLyricsSection(
+                    preferences = floatingLyricsPreferences,
+                    onPreferencesChange = onFloatingLyricsPreferencesChange,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+            }
+            if (cardIndex == null) LyricsDetailGap(showHeader)
+            if (shouldShowCard(1)) LyricsDetailCard(
+                showCard = !showHeader,
+                highlighted = false,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            ) {
+                MiuixSettingsSectionIntro(
+                    title = stringResource(R.string.settings_lyrics_source_section),
+                    description = stringResource(R.string.settings_lyrics_source_section_desc)
+                )
+                AutoSettingsSwitchItems(
+                    repository = autoSettingsRepository,
+                    scope = scope,
+                    sectionScope = AutoSettingsScopes.lyrics,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+            }
+            if (cardIndex == null) LyricsDetailGap(showHeader)
+            if (shouldShowCard(2)) LyricsDetailCard(
+                showCard = !showHeader,
+                highlighted = false,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            ) {
+                MiuixSettingsSectionIntro(
+                    title = stringResource(R.string.settings_lyrics_offset_section),
+                    description = stringResource(R.string.settings_lyrics_offset_section_desc)
+                )
+                LyricsOffsetSliderListItem(
+                    targetId = "setting:cloud_music_lyric_default_offset_ms",
+                    title = stringResource(R.string.settings_lyrics_offset_cloud_music),
+                    description = stringResource(R.string.settings_lyrics_offset_cloud_music_desc),
+                    offsetMs = cloudMusicLyricDefaultOffsetMs,
+                    onOffsetChange = onCloudMusicLyricDefaultOffsetMsChange,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+                Spacer(Modifier.height(4.dp))
+                LyricsOffsetSliderListItem(
+                    targetId = "setting:qq_music_lyric_default_offset_ms",
+                    title = stringResource(R.string.settings_lyrics_offset_qq_music),
+                    description = stringResource(R.string.settings_lyrics_offset_qq_music_desc),
+                    offsetMs = qqMusicLyricDefaultOffsetMs,
+                    onOffsetChange = onQqMusicLyricDefaultOffsetMsChange,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
+            }
         }
     }
 }
 
 @Composable
+private fun LyricsDetailCard(
+    showCard: Boolean,
+    highlighted: Boolean = false,
+    highlightPulse: Int = 0,
+    onHighlightFinished: (() -> Unit)? = null,
+    content: @Composable () -> Unit
+) {
+    if (showCard) {
+        MiuixSettingsSectionCard(
+            highlighted = highlighted,
+            highlightPulse = highlightPulse,
+            onHighlightFinished = if (highlighted) onHighlightFinished else null,
+            content = content
+        )
+    } else {
+        content()
+    }
+}
+
+@Composable
+private fun LyricsDetailGap(showHeader: Boolean) {
+    if (!showHeader) {
+        Spacer(Modifier.height(12.dp))
+    }
+}
+
+@Composable
 private fun LyricsOffsetSliderListItem(
+    targetId: String,
     title: String,
     description: String,
     offsetMs: Long,
-    onOffsetChange: (Long) -> Unit
+    onOffsetChange: (Long) -> Unit,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
 ) {
     var pendingOffset by remember { mutableLongStateOf(offsetMs) }
 
@@ -142,6 +229,12 @@ private fun LyricsOffsetSliderListItem(
     }
 
     ListItem(
+        modifier = Modifier.settingsHighlightTarget(
+            targetId = targetId,
+            highlightTargetId = highlightTargetId,
+            highlightPulse = highlightPulse,
+            onHighlightFinished = onHighlightFinished
+        ),
         headlineContent = { Text(title) },
         supportingContent = {
             Column(Modifier.fillMaxWidth()) {

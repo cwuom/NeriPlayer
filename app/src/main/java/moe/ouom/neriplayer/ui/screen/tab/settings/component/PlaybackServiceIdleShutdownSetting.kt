@@ -24,6 +24,9 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 @Composable
 internal fun PlaybackServiceIdleShutdownSetting(
     repository: AutoSettingsRepository,
+    highlightTargetId: String? = null,
+    highlightPulse: Int = 0,
+    onHighlightFinished: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val selectedMinutes by repository.playbackServiceIdleShutdownMinutesFlow.collectAsState(
@@ -34,6 +37,9 @@ internal fun PlaybackServiceIdleShutdownSetting(
     AutoSettingSpecListItem(
         setting = AutoSettingsSchema.general.playbackServiceIdleShutdownMinutes,
         trailingContent = { Text(playbackServiceIdleShutdownLabel(selectedMinutes)) },
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished,
         onClick = { showDialog = true }
     )
 

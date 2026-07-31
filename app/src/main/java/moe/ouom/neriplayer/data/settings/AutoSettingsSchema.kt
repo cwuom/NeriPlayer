@@ -55,20 +55,6 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
-            key = "dynamic_color",
-            type = SettingValueType.Boolean,
-            defaultBoolean = true,
-            order = 10,
-            ui = SettingUiType.Switch,
-            access = SettingAccessMode.KeyOnly
-        )
-        val dynamicColor = autoSetting(
-            titleRes = R.string.settings_dynamic_color,
-            descriptionRes = R.string.settings_dynamic_color_desc,
-            icon = AutoSettingIcon.Colorize
-        )
-
-        @AutoSetting(
             key = "force_dark",
             type = SettingValueType.Boolean,
             defaultBoolean = false,
@@ -191,6 +177,20 @@ object AutoSettingsSchema {
             titleRes = R.string.settings_theme,
             descriptionRes = R.string.settings_theme_desc,
             icon = AutoSettingIcon.Palette
+        )
+
+        @AutoSetting(
+            key = "dynamic_color",
+            type = SettingValueType.Boolean,
+            defaultBoolean = true,
+            order = 5,
+            ui = SettingUiType.Switch,
+            access = SettingAccessMode.KeyOnly
+        )
+        val dynamicColor = autoSetting(
+            titleRes = R.string.settings_dynamic_color,
+            descriptionRes = R.string.settings_dynamic_color_desc,
+            icon = AutoSettingIcon.Colorize
         )
 
         @AutoSetting(
@@ -416,7 +416,7 @@ object AutoSettingsSchema {
             ui = SettingUiType.Custom
         )
         val homeCardTrending = autoSetting(
-            titleRes = R.string.settings_home_cards
+            titleRes = R.string.recommend_trending
         )
 
         @AutoSetting(
@@ -427,7 +427,7 @@ object AutoSettingsSchema {
             ui = SettingUiType.Custom
         )
         val homeCardRadar = autoSetting(
-            titleRes = R.string.settings_home_cards
+            titleRes = R.string.recommend_radar
         )
 
         @AutoSetting(
@@ -438,7 +438,7 @@ object AutoSettingsSchema {
             ui = SettingUiType.Custom
         )
         val homeCardRecommended = autoSetting(
-            titleRes = R.string.settings_home_cards
+            titleRes = R.string.recommend_for_you
         )
     }
 
@@ -1117,45 +1117,6 @@ object AutoSettingsSchema {
             icon = AutoSettingIcon.Download
         )
 
-        @AutoSetting(
-            key = "download_directory_uri",
-            type = SettingValueType.String,
-            defaultString = "",
-            order = 10,
-            ui = SettingUiType.Custom,
-            access = SettingAccessMode.KeyOnly
-        )
-        val downloadDirectoryUri = autoSetting(
-            titleRes = R.string.settings_download_directory,
-            descriptionRes = R.string.settings_download_directory_desc,
-            icon = AutoSettingIcon.Download
-        )
-
-        @AutoSetting(
-            key = "download_directory_label",
-            type = SettingValueType.String,
-            defaultString = "",
-            order = 20,
-            access = SettingAccessMode.KeyOnly
-        )
-        val downloadDirectoryLabel = autoSetting(
-            titleRes = R.string.settings_download_directory_current
-        )
-
-        @AutoSetting(
-            key = "download_file_name_template",
-            type = SettingValueType.String,
-            defaultString = "",
-            order = 30,
-            ui = SettingUiType.Custom,
-            access = SettingAccessMode.KeyOnly
-        )
-        val downloadFileNameTemplate = autoSetting(
-            titleRes = R.string.settings_download_file_name_format,
-            descriptionRes = R.string.settings_download_file_name_format_desc,
-            icon = AutoSettingIcon.Download
-        )
-
         @AutoSetting(order = 40)
         val downloadMetadataPostProcessingEnabled = autoSwitchSetting(
             key = "download_metadata_post_processing_enabled",
@@ -1230,10 +1191,49 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
+            key = "download_directory_uri",
+            type = SettingValueType.String,
+            defaultString = "",
+            order = 10,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val downloadDirectoryUri = autoSetting(
+            titleRes = R.string.settings_download_directory,
+            descriptionRes = R.string.settings_download_directory_desc,
+            icon = AutoSettingIcon.Download
+        )
+
+        @AutoSetting(
+            key = "download_directory_label",
+            type = SettingValueType.String,
+            defaultString = "",
+            order = 20,
+            access = SettingAccessMode.KeyOnly
+        )
+        val downloadDirectoryLabel = autoSetting(
+            titleRes = R.string.settings_download_directory_current
+        )
+
+        @AutoSetting(
+            key = "download_file_name_template",
+            type = SettingValueType.String,
+            defaultString = "",
+            order = 30,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val downloadFileNameTemplate = autoSetting(
+            titleRes = R.string.settings_download_file_name_format,
+            descriptionRes = R.string.settings_download_file_name_format_desc,
+            icon = AutoSettingIcon.Download
+        )
+
+        @AutoSetting(
             key = "max_cache_size_bytes",
             type = SettingValueType.Long,
             defaultLong = 1024L * 1024L * 1024L,
-            order = 10,
+            order = 40,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )

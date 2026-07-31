@@ -110,22 +110,26 @@ internal enum class SettingsPage(
 }
 
 internal val SettingsHomePageGroups: List<List<SettingsPage>> = listOf(
-    listOf(SettingsPage.Accounts),
+    listOf(
+        SettingsPage.Accounts,
+        SettingsPage.General
+    ),
+    listOf(
+        SettingsPage.Theme,
+        SettingsPage.Personalization,
+        SettingsPage.Motion
+    ),
     listOf(
         SettingsPage.Playback,
-        SettingsPage.PlaybackSource,
         SettingsPage.AudioQuality,
+        SettingsPage.PlaybackSource,
+        SettingsPage.Lyrics
+    ),
+    listOf(
+        SettingsPage.Network,
         SettingsPage.Downloads,
         SettingsPage.Storage,
         SettingsPage.TrafficManagement
-    ),
-    listOf(
-        SettingsPage.General,
-        SettingsPage.Theme,
-        SettingsPage.Personalization,
-        SettingsPage.Motion,
-        SettingsPage.Lyrics,
-        SettingsPage.Network
     ),
     listOf(
         SettingsPage.Backup,

@@ -25,15 +25,15 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.about
 
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Timer
-import androidx.compose.material.icons.outlined.Update
-import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.Update
+import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
@@ -46,12 +46,14 @@ import moe.ouom.neriplayer.util.format.convertTimestampToDate
 internal fun LazyListScope.settingsAboutSection(
     devModeEnabled: Boolean,
     onVersionClick: () -> Unit,
+    onCopyValue: (String) -> Unit = {},
     onOpenGitHubRepo: () -> Unit
 ) {
     item {
         SettingsAboutContent(
             devModeEnabled = devModeEnabled,
             onVersionClick = onVersionClick,
+            onCopyValue = onCopyValue,
             onOpenGitHubRepo = onOpenGitHubRepo
         )
     }
@@ -61,15 +63,17 @@ internal fun LazyListScope.settingsAboutSection(
 internal fun SettingsAboutContent(
     devModeEnabled: Boolean,
     onVersionClick: () -> Unit,
+    onCopyValue: (String) -> Unit,
     onOpenGitHubRepo: () -> Unit
 ) {
     SettingsAboutIntroItem()
-    SettingsBuildUuidItem()
+    SettingsBuildUuidItem(onCopyValue)
     SettingsVersionItem(
         devModeEnabled = devModeEnabled,
-        onVersionClick = onVersionClick
+        onVersionClick = onVersionClick,
+        onCopyValue = onCopyValue
     )
-    SettingsBuildTimeItem()
+    SettingsBuildTimeItem(onCopyValue)
     SettingsGitHubItem(onOpenGitHubRepo = onOpenGitHubRepo)
 }
 
@@ -95,7 +99,9 @@ private fun SettingsAboutIntroItem() {
 }
 
 @Composable
-private fun SettingsBuildUuidItem() {
+private fun SettingsBuildUuidItem(onCopyValue: (String) -> Unit) {
+    val buildUuid = BuildConfig.BUILD_UUID
+
     ListItem(
         leadingContent = {
             Icon(
@@ -110,7 +116,10 @@ private fun SettingsBuildUuidItem() {
                 style = MaterialTheme.typography.titleMedium
             )
         },
-        supportingContent = { Text(BuildConfig.BUILD_UUID) },
+        supportingContent = { Text(buildUuid) },
+        modifier = androidx.compose.ui.Modifier.settingsItemClickable {
+            onCopyValue(buildUuid)
+        },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }
@@ -118,8 +127,16 @@ private fun SettingsBuildUuidItem() {
 @Composable
 private fun SettingsVersionItem(
     devModeEnabled: Boolean,
-    onVersionClick: () -> Unit
+    onVersionClick: () -> Unit,
+    onCopyValue: (String) -> Unit
 ) {
+    val suffix = if (devModeEnabled) {
+        " (${stringResource(R.string.settings_version_debug_suffix)})"
+    } else {
+        ""
+    }
+    val versionName = "${BuildConfig.VERSION_NAME}$suffix"
+
     ListItem(
         leadingContent = {
             Icon(
@@ -134,21 +151,19 @@ private fun SettingsVersionItem(
                 style = MaterialTheme.typography.titleMedium
             )
         },
-        supportingContent = {
-            val suffix = if (devModeEnabled) {
-                " (${stringResource(R.string.settings_version_debug_suffix)})"
-            } else {
-                ""
-            }
-            Text("${BuildConfig.VERSION_NAME}$suffix")
+        supportingContent = { Text(versionName) },
+        modifier = androidx.compose.ui.Modifier.settingsItemClickable {
+            onCopyValue(versionName)
+            onVersionClick()
         },
-        modifier = androidx.compose.ui.Modifier.settingsItemClickable(onClick = onVersionClick),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }
 
 @Composable
-private fun SettingsBuildTimeItem() {
+private fun SettingsBuildTimeItem(onCopyValue: (String) -> Unit) {
+    val buildTime = convertTimestampToDate(BuildConfig.BUILD_TIMESTAMP)
+
     ListItem(
         leadingContent = {
             Icon(
@@ -163,7 +178,10 @@ private fun SettingsBuildTimeItem() {
                 style = MaterialTheme.typography.titleMedium
             )
         },
-        supportingContent = { Text(convertTimestampToDate(BuildConfig.BUILD_TIMESTAMP)) },
+        supportingContent = { Text(buildTime) },
+        modifier = androidx.compose.ui.Modifier.settingsItemClickable {
+            onCopyValue(buildTime)
+        },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }

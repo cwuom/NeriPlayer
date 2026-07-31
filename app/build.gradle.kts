@@ -279,6 +279,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.lyricon.provider)
     implementation(libs.zxing.core)
+    implementation(libs.tiny.pinyin)
 
     implementation(project(":accompanist-lyrics-core"))
     implementation(project(":accompanist-lyrics-ui"))

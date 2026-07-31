@@ -115,7 +115,10 @@ internal fun SettingsAudioQualitySection(
     showMobileDataYouTubeQualityDialog: Boolean,
     onShowMobileDataYouTubeQualityDialogChange: (Boolean) -> Unit,
     showMobileDataBiliQualityDialog: Boolean,
-    onShowMobileDataBiliQualityDialogChange: (Boolean) -> Unit
+    onShowMobileDataBiliQualityDialogChange: (Boolean) -> Unit,
+    highlightTargetId: String? = null,
+    highlightPulse: Int = 0,
+    onHighlightFinished: (() -> Unit)? = null
 ) {
     var audioQualityNotice by remember { mutableStateOf<AudioQualityNotice?>(null) }
 
@@ -151,7 +154,10 @@ internal fun SettingsAudioQualitySection(
                 valueLabel = qualityLabel,
                 preferredQuality = preferredQuality,
                 iconRes = R.drawable.ic_netease_cloud_music,
-                onClick = { onShowQualityDialogChange(true) }
+                onClick = { onShowQualityDialogChange(true) },
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
             )
 
             AudioQualityListItem(
@@ -159,7 +165,10 @@ internal fun SettingsAudioQualitySection(
                 valueLabel = youtubeQualityLabel,
                 preferredQuality = youtubePreferredQuality,
                 iconRes = R.drawable.ic_youtube,
-                onClick = { onShowYouTubeQualityDialogChange(true) }
+                onClick = { onShowYouTubeQualityDialogChange(true) },
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
             )
 
             AudioQualityListItem(
@@ -167,7 +176,10 @@ internal fun SettingsAudioQualitySection(
                 valueLabel = biliQualityLabel,
                 preferredQuality = biliPreferredQuality,
                 iconRes = R.drawable.ic_bilibili,
-                onClick = { onShowBiliQualityDialogChange(true) }
+                onClick = { onShowBiliQualityDialogChange(true) },
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
             )
 
             AutoSettingsListItem(
@@ -194,7 +206,10 @@ internal fun SettingsAudioQualitySection(
                     onMobileDataFollowDefaultAudioQualityChange(
                         !mobileDataFollowDefaultAudioQuality
                     )
-                }
+                },
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
             )
 
             if (!mobileDataFollowDefaultAudioQuality) {
@@ -212,7 +227,10 @@ internal fun SettingsAudioQualitySection(
                     valueLabel = mobileDataNeteaseQualityLabel,
                     preferredQuality = mobileDataNeteaseAudioQuality,
                     iconRes = R.drawable.ic_netease_cloud_music,
-                    onClick = { onShowMobileDataNeteaseQualityDialogChange(true) }
+                    onClick = { onShowMobileDataNeteaseQualityDialogChange(true) },
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
                 )
 
                 AudioQualityListItem(
@@ -222,7 +240,10 @@ internal fun SettingsAudioQualitySection(
                     valueLabel = mobileDataYouTubeQualityLabel,
                     preferredQuality = mobileDataYouTubeAudioQuality,
                     iconRes = R.drawable.ic_youtube,
-                    onClick = { onShowMobileDataYouTubeQualityDialogChange(true) }
+                    onClick = { onShowMobileDataYouTubeQualityDialogChange(true) },
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
                 )
 
                 AudioQualityListItem(
@@ -232,7 +253,10 @@ internal fun SettingsAudioQualitySection(
                     valueLabel = mobileDataBiliQualityLabel,
                     preferredQuality = mobileDataBiliAudioQuality,
                     iconRes = R.drawable.ic_bilibili,
-                    onClick = { onShowMobileDataBiliQualityDialogChange(true) }
+                    onClick = { onShowMobileDataBiliQualityDialogChange(true) },
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
                 )
             }
         }
@@ -384,7 +408,10 @@ private fun AudioQualityListItem(
     valueLabel: String,
     preferredQuality: String,
     iconRes: Int,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
 ) {
     AutoSettingsListItem(
         setting = setting,
@@ -399,6 +426,9 @@ private fun AudioQualityListItem(
         supportingContent = {
             Text(stringResource(R.string.common_label_value_format, valueLabel, preferredQuality))
         },
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished,
         onClick = onClick
     )
 }

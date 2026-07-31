@@ -53,6 +53,7 @@ import moe.ouom.neriplayer.data.settings.AutoSettingSpecRepository
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingIcon
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingSpec
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
 
 @Composable
 internal fun rememberAutoSettingSpecRepository(): AutoSettingSpecRepository {
@@ -69,14 +70,23 @@ internal fun <T> AutoSettingSpecListItem(
     leadingContent: (@Composable () -> Unit)? = null,
     supportingContent: (@Composable () -> Unit)? = null,
     trailingContent: (@Composable () -> Unit)? = null,
+    highlightTargetId: String? = null,
+    highlightPulse: Int = 0,
+    onHighlightFinished: (() -> Unit)? = null,
     onClick: (() -> Unit)? = null
 ) {
     val title = autoSettingSpecString(setting.titleRes) ?: setting.key
     val description = autoSettingSpecString(setting.descriptionRes)
+    val highlightedModifier = modifier.settingsHighlightTarget(
+        targetId = "setting:${setting.key}",
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished
+    )
     val clickableModifier = if (onClick == null) {
-        modifier
+        highlightedModifier
     } else {
-        modifier.settingsItemClickable(enabled = enabled, onClick = onClick)
+        highlightedModifier.settingsItemClickable(enabled = enabled, onClick = onClick)
     }
     val defaultLeadingContent: (@Composable () -> Unit)? = if (showDefaultIcon) {
         {
@@ -112,6 +122,9 @@ internal fun AutoSettingSpecSwitchItem(
     showDefaultIcon: Boolean = true,
     leadingContent: (@Composable () -> Unit)? = null,
     supportingContent: (@Composable () -> Unit)? = null,
+    highlightTargetId: String? = null,
+    highlightPulse: Int = 0,
+    onHighlightFinished: (() -> Unit)? = null,
     afterCheckedChange: ((Boolean) -> Unit)? = null
 ) {
     val scope = rememberCoroutineScope()
@@ -131,7 +144,10 @@ internal fun AutoSettingSpecSwitchItem(
         enabled = enabled,
         showDefaultIcon = showDefaultIcon,
         leadingContent = leadingContent,
-        supportingContent = supportingContent
+        supportingContent = supportingContent,
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished
     )
 }
 
@@ -144,7 +160,10 @@ internal fun AutoSettingSpecSwitchItem(
     enabled: Boolean = true,
     showDefaultIcon: Boolean = true,
     leadingContent: (@Composable () -> Unit)? = null,
-    supportingContent: (@Composable () -> Unit)? = null
+    supportingContent: (@Composable () -> Unit)? = null,
+    highlightTargetId: String? = null,
+    highlightPulse: Int = 0,
+    onHighlightFinished: (() -> Unit)? = null
 ) {
     AutoSettingSpecListItem(
         setting = setting,
@@ -153,6 +172,9 @@ internal fun AutoSettingSpecSwitchItem(
         showDefaultIcon = showDefaultIcon,
         leadingContent = leadingContent,
         supportingContent = supportingContent,
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished,
         trailingContent = {
             MiuixSettingsSwitch(
                 checked = checked,

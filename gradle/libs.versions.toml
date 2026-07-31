@@ -40,6 +40,7 @@ foundationLayout = "1.11.4"
 securityCrypto = "1.1.0"
 superlyricapi = "3.4"
 taglib = "1.0.6"
+tinyPinyin = "2.0.3.RELEASE"
 uiGraphics = "1.11.4"
 workRuntimeKtx = "2.11.2"
 javascriptengine = "1.1.0"
@@ -65,6 +66,7 @@ androidx-palette-ktx = { module = "androidx.palette:palette-ktx", version.ref = 
 androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "securityCrypto" }
 superlyricapi = { module = "com.github.HChenX:SuperLyricApi", version.ref = "superlyricapi" }
 taglib = { module = "io.github.kyant0:taglib", version.ref = "taglib" }
+tiny-pinyin = { module = "io.github.biezhi:TinyPinyin", version.ref = "tinyPinyin" }
 androidx-ui-graphics = { module = "androidx.compose.ui:ui-graphics", version.ref = "uiGraphics" }
 androidx-work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "workRuntimeKtx" }
 androidx-javascriptengine = { module = "androidx.javascriptengine:javascriptengine", version.ref = "javascriptengine" }

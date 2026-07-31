@@ -24,11 +24,10 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.dialog
  */
 
 import android.content.Intent
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -43,7 +42,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -53,6 +51,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsInlineMessage
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
@@ -74,25 +73,46 @@ internal fun SettingsGitHubDialogs(
 
     if (showGitHubConfigDialog) {
         val githubState by githubVm.uiState.collectAsStateWithLifecycleCompat()
-        var githubToken by remember { mutableStateOf("") }
-        var githubRepoName by remember { mutableStateOf("neriplayer-backup") }
-        var useExistingRepo by remember { mutableStateOf(false) }
-        var existingRepoName by remember { mutableStateOf("") }
+        var githubToken by remember(showGitHubConfigDialog) { mutableStateOf("") }
+        var githubRepoName by remember(showGitHubConfigDialog) {
+            mutableStateOf("neriplayer-backup")
+        }
+        var useExistingRepo by remember(showGitHubConfigDialog) { mutableStateOf(false) }
+        var existingRepoName by remember(showGitHubConfigDialog) { mutableStateOf("") }
+
+        val dismissConfigDialog = {
+            githubVm.clearMessages()
+            onShowGitHubConfigDialogChange(false)
+        }
 
         MiuixSettingsDialog(
-            onDismissRequest = { onShowGitHubConfigDialogChange(false) },
+            onDismissRequest = dismissConfigDialog,
             title = { Text(stringResource(R.string.sync_config)) },
             text = {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    githubState.errorMessage?.let { error ->
+                        MiuixSettingsInlineMessage(
+                            message = error,
+                            isSuccess = false,
+                            onClose = githubVm::clearMessages
+                        )
+                    }
+                    githubState.successMessage?.let { message ->
+                        MiuixSettingsInlineMessage(
+                            message = message,
+                            isSuccess = true,
+                            onClose = githubVm::clearMessages
+                        )
+                    }
                     Text(
                         stringResource(R.string.sync_step1_token),
                         style = MaterialTheme.typography.titleSmall
                     )
-                    Spacer(Modifier.height(8.dp))
                     MiuixSettingsTextField(
                         value = githubToken,
                         onValueChange = { githubToken = it },
@@ -101,7 +121,6 @@ internal fun SettingsGitHubDialogs(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(Modifier.height(4.dp))
                     Text(
                         stringResource(R.string.settings_github_token_permission),
                         style = MaterialTheme.typography.bodySmall,
@@ -120,12 +139,10 @@ internal fun SettingsGitHubDialogs(
                     }
 
                     if (githubState.tokenValid) {
-                        Spacer(Modifier.height(16.dp))
                         Text(
                             stringResource(R.string.sync_step2_repo),
                             style = MaterialTheme.typography.titleSmall
                         )
-                        Spacer(Modifier.height(8.dp))
 
                         MiuixSettingsChoiceRow(
                             title = stringResource(R.string.sync_create_new_repo),
@@ -161,47 +178,54 @@ internal fun SettingsGitHubDialogs(
                         }
                     }
                 }
-        },
+            },
             confirmButton = {
-                if (!githubState.tokenValid) {
-                    MiuixSettingsButton(
-                        onClick = { githubVm.validateToken(context, githubToken) },
-                        enabled = githubToken.isNotBlank() && !githubState.isValidating
-                    ) {
-                        if (githubState.isValidating) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(Modifier.width(8.dp))
+                when {
+                    githubState.isConfigured -> {
+                        MiuixSettingsButton(onClick = dismissConfigDialog) {
+                            Text(stringResource(R.string.action_close))
                         }
-                        Text(stringResource(R.string.sync_verify_token))
                     }
-                } else {
-                    MiuixSettingsButton(
-                        onClick = {
-                            if (useExistingRepo) {
-                                githubVm.useExistingRepository(context, existingRepoName)
-                            } else {
-                                githubVm.createRepository(context, githubRepoName)
+                    !githubState.tokenValid -> {
+                        MiuixSettingsButton(
+                            onClick = { githubVm.validateToken(context, githubToken) },
+                            enabled = githubToken.isNotBlank() && !githubState.isValidating
+                        ) {
+                            if (githubState.isValidating) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(Modifier.width(8.dp))
                             }
-                            onShowGitHubConfigDialogChange(false)
-                        },
-                        enabled = !githubState.isCreatingRepo && !githubState.isCheckingRepo
-                    ) {
-                        if (githubState.isCreatingRepo || githubState.isCheckingRepo) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.sync_verify_token))
                         }
-                        Text(stringResource(R.string.action_done))
+                    }
+                    else -> {
+                        MiuixSettingsButton(
+                            onClick = {
+                                if (useExistingRepo) {
+                                    githubVm.useExistingRepository(context, existingRepoName)
+                                } else {
+                                    githubVm.createRepository(context, githubRepoName)
+                                }
+                            },
+                            enabled = !githubState.isCreatingRepo && !githubState.isCheckingRepo
+                        ) {
+                            if (githubState.isCreatingRepo || githubState.isCheckingRepo) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(stringResource(R.string.action_done))
+                        }
                     }
                 }
             },
             dismissButton = {
-                MiuixSettingsTextButton(onClick = { onShowGitHubConfigDialogChange(false) }) {
+                MiuixSettingsTextButton(onClick = dismissConfigDialog) {
                     Text(stringResource(R.string.action_cancel))
                 }
             }

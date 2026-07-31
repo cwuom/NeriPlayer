@@ -71,7 +71,10 @@ internal fun SettingsDownloadSection(
     arrowRotation: Float,
     onExpandedChange: (Boolean) -> Unit,
     showHeader: Boolean = true,
-    onNavigateToDownloadManager: () -> Unit
+    onNavigateToDownloadManager: () -> Unit,
+    highlightTargetId: String? = null,
+    highlightPulse: Int = 0,
+    onHighlightFinished: (() -> Unit)? = null
 ) {
     if (showHeader) {
         ExpandableHeader(
@@ -92,7 +95,10 @@ internal fun SettingsDownloadSection(
     ) {
         SettingsDownloadExpandedContent(
             indentContent = showHeader,
-            onNavigateToDownloadManager = onNavigateToDownloadManager
+            onNavigateToDownloadManager = onNavigateToDownloadManager,
+            highlightTargetId = highlightTargetId,
+            highlightPulse = highlightPulse,
+            onHighlightFinished = onHighlightFinished
         )
     }
 }
@@ -100,7 +106,10 @@ internal fun SettingsDownloadSection(
 @Composable
 private fun SettingsDownloadExpandedContent(
     indentContent: Boolean,
-    onNavigateToDownloadManager: () -> Unit
+    onNavigateToDownloadManager: () -> Unit,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
 ) {
     val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
     val taskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
@@ -120,18 +129,28 @@ private fun SettingsDownloadExpandedContent(
             )
     ) {
         AutoSettingSpecSwitchItem(
-            setting = AutoSettingsSchema.download.downloadMetadataPostProcessingEnabled
+            setting = AutoSettingsSchema.download.downloadMetadataPostProcessingEnabled,
+            highlightTargetId = highlightTargetId,
+            highlightPulse = highlightPulse,
+            onHighlightFinished = onHighlightFinished
         )
 
         Spacer(modifier = Modifier.height(4.dp))
 
         AutoSettingSpecSwitchItem(
-            setting = AutoSettingsSchema.download.standardizedLyricEmbeddingEnabled
+            setting = AutoSettingsSchema.download.standardizedLyricEmbeddingEnabled,
+            highlightTargetId = highlightTargetId,
+            highlightPulse = highlightPulse,
+            onHighlightFinished = onHighlightFinished
         )
 
         Spacer(modifier = Modifier.height(4.dp))
 
-        DownloadParallelismSettingItem()
+        DownloadParallelismSettingItem(
+            highlightTargetId = highlightTargetId,
+            highlightPulse = highlightPulse,
+            onHighlightFinished = onHighlightFinished
+        )
 
         Spacer(modifier = Modifier.height(4.dp))
 
@@ -213,7 +232,11 @@ private fun SettingsDownloadExpandedContent(
 }
 
 @Composable
-private fun DownloadParallelismSettingItem() {
+private fun DownloadParallelismSettingItem(
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
+) {
     val setting = AutoSettingsSchema.download.downloadParallelism
     val repository = rememberAutoSettingSpecRepository()
     val scope = rememberCoroutineScope()
@@ -230,6 +253,9 @@ private fun DownloadParallelismSettingItem() {
 
     AutoSettingSpecListItem(
         setting = setting,
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished,
         supportingContent = {
             val displayValue = normalizeDownloadParallelism(sliderValue.roundToInt())
             Column {

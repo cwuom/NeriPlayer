@@ -80,6 +80,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.toColorInt
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
 
 internal fun maskCookieValue(value: String): String {
     return when {
@@ -167,9 +168,22 @@ internal fun LazyAnimatedVisibility(
 
 /** 主题色预览行（当关闭系统动态取色时显示） */
 @Composable
-internal fun ThemeSeedListItem(seedColorHex: String, onClick: () -> Unit) {
+internal fun ThemeSeedListItem(
+    seedColorHex: String,
+    onClick: () -> Unit,
+    highlightTargetId: String? = null,
+    highlightPulse: Int = 0,
+    onHighlightFinished: (() -> Unit)? = null
+) {
     ListItem(
-        modifier = Modifier.settingsItemClickable(onClick = onClick),
+        modifier = Modifier
+            .settingsHighlightTarget(
+                targetId = "manual:theme_seed_color",
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            )
+            .settingsItemClickable(onClick = onClick),
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.ColorLens,

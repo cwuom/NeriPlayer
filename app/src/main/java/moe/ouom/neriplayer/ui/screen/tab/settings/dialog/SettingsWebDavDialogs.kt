@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.dialog
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
@@ -22,6 +23,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.sync.webdav.WebDavStorage
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsInlineMessage
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
@@ -59,21 +61,35 @@ internal fun SettingsWebDavDialogs(
             mutableStateOf(storage.getBasePath())
         }
 
-        LaunchedEffect(webDavState.isConfigured, webDavState.successMessage) {
-            if (webDavState.isConfigured && webDavState.successMessage != null) {
-                onShowWebDavConfigDialogChange(false)
-            }
+        val dismissConfigDialog = {
+            webDavVm.clearMessages()
+            onShowWebDavConfigDialogChange(false)
         }
 
         MiuixSettingsDialog(
-            onDismissRequest = { onShowWebDavConfigDialogChange(false) },
+            onDismissRequest = dismissConfigDialog,
             title = { Text(stringResource(R.string.webdav_sync_title)) },
             text = {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    webDavState.errorMessage?.let { error ->
+                        MiuixSettingsInlineMessage(
+                            message = error,
+                            isSuccess = false,
+                            onClose = webDavVm::clearMessages
+                        )
+                    }
+                    webDavState.successMessage?.let { message ->
+                        MiuixSettingsInlineMessage(
+                            message = message,
+                            isSuccess = true,
+                            onClose = webDavVm::clearMessages
+                        )
+                    }
                     Text(
                         text = stringResource(R.string.webdav_sync_desc),
                         style = MaterialTheme.typography.bodyMedium
@@ -116,31 +132,40 @@ internal fun SettingsWebDavDialogs(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-        },
+            },
             confirmButton = {
-                MiuixSettingsButton(
-                    onClick = {
-                        webDavVm.validateAndSaveConfiguration(
-                            context = context,
-                            serverUrl = serverUrl,
-                            username = username,
-                            password = password,
-                            basePath = basePath
-                        )
-                    },
-                    enabled = !webDavState.isValidating
-                ) {
-                    if (webDavState.isValidating) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp
-                        )
+                when {
+                    webDavState.isConfigured -> {
+                        MiuixSettingsButton(onClick = dismissConfigDialog) {
+                            Text(stringResource(R.string.action_close))
+                        }
                     }
-                    Text(stringResource(R.string.webdav_validate_and_save))
+                    else -> {
+                        MiuixSettingsButton(
+                            onClick = {
+                                webDavVm.validateAndSaveConfiguration(
+                                    context = context,
+                                    serverUrl = serverUrl,
+                                    username = username,
+                                    password = password,
+                                    basePath = basePath
+                                )
+                            },
+                            enabled = !webDavState.isValidating
+                        ) {
+                            if (webDavState.isValidating) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            }
+                            Text(stringResource(R.string.webdav_validate_and_save))
+                        }
+                    }
                 }
             },
             dismissButton = {
-                MiuixSettingsTextButton(onClick = { onShowWebDavConfigDialogChange(false) }) {
+                MiuixSettingsTextButton(onClick = dismissConfigDialog) {
                     Text(stringResource(R.string.action_cancel))
                 }
             }
