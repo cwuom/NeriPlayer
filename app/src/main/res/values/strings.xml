@@ -293,6 +293,24 @@
     <string name="music_lyrics_fill_failed">歌词填充失败</string>
     <string name="lyrics_editor_hint_original">[00:00.00]在这里输入歌词\n[00:05.00]支持LRC格式\n[00:10.00]格式: [分:秒.毫秒]歌词内容</string>
     <string name="lyrics_editor_hint_translation">[00:00.00]在这里输入翻译歌词\n[00:05.00]支持LRC格式\n[00:10.00]格式: [分:秒.毫秒]翻译内容</string>
+    <string name="lyrics_match_action">匹配</string>
+    <string name="lyrics_match_title">匹配歌词</string>
+    <string name="lyrics_match_keyword">匹配关键字</string>
+    <string name="lyrics_match_keyword_hint">可修改歌名、歌手或版本</string>
+    <string name="lyrics_match_search">搜索</string>
+    <string name="lyrics_match_sources">匹配平台</string>
+    <string name="lyrics_match_no_source_selected">请选择至少一个匹配平台</string>
+    <string name="lyrics_match_loading">正在按所选平台逐个匹配歌词，优先逐字结果</string>
+    <string name="lyrics_match_empty">没有找到可用歌词</string>
+    <string name="lyrics_match_error">匹配失败：%s</string>
+    <string name="lyrics_match_score">匹配 %1$d</string>
+    <string name="lyrics_match_duration_delta">相差 %s</string>
+    <string name="lyrics_match_source_kugou">酷狗</string>
+    <string name="lyrics_match_source_cloud_music">网易云</string>
+    <string name="lyrics_match_source_qq_music">QQ 音乐</string>
+    <string name="lyrics_match_source_amll_ttml">AMLL TTML</string>
+    <string name="lyrics_match_source_lrclib">LRCLIB</string>
+    <string name="lyrics_match_source_youtube_music">YouTube Music</string>
 
     <!-- Music Info -->
     <string name="music_unknown_song">未知歌曲</string>

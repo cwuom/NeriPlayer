@@ -65,6 +65,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -125,6 +127,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -173,6 +176,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -197,6 +201,11 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchRequest
+import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchSource
+import moe.ouom.neriplayer.core.api.lyrics.RankedEditableLyricMatch
+import moe.ouom.neriplayer.core.api.lyrics.defaultEditableLyricMatchSources
+import moe.ouom.neriplayer.core.api.lyrics.normalizeLyricMatchText
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -3364,6 +3373,12 @@ fun EditSongInfoSheet(
     val composeResources = LocalResources.current
     val coroutineScope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    fun clearEditSongInfoFocus() {
+        focusManager.clearFocus(force = true)
+        keyboardController?.hide()
+    }
 
     // 监听当前播放的歌曲, 以便在"获取歌曲信息"后更新UI
     val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
@@ -3481,7 +3496,12 @@ fun EditSongInfoSheet(
                 style = MaterialTheme.typography.titleMedium
             )
 
-            HapticTextButton(onClick = onDismiss) {
+            HapticTextButton(
+                onClick = {
+                    clearEditSongInfoFocus()
+                    onDismiss()
+                }
+            ) {
                 Text(stringResource(R.string.action_cancel))
             }
         }
@@ -3610,6 +3630,7 @@ fun EditSongInfoSheet(
             // 编辑歌词按钮
             HapticTextButton(
                 onClick = {
+                    clearEditSongInfoFocus()
                     // 在打开编辑器前先获取歌词
                     val displayedLyricsSnapshot = displayedLyrics.toList()
                     val displayedTranslatedLyricsSnapshot = displayedTranslatedLyrics.toList()
@@ -3800,6 +3821,7 @@ fun EditSongInfoSheet(
                             shouldRestoreTitleBase = false
                             shouldRestoreArtistBase = false
                             shouldClearMatchedMetadata = false
+                            clearEditSongInfoFocus()
                             onDismiss()
                         } catch (e: Exception) {
                             NPLogger.e("NowPlayingScreen", "保存歌曲信息失败", e)
@@ -3868,6 +3890,7 @@ fun EditSongInfoSheet(
             initialLyrics = lyricsEditorSeed!!.lyrics,
             initialTranslatedLyrics = lyricsEditorSeed!!.translatedLyrics,
             onDismiss = {
+                clearEditSongInfoFocus()
                 lyricsEditorSeed = null
             }
         )
@@ -3876,7 +3899,10 @@ fun EditSongInfoSheet(
     // 搜索结果Sheet
     if (showSearchResults) {
         ModalBottomSheet(
-            onDismissRequest = { showSearchResults = false },
+            onDismissRequest = {
+                clearEditSongInfoFocus()
+                showSearchResults = false
+            },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             sheetGesturesEnabled = false
         ) {
@@ -3899,7 +3925,12 @@ fun EditSongInfoSheet(
                         style = MaterialTheme.typography.titleMedium
                     )
 
-                    HapticTextButton(onClick = { showSearchResults = false }) {
+                    HapticTextButton(
+                        onClick = {
+                            clearEditSongInfoFocus()
+                            showSearchResults = false
+                        }
+                    ) {
                         Text(stringResource(R.string.action_cancel))
                     }
                 }
@@ -4017,6 +4048,7 @@ fun EditSongInfoSheet(
                                             )
                                         },
                                         modifier = Modifier.clickable {
+                                            clearEditSongInfoFocus()
                                             selectedSongForFill = songResult
                                             showSearchResults = false
                                         }
@@ -4227,13 +4259,104 @@ fun LyricsEditorSheet(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val coroutineScope = rememberCoroutineScope()
     val clipboard = LocalClipboard.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    fun dismissLyricsEditor() {
+        focusManager.clearFocus(force = true)
+        keyboardController?.hide()
+        onDismiss()
+    }
 
     var lyricsText by remember { mutableStateOf(initialLyrics) }
     var translatedLyricsText by remember { mutableStateOf(initialTranslatedLyrics) }
     var isSaving by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableIntStateOf(0) }
+    var showLyricMatchSheet by remember { mutableStateOf(false) }
+    var lyricMatchQuery by remember(originalSong.stableKey()) {
+        mutableStateOf(defaultEditableLyricsMatchKeyword(originalSong))
+    }
+    var lyricMatchResultsBySource by remember(originalSong.stableKey()) {
+        mutableStateOf<Map<EditableLyricMatchSource, List<RankedEditableLyricMatch>>>(emptyMap())
+    }
+    var cachedLyricMatchQuery by remember(originalSong.stableKey()) { mutableStateOf("") }
+    var searchedLyricMatchSources by remember(originalSong.stableKey()) {
+        mutableStateOf<Set<EditableLyricMatchSource>>(emptySet())
+    }
+    var isLyricMatching by remember { mutableStateOf(false) }
+    var lyricMatchError by remember { mutableStateOf<String?>(null) }
+    var selectedLyricMatchSources by remember(originalSong.stableKey()) {
+        mutableStateOf(defaultEditableLyricMatchSources())
+    }
+    val visibleLyricMatchResults = remember(lyricMatchResultsBySource, selectedLyricMatchSources) {
+        filterCachedLyricMatchResults(
+            resultsBySource = lyricMatchResultsBySource,
+            selectedSources = selectedLyricMatchSources
+        )
+    }
+    val hasSearchedSelectedLyricSources = selectedLyricMatchSources.any { source ->
+        source in searchedLyricMatchSources
+    }
+
+    fun runLyricMatch(
+        query: String,
+        sources: Set<EditableLyricMatchSource> = selectedLyricMatchSources
+    ) {
+        val trimmedQuery = query.trim()
+        if (trimmedQuery.isBlank() || isLyricMatching) return
+        if (sources.isEmpty()) {
+            lyricMatchError = resources.getString(R.string.lyrics_match_no_source_selected)
+            return
+        }
+        val queryKey = normalizeLyricMatchText(trimmedQuery)
+        val isSameQuery = cachedLyricMatchQuery == queryKey
+        if (!isSameQuery) {
+            cachedLyricMatchQuery = queryKey
+            lyricMatchResultsBySource = emptyMap()
+            searchedLyricMatchSources = emptySet()
+        }
+        val sourcesToSearch = sources
+        lyricMatchQuery = trimmedQuery
+        isLyricMatching = true
+        lyricMatchError = null
+        coroutineScope.launch {
+            try {
+                val matches = withContext(Dispatchers.IO) {
+                    AppContainer.editableLyricsMatcher.matchLyrics(
+                        EditableLyricMatchRequest(
+                            keyword = trimmedQuery,
+                            trackName = originalSong.customName ?: originalSong.name,
+                            artistName = originalSong.customArtist ?: originalSong.artist,
+                            albumName = originalSong.album,
+                            durationMs = originalSong.durationMs,
+                            sources = sourcesToSearch
+                        )
+                    )
+                }
+                val updatedResults = lyricMatchResultsBySource.toMutableMap()
+                sourcesToSearch.forEach { source ->
+                    val sourceMatches = matches.filter { it.candidate.source == source }
+                    if (sourceMatches.isNotEmpty() || !isSameQuery || updatedResults[source].isNullOrEmpty()) {
+                        updatedResults[source] = sourceMatches
+                    }
+                }
+                lyricMatchResultsBySource = updatedResults
+                searchedLyricMatchSources = searchedLyricMatchSources + sourcesToSearch
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                lyricMatchError = resources.getString(
+                    R.string.lyrics_match_error,
+                    error.message.orEmpty().ifBlank { error.javaClass.simpleName }
+                )
+            } finally {
+                isLyricMatching = false
+            }
+        }
+    }
 
 
     Column(
@@ -4256,32 +4379,46 @@ fun LyricsEditorSheet(
                 style = MaterialTheme.typography.titleMedium
             )
 
-            HapticTextButton(onClick = onDismiss) {
+            HapticTextButton(onClick = ::dismissLyricsEditor) {
                 Text(stringResource(R.string.action_cancel))
             }
         }
 
         // 歌曲信息
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(12.dp)
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                text = originalSong.customName ?: originalSong.name,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = originalSong.customArtist ?: originalSong.artist,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = originalSong.customName ?: originalSong.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = originalSong.customArtist ?: originalSong.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            HapticTextButton(
+                onClick = {
+                    showLyricMatchSheet = true
+                },
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(stringResource(R.string.lyrics_match_action), maxLines = 1)
+            }
         }
 
         // 标签页切换
@@ -4394,7 +4531,7 @@ fun LyricsEditorSheet(
                                 lyricsText,
                                 translatedLyricsText
                             )
-                            onDismiss()
+                            dismissLyricsEditor()
                         } catch (e: Exception) {
                             e.printStackTrace()
                         } finally {
@@ -4415,6 +4552,294 @@ fun LyricsEditorSheet(
                 }
             }
         }
+
+        if (showLyricMatchSheet) {
+            LyricMatchResultsSheet(
+                query = lyricMatchQuery,
+                onQueryChange = { query ->
+                    if (query != lyricMatchQuery) {
+                        lyricMatchQuery = query
+                        lyricMatchResultsBySource = emptyMap()
+                        cachedLyricMatchQuery = ""
+                        searchedLyricMatchSources = emptySet()
+                        lyricMatchError = null
+                    }
+                },
+                results = visibleLyricMatchResults,
+                isLoading = isLyricMatching,
+                errorMessage = lyricMatchError,
+                hasSearched = hasSearchedSelectedLyricSources,
+                selectedSources = selectedLyricMatchSources,
+                onSourceToggle = { source ->
+                    selectedLyricMatchSources = if (source in selectedLyricMatchSources) {
+                        selectedLyricMatchSources - source
+                    } else {
+                        selectedLyricMatchSources + source
+                    }
+                    lyricMatchError = null
+                },
+                onSearch = { query -> runLyricMatch(query, selectedLyricMatchSources) },
+                onApply = { result ->
+                    lyricsText = result.candidate.lyrics
+                    result.candidate.translatedLyrics?.takeIf { it.isNotBlank() }?.let { translated ->
+                        translatedLyricsText = translated
+                    }
+                    selectedTab = 0
+                    showLyricMatchSheet = false
+                },
+                onDismiss = { showLyricMatchSheet = false }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun LyricMatchResultsSheet(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    results: List<RankedEditableLyricMatch>,
+    isLoading: Boolean,
+    errorMessage: String?,
+    hasSearched: Boolean,
+    selectedSources: Set<EditableLyricMatchSource>,
+    onSourceToggle: (EditableLyricMatchSource) -> Unit,
+    onSearch: (String) -> Unit,
+    onApply: (RankedEditableLyricMatch) -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        sheetGesturesEnabled = false
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.82f)
+                .padding(horizontal = 24.dp, vertical = 16.dp)
+                .windowInsetsPadding(WindowInsets.navigationBars),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.lyrics_match_title),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                HapticTextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = stringResource(R.string.lyrics_match_sources),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    lyricMatchSelectableSources.forEach { source ->
+                        FilterChip(
+                            selected = source in selectedSources,
+                            onClick = { onSourceToggle(source) },
+                            enabled = !isLoading,
+                            label = {
+                                Text(
+                                    text = stringResource(source.stringResId()),
+                                    maxLines = 1
+                                )
+                            }
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    modifier = Modifier.weight(1f),
+                    label = { Text(stringResource(R.string.lyrics_match_keyword)) },
+                    placeholder = { Text(stringResource(R.string.lyrics_match_keyword_hint)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(
+                        onSearch = { onSearch(query) }
+                    )
+                )
+                HapticTextButton(
+                    onClick = { onSearch(query) },
+                    enabled = !isLoading && query.isNotBlank() && selectedSources.isNotEmpty(),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(stringResource(R.string.lyrics_match_search), maxLines = 1)
+                }
+            }
+
+            if (isLoading) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Text(
+                    text = stringResource(R.string.lyrics_match_loading),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            errorMessage?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            if (!isLoading && hasSearched && errorMessage == null && results.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.lyrics_match_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(
+                    items = results,
+                    key = { result ->
+                        "${result.candidate.source}:${result.candidate.id}:${result.candidate.lyrics.hashCode()}"
+                    }
+                ) { result ->
+                    LyricMatchResultCard(
+                        result = result,
+                        onClick = { onApply(result) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LyricMatchResultCard(
+    result: RankedEditableLyricMatch,
+    onClick: () -> Unit
+) {
+    val candidate = result.candidate
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = candidate.title,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = candidate.artist,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = buildLyricMatchMetaText(result),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun buildLyricMatchMetaText(result: RankedEditableLyricMatch): String {
+    val candidate = result.candidate
+    return buildString {
+        append(stringResource(candidate.source.stringResId()))
+        if (candidate.durationMs > 0L) {
+            append(" · ")
+            append(formatDuration(candidate.durationMs))
+        }
+        result.durationDeltaMs?.let { deltaMs ->
+            append(" · ")
+            append(stringResource(R.string.lyrics_match_duration_delta, formatDuration(deltaMs)))
+        }
+        append(" · ")
+        append(stringResource(R.string.lyrics_match_score, result.score))
+    }
+}
+
+private fun defaultEditableLyricsMatchKeyword(song: SongItem): String {
+    return listOf(
+        song.customName ?: song.name,
+        song.customArtist ?: song.artist
+    ).filter { it.isNotBlank() }
+        .joinToString(" ")
+}
+
+private fun filterCachedLyricMatchResults(
+    resultsBySource: Map<EditableLyricMatchSource, List<RankedEditableLyricMatch>>,
+    selectedSources: Set<EditableLyricMatchSource>
+): List<RankedEditableLyricMatch> {
+    if (selectedSources.isEmpty()) {
+        return emptyList()
+    }
+    return lyricMatchSelectableSources.asSequence()
+        .filter { it in selectedSources }
+        .flatMap { source -> resultsBySource[source].orEmpty().asSequence() }
+        .sortedWith(
+            compareByDescending<RankedEditableLyricMatch> { it.score }
+                .thenBy { it.durationDeltaMs ?: Long.MAX_VALUE }
+                .thenBy { lyricMatchSelectableSources.indexOf(it.candidate.source) }
+                .thenBy { it.candidate.title }
+        )
+        .toList()
+}
+
+private val lyricMatchSelectableSources = listOf(
+    EditableLyricMatchSource.AMLL_TTML,
+    EditableLyricMatchSource.CLOUD_MUSIC,
+    EditableLyricMatchSource.KUGOU,
+    EditableLyricMatchSource.QQ_MUSIC,
+    EditableLyricMatchSource.LRCLIB,
+    EditableLyricMatchSource.YOUTUBE_MUSIC
+)
+
+private fun EditableLyricMatchSource.stringResId(): Int {
+    return when (this) {
+        EditableLyricMatchSource.KUGOU -> R.string.lyrics_match_source_kugou
+        EditableLyricMatchSource.CLOUD_MUSIC -> R.string.lyrics_match_source_cloud_music
+        EditableLyricMatchSource.QQ_MUSIC -> R.string.lyrics_match_source_qq_music
+        EditableLyricMatchSource.AMLL_TTML -> R.string.lyrics_match_source_amll_ttml
+        EditableLyricMatchSource.LRCLIB -> R.string.lyrics_match_source_lrclib
+        EditableLyricMatchSource.YOUTUBE_MUSIC -> R.string.lyrics_match_source_youtube_music
     }
 }
 

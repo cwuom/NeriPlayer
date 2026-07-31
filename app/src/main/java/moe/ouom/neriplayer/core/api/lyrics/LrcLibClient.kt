@@ -29,6 +29,7 @@ package moe.ouom.neriplayer.core.api.lyrics
  * 无需 API Key, 支持按歌曲名+艺术家+时长精确匹配
  */
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -96,6 +97,8 @@ class LrcLibClient(private val okHttpClient: OkHttpClient) {
                     )
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             NPLogger.d(TAG, "LRCLIB getLyrics failed: ${e.message}")
             null
@@ -155,9 +158,50 @@ class LrcLibClient(private val okHttpClient: OkHttpClient) {
                         .thenBy { absDurationDeltaSeconds(it.durationSeconds, durationSeconds) }
                 ).firstOrNull()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             NPLogger.d(TAG, "LRCLIB searchLyrics failed: ${e.message}")
             null
+        }
+    }
+
+    suspend fun searchLyricsCandidates(keyword: String): List<LrcLibResult> = withContext(Dispatchers.IO) {
+        if (keyword.isBlank()) return@withContext emptyList()
+        try {
+            val encodedQuery = URLEncoder.encode(keyword, "UTF-8")
+            val url = "$BASE_URL/search?q=$encodedQuery"
+
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", USER_AGENT)
+                .get()
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    NPLogger.d(TAG, "LRCLIB candidate search returned ${response.code} for '$keyword'")
+                    return@withContext emptyList()
+                }
+
+                val body = response.body.string()
+                val arr = org.json.JSONArray(body)
+                buildList {
+                    for (index in 0 until arr.length()) {
+                        val result = arr.optJSONObject(index)
+                            ?.let(::parseResult)
+                            ?: continue
+                        if (!result.syncedLyrics.isNullOrBlank() || !result.plainLyrics.isNullOrBlank()) {
+                            add(result)
+                        }
+                    }
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            NPLogger.d(TAG, "LRCLIB searchLyricsCandidates failed: ${e.message}")
+            emptyList()
         }
     }
 

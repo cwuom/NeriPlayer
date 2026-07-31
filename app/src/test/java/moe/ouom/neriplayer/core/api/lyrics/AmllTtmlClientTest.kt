@@ -6,6 +6,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -80,6 +81,50 @@ class AmllTtmlClientTest {
     }
 
     @Test
+    fun `searchLyrics separates query keyword from metadata scoring`() = runTest {
+        var requestedQuery = ""
+        val okHttpClient = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                requestedQuery = JSONObject(chain.request().body?.bodyToString().orEmpty())
+                    .optString("query")
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body(
+                        """
+                        [
+                          {
+                            "file": "love-you.ttml",
+                            "title": "爱你",
+                            "titles": ["爱你"],
+                            "artist": "陈芳语",
+                            "artists": ["陈芳语"],
+                            "albums": ["爱你"],
+                            "ncmIds": [],
+                            "qqIds": [],
+                            "score": 100
+                          }
+                        ]
+                        """.trimIndent().toResponseBody("application/json".toMediaType())
+                    )
+                    .build()
+            }
+            .build()
+        val client = AmllTtmlClient(okHttpClient, baseUrl = "https://amll.test")
+
+        val results = client.searchLyrics(
+            query = "爱你 陈芳语",
+            trackName = "爱你",
+            artistName = "陈芳语"
+        )
+
+        assertEquals("爱你 陈芳语", requestedQuery)
+        assertEquals("love-you.ttml", results.single().file)
+    }
+
+    @Test
     fun `isAmllDurationCompatible accepts bounded drift and rejects distant match`() {
         assertTrue(isAmllDurationCompatible(180_000L, 188_000L))
         assertTrue(isAmllDurationCompatible(253_000L, 231_670L))
@@ -93,4 +138,10 @@ class AmllTtmlClientTest {
             normalizeAmllSearchText("Ｈｅｌｌｏ（World）")
         )
     }
+}
+
+private fun okhttp3.RequestBody.bodyToString(): String {
+    val buffer = okio.Buffer()
+    writeTo(buffer)
+    return buffer.readUtf8()
 }

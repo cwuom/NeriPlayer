@@ -46,10 +46,22 @@ class AmllTtmlClient(
     suspend fun searchLyrics(
         trackName: String,
         artistName: String
+    ): List<AmllTtmlSearchResult> {
+        return searchLyrics(
+            query = trackName,
+            trackName = trackName,
+            artistName = artistName
+        )
+    }
+
+    suspend fun searchLyrics(
+        query: String,
+        trackName: String,
+        artistName: String
     ): List<AmllTtmlSearchResult> = withContext(Dispatchers.IO) {
-        val query = trackName.trim().takeIf { it.isNotBlank() } ?: return@withContext emptyList()
+        val searchQuery = query.trim().takeIf { it.isNotBlank() } ?: return@withContext emptyList()
         val requestBody = JSONObject()
-            .put("query", query)
+            .put("query", searchQuery)
             .put("type", "title")
             .toString()
             .toRequestBody(JSON_MEDIA_TYPE)

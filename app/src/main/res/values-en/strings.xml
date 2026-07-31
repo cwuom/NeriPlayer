@@ -293,6 +293,24 @@
     <string name="music_lyrics_fill_failed">Failed to fill lyrics</string>
     <string name="lyrics_editor_hint_original">[00:00.00]Enter lyrics here\n[00:05.00]Supports LRC format\n[00:10.00]Format: [mm:ss.xx]Lyrics content</string>
     <string name="lyrics_editor_hint_translation">[00:00.00]Enter translated lyrics here\n[00:05.00]Supports LRC format\n[00:10.00]Format: [mm:ss.xx]Translation content</string>
+    <string name="lyrics_match_action">Match</string>
+    <string name="lyrics_match_title">Match Lyrics</string>
+    <string name="lyrics_match_keyword">Match keyword</string>
+    <string name="lyrics_match_keyword_hint">Edit title, artist, or version</string>
+    <string name="lyrics_match_search">Search</string>
+    <string name="lyrics_match_sources">Sources</string>
+    <string name="lyrics_match_no_source_selected">Select at least one source</string>
+    <string name="lyrics_match_loading">Matching selected sources one by one, preferring word-level lyrics</string>
+    <string name="lyrics_match_empty">No usable lyrics found</string>
+    <string name="lyrics_match_error">Match failed: %s</string>
+    <string name="lyrics_match_score">Match %1$d</string>
+    <string name="lyrics_match_duration_delta">delta %s</string>
+    <string name="lyrics_match_source_kugou">Kugou</string>
+    <string name="lyrics_match_source_cloud_music">NetEase</string>
+    <string name="lyrics_match_source_qq_music">QQ Music</string>
+    <string name="lyrics_match_source_amll_ttml">AMLL TTML</string>
+    <string name="lyrics_match_source_lrclib">LRCLIB</string>
+    <string name="lyrics_match_source_youtube_music">YouTube Music</string>
 
     <!-- Music Info -->
     <string name="music_unknown_song">Unknown Song</string>

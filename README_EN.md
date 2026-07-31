@@ -339,7 +339,10 @@ For release build and signing details, see
 - 🔍 **Layered search**:
   `Explore` searches NetEase / Bilibili / YouTube Music separately.
   Playback metadata completion uses NetEase / QQ Music and integrates LRCLIB
-  as an external lyrics source.
+  as an external lyrics source. The lyrics editor lets users choose Kugou,
+  NetEase, QQ Music, AMLL TTML, LRCLIB, and YouTube Music before manually
+  matching lyrics, preferring word-level lyrics without hiding regular lyrics
+  while automatically removing title and credit lines from matched lyrics.
 - 🧠 **Media3 playback core**:
   `PlayerManager` handles stream resolution, queue state, shuffle/repeat,
   persistence, failure retry, playback URL refresh, YouTube prefetching, and
@@ -649,8 +652,15 @@ For release build and signing details, see
   lyrics, and track metadata.
 - **Lyrics**:
   besides platform lyrics, LRCLIB is available as an external lyrics client.
-  The player supports original lyrics, translated lyrics, phonetic lyrics,
-  word timing, lyric sharing, and manual editing.
+  The lyrics editor has a dedicated Match entry where the search keyword can be
+  edited, sources are selected before searching, and results are cached
+  temporarily by source. Changing the source filter updates cached candidates
+  locally without repeated requests. Matched lyrics automatically drop title,
+  credit, and production-info lines before candidates are ranked by title,
+  artist, album, duration, and lyric type, preferring word-level lyrics while
+  keeping regular lyric candidates. The player supports original lyrics,
+  translated lyrics, phonetic lyrics, word timing, lyric sharing, and manual
+  editing.
 - **Lyricon integration**:
   `LyriconManager` outputs the current song, playback state, position,
   word-level lyrics, and translated lyrics to Lyricon and SuperLyric. Position is
@@ -856,13 +866,15 @@ and community feedback. They are not fixed-date commitments.
 
 - [ ] Video playback
 - [ ] Comment section
-- [ ] More third-party platforms such as KuGou
+- [ ] More third-party playback, library, and account capabilities
 - [ ] Fuller QQ Music account support, library data, and a more stable auth path
 
 ### Shipped recently
 
 - [x] Dual-scene main-tab transitions, interruptible reverse switching,
   advanced-glass owner handoff, and drawer-style detail feedback by default
+- [x] Lyrics-editor source selection, temporary result caching, and
+  word-level-first lyric matching
 - [x] Listen Together repeat/shuffle sync, stable-track-key target validation,
   server clock-offset estimation, and authoritative stream recovery
 - [x] Listen Together duration-based position projection, single-track repeat wrapping,
@@ -1042,6 +1054,10 @@ We will keep improving the project over time.
 <tr>
   <td><a href="https://github.com/6xingyv/accompanist-lyrics-ui">accompanist-lyrics-ui</a></td>
   <td>The state-of-the-art karaoke lyrics composable</td>
+</tr>
+<tr>
+  <td><a href="https://github.com/chenmozhijin/LDDC">LDDC</a></td>
+  <td>Multi-platform precise lyrics downloader and manual matching UX reference</td>
 </tr>
 <tr>
   <td><a href="https://github.com/ReChronoRain/HyperCeiler">HyperCeiler</a></td>

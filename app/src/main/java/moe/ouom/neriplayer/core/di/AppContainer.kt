@@ -36,6 +36,10 @@ import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.BiliClientAudioDataSource
 import moe.ouom.neriplayer.core.api.bili.BiliPlaybackRepository
 import moe.ouom.neriplayer.core.api.bili.BiliSponsorBlockRepository
+import moe.ouom.neriplayer.core.api.lyrics.AmllTtmlClient
+import moe.ouom.neriplayer.core.api.lyrics.EditableLyricsMatcher
+import moe.ouom.neriplayer.core.api.lyrics.KugouLyricsClient
+import moe.ouom.neriplayer.core.api.lyrics.LrcLibClient
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi
 import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
@@ -381,8 +385,19 @@ object AppContainer {
 
     val cloudMusicSearchApi by lazy { CloudMusicSearchApi(neteaseClient) }
     val qqMusicSearchApi by lazy { QQMusicSearchApi() }
-    val lrcLibClient by lazy { moe.ouom.neriplayer.core.api.lyrics.LrcLibClient(sharedOkHttpClient) }
-    val amllTtmlClient by lazy { moe.ouom.neriplayer.core.api.lyrics.AmllTtmlClient(sharedOkHttpClient) }
+    val lrcLibClient by lazy { LrcLibClient(sharedOkHttpClient) }
+    val amllTtmlClient by lazy { AmllTtmlClient(sharedOkHttpClient) }
+    val kugouLyricsClient by lazy { KugouLyricsClient(sharedOkHttpClient) }
+    val editableLyricsMatcher by lazy {
+        EditableLyricsMatcher(
+            cloudMusicSearchApi = cloudMusicSearchApi,
+            qqMusicSearchApi = qqMusicSearchApi,
+            kugouLyricsClient = kugouLyricsClient,
+            lrcLibClient = lrcLibClient,
+            amllTtmlClient = amllTtmlClient,
+            youtubeMusicClient = youtubeMusicClient
+        )
+    }
     val listenTogetherApi by lazy { ListenTogetherApi(sharedOkHttpClient) }
     private val listenTogetherOkHttpClient by lazy {
         sharedOkHttpClient.newBuilder()

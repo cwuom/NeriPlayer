@@ -79,16 +79,16 @@ import java.util.Base64
  *
  * 可空但缺默认值在 kotlinx.serialization 里仍算必填, 会直接抛 MissingFieldException
  */
-@Serializable internal data class QQMusicLyricResponse(
+@Serializable data class QQMusicLyricResponse(
     val lyric: String? = null,
     val trans: String? = null
 )
 
-@Serializable internal data class QQMusicLyricContainer(
+@Serializable data class QQMusicLyricContainer(
     val req: QQMusicLyricEnvelope? = null
 )
 
-@Serializable internal data class QQMusicLyricEnvelope(
+@Serializable data class QQMusicLyricEnvelope(
     val code: Int = 0,
     val data: QQMusicLyricResponse? = null
 )
@@ -103,7 +103,7 @@ private val QQMusicLrcTimestampPattern = Regex(
  *
  * 保留时间戳让翻译 matcher 可以消费这个空槽, 最终显示层会忽略占位文本
  */
-internal fun stripUntranslatedPlaceholderLines(lyric: String?): String? {
+fun stripUntranslatedPlaceholderLines(lyric: String?): String? {
     val source = lyric?.takeIf { it.isNotBlank() } ?: return null
     return source.lineSequence()
         .joinToString("\n") { line ->
@@ -129,7 +129,7 @@ private fun isQQMusicUntranslatedPlaceholder(text: String): Boolean {
     return normalized.length >= 2 && normalized.all { it == '/' }
 }
 
-internal fun decodeQQMusicLyricPayload(rawValue: String?): String? {
+fun decodeQQMusicLyricPayload(rawValue: String?): String? {
     val sanitized = rawValue?.trim()?.takeIf { it.isNotEmpty() } ?: return null
     val plainText = htmlUnescapeQQMusic(sanitized)
     if (QQMusicLrcTimestampPattern.containsMatchIn(plainText)) {
@@ -140,7 +140,7 @@ internal fun decodeQQMusicLyricPayload(rawValue: String?): String? {
         .takeIf { QQMusicLrcTimestampPattern.containsMatchIn(it) }
 }
 
-internal fun decodeQQMusicBase64Lyric(value: String): String? {
+fun decodeQQMusicBase64Lyric(value: String): String? {
     val compact = value.filterNot(Char::isWhitespace)
     if (compact.isEmpty() || compact.length % 4 != 0 || !QQMusicBase64Pattern.matches(compact)) {
         return null
@@ -150,7 +150,7 @@ internal fun decodeQQMusicBase64Lyric(value: String): String? {
     }.getOrNull()?.takeIf { QQMusicLrcTimestampPattern.containsMatchIn(it) }
 }
 
-internal fun chooseQQMusicLyrics(
+fun chooseQQMusicLyrics(
     qqLyric: String?,
     qqTranslatedLyric: String?,
     amllLyric: String?
@@ -216,25 +216,7 @@ class QQMusicSearchApi(
 
     override suspend fun getSongInfo(id: String): SongDetails { // id is songMid
         return withContext(Dispatchers.IO) {
-            val detailRequestData = JSONObject().put(
-                "songinfo", JSONObject()
-                    .put("method", "get_song_detail_yqq")
-                    .put("module", "music.pf_song_detail_svr")
-                    .put("param", JSONObject().put("song_mid", id))
-            ).toString()
-
-            val url = "https://u.y.qq.com/cgi-bin/musicu.fcg".toHttpUrl().newBuilder()
-                .addQueryParameter("data", detailRequestData)
-                .build()
-
-            val responseJson = executeRequest(url.toString()) as String
-            logDetailResponse(label = url.encodedPath, responseJson = responseJson)
-
-            val songInfoJson = JSONObject(responseJson).optJSONObject("songinfo")?.toString()
-                ?: throw IOException("响应中找不到 songinfo 字段")
-
-            val songData = json.decodeFromString<QQMusicDetailResponse>(songInfoJson).data?.trackInfo
-                ?: throw IOException("找不到ID为 $id 的歌曲详情")
+            val songData = fetchSongData(id)
 
             coroutineScope {
                 val lyricDeferred = async { fetchQQMusicLyric(id) }
@@ -249,17 +231,60 @@ class QQMusicSearchApi(
                     qqTranslatedLyric = qqTranslatedLyric,
                     amllLyric = amllLyric
                 )
-                SongDetails(
-                    id = songData.mid,
-                    songName = songData.name,
-                    singer = songData.singer.joinToString("/") { it.name },
-                    album = songData.album.name,
-                    coverUrl = "https://y.qq.com/music/photo_new/T002R800x800M000${songData.album.mid}.jpg",
+                songData.toSongDetails(
                     lyric = lyric,
                     translatedLyric = translatedLyric
                 )
             }
         }
+    }
+
+    suspend fun getNativeSongInfo(id: String): SongDetails {
+        return withContext(Dispatchers.IO) {
+            val songData = fetchSongData(id)
+            val (lyric, translatedLyric) = fetchQQMusicLyric(id)
+            songData.toSongDetails(
+                lyric = lyric,
+                translatedLyric = translatedLyric
+            )
+        }
+    }
+
+    private suspend fun fetchSongData(id: String): QQMusicTrackInfo {
+        val detailRequestData = JSONObject().put(
+            "songinfo", JSONObject()
+                .put("method", "get_song_detail_yqq")
+                .put("module", "music.pf_song_detail_svr")
+                .put("param", JSONObject().put("song_mid", id))
+        ).toString()
+
+        val url = "https://u.y.qq.com/cgi-bin/musicu.fcg".toHttpUrl().newBuilder()
+            .addQueryParameter("data", detailRequestData)
+            .build()
+
+        val responseJson = executeRequest(url.toString()) as String
+        logDetailResponse(label = url.encodedPath, responseJson = responseJson)
+
+        val songInfoJson = JSONObject(responseJson).optJSONObject("songinfo")?.toString()
+            ?: throw IOException("响应中找不到 songinfo 字段")
+
+        return json.decodeFromString<QQMusicDetailResponse>(songInfoJson).data?.trackInfo
+            ?: throw IOException("找不到ID为 $id 的歌曲详情")
+    }
+
+    private fun QQMusicTrackInfo.toSongDetails(
+        lyric: String?,
+        translatedLyric: String?
+    ): SongDetails {
+        return SongDetails(
+            id = mid,
+            songName = name,
+            singer = singer.joinToString("/") { it.name },
+            album = album.name,
+            coverUrl = "https://y.qq.com/music/photo_new/T002R800x800M000${album.mid}.jpg",
+            lyric = lyric,
+            translatedLyric = translatedLyric
+        )
     }
 
     private suspend fun fetchAmllWordLyricIfEnabled(songData: QQMusicTrackInfo): String? {

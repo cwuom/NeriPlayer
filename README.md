@@ -273,7 +273,10 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   网易云页支持歌单/专辑切换，Bilibili 页区分创建收藏夹、订阅收藏夹和合集。
 - 🔍 **分层搜索能力**：
   `Explore` 使用网易云 / Bilibili / YouTube Music 按平台独立搜索；
-  播放页元数据补全使用网易云 / QQ 音乐，并接入 LRCLIB 外部歌词来源。
+  播放页元数据补全使用网易云 / QQ 音乐，并接入 LRCLIB 外部歌词来源；
+  歌词编辑器可选择酷狗、网易云、QQ 音乐、AMLL TTML、LRCLIB 和
+  YouTube Music 后手动匹配歌词，逐字歌词优先但不隐藏普通歌词，并会自动清理
+  标题、制作信息等非歌词行。
 - 🧠 **Media3 播放核心**：
   `PlayerManager` 管理音源解析、队列、随机/循环、状态恢复、失败重试、
   播放链接刷新、YouTube 预取与平台特殊请求策略。
@@ -528,8 +531,12 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - **元数据补全**：
   播放页通过 `SearchManager` 使用网易云与 QQ 音乐补全封面、歌词和曲目信息。
 - **歌词来源**：
-  除平台歌词外，还包含 LRCLIB 外部歌词客户端；
-  播放页支持原文歌词、翻译歌词、音译歌词、逐词歌词、歌词分享和手动编辑。
+  除平台歌词外，还包含 LRCLIB 外部歌词客户端；歌词编辑器提供单独的
+  “匹配”入口，可修改匹配关键字，先选择平台再搜索，并按平台临时缓存
+  搜索结果。切换平台过滤时直接更新已缓存候选，不会频繁重新请求；匹配结果会自动清理
+  标题、制作信息等非歌词行；排序按
+  歌名、歌手、专辑、时长和歌词类型综合计算，优先逐字歌词但保留普通歌词
+  候选。播放页支持原文歌词、翻译歌词、音译歌词、逐词歌词、歌词分享和手动编辑。
 - **词幕适配**：
   `LyriconManager` 向 Lyricon 与 SuperLyric 输出当前歌曲、播放状态、进度、
   逐字歌词与翻译歌词；进度通过独立的 200 ms feed loop 推送并使用时间锚点校准，
@@ -701,12 +708,13 @@ NeriPlayer 支持将本地元数据同步到 **用户自己的 GitHub 仓库**�
 
 - [ ] 视频播放
 - [ ] 评论区
-- [ ] 第三方平台持续扩展（酷狗音乐等）
+- [ ] 第三方平台播放、库页和账号能力持续扩展
 - [ ] 更完整的 QQ 音乐账号能力、库页数据与更稳定授权链路
 
 ### 近期已落地
 
 - [x] 主标签双场景横向转场、可打断反向切换、玻璃 owner 接力和默认抽屉式详情反馈
+- [x] 编辑歌词时选择平台手动匹配歌词，结果临时缓存并优先展示逐字候选
 - [x] 一起听循环/随机模式同步、服务端时钟偏移估算与权威直链恢复
 - [x] 一起听按曲目时长推算位置、单曲循环位置回绕和最多三条会话候选直链
 - [x] 一起听邀请/成员密钥、控制事件顺序过滤和队列内曲目选择约束
@@ -862,6 +870,10 @@ NeriPlayer 支持将本地元数据同步到 **用户自己的 GitHub 仓库**�
 <tr>
   <td><a href="https://github.com/6xingyv/accompanist-lyrics-ui">accompanist-lyrics-ui</a></td>
   <td>The state-of-the-art karaoke lyrics composable</td>
+</tr>
+<tr>
+  <td><a href="https://github.com/chenmozhijin/LDDC">LDDC</a></td>
+  <td>多平台精准歌词下载匹配工具，手动歌词匹配体验参考</td>
 </tr>
 <tr>
   <td><a href="https://github.com/ReChronoRain/HyperCeiler">HyperCeiler</a></td>
