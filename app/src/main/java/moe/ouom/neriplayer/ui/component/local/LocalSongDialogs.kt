@@ -25,7 +25,6 @@ package moe.ouom.neriplayer.ui.component.local
 
 
 import android.content.ClipData
-import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -85,7 +84,8 @@ internal fun resolveLocalSongDetailsLoadState(
 @Composable
 fun LocalSongDetailsDialog(
     song: SongItem,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onShowMessage: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val composeResources = LocalResources.current
@@ -117,7 +117,7 @@ fun LocalSongDetailsDialog(
                 scope.launch {
                     clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", path)))
                 }
-                Toast.makeText(context, composeResources.getString(R.string.toast_copied), Toast.LENGTH_SHORT).show()
+                onShowMessage(composeResources.getString(R.string.toast_copied))
             }
 
             Column(

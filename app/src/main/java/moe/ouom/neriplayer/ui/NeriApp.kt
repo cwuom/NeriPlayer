@@ -36,7 +36,6 @@ import android.os.Looper
 import android.view.PixelCopy
 import android.view.View
 import android.view.ViewTreeObserver
-import android.widget.Toast
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContentTransitionScope
@@ -61,15 +60,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
@@ -80,7 +75,6 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -202,6 +196,10 @@ import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassVisibilitySceneMo
 import moe.ouom.neriplayer.ui.effect.glass.captureAdvancedGlassBackdrop
 import moe.ouom.neriplayer.ui.effect.glass.isAdvancedGlassBackendSupported
 import moe.ouom.neriplayer.ui.effect.glass.rememberAdvancedGlassBackdrop
+import moe.ouom.neriplayer.ui.feedback.AppFeedback
+import moe.ouom.neriplayer.ui.feedback.AppFeedbackHostEffect
+import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
+import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
 import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
 import moe.ouom.neriplayer.ui.screen.NowPlayingScreen
@@ -2665,13 +2663,10 @@ private fun NeriAppContent(
                             playbackHighResolutionOutputEnabled,
                         onPlaybackHighResolutionOutputEnabledChange = { enabled ->
                             PlayerManager.setPlaybackHighResolutionOutputEnabled(enabled)
-                            // 32-bit 输出在播放器初始化时绑定到 AudioSink, 运行时无法在不重建
-                            // player(会断播)的前提下切换, 因此明确提示用户重启后生效
-                            Toast.makeText(
-                                context,
-                                composeResources.getString(R.string.settings_restart_hint),
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            AppFeedback.show(
+                                context = context,
+                                message = composeResources.getString(R.string.settings_restart_hint)
+                            )
                         },
                         playbackVolumeBalance = playbackVolumeBalance,
                         onPlaybackVolumeBalanceChange = { balance ->
@@ -2744,7 +2739,7 @@ private fun NeriAppContent(
                                         )
                                     }
                                 }
-                                snackbarHostState.showSnackbar(messages.joinToString(" · "))
+                                snackbarHostState.showNeriSnackbar(messages.joinToString(" · "))
                             }
                         },
                         onBeforeLanguageRestart = clearThemeRevealState,
@@ -2942,17 +2937,15 @@ private fun NeriAppContent(
                 }
 
                 CompositionLocalProvider(LocalMiniPlayerHeight provides reservedMiniPlayerHeightDp) {
+                    AppFeedbackHostEffect(snackbarHostState)
                     Scaffold(
                         containerColor = containerColor,
                         contentColor = MaterialTheme.colorScheme.onSurface,
                         snackbarHost = {
                             val miniH = LocalMiniPlayerHeight.current
-                            SnackbarHost(
+                            NeriSnackbarHost(
                                 hostState = snackbarHostState,
-                                modifier = Modifier
-                                    .padding(bottom = miniH)
-                                    .windowInsetsPadding(WindowInsets.navigationBars)
-                                    .imePadding()
+                                bottomPadding = miniH
                             )
                         },
                         bottomBar = {

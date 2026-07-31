@@ -32,7 +32,6 @@ import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -138,7 +137,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
@@ -256,6 +254,8 @@ import moe.ouom.neriplayer.ui.component.playback.WaveformSlider
 import moe.ouom.neriplayer.ui.component.playback.resolvePlaybackWaiting
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
+import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
+import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.ui.component.lyrics.rememberLyricSeekHapticFeedback
@@ -1356,7 +1356,7 @@ fun NowPlayingScreen(
         val song = currentSong
         if (song == null || currentCoverUrl.isNullOrBlank()) {
             screenScope.launch {
-                snackbarHostState.showSnackbar(
+                snackbarHostState.showNeriSnackbar(
                     composeResources.getString(R.string.cover_download_unavailable)
                 )
             }
@@ -1367,12 +1367,12 @@ fun NowPlayingScreen(
                     imageUrl = currentCoverUrl,
                     suggestedName = "${song.displayArtist()} - ${song.displayName()} 封面"
                 ).onSuccess { fileName ->
-                    snackbarHostState.showSnackbar(
+                    snackbarHostState.showNeriSnackbar(
                         composeResources.getString(R.string.cover_download_success, fileName)
                     )
                 }.onFailure { error ->
                     val errorMessage = error.message ?: composeResources.getString(R.string.download_failed)
-                    snackbarHostState.showSnackbar(
+                    snackbarHostState.showNeriSnackbar(
                         composeResources.getString(R.string.cover_download_failed, errorMessage)
                     )
                 }
@@ -1387,7 +1387,7 @@ fun NowPlayingScreen(
             downloadCurrentCover()
         } else {
             screenScope.launch {
-                snackbarHostState.showSnackbar(
+                snackbarHostState.showNeriSnackbar(
                     composeResources.getString(R.string.cover_download_permission_required)
                 )
             }
@@ -1444,7 +1444,7 @@ fun NowPlayingScreen(
         val distinctArtists = artists.distinctBy { it.id }
         when (distinctArtists.size) {
             0 -> screenScope.launch {
-                snackbarHostState.showSnackbar(composeResources.getString(R.string.artist_not_available))
+                snackbarHostState.showNeriSnackbar(composeResources.getString(R.string.artist_not_available))
             }
             1 -> openResolvedArtist(distinctArtists.first())
             else -> artistPickerCandidates = distinctArtists
@@ -1464,7 +1464,7 @@ fun NowPlayingScreen(
                 onError = {
                     resolvingArtistNavigation = false
                     screenScope.launch {
-                        snackbarHostState.showSnackbar(composeResources.getString(R.string.artist_not_available))
+                        snackbarHostState.showNeriSnackbar(composeResources.getString(R.string.artist_not_available))
                     }
                 }
             )
@@ -1729,7 +1729,12 @@ fun NowPlayingScreen(
                 lyrics = plainLyrics,
                 initialLine = initialLine,
                 queue = displayedQueue,
-                onDismiss = { lyricShareInitialLine = null }
+                onDismiss = { lyricShareInitialLine = null },
+                onShowMessage = { message ->
+                    screenScope.launch {
+                        snackbarHostState.showNeriSnackbar(message)
+                    }
+                }
             )
         }
     }
@@ -1971,7 +1976,7 @@ fun NowPlayingScreen(
                                         onLongClick = {
                                             if (currentCoverUrl.isNullOrBlank()) {
                                                 screenScope.launch {
-                                                    snackbarHostState.showSnackbar(
+                                                    snackbarHostState.showNeriSnackbar(
                                                         composeResources.getString(
                                                             R.string.cover_preview_unavailable
                                                         )
@@ -2652,7 +2657,12 @@ fun NowPlayingScreen(
             detailSong?.let { song ->
                 LocalSongDetailsDialog(
                     song = song,
-                    onDismiss = { detailSong = null }
+                    onDismiss = { detailSong = null },
+                    onShowMessage = { message ->
+                        screenScope.launch {
+                            snackbarHostState.showNeriSnackbar(message)
+                        }
+                    }
                 )
             }
 
@@ -2978,10 +2988,9 @@ fun MoreOptionsSheet(
                 }
             }
 
-            // Snackbar
-            SnackbarHost(
+            NeriSnackbarHost(
                 hostState = snackbarHostState,
-                modifier = Modifier.padding(bottom = LocalMiniPlayerHeight.current)
+                bottomPadding = LocalMiniPlayerHeight.current
             )
         }
     }
@@ -3439,7 +3448,9 @@ fun EditSongInfoSheet(
                 }
                 userHasEdited = true
             }
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            coroutineScope.launch {
+                snackbarHostState.showNeriSnackbar(message)
+            }
         }
     }
 
@@ -3790,11 +3801,9 @@ fun EditSongInfoSheet(
                             onDismiss()
                         } catch (e: Exception) {
                             NPLogger.e("NowPlayingScreen", "保存歌曲信息失败", e)
-                            Toast.makeText(
-                                context,
+                            snackbarHostState.showNeriSnackbar(
                                 composeResources.getString(R.string.toast_save_failed, e.message.orEmpty()),
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            )
                         }
                     }
                 },
@@ -3839,7 +3848,7 @@ fun EditSongInfoSheet(
                     selectedSongForFill?.let { selectedSong ->
                         viewModel.fillLyrics(context, actualSong, selectedSong) { _, message ->
                             coroutineScope.launch {
-                                snackbarHostState.showSnackbar(message)
+                                snackbarHostState.showNeriSnackbar(message)
                             }
                         }
                     }

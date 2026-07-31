@@ -141,6 +141,8 @@ import moe.ouom.neriplayer.ui.component.playback.rememberDelayedPlaybackWaiting
 import moe.ouom.neriplayer.ui.component.playback.WaveformSlider
 import moe.ouom.neriplayer.ui.component.playback.resolvePlaybackWaiting
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
+import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
+import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.component.lyrics.rememberLyricSeekHapticFeedback
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.data.model.SongItem
@@ -251,6 +253,7 @@ fun LyricsScreen(
     val toolbarIconSize = if (isTabletLandscape) 22.dp else 20.dp
     val primaryControlSize = if (isTabletLandscape) 50.dp else 42.dp
     val secondaryControlSize = if (isTabletLandscape) 46.dp else 42.dp
+    val snackbarHostState = remember { SnackbarHostState() }
 
     // 启动进入动画
     LaunchedEffect(Unit) {
@@ -279,7 +282,12 @@ fun LyricsScreen(
                 lyrics = plainLyrics,
                 initialLine = initialLine,
                 queue = queue,
-                onDismiss = { lyricShareInitialLine = null }
+                onDismiss = { lyricShareInitialLine = null },
+                onShowMessage = { message ->
+                    scope.launch {
+                        snackbarHostState.showNeriSnackbar(message)
+                    }
+                }
             )
         }
     }
@@ -299,23 +307,24 @@ fun LyricsScreen(
 
     // 播放控件动画 - 轻微上浮/下沉, 保持常驻在安全区域内
 
-    // 使用填充整个屏幕, 不创建新背景, 复用现有背景
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .windowInsetsPadding(WindowInsets.statusBars)
-            .windowInsetsPadding(WindowInsets.navigationBars)
-            .pointerInput(Unit) {
-                detectHorizontalDragGestures { _, dragAmount ->
-                    // 右滑返回
-                    if (dragAmount > 50) {
-                        onNavigateBack()
+    Box(modifier = Modifier.fillMaxSize()) {
+        // 使用填充整个屏幕, 不创建新背景, 复用现有背景
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures { _, dragAmount ->
+                        // 右滑返回
+                        if (dragAmount > 50) {
+                            onNavigateBack()
+                        }
                     }
                 }
-            }
-            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
+                .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
         // 顶部区域 - 包含缩小的封面 + 收藏 + 更多
         Row(
             modifier = Modifier
@@ -531,7 +540,6 @@ fun LyricsScreen(
                 val queue by PlayerManager.currentQueueFlow.collectAsState()
                 val displayedQueue = remember(queue) { queue }
                 val nowPlayingViewModel: moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
-                val snackbarHostState = remember { SnackbarHostState() }
                 MoreOptionsSheet(
                     viewModel = nowPlayingViewModel,
                     originalSong = currentSong!!,
@@ -959,11 +967,22 @@ fun LyricsScreen(
         }
             }
         }
+        }
+
+        NeriSnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
 
         detailSong?.let { song ->
             LocalSongDetailsDialog(
                 song = song,
-                onDismiss = { detailSong = null }
+                onDismiss = { detailSong = null },
+                onShowMessage = { message ->
+                    scope.launch {
+                        snackbarHostState.showNeriSnackbar(message)
+                    }
+                }
             )
         }
 

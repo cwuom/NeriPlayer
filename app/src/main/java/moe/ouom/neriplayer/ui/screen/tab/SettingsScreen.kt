@@ -27,7 +27,6 @@ import android.content.Intent
 import android.content.Context
 import android.net.Uri
 import android.text.format.Formatter
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -180,6 +179,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.page.backTargetPage
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.miuixSettingsSectionCardItem
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
+import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.ui.viewmodel.BackupRestoreViewModel
 import moe.ouom.neriplayer.ui.viewmodel.ConfigTransferViewModel
@@ -510,6 +510,14 @@ fun SettingsScreen(
     val defaultDownloadDirectorySummary = composeResources.getString(R.string.settings_download_directory_default_label)
     val downloadDirectoryChangeEnabled = !hasActiveDownloadOperations && !isMigratingDownloadDirectory
 
+    fun showSettingsMessage(message: String) {
+        AppFeedback.show(context = context, message = message)
+    }
+
+    fun showListenTogetherMessage(message: String) {
+        AppFeedback.showToast(context = context, message = message)
+    }
+
     fun guardDownloadDirectoryChange(
         targetUri: String? = null,
         releaseTargetPermissionOnBlock: Boolean = false
@@ -528,7 +536,7 @@ fun SettingsScreen(
             R.string.settings_download_directory_change_blocked_active_download
         )
         inlineMsg = message
-        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        showSettingsMessage(message)
         return true
     }
 
@@ -1808,11 +1816,11 @@ fun SettingsScreen(
                         scope.launch {
                             listenTogetherPreferences.resetUserUuid()
                             showListenTogetherResetUuidDialog = false
-                            Toast.makeText(
-                                context,
-                                composeResources.getString(R.string.listen_together_reset_uuid_done),
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            showListenTogetherMessage(
+                                composeResources.getString(
+                                    R.string.listen_together_reset_uuid_done
+                                )
+                            )
                         }
                     }
                 ) {
@@ -1876,11 +1884,11 @@ fun SettingsScreen(
                             listenTogetherPreferences.setNickname(nickname)
                             showListenTogetherNicknameDialog = false
                             listenTogetherNicknameError = null
-                            Toast.makeText(
-                                context,
-                                composeResources.getString(R.string.settings_listen_together_default_nickname_saved),
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            showListenTogetherMessage(
+                                composeResources.getString(
+                                    R.string.settings_listen_together_default_nickname_saved
+                                )
+                            )
                         }
                     }
                 ) {
@@ -2022,11 +2030,11 @@ fun SettingsScreen(
                             listenTogetherServerInput = normalizedInput.orEmpty()
                             showListenTogetherServerDialog = false
                             listenTogetherServerTestMessage = null
-                            Toast.makeText(
-                                context,
-                                composeResources.getString(R.string.settings_listen_together_server_saved),
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            showListenTogetherMessage(
+                                composeResources.getString(
+                                    R.string.settings_listen_together_server_saved
+                                )
+                            )
                         }
                     },
                     enabled = !listenTogetherServerTesting

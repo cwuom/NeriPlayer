@@ -25,11 +25,7 @@ package moe.ouom.neriplayer.ui.screen.debug
 
 import android.annotation.SuppressLint
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -46,6 +42,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
+import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
 import java.text.SimpleDateFormat
@@ -95,7 +93,7 @@ fun LogListScreen(
                             }
                             // 更新UI
                             logFilesState.value = emptyList()
-                            snackbarHostState.showSnackbar(
+                            snackbarHostState.showNeriSnackbar(
                                 context.resources.getQuantityString(
                                     R.plurals.log_cleared_count,
                                     clearedCount,
@@ -119,12 +117,9 @@ fun LogListScreen(
     Scaffold(
         snackbarHost = {
             val miniH = LocalMiniPlayerHeight.current
-            SnackbarHost(
+            NeriSnackbarHost(
                 hostState = snackbarHostState,
-                modifier = Modifier
-                    .padding(bottom = miniH)
-                    .windowInsetsPadding(WindowInsets.navigationBars)
-                    .imePadding()
+                bottomPadding = miniH
             )
         },
         topBar = {

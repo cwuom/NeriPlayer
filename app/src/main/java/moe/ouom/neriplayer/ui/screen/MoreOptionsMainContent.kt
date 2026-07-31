@@ -55,6 +55,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
@@ -337,7 +338,7 @@ private fun LyricsAndAlbumActions(
         if (album != null) {
             onEnterAlbum(album)
         } else {
-            snackbarHostState.showSnackbar(composeResources.getString(R.string.music_get_detail_failed))
+            snackbarHostState.showNeriSnackbar(composeResources.getString(R.string.music_get_detail_failed))
         }
     }
 
@@ -382,7 +383,7 @@ private fun ShareSongAction(
                     if (shared) {
                         onDismissSheet {}
                     } else {
-                        snackbarHostState.showSnackbar(
+                        snackbarHostState.showNeriSnackbar(
                             composeResources.getString(R.string.local_song_share_failed)
                         )
                     }

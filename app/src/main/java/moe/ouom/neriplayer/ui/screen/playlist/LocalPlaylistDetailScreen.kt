@@ -97,7 +97,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -180,6 +179,8 @@ import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.local.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.component.download.SongDownloadSubtitle
+import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
+import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.util.rememberPlaylistDisplayCoverUrl
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailViewModel
@@ -510,7 +511,7 @@ fun LocalPlaylistDetailScreen(
                             )
                         }
                     }
-                    snackbarHostState.showSnackbar(message)
+                    snackbarHostState.showNeriSnackbar(message)
                 }
             }
 
@@ -525,21 +526,21 @@ fun LocalPlaylistDetailScreen(
                     } else {
                         composeResources.getString(R.string.local_playlist_add_scanned_no_new)
                     }
-                    snackbarHostState.showSnackbar(message)
+                    snackbarHostState.showNeriSnackbar(message)
                 }
             }
 
             fun handleLocalAudioScanResult(result: LocalAudioImportResult) {
                 scope.launch {
                     if (!result.completed) {
-                        snackbarHostState.showSnackbar(
+                        snackbarHostState.showNeriSnackbar(
                             composeResources.getString(R.string.local_playlist_scan_preserve_existing)
                         )
                         return@launch
                     }
 
                     if (result.failedCount > 0) {
-                        snackbarHostState.showSnackbar(
+                        snackbarHostState.showNeriSnackbar(
                             context.resources.getQuantityString(
                                 R.plurals.download_scan_failed,
                                 result.failedCount,
@@ -577,7 +578,7 @@ fun LocalPlaylistDetailScreen(
                 }.isSuccess
                 if (!persistGranted) {
                     scope.launch {
-                        snackbarHostState.showSnackbar(
+                        snackbarHostState.showNeriSnackbar(
                             "目录持久授权失败，导入的歌曲在应用重启后可能无法访问"
                         )
                     }
@@ -592,7 +593,7 @@ fun LocalPlaylistDetailScreen(
                     startDeviceAudioScan()
                 } else {
                     scope.launch {
-                        snackbarHostState.showSnackbar(
+                        snackbarHostState.showNeriSnackbar(
                             composeResources.getString(R.string.download_scan_permission_required)
                         )
                     }
@@ -720,7 +721,7 @@ fun LocalPlaylistDetailScreen(
                     )
                 }
                 scope.launch {
-                    snackbarHostState.showSnackbar(message)
+                    snackbarHostState.showNeriSnackbar(message)
                 }
             }
 
@@ -741,7 +742,7 @@ fun LocalPlaylistDetailScreen(
                 val allSongs = playlist.songs
                 if (allSongs.isEmpty()) {
                     scope.launch {
-                        snackbarHostState.showSnackbar(
+                        snackbarHostState.showNeriSnackbar(
                             composeResources.getString(R.string.local_playlist_sync_netease_empty)
                         )
                     }
@@ -756,7 +757,7 @@ fun LocalPlaylistDetailScreen(
                     )
                     syncInProgress = false
                     if (plan.pendingSongs.isEmpty()) {
-                        snackbarHostState.showSnackbar(
+                        snackbarHostState.showNeriSnackbar(
                             plan.message ?: composeResources.getString(R.string.local_playlist_sync_netease_all_synced)
                         )
                         return@launch
@@ -1156,9 +1157,9 @@ fun LocalPlaylistDetailScreen(
             Scaffold(
                 containerColor = Color.Transparent,
                 snackbarHost = { 
-                    SnackbarHost(
+                    NeriSnackbarHost(
                         hostState = snackbarHostState,
-                        modifier = Modifier.padding(bottom = LocalMiniPlayerHeight.current)
+                        bottomPadding = LocalMiniPlayerHeight.current
                     ) 
                 },
                 topBar = {
@@ -1627,7 +1628,7 @@ fun LocalPlaylistDetailScreen(
                                                                                 LocalMediaSupport.shareSongFile(context, song)
                                                                             }.getOrElse { false }
                                                                             if (!shared) {
-                                                                                snackbarHostState.showSnackbar(
+                                                                                snackbarHostState.showNeriSnackbar(
                                                                                     composeResources.getString(R.string.local_song_share_failed)
                                                                                 )
                                                                             }
@@ -1656,7 +1657,7 @@ fun LocalPlaylistDetailScreen(
                                                                         "${song.displayName()}-${song.displayArtist()}"
                                                                     scope.launch {
                                                                         clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", songInfo)))
-                                                                        snackbarHostState.showSnackbar(
+                                                                        snackbarHostState.showNeriSnackbar(
                                                                             composeResources.getString(R.string.toast_copied)
                                                                         )
                                                                     }
@@ -1908,7 +1909,12 @@ fun LocalPlaylistDetailScreen(
                 detailSong?.let { song ->
                     LocalSongDetailsDialog(
                         song = song,
-                        onDismiss = { detailSong = null }
+                        onDismiss = { detailSong = null },
+                        onShowMessage = { message ->
+                            scope.launch {
+                                snackbarHostState.showNeriSnackbar(message)
+                            }
+                        }
                     )
                 }
 
@@ -2171,9 +2177,9 @@ private fun LocalScanPreviewScreen(
     Scaffold(
         containerColor = Color.Transparent,
         snackbarHost = {
-            SnackbarHost(
+            NeriSnackbarHost(
                 hostState = snackbarHostState,
-                modifier = Modifier.padding(bottom = LocalMiniPlayerHeight.current)
+                bottomPadding = LocalMiniPlayerHeight.current
             )
         },
         topBar = {

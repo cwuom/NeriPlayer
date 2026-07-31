@@ -44,6 +44,7 @@ import moe.ouom.neriplayer.core.crash.ExceptionHandler
 import moe.ouom.neriplayer.util.platform.LanguageManager
 import moe.ouom.neriplayer.util.crash.NativeCrashHandler
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
+import moe.ouom.neriplayer.ui.feedback.AppFeedback
 
 class NeriPlayerApplication : Application() {
     @Volatile
@@ -51,6 +52,7 @@ class NeriPlayerApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        AppFeedback.initialize(this)
         // 冷启动首个播放点击可能早于 Compose 的 SideEffect, 先把 Application 绑给播放器
         PlayerManager.bindApplication(this)
         val runningInMainProcess = AppProcessClassifier.isMainProcess(

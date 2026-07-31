@@ -26,7 +26,6 @@ package moe.ouom.neriplayer.ui.screen.tab
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -129,6 +128,7 @@ import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
@@ -513,7 +513,10 @@ private fun YouTubeMusicPlaylistList(
 
     fun copyToClipboard(label: String, text: String) {
         clipboardManager.setPrimaryClip(ClipData.newPlainText(label, text))
-        Toast.makeText(context, composeResources.getString(R.string.toast_copied), Toast.LENGTH_SHORT).show()
+        AppFeedback.show(
+            context = context,
+            message = composeResources.getString(R.string.toast_copied)
+        )
     }
 
     LazyColumn(
@@ -696,7 +699,10 @@ private fun YouTubeMusicPlaylistList(
                                         songs = emptyList()
                                     )
                                 }
-                                Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
+                                AppFeedback.show(
+                                    context = context,
+                                    message = toastMessage
+                                )
                             }
                         }
                     )

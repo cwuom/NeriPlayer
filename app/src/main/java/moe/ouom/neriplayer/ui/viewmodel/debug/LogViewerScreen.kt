@@ -26,11 +26,7 @@ package moe.ouom.neriplayer.ui.viewmodel.debug
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -54,6 +50,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
+import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import java.io.File
 import java.io.FileNotFoundException
 import java.net.URLDecoder
@@ -85,11 +83,11 @@ fun LogViewerScreen(
                             File(decodedFilePath).inputStream().copyTo(outputStream)
                         }
                         withContext(Dispatchers.Main) {
-                            snackbarHostState.showSnackbar(composeResources.getString(R.string.log_exported))
+                            snackbarHostState.showNeriSnackbar(composeResources.getString(R.string.log_exported))
                         }
                     } catch (e: Exception) {
                         withContext(Dispatchers.Main) {
-                            snackbarHostState.showSnackbar(composeResources.getString(R.string.log_export_failed, e.message))
+                            snackbarHostState.showNeriSnackbar(composeResources.getString(R.string.log_export_failed, e.message))
                         }
                     }
                 }
@@ -106,7 +104,7 @@ fun LogViewerScreen(
                 }
             } catch (e: FileNotFoundException) {
                 withContext(Dispatchers.Main) {
-                    snackbarHostState.showSnackbar(composeResources.getString(R.string.log_cannot_read))
+                    snackbarHostState.showNeriSnackbar(composeResources.getString(R.string.log_cannot_read))
                 }
             }
         }
@@ -115,12 +113,9 @@ fun LogViewerScreen(
     Scaffold(
         snackbarHost = {
             val miniH = LocalMiniPlayerHeight.current
-            SnackbarHost(
+            NeriSnackbarHost(
                 hostState = snackbarHostState,
-                modifier = Modifier
-                    .padding(bottom = miniH)
-                    .windowInsetsPadding(WindowInsets.navigationBars)
-                    .imePadding()
+                bottomPadding = miniH
             )
         },
         topBar = {
@@ -136,7 +131,7 @@ fun LogViewerScreen(
                         val fullText = logContent.joinToString("\n")
                         coroutineScope.launch {
                             clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", fullText)))
-                            snackbarHostState.showSnackbar(composeResources.getString(R.string.log_copied))
+                            snackbarHostState.showNeriSnackbar(composeResources.getString(R.string.log_copied))
                         }
                     }) {
                         Icon(Icons.Outlined.ContentCopy, contentDescription = stringResource(R.string.debug_copy_all))

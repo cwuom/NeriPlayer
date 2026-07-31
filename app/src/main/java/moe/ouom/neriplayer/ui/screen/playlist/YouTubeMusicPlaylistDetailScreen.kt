@@ -69,7 +69,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -118,6 +117,8 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
+import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
+import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.YouTubeMusicPlaylistDetailViewModel
@@ -187,7 +188,7 @@ fun YouTubeMusicPlaylistDetailScreen(
     fun exitSelection() { selectionMode = false; clearSelection() }
     fun showWaitForFullLoadMessage() {
         scope.launch {
-            snackbarHostState.showSnackbar(
+            snackbarHostState.showNeriSnackbar(
                 composeResources.getString(R.string.youtube_music_playlist_wait_full_load)
             )
         }
@@ -327,7 +328,12 @@ fun YouTubeMusicPlaylistDetailScreen(
 
     Scaffold(
         containerColor = Color.Transparent,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = {
+            NeriSnackbarHost(
+                hostState = snackbarHostState,
+                bottomPadding = miniPlayerHeight
+            )
+        },
         topBar = {
             if (!selectionMode) {
                 TopAppBar(
@@ -683,7 +689,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                                         onDownload = {
                                             GlobalDownloadManager.startDownload(context, song)
                                             scope.launch {
-                                                snackbarHostState.showSnackbar(
+                                                snackbarHostState.showNeriSnackbar(
                                                     composeResources.getString(R.string.download_starting, song.displayName())
                                                 )
                                             }
@@ -1052,7 +1058,7 @@ private fun YouTubeMusicSongRow(
                                     )
                                 )
                             )
-                            snackbarHostState.showSnackbar(
+                            snackbarHostState.showNeriSnackbar(
                                 composeResources.getString(R.string.toast_copied)
                             )
                         }

@@ -2,7 +2,6 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.component
 
 import android.content.Context
 import android.media.AudioFormat
-import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,6 +15,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -48,6 +48,7 @@ import moe.ouom.neriplayer.data.settings.UsbExclusiveUnsupportedFormatPolicy
 import moe.ouom.neriplayer.data.settings.normalizeUsbExclusiveBackgroundBufferMs
 import moe.ouom.neriplayer.data.settings.normalizeUsbExclusiveForegroundBufferMs
 import moe.ouom.neriplayer.data.settings.normalizeUsbExclusiveVolumeRiskThresholdDbfs
+import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
@@ -321,14 +322,14 @@ private fun showUnsupportedSampleRateWarning(
         ?.takeIf { it.isNotEmpty() }
         ?: return
     if (requestedRate in supportedRates) return
-    Toast.makeText(
-        context,
-        context.getString(
+    AppFeedback.show(
+        context = context,
+        message = context.getString(
             R.string.settings_usb_exclusive_sample_rate_not_supported,
             requestedRate.formatSampleRate()
         ),
-        Toast.LENGTH_LONG
-    ).show()
+        duration = SnackbarDuration.Long
+    )
 }
 
 private fun showUnsupportedBitDepthWarning(
@@ -342,14 +343,14 @@ private fun showUnsupportedBitDepthWarning(
         ?.takeIf { it.isNotEmpty() }
         ?: return
     if (requestedBitDepth in supportedBitDepths) return
-    Toast.makeText(
-        context,
-        context.getString(
+    AppFeedback.show(
+        context = context,
+        message = context.getString(
             R.string.settings_usb_exclusive_bit_depth_not_supported,
             requestedBitDepth
         ),
-        Toast.LENGTH_LONG
-    ).show()
+        duration = SnackbarDuration.Long
+    )
 }
 
 private fun bitDepthForAudioEncoding(encoding: Int): Int? {

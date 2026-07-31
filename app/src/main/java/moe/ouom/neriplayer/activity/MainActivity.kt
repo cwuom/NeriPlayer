@@ -33,8 +33,6 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.view.Gravity
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -66,6 +64,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
@@ -142,6 +141,7 @@ import moe.ouom.neriplayer.listentogether.invite.parseListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherInviteJoinBaseUrl
 import moe.ouom.neriplayer.ui.MobileDataDownloadInterruptionDialog
 import moe.ouom.neriplayer.ui.NeriApp
+import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.onboarding.StartupOnboardingScreen
 import moe.ouom.neriplayer.ui.screen.safemode.SafeModeScreen
 import moe.ouom.neriplayer.ui.theme.rememberActualSystemDarkTheme
@@ -355,19 +355,18 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }.onSuccess {
                                     withContext(Dispatchers.Main) {
-                                        Toast.makeText(
-                                            this@MainActivity,
-                                            getString(R.string.log_exported),
-                                            Toast.LENGTH_SHORT
-                                        ).show()
+                                        AppFeedback.show(
+                                            context = this@MainActivity,
+                                            message = getString(R.string.log_exported)
+                                        )
                                     }
                                 }.onFailure { error ->
                                     withContext(Dispatchers.Main) {
-                                        Toast.makeText(
-                                            this@MainActivity,
-                                            getString(R.string.log_export_failed, error.message),
-                                            Toast.LENGTH_LONG
-                                        ).show()
+                                        AppFeedback.show(
+                                            context = this@MainActivity,
+                                            message = getString(R.string.log_export_failed, error.message),
+                                            duration = SnackbarDuration.Long
+                                        )
                                     }
                                 }
                             }
@@ -545,7 +544,7 @@ class MainActivity : ComponentActivity() {
                             }
 
                             LaunchedEffect(effectiveListenTogetherStatus) {
-                                effectiveListenTogetherStatus?.let(::showListenTogetherStatusToast)
+                                effectiveListenTogetherStatus?.let(::showListenTogetherStatusFeedback)
                             }
 
                             LaunchedEffect(
@@ -562,10 +561,7 @@ class MainActivity : ComponentActivity() {
                                     return@LaunchedEffect
                                 }
                                 lastShownListenTogetherNotice = noticeKey
-                                showListenTogetherStatusToast(
-                                    message = displayNotice,
-                                    atBottom = true
-                                )
+                                showListenTogetherStatusFeedback(displayNotice)
                             }
 
                             loudPlaybackConfirmation?.let { confirmation ->
@@ -852,17 +848,15 @@ class MainActivity : ComponentActivity() {
                                         clipboardManager?.setPrimaryClip(
                                             ClipData.newPlainText("crash_report", fullContent)
                                         )
-                                        Toast.makeText(
-                                            this@MainActivity,
-                                            getString(R.string.log_copied),
-                                            Toast.LENGTH_SHORT
-                                        ).show()
+                                        AppFeedback.show(
+                                            context = this@MainActivity,
+                                            message = getString(R.string.log_copied)
+                                        )
                                     } else {
-                                        Toast.makeText(
-                                            this@MainActivity,
-                                            getString(R.string.log_cannot_read),
-                                            Toast.LENGTH_SHORT
-                                        ).show()
+                                        AppFeedback.show(
+                                            context = this@MainActivity,
+                                            message = getString(R.string.log_cannot_read)
+                                        )
                                     }
                                 }
                             }
@@ -912,11 +906,14 @@ class MainActivity : ComponentActivity() {
             startActivity(restartIntent)
             finish()
         }.onFailure { error ->
-            Toast.makeText(
-                this,
-                getString(R.string.safe_mode_restore_failed, error.message ?: error.javaClass.simpleName),
-                Toast.LENGTH_LONG
-            ).show()
+            AppFeedback.show(
+                context = this,
+                message = getString(
+                    R.string.safe_mode_restore_failed,
+                    error.message ?: error.javaClass.simpleName
+                ),
+                duration = SnackbarDuration.Long
+            )
         }
     }
 
@@ -1046,17 +1043,11 @@ class MainActivity : ComponentActivity() {
         listenTogetherStatusMessage.value = message
     }
 
-    private fun showListenTogetherStatusToast(
-        message: String,
-        atBottom: Boolean = false
-    ) {
-        Toast.makeText(this, message, Toast.LENGTH_SHORT).apply {
-            if (atBottom) {
-                setGravity(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL, 0, 220)
-            } else {
-                setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 180)
-            }
-        }.show()
+    private fun showListenTogetherStatusFeedback(message: String) {
+        AppFeedback.showToast(
+            context = this,
+            message = message
+        )
     }
 
     private fun scheduleStartupSyncIfNeeded() {

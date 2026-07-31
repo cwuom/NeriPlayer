@@ -4,7 +4,6 @@ package moe.ouom.neriplayer.core.player.persistence
 
 import android.app.Application
 import android.os.SystemClock
-import android.widget.Toast
 import androidx.media3.common.Player
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CancellationException
@@ -52,6 +51,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import java.io.File
 import java.io.OutputStreamWriter
 import java.lang.reflect.Type
@@ -1118,11 +1118,10 @@ internal fun PlayerManager.replaceMetadataFromSearchImpl(
                 AppContainer.neteaseCookieRepo.getAuthHealthOnce().state == SavedCookieAuthState.Missing
             ) {
                 mainScope.launch {
-                    Toast.makeText(
-                        application,
-                        getLocalizedString(R.string.netease_login_required_metadata),
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    AppFeedback.show(
+                        context = application,
+                        message = getLocalizedString(R.string.netease_login_required_metadata)
+                    )
                 }
                 return@launch
             }
@@ -1216,11 +1215,10 @@ internal fun PlayerManager.replaceMetadataFromSearchImpl(
         } catch (e: Exception) {
             if (songMetadataRequestCoordinator.isLatest(requestToken)) {
                 mainScope.launch {
-                    Toast.makeText(
-                        application,
-                        getLocalizedString(R.string.toast_match_failed, e.message.orEmpty()),
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    AppFeedback.show(
+                        context = application,
+                        message = getLocalizedString(R.string.toast_match_failed, e.message.orEmpty())
+                    )
                     NPLogger.e(
                         "NERI-PlayerManager",
                         "replaceMetadataFromSearch failed: ${e.message}",

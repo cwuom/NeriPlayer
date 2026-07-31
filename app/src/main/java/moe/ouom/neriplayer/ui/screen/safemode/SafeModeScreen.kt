@@ -3,7 +3,6 @@ package moe.ouom.neriplayer.ui.screen.safemode
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.net.Uri
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -26,6 +25,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -49,6 +50,8 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.util.crash.CrashReportStore
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
+import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
+import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 
 @Composable
 fun SafeModeScreen(
@@ -63,6 +66,19 @@ fun SafeModeScreen(
     var showResetLoginDialog by remember { mutableStateOf(false) }
     var showResetSettingsDialog by remember { mutableStateOf(false) }
     var exportReport by remember { mutableStateOf<CrashReportStore.PendingCrashReport?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    fun showMessage(
+        message: String,
+        duration: SnackbarDuration = SnackbarDuration.Short
+    ) {
+        scope.launch {
+            snackbarHostState.showNeriSnackbar(
+                message = message,
+                duration = duration
+            )
+        }
+    }
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/plain")
@@ -79,13 +95,15 @@ fun SafeModeScreen(
                     destination = uri
                 )
             }.onSuccess {
-                Toast.makeText(context, composeResources.getString(R.string.log_exported), Toast.LENGTH_SHORT).show()
+                showMessage(composeResources.getString(R.string.log_exported))
             }.onFailure { error ->
-                Toast.makeText(
-                    context,
-                    composeResources.getString(R.string.log_export_failed, error.message ?: error.javaClass.simpleName),
-                    Toast.LENGTH_LONG
-                ).show()
+                showMessage(
+                    composeResources.getString(
+                        R.string.log_export_failed,
+                        error.message ?: error.javaClass.simpleName
+                    ),
+                    duration = SnackbarDuration.Long
+                )
             }
         }
     }
@@ -110,20 +128,17 @@ fun SafeModeScreen(
                                 SafeModeManager.clearAllCookiesAndLoginOptions(context)
                             }.onSuccess {
                                 showResetLoginDialog = false
-                                Toast.makeText(
-                                    context,
-                                    composeResources.getString(R.string.safe_mode_reset_login_done),
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                showMessage(
+                                    composeResources.getString(R.string.safe_mode_reset_login_done)
+                                )
                             }.onFailure { error ->
-                                Toast.makeText(
-                                    context,
+                                showMessage(
                                     composeResources.getString(
                                         R.string.safe_mode_reset_login_failed,
                                         error.message ?: error.javaClass.simpleName
                                     ),
-                                    Toast.LENGTH_LONG
-                                ).show()
+                                    duration = SnackbarDuration.Long
+                                )
                             }
                             busy = false
                         }
@@ -158,20 +173,17 @@ fun SafeModeScreen(
                                 SafeModeManager.resetAppSettings(context)
                             }.onSuccess {
                                 showResetSettingsDialog = false
-                                Toast.makeText(
-                                    context,
-                                    composeResources.getString(R.string.safe_mode_reset_settings_done),
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                showMessage(
+                                    composeResources.getString(R.string.safe_mode_reset_settings_done)
+                                )
                             }.onFailure { error ->
-                                Toast.makeText(
-                                    context,
+                                showMessage(
                                     composeResources.getString(
                                         R.string.safe_mode_reset_settings_failed,
                                         error.message ?: error.javaClass.simpleName
                                     ),
-                                    Toast.LENGTH_LONG
-                                ).show()
+                                    duration = SnackbarDuration.Long
+                                )
                             }
                             busy = false
                         }
@@ -191,73 +203,80 @@ fun SafeModeScreen(
         )
     }
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.onSurface
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+    Box(modifier = Modifier.fillMaxSize()) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface
         ) {
-            SafeModeHeader()
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                SafeModeHeader()
 
-            if (loading) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
-            } else {
-                CrashLogPreviewCard(
-                    report = report,
-                    onCopy = {
-                        val currentReport = report ?: return@CrashLogPreviewCard
-                        scope.launch {
-                            val fullContent = SafeModeManager.readFullCrashReport(currentReport.file)
-                                ?: currentReport.previewContent
-                            val copied = copyLogToClipboard(
-                                clipboardManager = context.getSystemService(ClipboardManager::class.java),
-                                content = fullContent
-                            )
-                            Toast.makeText(
-                                context,
-                                composeResources.getString(
-                                    if (copied) {
-                                        R.string.log_copied
-                                    } else {
-                                        R.string.log_cannot_read
-                                    }
-                                ),
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    },
-                    onExport = {
-                        val currentReport = report ?: return@CrashLogPreviewCard
-                        exportReport = currentReport
-                        exportLauncher.launch(currentReport.file.name)
+                if (loading) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
                     }
+                } else {
+                    CrashLogPreviewCard(
+                        report = report,
+                        onCopy = {
+                            val currentReport = report ?: return@CrashLogPreviewCard
+                            scope.launch {
+                                val fullContent = SafeModeManager.readFullCrashReport(currentReport.file)
+                                    ?: currentReport.previewContent
+                                val copied = copyLogToClipboard(
+                                    clipboardManager = context.getSystemService(ClipboardManager::class.java),
+                                    content = fullContent
+                                )
+                                showMessage(
+                                    composeResources.getString(
+                                        if (copied) {
+                                            R.string.log_copied
+                                        } else {
+                                            R.string.log_cannot_read
+                                        }
+                                    )
+                                )
+                            }
+                        },
+                        onExport = {
+                            val currentReport = report ?: return@CrashLogPreviewCard
+                            exportReport = currentReport
+                            exportLauncher.launch(currentReport.file.name)
+                        }
+                    )
+                }
+
+                SafeModeExportCard(
+                    busy = busy,
+                    onShowMessage = ::showMessage
+                )
+
+                RecoveryActionCard(
+                    busy = busy,
+                    onResetLogin = { showResetLoginDialog = true },
+                    onResetSettings = { showResetSettingsDialog = true },
+                    onRestoreNormal = onRestoreNormal
                 )
             }
-
-            SafeModeExportCard(busy = busy)
-
-            RecoveryActionCard(
-                busy = busy,
-                onResetLogin = { showResetLoginDialog = true },
-                onResetSettings = { showResetSettingsDialog = true },
-                onRestoreNormal = onRestoreNormal
-            )
         }
+        NeriSnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
     }
 }
 

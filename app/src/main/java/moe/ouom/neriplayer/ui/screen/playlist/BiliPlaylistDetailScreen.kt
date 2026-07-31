@@ -89,6 +89,8 @@ import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
+import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
+import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
@@ -636,6 +638,13 @@ fun BiliPlaylistDetailScreen(
                             )
                         }
                     }
+
+                    NeriSnackbarHost(
+                        hostState = snackbarHostState,
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                        bottomPadding = miniPlayerHeight,
+                        applyNavigationBarsPadding = false
+                    )
                 }
             }
 
@@ -1033,7 +1042,7 @@ private fun VideoRow(
                             val songInfo = "${video.title}-${video.uploader}"
                             scope.launch {
                                 clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", songInfo)))
-                                snackbarHostState.showSnackbar(composeResources.getString(R.string.toast_copied))
+                                snackbarHostState.showNeriSnackbar(composeResources.getString(R.string.toast_copied))
                             }
                             showMoreMenu = false
                         }

@@ -68,7 +68,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
@@ -129,6 +128,8 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
+import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
+import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeItem
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicParser
@@ -403,7 +404,7 @@ fun HomeScreen(
                                                 onClick = { onYouTubeMusicPlaylistClick(playlist) },
                                                 onShowSnackbar = { message ->
                                                     scope.launch {
-                                                        snackbarHostState.showSnackbar(message)
+                                                        snackbarHostState.showNeriSnackbar(message)
                                                     }
                                                 },
                                                 offlineMode = offlineMode
@@ -470,7 +471,7 @@ fun HomeScreen(
                                                         },
                                                         onShowSnackbar = { message ->
                                                             scope.launch {
-                                                                snackbarHostState.showSnackbar(message)
+                                                                snackbarHostState.showNeriSnackbar(message)
                                                             }
                                                         },
                                                         offlineMode = offlineMode
@@ -567,7 +568,7 @@ fun HomeScreen(
                                                 onClick = { onItemClick(item) },
                                                 onShowSnackbar = { message ->
                                                     scope.launch {
-                                                        snackbarHostState.showSnackbar(message)
+                                                        snackbarHostState.showNeriSnackbar(message)
                                                     }
                                                 },
                                                 offlineMode = offlineMode
@@ -594,11 +595,11 @@ fun HomeScreen(
             }
         }
 
-        SnackbarHost(
+        NeriSnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = LocalMiniPlayerHeight.current)
+                .align(Alignment.BottomCenter),
+            bottomPadding = LocalMiniPlayerHeight.current
         )
     }
 }

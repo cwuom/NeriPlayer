@@ -75,6 +75,7 @@ import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeLoginHost
 import moe.ouom.neriplayer.data.platform.youtube.resolveYouTubeMobileWebLoginUserAgent
 import moe.ouom.neriplayer.util.network.DynamicProxySelector
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.ui.feedback.showNeriViewSnackbar
 import moe.ouom.neriplayer.util.network.isAllowedMainFrameRequest
 import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
 import okhttp3.OkHttpClient
@@ -334,14 +335,14 @@ class YouTubeWebLoginActivity : ComponentActivity() {
                 )
             }
         } catch (error: Throwable) {
-            Snackbar.make(
+            showNeriViewSnackbar(
                 webView,
                 getString(
                     R.string.snackbar_read_failed,
                     error.message ?: error.javaClass.simpleName
                 ),
                 Snackbar.LENGTH_LONG
-            ).show()
+            )
         }
     }
 
@@ -565,11 +566,11 @@ class YouTubeWebLoginActivity : ComponentActivity() {
 
     private fun showCookieMissingSnack() {
         dismissVerifyingSnack()
-        Snackbar.make(
+        showNeriViewSnackbar(
             webView,
             getString(R.string.settings_youtube_auth_missing),
             Snackbar.LENGTH_LONG
-        ).show()
+        )
     }
 
     /** 校验走网络可能耗时数秒, 期间没有反馈用户会误判为无响应并中途退出 */
@@ -577,11 +578,11 @@ class YouTubeWebLoginActivity : ComponentActivity() {
         if (verifyingSnack?.isShown == true) {
             return
         }
-        verifyingSnack = Snackbar.make(
+        verifyingSnack = showNeriViewSnackbar(
             webView,
             getString(R.string.settings_youtube_auth_verifying),
             Snackbar.LENGTH_INDEFINITE
-        ).also { it.show() }
+        )
     }
 
     private fun dismissVerifyingSnack() {

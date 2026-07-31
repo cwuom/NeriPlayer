@@ -434,7 +434,8 @@ fun LyricShareSheet(
     initialLine: LyricEntry,
     queue: List<SongItem>,
     onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onShowMessage: (String) -> Unit = {}
 ) {
     moe.ouom.neriplayer.ui.component.lyrics.LyricShareSheet(
         song = song,
@@ -442,6 +443,7 @@ fun LyricShareSheet(
         initialLine = initialLine,
         queue = queue,
         onDismiss = onDismiss,
+        onShowMessage = onShowMessage,
         modifier = modifier
     )
 }

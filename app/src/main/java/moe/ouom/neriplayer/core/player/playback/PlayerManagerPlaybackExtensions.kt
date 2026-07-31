@@ -3,7 +3,6 @@
 package moe.ouom.neriplayer.core.player.playback
 
 import android.os.SystemClock
-import android.widget.Toast
 import androidx.media3.common.Player
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -75,6 +74,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.api.search.SearchManager
+import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import kotlin.random.Random
 
 internal fun PlayerManager.cancelVolumeFadeImpl(resetToFull: Boolean = false) {
@@ -598,11 +598,10 @@ internal fun PlayerManager.playAtIndex(
             "Too many consecutive playback failures: $consecutivePlayFailures"
         )
         mainScope.launch {
-            Toast.makeText(
-                application,
-                getLocalizedString(R.string.toast_playback_stopped),
-                Toast.LENGTH_SHORT
-            ).show()
+            AppFeedback.showToast(
+                context = application,
+                message = getLocalizedString(R.string.toast_playback_stopped)
+            )
         }
         stopPlaybackPreservingQueue(clearMediaUrl = true)
         return
@@ -1837,11 +1836,10 @@ internal fun PlayerManager.startProgressUpdates() {
                         "BiliSponsorBlock",
                         "auto skipping segment: from=${positionMs}ms, to=${skipPositionMs}ms"
                     )
-                    Toast.makeText(
-                        application,
-                        getLocalizedString(R.string.toast_bili_sponsor_block_skipped),
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    AppFeedback.showToast(
+                        context = application,
+                        message = getLocalizedString(R.string.toast_bili_sponsor_block_skipped)
+                    )
                     seekTo(
                         positionMs = skipPositionMs,
                         commandSource = PlaybackCommandSource.LOCAL_SAFETY

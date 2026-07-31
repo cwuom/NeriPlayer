@@ -56,6 +56,7 @@ import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.normalizeNeteaseWebLoginCookies
 import moe.ouom.neriplayer.data.auth.web.shouldAutoCompleteNeteaseWebLogin
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.ui.feedback.showNeriViewSnackbar
 import moe.ouom.neriplayer.util.network.hostMatchesAnyDomain
 import moe.ouom.neriplayer.util.network.isAllowedMainFrameRequest
 import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
@@ -229,7 +230,11 @@ class NeteaseWebLoginActivity : ComponentActivity() {
         try {
             val map = readCookieMap()
             if (map.isEmpty()) {
-                Snackbar.make(webView, getString(R.string.snackbar_cookie_empty), Snackbar.LENGTH_SHORT).show()
+                showNeriViewSnackbar(
+                    webView,
+                    getString(R.string.snackbar_cookie_empty),
+                    Snackbar.LENGTH_SHORT
+                )
                 return
             }
 
@@ -237,11 +242,11 @@ class NeteaseWebLoginActivity : ComponentActivity() {
             setResult(RESULT_OK, Intent().putExtra(RESULT_COOKIE, json))
             finish()
         } catch (e: Throwable) {
-            Snackbar.make(
+            showNeriViewSnackbar(
                 webView,
                 getString(R.string.snackbar_read_failed, e.message ?: e.javaClass.simpleName),
                 Snackbar.LENGTH_LONG
-            ).show()
+            )
         }
     }
 
