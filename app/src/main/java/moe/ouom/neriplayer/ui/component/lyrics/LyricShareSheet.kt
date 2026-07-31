@@ -61,6 +61,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -111,6 +112,7 @@ fun LyricShareSheet(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -259,7 +261,7 @@ fun LyricShareSheet(
                             result.onFailure {
                                 Toast.makeText(
                                     context,
-                                    context.getString(R.string.lyric_share_card_failed),
+                                    composeResources.getString(R.string.lyric_share_card_failed),
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }.onSuccess {

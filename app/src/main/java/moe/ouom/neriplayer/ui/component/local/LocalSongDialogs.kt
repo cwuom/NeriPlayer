@@ -50,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -87,6 +88,7 @@ fun LocalSongDetailsDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     var details by remember(song) { mutableStateOf<LocalMediaDetails?>(null) }
@@ -99,7 +101,7 @@ fun LocalSongDetailsDialog(
             .onSuccess {
                 val loadState = resolveLocalSongDetailsLoadState(
                     details = it,
-                    unavailableMessage = context.getString(R.string.local_song_details_unavailable)
+                    unavailableMessage = composeResources.getString(R.string.local_song_details_unavailable)
                 )
                 details = loadState.details
                 error = loadState.error
@@ -115,7 +117,7 @@ fun LocalSongDetailsDialog(
                 scope.launch {
                     clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", path)))
                 }
-                Toast.makeText(context, context.getString(R.string.toast_copied), Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, composeResources.getString(R.string.toast_copied), Toast.LENGTH_SHORT).show()
             }
 
             Column(

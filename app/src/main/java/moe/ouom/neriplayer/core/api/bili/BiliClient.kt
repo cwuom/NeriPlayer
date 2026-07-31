@@ -1190,7 +1190,7 @@ class BiliClient(
             .get()
             .build()
 
-        val text = http.newCall(req).executeOrThrow().use { it.body?.string().orEmpty() }
+        val text = http.newCall(req).executeOrThrow().use { it.body.string() }
         val jo = JSONObject(text)
         val data = jo.optJSONObject("data") ?: JSONObject()
         val wbiImg = data.optJSONObject("wbi_img") ?: JSONObject()
@@ -1219,7 +1219,7 @@ class BiliClient(
             .post(ByteArray(0).toRequestBody(null))
             .build()
 
-        val text = http.newCall(req).executeOrThrow().use { it.body?.string().orEmpty() }
+        val text = http.newCall(req).executeOrThrow().use { it.body.string() }
         val jo = JSONObject(text)
         val data = jo.optJSONObject("data") ?: JSONObject()
         val nav = data.optJSONObject("nav") ?: JSONObject()
@@ -1273,7 +1273,7 @@ class BiliClient(
             .build()
 
         runCatching {
-            val text = http.newCall(req).executeOrThrow().use { it.body?.string().orEmpty() }
+            val text = http.newCall(req).executeOrThrow().use { it.body.string() }
             val jo = JSONObject(text)
             val data = jo.optJSONObject("data") ?: JSONObject()
             jo.optInt("code", -1) == 0 &&
@@ -1308,7 +1308,7 @@ class BiliClient(
             .get()
             .build()
 
-        val text = http.newCall(req).executeOrThrow().use { it.body?.string().orEmpty() }
+        val text = http.newCall(req).executeOrThrow().use { it.body.string() }
         val jo = JSONObject(text)
         val data = jo.optJSONObject("data") ?: JSONObject()
         val map = mutableMapOf<String, String>()

@@ -167,7 +167,6 @@ class BackupRestoreViewModel : ViewModel() {
     }
 
     override fun onCleared() {
-        super.onCleared()
         backupManager = null
         strings = null
     }

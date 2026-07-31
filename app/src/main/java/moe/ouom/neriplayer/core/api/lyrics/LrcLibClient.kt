@@ -84,7 +84,7 @@ class LrcLibClient(private val okHttpClient: OkHttpClient) {
                     return@withContext null
                 }
 
-                val body = response.body?.string() ?: return@withContext null
+                val body = response.body.string()
                 val json = JSONObject(body)
 
                 parseResult(json)?.takeIf {
@@ -132,7 +132,7 @@ class LrcLibClient(private val okHttpClient: OkHttpClient) {
                     return@withContext null
                 }
 
-                val body = response.body?.string() ?: return@withContext null
+                val body = response.body.string()
                 val arr = org.json.JSONArray(body)
                 buildList {
                     for (index in 0 until arr.length()) {

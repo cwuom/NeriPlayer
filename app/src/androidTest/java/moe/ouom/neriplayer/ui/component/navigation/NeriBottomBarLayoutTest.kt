@@ -24,7 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
@@ -43,6 +43,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 @RunWith(AndroidJUnit4::class)
@@ -79,12 +80,18 @@ class NeriBottomBarLayoutTest {
         }
 
         val image = composeRule.onNodeWithTag(BottomBarTag).captureToImage()
+        val pixels = image.toPixelMap()
         val edgeOffset = (image.height / 48).coerceAtLeast(2)
-        val topCorner = image.toPixelMap()[edgeOffset, edgeOffset]
+        val topCorner = pixels[edgeOffset, edgeOffset]
+        val edgeBody = pixels[edgeOffset, image.height / 2]
 
         assertTrue(
-            "Bottom bar top corner no longer connects to the MiniPlayer: $topCorner",
-            topCorner.blue > 0.8f && topCorner.red < 0.2f
+            "Bottom bar surface was not rendered over the red background: $edgeBody",
+            edgeBody.blue > 0.15f && edgeBody.red < 0.85f
+        )
+        assertTrue(
+            "Bottom bar top corner no longer connects to the MiniPlayer: corner=$topCorner body=$edgeBody",
+            topCorner.isVisuallyCloseTo(edgeBody)
         )
     }
 
@@ -296,4 +303,12 @@ class NeriBottomBarLayoutTest {
         const val NavHostBottomBarTag = "nav_host_bottom_bar"
         const val TestRoute = "test"
     }
+}
+
+private fun Color.isVisuallyCloseTo(other: Color): Boolean {
+    val tolerance = 0.04f
+    return abs(red - other.red) <= tolerance &&
+        abs(green - other.green) <= tolerance &&
+        abs(blue - other.blue) <= tolerance &&
+        abs(alpha - other.alpha) <= tolerance
 }

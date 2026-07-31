@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -54,6 +55,7 @@ fun SafeModeScreen(
     onRestoreNormal: () -> Unit
 ) {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     val scope = rememberCoroutineScope()
     var report by remember { mutableStateOf<CrashReportStore.PendingCrashReport?>(null) }
     var loading by remember { mutableStateOf(true) }
@@ -77,11 +79,11 @@ fun SafeModeScreen(
                     destination = uri
                 )
             }.onSuccess {
-                Toast.makeText(context, context.getString(R.string.log_exported), Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, composeResources.getString(R.string.log_exported), Toast.LENGTH_SHORT).show()
             }.onFailure { error ->
                 Toast.makeText(
                     context,
-                    context.getString(R.string.log_export_failed, error.message ?: error.javaClass.simpleName),
+                    composeResources.getString(R.string.log_export_failed, error.message ?: error.javaClass.simpleName),
                     Toast.LENGTH_LONG
                 ).show()
             }
@@ -110,13 +112,13 @@ fun SafeModeScreen(
                                 showResetLoginDialog = false
                                 Toast.makeText(
                                     context,
-                                    context.getString(R.string.safe_mode_reset_login_done),
+                                    composeResources.getString(R.string.safe_mode_reset_login_done),
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }.onFailure { error ->
                                 Toast.makeText(
                                     context,
-                                    context.getString(
+                                    composeResources.getString(
                                         R.string.safe_mode_reset_login_failed,
                                         error.message ?: error.javaClass.simpleName
                                     ),
@@ -158,13 +160,13 @@ fun SafeModeScreen(
                                 showResetSettingsDialog = false
                                 Toast.makeText(
                                     context,
-                                    context.getString(R.string.safe_mode_reset_settings_done),
+                                    composeResources.getString(R.string.safe_mode_reset_settings_done),
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }.onFailure { error ->
                                 Toast.makeText(
                                     context,
-                                    context.getString(
+                                    composeResources.getString(
                                         R.string.safe_mode_reset_settings_failed,
                                         error.message ?: error.javaClass.simpleName
                                     ),
@@ -228,7 +230,7 @@ fun SafeModeScreen(
                             )
                             Toast.makeText(
                                 context,
-                                context.getString(
+                                composeResources.getString(
                                     if (copied) {
                                         R.string.log_copied
                                     } else {

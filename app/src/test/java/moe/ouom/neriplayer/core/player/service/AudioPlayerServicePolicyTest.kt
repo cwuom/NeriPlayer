@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package moe.ouom.neriplayer.core.player.service
 
 import android.media.AudioManager

@@ -131,6 +131,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
@@ -421,6 +422,7 @@ fun LocalPlaylistDetailScreen(
             }
 
             val context = LocalContext.current
+            val composeResources = LocalResources.current
             val clipboard = LocalClipboard.current
             val isFavorites = FavoritesPlaylist.isSystemPlaylist(playlist, context)
             val isLocalFilesPlaylist = LocalFilesPlaylist.isSystemPlaylist(playlist, context)
@@ -498,7 +500,7 @@ fun LocalPlaylistDetailScreen(
                             )
                         }
                         result.failedCount == 0 -> {
-                            context.getString(R.string.local_playlist_import_audio_no_new)
+                            composeResources.getString(R.string.local_playlist_import_audio_no_new)
                         }
                         else -> {
                             resources.getQuantityString(
@@ -521,7 +523,7 @@ fun LocalPlaylistDetailScreen(
                             result.importedCount
                         )
                     } else {
-                        context.getString(R.string.local_playlist_add_scanned_no_new)
+                        composeResources.getString(R.string.local_playlist_add_scanned_no_new)
                     }
                     snackbarHostState.showSnackbar(message)
                 }
@@ -531,7 +533,7 @@ fun LocalPlaylistDetailScreen(
                 scope.launch {
                     if (!result.completed) {
                         snackbarHostState.showSnackbar(
-                            context.getString(R.string.local_playlist_scan_preserve_existing)
+                            composeResources.getString(R.string.local_playlist_scan_preserve_existing)
                         )
                         return@launch
                     }
@@ -591,7 +593,7 @@ fun LocalPlaylistDetailScreen(
                 } else {
                     scope.launch {
                         snackbarHostState.showSnackbar(
-                            context.getString(R.string.download_scan_permission_required)
+                            composeResources.getString(R.string.download_scan_permission_required)
                         )
                     }
                 }
@@ -706,9 +708,9 @@ fun LocalPlaylistDetailScreen(
             fun handleNeteaseSyncResult(result: moe.ouom.neriplayer.data.local.playlist.sync.NeteaseLikeSyncResult) {
                 syncInProgress = false
                 val message = result.message ?: if (result.totalSongs == 0) {
-                    context.getString(R.string.local_playlist_sync_netease_empty)
+                    composeResources.getString(R.string.local_playlist_sync_netease_empty)
                 } else {
-                    context.getString(
+                    composeResources.getString(
                         R.string.local_playlist_sync_netease_result,
                         result.totalSongs,
                         result.added,
@@ -740,7 +742,7 @@ fun LocalPlaylistDetailScreen(
                 if (allSongs.isEmpty()) {
                     scope.launch {
                         snackbarHostState.showSnackbar(
-                            context.getString(R.string.local_playlist_sync_netease_empty)
+                            composeResources.getString(R.string.local_playlist_sync_netease_empty)
                         )
                     }
                     return
@@ -755,7 +757,7 @@ fun LocalPlaylistDetailScreen(
                     syncInProgress = false
                     if (plan.pendingSongs.isEmpty()) {
                         snackbarHostState.showSnackbar(
-                            plan.message ?: context.getString(R.string.local_playlist_sync_netease_all_synced)
+                            plan.message ?: composeResources.getString(R.string.local_playlist_sync_netease_all_synced)
                         )
                         return@launch
                     }
@@ -791,14 +793,14 @@ fun LocalPlaylistDetailScreen(
             fun validateRename(input: String): String? {
                 val name = normalizedRenameName(input)
                 if (isSameRenameName(input)) return null
-                if (name.isEmpty()) return context.getString(R.string.playlist_name_empty)
+                if (name.isEmpty()) return composeResources.getString(R.string.playlist_name_empty)
                 if (SystemLocalPlaylists.matchesReservedName(name, context)) {
                     val reservedName = SystemLocalPlaylists.resolve(
                         playlistId = 0L,
                         playlistName = name,
                         context = context
                     )?.currentName ?: name
-                    return context.getString(R.string.library_name_reserved, reservedName)
+                    return composeResources.getString(R.string.library_name_reserved, reservedName)
                 }
                 if (allPlaylists.any {
                         it.id != playlist.id && it.name.equals(
@@ -806,7 +808,7 @@ fun LocalPlaylistDetailScreen(
                             ignoreCase = true
                         )
                     }) {
-                    return context.getString(R.string.library_name_exists)
+                    return composeResources.getString(R.string.library_name_exists)
                 }
                 return null
             }
@@ -1052,7 +1054,7 @@ fun LocalPlaylistDetailScreen(
                             }
                             launchWithLocalSyncWarning(
                                 songs = selectedSongs,
-                                actionLabel = context.getString(R.string.playlist_add_to)
+                                actionLabel = composeResources.getString(R.string.playlist_add_to)
                             ) {
                                 vm.createPlaylistWithScannedSongs(
                                     name = name,
@@ -1067,7 +1069,7 @@ fun LocalPlaylistDetailScreen(
                             }
                             launchWithLocalSyncWarning(
                                 songs = selectedSongs,
-                                actionLabel = context.getString(R.string.playlist_add_to)
+                                actionLabel = composeResources.getString(R.string.playlist_add_to)
                             ) {
                                 appendSongsOptimistically(target.id, selectedSongs)
                                 vm.addScannedSongsToPlaylist(
@@ -1110,7 +1112,7 @@ fun LocalPlaylistDetailScreen(
                     onImport = { syncSelectedNeteaseSongs() },
                     title = stringResource(R.string.local_playlist_sync_netease_preview_title),
                     actionLabel = { count ->
-                        context.getString(R.string.local_playlist_sync_selected, count)
+                        composeResources.getString(R.string.local_playlist_sync_selected, count)
                     },
                     searchPlaceholder = stringResource(R.string.local_playlist_sync_search),
                     emptyText = stringResource(R.string.local_playlist_sync_empty),
@@ -1626,7 +1628,7 @@ fun LocalPlaylistDetailScreen(
                                                                             }.getOrElse { false }
                                                                             if (!shared) {
                                                                                 snackbarHostState.showSnackbar(
-                                                                                    context.getString(R.string.local_song_share_failed)
+                                                                                    composeResources.getString(R.string.local_song_share_failed)
                                                                                 )
                                                                             }
                                                                         }
@@ -1655,7 +1657,7 @@ fun LocalPlaylistDetailScreen(
                                                                     scope.launch {
                                                                         clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", songInfo)))
                                                                         snackbarHostState.showSnackbar(
-                                                                            context.getString(R.string.toast_copied)
+                                                                            composeResources.getString(R.string.toast_copied)
                                                                         )
                                                                     }
                                                                     showMoreMenu = false
@@ -1814,7 +1816,7 @@ fun LocalPlaylistDetailScreen(
                             )
                             launchWithLocalSyncWarning(
                                 songs = songs,
-                                actionLabel = context.getString(R.string.playlist_add_to)
+                                actionLabel = composeResources.getString(R.string.playlist_add_to)
                             ) {
                                 scope.launchLocalPlaylistMutation("createPlaylistFromLocalPlaylist") {
                                     repo.createPlaylistWithPreparedSongs(name, songs)
@@ -1829,7 +1831,7 @@ fun LocalPlaylistDetailScreen(
                             )
                             launchWithLocalSyncWarning(
                                 songs = songs,
-                                actionLabel = context.getString(R.string.playlist_add_to)
+                                actionLabel = composeResources.getString(R.string.playlist_add_to)
                             ) {
                                 scope.launchLocalPlaylistMutation("exportSongsFromLocalPlaylist") {
                                     repo.addPreparedSongsToPlaylist(target.id, songs)
@@ -1852,7 +1854,7 @@ fun LocalPlaylistDetailScreen(
                             val songs = baseQueue
                             launchWithLocalSyncWarning(
                                 songs = songs,
-                                actionLabel = context.getString(R.string.playlist_add_to)
+                                actionLabel = composeResources.getString(R.string.playlist_add_to)
                             ) {
                                 scope.launchLocalPlaylistMutation("createPlaylistFromLocalPlaylistAll") {
                                     repo.createPlaylistWithPreparedSongs(name, songs)
@@ -1864,7 +1866,7 @@ fun LocalPlaylistDetailScreen(
                             val songs = baseQueue
                             launchWithLocalSyncWarning(
                                 songs = songs,
-                                actionLabel = context.getString(R.string.playlist_add_to)
+                                actionLabel = composeResources.getString(R.string.playlist_add_to)
                             ) {
                                 scope.launchLocalPlaylistMutation("exportAllSongsFromLocalPlaylist") {
                                     repo.addPreparedSongsToPlaylist(target.id, songs)
@@ -2218,7 +2220,7 @@ private fun LocalScanPreviewScreen(
                                             )
                                         },
                                         onClick = {
-                                            onMetadataOnlyChange?.invoke(!metadataOnly)
+                                            onMetadataOnlyChange(!metadataOnly)
                                             showMoreMenu = false
                                         }
                                     )
@@ -2235,7 +2237,7 @@ private fun LocalScanPreviewScreen(
                                             )
                                         },
                                         onClick = {
-                                            onHideExistingLocalPlaylistSongsChange?.invoke(
+                                            onHideExistingLocalPlaylistSongsChange(
                                                 !hideExistingLocalPlaylistSongs
                                             )
                                             showMoreMenu = false

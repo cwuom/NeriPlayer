@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -65,6 +66,7 @@ fun LogViewerScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     val coroutineScope = rememberCoroutineScope()
     val clipboard = LocalClipboard.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -83,11 +85,11 @@ fun LogViewerScreen(
                             File(decodedFilePath).inputStream().copyTo(outputStream)
                         }
                         withContext(Dispatchers.Main) {
-                            snackbarHostState.showSnackbar(context.getString(R.string.log_exported))
+                            snackbarHostState.showSnackbar(composeResources.getString(R.string.log_exported))
                         }
                     } catch (e: Exception) {
                         withContext(Dispatchers.Main) {
-                            snackbarHostState.showSnackbar(context.getString(R.string.log_export_failed, e.message))
+                            snackbarHostState.showSnackbar(composeResources.getString(R.string.log_export_failed, e.message))
                         }
                     }
                 }
@@ -104,7 +106,7 @@ fun LogViewerScreen(
                 }
             } catch (e: FileNotFoundException) {
                 withContext(Dispatchers.Main) {
-                    snackbarHostState.showSnackbar(context.getString(R.string.log_cannot_read))
+                    snackbarHostState.showSnackbar(composeResources.getString(R.string.log_cannot_read))
                 }
             }
         }
@@ -134,7 +136,7 @@ fun LogViewerScreen(
                         val fullText = logContent.joinToString("\n")
                         coroutineScope.launch {
                             clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", fullText)))
-                            snackbarHostState.showSnackbar(context.getString(R.string.log_copied))
+                            snackbarHostState.showSnackbar(composeResources.getString(R.string.log_copied))
                         }
                     }) {
                         Icon(Icons.Outlined.ContentCopy, contentDescription = stringResource(R.string.debug_copy_all))

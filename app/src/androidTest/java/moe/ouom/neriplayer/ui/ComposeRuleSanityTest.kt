@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.ui
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable

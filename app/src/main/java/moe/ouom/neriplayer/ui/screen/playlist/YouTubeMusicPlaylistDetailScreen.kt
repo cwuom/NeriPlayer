@@ -93,6 +93,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
@@ -150,6 +151,7 @@ fun YouTubeMusicPlaylistDetailScreen(
     offlineMode: Boolean = false
 ) {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     val viewModel: YouTubeMusicPlaylistDetailViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
@@ -186,7 +188,7 @@ fun YouTubeMusicPlaylistDetailScreen(
     fun showWaitForFullLoadMessage() {
         scope.launch {
             snackbarHostState.showSnackbar(
-                context.getString(R.string.youtube_music_playlist_wait_full_load)
+                composeResources.getString(R.string.youtube_music_playlist_wait_full_load)
             )
         }
     }
@@ -682,7 +684,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                                             GlobalDownloadManager.startDownload(context, song)
                                             scope.launch {
                                                 snackbarHostState.showSnackbar(
-                                                    context.getString(R.string.download_starting, song.displayName())
+                                                    composeResources.getString(R.string.download_starting, song.displayName())
                                                 )
                                             }
                                         },
@@ -902,6 +904,7 @@ private fun YouTubeMusicSongRow(
     offlineMode: Boolean
 ) {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     var showMenu by remember { mutableStateOf(false) }
@@ -1050,7 +1053,7 @@ private fun YouTubeMusicSongRow(
                                 )
                             )
                             snackbarHostState.showSnackbar(
-                                context.getString(R.string.toast_copied)
+                                composeResources.getString(R.string.toast_copied)
                             )
                         }
                         showMenu = false

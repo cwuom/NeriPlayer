@@ -100,6 +100,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -200,6 +201,7 @@ fun ExploreScreen(
     onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> }
 ) {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     if (offlineMode) {
         ExploreOfflineContent(topAppBarState)
         return
@@ -506,7 +508,7 @@ fun ExploreScreen(
                                                             showPartsSheet = true
                                                         }
                                                     } catch (e: Exception) {
-                                                        NPLogger.e("ExploreScreen", context.getString(R.string.search_error), e)
+                                                        NPLogger.e("ExploreScreen", composeResources.getString(R.string.search_error), e)
                                                     }
                                                 }
                                             } else {
@@ -1109,7 +1111,7 @@ private fun YouTubeMusicExploreContent(
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        ui.ytMusicPlaylistsError!!,
+                        ui.ytMusicPlaylistsError,
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodyMedium
                     )

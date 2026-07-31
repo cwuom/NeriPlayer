@@ -6,7 +6,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.FrameMetrics
 import android.view.Window
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.runBlocking

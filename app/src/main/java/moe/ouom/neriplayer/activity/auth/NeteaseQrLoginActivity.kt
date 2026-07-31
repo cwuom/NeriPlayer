@@ -130,7 +130,7 @@ class NeteaseQrLoginActivity : ComponentActivity() {
             com.google.android.material.R.attr.colorOnSurfaceVariant,
             Color.DKGRAY
         )
-        val primary = root.materialColor(com.google.android.material.R.attr.colorPrimary, Color.rgb(199, 37, 53))
+        val primary = root.materialColor(androidx.appcompat.R.attr.colorPrimary, Color.rgb(199, 37, 53))
         val onPrimary = root.materialColor(com.google.android.material.R.attr.colorOnPrimary, Color.WHITE)
         val outline = root.materialColor(com.google.android.material.R.attr.colorOutline, Color.LTGRAY)
         val softPrimary = ColorUtils.blendARGB(surface, primary, 0.08f)
@@ -433,7 +433,7 @@ class NeteaseQrLoginActivity : ComponentActivity() {
     private fun setErrorStatus(text: String) {
         statusText.text = text
         NPLogger.w(LOG_TAG, "UI error=$text")
-        val error = statusText.materialColor(com.google.android.material.R.attr.colorError, Color.RED)
+        val error = statusText.materialColor(androidx.appcompat.R.attr.colorError, Color.RED)
         val surface = statusText.materialColor(com.google.android.material.R.attr.colorSurface, Color.WHITE)
         statusText.setTextColor(error)
         statusText.background = roundedBackground(

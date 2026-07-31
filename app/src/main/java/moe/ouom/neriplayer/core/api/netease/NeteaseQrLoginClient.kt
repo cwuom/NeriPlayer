@@ -330,12 +330,12 @@ class NeteaseQrLoginClient(
     }
 
     private fun okhttp3.Response.readBodyText(): String {
-        val body = body ?: throw IOException("Empty response body")
+        val responseBody = body
         val encoding = header("Content-Encoding")?.lowercase(Locale.getDefault())
         val bytes = when (encoding) {
-            "br" -> BrotliInputStream(body.byteStream()).use { it.readBytesLimited(NETEASE_QR_MAX_RESPONSE_BYTES) }
-            "gzip" -> GZIPInputStream(body.byteStream()).use { it.readBytesLimited(NETEASE_QR_MAX_RESPONSE_BYTES) }
-            else -> body.byteStream().use { it.readBytesLimited(NETEASE_QR_MAX_RESPONSE_BYTES) }
+            "br" -> BrotliInputStream(responseBody.byteStream()).use { it.readBytesLimited(NETEASE_QR_MAX_RESPONSE_BYTES) }
+            "gzip" -> GZIPInputStream(responseBody.byteStream()).use { it.readBytesLimited(NETEASE_QR_MAX_RESPONSE_BYTES) }
+            else -> responseBody.byteStream().use { it.readBytesLimited(NETEASE_QR_MAX_RESPONSE_BYTES) }
         }
         return String(bytes, StandardCharsets.UTF_8)
     }

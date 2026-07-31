@@ -1,28 +1,26 @@
 @file:Suppress("UnstableApiUsage")
 
-import com.android.build.gradle.BaseExtension
+import com.android.build.api.dsl.CommonExtension
+import com.android.build.api.dsl.ApplicationExtension
+import com.android.build.api.dsl.LibraryExtension
 
 plugins {
     id("com.android.base")
-    kotlin("android")
 }
 
-extensions.findByType(BaseExtension::class)?.run {
-    compileSdkVersion(Version.compileSdkVersion)
+fun CommonExtension.configureAndroidBase() {
+    compileSdk = Version.compileSdkVersion
     ndkVersion = Version.getNdkVersion()
 
-    defaultConfig {
-        minSdk = Version.minSdk
-        targetSdk = Version.targetSdk
-    }
+    defaultConfig.minSdk = Version.minSdk
 
-    compileOptions {
-        sourceCompatibility = Version.java
-        targetCompatibility = Version.java
-    }
-
+    compileOptions.sourceCompatibility = Version.java
+    compileOptions.targetCompatibility = Version.java
 }
 
-kotlin {
-    jvmToolchain(Version.java.toString().toInt())
+extensions.findByType(ApplicationExtension::class)?.run {
+    configureAndroidBase()
+    defaultConfig.targetSdk = Version.targetSdk
 }
+
+extensions.findByType(LibraryExtension::class)?.configureAndroidBase()

@@ -140,7 +140,7 @@ class BiliQrLoginClient {
 
         http.newCall(requestBuilder.build()).execute().use { response ->
             storeSetCookieHeaders(response.headers("Set-Cookie"))
-            val text = response.body?.string().orEmpty()
+            val text = response.body.string()
             NPLogger.d(
                 BILI_QR_LOG_TAG,
                 "HTTP GET done url=${url.encodedPath} status=${response.code} " +

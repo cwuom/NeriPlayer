@@ -67,6 +67,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -128,6 +129,7 @@ internal fun SettingsStorageCacheSection(
     onClearCacheClick: (StorageCacheClearOptions) -> Unit
 ) {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     val scope = rememberCoroutineScope()
     var isStorageDetailsLoading by remember { mutableStateOf(false) }
     var showDownloadFileNameDialog by remember { mutableStateOf(false) }
@@ -300,9 +302,9 @@ internal fun SettingsStorageCacheSection(
                     val sizeMb = maxCacheSizeBytes / (1024 * 1024).toFloat()
                     var sliderValue by remember(sizeMb) { mutableFloatStateOf(sizeMb) }
                     val displaySize = if (sliderValue >= 1024) {
-                        context.getString(R.string.settings_cache_size_gb, sliderValue / 1024)
+                        composeResources.getString(R.string.settings_cache_size_gb, sliderValue / 1024)
                     } else {
-                        context.getString(R.string.settings_cache_size_mb, sliderValue.toInt())
+                        composeResources.getString(R.string.settings_cache_size_mb, sliderValue.toInt())
                     }
 
                     Column {

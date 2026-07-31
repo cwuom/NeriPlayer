@@ -172,6 +172,7 @@ import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -1299,6 +1300,7 @@ fun NowPlayingScreen(
     val playlists by PlayerManager.playlistsFlow.collectAsStateWithLifecycle()
     val localPlaylistsReady by PlayerManager.localPlaylistsReadyFlow.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     val coverDownloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
     val currentCoverUrl = remember(currentSong, context, coverDownloadPresenceVersion) {
         currentSong?.displayCoverUrl(context)
@@ -1355,7 +1357,7 @@ fun NowPlayingScreen(
         if (song == null || currentCoverUrl.isNullOrBlank()) {
             screenScope.launch {
                 snackbarHostState.showSnackbar(
-                    context.getString(R.string.cover_download_unavailable)
+                    composeResources.getString(R.string.cover_download_unavailable)
                 )
             }
         } else {
@@ -1366,12 +1368,12 @@ fun NowPlayingScreen(
                     suggestedName = "${song.displayArtist()} - ${song.displayName()} 封面"
                 ).onSuccess { fileName ->
                     snackbarHostState.showSnackbar(
-                        context.getString(R.string.cover_download_success, fileName)
+                        composeResources.getString(R.string.cover_download_success, fileName)
                     )
                 }.onFailure { error ->
-                    val errorMessage = error.message ?: context.getString(R.string.download_failed)
+                    val errorMessage = error.message ?: composeResources.getString(R.string.download_failed)
                     snackbarHostState.showSnackbar(
-                        context.getString(R.string.cover_download_failed, errorMessage)
+                        composeResources.getString(R.string.cover_download_failed, errorMessage)
                     )
                 }
             }
@@ -1386,7 +1388,7 @@ fun NowPlayingScreen(
         } else {
             screenScope.launch {
                 snackbarHostState.showSnackbar(
-                    context.getString(R.string.cover_download_permission_required)
+                    composeResources.getString(R.string.cover_download_permission_required)
                 )
             }
         }
@@ -1442,7 +1444,7 @@ fun NowPlayingScreen(
         val distinctArtists = artists.distinctBy { it.id }
         when (distinctArtists.size) {
             0 -> screenScope.launch {
-                snackbarHostState.showSnackbar(context.getString(R.string.artist_not_available))
+                snackbarHostState.showSnackbar(composeResources.getString(R.string.artist_not_available))
             }
             1 -> openResolvedArtist(distinctArtists.first())
             else -> artistPickerCandidates = distinctArtists
@@ -1462,7 +1464,7 @@ fun NowPlayingScreen(
                 onError = {
                     resolvingArtistNavigation = false
                     screenScope.launch {
-                        snackbarHostState.showSnackbar(context.getString(R.string.artist_not_available))
+                        snackbarHostState.showSnackbar(composeResources.getString(R.string.artist_not_available))
                     }
                 }
             )
@@ -1854,7 +1856,7 @@ fun NowPlayingScreen(
                                     val willFav = nextFavoriteStateAfterTap(isFavorite)
                                     launchWithLocalSyncWarning(
                                         song = song,
-                                        actionLabel = context.getString(R.string.favorite_add),
+                                        actionLabel = composeResources.getString(R.string.favorite_add),
                                         warnForLocalSync = willFav
                                     ) {
                                         favOverride = willFav
@@ -1970,7 +1972,7 @@ fun NowPlayingScreen(
                                             if (currentCoverUrl.isNullOrBlank()) {
                                                 screenScope.launch {
                                                     snackbarHostState.showSnackbar(
-                                                        context.getString(
+                                                        composeResources.getString(
                                                             R.string.cover_preview_unavailable
                                                         )
                                                     )
@@ -2614,7 +2616,7 @@ fun NowPlayingScreen(
                                     .clickable {
                                         launchWithLocalSyncWarning(
                                             song = currentSong,
-                                            actionLabel = context.getString(R.string.playlist_add_to)
+                                            actionLabel = composeResources.getString(R.string.playlist_add_to)
                                         ) {
                                             PlayerManager.addCurrentToPlaylist(pl.id)
                                             showAddSheet = false
@@ -3348,6 +3350,7 @@ fun EditSongInfoSheet(
     offlineMode: Boolean = false
 ) {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     val coroutineScope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
 
@@ -3789,7 +3792,7 @@ fun EditSongInfoSheet(
                             NPLogger.e("NowPlayingScreen", "保存歌曲信息失败", e)
                             Toast.makeText(
                                 context,
-                                context.getString(R.string.toast_save_failed, e.message.orEmpty()),
+                                composeResources.getString(R.string.toast_save_failed, e.message.orEmpty()),
                                 Toast.LENGTH_SHORT
                             ).show()
                         }

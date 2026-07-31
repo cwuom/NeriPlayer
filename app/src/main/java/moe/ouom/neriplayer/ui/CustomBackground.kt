@@ -42,6 +42,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import coil.compose.AsyncImage
@@ -64,6 +65,7 @@ fun CustomBackground(
 ) {
     if (imageUri != null) {
         val context = LocalContext.current
+        val composeResources = LocalResources.current
         val backgroundBaseColor = MaterialTheme.colorScheme.background
         val legacyBlur = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 0f else blur
 
@@ -92,7 +94,7 @@ fun CustomBackground(
             )
             AsyncImage(
                 model = imageRequest,
-                contentDescription = context.getString(R.string.cd_app_background),
+                contentDescription = composeResources.getString(R.string.cd_app_background),
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxSize()

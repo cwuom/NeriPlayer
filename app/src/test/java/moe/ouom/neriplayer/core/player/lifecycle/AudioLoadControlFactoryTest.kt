@@ -3,6 +3,7 @@
 package moe.ouom.neriplayer.core.player.lifecycle
 
 import androidx.media3.common.C
+import androidx.media3.common.MediaItem
 import androidx.media3.common.Timeline
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.LoadControl
@@ -95,7 +96,7 @@ class AudioLoadControlFactoryTest {
     ): LoadControl.Parameters {
         return LoadControl.Parameters(
             playerId,
-            Timeline.EMPTY,
+            timelineFor(mediaPeriodId),
             mediaPeriodId,
             0L,
             bufferedDurationMs * 1_000,
@@ -105,5 +106,61 @@ class AudioLoadControlFactoryTest {
             C.TIME_UNSET,
             C.TIME_UNSET
         )
+    }
+
+    private fun timelineFor(mediaPeriodId: MediaPeriodId): Timeline {
+        return object : Timeline() {
+            override fun getWindowCount(): Int = 1
+
+            override fun getWindow(
+                windowIndex: Int,
+                window: Window,
+                defaultPositionProjectionUs: Long
+            ): Window {
+                check(windowIndex == 0)
+                return window.set(
+                    WINDOW_UID,
+                    MediaItem.EMPTY,
+                    null,
+                    C.TIME_UNSET,
+                    C.TIME_UNSET,
+                    C.TIME_UNSET,
+                    true,
+                    false,
+                    null,
+                    0L,
+                    C.TIME_UNSET,
+                    0,
+                    0,
+                    0L
+                )
+            }
+
+            override fun getPeriodCount(): Int = 1
+
+            override fun getPeriod(
+                periodIndex: Int,
+                period: Period,
+                setIds: Boolean
+            ): Period {
+                check(periodIndex == 0)
+                val periodUid = mediaPeriodId.periodUid
+                val id = if (setIds) periodUid else null
+                return period.set(id, periodUid, 0, C.TIME_UNSET, 0L)
+            }
+
+            override fun getIndexOfPeriod(uid: Any): Int {
+                return if (uid == mediaPeriodId.periodUid) 0 else C.INDEX_UNSET
+            }
+
+            override fun getUidOfPeriod(periodIndex: Int): Any {
+                check(periodIndex == 0)
+                return mediaPeriodId.periodUid
+            }
+        }
+    }
+
+    private companion object {
+        private val WINDOW_UID = Any()
     }
 }

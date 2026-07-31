@@ -114,6 +114,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.pluralStringResource
@@ -1279,6 +1280,7 @@ private fun NeriAppContent(
     onNowPlayingVisibilityChanged: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     val latestOnNowPlayingVisibilityChanged by rememberUpdatedState(
         onNowPlayingVisibilityChanged
     )
@@ -2667,7 +2669,7 @@ private fun NeriAppContent(
                             // player(会断播)的前提下切换, 因此明确提示用户重启后生效
                             Toast.makeText(
                                 context,
-                                context.getString(R.string.settings_restart_hint),
+                                composeResources.getString(R.string.settings_restart_hint),
                                 Toast.LENGTH_SHORT
                             ).show()
                         },
@@ -2732,12 +2734,12 @@ private fun NeriAppContent(
                                 if (options.needsExtraCacheClear) {
                                     val result = clearExtraStorageCaches(context, options)
                                     messages += if (result.success) {
-                                        context.getString(
+                                        composeResources.getString(
                                             R.string.storage_extra_cache_clear_complete,
                                             formatFileSize(result.freedBytes)
                                         )
                                     } else {
-                                        context.getString(
+                                        composeResources.getString(
                                             R.string.storage_extra_cache_clear_partial
                                         )
                                     }
@@ -2796,7 +2798,7 @@ private fun NeriAppContent(
                                 navController.navigate(Destinations.DebugCrashLogsList.route)
                             },
                             onTestExceptionHandler = { crashType ->
-                            val crashMessage = context.getString(R.string.test_exception_message)
+                            val crashMessage = composeResources.getString(R.string.test_exception_message)
                             when (crashType) {
                                 DebugCrashTestType.JvmHandled -> {
                                     ExceptionHandler.safeExecute("DebugTestHandled") {
@@ -3661,7 +3663,7 @@ private fun NeriAppContent(
                                 ) {
                                     NeriMiniPlayer(
                                     title = currentSong?.displayName()
-                                        ?: context.getString(R.string.nowplaying_no_playback),
+                                        ?: composeResources.getString(R.string.nowplaying_no_playback),
                                     artist = currentSong?.displayArtist() ?: "",
                                     coverUrl = displayCoverUrl,
                                     isPlaying = isPlaybackControlPlaying,

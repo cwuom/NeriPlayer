@@ -109,7 +109,7 @@ class AmllTtmlClient(
                     NPLogger.d(TAG, "AMLL request returned ${response.code} for ${request.url.redactedForLog()}")
                     return@withContext null
                 }
-                response.body?.string()?.takeIf { it.isNotBlank() }
+                response.body.string().takeIf { it.isNotBlank() }
             }
         } catch (error: Exception) {
             NPLogger.d(TAG, "AMLL request failed: ${error.message}")

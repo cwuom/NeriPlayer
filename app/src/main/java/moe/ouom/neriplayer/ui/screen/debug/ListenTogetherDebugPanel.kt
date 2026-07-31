@@ -63,6 +63,7 @@ import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -137,6 +138,7 @@ fun ListenTogetherRoomPanel(
     showAdvancedDebug: Boolean = false
 ) {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     val activity = remember(context) { context.findComponentActivity() }
     val clipboard = LocalClipboard.current
     val clipboardScope = rememberCoroutineScope()
@@ -354,13 +356,13 @@ fun ListenTogetherRoomPanel(
                                     if (isInRoom && isController) {
                                         val result = sessionManager.updateRoomSettings(updated)
                                         check(result.ok) {
-                                            result.error ?: context.getString(R.string.listen_together_debug_ws_unavailable)
+                                            result.error ?: composeResources.getString(R.string.listen_together_debug_ws_unavailable)
                                         }
                                     }
                                 }.onFailure {
                                     Toast.makeText(context, it.message ?: it.javaClass.simpleName, Toast.LENGTH_SHORT).show()
                                 }
-                            } ?: Toast.makeText(context, context.getString(R.string.listen_together_action_unavailable), Toast.LENGTH_SHORT).show()
+                            } ?: Toast.makeText(context, composeResources.getString(R.string.listen_together_action_unavailable), Toast.LENGTH_SHORT).show()
                         }
                     )
                 }
@@ -503,7 +505,7 @@ fun ListenTogetherRoomPanel(
                                         check(result.ok) { result.error ?: "websocket unavailable" }
                                     }
                                 }.onFailure { Toast.makeText(context, it.message ?: it.javaClass.simpleName, Toast.LENGTH_SHORT).show() }
-                            } ?: Toast.makeText(context, context.getString(R.string.listen_together_action_unavailable), Toast.LENGTH_SHORT).show()
+                            } ?: Toast.makeText(context, composeResources.getString(R.string.listen_together_action_unavailable), Toast.LENGTH_SHORT).show()
                         }
                     )
                 }
@@ -545,6 +547,7 @@ private fun QuickActionSection(
     onRunningActionChange: (Int?) -> Unit
 ) {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -557,11 +560,11 @@ private fun QuickActionSection(
                     runCatching {
                         val result = AppContainer.listenTogetherApi.testServerAvailability(effectiveBaseUrl)
                         val detail = if (result.ok) {
-                            context.getString(R.string.listen_together_debug_probe_reachable)
+                            composeResources.getString(R.string.listen_together_debug_probe_reachable)
                         } else {
                             result.message
                         }
-                        Toast.makeText(context, context.getString(R.string.listen_together_debug_probe_result, detail), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, composeResources.getString(R.string.listen_together_debug_probe_result, detail), Toast.LENGTH_SHORT).show()
                     }.onFailure {
                         Toast.makeText(context, it.message ?: it.javaClass.simpleName, Toast.LENGTH_SHORT).show()
                     }
@@ -575,7 +578,7 @@ private fun QuickActionSection(
         OutlinedButton(
             onClick = {
                 val sent = AppContainer.listenTogetherSessionManager.sendPing()
-                Toast.makeText(context, context.getString(if (sent) R.string.listen_together_debug_ping_sent else R.string.listen_together_debug_ping_failed), Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, composeResources.getString(if (sent) R.string.listen_together_debug_ping_sent else R.string.listen_together_debug_ping_failed), Toast.LENGTH_SHORT).show()
             },
             enabled = sessionState.connectionState == ListenTogetherConnectionState.CONNECTED
         ) {
@@ -600,7 +603,7 @@ private fun QuickActionSection(
             onClick = {
                 sessionState.wsUrl?.let {
                     clipboard.copyText(clipboardScope, it)
-                    Toast.makeText(context, context.getString(R.string.listen_together_debug_ws_url_copied), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, composeResources.getString(R.string.listen_together_debug_ws_url_copied), Toast.LENGTH_SHORT).show()
                 }
             },
             enabled = !sessionState.wsUrl.isNullOrBlank()
@@ -631,6 +634,7 @@ private fun RoomActions(
     onRunningActionChange: (Int?) -> Unit
 ) {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     val clipboard = LocalClipboard.current
     val userUuidError = validateListenTogetherUserUuid(userUuid)
     val nicknameError = validateListenTogetherNickname(nickname)
@@ -667,7 +671,7 @@ private fun RoomActions(
                         Toast.makeText(context, it.message ?: it.javaClass.simpleName, Toast.LENGTH_SHORT).show()
                     }
                     onRunningActionChange(null)
-                } ?: Toast.makeText(context, context.getString(R.string.listen_together_action_unavailable), Toast.LENGTH_SHORT).show()
+                } ?: Toast.makeText(context, composeResources.getString(R.string.listen_together_action_unavailable), Toast.LENGTH_SHORT).show()
             },
             enabled = runningActionResId == null &&
                 currentQueue.isNotEmpty() &&
@@ -693,7 +697,7 @@ private fun RoomActions(
                     if (invite == null) {
                         Toast.makeText(
                             context,
-                            context.getString(R.string.listen_together_clipboard_invite_missing),
+                            composeResources.getString(R.string.listen_together_clipboard_invite_missing),
                             Toast.LENGTH_SHORT
                         ).show()
                         return@launch
@@ -709,7 +713,7 @@ private fun RoomActions(
                         val targetRoomId = invite.roomId
                         val currentRoomId = sessionState.roomId?.let(::normalizeListenTogetherRoomId)
                         if (currentRoomId != null && currentRoomId == targetRoomId) {
-                            Toast.makeText(context, context.getString(R.string.listen_together_same_room_join_ignored, targetRoomId), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, composeResources.getString(R.string.listen_together_same_room_join_ignored, targetRoomId), Toast.LENGTH_SHORT).show()
                             return@runCatching
                         }
                         persistSettings(
@@ -736,7 +740,7 @@ private fun RoomActions(
                         Toast.makeText(context, it.message ?: it.javaClass.simpleName, Toast.LENGTH_SHORT).show()
                     }
                     onRunningActionChange(null)
-                } ?: Toast.makeText(context, context.getString(R.string.listen_together_action_unavailable), Toast.LENGTH_SHORT).show()
+                } ?: Toast.makeText(context, composeResources.getString(R.string.listen_together_action_unavailable), Toast.LENGTH_SHORT).show()
             },
             enabled = runningActionResId == null &&
                 (userUuid.isBlank() || userUuidError == null) &&
@@ -758,6 +762,7 @@ private fun InviteCopyActions(
     clipboardScope: CoroutineScope
 ) {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     val joinSecret = sanitizeListenTogetherJoinSecretOrNull(sessionState.joinSecret)
 
     FlowRow(
@@ -770,9 +775,9 @@ private fun InviteCopyActions(
                 val roomId = sessionState.roomId ?: return@TextButton
                 val inviteText = buildString {
                     append(
-                        context.getString(
+                        composeResources.getString(
                             R.string.listen_together_invite_share_text,
-                            sessionState.nickname ?: context.getString(R.string.listen_together_title),
+                            sessionState.nickname ?: composeResources.getString(R.string.listen_together_title),
                             roomId
                         )
                     )
@@ -784,7 +789,7 @@ private fun InviteCopyActions(
                 clipboard.copyText(clipboardScope, inviteText)
                 Toast.makeText(
                     context,
-                    context.getString(R.string.listen_together_invite_copied),
+                    composeResources.getString(R.string.listen_together_invite_copied),
                     Toast.LENGTH_SHORT
                 ).show()
             },
@@ -798,7 +803,7 @@ private fun InviteCopyActions(
                 clipboard.copyText(clipboardScope, secret)
                 Toast.makeText(
                     context,
-                    context.getString(R.string.listen_together_join_secret_copied),
+                    composeResources.getString(R.string.listen_together_join_secret_copied),
                     Toast.LENGTH_SHORT
                 ).show()
             },
@@ -824,6 +829,7 @@ private fun ConnectedActions(
     onRunningActionChange: (Int?) -> Unit
 ) {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -841,7 +847,7 @@ private fun ConnectedActions(
                         Toast.makeText(context, it.message ?: it.javaClass.simpleName, Toast.LENGTH_SHORT).show()
                     }
                     onRunningActionChange(null)
-                } ?: Toast.makeText(context, context.getString(R.string.listen_together_action_unavailable), Toast.LENGTH_SHORT).show()
+                } ?: Toast.makeText(context, composeResources.getString(R.string.listen_together_action_unavailable), Toast.LENGTH_SHORT).show()
             },
             enabled = runningActionResId == null,
             modifier = Modifier.weight(1f)

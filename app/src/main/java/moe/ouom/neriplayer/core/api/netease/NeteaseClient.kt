@@ -294,7 +294,7 @@ class NeteaseClient {
     }
 
     private fun readResponseString(response: Response): String {
-        val responseBody = response.body ?: throw IOException("Empty response body")
+        val responseBody = response.body
         val encoding = response.header("Content-Encoding")?.lowercase(Locale.getDefault())
         val bytes = when (encoding) {
             "br" -> BrotliInputStream(responseBody.byteStream()).use {

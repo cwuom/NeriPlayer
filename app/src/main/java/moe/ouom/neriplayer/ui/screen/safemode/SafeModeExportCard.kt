@@ -23,6 +23,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -35,6 +36,7 @@ internal fun SafeModeExportCard(
     busy: Boolean
 ) {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     val scope = rememberCoroutineScope()
     var exportingKind by remember { mutableStateOf<SafeModeExportKind?>(null) }
     val isExporting = exportingKind != null
@@ -50,14 +52,14 @@ internal fun SafeModeExportCard(
                 onSuccess = { fileName ->
                     Toast.makeText(
                         context,
-                        context.getString(kind.successMessageRes, fileName),
+                        composeResources.getString(kind.successMessageRes, fileName),
                         Toast.LENGTH_SHORT
                     ).show()
                 },
                 onFailure = { error ->
                     Toast.makeText(
                         context,
-                        context.getString(
+                        composeResources.getString(
                             R.string.safe_mode_export_failed,
                             error.message ?: error.javaClass.simpleName
                         ),

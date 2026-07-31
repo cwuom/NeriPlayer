@@ -120,7 +120,6 @@ class ConfigTransferViewModel : ViewModel() {
     fun generateConfigFileName(): String = generateBackupFileName()
 
     override fun onCleared() {
-        super.onCleared()
         configFileManager = null
         strings = null
     }

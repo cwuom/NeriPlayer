@@ -79,6 +79,7 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
@@ -151,6 +152,7 @@ private enum class StartupStep {
 @Composable
 fun StartupOnboardingScreen() {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     val activity = context as? Activity
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
@@ -282,7 +284,7 @@ fun StartupOnboardingScreen() {
                 }
                 NeteaseAuthEvent.LoginSuccess -> {
                     showNeteaseSavedCookieDialog = false
-                    inlineMessage = context.getString(R.string.settings_netease_login_success)
+                    inlineMessage = composeResources.getString(R.string.settings_netease_login_success)
                     showNeteaseSheet = false
                     neteaseVm.refreshAuthHealth()
                 }
@@ -302,7 +304,7 @@ fun StartupOnboardingScreen() {
                 }
                 BiliAuthEvent.LoginSuccess -> {
                     showBiliSavedCookieDialog = false
-                    inlineMessage = context.getString(R.string.settings_bili_login_success)
+                    inlineMessage = composeResources.getString(R.string.settings_bili_login_success)
                     showBiliSheet = false
                     biliVm.refreshAuthHealth()
                 }
@@ -322,7 +324,7 @@ fun StartupOnboardingScreen() {
                 }
                 YouTubeAuthEvent.LoginSuccess -> {
                     showYouTubeSavedCookieDialog = false
-                    inlineMessage = context.getString(R.string.settings_youtube_login_success)
+                    inlineMessage = composeResources.getString(R.string.settings_youtube_login_success)
                     showYouTubeSheet = false
                     youTubeVm.refreshAuthHealth()
                 }

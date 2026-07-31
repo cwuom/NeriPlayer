@@ -16,7 +16,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  */
 internal class YouTubeJsSolveQueue {
 
-    private val monitor = Object()
+    private val monitor = Any()
     private var nextTicket = 0L
     private var busyTicket: Long? = null
     private val waiting = ArrayDeque<Waiter>()

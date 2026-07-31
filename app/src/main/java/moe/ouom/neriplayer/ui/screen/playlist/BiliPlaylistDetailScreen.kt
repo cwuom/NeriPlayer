@@ -64,6 +64,7 @@ import android.content.ClipData
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
@@ -114,6 +115,7 @@ fun BiliPlaylistDetailScreen(
     offlineMode: Boolean = false
 ) {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     val snackbarHostState = remember { SnackbarHostState() }
     val vm: BiliPlaylistDetailViewModel = viewModel(
         factory = viewModelFactory {
@@ -601,7 +603,7 @@ fun BiliPlaylistDetailScreen(
                                                             showPartsSheet = true
                                                         }
                                                     } catch (e: Exception) {
-                                                        NPLogger.e("BiliPlaylistDetail", context.getString(R.string.bili_get_parts_failed), e)
+                                                        NPLogger.e("BiliPlaylistDetail", composeResources.getString(R.string.bili_get_parts_failed), e)
                                                     }
                                                 }
                                             },
@@ -910,6 +912,7 @@ private fun VideoRow(
     offlineMode: Boolean
 ) {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     Row(
@@ -1030,7 +1033,7 @@ private fun VideoRow(
                             val songInfo = "${video.title}-${video.uploader}"
                             scope.launch {
                                 clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", songInfo)))
-                                snackbarHostState.showSnackbar(context.getString(R.string.toast_copied))
+                                snackbarHostState.showSnackbar(composeResources.getString(R.string.toast_copied))
                             }
                             showMoreMenu = false
                         }

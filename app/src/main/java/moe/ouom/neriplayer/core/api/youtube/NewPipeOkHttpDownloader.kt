@@ -81,9 +81,7 @@ class NewPipeOkHttpDownloader(
         }
 
         client.newCall(builder.build()).execute().use { response ->
-            val responseBody = response.body
-                ?.readTextWithLimit(YOUTUBE_TEXT_RESPONSE_MAX_BYTES)
-                .orEmpty()
+            val responseBody = response.body.readTextWithLimit(YOUTUBE_TEXT_RESPONSE_MAX_BYTES)
             val headers = linkedMapOf<String, List<String>>().apply {
                 response.headers.names().forEach { name ->
                     put(name, response.headers.values(name))

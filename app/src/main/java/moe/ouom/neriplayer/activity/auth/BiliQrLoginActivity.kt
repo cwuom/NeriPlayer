@@ -422,7 +422,7 @@ class BiliQrLoginActivity : ComponentActivity() {
     private fun setErrorStatus(text: String) {
         statusText.text = text
         NPLogger.w(LOG_TAG, "UI error=$text")
-        val error = statusText.materialColor(com.google.android.material.R.attr.colorError, Color.RED)
+        val error = statusText.materialColor(androidx.appcompat.R.attr.colorError, Color.RED)
         val surface = statusText.materialColor(com.google.android.material.R.attr.colorSurface, Color.WHITE)
         statusText.setTextColor(error)
         statusText.background = roundedBackground(

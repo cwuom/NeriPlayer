@@ -51,6 +51,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -89,6 +90,7 @@ internal fun SettingsNeteaseAuthDialogs(
     onBrowserLogin: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
 
     if (showSavedCookieDialog) {
         SavedCookieActionDialog(
@@ -125,7 +127,7 @@ internal fun SettingsNeteaseAuthDialogs(
                 MiuixSettingsTextButton(
                     onClick = {
                         onDismissConfirmDialog()
-                        onInlineMsgChange(context.getString(R.string.sync_send_cancelled))
+                        onInlineMsgChange(composeResources.getString(R.string.sync_send_cancelled))
                     }
                 ) {
                     Text(stringResource(R.string.action_cancel))
@@ -151,7 +153,7 @@ internal fun SettingsNeteaseAuthDialogs(
                     val json = result.data?.getStringExtra(NeteaseQrLoginActivity.RESULT_COOKIE) ?: "{}"
                     vm.importCookiesFromMap(parseCookieMap(json))
                 } else {
-                    onInlineMsgChange(context.getString(R.string.settings_cookie_cancelled))
+                    onInlineMsgChange(composeResources.getString(R.string.settings_cookie_cancelled))
                 }
             }
             val defaultBrowserLogin: () -> Unit = {
@@ -228,7 +230,7 @@ internal fun SettingsNeteaseAuthDialogs(
                             MiuixSettingsButton(
                                 onClick = {
                                     if (rawCookie.isBlank()) {
-                                        onInlineMsgChange(context.getString(R.string.settings_cookie_input_hint))
+                                        onInlineMsgChange(composeResources.getString(R.string.settings_cookie_input_hint))
                                     } else {
                                         vm.importCookiesFromRaw(rawCookie)
                                     }

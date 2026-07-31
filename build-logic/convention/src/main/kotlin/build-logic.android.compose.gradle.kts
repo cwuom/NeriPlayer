@@ -5,12 +5,8 @@ plugins {
 }
 
 fun configureCompose() {
-    extensions.findByName("android")?.let { extension ->
-        @Suppress("UNCHECKED_CAST")
-        (extension as CommonExtension<*, *, *, *, *, *>).buildFeatures {
-            compose = true
-        }
-    }
+    val androidExtension = extensions.findByName("android") as? CommonExtension ?: return
+    androidExtension.buildFeatures.compose = true
 }
 
 plugins.withId("com.android.application") { configureCompose() }

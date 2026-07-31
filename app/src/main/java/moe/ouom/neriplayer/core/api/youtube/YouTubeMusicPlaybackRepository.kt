@@ -2656,13 +2656,7 @@ class YouTubeMusicPlaybackRepository(
                         elapsedMs = playbackElapsedMs(startedAtMs)
                     )
                 }
-                val body = response.body ?: return@use DirectRangeVerificationResult(
-                    status = DirectRangeVerificationStatus.EMPTY_BODY,
-                    httpCode = response.code,
-                    bytesRead = 0L,
-                    elapsedMs = playbackElapsedMs(startedAtMs)
-                )
-                val bytesRead = body.source().read(Buffer(), 1L).coerceAtLeast(0L)
+                val bytesRead = response.body.source().read(Buffer(), 1L).coerceAtLeast(0L)
                 DirectRangeVerificationResult(
                     status = if (bytesRead > 0L) {
                         DirectRangeVerificationStatus.READABLE
@@ -2858,7 +2852,6 @@ class YouTubeMusicPlaybackRepository(
                 obfuscatedThrottlingParameter: String?
             ) {
                 // 同步解析入口只允许读取已有缓存, 不能再次阻塞调用线程
-                Unit
             }
 
             override suspend fun prewarmChallengesAsync(
@@ -3837,7 +3830,7 @@ class YouTubeMusicPlaybackRepository(
                     created = inFlightPlayableAudioScope.async(start = CoroutineStart.LAZY) {
                         try {
                             loadBootstrap(auth = auth, forceRefresh = true)
-                            Unit
+                            return@async
                         } catch (error: CancellationException) {
                             throw error
                         } catch (error: Exception) {

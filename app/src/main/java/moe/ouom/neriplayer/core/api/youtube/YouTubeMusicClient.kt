@@ -2982,14 +2982,10 @@ class YouTubeMusicClient(
     private fun executeText(request: Request): String {
         okHttpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                val preview = response.body
-                    ?.readErrorPreviewWithLimit(YOUTUBE_ERROR_RESPONSE_MAX_BYTES)
-                    .orEmpty()
+                val preview = response.body.readErrorPreviewWithLimit(YOUTUBE_ERROR_RESPONSE_MAX_BYTES)
                 throw IOException("YouTube Music request failed: ${response.code} $preview")
             }
-            return response.body
-                ?.readTextWithLimit(YOUTUBE_TEXT_RESPONSE_MAX_BYTES)
-                .orEmpty()
+            return response.body.readTextWithLimit(YOUTUBE_TEXT_RESPONSE_MAX_BYTES)
         }
     }
 

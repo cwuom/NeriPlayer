@@ -1,4 +1,4 @@
-import com.android.build.gradle.LibraryExtension
+import com.android.build.api.dsl.LibraryExtension
 
 plugins {
     id("build-logic.android.library")
@@ -7,13 +7,13 @@ plugins {
 extensions.findByType(LibraryExtension::class)?.run {
     sourceSets {
         getByName("main") {
-            java.srcDirs("src/commonMain/kotlin")
+            kotlin.directories.add("src/commonMain/kotlin")
         }
         getByName("test") {
-            java.srcDirs("src/commonTest/kotlin")
+            kotlin.directories.add("src/commonTest/kotlin")
         }
         getByName("androidTest") {
-            java.srcDirs("src/commonAndroidTest/kotlin")
+            kotlin.directories.add("src/commonAndroidTest/kotlin")
         }
     }
 }

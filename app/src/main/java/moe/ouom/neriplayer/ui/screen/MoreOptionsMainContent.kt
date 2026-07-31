@@ -43,6 +43,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -318,6 +319,7 @@ private fun LyricsAndAlbumActions(
 
     val albumName = neteaseAlbumDisplayName(song)
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     var albumResolveRequest by remember(song) { mutableIntStateOf(0) }
     var resolvingAlbum by remember(song) { mutableStateOf(false) }
 
@@ -335,7 +337,7 @@ private fun LyricsAndAlbumActions(
         if (album != null) {
             onEnterAlbum(album)
         } else {
-            snackbarHostState.showSnackbar(context.getString(R.string.music_get_detail_failed))
+            snackbarHostState.showSnackbar(composeResources.getString(R.string.music_get_detail_failed))
         }
     }
 
@@ -366,6 +368,7 @@ private fun ShareSongAction(
     onDismissSheet: (() -> Unit) -> Unit
 ) {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
     val coroutineScope = rememberCoroutineScope()
     ListItem(
         headlineContent = { Text(stringResource(R.string.action_share)) },
@@ -380,7 +383,7 @@ private fun ShareSongAction(
                         onDismissSheet {}
                     } else {
                         snackbarHostState.showSnackbar(
-                            context.getString(R.string.local_song_share_failed)
+                            composeResources.getString(R.string.local_song_share_failed)
                         )
                     }
                 }
@@ -391,7 +394,7 @@ private fun ShareSongAction(
             val shareText = if (shareUrl.isNullOrBlank()) {
                 "${song.displayName()} - ${song.displayArtist()}"
             } else {
-                context.getString(
+                composeResources.getString(
                     R.string.nowplaying_share_song,
                     song.displayName(),
                     song.displayArtist(),

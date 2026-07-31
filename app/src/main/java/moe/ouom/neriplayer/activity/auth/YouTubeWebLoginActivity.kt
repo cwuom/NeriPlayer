@@ -180,7 +180,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
             setBackgroundColor(
                 MaterialColors.getColor(
                     this,
-                    com.google.android.material.R.attr.cardBackgroundColor,
+                    com.google.android.material.R.attr.colorSurface,
                     Color.WHITE
                 )
             )

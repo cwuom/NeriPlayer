@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package moe.ouom.neriplayer.core.player
 
 import android.support.v4.media.session.PlaybackStateCompat

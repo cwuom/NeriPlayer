@@ -216,18 +216,21 @@ tasks.withType<Test>().configureEach {
     )
 }
 
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        if (variant.buildType == "debug") return@onVariants
 
-android.applicationVariants.all {
-    outputs.all {
-        if (this is com.android.build.gradle.internal.api.ApkVariantOutputImpl
-            && !outputFileName.lowercase().contains("debug")
-        ) {
-            val versionName = project.android.defaultConfig.versionName ?: "dev"
-            val abiName = filters
-                .find { it.filterType == FilterConfiguration.FilterType.ABI.name }
+        variant.outputs.forEach { output ->
+            val abiSuffix = output.filters
+                .find { it.filterType == FilterConfiguration.FilterType.ABI }
                 ?.identifier
-            val abiSuffix = abiName?.let { "-$it" } ?: ""
-            outputFileName = "NeriPlayer-${versionName}${abiSuffix}.apk"
+                ?.let { "-$it" }
+                ?: ""
+            output.outputFileName.set(
+                output.versionName.orElse("dev").map { versionName ->
+                    "NeriPlayer-${versionName}${abiSuffix}.apk"
+                }
+            )
         }
     }
 }
