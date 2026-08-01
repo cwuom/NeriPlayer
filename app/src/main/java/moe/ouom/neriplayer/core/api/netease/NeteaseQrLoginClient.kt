@@ -24,6 +24,7 @@ private const val NETEASE_QR_UNIKEY_PATH = "/weapi/login/qrcode/unikey"
 private const val NETEASE_QR_CHECK_PATH = "/weapi/login/qrcode/client/login"
 private const val NETEASE_ACCOUNT_PATH = "/weapi/w/nuser/account/get"
 private const val NETEASE_REFRESH_TOKEN_HEADER = "x-refresh-token"
+private const val NETEASE_REFRESH_TOKEN_COOKIE = "MUSIC_U"
 private const val NETEASE_QR_LOG_TAG = "NERI-NeteaseQrClient"
 private const val NETEASE_QR_MAX_RESPONSE_BYTES = 4L * 1024L * 1024L
 private const val NETEASE_QR_DESKTOP_UA =
@@ -52,6 +53,30 @@ private data class NeteaseQrHttpResult(
     val text: String,
     val refreshToken: String = ""
 )
+
+internal fun buildNeteaseQrAccountParams(csrf: String): Map<String, Any> {
+    return linkedMapOf<String, Any>("noCheckToken" to true).apply {
+        if (csrf.isNotBlank()) {
+            put("csrf_token", csrf)
+        }
+    }
+}
+
+internal fun mergeNeteaseQrCredentialCookies(
+    cookies: Map<String, String>,
+    refreshToken: String
+): Map<String, String> {
+    val merged = linkedMapOf<String, String>()
+    cookies.forEach { (key, value) ->
+        if (key.isNotBlank() && value.isNotBlank()) {
+            merged[key] = value
+        }
+    }
+    if (merged[NETEASE_REFRESH_TOKEN_COOKIE].isNullOrBlank() && refreshToken.isNotBlank()) {
+        merged[NETEASE_REFRESH_TOKEN_COOKIE] = refreshToken
+    }
+    return merged
+}
 
 class NeteaseQrLoginClient(
     context: Context
@@ -260,11 +285,7 @@ class NeteaseQrLoginClient(
             NETEASE_QR_LOG_TAG,
             "Verify account start csrfPresent=${csrf.isNotBlank()} cookieKeys=${snapshot.keys}"
         )
-        val params = if (csrf.isBlank()) {
-            emptyMap()
-        } else {
-            mapOf("csrf_token" to csrf)
-        }
+        val params = buildNeteaseQrAccountParams(csrf)
         return runCatching {
             val json = executeWeApiJsonPost(NETEASE_ACCOUNT_PATH, params)
             val hasAccount = json.optJSONObject("account") != null || json.optJSONObject("profile") != null
@@ -295,24 +316,26 @@ class NeteaseQrLoginClient(
             return directCookies
         }
 
-        if (refreshToken.isBlank() || currentCookies()["MUSIC_U"].isNullOrBlank().not()) {
+        val credentialCookies = mergeNeteaseQrCredentialCookies(currentCookies(), refreshToken)
+        if (credentialCookies[NETEASE_REFRESH_TOKEN_COOKIE].isNullOrBlank()) {
             NPLogger.d(
                 NETEASE_QR_LOG_TAG,
-                "Verify confirmed login stop refreshFallbackAllowed=${refreshToken.isNotBlank()} " +
-                    "hasMusicU=${currentCookies()["MUSIC_U"].isNullOrBlank().not()}"
+                "Verify confirmed login stop because no refresh credential is available"
             )
             return emptyMap()
         }
 
-        setMusicUCookie(refreshToken)
+        seedCookieStoreFromSnapshot(credentialCookies)
         val refreshedCookies = verifyAccountIfPossible()
         if (refreshedCookies.isNotEmpty()) {
             NPLogger.d(NETEASE_QR_LOG_TAG, "Verify confirmed login succeeded after refresh token fallback")
             return refreshedCookies
         }
-        removeMusicUCookie()
-        NPLogger.d(NETEASE_QR_LOG_TAG, "Verify confirmed login failed after refresh token fallback")
-        return emptyMap()
+        NPLogger.d(
+            NETEASE_QR_LOG_TAG,
+            "Verify confirmed login keeps QR credential after best-effort account check failed"
+        )
+        return credentialCookies
     }
 
     private fun HttpUrl.Builder.applyCsrfIfNeeded(
@@ -340,24 +363,6 @@ class NeteaseQrLoginClient(
         return String(bytes, StandardCharsets.UTF_8)
     }
 
-    private fun setMusicUCookie(refreshToken: String) {
-        synchronized(cookieLock) {
-            val hostCookies = cookieStore.getOrPut(NETEASE_QR_SCAN_HOST) { mutableListOf() }
-            val cookie = Cookie.Builder()
-                .name("MUSIC_U")
-                .value(refreshToken)
-                .domain(NETEASE_QR_SCAN_HOST)
-                .path("/")
-                .build()
-            hostCookies.removeAll { it.sameCookieIdentity(cookie) }
-            hostCookies.add(cookie)
-        }
-        NPLogger.d(
-            NETEASE_QR_LOG_TAG,
-            "Applied MUSIC_U fallback cookie refreshTokenLength=${refreshToken.length}"
-        )
-    }
-
     private fun seedCookieStoreFromSnapshot(cookies: Map<String, String>) {
         if (cookies.isEmpty()) {
             NPLogger.d(NETEASE_QR_LOG_TAG, "No WebView cookies available for QR seed")
@@ -380,13 +385,6 @@ class NeteaseQrLoginClient(
             }
         }
         NPLogger.d(NETEASE_QR_LOG_TAG, "Seeded QR cookie store keys=${cookies.keys}")
-    }
-
-    private fun removeMusicUCookie() {
-        synchronized(cookieLock) {
-            cookieStore[NETEASE_QR_SCAN_HOST]?.removeAll { it.name == "MUSIC_U" }
-        }
-        NPLogger.d(NETEASE_QR_LOG_TAG, "Removed MUSIC_U fallback cookie")
     }
 
     private fun removeStoredCookie(cookie: Cookie) {

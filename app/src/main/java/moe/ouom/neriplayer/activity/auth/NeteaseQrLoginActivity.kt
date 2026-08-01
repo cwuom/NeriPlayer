@@ -57,8 +57,8 @@ class NeteaseQrLoginActivity : ComponentActivity() {
     companion object {
         const val RESULT_COOKIE = "result_cookie_map_json"
         private const val LOG_TAG = "NERI-NeteaseQrLogin"
-        private const val POLL_INTERVAL_MS = 1_500L
-        private const val QR_SIZE_DP = 260
+        private const val POLL_INTERVAL_MS = 1_000L
+        private const val QR_SIZE_DP = 216
     }
 
     private val qrClient by lazy { NeteaseQrLoginClient(this) }
@@ -132,44 +132,45 @@ class NeteaseQrLoginActivity : ComponentActivity() {
         )
         val primary = root.materialColor(androidx.appcompat.R.attr.colorPrimary, Color.rgb(199, 37, 53))
         val onPrimary = root.materialColor(com.google.android.material.R.attr.colorOnPrimary, Color.WHITE)
-        val outline = root.materialColor(com.google.android.material.R.attr.colorOutline, Color.LTGRAY)
-        val softPrimary = ColorUtils.blendARGB(surface, primary, 0.08f)
+        val softPrimary = ColorUtils.blendARGB(surface, primary, 0.12f)
+        val softSurface = ColorUtils.blendARGB(surface, surfaceVariant, 0.18f)
 
         root.background = GradientDrawable(
             GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(softPrimary, surface)
+            intArrayOf(softPrimary, softSurface, surface)
         )
-
-        val toolbarBackground = ColorUtils.blendARGB(surface, softPrimary, 0.38f)
 
         val appBar = AppBarLayout(this).apply {
             layoutParams = CoordinatorLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
-            setBackgroundColor(toolbarBackground)
+            setBackgroundColor(Color.TRANSPARENT)
+            elevation = 0f
+            stateListAnimator = null
         }
         appBar.addView(
             MaterialToolbar(this).apply {
                 title = getString(R.string.netease_qr_login)
                 setNavigationIcon(R.drawable.ic_arrow_back_24)
                 setNavigationOnClickListener { finish() }
-                setBackgroundColor(toolbarBackground)
+                setBackgroundColor(Color.TRANSPARENT)
             }
         )
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(20.dp(), 16.dp(), 20.dp(), 48.dp())
+            setPadding(24.dp(), 22.dp(), 24.dp(), 48.dp())
         }
-        val qrCardSizePx = minOf(280.dp(), resources.displayMetrics.widthPixels - 80.dp()).coerceAtLeast(220.dp())
-        val qrImageSizePx = minOf(QR_SIZE_DP.dp(), qrCardSizePx - 24.dp()).coerceAtLeast(196.dp())
+        val qrCardSizePx = minOf(240.dp(), resources.displayMetrics.widthPixels - 96.dp()).coerceAtLeast(204.dp())
+        val qrImageSizePx = minOf(QR_SIZE_DP.dp(), qrCardSizePx - 24.dp()).coerceAtLeast(180.dp())
+        val actionWidthPx = minOf(420.dp(), resources.displayMetrics.widthPixels - 48.dp()).coerceAtLeast(228.dp())
 
         val titleText = TextView(this).apply {
             text = getString(R.string.netease_qr_login_title)
             gravity = Gravity.CENTER
-            textSize = 22f
+            textSize = 24f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(onSurface)
         }
@@ -182,108 +183,82 @@ class NeteaseQrLoginActivity : ComponentActivity() {
         }
 
         val qrCard = MaterialCardView(this).apply {
-            radius = 34.dp().toFloat()
-            cardElevation = 0f
-            strokeWidth = 1.dp()
-            strokeColor = ColorUtils.blendARGB(outline, surface, 0.42f)
+            radius = 28.dp().toFloat()
+            cardElevation = 2.dp().toFloat()
+            strokeWidth = 0
             setCardBackgroundColor(Color.WHITE)
-            useCompatPadding = true
+            useCompatPadding = false
             preventCornerOverlap = true
             layoutParams = LinearLayout.LayoutParams(qrCardSizePx, qrCardSizePx).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
             }
         }
         qrImage = ImageView(this).apply {
-            background = roundedBackground(Color.WHITE, 28.dp())
+            background = roundedBackground(Color.WHITE, 22.dp())
             clipToOutline = true
             scaleType = ImageView.ScaleType.FIT_CENTER
             adjustViewBounds = false
-            setPadding(10.dp(), 10.dp(), 10.dp(), 10.dp())
+            setPadding(2.dp(), 2.dp(), 2.dp(), 2.dp())
             layoutParams = FrameLayout.LayoutParams(qrImageSizePx, qrImageSizePx, Gravity.CENTER)
         }
         qrCard.addView(qrImage)
+        progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleSmall).apply {
+            isIndeterminate = true
+            visibility = View.GONE
+            indeterminateTintList = ColorStateList.valueOf(primary)
+            layoutParams = FrameLayout.LayoutParams(42.dp(), 42.dp(), Gravity.CENTER)
+        }
+        qrCard.addView(progressBar)
 
         statusText = TextView(this).apply {
             gravity = Gravity.CENTER
             typeface = Typeface.DEFAULT_BOLD
             textSize = 15f
-            setPadding(14.dp(), 9.dp(), 14.dp(), 9.dp())
-            setTextColor(onSurface)
-            background = roundedBackground(surfaceVariant, 18.dp())
+            setPadding(16.dp(), 9.dp(), 16.dp(), 9.dp())
+            setTextColor(primary)
+            background = roundedBackground(ColorUtils.blendARGB(surface, primary, 0.11f), 20.dp())
         }
         hintText = TextView(this).apply {
             gravity = Gravity.CENTER
             textSize = 14f
-            setLineSpacing(2.dp().toFloat(), 1f)
+            setLineSpacing(3.dp().toFloat(), 1f)
             setTextColor(onSurfaceVariant)
-        }
-        progressBar = ProgressBar(this).apply {
-            isIndeterminate = true
-            visibility = View.GONE
-            indeterminateTintList = ColorStateList.valueOf(primary)
         }
         retryButton = MaterialButton(this).apply {
             text = getString(R.string.netease_qr_login_retry)
-            cornerRadius = 18.dp()
-            minHeight = 50.dp()
+            cornerRadius = 20.dp()
+            minHeight = 52.dp()
             insetTop = 0
             insetBottom = 0
             backgroundTintList = ColorStateList.valueOf(primary)
             setTextColor(onPrimary)
             setOnClickListener { startQrLogin() }
         }
-        webFallbackButton = MaterialButton(
-            this,
-            null,
-            com.google.android.material.R.attr.materialButtonOutlinedStyle
-        ).apply {
+        webFallbackButton = MaterialButton(this).apply {
             text = getString(R.string.netease_qr_login_web_fallback)
-            cornerRadius = 18.dp()
+            cornerRadius = 20.dp()
             minHeight = 50.dp()
             insetTop = 0
             insetBottom = 0
-            strokeWidth = 1.dp()
-            strokeColor = ColorStateList.valueOf(ColorUtils.blendARGB(outline, primary, 0.25f))
-            backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
+            strokeWidth = 0
+            backgroundTintList = ColorStateList.valueOf(ColorUtils.blendARGB(surface, primary, 0.10f))
             setTextColor(primary)
             setOnClickListener { openWebFallback() }
         }
 
-        val panel = MaterialCardView(this).apply {
-            radius = 32.dp().toFloat()
-            cardElevation = 0f
-            strokeWidth = 1.dp()
-            strokeColor = ColorUtils.blendARGB(outline, surface, 0.52f)
-            setCardBackgroundColor(ColorUtils.blendARGB(surface, surfaceVariant, 0.26f))
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        }
-        val panelContent = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(16.dp(), 18.dp(), 16.dp(), 18.dp())
-        }
-
-        panelContent.addView(qrCard)
-        panelContent.addVerticalSpace(14)
-        panelContent.addView(statusText, wrapContentCentered())
-        panelContent.addVerticalSpace(8)
-        panelContent.addView(hintText, matchWidthWrapHeight())
-        panelContent.addVerticalSpace(8)
-        panelContent.addView(progressBar)
-        panelContent.addVerticalSpace(14)
-        panelContent.addView(retryButton, matchWidthWrapHeight())
-        panelContent.addVerticalSpace(8)
-        panelContent.addView(webFallbackButton, matchWidthWrapHeight())
-        panel.addView(panelContent)
-
         content.addView(titleText, matchWidthWrapHeight())
-        content.addVerticalSpace(6)
+        content.addVerticalSpace(8)
         content.addView(subtitleText, matchWidthWrapHeight())
+        content.addVerticalSpace(22)
+        content.addView(qrCard)
+        content.addVerticalSpace(14)
+        content.addView(statusText, wrapContentCentered())
+        content.addVerticalSpace(10)
+        content.addView(hintText, fixedWidthWrapHeight(actionWidthPx))
         content.addVerticalSpace(16)
-        content.addView(panel)
+        content.addView(retryButton, fixedWidthWrapHeight(actionWidthPx))
+        content.addVerticalSpace(10)
+        content.addView(webFallbackButton, fixedWidthWrapHeight(actionWidthPx))
 
         val scrollView = ScrollView(this).apply {
             isFillViewport = true
@@ -422,12 +397,10 @@ class NeteaseQrLoginActivity : ComponentActivity() {
     private fun setStatus(text: String) {
         statusText.text = text
         NPLogger.d(LOG_TAG, "UI status=$text")
-        val surfaceVariant = statusText.materialColor(
-            com.google.android.material.R.attr.colorSurfaceVariant,
-            Color.rgb(244, 241, 246)
-        )
-        statusText.setTextColor(statusText.materialColor(com.google.android.material.R.attr.colorOnSurface, Color.BLACK))
-        statusText.background = roundedBackground(surfaceVariant, 18.dp())
+        val surface = statusText.materialColor(com.google.android.material.R.attr.colorSurface, Color.WHITE)
+        val primary = statusText.materialColor(androidx.appcompat.R.attr.colorPrimary, Color.rgb(199, 37, 53))
+        statusText.setTextColor(primary)
+        statusText.background = roundedBackground(ColorUtils.blendARGB(surface, primary, 0.11f), 20.dp())
     }
 
     private fun setErrorStatus(text: String) {
@@ -438,7 +411,7 @@ class NeteaseQrLoginActivity : ComponentActivity() {
         statusText.setTextColor(error)
         statusText.background = roundedBackground(
             ColorUtils.blendARGB(surface, error, 0.12f),
-            18.dp()
+            20.dp()
         )
     }
 
@@ -480,6 +453,15 @@ class NeteaseQrLoginActivity : ComponentActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         )
+    }
+
+    private fun fixedWidthWrapHeight(widthPx: Int): LinearLayout.LayoutParams {
+        return LinearLayout.LayoutParams(
+            widthPx,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
     }
 
     private fun wrapContentCentered(): LinearLayout.LayoutParams {
