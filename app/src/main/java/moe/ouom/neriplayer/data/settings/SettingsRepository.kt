@@ -292,6 +292,17 @@ class SettingsRepository(private val context: Context) {
             normalizeLyricFontScale(it[SettingsKeys.LYRIC_FONT_SCALE] ?: 1.0f)
         }
 
+    val lyricFontScalesFlow: Flow<LyricFontScales> =
+        dataStoreSettingFlow { prefs ->
+            resolveLyricFontScales(
+                legacyScale = prefs[SettingsKeys.LYRIC_FONT_SCALE] ?: 1.0f,
+                coverLyric = prefs[SettingsKeys.NOWPLAYING_COVER_LYRIC_FONT_SCALE],
+                coverTranslation = prefs[SettingsKeys.NOWPLAYING_COVER_TRANSLATION_FONT_SCALE],
+                lyricsPageLyric = prefs[SettingsKeys.LYRICS_PAGE_LYRIC_FONT_SCALE],
+                lyricsPageTranslation = prefs[SettingsKeys.LYRICS_PAGE_TRANSLATION_FONT_SCALE]
+            )
+        }
+
     val uiDensityScaleFlow: Flow<Float> =
         autoSettingsRepository.uiDensityScaleFlow
 
@@ -831,6 +842,18 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setLyricFontScale(scale: Float) {
         context.dataStore.edit { it[SettingsKeys.LYRIC_FONT_SCALE] = normalizeLyricFontScale(scale) }
+    }
+
+    suspend fun setLyricFontScale(target: LyricFontScaleTarget, scale: Float) {
+        val key = when (target) {
+            LyricFontScaleTarget.COVER_LYRIC -> SettingsKeys.NOWPLAYING_COVER_LYRIC_FONT_SCALE
+            LyricFontScaleTarget.COVER_TRANSLATION ->
+                SettingsKeys.NOWPLAYING_COVER_TRANSLATION_FONT_SCALE
+            LyricFontScaleTarget.LYRICS_PAGE_LYRIC -> SettingsKeys.LYRICS_PAGE_LYRIC_FONT_SCALE
+            LyricFontScaleTarget.LYRICS_PAGE_TRANSLATION ->
+                SettingsKeys.LYRICS_PAGE_TRANSLATION_FONT_SCALE
+        }
+        context.dataStore.edit { it[key] = normalizeLyricFontScale(scale) }
     }
 
     suspend fun setUiDensityScale(scale: Float) {

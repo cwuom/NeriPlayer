@@ -334,7 +334,10 @@ private val PersonalizationLyricsAndDisplayTargets = setOf(
     "setting:show_lyric_translation",
     "setting:lyric_translation_use_phonetic",
     "setting:lyric_font_scale",
-    "setting:ui_density_scale"
+    "setting:nowplaying_cover_lyric_font_scale",
+    "setting:nowplaying_cover_translation_font_scale",
+    "setting:lyrics_page_lyric_font_scale",
+    "setting:lyrics_page_translation_font_scale"
 )
 
 private val PersonalizationBackgroundTargets = setOf(
@@ -750,6 +753,10 @@ private val SettingSearchAliases = mapOf(
     "nowplaying_progress_show_audio_codec" to listOf("codec", "aac", "flac", "bianma"),
     "nowplaying_progress_show_audio_spec" to listOf("sample rate", "bit depth", "guige"),
     "lyric_font_scale" to listOf("font", "size", "geci daxiao", "ziti"),
+    "nowplaying_cover_lyric_font_scale" to listOf("cover lyric font", "font", "size", "fengmian geci"),
+    "nowplaying_cover_translation_font_scale" to listOf("cover translation font", "translation", "fanyi"),
+    "lyrics_page_lyric_font_scale" to listOf("lyrics page font", "full screen lyric", "geciye"),
+    "lyrics_page_translation_font_scale" to listOf("lyrics page translation", "translation", "fanyi"),
     "ui_density_scale" to listOf("dpi", "scale", "zoom", "suofang"),
     "background_image_uri" to listOf("wallpaper", "custom background", "beijingtu"),
     "background_image_blur" to listOf("wallpaper blur", "mohu", "gaosi"),

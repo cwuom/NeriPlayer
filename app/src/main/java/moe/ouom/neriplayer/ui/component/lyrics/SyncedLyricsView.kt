@@ -588,22 +588,11 @@ fun SyncedLyricsView(
                         label = "translation_crossfade"
                     ) { show ->
                         if (show && transText != null) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Spacer(Modifier.height(4.dp)) // 间距可以按需调整
-                                Text(
-                                    text = transText,
-                                    style = TextStyle(
-                                        color = textColor.copy(alpha = 0.85f),
-                                        fontSize = translationFontSize,
-                                        fontWeight = FontWeight.Normal,
-                                        textAlign = TextAlign.Center
-                                    ),
-                                    maxLines = Int.MAX_VALUE,
-                                    softWrap = true
-                                )
-                            }
+                            LyricTranslationText(
+                                text = transText,
+                                textColor = textColor,
+                                fontSize = translationFontSize
+                            )
                         }
                     }
                 }
@@ -614,6 +603,30 @@ fun SyncedLyricsView(
 
 internal fun lyricListItemKey(index: Int, line: LyricEntry): String {
     return "$index:${line.startTimeMs}:${line.endTimeMs}:${line.text}"
+}
+
+@Composable
+private fun LyricTranslationText(
+    text: String,
+    textColor: Color,
+    fontSize: TextUnit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = text,
+            style = TextStyle(
+                color = textColor.copy(alpha = 0.85f),
+                fontSize = fontSize,
+                fontWeight = FontWeight.Normal,
+                textAlign = TextAlign.Center
+            ),
+            maxLines = Int.MAX_VALUE,
+            softWrap = true
+        )
+    }
 }
 
 

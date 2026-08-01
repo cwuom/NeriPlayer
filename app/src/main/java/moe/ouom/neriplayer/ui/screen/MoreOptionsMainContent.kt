@@ -92,6 +92,7 @@ internal fun MoreOptionsMainContent(
     queue: List<SongItem>,
     isLocalSong: Boolean,
     lyricFontScale: Float,
+    translationFontScale: Float,
     currentPlaybackAudioInfo: PlaybackAudioInfo?,
     isDismissing: Boolean,
     snackbarHostState: SnackbarHostState,
@@ -130,6 +131,7 @@ internal fun MoreOptionsMainContent(
         LyricsAndAlbumActions(
             song = originalSong,
             lyricFontScale = lyricFontScale,
+            translationFontScale = translationFontScale,
             onOpenLyricBehavior = onOpenLyricBehavior,
             onOpenFontSize = onOpenFontSize,
             onEnterAlbum = onEnterAlbum,
@@ -298,6 +300,7 @@ private fun DownloadProgressContent(task: DownloadTask?) {
 private fun LyricsAndAlbumActions(
     song: SongItem,
     lyricFontScale: Float,
+    translationFontScale: Float,
     onOpenLyricBehavior: () -> Unit,
     onOpenFontSize: () -> Unit,
     onEnterAlbum: (AlbumSummary) -> Unit,
@@ -312,7 +315,13 @@ private fun LyricsAndAlbumActions(
         headlineContent = { Text(stringResource(R.string.lyrics_font_size)) },
         leadingContent = { Icon(Icons.Outlined.FormatSize, null) },
         supportingContent = {
-            Text(stringResource(R.string.common_percent_int, (lyricFontScale * 100).roundToInt()))
+            Text(
+                stringResource(
+                    R.string.settings_lyrics_font_scale_pair_value,
+                    (lyricFontScale * 100).roundToInt(),
+                    (translationFontScale * 100).roundToInt()
+                )
+            )
         },
         modifier = Modifier.clickable(onClick = onOpenFontSize)
     )

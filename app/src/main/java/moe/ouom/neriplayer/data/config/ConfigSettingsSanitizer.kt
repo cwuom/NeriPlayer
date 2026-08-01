@@ -84,7 +84,12 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
                 return@forEach
             }
             val normalized = when (name) {
-                SettingsKeys.LYRIC_FONT_SCALE.name -> normalizeLyricFontScale(value)
+                SettingsKeys.LYRIC_FONT_SCALE.name,
+                SettingsKeys.NOWPLAYING_COVER_LYRIC_FONT_SCALE.name,
+                SettingsKeys.NOWPLAYING_COVER_TRANSLATION_FONT_SCALE.name,
+                SettingsKeys.LYRICS_PAGE_LYRIC_FONT_SCALE.name,
+                SettingsKeys.LYRICS_PAGE_TRANSLATION_FONT_SCALE.name ->
+                    normalizeLyricFontScale(value)
                 SettingsKeys.FLOATING_LYRICS_FONT_SIZE_SP.name -> normalizeFloatingLyricsFontSizeSp(value)
                 SettingsKeys.FLOATING_LYRICS_OUTLINE_WIDTH_DP.name ->
                     normalizeFloatingLyricsOutlineWidthDp(value)

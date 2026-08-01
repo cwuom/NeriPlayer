@@ -120,6 +120,9 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.settings.LyricFontScalePage
+import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
+import moe.ouom.neriplayer.data.settings.LyricFontScales
 import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
@@ -162,8 +165,8 @@ fun LyricsScreen(
     rawTranslatedLyrics: String? = null,
     lyricBlurEnabled: Boolean,
     lyricBlurAmount: Float,
-    lyricFontScale: Float,
-    onLyricFontScaleChange: (Float) -> Unit,
+    lyricFontScales: LyricFontScales,
+    onLyricFontScaleChange: (LyricFontScaleTarget, Float) -> Unit,
     onEnterAlbum: (AlbumSummary) -> Unit,
     onExitNowPlaying: () -> Unit,
     onOpenCurrentNeteaseArtist: () -> Unit = {},
@@ -183,6 +186,8 @@ fun LyricsScreen(
 ) {
     // 处理返回键
     androidx.activity.compose.BackHandler(onBack = onNavigateBack)
+    val lyricFontScale = lyricFontScales.lyricsPageLyric
+    val translationFontScale = lyricFontScales.lyricsPageTranslation
 
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val queue by PlayerManager.currentQueueFlow.collectAsState()
@@ -552,7 +557,8 @@ fun LyricsScreen(
                     onEnterAlbum = onEnterAlbum,
                     onNavigateUp = onExitNowPlaying,
                     snackbarHostState = snackbarHostState,
-                    lyricFontScale = lyricFontScale,
+                    lyricFontScalePage = LyricFontScalePage.LYRICS,
+                    lyricFontScales = lyricFontScales,
                     onLyricFontScaleChange = onLyricFontScaleChange
                 )
             }
@@ -578,6 +584,7 @@ fun LyricsScreen(
                 showLyricTranslation = showLyricTranslation,
                 lyricTranslationUsePhonetic = lyricTranslationUsePhonetic,
                 lyricFontScale = lyricFontScale,
+                translationFontScale = translationFontScale,
                 lyricOffsetMs = lyricOffsetMs,
                 lyricBlurEnabled = lyricBlurEnabled,
                 lyricBlurAmount = lyricBlurAmount,
@@ -1015,6 +1022,7 @@ private fun LyricsContentPane(
     showLyricTranslation: Boolean,
     lyricTranslationUsePhonetic: Boolean,
     lyricFontScale: Float,
+    translationFontScale: Float,
     lyricOffsetMs: Long,
     lyricBlurEnabled: Boolean,
     lyricBlurAmount: Float,
@@ -1067,6 +1075,7 @@ private fun LyricsContentPane(
             modifier = Modifier.fillMaxSize(),
             textColor = textColor,
             lyricFontScale = lyricFontScale,
+            translationFontScale = translationFontScale,
             lyricOffsetMs = lyricOffsetMs,
             lyricBlurEnabled = lyricBlurEnabled,
             lyricBlurAmount = lyricBlurAmount,
@@ -1114,7 +1123,7 @@ private fun LyricsContentPane(
         },
         onLyricLongClick = onLyricLongClick,
         translatedLyrics = if (showLyricTranslation) effectivePlainTranslatedLyrics else null,
-        translationFontSize = scaledLyricFontSize(16f, lyricFontScale).sp,
+        translationFontSize = scaledLyricFontSize(16f, translationFontScale).sp,
         isPlaying = shouldAnimateFromPlayback,
         playbackSpeed = playbackSpeed,
         interpolatePlaybackPosition = !lowPowerRendering

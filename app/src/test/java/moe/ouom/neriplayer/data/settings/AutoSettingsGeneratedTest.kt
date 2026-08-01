@@ -67,9 +67,20 @@ class AutoSettingsGeneratedTest {
             "dynamic_color" in booleanKeyNames
         )
         assertTrue(
-            "display float should be exportable",
+            "general float should be exportable",
             "ui_density_scale" in floatKeyNames
         )
+        listOf(
+            "nowplaying_cover_lyric_font_scale",
+            "nowplaying_cover_translation_font_scale",
+            "lyrics_page_lyric_font_scale",
+            "lyrics_page_translation_font_scale"
+        ).forEach { keyName ->
+            assertTrue(
+                "lyric font scale should be exportable: $keyName",
+                keyName in floatKeyNames
+            )
+        }
         assertTrue(
             "playback long should be exportable",
             "max_cache_size_bytes" in longKeyNames
@@ -95,8 +106,28 @@ class AutoSettingsGeneratedTest {
             "show_lyric_translation" in booleanKeyNames
         )
         assertTrue(
+            "cover lyric font scale should be exportable",
+            "nowplaying_cover_lyric_font_scale" in floatKeyNames
+        )
+        assertTrue(
+            "cover translation font scale should be exportable",
+            "nowplaying_cover_translation_font_scale" in floatKeyNames
+        )
+        assertTrue(
+            "lyrics page lyric font scale should be exportable",
+            "lyrics_page_lyric_font_scale" in floatKeyNames
+        )
+        assertTrue(
+            "lyrics page translation font scale should be exportable",
+            "lyrics_page_translation_font_scale" in floatKeyNames
+        )
+        assertTrue(
             "external bluetooth lyrics switch should be exportable",
             "external_bluetooth_lyrics_enabled" in booleanKeyNames
+        )
+        assertTrue(
+            "external bluetooth translation switch should be exportable",
+            "external_bluetooth_translation_enabled" in booleanKeyNames
         )
     }
 
@@ -197,6 +228,12 @@ class AutoSettingsGeneratedTest {
         assertEquals(SettingUiType.Custom, audioQuality?.ui)
         assertEquals(AutoSettingsSections.audioQuality, audioQuality?.section)
 
+        val uiDensityScale = AutoSettingsMetadata.setting("ui_density_scale")
+        assertEquals(SettingValueType.Float, uiDensityScale?.valueType)
+        assertEquals(SettingUiType.Custom, uiDensityScale?.ui)
+        assertEquals(AutoSettingsSections.general, uiDensityScale?.section)
+        assertEquals(AutoSettingIcon.ZoomInMap, uiDensityScale?.icon)
+
         val displaySettings = AutoSettingsMetadata.settingsIn(AutoSettingsSections.display)
         assertTrue(
             "display metadata should include both generated switches and custom rows",
@@ -232,6 +269,13 @@ class AutoSettingsGeneratedTest {
             "lyrics metadata should include external bluetooth lyrics switch",
             lyricsSettings.any {
                 it.keyName == "external_bluetooth_lyrics_enabled" &&
+                    it.ui == SettingUiType.Switch
+            }
+        )
+        assertTrue(
+            "lyrics metadata should include external bluetooth translation switch",
+            lyricsSettings.any {
+                it.keyName == "external_bluetooth_translation_enabled" &&
                     it.ui == SettingUiType.Switch
             }
         )
@@ -294,6 +338,26 @@ class AutoSettingsGeneratedTest {
             1,
             AutoSettingsMetadata.settings.count { it.icon == AutoSettingIcon.Tab }
         )
+    }
+
+    @Test
+    fun splitLyricFontScaleSettingsUseCustomDisplayRows() {
+        val expectedIcons = mapOf(
+            "nowplaying_cover_lyric_font_scale" to AutoSettingIcon.FormatSize,
+            "nowplaying_cover_translation_font_scale" to AutoSettingIcon.Translate,
+            "lyrics_page_lyric_font_scale" to AutoSettingIcon.FormatSize,
+            "lyrics_page_translation_font_scale" to AutoSettingIcon.Translate
+        )
+
+        expectedIcons.forEach { (key, icon) ->
+            val metadata = AutoSettingsMetadata.setting(key)
+
+            assertEquals(SettingValueType.Float, metadata?.valueType)
+            assertEquals(SettingUiType.Custom, metadata?.ui)
+            assertEquals(SettingAccessMode.KeyOnly, metadata?.access)
+            assertEquals(AutoSettingsSections.display, metadata?.section)
+            assertEquals(icon, metadata?.icon)
+        }
     }
 
     @Test
@@ -411,6 +475,10 @@ class AutoSettingsGeneratedTest {
         assertEquals(
             AutoSettingIcon.BluetoothAudio,
             AutoSettingsSchema.lyrics.externalBluetoothLyricsEnabled.icon
+        )
+        assertEquals(
+            AutoSettingIcon.Translate,
+            AutoSettingsSchema.lyrics.externalBluetoothTranslationEnabled.icon
         )
         assertEquals(
             AutoSettingIcon.Error,

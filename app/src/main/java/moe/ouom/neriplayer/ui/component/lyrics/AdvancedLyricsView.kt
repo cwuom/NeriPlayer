@@ -4,9 +4,11 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +39,7 @@ fun AdvancedLyricsView(
     modifier: Modifier = Modifier,
     textColor: Color,
     lyricFontScale: Float,
+    translationFontScale: Float = lyricFontScale,
     baseFontSizeSp: Float = 18f,
     lyricOffsetMs: Long = 0L,
     rawLyrics: String? = null,
@@ -97,6 +100,18 @@ fun AdvancedLyricsView(
             lineHeight = (accompanimentFontSize.value * 1.12f).sp
         )
     }
+    val baseTranslationTextStyle = LocalTextStyle.current
+    val translationTextStyle = remember(
+        baseTranslationTextStyle,
+        baseFontSizeSp,
+        translationFontScale
+    ) {
+        val translationFontSize = scaledLyricFontSize(baseFontSizeSp * 0.70f, translationFontScale).sp
+        baseTranslationTextStyle.copy(
+            fontSize = translationFontSize,
+            lineHeight = (translationFontSize.value * 1.12f).sp
+        )
+    }
     val listState = rememberLazyListState()
     val blurDelta = (lyricBlurAmount * 0.45f).coerceIn(0f, 4f)
     val safeCurrentPosition = (currentTimeMs + lyricOffsetMs)
@@ -127,36 +142,38 @@ fun AdvancedLyricsView(
             topFadeLength = topFadeLength
         )
 
-        ModernKaraokeLyricsView(
-            listState = listState,
-            lyrics = syncedLyrics,
-            currentPosition = { safeCurrentPosition.toInt() },
-            renderCurrentPosition = renderPositionProvider,
-            onLineClicked = { line -> onSeekTo(line.start.toLong()) },
-            onLinePressed = { line ->
-                val entry = resolvePressedLyricEntry(line, lyrics)
-                if (onLyricLongClick != null) {
-                    onLyricLongClick(entry)
-                } else {
-                    onSeekTo(line.start.toLong())
-                }
-            },
-            modifier = Modifier.fillMaxSize(),
-            normalLineTextStyle = normalTextStyle,
-            accompanimentLineTextStyle = accompanimentTextStyle,
-            textColor = textColor,
-            showTranslation = showLyricTranslation,
-            showPhonetic = false,
-            useBlurEffect = lyricBlurEnabled,
-            animateViewportScroll = animateViewportScroll,
-            offset = effectiveOffset,
-            keepAliveZone = keepAliveZone,
-            bottomContentInset = bottomContentInset,
-            blurDelta = if (lowPowerRendering) blurDelta * 0.55f else blurDelta,
-            topFadeLength = topFadeLength,
-            bottomFadeLength = bottomFadeLength,
-            useAdditiveBlend = !lowPowerRendering
-        )
+        CompositionLocalProvider(LocalTextStyle provides translationTextStyle) {
+            ModernKaraokeLyricsView(
+                listState = listState,
+                lyrics = syncedLyrics,
+                currentPosition = { safeCurrentPosition.toInt() },
+                renderCurrentPosition = renderPositionProvider,
+                onLineClicked = { line -> onSeekTo(line.start.toLong()) },
+                onLinePressed = { line ->
+                    val entry = resolvePressedLyricEntry(line, lyrics)
+                    if (onLyricLongClick != null) {
+                        onLyricLongClick(entry)
+                    } else {
+                        onSeekTo(line.start.toLong())
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
+                normalLineTextStyle = normalTextStyle,
+                accompanimentLineTextStyle = accompanimentTextStyle,
+                textColor = textColor,
+                showTranslation = showLyricTranslation,
+                showPhonetic = false,
+                useBlurEffect = lyricBlurEnabled,
+                animateViewportScroll = animateViewportScroll,
+                offset = effectiveOffset,
+                keepAliveZone = keepAliveZone,
+                bottomContentInset = bottomContentInset,
+                blurDelta = if (lowPowerRendering) blurDelta * 0.55f else blurDelta,
+                topFadeLength = topFadeLength,
+                bottomFadeLength = bottomFadeLength,
+                useAdditiveBlend = !lowPowerRendering
+            )
+        }
     }
 }
 

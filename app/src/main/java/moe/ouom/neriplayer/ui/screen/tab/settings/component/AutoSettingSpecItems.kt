@@ -16,6 +16,7 @@ import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Colorize
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Error
+import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Keyboard
@@ -28,8 +29,10 @@ import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Tab
+import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Wallpaper
+import androidx.compose.material.icons.outlined.ZoomInMap
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -209,6 +212,7 @@ private fun autoSettingSpecIconVector(icon: AutoSettingIcon): ImageVector? {
         AutoSettingIcon.Colorize -> Icons.Outlined.Colorize
         AutoSettingIcon.Download -> Icons.Outlined.Download
         AutoSettingIcon.Error -> Icons.Outlined.Error
+        AutoSettingIcon.FormatSize -> Icons.Outlined.FormatSize
         AutoSettingIcon.Home -> Icons.Outlined.Home
         AutoSettingIcon.Info -> Icons.Outlined.Info
         AutoSettingIcon.Keyboard -> Icons.Outlined.Keyboard
@@ -222,8 +226,10 @@ private fun autoSettingSpecIconVector(icon: AutoSettingIcon): ImageVector? {
         AutoSettingIcon.Subtitles -> Icons.Outlined.Subtitles
         AutoSettingIcon.Sync -> Icons.Outlined.Sync
         AutoSettingIcon.Tab -> Icons.Outlined.Tab
+        AutoSettingIcon.Translate -> Icons.Outlined.Translate
         AutoSettingIcon.Tune -> Icons.Outlined.Tune
         AutoSettingIcon.Wallpaper -> Icons.Outlined.Wallpaper
+        AutoSettingIcon.ZoomInMap -> Icons.Outlined.ZoomInMap
     }
 }
 

@@ -93,6 +93,18 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
+            key = "ui_density_scale",
+            type = SettingValueType.Float,
+            defaultFloat = 1.0f,
+            order = 44,
+            ui = SettingUiType.Custom
+        )
+        val uiDensityScale = autoSetting(
+            titleRes = R.string.settings_ui_scale_dpi,
+            icon = AutoSettingIcon.ZoomInMap
+        )
+
+        @AutoSetting(
             key = "playback_service_idle_shutdown_minutes",
             type = SettingValueType.Int,
             defaultInt = DEFAULT_PLAYBACK_SERVICE_IDLE_SHUTDOWN_MINUTES,
@@ -589,14 +601,55 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
-            key = "ui_density_scale",
+            key = "nowplaying_cover_lyric_font_scale",
             type = SettingValueType.Float,
             defaultFloat = 1.0f,
-            order = 90,
-            ui = SettingUiType.Custom
+            order = 81,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
         )
-        val uiDensityScale = autoSetting(
-            titleRes = R.string.settings_ui_scale_dpi
+        val nowPlayingCoverLyricFontScale = autoSetting(
+            titleRes = R.string.settings_lyrics_cover_lyric_font_size,
+            icon = AutoSettingIcon.FormatSize
+        )
+
+        @AutoSetting(
+            key = "nowplaying_cover_translation_font_scale",
+            type = SettingValueType.Float,
+            defaultFloat = 1.0f,
+            order = 82,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val nowPlayingCoverTranslationFontScale = autoSetting(
+            titleRes = R.string.settings_lyrics_cover_translation_font_size,
+            icon = AutoSettingIcon.Translate
+        )
+
+        @AutoSetting(
+            key = "lyrics_page_lyric_font_scale",
+            type = SettingValueType.Float,
+            defaultFloat = 1.0f,
+            order = 83,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val lyricsPageLyricFontScale = autoSetting(
+            titleRes = R.string.settings_lyrics_page_lyric_font_size,
+            icon = AutoSettingIcon.FormatSize
+        )
+
+        @AutoSetting(
+            key = "lyrics_page_translation_font_scale",
+            type = SettingValueType.Float,
+            defaultFloat = 1.0f,
+            order = 84,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val lyricsPageTranslationFontScale = autoSetting(
+            titleRes = R.string.settings_lyrics_page_translation_font_size,
+            icon = AutoSettingIcon.Translate
         )
 
         @AutoSetting(

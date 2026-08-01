@@ -216,6 +216,7 @@ enum class AutoSettingIcon {
     Colorize,
     Download,
     Error,
+    FormatSize,
     Home,
     Info,
     Keyboard,
@@ -229,8 +230,10 @@ enum class AutoSettingIcon {
     Subtitles,
     Sync,
     Tab,
+    Translate,
     Tune,
-    Wallpaper
+    Wallpaper,
+    ZoomInMap
 }
 
 enum class SettingValueType {

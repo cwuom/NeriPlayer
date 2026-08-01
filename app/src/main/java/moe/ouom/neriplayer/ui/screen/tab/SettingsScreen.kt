@@ -128,6 +128,8 @@ import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
+import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
+import moe.ouom.neriplayer.data.settings.LyricFontScales
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingInfo
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.ThemeMode
@@ -144,6 +146,7 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSwitchItems
 import moe.ouom.neriplayer.data.settings.normalizeMobileDataBiliAudioQuality
 import moe.ouom.neriplayer.data.settings.normalizeMobileDataNeteaseAudioQuality
 import moe.ouom.neriplayer.data.settings.normalizeMobileDataYouTubeAudioQuality
+import moe.ouom.neriplayer.data.settings.normalizeLyricFontScale
 import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
 import moe.ouom.neriplayer.data.storage.StorageUsageSummary
@@ -459,8 +462,8 @@ fun SettingsScreen(
     onNowPlayingCoverBlurAmountChange: (Float) -> Unit,
     nowPlayingCoverBlurDarken: Float,
     onNowPlayingCoverBlurDarkenChange: (Float) -> Unit,
-    lyricFontScale: Float,
-    onLyricFontScaleChange: (Float) -> Unit,
+    lyricFontScales: LyricFontScales,
+    onLyricFontScaleChange: (LyricFontScaleTarget, Float) -> Unit,
     uiDensityScale: Float,
     onUiDensityScaleChange: (Float) -> Unit,
     bypassProxy: Boolean,
@@ -1330,6 +1333,33 @@ fun SettingsScreen(
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
+                        MiuixSettingsSectionIntro(
+                            title = stringResource(R.string.settings_ui_scale),
+                            description = stringResource(R.string.settings_ui_scale_global_desc)
+                        )
+                        AutoSettingsListItem(
+                            setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.UI_DENSITY_SCALE),
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.ZoomInMap,
+                                    contentDescription = stringResource(R.string.settings_ui_scale),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            supportingContent = {
+                                Text(
+                                    stringResource(
+                                        R.string.settings_ui_scale_current,
+                                        "%.2f".format(uiDensityScale)
+                                    )
+                                )
+                            },
+                            highlightTargetId = settingsHighlightTargetId,
+                            highlightPulse = settingsHighlightPulse,
+                            onHighlightFinished = onSettingsHighlightFinished,
+                            onClick = { showDpiDialog = true }
+                        )
                     }
                 }
 
@@ -1482,10 +1512,8 @@ fun SettingsScreen(
                                 onShowHomeRadarCardChange = onShowHomeRadarCardChange,
                                 showHomeRecommendedCard = showHomeRecommendedCard,
                                 onShowHomeRecommendedCardChange = onShowHomeRecommendedCardChange,
-                                lyricFontScale = lyricFontScale,
+                                lyricFontScales = lyricFontScales,
                                 onLyricFontScaleChange = onLyricFontScaleChange,
-                                uiDensityScale = uiDensityScale,
-                                onOpenDpiDialog = { showDpiDialog = true },
                                 backgroundImageUri = backgroundImageUri,
                                 onPickBackgroundImage = {
                                     photoPickerLauncher.launch(
@@ -2896,10 +2924,8 @@ private fun SettingsPersonalizationPageContent(
     onShowHomeRadarCardChange: (Boolean) -> Unit,
     showHomeRecommendedCard: Boolean,
     onShowHomeRecommendedCardChange: (Boolean) -> Unit,
-    lyricFontScale: Float,
-    onLyricFontScaleChange: (Float) -> Unit,
-    uiDensityScale: Float,
-    onOpenDpiDialog: () -> Unit,
+    lyricFontScales: LyricFontScales,
+    onLyricFontScaleChange: (LyricFontScaleTarget, Float) -> Unit,
     backgroundImageUri: String?,
     onPickBackgroundImage: () -> Unit,
     onClearBackgroundImage: () -> Unit,
@@ -3212,75 +3238,69 @@ private fun SettingsPersonalizationPageContent(
                 highlightPulse = highlightPulse,
                 onHighlightFinished = onHighlightFinished
             )
-            AutoSettingsListItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.LYRIC_FONT_SCALE),
-                leadingContent = {
-                    Icon(
-                        imageVector = Icons.Outlined.FormatSize,
-                        contentDescription = stringResource(R.string.settings_lyrics_font_size),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
+            MiuixSettingsSectionIntro(
+                title = stringResource(R.string.settings_lyrics_cover_page_section),
+                description = stringResource(R.string.settings_lyrics_cover_page_section_desc)
+            )
+            LyricFontScaleSettingsItem(
+                setting = AutoSettingsMetadata.requireSetting(
+                    AutoSettingsKeys.NOWPLAYING_COVER_LYRIC_FONT_SCALE
+                ),
+                currentScale = lyricFontScales.coverLyric,
+                onScaleCommit = { scale ->
+                    onLyricFontScaleChange(LyricFontScaleTarget.COVER_LYRIC, scale)
                 },
-                supportingContent = {
-                    var pendingLyricFontScale by remember { mutableFloatStateOf(lyricFontScale) }
-                    LaunchedEffect(lyricFontScale) {
-                        if ((pendingLyricFontScale - lyricFontScale).absoluteValue > 0.001f) {
-                            pendingLyricFontScale = lyricFontScale
-                        }
-                    }
-
-                    Column(Modifier.fillMaxWidth()) {
-                        Text(
-                            text = stringResource(
-                                R.string.settings_lyrics_font_current,
-                                (pendingLyricFontScale * 100).roundToInt()
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        MiuixSettingsSlider(
-                            value = pendingLyricFontScale,
-                            onValueChange = { pendingLyricFontScale = it },
-                            onValueChangeFinished = {
-                                onLyricFontScaleChange(pendingLyricFontScale)
-                            },
-                            valueRange = MIN_LYRIC_FONT_SCALE..MAX_LYRIC_FONT_SCALE,
-                            steps = 10
-                        )
-                        Text(
-                            text = stringResource(R.string.settings_lyrics_sample),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 4.dp),
-                            textAlign = TextAlign.Center,
-                            fontSize = scaledLyricFontSize(18f, pendingLyricFontScale).sp
-                        )
-                    }
+                sampleText = stringResource(R.string.settings_lyrics_sample),
+                sampleBaseSizeSp = 18f,
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            )
+            LyricFontScaleSettingsItem(
+                setting = AutoSettingsMetadata.requireSetting(
+                    AutoSettingsKeys.NOWPLAYING_COVER_TRANSLATION_FONT_SCALE
+                ),
+                currentScale = lyricFontScales.coverTranslation,
+                onScaleCommit = { scale ->
+                    onLyricFontScaleChange(LyricFontScaleTarget.COVER_TRANSLATION, scale)
                 },
+                sampleText = stringResource(R.string.settings_lyrics_translation_sample),
+                sampleBaseSizeSp = 14f,
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            )
+            MiuixSettingsSectionIntro(
+                title = stringResource(R.string.settings_lyrics_page_section),
+                description = stringResource(R.string.settings_lyrics_page_section_desc)
+            )
+            LyricFontScaleSettingsItem(
+                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.LYRICS_PAGE_LYRIC_FONT_SCALE),
+                currentScale = lyricFontScales.lyricsPageLyric,
+                onScaleCommit = { scale ->
+                    onLyricFontScaleChange(LyricFontScaleTarget.LYRICS_PAGE_LYRIC, scale)
+                },
+                sampleText = stringResource(R.string.settings_lyrics_sample),
+                sampleBaseSizeSp = 20f,
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            )
+            LyricFontScaleSettingsItem(
+                setting = AutoSettingsMetadata.requireSetting(
+                    AutoSettingsKeys.LYRICS_PAGE_TRANSLATION_FONT_SCALE
+                ),
+                currentScale = lyricFontScales.lyricsPageTranslation,
+                onScaleCommit = { scale ->
+                    onLyricFontScaleChange(LyricFontScaleTarget.LYRICS_PAGE_TRANSLATION, scale)
+                },
+                sampleText = stringResource(R.string.settings_lyrics_translation_sample),
+                sampleBaseSizeSp = 16f,
                 highlightTargetId = highlightTargetId,
                 highlightPulse = highlightPulse,
                 onHighlightFinished = onHighlightFinished
             )
 
-            AutoSettingsListItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.UI_DENSITY_SCALE),
-                leadingContent = {
-                    Icon(
-                        imageVector = Icons.Outlined.ZoomInMap,
-                        contentDescription = stringResource(R.string.settings_ui_scale),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                supportingContent = {
-                    Text(stringResource(R.string.settings_ui_scale_current, "%.2f".format(uiDensityScale)))
-                },
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished,
-                onClick = onOpenDpiDialog
-            )
         }
 
         if (shouldShowCard(5)) PersonalizationDetailCard(
@@ -3396,6 +3416,66 @@ private fun PersonalizationSwitchItem(
         highlightPulse = highlightPulse,
         onHighlightFinished = onHighlightFinished,
         onClick = { onCheckedChange(!checked) }
+    )
+}
+
+@Composable
+private fun LyricFontScaleSettingsItem(
+    setting: AutoSettingInfo,
+    currentScale: Float,
+    onScaleCommit: (Float) -> Unit,
+    sampleText: String,
+    sampleBaseSizeSp: Float,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
+) {
+    var pendingScale by remember(setting.keyName) {
+        mutableFloatStateOf(normalizeLyricFontScale(currentScale))
+    }
+
+    LaunchedEffect(currentScale) {
+        val normalizedScale = normalizeLyricFontScale(currentScale)
+        if ((pendingScale - normalizedScale).absoluteValue > 0.001f) {
+            pendingScale = normalizedScale
+        }
+    }
+
+    AutoSettingsListItem(
+        setting = setting,
+        showDefaultIcon = true,
+        supportingContent = {
+            Column(Modifier.fillMaxWidth()) {
+                Text(
+                    text = stringResource(
+                        R.string.settings_lyrics_font_scale_value,
+                        (pendingScale * 100).roundToInt()
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                MiuixSettingsSlider(
+                    value = pendingScale,
+                    onValueChange = { pendingScale = it },
+                    onValueChangeFinished = {
+                        onScaleCommit(normalizeLyricFontScale(pendingScale))
+                    },
+                    valueRange = MIN_LYRIC_FONT_SCALE..MAX_LYRIC_FONT_SCALE,
+                    steps = 10
+                )
+                Text(
+                    text = sampleText,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    textAlign = TextAlign.Center,
+                    fontSize = scaledLyricFontSize(sampleBaseSizeSp, pendingScale).sp
+                )
+            }
+        },
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished
     )
 }
 

@@ -43,6 +43,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
+import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
+import moe.ouom.neriplayer.data.settings.LyricFontScales
 import moe.ouom.neriplayer.data.settings.ThemeMode
 import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassHostNavigationTransition
@@ -148,8 +150,8 @@ fun SettingsHostScreen(
     onNowPlayingCoverBlurAmountChange: (Float) -> Unit,
     nowPlayingCoverBlurDarken: Float,
     onNowPlayingCoverBlurDarkenChange: (Float) -> Unit,
-    lyricFontScale: Float,
-    onLyricFontScaleChange: (Float) -> Unit,
+    lyricFontScales: LyricFontScales,
+    onLyricFontScaleChange: (LyricFontScaleTarget, Float) -> Unit,
     uiDensityScale: Float,
     onUiDensityScaleChange: (Float) -> Unit,
     bypassProxy: Boolean,
@@ -422,7 +424,7 @@ fun SettingsHostScreen(
                             onNowPlayingCoverBlurAmountChange = onNowPlayingCoverBlurAmountChange,
                             nowPlayingCoverBlurDarken = nowPlayingCoverBlurDarken,
                             onNowPlayingCoverBlurDarkenChange = onNowPlayingCoverBlurDarkenChange,
-                            lyricFontScale = lyricFontScale,
+                            lyricFontScales = lyricFontScales,
                             onLyricFontScaleChange = onLyricFontScaleChange,
                             uiDensityScale = uiDensityScale,
                             onUiDensityScaleChange = onUiDensityScaleChange,

@@ -254,7 +254,7 @@ class SettingsPageTest {
             5,
             settingsSearchScrollAnchor(
                 page = SettingsPage.Personalization,
-                targetId = "setting:ui_density_scale"
+                targetId = "setting:lyrics_page_lyric_font_scale"
             ).itemIndex
         )
         assertEquals(
@@ -262,6 +262,17 @@ class SettingsPageTest {
             settingsSearchScrollAnchor(
                 page = SettingsPage.Personalization,
                 targetId = "setting:background_image_uri"
+            ).itemIndex
+        )
+    }
+
+    @Test
+    fun generalSearchUsesDefaultAnchorForUiScale() {
+        assertEquals(
+            1,
+            settingsSearchScrollAnchor(
+                page = SettingsPage.General,
+                targetId = "setting:ui_density_scale"
             ).itemIndex
         )
     }

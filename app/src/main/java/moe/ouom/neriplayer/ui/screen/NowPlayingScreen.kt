@@ -232,6 +232,9 @@ import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.settings.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.LYRIC_DEFAULT_OFFSET_STEP_MS
+import moe.ouom.neriplayer.data.settings.LyricFontScalePage
+import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
+import moe.ouom.neriplayer.data.settings.LyricFontScales
 import moe.ouom.neriplayer.data.settings.MAX_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.MIN_LYRIC_DEFAULT_OFFSET_MS
@@ -1222,14 +1225,16 @@ fun NowPlayingScreen(
     onEnterArtist: (NeteaseArtistSummary) -> Unit = {},
     lyricBlurEnabled: Boolean,
     lyricBlurAmount: Float,
-    lyricFontScale: Float,
-    onLyricFontScaleChange: (Float) -> Unit,
+    lyricFontScales: LyricFontScales,
+    onLyricFontScaleChange: (LyricFontScaleTarget, Float) -> Unit,
     advancedLyricsEnabled: Boolean = true,
     showCoverSourceBadge: Boolean = true,
     showLyricTranslation: Boolean = true,
     showNowPlayingTitle: Boolean = true,
     offlineMode: Boolean = false,
 ) {
+    val coverLyricFontScale = lyricFontScales.coverLyric
+    val coverTranslationFontScale = lyricFontScales.coverTranslation
     val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsStateWithLifecycle()
     val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsStateWithLifecycle()
@@ -1787,7 +1792,7 @@ fun NowPlayingScreen(
                             rawTranslatedLyrics = rawTranslatedLyricsText,
                             lyricBlurEnabled = lyricBlurEnabled,
                             lyricBlurAmount = lyricBlurAmount,
-                            lyricFontScale = lyricFontScale,
+                            lyricFontScales = lyricFontScales,
                             onEnterAlbum = onEnterAlbum,
                             onOpenCurrentNeteaseArtist = openCurrentNeteaseArtist,
                             onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource,
@@ -1928,7 +1933,8 @@ fun NowPlayingScreen(
                                     onEnterAlbum = onEnterAlbum,
                                     onNavigateUp = onNavigateUp,
                                     snackbarHostState = snackbarHostState,
-                                    lyricFontScale = lyricFontScale,
+                                    lyricFontScalePage = LyricFontScalePage.COVER,
+                                    lyricFontScales = lyricFontScales,
                                     onLyricFontScaleChange = onLyricFontScaleChange,
                                     currentPlaybackAudioInfo = currentPlaybackAudioInfo,
                                     onShowQualitySwitch = { showQualitySwitchDialog = true },
@@ -2234,8 +2240,8 @@ fun NowPlayingScreen(
                                 .fillMaxWidth()
                                 .weight(8f),
                             textColor = MaterialTheme.colorScheme.onBackground,
-                            fontSize = scaledLyricFontSize(18f, lyricFontScale).sp,
-                            translationFontSize = scaledLyricFontSize(14f, lyricFontScale).sp,
+                            fontSize = scaledLyricFontSize(18f, coverLyricFontScale).sp,
+                            translationFontSize = scaledLyricFontSize(14f, coverTranslationFontScale).sp,
                             visualSpec = LyricVisualSpec(),
                             lyricOffsetMs = totalOffset,
                             lyricBlurEnabled = lyricBlurEnabled,
@@ -2466,7 +2472,8 @@ fun NowPlayingScreen(
                                         currentTimeMs = effectiveLyricTimeMs,
                                         modifier = Modifier.fillMaxSize(),
                                         textColor = MaterialTheme.colorScheme.onBackground,
-                                        lyricFontScale = lyricFontScale,
+                                        lyricFontScale = coverLyricFontScale,
+                                        translationFontScale = coverTranslationFontScale,
                                         baseFontSizeSp = 20f,
                                         lyricOffsetMs = totalOffset,
                                         rawLyrics = rawLyricsText,
@@ -2503,8 +2510,8 @@ fun NowPlayingScreen(
                                         previewPositionOverrideMs = previewPositionOverrideMs,
                                         modifier = Modifier.fillMaxSize(),
                                         textColor = MaterialTheme.colorScheme.onBackground,
-                                        fontSize = scaledLyricFontSize(18f, lyricFontScale).sp,
-                                        translationFontSize = scaledLyricFontSize(14f, lyricFontScale).sp,
+                                        fontSize = scaledLyricFontSize(18f, coverLyricFontScale).sp,
+                                        translationFontSize = scaledLyricFontSize(14f, coverTranslationFontScale).sp,
                                         visualSpec = LyricVisualSpec(),
                                         lyricOffsetMs = totalOffset,
                                         lyricBlurEnabled = lyricBlurEnabled,
@@ -2827,8 +2834,9 @@ fun MoreOptionsSheet(
     onEnterAlbum: (AlbumSummary) -> Unit,
     onNavigateUp: () -> Unit,
     snackbarHostState: SnackbarHostState,
-    lyricFontScale: Float,
-    onLyricFontScaleChange: (Float) -> Unit,
+    lyricFontScalePage: LyricFontScalePage,
+    lyricFontScales: LyricFontScales,
+    onLyricFontScaleChange: (LyricFontScaleTarget, Float) -> Unit,
     currentPlaybackAudioInfo: PlaybackAudioInfo? = null,
     onShowQualitySwitch: () -> Unit = {},
     offlineMode: Boolean = false
@@ -2842,6 +2850,10 @@ fun MoreOptionsSheet(
     val actualSong = currentSong?.takeIf { it.sameIdentityAs(originalSong) } ?: originalSong
     val isLocalSong = actualSong.isLocalSong()
     val playbackSoundState by PlayerManager.playbackSoundStateFlow.collectAsStateWithLifecycle()
+    val lyricFontScaleTarget = lyricFontScales.lyricTargetFor(lyricFontScalePage)
+    val translationFontScaleTarget = lyricFontScales.translationTargetFor(lyricFontScalePage)
+    val currentLyricFontScale = lyricFontScales.scaleFor(lyricFontScaleTarget)
+    val currentTranslationFontScale = lyricFontScales.scaleFor(translationFontScaleTarget)
 
     fun dismissSheet(afterHidden: () -> Unit = {}) {
         if (isDismissing) return
@@ -2894,7 +2906,8 @@ fun MoreOptionsSheet(
                         originalSong = originalSong,
                         queue = queue,
                         isLocalSong = isLocalSong,
-                        lyricFontScale = lyricFontScale,
+                        lyricFontScale = currentLyricFontScale,
+                        translationFontScale = currentTranslationFontScale,
                         currentPlaybackAudioInfo = currentPlaybackAudioInfo,
                         isDismissing = isDismissing,
                         snackbarHostState = snackbarHostState,
@@ -2964,8 +2977,14 @@ fun MoreOptionsSheet(
 
                 MoreOptionsPage.FONT_SIZE -> {
                     LyricFontSizeSheet(
-                        currentScale = lyricFontScale,
-                        onScaleCommit = onLyricFontScaleChange,
+                        currentLyricScale = currentLyricFontScale,
+                        currentTranslationScale = currentTranslationFontScale,
+                        onLyricScaleCommit = { scale ->
+                            onLyricFontScaleChange(lyricFontScaleTarget, scale)
+                        },
+                        onTranslationScaleCommit = { scale ->
+                            onLyricFontScaleChange(translationFontScaleTarget, scale)
+                        },
                         onDismiss = { page = MoreOptionsPage.MAIN }
                     )
                 }
@@ -3301,14 +3320,25 @@ fun LyricBehaviorSheet(
 
 @Composable
 fun LyricFontSizeSheet(
-    currentScale: Float,
-    onScaleCommit: (Float) -> Unit,
+    currentLyricScale: Float,
+    currentTranslationScale: Float,
+    onLyricScaleCommit: (Float) -> Unit,
+    onTranslationScaleCommit: (Float) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var sliderValue by remember { mutableFloatStateOf(normalizeLyricFontScale(currentScale)) }
+    var lyricSliderValue by remember {
+        mutableFloatStateOf(normalizeLyricFontScale(currentLyricScale))
+    }
+    var translationSliderValue by remember {
+        mutableFloatStateOf(normalizeLyricFontScale(currentTranslationScale))
+    }
 
-    LaunchedEffect(currentScale) {
-        sliderValue = normalizeLyricFontScale(currentScale)
+    LaunchedEffect(currentLyricScale) {
+        lyricSliderValue = normalizeLyricFontScale(currentLyricScale)
+    }
+
+    LaunchedEffect(currentTranslationScale) {
+        translationSliderValue = normalizeLyricFontScale(currentTranslationScale)
     }
 
     Column(
@@ -3322,38 +3352,77 @@ fun LyricFontSizeSheet(
         Text(stringResource(R.string.lyrics_font_size), style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "${(sliderValue * 100).roundToInt()}%",
-            style = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Monospace)
-        )
-        Text(
-            text = stringResource(R.string.nowplaying_font_size_hint),
+            text = stringResource(R.string.settings_lyrics_font_scale_hint),
             style = MaterialTheme.typography.bodySmall
         )
 
-        Slider(
-            value = sliderValue,
-            onValueChange = { sliderValue = it },
-            onValueChangeFinished = { onScaleCommit(normalizeLyricFontScale(sliderValue)) },
-            valueRange = MIN_LYRIC_FONT_SCALE..MAX_LYRIC_FONT_SCALE,
-            steps = 10
+        SheetLyricFontScaleSlider(
+            title = stringResource(R.string.settings_lyrics_lyric_font_size),
+            currentScale = lyricSliderValue,
+            onScaleChange = { lyricSliderValue = it },
+            onScaleCommit = { onLyricScaleCommit(normalizeLyricFontScale(lyricSliderValue)) },
+            sampleText = stringResource(R.string.nowplaying_lyrics_sample),
+            sampleBaseSizeSp = 18f
         )
-
-        Text(
-            text = stringResource(R.string.nowplaying_lyrics_sample),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 4.dp),
-            textAlign = TextAlign.Center,
-            fontSize = scaledLyricFontSize(18f, sliderValue).sp
+        SheetLyricFontScaleSlider(
+            title = stringResource(R.string.settings_lyrics_translation_font_size),
+            currentScale = translationSliderValue,
+            onScaleChange = { translationSliderValue = it },
+            onScaleCommit = {
+                onTranslationScaleCommit(normalizeLyricFontScale(translationSliderValue))
+            },
+            sampleText = stringResource(R.string.settings_lyrics_translation_sample),
+            sampleBaseSizeSp = 14f
         )
 
         Spacer(Modifier.height(16.dp))
         HapticTextButton(onClick = {
-            onScaleCommit(normalizeLyricFontScale(sliderValue))
+            onLyricScaleCommit(normalizeLyricFontScale(lyricSliderValue))
+            onTranslationScaleCommit(normalizeLyricFontScale(translationSliderValue))
             onDismiss()
         }) {
             Text(stringResource(R.string.action_done))
         }
+    }
+}
+
+@Composable
+private fun SheetLyricFontScaleSlider(
+    title: String,
+    currentScale: Float,
+    onScaleChange: (Float) -> Unit,
+    onScaleCommit: () -> Unit,
+    sampleText: String,
+    sampleBaseSizeSp: Float
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Text(
+            text = "${(currentScale * 100).roundToInt()}%",
+            style = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Monospace),
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center
+        )
+        Slider(
+            value = currentScale,
+            onValueChange = onScaleChange,
+            onValueChangeFinished = onScaleCommit,
+            valueRange = MIN_LYRIC_FONT_SCALE..MAX_LYRIC_FONT_SCALE,
+            steps = 10
+        )
+        Text(
+            text = sampleText,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+            textAlign = TextAlign.Center,
+            fontSize = scaledLyricFontSize(sampleBaseSizeSp, currentScale).sp
+        )
     }
 }
 

@@ -170,6 +170,8 @@ import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
+import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
+import moe.ouom.neriplayer.data.settings.LyricFontScales
 import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.ThemeMode
@@ -1352,7 +1354,14 @@ private fun NeriAppContent(
     val nowPlayingCoverBlurBackgroundEnabled by repo.nowPlayingCoverBlurBackgroundEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
     val nowPlayingCoverBlurAmount by repo.nowPlayingCoverBlurAmountFlow.collectAsStateWithLifecycle(initialValue = 1.5f)
     val nowPlayingCoverBlurDarken by repo.nowPlayingCoverBlurDarkenFlow.collectAsStateWithLifecycle(initialValue = 0.2f)
-    val lyricFontScale by repo.lyricFontScaleFlow.collectAsStateWithLifecycle(initialValue = 1.0f)
+    val lyricFontScales by repo.lyricFontScalesFlow.collectAsStateWithLifecycle(
+        initialValue = LyricFontScales(
+            coverLyric = 1.0f,
+            coverTranslation = 1.0f,
+            lyricsPageLyric = 1.0f,
+            lyricsPageTranslation = 1.0f
+        )
+    )
     val uiDensityScale by repo.uiDensityScaleFlow.collectAsStateWithLifecycle(initialValue = 1.0f)
     val bypassProxy by repo.bypassProxyFlow.collectAsStateWithLifecycle(initialValue = true)
     val backgroundImageUri by repo.backgroundImageUriFlow.collectAsStateWithLifecycle(initialValue = null)
@@ -2562,9 +2571,9 @@ private fun NeriAppContent(
                         onNowPlayingCoverBlurDarkenChange = { amount ->
                             scope.launch { repo.setNowPlayingCoverBlurDarken(amount) }
                         },
-                        lyricFontScale = lyricFontScale,
-                        onLyricFontScaleChange = { scale ->
-                            scope.launch { repo.setLyricFontScale(scale) }
+                        lyricFontScales = lyricFontScales,
+                        onLyricFontScaleChange = { target: LyricFontScaleTarget, scale ->
+                            scope.launch { repo.setLyricFontScale(target, scale) }
                         },
                         uiDensityScale = uiDensityScale,
                         onUiDensityScaleChange = { scale ->
@@ -3965,9 +3974,9 @@ private fun NeriAppContent(
                                     onEnterArtist = ::navigateToNeteaseArtist,
                                     lyricBlurEnabled = lyricBlurEnabled,
                                     lyricBlurAmount = lyricBlurAmount,
-                                    lyricFontScale = lyricFontScale,
-                                    onLyricFontScaleChange = { scale ->
-                                        scope.launch { repo.setLyricFontScale(scale) }
+                                    lyricFontScales = lyricFontScales,
+                                    onLyricFontScaleChange = { target, scale ->
+                                        scope.launch { repo.setLyricFontScale(target, scale) }
                                     },
                                     advancedLyricsEnabled = advancedLyricsEnabled,
                                     showCoverSourceBadge = showCoverSourceBadge,
