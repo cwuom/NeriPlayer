@@ -317,6 +317,10 @@ fun Modifier.verticalEdgeFade(fadeHeight: Dp): Modifier = this
         drawRect(brush = brush, size = size, blendMode = BlendMode.DstIn)
     }
 
+internal fun resolveLyricEdgeFadeHeight(isEmbedded: Boolean): Dp {
+    return if (isEmbedded) 24.dp else 72.dp
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @SuppressLint("UnusedBoxWithConstraintsScope")
 @Composable
@@ -343,7 +347,8 @@ fun SyncedLyricsView(
     playbackSpeed: Float = 1f,
     interpolatePlaybackPosition: Boolean = false,
     visualEffectsEnabled: Boolean = true,
-    smoothActiveLineProgress: Boolean = true
+    smoothActiveLineProgress: Boolean = true,
+    edgeFadeHeight: Dp = resolveLyricEdgeFadeHeight(isEmbedded = false)
 ) {
     val listState = rememberLazyListState()
     var manualClearHoldIndex by remember(lyrics) { mutableStateOf<Int?>(null) }
@@ -426,7 +431,7 @@ fun SyncedLyricsView(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
                 .fillMaxSize()
-                .verticalEdgeFade(fadeHeight = 72.dp)
+                .verticalEdgeFade(fadeHeight = edgeFadeHeight)
         ) {
             itemsIndexed(
                 items = lyrics,

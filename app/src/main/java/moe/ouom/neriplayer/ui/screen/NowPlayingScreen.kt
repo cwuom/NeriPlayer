@@ -270,6 +270,7 @@ import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.ui.component.lyrics.rememberLyricSeekHapticFeedback
+import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricEdgeFadeHeight
 import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricsEditorInitialText
 import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricsEditorSeed
 import moe.ouom.neriplayer.ui.component.lyrics.resolvePreferredLyricContent
@@ -4349,7 +4350,8 @@ private fun NowPlayingLyricsPane(
         playbackSpeed = playbackSpeed,
         interpolatePlaybackPosition = true,
         visualEffectsEnabled = false,
-        smoothActiveLineProgress = false
+        smoothActiveLineProgress = false,
+        edgeFadeHeight = resolveLyricEdgeFadeHeight(isEmbedded = true)
     )
 }
 

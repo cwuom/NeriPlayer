@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.component.lyrics
 
+import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -65,6 +66,12 @@ class SyncedLyricsViewTimingTest {
             )
         )
         assertTrue(shouldSnapLyricTimeSmoothing(displayedTimeMs = 1_000L, targetTimeMs = 900L))
+    }
+
+    @Test
+    fun `embedded lyrics use a shorter edge fade than the full lyrics page`() {
+        assertEquals(24.dp, resolveLyricEdgeFadeHeight(isEmbedded = true))
+        assertEquals(72.dp, resolveLyricEdgeFadeHeight(isEmbedded = false))
     }
 
     @Test
