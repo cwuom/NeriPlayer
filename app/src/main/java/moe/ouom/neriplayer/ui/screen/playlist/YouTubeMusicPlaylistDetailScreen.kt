@@ -130,6 +130,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
+import moe.ouom.neriplayer.util.search.playlistSearchValues
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
@@ -239,14 +240,14 @@ fun YouTubeMusicPlaylistDetailScreen(
         derivedStateOf { listState.firstVisibleItemIndex > 0 }
     }
     val playlistTopBarColor = if (playlistChromeCollapsed) {
-        playlistModernCollapsedTopBarColor()
+        playlistModernCollapsedTopBarColor(playlistChromeColor)
     } else {
-        playlistChromeColor
+        playlistModernExpandedTopBarColor(playlistChromeColor)
     }
     val playlistTopBarContentColor = if (playlistChromeCollapsed) {
         playlistModernCollapsedTopBarContentColor()
     } else {
-        Color.White
+        resolvePlaylistSolidTopBarContentColor(playlistChromeColor)
     }
     val playlistHeroHeight by animateDpAsState(
         targetValue = if (showSearch && !selectionMode && !playlistChromeCollapsed) {
@@ -277,19 +278,11 @@ fun YouTubeMusicPlaylistDetailScreen(
         favoriteRepo.isFavorite(playlistFavoriteId, "youtubeMusic")
     }
     val resolvedTrackCount = resolvedPlaylist.trackCount.takeIf { it > 0 } ?: ui.tracks.size
-    val displayedTracks = remember(ui.tracks, searchQuery) {
-        if (searchQuery.isBlank()) {
-            ui.tracks
-        } else {
-            ui.tracks.filter { song ->
-                song.displayName().contains(searchQuery, ignoreCase = true) ||
-                    song.displayArtist().contains(searchQuery, ignoreCase = true) ||
-                    song.name.contains(searchQuery, ignoreCase = true) ||
-                    song.artist.contains(searchQuery, ignoreCase = true) ||
-                    song.album.contains(searchQuery, ignoreCase = true)
-            }
-        }
-    }
+    val displayedTracks = rememberPlaylistSearchResults(
+        query = searchQuery,
+        items = ui.tracks,
+        tokens = { song -> song.playlistSearchValues(context) }
+    )
     val currentIndex = displayedTracks.indexOfFirst { it.sameIdentityAs(currentSong) }
     val heroSubtitle = listOfNotNull(
         resolvedPlaylist.subtitle.takeIf { it.isNotBlank() },

@@ -159,6 +159,7 @@ import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.format.formatPlayCount
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
+import moe.ouom.neriplayer.util.search.playlistSearchValues
 import kotlin.random.Random
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -347,14 +348,14 @@ fun DetailScreen(
         derivedStateOf { listState.firstVisibleItemIndex > 0 }
     }
     val playlistTopBarColor = if (playlistChromeCollapsed) {
-        playlistModernCollapsedTopBarColor()
+        playlistModernCollapsedTopBarColor(playlistChromeColor)
     } else {
-        playlistChromeColor
+        playlistModernExpandedTopBarColor(playlistChromeColor)
     }
     val playlistTopBarContentColor = if (playlistChromeCollapsed) {
         playlistModernCollapsedTopBarContentColor()
     } else {
-        Color.White
+        resolvePlaylistSolidTopBarContentColor(playlistChromeColor)
     }
     val playlistHeroHeight by animateDpAsState(
         targetValue = if (showSearch && !selectionMode && !playlistChromeCollapsed) {
@@ -547,15 +548,11 @@ fun DetailScreen(
                         }
                     }
 
-                    val displayedTracks = remember(ui.tracks, searchQuery) {
-                        if (searchQuery.isBlank()) ui.tracks
-                        else ui.tracks.filter {
-                            it.name.contains(
-                                searchQuery,
-                                true
-                            ) || it.artist.contains(searchQuery, true)
-                        }
-                    }
+                    val displayedTracks = rememberPlaylistSearchResults(
+                        query = searchQuery,
+                        items = ui.tracks,
+                        tokens = { song -> song.playlistSearchValues(context) }
+                    )
                     val trackCount = ui.header?.trackCount ?: ui.tracks.size
                     val heroTitle = ui.header?.name ?: stringResource(R.string.playlist_title)
                     val heroSubtitle = if (ui.header?.isAlbum == true) {

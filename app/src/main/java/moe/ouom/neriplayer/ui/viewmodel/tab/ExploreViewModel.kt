@@ -49,6 +49,8 @@ import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.util.search.searchValues
+import moe.ouom.neriplayer.util.search.SearchTextMatcher
 import org.json.JSONObject
 
 private const val TAG = "NERI-ExploreVM"
@@ -121,6 +123,44 @@ internal fun ExploreUiState.withYouTubeDisabled(): ExploreUiState {
     )
 }
 
+internal fun rankExploreSongSearchResults(
+    query: String,
+    songs: List<SongItem>
+): List<SongItem> {
+    val normalizedQuery = query.trim()
+    if (normalizedQuery.isBlank() || songs.size <= 1) return songs
+
+    val scoredSongs = songs.mapIndexed { index, song ->
+        RankedSongSearchResult(
+            song = song,
+            index = index,
+            score = SearchTextMatcher.score(normalizedQuery, song.searchTokens())
+        )
+    }
+    val matchedSongs = scoredSongs.filter { it.score != null }
+    if (matchedSongs.isEmpty()) return songs
+
+    return matchedSongs
+        .sortedWith(
+            compareBy<RankedSongSearchResult> { it.score ?: Int.MAX_VALUE }
+                .thenBy { it.index }
+        )
+        .map { it.song } +
+        scoredSongs
+            .filter { it.score == null }
+            .map { it.song }
+}
+
+private data class RankedSongSearchResult(
+    val song: SongItem,
+    val index: Int,
+    val score: Int?
+)
+
+private fun SongItem.searchTokens(): List<Any?> {
+    return searchValues()
+}
+
 class ExploreViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application
     private val neteaseRepo = NeteaseCookieRepository(application)
@@ -173,8 +213,10 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** 统一搜索入口 */
-    fun search(keyword: String) {
-        if (keyword.isBlank()) {
+    fun search(keyword: String, displayQuery: String = keyword) {
+        val apiKeyword = keyword.trim()
+        val matchQuery = displayQuery.trim().ifBlank { apiKeyword }
+        if (apiKeyword.isBlank()) {
             NPLogger.d(TAG, "search cleared because keyword is blank")
             searchJob?.cancel()
             invalidateSearchRequest()
@@ -187,23 +229,29 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         }
         val source = _uiState.value.selectedSearchSource
         val requestVersion = beginSearchRequest()
-        NPLogger.d(TAG, "search start: source=$source, request=$requestVersion, keyword=$keyword")
+        NPLogger.d(
+            TAG,
+            "search start: source=$source, request=$requestVersion, keyword=$apiKeyword, display=$matchQuery"
+        )
         when (source) {
-            SearchSource.NETEASE -> searchNetease(keyword, requestVersion)
-            SearchSource.BILIBILI -> searchBilibili(keyword, requestVersion)
-            SearchSource.YOUTUBE_MUSIC -> searchYouTubeMusic(keyword, requestVersion)
+            SearchSource.NETEASE -> searchNetease(apiKeyword, matchQuery, requestVersion)
+            SearchSource.BILIBILI -> searchBilibili(apiKeyword, matchQuery, requestVersion)
+            SearchSource.YOUTUBE_MUSIC -> searchYouTubeMusic(apiKeyword, matchQuery, requestVersion)
         }
     }
 
     /** 搜索 Bilibili 视频 */
-    private fun searchBilibili(keyword: String, requestVersion: Long) {
+    private fun searchBilibili(keyword: String, matchQuery: String, requestVersion: Long) {
         searchJob = viewModelScope.launch {
             try {
                 val searchPage = withContext(Dispatchers.IO) {
                     biliClient.searchVideos(keyword = keyword, page = 1)
                 }
                 // 将B站搜索结果转换为通用的 SongItem
-                val songs = searchPage.items.map { it.toSongItem() }
+                val songs = rankExploreSongSearchResults(
+                    query = matchQuery,
+                    songs = searchPage.items.map { it.toSongItem() }
+                )
                 NPLogger.d(
                     TAG,
                     "search Bilibili success: request=$requestVersion, keyword=$keyword, count=${songs.size}, page=${searchPage.page}"
@@ -351,7 +399,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** 搜索网易云歌曲 */
-    private fun searchNetease(keyword: String, requestVersion: Long) {
+    private fun searchNetease(keyword: String, matchQuery: String, requestVersion: Long) {
         if (neteaseRepo.getAuthHealthOnce().state == SavedCookieAuthState.Missing) {
             updateSearchStateIfCurrent(requestVersion, SearchSource.NETEASE) {
                 it.copy(
@@ -373,7 +421,10 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                         usePersistedCookies = false
                     )
                 }
-                val songs = parseNeteaseSearchSongs(raw)
+                val songs = rankExploreSongSearchResults(
+                    query = matchQuery,
+                    songs = parseNeteaseSearchSongs(raw)
+                )
                 NPLogger.d(
                     TAG,
                     "search Netease success: request=$requestVersion, keyword=$keyword, count=${songs.size}"
@@ -425,7 +476,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** 搜索 YouTube Music：只返回歌曲结果 */
-    private fun searchYouTubeMusic(keyword: String, requestVersion: Long) {
+    private fun searchYouTubeMusic(keyword: String, matchQuery: String, requestVersion: Long) {
         if (!youtubeEnabled) return
         searchJob = viewModelScope.launch {
             try {
@@ -434,7 +485,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                         query = keyword,
                         limit = 30
                     ).map { it.toSongItem(app) }
-                }
+                }.let { rankExploreSongSearchResults(matchQuery, it) }
                 if (!isSearchRequestCurrent(requestVersion, SearchSource.YOUTUBE_MUSIC)) return@launch
                 NPLogger.d(
                     TAG,
