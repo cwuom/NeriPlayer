@@ -163,6 +163,15 @@ import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.util.search.playlistSearchValues
 import kotlin.random.Random
 
+internal fun isNeteaseCollectionHeaderForRoute(
+    header: NeteaseCollectionHeader?,
+    playlistId: Long,
+    playlistSource: String
+): Boolean {
+    return header?.id == playlistId &&
+        header.isAlbum == (playlistSource == "neteaseAlbum")
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun NeteasePlaylistDetailScreen(
@@ -210,6 +219,7 @@ fun NeteasePlaylistDetailScreen(
         ui = ui,
         playlistId = playlist.id,
         playlistSource = "netease",
+        initialCoverUrl = playlist.picUrl,
         onRetry = vm::retry,
         onBack = onBack,
         onSongClick = onSongClick,
@@ -264,6 +274,7 @@ fun NeteaseAlbumDetailScreen(
         ui = ui,
         playlistId = album.id,
         playlistSource = "neteaseAlbum",
+        initialCoverUrl = album.picUrl,
         onRetry = vm::retry,
         onBack = onBack,
         onSongClick = onSongClick,
@@ -278,6 +289,7 @@ fun DetailScreen(
     ui: NeteaseCollectionDetailUiState,
     playlistId: Long,
     playlistSource: String,
+    initialCoverUrl: String? = null,
     onRetry: () -> Unit,
     onBack: () -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
@@ -342,8 +354,19 @@ fun DetailScreen(
     var showExportAllSheet by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
+    val routeHeader = ui.header?.takeIf { header ->
+        isNeteaseCollectionHeaderForRoute(
+            header = header,
+            playlistId = playlistId,
+            playlistSource = playlistSource
+        )
+    }
+    val displayCoverUrl = resolvePlaylistDetailCoverUrl(
+        headerCoverUrl = routeHeader?.coverUrl,
+        fallbackCoverUrl = initialCoverUrl
+    )
     val playlistChromeColor = rememberPlaylistModernHeroBackgroundColor(
-        coverUrl = ui.header?.coverUrl,
+        coverUrl = displayCoverUrl,
         offlineMode = offlineMode
     )
     val searchVisible = shouldShowPlaylistSearch(
@@ -601,7 +624,7 @@ fun DetailScreen(
 
                     PlaylistModernDockedSearchSlot(
                         revealProgress = dockedSearchProgress,
-                        coverUrl = ui.header?.coverUrl,
+                        coverUrl = displayCoverUrl,
                         offlineMode = offlineMode,
                         query = searchQuery,
                         onQueryChange = { searchQuery = it },
@@ -650,7 +673,7 @@ fun DetailScreen(
                             .windowInsetsPadding(WindowInsets.navigationBars)
                     ) {
                         PlaylistModernVisualColorsProvider(
-                            coverUrl = ui.header?.coverUrl,
+                            coverUrl = displayCoverUrl,
                             offlineMode = offlineMode
                         ) {
                             LazyColumn(
@@ -663,7 +686,7 @@ fun DetailScreen(
                                 item {
                                     PlaylistModernHeroHeader(
                                         displayName = heroTitle,
-                                        coverUrl = ui.header?.coverUrl,
+                                        coverUrl = displayCoverUrl,
                                         subtitle = heroSubtitle,
                                         offlineMode = offlineMode,
                                         height = playlistHeroHeight,
@@ -698,7 +721,7 @@ fun DetailScreen(
                                 contentType = "playlist_actions"
                             ) {
                                 PlaylistModernActionSheet(
-                                    coverUrl = ui.header?.coverUrl,
+                                    coverUrl = displayCoverUrl,
                                     offlineMode = offlineMode,
                                     hasCustomBackground = hasCustomBackground
                                 ) {
@@ -726,7 +749,7 @@ fun DetailScreen(
                                 ui.loading && ui.tracks.isEmpty() -> {
                                     item {
                                         PlaylistModernListItemSurface(
-                                            coverUrl = ui.header?.coverUrl,
+                                            coverUrl = displayCoverUrl,
                                             offlineMode = offlineMode
                                         ) {
                                             Row(
@@ -747,7 +770,7 @@ fun DetailScreen(
                                 ui.error != null && ui.tracks.isEmpty() -> {
                                     item {
                                         PlaylistModernListItemSurface(
-                                            coverUrl = ui.header?.coverUrl,
+                                            coverUrl = displayCoverUrl,
                                             offlineMode = offlineMode
                                         ) {
                                             Column(
@@ -772,7 +795,7 @@ fun DetailScreen(
                                         displayedTracks,
                                         key = { _, it -> it.stableKey() }) { index, item ->
                                         PlaylistModernListItemSurface(
-                                            coverUrl = ui.header?.coverUrl,
+                                            coverUrl = displayCoverUrl,
                                             offlineMode = offlineMode
                                         ) {
                                             SongRow(

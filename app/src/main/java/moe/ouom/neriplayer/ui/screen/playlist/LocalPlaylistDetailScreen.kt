@@ -195,6 +195,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticOutlinedButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.format.formatTotalDuration
+import moe.ouom.neriplayer.util.media.CoverArtColorCache
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.search.playlistSearchValues
 import moe.ouom.neriplayer.util.search.SearchTextMatcher
@@ -923,6 +924,9 @@ fun LocalPlaylistDetailScreen(
                 playlist = displayOrderPlaylistForCover,
                 resolveLocalFallback = true
             )
+            LaunchedEffect(headerCover, offlineMode) {
+                CoverArtColorCache.preload(context, headerCover, offlineMode)
+            }
             val displayedSongs = rememberPlaylistSearchResults(
                 query = searchQuery,
                 items = baseQueue,

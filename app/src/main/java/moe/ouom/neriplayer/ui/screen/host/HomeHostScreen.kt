@@ -42,12 +42,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -75,6 +80,7 @@ import moe.ouom.neriplayer.ui.util.restoreAlbumSummary
 import moe.ouom.neriplayer.ui.util.restorePlaylistSummary
 import moe.ouom.neriplayer.ui.util.restoreYouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.util.toSaveMap
+import moe.ouom.neriplayer.util.media.CoverArtColorCache
 
 // 用密封类承载四种目标
 private sealed class HomeSelectedItem {
@@ -131,13 +137,56 @@ fun HomeHostScreen(
         mutableStateOf(null)
     }
     var skipDetailCloseAnimation by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var pendingNeteaseCoverWarmupJob by remember { mutableStateOf<Job?>(null) }
+    var pendingNeteaseCoverWarmupToken by remember { mutableIntStateOf(0) }
+
+    fun cancelPendingNeteaseCoverWarmup() {
+        pendingNeteaseCoverWarmupToken += 1
+        pendingNeteaseCoverWarmupJob?.cancel()
+        pendingNeteaseCoverWarmupJob = null
+    }
+
+    fun openAfterNeteaseCoverWarmup(
+        coverUrl: String?,
+        item: HomeSelectedItem
+    ) {
+        val token = pendingNeteaseCoverWarmupToken + 1
+        pendingNeteaseCoverWarmupToken = token
+        pendingNeteaseCoverWarmupJob?.cancel()
+        pendingNeteaseCoverWarmupJob = scope.launch {
+            CoverArtColorCache.preload(context, coverUrl, offlineMode)
+            if (pendingNeteaseCoverWarmupToken == token) {
+                selected = item
+                pendingNeteaseCoverWarmupJob = null
+            }
+        }
+    }
+
+    fun openHomeSelectedItem(item: HomeSelectedItem) {
+        when (item) {
+            is HomeSelectedItem.Netease -> {
+                openAfterNeteaseCoverWarmup(item.playlist.picUrl, item)
+            }
+            is HomeSelectedItem.NeteaseAlbumList -> {
+                openAfterNeteaseCoverWarmup(item.album.picUrl, item)
+            }
+            else -> {
+                cancelPendingNeteaseCoverWarmup()
+                selected = item
+            }
+        }
+    }
 
     fun closeSelectedDetail() {
+        cancelPendingNeteaseCoverWarmup()
         skipDetailCloseAnimation = false
         selected = null
     }
 
     fun closeDeletedLocalPlaylist() {
+        cancelPendingNeteaseCoverWarmup()
         skipDetailCloseAnimation = true
         selected = null
     }
@@ -244,7 +293,7 @@ fun HomeHostScreen(
                                     trackCount = pl.trackCount,
                                     source = "netease"
                                 )
-                                selected = HomeSelectedItem.Netease(pl)
+                                openHomeSelectedItem(HomeSelectedItem.Netease(pl))
                             },
                             onYouTubeMusicPlaylistClick = { pl ->
                                 skipDetailCloseAnimation = false
@@ -260,12 +309,12 @@ fun HomeHostScreen(
                                     browseId = pl.browseId,
                                     playlistId = pl.playlistId
                                 )
-                                selected = HomeSelectedItem.YouTubeMusic(pl)
+                                openHomeSelectedItem(HomeSelectedItem.YouTubeMusic(pl))
                             },
                             onOpenRecent = { entry ->
                                 skipDetailCloseAnimation = false
                                 captureHomeScrollPosition()
-                                openRecent(entry) { next -> selected = next }
+                                openRecent(entry, ::openHomeSelectedItem)
                             },
                             onSongClick = onSongClick
                         )

@@ -79,6 +79,7 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.util.media.CoverArtColorCache
+import moe.ouom.neriplayer.util.media.normalizeCoverArtColorCacheKey
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.search.SearchTextMatcher
 
@@ -395,6 +396,19 @@ internal fun resolvePlaylistHeroAccentArgb(
     return ColorUtils.HSLToColor(floatArrayOf(hsl[0], targetSaturation, targetLightness))
 }
 
+internal fun resolvePlaylistDetailCoverUrl(
+    headerCoverUrl: String?,
+    fallbackCoverUrl: String?
+): String? {
+    return normalizePlaylistDetailCoverUrl(headerCoverUrl)
+        ?: normalizePlaylistDetailCoverUrl(fallbackCoverUrl)
+}
+
+private fun normalizePlaylistDetailCoverUrl(coverUrl: String?): String? {
+    return coverUrl?.trim()?.takeIf { it.isNotEmpty() }
+        ?.replaceFirst(Regex("^http://", RegexOption.IGNORE_CASE), "https://")
+}
+
 internal fun resolvePlaylistChromeCollapseProgress(
     firstVisibleItemIndex: Int,
     firstVisibleItemScrollOffsetPx: Int,
@@ -457,21 +471,32 @@ private fun rememberResolvedPlaylistHeroVisualColors(
     val context = LocalContext.current
     val isDarkTheme = playlistModernUsesDarkSurface()
     val normalizedCoverModel = normalizeLocalPlaylistHeaderCoverModel(coverUrl)
+    val colorCacheKey = normalizeCoverArtColorCacheKey(normalizedCoverModel)
+        ?: normalizedCoverModel
     val fallbackArgb = resolvePlaylistHeroFallbackSeedArgb(isDarkTheme)
-    val cachedColorSample = remember(normalizedCoverModel) {
+    val cachedColorSample = remember(colorCacheKey) {
         CoverArtColorCache.peek(normalizedCoverModel)
     }
-    val colorSampleState = remember(normalizedCoverModel) {
+    val colorSampleState = remember {
         mutableStateOf(cachedColorSample)
     }
-    LaunchedEffect(context, normalizedCoverModel, offlineMode) {
+    val hasCoverModel = !coverUrl.isNullOrBlank()
+    LaunchedEffect(context, colorCacheKey, offlineMode) {
+        if (!hasCoverModel) {
+            colorSampleState.value = null
+            return@LaunchedEffect
+        }
         colorSampleState.value = CoverArtColorCache.getOrLoad(
             context = context,
             coverUrl = normalizedCoverModel,
             offlineMode = offlineMode
         )
     }
-    val coverColorArgb = colorSampleState.value?.baseColorArgb
+    val coverColorArgb = if (hasCoverModel) {
+        (cachedColorSample ?: colorSampleState.value)?.baseColorArgb
+    } else {
+        null
+    }
     val backgroundColor by animateColorAsState(
         targetValue = Color(
             resolvePlaylistHeroBackgroundArgb(

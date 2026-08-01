@@ -12,6 +12,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.traffic.isOfflineModeNow
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 data class CoverArtColorSample(
     val seedHex: String,
@@ -26,9 +27,9 @@ object CoverArtColorCache {
     private val inFlightLoads = mutableMapOf<String, CompletableDeferred<CoverArtColorSample?>>()
 
     fun peek(coverUrl: String?): CoverArtColorSample? {
-        if (coverUrl.isNullOrBlank()) return null
+        val cacheKey = normalizeCoverArtColorCacheKey(coverUrl) ?: return null
         return synchronized(cacheLock) {
-            cache.get(coverUrl)
+            cache.get(cacheKey)
         }
     }
 
@@ -46,19 +47,21 @@ object CoverArtColorCache {
         coverUrl: String,
         offlineMode: Boolean = context.isOfflineModeNow()
     ): CoverArtColorSample? {
+        val cacheKey = normalizeCoverArtColorCacheKey(coverUrl) ?: return null
         peek(coverUrl)?.let { return it }
 
         var pendingLoad: CompletableDeferred<CoverArtColorSample?>? = null
         var ownsLoad = false
         synchronized(cacheLock) {
-            val cached = cache.get(coverUrl)
+            val cached = cache.get(cacheKey)
             if (cached != null) {
                 return cached
             }
-            pendingLoad = inFlightLoads[coverUrl]
+            pendingLoad = inFlightLoads[cacheKey]
             if (pendingLoad == null) {
-                pendingLoad = CompletableDeferred()
-                inFlightLoads[coverUrl] = pendingLoad!!
+                val createdLoad = CompletableDeferred<CoverArtColorSample?>()
+                pendingLoad = createdLoad
+                inFlightLoads[cacheKey] = createdLoad
                 ownsLoad = true
             }
         }
@@ -68,14 +71,14 @@ object CoverArtColorCache {
         }
 
         val sample = runCatching {
-            loadSample(context, coverUrl, offlineMode)
+            loadSample(context, normalizeCoverArtRequestUrl(coverUrl), offlineMode)
         }.getOrNull()
 
         synchronized(cacheLock) {
             if (sample != null) {
-                cache.put(coverUrl, sample)
+                cache.put(cacheKey, sample)
             }
-            inFlightLoads.remove(coverUrl)
+            inFlightLoads.remove(cacheKey)
         }
         deferred.complete(sample)
         return sample
@@ -116,6 +119,24 @@ object CoverArtColorCache {
             baseColorArgb = baseColor
         )
     }
+}
+
+internal fun normalizeCoverArtColorCacheKey(coverUrl: String?): String? {
+    val normalized = coverUrl?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val parsed = normalized.toHttpUrlOrNull() ?: return normalized
+    if (!parsed.isNeteaseCoverHost()) return normalized
+    return "netease-cover:${parsed.encodedPath}"
+}
+
+private fun normalizeCoverArtRequestUrl(coverUrl: String): String {
+    val normalized = coverUrl.trim()
+    val parsed = normalized.toHttpUrlOrNull() ?: return normalized
+    if (!parsed.isNeteaseCoverHost() || parsed.scheme == "https") return normalized
+    return parsed.newBuilder().scheme("https").build().toString()
+}
+
+private fun okhttp3.HttpUrl.isNeteaseCoverHost(): Boolean {
+    return host == "music.126.net" || host.endsWith(".music.126.net")
 }
 
 fun adjustedAccentColorArgb(baseColorArgb: Int, isDark: Boolean): Int {

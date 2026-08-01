@@ -44,6 +44,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -53,6 +55,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.ui.screen.artist.NeteaseArtistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalArtistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
@@ -82,6 +86,7 @@ import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
 import moe.ouom.neriplayer.ui.util.restoreAlbumSummary
 import moe.ouom.neriplayer.ui.util.restorePlaylistSummary
 import moe.ouom.neriplayer.ui.util.restoreYouTubeMusicPlaylist
+import moe.ouom.neriplayer.util.media.CoverArtColorCache
 
 @Parcelize
 sealed class LibrarySelectedItem : Parcelable {
@@ -172,8 +177,53 @@ fun LibraryHostScreen(
     // 保存当前选中的标签页类型，避免国际化切换后索引错位
     var selectedTab by rememberSaveable { mutableStateOf(LibraryTab.LOCAL) }
     val libraryStateHolder = rememberSaveableStateHolder()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var pendingNeteaseCoverWarmupJob by remember { mutableStateOf<Job?>(null) }
+    var pendingNeteaseCoverWarmupToken by remember { mutableIntStateOf(0) }
+
+    fun cancelPendingNeteaseCoverWarmup() {
+        pendingNeteaseCoverWarmupToken += 1
+        pendingNeteaseCoverWarmupJob?.cancel()
+        pendingNeteaseCoverWarmupJob = null
+    }
+
+    fun openAfterNeteaseCoverWarmup(
+        coverUrl: String?,
+        item: LibrarySelectedItem
+    ) {
+        val token = pendingNeteaseCoverWarmupToken + 1
+        pendingNeteaseCoverWarmupToken = token
+        pendingNeteaseCoverWarmupJob?.cancel()
+        pendingNeteaseCoverWarmupJob = scope.launch {
+            CoverArtColorCache.preload(context, coverUrl, offlineMode)
+            if (pendingNeteaseCoverWarmupToken == token) {
+                selected = item
+                pendingNeteaseCoverWarmupJob = null
+            }
+        }
+    }
+
+    fun openLibrarySelectedItem(item: LibrarySelectedItem) {
+        when (item) {
+            is LibrarySelectedItem.Netease -> {
+                openAfterNeteaseCoverWarmup(item.playlist.picUrl, item)
+            }
+            is LibrarySelectedItem.NeteaseAlbum -> {
+                openAfterNeteaseCoverWarmup(item.album.picUrl, item)
+            }
+            is LibrarySelectedItem.NeteaseArtistAlbum -> {
+                openAfterNeteaseCoverWarmup(item.album.picUrl, item)
+            }
+            else -> {
+                cancelPendingNeteaseCoverWarmup()
+                selected = item
+            }
+        }
+    }
 
     fun closeSelectedDetail() {
+        cancelPendingNeteaseCoverWarmup()
         skipDetailCloseAnimation = false
         selected = when (val current = selected) {
             is LibrarySelectedItem.NeteaseArtistAlbum -> LibrarySelectedItem.NeteaseArtist(current.artist)
@@ -184,11 +234,13 @@ fun LibraryHostScreen(
     fun openNeteaseArtist(artist: NeteaseArtistSummary) {
         val currentArtist = (selected as? LibrarySelectedItem.NeteaseArtist)?.artist
         if (currentArtist?.id == artist.id) return
+        cancelPendingNeteaseCoverWarmup()
         skipDetailCloseAnimation = false
         selected = LibrarySelectedItem.NeteaseArtist(artist)
     }
 
     fun closeDeletedLocalPlaylist() {
+        cancelPendingNeteaseCoverWarmup()
         skipDetailCloseAnimation = true
         selected = null
     }
@@ -238,8 +290,6 @@ fun LibraryHostScreen(
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
     val topAppBarState = rememberTopAppBarState()
-    val context = LocalContext.current
-
     fun listStateFor(source: LibraryScrollSource): LazyListState = when (source) {
         LibraryScrollSource.Local -> localListState
         LibraryScrollSource.Favorite -> favoriteListState
@@ -337,7 +387,7 @@ fun LibraryHostScreen(
                             onLocalPlaylistClick = { playlist ->
                                 skipDetailCloseAnimation = false
                                 captureLibraryScrollPosition(LibraryScrollSource.Local)
-                                selected = LibrarySelectedItem.Local(playlist.id)
+                                openLibrarySelectedItem(LibrarySelectedItem.Local(playlist.id))
                                 AppContainer.playlistUsageRepo.recordOpen(
                                     id = playlist.id,
                                     name = playlist.name,
@@ -349,7 +399,7 @@ fun LibraryHostScreen(
                             onLocalArtistClick = { artist ->
                                 skipDetailCloseAnimation = false
                                 captureLibraryScrollPosition(LibraryScrollSource.Local)
-                                selected = LibrarySelectedItem.LocalArtist(artist.name)
+                                openLibrarySelectedItem(LibrarySelectedItem.LocalArtist(artist.name))
                                 AppContainer.playlistUsageRepo.recordOpen(
                                     id = artist.id,
                                     name = artist.name,
@@ -365,7 +415,7 @@ fun LibraryHostScreen(
                                         LibraryScrollSource.NeteasePlaylist
                                     )
                                 )
-                                selected = LibrarySelectedItem.Netease(playlist)
+                                openLibrarySelectedItem(LibrarySelectedItem.Netease(playlist))
                                 AppContainer.playlistUsageRepo.recordOpen(
                                     id = playlist.id,
                                     name = playlist.name,
@@ -381,7 +431,7 @@ fun LibraryHostScreen(
                                         LibraryScrollSource.NeteaseAlbum
                                     )
                                 )
-                                selected = LibrarySelectedItem.NeteaseAlbum(album)
+                                openLibrarySelectedItem(LibrarySelectedItem.NeteaseAlbum(album))
                                 AppContainer.playlistUsageRepo.recordOpen(
                                     id = album.id,
                                     name = album.name,
@@ -401,7 +451,7 @@ fun LibraryHostScreen(
                                         LibraryScrollSource.YouTubeMusic
                                     )
                                 )
-                                selected = LibrarySelectedItem.YouTubeMusic(playlist)
+                                openLibrarySelectedItem(LibrarySelectedItem.YouTubeMusic(playlist))
                                 AppContainer.playlistUsageRepo.recordOpen(
                                     id = stableYouTubeMusicId(
                                         playlist.playlistId.ifBlank { playlist.browseId }
@@ -419,7 +469,7 @@ fun LibraryHostScreen(
                                 captureLibraryScrollPosition(
                                     sourceForFavoriteAwareDestination(LibraryScrollSource.Bili)
                                 )
-                                selected = LibrarySelectedItem.Bili(playlist)
+                                openLibrarySelectedItem(LibrarySelectedItem.Bili(playlist))
                                 AppContainer.playlistUsageRepo.recordOpen(
                                     id = playlist.mediaId,
                                     name = playlist.title,
@@ -502,9 +552,11 @@ fun LibraryHostScreen(
                                     onSongClick = onSongClick,
                                     offlineMode = offlineMode,
                                     onAlbumClick = { album ->
-                                        selected = LibrarySelectedItem.NeteaseArtistAlbum(
-                                            current.artist,
-                                            album
+                                        openLibrarySelectedItem(
+                                            LibrarySelectedItem.NeteaseArtistAlbum(
+                                                current.artist,
+                                                album
+                                            )
                                         )
                                     }
                                 )

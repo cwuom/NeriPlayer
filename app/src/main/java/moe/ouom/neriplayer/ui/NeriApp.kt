@@ -2188,6 +2188,44 @@ private fun NeriAppContent(
                     restoreState = true
                 }
             }
+            suspend fun preloadNeteaseDetailRouteCover(route: String) {
+                val coverUrl = runCatching {
+                    when {
+                        route.startsWith("playlist_detail/") -> {
+                            val json = Uri.decode(route.substringAfter("playlist_detail/"))
+                            navigationGson.fromJson(json, PlaylistSummary::class.java).picUrl
+                        }
+                        route.startsWith("netease_album_detail/") -> {
+                            val json = Uri.decode(route.substringAfter("netease_album_detail/"))
+                            navigationGson.fromJson(json, AlbumSummary::class.java).picUrl
+                        }
+                        else -> null
+                    }
+                }.getOrNull()
+                CoverArtColorCache.preload(context, coverUrl, offlineMode)
+            }
+            fun navigateToNeteaseAlbum(
+                album: AlbumSummary,
+                afterNavigate: () -> Unit = {}
+            ) {
+                scope.launch {
+                    CoverArtColorCache.preload(context, album.picUrl, offlineMode)
+                    navController.navigate(neteaseAlbumSourceRoute(album)) {
+                        launchSingleTop = true
+                    }
+                    afterNavigate()
+                }
+            }
+            fun navigateToPlaybackSourceRoute(route: String) {
+                scope.launch {
+                    preloadNeteaseDetailRouteCover(route)
+                    showNowPlayingLyrics = false
+                    showNowPlaying = false
+                    navController.navigate(route) {
+                        launchSingleTop = true
+                    }
+                }
+            }
             fun navigateToNeteaseArtist(artist: NeteaseArtistSummary) {
                 val json = Uri.encode(navigationGson.toJson(artist))
                 val currentEntry = navController.currentBackStackEntry
@@ -3193,8 +3231,7 @@ private fun NeriAppContent(
                                             onSongClick = ::playSongsAndOpenNowPlaying,
                                             offlineMode = offlineMode,
                                             onAlbumClick = { album ->
-                                                val json = Uri.encode(navigationGson.toJson(album))
-                                                navController.navigate("netease_album_detail/$json")
+                                                navigateToNeteaseAlbum(album)
                                             }
                                         )
                                     }
@@ -3955,20 +3992,17 @@ private fun NeriAppContent(
                                     onNavigateUp = { showNowPlaying = false },
                                     onOpenCurrentPlaybackSource = currentSourceRoute?.let { route ->
                                         {
-                                            showNowPlayingLyrics = false
-                                            showNowPlaying = false
-                                            navController.navigate(route) {
-                                                launchSingleTop = true
-                                            }
+                                            navigateToPlaybackSourceRoute(route)
                                         }
                                     },
                                     showLyricsScreen = showNowPlayingLyrics,
                                     onShowLyricsScreenChange = { showNowPlayingLyrics = it },
                                     onEnterAlbum = { album ->
-                                        val json = Uri.encode(navigationGson.toJson(album))
-                                        navController.navigate("netease_album_detail/$json")
-                                        if (showNowPlayingLyrics) {
-                                            restoreLyricsAfterAlbumBack = true
+                                        val shouldRestoreLyrics = showNowPlayingLyrics
+                                        navigateToNeteaseAlbum(album) {
+                                            if (shouldRestoreLyrics) {
+                                                restoreLyricsAfterAlbumBack = true
+                                            }
                                         }
                                     },
                                     onEnterArtist = ::navigateToNeteaseArtist,
