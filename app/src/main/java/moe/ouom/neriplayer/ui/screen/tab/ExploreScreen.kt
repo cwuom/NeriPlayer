@@ -52,6 +52,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
@@ -62,6 +63,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
+import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
@@ -70,6 +72,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -103,6 +106,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -224,6 +228,14 @@ private fun neteaseSearchTypeLabel(type: NeteaseExploreSearchType): String {
     }
 }
 
+private fun neteaseSearchTypeIcon(type: NeteaseExploreSearchType): ImageVector {
+    return when (type) {
+        NeteaseExploreSearchType.SONG -> Icons.Outlined.MusicNote
+        NeteaseExploreSearchType.PLAYLIST -> Icons.AutoMirrored.Outlined.QueueMusic
+        NeteaseExploreSearchType.ARTIST -> Icons.Filled.AccountCircle
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 @Suppress("AssignedValueIsNeverRead")
@@ -333,10 +345,35 @@ fun ExploreScreen(
     val searchPanelHorizontalPadding = if (isTabletLayout) 28.dp else 16.dp
     val searchResultHorizontalPadding = if (isTabletLayout) 88.dp else 0.dp
     val searchListState = rememberLazyListState()
+    val youtubeGridState = rememberLazyGridState()
     val tagChipSelectedAlpha = if (backgroundImageUri == null) 1f else 0.86f
     val tagChipUnselectedAlpha = if (backgroundImageUri == null) 1f else 0.74f
     val tagChipBorderAlpha = if (backgroundImageUri == null) 1f else 0.58f
     var previousSearchSource by remember { mutableStateOf(ui.selectedSearchSource) }
+    val isExploreContentScrolled by remember(
+        searchQuery,
+        ui.selectedSearchSource,
+        searchListState,
+        gridState,
+        youtubeGridState,
+        topAppBarState
+    ) {
+        derivedStateOf {
+            when {
+                topAppBarState.collapsedFraction > 0f -> true
+                searchQuery.isNotBlank() -> searchListState.canScrollBackward
+                ui.selectedSearchSource == SearchSource.NETEASE -> gridState.canScrollBackward
+                ui.selectedSearchSource == SearchSource.YOUTUBE_MUSIC -> {
+                    youtubeGridState.canScrollBackward
+                }
+                else -> false
+            }
+        }
+    }
+    val shouldShowSearchHistory = shouldShowExploreSearchHistory(
+        history = visibleSearchHistory,
+        contentScrolled = isExploreContentScrolled
+    )
 
     val shouldLoadMoreSearch by remember(
         searchListState,
@@ -583,6 +620,7 @@ fun ExploreScreen(
                     )
                     ExploreSearchHistoryRow(
                         history = visibleSearchHistory,
+                        visible = shouldShowSearchHistory,
                         query = searchQuery,
                         onHistoryClick = { item -> submitExploreSearch(item) },
                         onClearHistory = {
@@ -646,6 +684,7 @@ fun ExploreScreen(
                             NeteaseExploreSearchType.entries.forEach { type ->
                                 ExploreTagChip(
                                     label = neteaseSearchTypeLabel(type),
+                                    icon = neteaseSearchTypeIcon(type),
                                     selected = ui.selectedNeteaseSearchType == type,
                                     onClick = { vm.setNeteaseSearchType(type) },
                                     selectedAlpha = tagChipSelectedAlpha,
@@ -836,7 +875,8 @@ fun ExploreScreen(
                                 vm = vm,
                                 onClick = onYouTubeMusicPlaylistClick,
                                 offlineMode = offlineMode,
-                                isTabletLayout = isTabletLayout
+                                isTabletLayout = isTabletLayout,
+                                gridState = youtubeGridState
                             )
                         }
                         SearchSource.LINK_RECOGNITION -> {
@@ -1074,11 +1114,12 @@ private fun ExploreOfflineContent(topAppBarState: TopAppBarState) {
 @Composable
 private fun ExploreSearchHistoryRow(
     history: List<String>,
+    visible: Boolean,
     query: String,
     onHistoryClick: (String) -> Unit,
     onClearHistory: () -> Unit
 ) {
-    AnimatedVisibility(visible = history.isNotEmpty()) {
+    AnimatedVisibility(visible = visible && history.isNotEmpty()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1150,6 +1191,13 @@ private fun ExploreSearchHistoryChip(
 
 internal fun filteredExploreSearchHistory(history: List<String>): List<String> {
     return history.take(EXPLORE_HISTORY_DISPLAY_LIMIT)
+}
+
+internal fun shouldShowExploreSearchHistory(
+    history: List<String>,
+    contentScrolled: Boolean
+): Boolean {
+    return history.isNotEmpty() && !contentScrolled
 }
 
 private const val EXPLORE_HISTORY_DISPLAY_LIMIT = 15
@@ -1259,7 +1307,8 @@ private fun ExploreTagChip(
     onClick: () -> Unit,
     selectedAlpha: Float,
     unselectedAlpha: Float,
-    borderAlpha: Float
+    borderAlpha: Float,
+    icon: ImageVector? = null
 ) {
     val containerColor = if (selected) {
         MaterialTheme.colorScheme.secondaryContainer.copy(alpha = selectedAlpha)
@@ -1284,12 +1333,21 @@ private fun ExploreTagChip(
         contentColor = contentColor,
         border = androidx.compose.foundation.BorderStroke(1.dp, borderColor)
     ) {
-        Box(
+        Row(
             modifier = Modifier
                 .height(32.dp)
                 .padding(horizontal = 14.dp),
-            contentAlignment = Alignment.Center
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+            }
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelLarge,
@@ -1688,6 +1746,7 @@ private fun YouTubeMusicExploreContent(
     vm: ExploreViewModel,
     onClick: (YouTubeMusicPlaylist) -> Unit,
     offlineMode: Boolean,
+    gridState: LazyGridState,
     isTabletLayout: Boolean = false
 ) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
@@ -1738,6 +1797,7 @@ private fun YouTubeMusicExploreContent(
         }
         else -> {
             LazyVerticalGrid(
+                state = gridState,
                 columns = GridCells.Adaptive(gridMinCellSize),
                 contentPadding = PaddingValues(
                     start = gridHorizontalPadding, end = gridHorizontalPadding,

@@ -17,4 +17,13 @@ class ExploreSearchHistoryDisplayTest {
 
         assertEquals((1..15).map { "history$it" }, filteredExploreSearchHistory(history))
     }
+
+    @Test
+    fun `search history hides after content leaves the top`() {
+        val history = listOf("你好")
+
+        assertEquals(true, shouldShowExploreSearchHistory(history, contentScrolled = false))
+        assertEquals(false, shouldShowExploreSearchHistory(history, contentScrolled = true))
+        assertEquals(false, shouldShowExploreSearchHistory(emptyList(), contentScrolled = false))
+    }
 }
