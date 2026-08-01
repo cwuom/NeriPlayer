@@ -283,7 +283,13 @@ private fun parseRawLyrics(rawLyrics: String?): SyncedLyrics {
     if (rawLyrics.isNullOrBlank()) {
         return SyncedLyrics(emptyList())
     }
-    return runCatching { AutoParser().parse(rawLyrics) }
+    return runCatching {
+        if (isTtmlLyrics(rawLyrics) || isNeteaseYrc(rawLyrics)) {
+            AutoParser().parse(rawLyrics)
+        } else {
+            parseNeteaseLrc(rawLyrics).toSyncedLyrics()
+        }
+    }
         .getOrDefault(SyncedLyrics(emptyList()))
 }
 
@@ -311,7 +317,7 @@ private fun LyricEntry.toSyncedLine(): ISyncedLine {
     if (syllables.isEmpty()) {
         return SyncedLine(
             content = text,
-            translation = null,
+            translation = translation,
             start = startTimeMs.toIntSafely(),
             end = endTimeMs.toIntSafely()
         )
@@ -319,7 +325,7 @@ private fun LyricEntry.toSyncedLine(): ISyncedLine {
 
     return KaraokeLine.MainKaraokeLine(
         syllables = syllables,
-        translation = null,
+        translation = translation,
         alignment = KaraokeAlignment.Unspecified,
         start = startTimeMs.toIntSafely(),
         end = max(endTimeMs.toIntSafely(), syllables.last().end)

@@ -1123,6 +1123,7 @@ private fun LyricsContentPane(
         },
         onLyricLongClick = onLyricLongClick,
         translatedLyrics = if (showLyricTranslation) effectivePlainTranslatedLyrics else null,
+        showEmbeddedTranslations = showLyricTranslation && !usePhoneticTranslation,
         translationFontSize = scaledLyricFontSize(16f, translationFontScale).sp,
         isPlaying = shouldAnimateFromPlayback,
         playbackSpeed = playbackSpeed,

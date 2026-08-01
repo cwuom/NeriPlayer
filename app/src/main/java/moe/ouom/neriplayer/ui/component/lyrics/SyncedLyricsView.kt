@@ -24,6 +24,9 @@ package moe.ouom.neriplayer.ui.component.lyrics
  */
 
 import android.annotation.SuppressLint
+import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.Typeface
 import android.os.Build
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateContentSize
@@ -97,6 +100,91 @@ import moe.ouom.neriplayer.core.player.metadata.normalizeLegacyLrcTimestamps
 
 private const val LYRIC_TIME_SMOOTHING_DURATION_MS = 96
 private const val LYRIC_TIME_SMOOTHING_MAX_DELTA_MS = 180L
+private const val LYRIC_TRANSLATION_LAYOUT_ANIMATION_DURATION_MS = 250
+private const val LYRIC_TRANSLATION_GAP_REFERENCE_SP = 16f
+private const val LYRIC_TRANSLATION_GAP_REFERENCE_DP = 4f
+private const val LYRIC_TRANSLATION_GAP_MIN_DP = 2f
+private const val LYRIC_TRANSLATION_GAP_MAX_DP = 8f
+private const val LYRIC_LINE_HEIGHT_MULTIPLIER = 1.18f
+private const val LYRIC_TRANSLATION_LINE_HEIGHT_MULTIPLIER = 1.12f
+
+private data class LyricInkMetrics(
+    val coverage: Float
+)
+
+internal data class LyricAutoScrollTarget(
+    val lineIndex: Int,
+    val lyricsSize: Int
+)
+
+internal fun resolveLyricTranslationGap(
+    lyricFontSize: TextUnit,
+    translationFontSize: TextUnit,
+    lyricGlyphCoverage: Float = 1f,
+    translationGlyphCoverage: Float = 1f,
+    fontScale: Float = 1f
+): Dp {
+    val lyricSize = lyricFontSize.value.takeIf { it.isFinite() && it > 0f }
+    val translationSize = translationFontSize.value.takeIf { it.isFinite() && it > 0f }
+    val referenceFontSize = when {
+        lyricSize != null && translationSize != null -> (lyricSize + translationSize) / 2f
+        lyricSize != null -> lyricSize
+        translationSize != null -> translationSize
+        else -> LYRIC_TRANSLATION_GAP_REFERENCE_SP
+    }
+    val glyphCoverage = (
+        lyricGlyphCoverage.coerceAtLeast(0f) + translationGlyphCoverage.coerceAtLeast(0f)
+        ) / 2f
+    val scaledGap = referenceFontSize /
+        LYRIC_TRANSLATION_GAP_REFERENCE_SP * LYRIC_TRANSLATION_GAP_REFERENCE_DP *
+        glyphCoverage.coerceIn(0.75f, 1f) * fontScale.coerceAtLeast(0.1f)
+    return scaledGap.coerceIn(
+        LYRIC_TRANSLATION_GAP_MIN_DP,
+        LYRIC_TRANSLATION_GAP_MAX_DP
+    ).dp
+}
+
+private fun measureLyricInkMetrics(
+    text: String,
+    fontSize: TextUnit,
+    typeface: Typeface
+): LyricInkMetrics {
+    val sizeSp = fontSize.value.takeIf { it.isFinite() && it > 0f }
+        ?: LYRIC_TRANSLATION_GAP_REFERENCE_SP
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = sizeSp
+        this.typeface = typeface
+    }
+    val bounds = Rect()
+    val glyphHeight = text.lineSequence()
+        .filter { it.isNotEmpty() }
+        .maxOfOrNull { line ->
+            paint.getTextBounds(line, 0, line.length, bounds)
+            bounds.height().toFloat()
+        }
+        ?: 0f
+    return LyricInkMetrics(
+        coverage = (glyphHeight / sizeSp).coerceIn(0f, 1.5f)
+    )
+}
+
+private fun resolveLyricFontTypeface(fontWeight: FontWeight): Typeface {
+    return if (fontWeight >= FontWeight.Medium) {
+        Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    } else {
+        Typeface.create("sans-serif", Typeface.NORMAL)
+    }
+}
+
+private fun resolveLyricLineHeight(fontSize: TextUnit, multiplier: Float): TextUnit {
+    val size = fontSize.value.takeIf { it.isFinite() && it > 0f }
+        ?: LYRIC_TRANSLATION_GAP_REFERENCE_SP
+    return if (fontSize.value.isFinite() && fontSize.value > 0f) {
+        fontSize * multiplier
+    } else {
+        (size * multiplier).sp
+    }
+}
 
 @Stable
 data class LyricVisualSpec(
@@ -125,18 +213,30 @@ data class LyricEntry(
     val text: String,
     val startTimeMs: Long,
     val endTimeMs: Long,
-    val words: List<WordTiming>? = null
+    val words: List<WordTiming>? = null,
+    val translation: String? = null
 )
 
 private val NeteaseYrcLineRegex = Regex("""\[\d{1,19},\s*\d{1,19}]\(\d{1,19},""")
 private val TtmlTagRegex = Regex("""<\s*tt(?:\s|>)""", RegexOption.IGNORE_CASE)
 private val TtmlLayoutWhitespaceRegex = Regex("""[\r\n]\s*""")
+private val LrcCreditLineRegex = Regex(
+    """^(?:作词|作曲|编曲|填词|演唱|歌手|混音|母带|制作|监制|录音|和声|配唱|吉他(?:solo)?|贝斯|鼓|键盘|弦乐|vo(?:/mix)?|mix|tune|inst|guitar|bass|drums?|vocal|lyrics|music|arrangement|produced)\s*[:：]""",
+    RegexOption.IGNORE_CASE
+)
+
+private data class LrcTimelineEntry(
+    val startTimeMs: Long,
+    val text: String
+)
 
 fun isNeteaseYrc(content: String): Boolean = content.contains(NeteaseYrcLineRegex)
 
+internal fun isTtmlLyrics(content: String): Boolean = TtmlTagRegex.containsMatchIn(content)
+
 fun parseNeteaseLyricsAuto(content: String): List<LyricEntry> {
     return when {
-        TtmlTagRegex.containsMatchIn(content) -> parseTtmlLyrics(content)
+        isTtmlLyrics(content) -> parseTtmlLyrics(content)
         isNeteaseYrc(content) -> runCatching { parseNeteaseYrc(content) }.getOrDefault(emptyList())
         else -> parseNeteaseLrc(content)
     }
@@ -170,13 +270,19 @@ private fun toLyricEntry(line: ISyncedLine): LyricEntry? {
                         endTimeMs = syllable.end.toLong().coerceAtLeast(syllable.start.toLong()),
                         charCount = content.length
                     )
-                }.takeIf { it.isNotEmpty() }
+                }.takeIf { it.isNotEmpty() },
+                translation = line.translation
+                    ?.withoutTtmlLayoutWhitespace()
+                    ?.takeIf { it.isNotBlank() }
             )
         }
         is SyncedLine -> LyricEntry(
             text = line.content.withoutTtmlLayoutWhitespace(),
             startTimeMs = startMs,
-            endTimeMs = endMs
+            endTimeMs = endMs,
+            translation = line.translation
+                ?.withoutTtmlLayoutWhitespace()
+                ?.takeIf { it.isNotBlank() }
         )
         else -> null
     }
@@ -250,6 +356,26 @@ internal fun shouldSnapLyricTimeSmoothing(
 ): Boolean {
     val delta = targetTimeMs - displayedTimeMs
     return delta < 0L || delta > maxAnimatedDeltaMs
+}
+
+internal fun resolveLyricSeekPosition(positionMs: Long, durationMs: Long): Long? {
+    val safePositionMs = positionMs.coerceAtLeast(0L)
+    val safeDurationMs = durationMs.takeIf { it > 0L } ?: return safePositionMs
+    return safePositionMs.takeIf { it < safeDurationMs }
+}
+
+internal fun shouldFinishLyricAutoScroll(
+    requestTarget: LyricAutoScrollTarget,
+    latestTarget: LyricAutoScrollTarget
+): Boolean = requestTarget == latestTarget
+
+internal fun resolveLyricTranslationText(
+    line: LyricEntry,
+    matchedTranslation: LyricEntry?,
+    showEmbeddedTranslations: Boolean
+): String? {
+    return matchedTranslation?.text?.takeIf { it.isNotBlank() }
+        ?: line.translation?.takeIf { showEmbeddedTranslations }
 }
 
 @Composable
@@ -348,7 +474,8 @@ fun SyncedLyricsView(
     interpolatePlaybackPosition: Boolean = false,
     visualEffectsEnabled: Boolean = true,
     smoothActiveLineProgress: Boolean = true,
-    edgeFadeHeight: Dp = resolveLyricEdgeFadeHeight(isEmbedded = false)
+    edgeFadeHeight: Dp = resolveLyricEdgeFadeHeight(isEmbedded = false),
+    showEmbeddedTranslations: Boolean = true
 ) {
     val listState = rememberLazyListState()
     var manualClearHoldIndex by remember(lyrics) { mutableStateOf<Int?>(null) }
@@ -371,20 +498,30 @@ fun SyncedLyricsView(
             .orEmpty()
     }
 
-    LaunchedEffect(currentIndex, lyrics.size) {
-        if (currentIndex in lyrics.indices && !listState.isScrollInProgress) {
-            isAutoScrolling = true
-            try {
-                listState.animateScrollToItem(currentIndex)
-            } finally {
-                // 确保自动滚动被取消或完成后及时复位, 避免后续手动滚动无法进入清晰态
+    val isUserInteracting by remember {
+        derivedStateOf { listState.isScrollInProgress && !isAutoScrolling }
+    }
+    val autoScrollTarget = LyricAutoScrollTarget(
+        lineIndex = currentIndex,
+        lyricsSize = lyrics.size
+    )
+    val latestAutoScrollTarget by rememberUpdatedState(autoScrollTarget)
+
+    LaunchedEffect(currentIndex, lyrics.size, isUserInteracting) {
+        if (currentIndex !in lyrics.indices || isUserInteracting) {
+            if (isUserInteracting) isAutoScrolling = false
+            return@LaunchedEffect
+        }
+
+        val requestTarget = autoScrollTarget
+        isAutoScrolling = true
+        try {
+            listState.animateScrollToItem(currentIndex)
+        } finally {
+            if (shouldFinishLyricAutoScroll(requestTarget, latestAutoScrollTarget)) {
                 isAutoScrolling = false
             }
         }
-    }
-
-    val isUserInteracting by remember {
-        derivedStateOf { listState.isScrollInProgress && !isAutoScrolling }
     }
 
     LaunchedEffect(isUserInteracting, currentIndex) {
@@ -449,16 +586,14 @@ fun SyncedLyricsView(
                         )
                         .animateItem()
                         .widthIn(max = maxTextWidth)
-                        .then(
-                            if (visualEffectsEnabled) {
-                                Modifier.animateContentSize(
-                                    animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioLowBouncy,
-                                        stiffness = Spring.StiffnessLow
-                                    )
+                        .animateContentSize(
+                            animationSpec = if (visualEffectsEnabled) {
+                                spring(
+                                    dampingRatio = Spring.DampingRatioLowBouncy,
+                                    stiffness = Spring.StiffnessLow
                                 )
                             } else {
-                                Modifier
+                                tween(LYRIC_TRANSLATION_LAYOUT_ANIMATION_DURATION_MS)
                             }
                         ),
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -474,7 +609,11 @@ fun SyncedLyricsView(
                                 color = textColor,
                                 fontSize = fontSize,
                                 fontWeight = FontWeight.Medium,
-                                textAlign = TextAlign.Center
+                                textAlign = TextAlign.Center,
+                                lineHeight = resolveLyricLineHeight(
+                                    fontSize,
+                                    LYRIC_LINE_HEIGHT_MULTIPLIER
+                                )
                             ),
                             maxLines = Int.MAX_VALUE,
                             softWrap = true
@@ -576,7 +715,11 @@ fun SyncedLyricsView(
                                     fontSize = fontSize,
                                     fontWeight = FontWeight.Medium,
                                     textAlign = TextAlign.Center,
-                                    shadow = shadowEffect
+                                    shadow = shadowEffect,
+                                    lineHeight = resolveLyricLineHeight(
+                                        fontSize,
+                                        LYRIC_LINE_HEIGHT_MULTIPLIER
+                                    )
                                 ),
                                 maxLines = Int.MAX_VALUE,
                                 softWrap = true
@@ -584,18 +727,24 @@ fun SyncedLyricsView(
                         }
                     }
 
-                    val transText = translationMatchesByIndex[index]?.text
+                    val transText = resolveLyricTranslationText(
+                        line = line,
+                        matchedTranslation = translationMatchesByIndex[index],
+                        showEmbeddedTranslations = showEmbeddedTranslations
+                    )
                     val shouldShowTranslation = (shouldUseClearText || isActive) && !transText.isNullOrBlank()
 
                     Crossfade(
                         targetState = shouldShowTranslation,
-                        animationSpec = tween(250),
+                        animationSpec = tween(LYRIC_TRANSLATION_LAYOUT_ANIMATION_DURATION_MS),
                         label = "translation_crossfade"
                     ) { show ->
                         if (show && transText != null) {
                             LyricTranslationText(
                                 text = transText,
                                 textColor = textColor,
+                                lyricText = line.text,
+                                lyricFontSize = fontSize,
                                 fontSize = translationFontSize
                             )
                         }
@@ -614,19 +763,51 @@ internal fun lyricListItemKey(index: Int, line: LyricEntry): String {
 private fun LyricTranslationText(
     text: String,
     textColor: Color,
+    lyricText: String,
+    lyricFontSize: TextUnit,
     fontSize: TextUnit
 ) {
+    val density = LocalDensity.current
+    val translationGap = remember(
+        lyricText,
+        text,
+        lyricFontSize,
+        fontSize,
+        density.fontScale
+    ) {
+        val lyricMetrics = measureLyricInkMetrics(
+            text = lyricText,
+            fontSize = lyricFontSize,
+            typeface = resolveLyricFontTypeface(FontWeight.Medium)
+        )
+        val translationMetrics = measureLyricInkMetrics(
+            text = text,
+            fontSize = fontSize,
+            typeface = resolveLyricFontTypeface(FontWeight.Normal)
+        )
+        resolveLyricTranslationGap(
+            lyricFontSize = lyricFontSize,
+            translationFontSize = fontSize,
+            lyricGlyphCoverage = lyricMetrics.coverage,
+            translationGlyphCoverage = translationMetrics.coverage,
+            fontScale = density.fontScale
+        )
+    }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(translationGap))
         Text(
             text = text,
             style = TextStyle(
                 color = textColor.copy(alpha = 0.85f),
                 fontSize = fontSize,
                 fontWeight = FontWeight.Normal,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
+                lineHeight = resolveLyricLineHeight(
+                    fontSize,
+                    LYRIC_TRANSLATION_LINE_HEIGHT_MULTIPLIER
+                )
             ),
             maxLines = Int.MAX_VALUE,
             softWrap = true
@@ -893,7 +1074,8 @@ fun SyncedLyricsActiveLine(
         fontSize = fontSize,
         fontWeight = FontWeight.Medium,
         textAlign = TextAlign.Center,
-        letterSpacing = 0.sp  // 禁用字符间距调整，确保测量和渲染一致
+        letterSpacing = 0.sp,  // 禁用字符间距调整，确保测量和渲染一致
+        lineHeight = resolveLyricLineHeight(fontSize, LYRIC_LINE_HEIGHT_MULTIPLIER)
     )
 
     val effectiveFadeWidth = if (line.words.isNullOrEmpty()) fadeWidth else 0.dp
@@ -974,7 +1156,7 @@ fun parseNeteaseLrc(lrc: String): List<LyricEntry> {
 //    NPLogger.d("parseLyc-N", lrc)
     val normalizedLrc = normalizeLegacyLrcTimestamps(lrc)
     val tag = Regex("""\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?]""")
-    val timeline = mutableListOf<Pair<Long, String>>()
+    val timeline = mutableListOf<LrcTimelineEntry>()
 
     normalizedLrc.lineSequence().forEach { raw ->
         val line = raw.trim()
@@ -992,18 +1174,50 @@ fun parseNeteaseLrc(lrc: String): List<LyricEntry> {
         }
         val time = mm * 60_000L + ss * 1_000L + ms
         val text = line.substring(m.range.last + 1).trim()
-        if (text.isNotEmpty()) {
-            timeline.add(time to text)
-        }
+        timeline.add(LrcTimelineEntry(startTimeMs = time, text = text))
     }
 
-    timeline.sortBy { it.first }
-    val out = mutableListOf<LyricEntry>()
-    for (i in timeline.indices) {
-        val (start, text) = timeline[i]
-        val end = if (i < timeline.lastIndex) timeline[i + 1].first else start + 5_000L
-        out.add(LyricEntry(text = text, startTimeMs = start, endTimeMs = end, words = null))
+    timeline.sortBy { it.startTimeMs }
+    val suffixContainsOnlyCredits = BooleanArray(timeline.size + 1)
+    suffixContainsOnlyCredits[timeline.size] = true
+    for (index in timeline.lastIndex downTo 0) {
+        val text = timeline[index].text
+        suffixContainsOnlyCredits[index] = text.isNotBlank() &&
+            LrcCreditLineRegex.containsMatchIn(text) &&
+            suffixContainsOnlyCredits[index + 1]
     }
+    var seenNonBlankLine = false
+    var terminalMarkerIndex: Int? = null
+    for (index in timeline.indices) {
+        val entry = timeline[index]
+        if (entry.text.isBlank() && seenNonBlankLine && suffixContainsOnlyCredits[index + 1]) {
+            terminalMarkerIndex = index
+            break
+        }
+        if (entry.text.isNotBlank()) {
+            seenNonBlankLine = true
+        }
+    }
+    val effectiveTimeline = terminalMarkerIndex?.let { markerIndex ->
+        timeline.take(markerIndex + 1)
+    } ?: timeline
+    val out = mutableListOf<LyricEntry>()
+    var nextTimestampMs: Long? = null
+    for (index in effectiveTimeline.lastIndex downTo 0) {
+        val entry = effectiveTimeline[index]
+        if (entry.text.isNotBlank()) {
+            out.add(
+                LyricEntry(
+                    text = entry.text,
+                    startTimeMs = entry.startTimeMs,
+                    endTimeMs = nextTimestampMs ?: (entry.startTimeMs + 5_000L),
+                    words = null
+                )
+            )
+        }
+        nextTimestampMs = entry.startTimeMs
+    }
+    out.reverse()
     return out
 }
 

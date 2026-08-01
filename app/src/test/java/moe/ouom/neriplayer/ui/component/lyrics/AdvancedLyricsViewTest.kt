@@ -40,6 +40,76 @@ class AdvancedLyricsViewTest {
     }
 
     @Test
+    fun `parseTtmlLyrics keeps inline translation on word timed lines`() {
+        val ttml = """
+            <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">
+                <body><div>
+                    <p begin="00:00:01.000" end="00:00:02.000">
+                        <span begin="00:00:01.000" end="00:00:01.500">今日は</span>
+                        <span begin="00:00:01.500" end="00:00:02.000">晴れ</span>
+                        <span ttm:role="x-translation">今天放晴</span>
+                    </p>
+                </div></body>
+            </tt>
+        """.trimIndent()
+
+        val entry = parseNeteaseLyricsAuto(ttml).single()
+
+        assertEquals("今日は晴れ", entry.text)
+        assertEquals("今天放晴", entry.translation)
+        assertEquals(1_000L, entry.startTimeMs)
+        assertEquals(2_000L, entry.endTimeMs)
+    }
+
+    @Test
+    fun `buildAdvancedSyncedLyrics preserves embedded ttml translation`() {
+        val ttml = """
+            <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">
+                <body><div>
+                    <p begin="00:00:01.000" end="00:00:02.000">
+                        <span begin="00:00:01.000" end="00:00:02.000">今日は</span>
+                        <span ttm:role="x-translation">今天</span>
+                    </p>
+                </div></body>
+            </tt>
+        """.trimIndent()
+        val parsed = parseNeteaseLyricsAuto(ttml)
+
+        val result = buildAdvancedSyncedLyrics(
+            rawLyrics = ttml,
+            rawTranslatedLyrics = null,
+            lyrics = parsed,
+            translatedLyrics = emptyList()
+        )
+
+        val line = result.lines.single() as KaraokeLine.MainKaraokeLine
+        assertEquals("今天", line.translation)
+    }
+
+    @Test
+    fun `buildAdvancedSyncedLyrics uses trimmed plain lrc timeline`() {
+        val rawLyrics = """
+            [03:58.12]もっと、ちゃんと言って
+            [04:00.67]
+            [04:01.30]vo/mix：Neri
+            [04:02.03]吉他solo：热闹的蛋白酥
+        """.trimIndent()
+        val parsedLyrics = parseNeteaseLyricsAuto(rawLyrics)
+
+        val result = buildAdvancedSyncedLyrics(
+            rawLyrics = rawLyrics,
+            rawTranslatedLyrics = null,
+            lyrics = parsedLyrics,
+            translatedLyrics = emptyList()
+        )
+
+        assertEquals(1, result.lines.size)
+        val line = result.lines.single() as SyncedLine
+        assertEquals("もっと、ちゃんと言って", line.content)
+        assertEquals(240_670, line.end)
+    }
+
+    @Test
     fun `buildAdvancedSyncedLyrics attaches translation by overlap`() {
         val lyrics = listOf(
             LyricEntry(

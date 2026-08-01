@@ -271,6 +271,7 @@ import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.ui.component.lyrics.rememberLyricSeekHapticFeedback
 import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricEdgeFadeHeight
+import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricSeekPosition
 import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricsEditorInitialText
 import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricsEditorSeed
 import moe.ouom.neriplayer.ui.component.lyrics.resolvePreferredLyricContent
@@ -1235,6 +1236,15 @@ private fun resolvePreferredNeteaseLyricSongId(song: SongItem?): Long? {
     return if (isDirectNeteaseSong) song.id.takeIf { it > 0L } else null
 }
 
+private fun seekToLyricSafely(
+    positionMs: Long,
+    playbackDurationMs: Long,
+    songDurationMs: Long
+) {
+    val knownDurationMs = maxOf(playbackDurationMs, songDurationMs)
+    resolveLyricSeekPosition(positionMs, knownDurationMs)?.let(PlayerManager::seekTo)
+}
+
 private data class LoadedLyricsState(
     val rawLyrics: String?,
     val rawTranslatedLyrics: String?,
@@ -1833,7 +1843,13 @@ fun NowPlayingScreen(
                             onLyricFontScaleChange = onLyricFontScaleChange,
                             onExitNowPlaying = onNavigateUp,
                             onNavigateBack = { onShowLyricsScreenChange(false) },
-                            onSeekTo = { position -> PlayerManager.seekTo(position) },
+                            onSeekTo = { position ->
+                                seekToLyricSafely(
+                                    positionMs = position,
+                                    playbackDurationMs = durationMs,
+                                    songDurationMs = currentSong?.durationMs ?: 0L
+                                )
+                            },
                             progressSeekEnabled = playbackProgressSeekEnabled,
                             advancedLyricsEnabled = advancedLyricsEnabled,
                             translatedLyrics = translatedLyrics,
@@ -2282,8 +2298,16 @@ fun NowPlayingScreen(
                             lyricBlurAmount = lyricBlurAmount,
                             isPlaying = isPlaying && previewPositionOverrideMs == null,
                             playbackSpeed = playbackSoundState.speed,
-                            onLyricClick = { entry -> PlayerManager.seekTo(entry.startTimeMs) },
+                            onLyricClick = { entry ->
+                                seekToLyricSafely(
+                                    positionMs = entry.startTimeMs,
+                                    playbackDurationMs = durationMs,
+                                    songDurationMs = currentSong?.durationMs ?: 0L
+                                )
+                            },
                             onLyricLongClick = { entry -> lyricShareInitialLine = entry },
+                            showEmbeddedTranslations = showLyricTranslation &&
+                                !usePhoneticTranslation,
                             translatedLyrics = if (showLyricTranslation) secondaryPlainLyrics else null
                         )
                     }
@@ -2534,7 +2558,13 @@ fun NowPlayingScreen(
                                         onLyricLongClick = { line ->
                                             lyricShareInitialLine = line
                                         },
-                                        onSeekTo = { position -> PlayerManager.seekTo(position) }
+                                        onSeekTo = { position ->
+                                            seekToLyricSafely(
+                                                positionMs = position,
+                                                playbackDurationMs = durationMs,
+                                                songDurationMs = currentSong?.durationMs ?: 0L
+                                            )
+                                        }
                                     )
                                 }
 
@@ -2553,11 +2583,17 @@ fun NowPlayingScreen(
                                         isPlaying = isPlaying && previewPositionOverrideMs == null,
                                         playbackSpeed = playbackSoundState.speed,
                                         onLyricClick = { entry ->
-                                            PlayerManager.seekTo(entry.startTimeMs)
+                                            seekToLyricSafely(
+                                                positionMs = entry.startTimeMs,
+                                                playbackDurationMs = durationMs,
+                                                songDurationMs = currentSong?.durationMs ?: 0L
+                                            )
                                         },
                                         onLyricLongClick = { entry ->
                                             lyricShareInitialLine = entry
                                         },
+                                        showEmbeddedTranslations = showLyricTranslation &&
+                                            !usePhoneticTranslation,
                                         translatedLyrics = if (showLyricTranslation) {
                                             secondaryPlainLyrics
                                         } else {
@@ -4328,7 +4364,8 @@ private fun NowPlayingLyricsPane(
     playbackSpeed: Float,
     onLyricClick: (LyricEntry) -> Unit,
     onLyricLongClick: (LyricEntry) -> Unit,
-    translatedLyrics: List<LyricEntry>? = null
+    translatedLyrics: List<LyricEntry>? = null,
+    showEmbeddedTranslations: Boolean = translatedLyrics != null
 ) {
     val currentPosition by PlayerManager.playbackPositionFlow.collectAsStateWithLifecycle()
     val effectivePositionMs = previewPositionOverrideMs ?: currentPosition
@@ -4351,7 +4388,8 @@ private fun NowPlayingLyricsPane(
         interpolatePlaybackPosition = true,
         visualEffectsEnabled = false,
         smoothActiveLineProgress = false,
-        edgeFadeHeight = resolveLyricEdgeFadeHeight(isEmbedded = true)
+        edgeFadeHeight = resolveLyricEdgeFadeHeight(isEmbedded = true),
+        showEmbeddedTranslations = showEmbeddedTranslations
     )
 }
 

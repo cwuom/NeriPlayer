@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.ui.component.lyrics
 
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -41,6 +43,46 @@ class SyncedLyricsViewTimingTest {
     }
 
     @Test
+    fun `parseNeteaseLrc trims credits after a terminal empty timestamp`() {
+        val lyrics = parseNeteaseLrc(
+            """
+            [03:58.12]もっと、ちゃんと言って
+            [04:00.67]
+            [04:01.30]vo/mix：Neri
+            [04:01.64]tune：Tsubaki椿
+            [04:01.83]inst：Trebor_TTTTT
+            [04:02.03]吉他solo：热闹的蛋白酥
+            """.trimIndent()
+        )
+
+        assertEquals(listOf("もっと、ちゃんと言って"), lyrics.map { it.text })
+        assertEquals(238_120L, lyrics.single().startTimeMs)
+        assertEquals(240_670L, lyrics.single().endTimeMs)
+    }
+
+    @Test
+    fun `parseNeteaseLrc keeps lyric lines after a non-terminal empty timestamp`() {
+        val lyrics = parseNeteaseLrc(
+            """
+            [00:01.00]第一句
+            [00:02.00]
+            [00:03.00]第二句
+            """.trimIndent()
+        )
+
+        assertEquals(listOf("第一句", "第二句"), lyrics.map { it.text })
+        assertEquals(2_000L, lyrics[0].endTimeMs)
+    }
+
+    @Test
+    fun `resolveLyricSeekPosition rejects positions at or after known duration`() {
+        assertEquals(239_999L, resolveLyricSeekPosition(239_999L, 240_000L))
+        assertEquals(null, resolveLyricSeekPosition(240_000L, 240_000L))
+        assertEquals(240_000L, resolveLyricSeekPosition(240_000L, 0L))
+        assertEquals(0L, resolveLyricSeekPosition(-1L, 240_000L))
+    }
+
+    @Test
     fun `lyricListItemKey stays unique for duplicate metadata lines`() {
         val duplicateLine = LyricEntry(text = "BPM：180", startTimeMs = 0L, endTimeMs = 0L)
         val keys = listOf(
@@ -72,6 +114,66 @@ class SyncedLyricsViewTimingTest {
     fun `embedded lyrics use a shorter edge fade than the full lyrics page`() {
         assertEquals(24.dp, resolveLyricEdgeFadeHeight(isEmbedded = true))
         assertEquals(72.dp, resolveLyricEdgeFadeHeight(isEmbedded = false))
+    }
+
+    @Test
+    fun `translation gap follows both font sizes and stays bounded`() {
+        assertEquals(4.dp, resolveLyricTranslationGap(18.sp, 14.sp))
+        assertEquals(
+            3.dp,
+            resolveLyricTranslationGap(
+                lyricFontSize = 18.sp,
+                translationFontSize = 14.sp,
+                lyricGlyphCoverage = 0.75f,
+                translationGlyphCoverage = 0.75f
+            )
+        )
+        assertEquals(2.dp, resolveLyricTranslationGap(9.sp, 7.sp))
+        assertEquals(6.dp, resolveLyricTranslationGap(28.sp, 20.sp))
+        assertEquals(8.dp, resolveLyricTranslationGap(48.sp, 32.sp))
+    }
+
+    @Test
+    fun `translation gap ignores invalid font sizes`() {
+        assertEquals(
+            4.dp,
+            resolveLyricTranslationGap(TextUnit.Unspecified, TextUnit.Unspecified)
+        )
+        assertEquals(3.5.dp, resolveLyricTranslationGap(TextUnit.Unspecified, 14.sp))
+    }
+
+    @Test
+    fun `stale lyric auto scroll cannot clear the latest scroll state`() {
+        val staleTarget = LyricAutoScrollTarget(lineIndex = 1, lyricsSize = 4)
+        val latestTarget = LyricAutoScrollTarget(lineIndex = 2, lyricsSize = 4)
+
+        assertFalse(shouldFinishLyricAutoScroll(staleTarget, latestTarget))
+        assertTrue(shouldFinishLyricAutoScroll(latestTarget, latestTarget))
+    }
+
+    @Test
+    fun `embedded translation is used when no separate translation line matches`() {
+        val line = LyricEntry(
+            text = "今日は晴れ",
+            startTimeMs = 1_000L,
+            endTimeMs = 2_000L,
+            translation = "今天放晴"
+        )
+
+        assertEquals("今天放晴", resolveLyricTranslationText(line, null, true))
+        assertEquals(null, resolveLyricTranslationText(line, null, false))
+        assertEquals(
+            "外部翻译",
+            resolveLyricTranslationText(
+                line = line,
+                matchedTranslation = LyricEntry(
+                    text = "外部翻译",
+                    startTimeMs = 1_000L,
+                    endTimeMs = 2_000L
+                ),
+                showEmbeddedTranslations = true
+            )
+        )
     }
 
     @Test
