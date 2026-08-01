@@ -99,6 +99,7 @@ import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.policy.progress.LONG_FORM_PLAYBACK_MIN_DURATION_MS
 import moe.ouom.neriplayer.core.player.policy.progress.resolveLongFormPlaybackPositionForPersistence
 import moe.ouom.neriplayer.core.player.policy.progress.resolveLongFormPlaybackResumePosition
+import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.core.player.metadata.NeteaseLyricsCacheEntry
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
@@ -297,6 +298,7 @@ object PlayerManager {
     internal var progressJob: Job? = null
     internal var lyriconUpdateJob: Job? = null
     internal var externalBluetoothLyricsLoadJob: Job? = null
+    internal var externalBluetoothTranslationLoadJob: Job? = null
     internal var volumeFadeJob: Job? = null
     internal var pendingPauseJob: Job? = null
         set(value) {
@@ -404,6 +406,7 @@ object PlayerManager {
     internal var amllLyricsEnabled = false
     internal var statusBarLyricsEnable = false
     internal var externalBluetoothLyricsEnabled = false
+    internal var externalBluetoothTranslationEnabled = false
     internal var floatingLyricsEnabled = false
     internal var floatingLyricsShowTranslation = true
     internal var cloudMusicLyricDefaultOffsetMs = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
@@ -559,6 +562,10 @@ object PlayerManager {
     val externalBluetoothLyricLineFlow: StateFlow<String?> = _externalBluetoothLyricLineFlow
     internal val _floatingTranslatedLyricLineFlow = MutableStateFlow<String?>(null)
     val floatingTranslatedLyricLineFlow: StateFlow<String?> = _floatingTranslatedLyricLineFlow
+    internal val _externalBluetoothLyricPayloadFlow =
+        MutableStateFlow(ExternalBluetoothLyricPayload())
+    internal val externalBluetoothLyricPayloadFlow: StateFlow<ExternalBluetoothLyricPayload> =
+        _externalBluetoothLyricPayloadFlow
 
     internal val _playerEventFlow = MutableSharedFlow<PlayerEvent>()
     val playerEventFlow: SharedFlow<PlayerEvent> = _playerEventFlow.asSharedFlow()

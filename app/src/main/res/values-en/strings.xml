@@ -1335,8 +1335,10 @@
     <string name="settings_lyric_api_enabled_desc">Provide Lyricon and SuperLyric with the current song, playback state, position, word-level lyrics, and translations</string>
     <string name="settings_amll_lyrics_enabled">Use AMLL Database</string>
     <string name="settings_amll_lyrics_enabled_desc">When platform lyrics are not word-level, try matching word-level lyrics from the AMLL TTML database</string>
-    <string name="settings_external_bluetooth_lyrics_enabled">External Bluetooth Lyrics</string>
-    <string name="settings_external_bluetooth_lyrics_enabled_desc">When a Bluetooth device is connected, sync the current lyric line to the device song info area</string>
+    <string name="settings_external_bluetooth_lyrics_enabled">Bluetooth Original Lyrics</string>
+    <string name="settings_external_bluetooth_lyrics_enabled_desc">When a Bluetooth device is connected, send the current original lyric to its title field</string>
+    <string name="settings_external_bluetooth_translation_enabled">Bluetooth Translated Lyrics</string>
+    <string name="settings_external_bluetooth_translation_enabled_desc">Send the current translation independently; with original lyrics enabled, title and artist fields carry separate lines</string>
     <string name="settings_lyrics_offset">Lyrics Settings</string>
     <string name="settings_lyrics_offset_expand">External lyrics, Lyricon integration, and default offsets</string>
     <string name="settings_lyrics_offset_cloud_music">Cloud Music default offset</string>

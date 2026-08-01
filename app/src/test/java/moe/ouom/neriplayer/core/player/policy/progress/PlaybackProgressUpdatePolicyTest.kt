@@ -94,4 +94,16 @@ class PlaybackProgressUpdatePolicyTest {
         assertEquals(1_500L, PLAYBACK_PROGRESS_BACKGROUND_UPDATE_INTERVAL_MS)
         assertEquals(1_000L, PLAYBACK_PROGRESS_STATS_UPDATE_INTERVAL_MS)
     }
+
+    @Test
+    fun `active external lyrics keep background cadence responsive`() {
+        assertEquals(
+            PLAYBACK_PROGRESS_INTERACTIVE_UPDATE_INTERVAL_MS,
+            resolvePlaybackProgressUpdateIntervalMs(
+                playbackProgressAdvanceReported = true,
+                interactiveNowPlayingVisible = false,
+                realtimeExternalLyricsActive = true
+            )
+        )
+    }
 }

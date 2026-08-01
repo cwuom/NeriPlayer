@@ -7,9 +7,19 @@ import moe.ouom.neriplayer.ui.component.lyrics.matchTranslationsToLineIndices
 internal data class ExternalBluetoothMetadataText(
     val title: String,
     val artist: String,
+    val album: String?,
     val displayTitle: String,
-    val displaySubtitle: String
+    val displaySubtitle: String,
+    val displayDescription: String?
 )
+
+internal data class ExternalBluetoothLyricPayload(
+    val lyric: String? = null,
+    val translation: String? = null
+)
+
+internal const val EXTERNAL_BLUETOOTH_LYRIC_STALE_GRACE_MS = 1_500L
+internal const val EXTERNAL_BLUETOOTH_METADATA_MAX_UTF8_BYTES = 240
 
 internal fun findExternalBluetoothLyricLine(
     lyrics: List<LyricEntry>,
@@ -48,43 +58,70 @@ internal fun findFloatingTranslatedLyricLine(
         ?.takeIf { it.isNotEmpty() }
 }
 
+internal fun resolveExternalBluetoothLyricPayload(
+    lyricEnabled: Boolean,
+    translationEnabled: Boolean,
+    lyricLine: String?,
+    translationLine: String?
+): ExternalBluetoothLyricPayload {
+    val lyric = lyricLine
+        .takeIf { lyricEnabled }
+        .sanitizeExternalBluetoothMetadataValue()
+    val translation = translationLine
+        .takeIf { translationEnabled }
+        .sanitizeExternalBluetoothMetadataValue()
+        ?.takeUnless { lyric != null && it == lyric }
+    return ExternalBluetoothLyricPayload(
+        lyric = lyric,
+        translation = translation
+    )
+}
+
 internal fun shouldUseExternalBluetoothLyrics(
-    enabled: Boolean,
     audioDeviceType: Int?,
-    lyricLine: String?
+    payload: ExternalBluetoothLyricPayload
 ): Boolean {
-    return enabled &&
-        audioDeviceType != null &&
+    return audioDeviceType != null &&
         isBluetoothOutputType(audioDeviceType) &&
-        !lyricLine.isNullOrBlank()
+        (!payload.lyric.isNullOrBlank() || !payload.translation.isNullOrBlank())
 }
 
 internal fun resolveExternalBluetoothMetadataText(
     normalTitle: String,
     normalArtist: String,
-    lyricLine: String?,
+    payload: ExternalBluetoothLyricPayload,
     useBluetoothLyrics: Boolean
 ): ExternalBluetoothMetadataText {
-    if (!useBluetoothLyrics || lyricLine.isNullOrBlank()) {
+    val lyric = payload.lyric.sanitizeExternalBluetoothMetadataValue()
+    val translation = payload.translation
+        .sanitizeExternalBluetoothMetadataValue()
+        ?.takeUnless { lyric != null && it == lyric }
+    val primaryLine = lyric ?: translation
+    if (!useBluetoothLyrics || primaryLine == null) {
         return ExternalBluetoothMetadataText(
             title = normalTitle,
             artist = normalArtist,
+            album = null,
             displayTitle = normalTitle,
-            displaySubtitle = normalArtist
+            displaySubtitle = normalArtist,
+            displayDescription = null
         )
     }
 
     val songInfo = listOf(normalTitle, normalArtist)
-        .map { it.trim() }
+        .mapNotNull { it.sanitizeExternalBluetoothMetadataValue() }
         .filter { it.isNotEmpty() }
         .distinct()
         .joinToString(" - ")
+    val secondaryLine = translation.takeIf { lyric != null }
 
     return ExternalBluetoothMetadataText(
-        title = lyricLine,
-        artist = songInfo,
-        displayTitle = lyricLine,
-        displaySubtitle = songInfo
+        title = primaryLine,
+        artist = secondaryLine ?: songInfo,
+        album = songInfo.takeIf { secondaryLine != null && it.isNotEmpty() },
+        displayTitle = primaryLine,
+        displaySubtitle = secondaryLine ?: songInfo,
+        displayDescription = songInfo.takeIf { secondaryLine != null && it.isNotEmpty() }
     )
 }
 
@@ -104,5 +141,68 @@ private fun findCurrentExternalBluetoothLyricIndex(
             high = mid - 1
         }
     }
-    return result
+    if (result < 0) return result
+
+    val line = lyrics[result]
+    val activeUntilMs = line.endTimeMs
+        .coerceAtLeast(line.startTimeMs)
+        .saturatingAdd(EXTERNAL_BLUETOOTH_LYRIC_STALE_GRACE_MS)
+    return result.takeIf { currentTimeMs <= activeUntilMs } ?: -1
+}
+
+private fun String?.sanitizeExternalBluetoothMetadataValue(): String? {
+    val source = this ?: return null
+    val normalized = buildString(source.length) {
+        var pendingSpace = false
+        source.forEach { character ->
+            if (character.isWhitespace() || character.isISOControl()) {
+                pendingSpace = isNotEmpty()
+            } else {
+                if (pendingSpace) {
+                    append(' ')
+                    pendingSpace = false
+                }
+                append(character)
+            }
+        }
+    }.trim()
+    if (normalized.isEmpty()) return null
+    return normalized.truncateExternalBluetoothMetadataUtf8()
+}
+
+private fun String.truncateExternalBluetoothMetadataUtf8(): String {
+    if (toByteArray(Charsets.UTF_8).size <= EXTERNAL_BLUETOOTH_METADATA_MAX_UTF8_BYTES) {
+        return this
+    }
+
+    val suffix = "…"
+    val contentBudget = EXTERNAL_BLUETOOTH_METADATA_MAX_UTF8_BYTES -
+        suffix.toByteArray(Charsets.UTF_8).size
+    val prefix = buildString {
+        var offset = 0
+        var usedBytes = 0
+        while (offset < this@truncateExternalBluetoothMetadataUtf8.length) {
+            val codePoint = Character.codePointAt(
+                this@truncateExternalBluetoothMetadataUtf8,
+                offset
+            )
+            val codePointText = String(Character.toChars(codePoint))
+            val codePointBytes = codePointText.toByteArray(Charsets.UTF_8).size
+            if (usedBytes + codePointBytes > contentBudget) {
+                break
+            }
+            append(codePointText)
+            usedBytes += codePointBytes
+            offset += Character.charCount(codePoint)
+        }
+    }.trimEnd()
+    return prefix + suffix
+}
+
+private fun Long.saturatingAdd(value: Long): Long {
+    return if (value > 0L && this > Long.MAX_VALUE - value) {
+        Long.MAX_VALUE
+    } else {
+        this + value
+    }
 }

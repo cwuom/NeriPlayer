@@ -1,19 +1,28 @@
 package moe.ouom.neriplayer.core.player.lyrics
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.audio.isBluetoothOutputType
+import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.core.player.metadata.findExternalBluetoothLyricLine
 import moe.ouom.neriplayer.core.player.metadata.findFloatingTranslatedLyricLine
-import moe.ouom.neriplayer.ui.component.lyrics.matchTranslationsToLineIndices
+import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothLyricPayload
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.resolveLyricDefaultOffsetMs
-import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
+import moe.ouom.neriplayer.ui.component.lyrics.matchTranslationsToLineIndices
 
 internal fun PlayerManager.syncExternalBluetoothLyrics(song: SongItem?) {
     externalBluetoothLyricsLoadJob?.cancel()
     externalBluetoothLyricsLoadJob = null
+    externalBluetoothTranslationLoadJob?.cancel()
+    externalBluetoothTranslationLoadJob = null
     externalBluetoothLyrics = emptyList()
     floatingTranslatedLyrics = emptyList()
     floatingTranslationMatchesByIndex = emptyMap()
@@ -26,28 +35,9 @@ internal fun PlayerManager.syncExternalBluetoothLyrics(song: SongItem?) {
 
     val songKey = song.stableKey()
     externalBluetoothLyricsLoadJob = ioScope.launch {
-        val lyrics = runCatching { getLyrics(song) }
-            .onFailure { error ->
-                NPLogger.w(
-                    "NERI-PlayerManager",
-                    "external bluetooth lyrics load failed: song=${song.name}/${song.id}",
-                    error
-                )
-            }
-            .getOrDefault(emptyList())
-        val translatedLyrics = if (floatingLyricsEnabled && floatingLyricsShowTranslation) {
-            runCatching { getTranslatedLyrics(song) }
-                .onFailure { error ->
-                    NPLogger.w(
-                        "NERI-PlayerManager",
-                        "floating lyrics translation load failed: song=${song.name}/${song.id}",
-                        error
-                    )
-                }
-                .getOrDefault(emptyList())
-        } else {
-            emptyList()
-        }
+        val lyrics = loadExternalLyrics(song)
+            .sortedBy { it.startTimeMs }
+        currentCoroutineContext().ensureActive()
 
         val currentSong = _currentSongFlow.value
         if (!shouldProvideExternalLyricLine() || currentSong?.sameIdentityAs(song) != true) {
@@ -56,26 +46,23 @@ internal fun PlayerManager.syncExternalBluetoothLyrics(song: SongItem?) {
 
         externalBluetoothLyricsSongKey = songKey
         externalBluetoothLyrics = lyrics
-        floatingTranslatedLyrics = if (floatingLyricsEnabled && floatingLyricsShowTranslation) {
-            translatedLyrics
-        } else {
-            emptyList()
-        }
-        floatingTranslationMatchesByIndex = matchTranslationsToLineIndices(
-            lines = lyrics,
-            translations = floatingTranslatedLyrics.filter { it.text.isNotBlank() }
-        )
         updateExternalBluetoothLyricLine(_playbackPositionMs.value)
+        if (shouldProvideExternalTranslatedLyricLine()) {
+            startExternalBluetoothTranslationLoad(song, songKey)
+        }
     }
 }
 
-internal fun PlayerManager.syncFloatingTranslatedLyrics(song: SongItem?) {
-    if (!floatingLyricsEnabled || !floatingLyricsShowTranslation) {
+internal fun PlayerManager.syncExternalTranslatedLyrics(song: SongItem?) {
+    externalBluetoothTranslationLoadJob?.cancel()
+    externalBluetoothTranslationLoadJob = null
+    if (!shouldProvideExternalTranslatedLyricLine()) {
         clearFloatingTranslatedLyricLine()
+        updateExternalBluetoothLyricLine(_playbackPositionMs.value)
         return
     }
     if (!shouldProvideExternalLyricLine() || song == null) {
-        clearFloatingTranslatedLyricLine()
+        clearExternalBluetoothLyricLine()
         return
     }
 
@@ -85,21 +72,22 @@ internal fun PlayerManager.syncFloatingTranslatedLyrics(song: SongItem?) {
         return
     }
 
-    ioScope.launch {
-        val translatedLyrics = runCatching { getTranslatedLyrics(song) }
-            .onFailure { error ->
-                NPLogger.w(
-                    "NERI-PlayerManager",
-                    "floating lyrics translation load failed: song=${song.name}/${song.id}",
-                    error
-                )
-            }
-            .getOrDefault(emptyList())
+    startExternalBluetoothTranslationLoad(song, songKey)
+}
+
+private fun PlayerManager.startExternalBluetoothTranslationLoad(
+    song: SongItem,
+    songKey: String
+) {
+    externalBluetoothTranslationLoadJob?.cancel()
+    externalBluetoothTranslationLoadJob = ioScope.launch {
+        val translatedLyrics = loadExternalTranslatedLyrics(song)
+            .sortedBy { it.startTimeMs }
+        currentCoroutineContext().ensureActive()
 
         val currentSong = _currentSongFlow.value
         if (
-            !floatingLyricsEnabled ||
-            !floatingLyricsShowTranslation ||
+            !shouldProvideExternalTranslatedLyricLine() ||
             currentSong?.sameIdentityAs(song) != true ||
             externalBluetoothLyricsSongKey != songKey
         ) {
@@ -112,6 +100,36 @@ internal fun PlayerManager.syncFloatingTranslatedLyrics(song: SongItem?) {
             translations = translatedLyrics.filter { it.text.isNotBlank() }
         )
         updateExternalBluetoothLyricLine(_playbackPositionMs.value)
+    }
+}
+
+private suspend fun PlayerManager.loadExternalLyrics(song: SongItem): List<LyricEntry> {
+    return try {
+        getLyrics(song)
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (error: Throwable) {
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "external lyrics load failed: song=${song.name}/${song.id}",
+            error
+        )
+        emptyList()
+    }
+}
+
+private suspend fun PlayerManager.loadExternalTranslatedLyrics(song: SongItem): List<LyricEntry> {
+    return try {
+        getTranslatedLyrics(song)
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (error: Throwable) {
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "external translated lyrics load failed: song=${song.name}/${song.id}",
+            error
+        )
+        emptyList()
     }
 }
 
@@ -152,6 +170,15 @@ internal fun PlayerManager.updateExternalBluetoothLyricLine(positionMs: Long) {
     if (_floatingTranslatedLyricLineFlow.value != translatedLine) {
         _floatingTranslatedLyricLineFlow.value = translatedLine
     }
+    val payload = resolveExternalBluetoothLyricPayload(
+        lyricEnabled = externalBluetoothLyricsEnabled,
+        translationEnabled = externalBluetoothTranslationEnabled,
+        lyricLine = line,
+        translationLine = translatedLine
+    )
+    if (_externalBluetoothLyricPayloadFlow.value != payload) {
+        _externalBluetoothLyricPayloadFlow.value = payload
+    }
 }
 
 internal fun PlayerManager.clearExternalBluetoothLyricLine() {
@@ -159,6 +186,9 @@ internal fun PlayerManager.clearExternalBluetoothLyricLine() {
         _externalBluetoothLyricLineFlow.value = null
     }
     clearFloatingTranslatedLyricLine()
+    if (_externalBluetoothLyricPayloadFlow.value != ExternalBluetoothLyricPayload()) {
+        _externalBluetoothLyricPayloadFlow.value = ExternalBluetoothLyricPayload()
+    }
 }
 
 private fun PlayerManager.clearFloatingTranslatedLyricLine() {
@@ -170,5 +200,20 @@ private fun PlayerManager.clearFloatingTranslatedLyricLine() {
 }
 
 private fun PlayerManager.shouldProvideExternalLyricLine(): Boolean {
-    return externalBluetoothLyricsEnabled || statusBarLyricsEnable || floatingLyricsEnabled
+    return externalBluetoothLyricsEnabled ||
+        externalBluetoothTranslationEnabled ||
+        statusBarLyricsEnable ||
+        floatingLyricsEnabled
+}
+
+private fun PlayerManager.shouldProvideExternalTranslatedLyricLine(): Boolean {
+    return externalBluetoothTranslationEnabled ||
+        (floatingLyricsEnabled && floatingLyricsShowTranslation)
+}
+
+internal fun PlayerManager.isExternalBluetoothLyricCadenceActive(): Boolean {
+    val deviceType = _currentAudioDevice.value?.type ?: return false
+    return isBluetoothOutputType(deviceType) &&
+        (externalBluetoothLyricsEnabled || externalBluetoothTranslationEnabled) &&
+        externalBluetoothLyrics.isNotEmpty()
 }

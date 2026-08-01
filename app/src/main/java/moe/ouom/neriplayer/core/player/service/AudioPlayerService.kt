@@ -176,8 +176,10 @@ private data class PlaybackMetadataSnapshot(
     val songKey: String?,
     val title: String,
     val artist: String,
+    val album: String?,
     val displayTitle: String,
     val displaySubtitle: String,
+    val displayDescription: String?,
     val durationMs: Long,
     val coverSource: String?,
     val largeIconReady: Boolean,
@@ -1257,7 +1259,9 @@ class AudioPlayerService : Service() {
                 }
         }
         serviceScope.launch {
-            PlayerManager.externalBluetoothLyricLineFlow.collectSafely("externalBluetoothLyricLineFlow") {
+            PlayerManager.externalBluetoothLyricPayloadFlow.collectSafely(
+                "externalBluetoothLyricPayloadFlow"
+            ) {
                 updateMetadata()
             }
         }
@@ -1981,24 +1985,25 @@ class AudioPlayerService : Service() {
 
         val normalTitle = song?.displayName() ?: "NeriPlayer"
         val normalArtist = song?.displayArtist().orEmpty()
-        val lyricLine = PlayerManager.externalBluetoothLyricLineFlow.value
+        val lyricPayload = PlayerManager.externalBluetoothLyricPayloadFlow.value
         val useBluetoothLyrics = shouldUseExternalBluetoothLyrics(
-            enabled = PlayerManager.externalBluetoothLyricsEnabled,
             audioDeviceType = PlayerManager.currentAudioDeviceFlow.value?.type,
-            lyricLine = lyricLine
+            payload = lyricPayload
         )
         val metadataText = resolveExternalBluetoothMetadataText(
             normalTitle = normalTitle,
             normalArtist = normalArtist,
-            lyricLine = lyricLine,
+            payload = lyricPayload,
             useBluetoothLyrics = useBluetoothLyrics
         )
         val snapshot = PlaybackMetadataSnapshot(
             songKey = songKey,
             title = metadataText.title,
             artist = metadataText.artist,
+            album = metadataText.album,
             displayTitle = metadataText.displayTitle,
             displaySubtitle = metadataText.displaySubtitle,
+            displayDescription = metadataText.displayDescription,
             durationMs = duration,
             coverSource = currentCoverSource,
             largeIconReady = currentMediaArtwork != null,
@@ -2018,6 +2023,16 @@ class AudioPlayerService : Service() {
             )
             .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
             .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, currentMediaArtwork)
+
+        metadataText.album?.let { album ->
+            metadataBuilder.putString(MediaMetadataCompat.METADATA_KEY_ALBUM, album)
+        }
+        metadataText.displayDescription?.let { description ->
+            metadataBuilder.putString(
+                MediaMetadataCompat.METADATA_KEY_DISPLAY_DESCRIPTION,
+                description
+            )
+        }
 
         resolveRemoteMetadataArtworkUri(currentCoverSource)?.let { artworkUri ->
             metadataBuilder.putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, artworkUri)

@@ -1335,8 +1335,10 @@
     <string name="settings_lyric_api_enabled_desc">向 Lyricon &amp; SuperLyric 提供当前歌曲、播放状态、进度、逐字歌词和翻译</string>
     <string name="settings_amll_lyrics_enabled">使用 AMLL 数据库</string>
     <string name="settings_amll_lyrics_enabled_desc">平台没有逐字歌词时，从 AMLL TTML 数据库尝试匹配逐字歌词</string>
-    <string name="settings_external_bluetooth_lyrics_enabled">外接设备蓝牙歌词</string>
-    <string name="settings_external_bluetooth_lyrics_enabled_desc">连接蓝牙设备时，将当前歌词行同步到外接设备的歌曲信息区域</string>
+    <string name="settings_external_bluetooth_lyrics_enabled">蓝牙外接设备原文歌词</string>
+    <string name="settings_external_bluetooth_lyrics_enabled_desc">连接蓝牙设备时，将当前原文歌词发送到外接设备的标题区域</string>
+    <string name="settings_external_bluetooth_translation_enabled">蓝牙外接设备翻译歌词</string>
+    <string name="settings_external_bluetooth_translation_enabled_desc">独立发送当前翻译歌词；与原文同时开启时分别显示在标题和艺术家区域</string>
     <string name="settings_lyrics_offset">歌词设置</string>
     <string name="settings_lyrics_offset_expand">外接歌词、词幕适配与默认偏移</string>
     <string name="settings_lyrics_offset_cloud_music">网易云默认歌词偏移</string>

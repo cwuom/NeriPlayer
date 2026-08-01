@@ -30,12 +30,13 @@ internal fun hasPlaybackProgressAdvancedSinceBaseline(
 
 internal fun resolvePlaybackProgressUpdateIntervalMs(
     playbackProgressAdvanceReported: Boolean,
-    interactiveNowPlayingVisible: Boolean
+    interactiveNowPlayingVisible: Boolean,
+    realtimeExternalLyricsActive: Boolean = false
 ): Long {
     if (!playbackProgressAdvanceReported) {
         return PLAYBACK_PROGRESS_STARTUP_UPDATE_INTERVAL_MS
     }
-    return if (interactiveNowPlayingVisible) {
+    return if (interactiveNowPlayingVisible || realtimeExternalLyricsActive) {
         PLAYBACK_PROGRESS_INTERACTIVE_UPDATE_INTERVAL_MS
     } else {
         PLAYBACK_PROGRESS_BACKGROUND_UPDATE_INTERVAL_MS

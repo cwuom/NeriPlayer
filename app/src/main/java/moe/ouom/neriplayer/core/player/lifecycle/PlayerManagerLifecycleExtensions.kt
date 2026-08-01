@@ -52,7 +52,7 @@ import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
 import moe.ouom.neriplayer.core.player.lyrics.clearExternalBluetoothLyricLine
 import moe.ouom.neriplayer.core.player.lyrics.syncExternalBluetoothLyrics
-import moe.ouom.neriplayer.core.player.lyrics.syncFloatingTranslatedLyrics
+import moe.ouom.neriplayer.core.player.lyrics.syncExternalTranslatedLyrics
 import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
 import moe.ouom.neriplayer.core.player.audio.isBluetoothOutputType
 import moe.ouom.neriplayer.core.player.audio.isHeadsetLikeOutput
@@ -221,6 +221,7 @@ internal fun PlayerManager.initializeImpl(
         qqMusicLyricDefaultOffsetMs =
             initialPlaybackPreferences.qqMusicLyricDefaultOffsetMs
         externalBluetoothLyricsEnabled = false
+        externalBluetoothTranslationEnabled = false
         amllLyricsEnabled = initialPlaybackPreferences.amllLyricsEnabled
         lyriconEnabled = initialPlaybackPreferences.lyriconEnabled
         LyriconManager.setEnabled(lyriconEnabled)
@@ -751,6 +752,12 @@ internal fun PlayerManager.initializeImpl(
             }
         }
         ioScope.launch {
+            settingsRepo.externalBluetoothTranslationEnabledFlow.collect { enabled ->
+                externalBluetoothTranslationEnabled = enabled
+                syncExternalTranslatedLyrics(_currentSongFlow.value)
+            }
+        }
+        ioScope.launch {
             settingsRepo.floatingLyricsPreferencesFlow.collect { preferences ->
                 val normalized = preferences.normalized()
                 val floatingLyricsEnabledChanged = floatingLyricsEnabled != normalized.enabled
@@ -760,7 +767,7 @@ internal fun PlayerManager.initializeImpl(
                 FloatingLyricsOverlayManager.updatePreferences(normalized)
                 when {
                     floatingLyricsEnabledChanged -> syncExternalBluetoothLyrics(_currentSongFlow.value)
-                    showTranslationChanged -> syncFloatingTranslatedLyrics(_currentSongFlow.value)
+                    showTranslationChanged -> syncExternalTranslatedLyrics(_currentSongFlow.value)
                 }
             }
         }
@@ -3536,11 +3543,14 @@ internal fun PlayerManager.releaseImpl() {
         lyriconUpdateJob = null
         externalBluetoothLyricsLoadJob?.cancel()
         externalBluetoothLyricsLoadJob = null
+        externalBluetoothTranslationLoadJob?.cancel()
+        externalBluetoothTranslationLoadJob = null
         externalBluetoothLyrics = emptyList()
         floatingTranslatedLyrics = emptyList()
         floatingTranslationMatchesByIndex = emptyMap()
         externalBluetoothLyricsSongKey = null
         externalBluetoothLyricsEnabled = false
+        externalBluetoothTranslationEnabled = false
         floatingLyricsEnabled = false
         floatingLyricsShowTranslation = true
         statusBarLyricsEnable = false

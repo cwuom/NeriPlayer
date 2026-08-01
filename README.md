@@ -405,7 +405,9 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   支持词幕适配（Lyricon Provider）、SuperLyric、外部蓝牙歌词、
   蓝牙断连暂停和 USB 独占播放开关；外部歌词链路会同步当前歌曲、
   播放状态、进度、逐字歌词和翻译；Lyricon/SuperLyric 进度由独立 200 ms 推送，
-  翻译行按时间匹配，歌词卡片使用缓存，歌曲分享支持 Xiaomi Super Island 链接。
+  翻译行按时间匹配。蓝牙歌词的原文和翻译可独立开启；同时开启时会分别写入
+  标题和艺术家字段，并在专辑/描述字段保留曲目信息。歌词卡片使用缓存，
+  歌曲分享支持 Xiaomi Super Island 链接。
 - 🛠️ **开发者模式与调试工具**：
   设置页连续点击版本号 **7 次** 后，底栏出现 `Debug` 页，
   包含 YouTube / Bili / Netease / Search / Listen Together 探针、

@@ -503,7 +503,9 @@ For release build and signing details, see
   Lyricon integration, SuperLyric, external Bluetooth lyrics, pause on Bluetooth
   disconnect, and USB exclusive playback toggles. The external lyrics path
   receives the current song, playback state, position, word-level lyrics,
-  and translations.
+  and translations. Original and translated Bluetooth lyrics have independent
+  switches; when both are enabled, they use separate title and artist fields while
+  track identity remains available through album/description metadata.
 - 🛠️ **Developer mode and debug tools**:
   tap the version number **7 times** to reveal the `Debug` tab, including
   YouTube / Bili / NetEase / Search / Listen Together probes, log viewer, and

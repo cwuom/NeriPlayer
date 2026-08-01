@@ -24,6 +24,27 @@ class ExternalBluetoothLyricsTest {
     }
 
     @Test
+    fun `findExternalBluetoothLyricLine clears an expired final line`() {
+        val lyrics = listOf(
+            LyricEntry("last line", startTimeMs = 1_000L, endTimeMs = 2_000L)
+        )
+
+        assertEquals(
+            "last line",
+            findExternalBluetoothLyricLine(
+                lyrics = lyrics,
+                positionMs = 2_000L + EXTERNAL_BLUETOOTH_LYRIC_STALE_GRACE_MS
+            )
+        )
+        assertNull(
+            findExternalBluetoothLyricLine(
+                lyrics = lyrics,
+                positionMs = 2_001L + EXTERNAL_BLUETOOTH_LYRIC_STALE_GRACE_MS
+            )
+        )
+    }
+
+    @Test
     fun `findFloatingTranslatedLyricLine only shows translation for current lyric line`() {
         val lyrics = listOf(
             LyricEntry("first", startTimeMs = 1_000L, endTimeMs = 2_000L),
@@ -113,49 +134,155 @@ class ExternalBluetoothLyricsTest {
     }
 
     @Test
-    fun `shouldUseExternalBluetoothLyrics requires enabled bluetooth device and lyric line`() {
-        assertTrue(
-            shouldUseExternalBluetoothLyrics(
-                enabled = true,
-                audioDeviceType = AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
-                lyricLine = "current line"
+    fun `resolveExternalBluetoothLyricPayload keeps original and translation independent`() {
+        val both = resolveExternalBluetoothLyricPayload(
+            lyricEnabled = true,
+            translationEnabled = true,
+            lyricLine = "  original\nline\u0000 ",
+            translationLine = "  translated\tline  "
+        )
+
+        assertEquals("original line", both.lyric)
+        assertEquals("translated line", both.translation)
+        assertEquals(
+            ExternalBluetoothLyricPayload(lyric = "original line"),
+            resolveExternalBluetoothLyricPayload(
+                lyricEnabled = true,
+                translationEnabled = false,
+                lyricLine = "original line",
+                translationLine = "translated line"
             )
         )
-        assertFalse(
-            shouldUseExternalBluetoothLyrics(
-                enabled = false,
-                audioDeviceType = AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
-                lyricLine = "current line"
-            )
-        )
-        assertFalse(
-            shouldUseExternalBluetoothLyrics(
-                enabled = true,
-                audioDeviceType = AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
-                lyricLine = "current line"
-            )
-        )
-        assertFalse(
-            shouldUseExternalBluetoothLyrics(
-                enabled = true,
-                audioDeviceType = AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
-                lyricLine = " "
+        assertEquals(
+            ExternalBluetoothLyricPayload(translation = "translated line"),
+            resolveExternalBluetoothLyricPayload(
+                lyricEnabled = false,
+                translationEnabled = true,
+                lyricLine = "original line",
+                translationLine = "translated line"
             )
         )
     }
 
     @Test
-    fun `resolveExternalBluetoothMetadataText puts lyric in title and song info in artist`() {
+    fun `resolveExternalBluetoothLyricPayload bounds utf8 metadata without splitting emoji`() {
+        val payload = resolveExternalBluetoothLyricPayload(
+            lyricEnabled = true,
+            translationEnabled = false,
+            lyricLine = "歌词🎵".repeat(100),
+            translationLine = null
+        )
+
+        val lyric = payload.lyric.orEmpty()
+        assertTrue(lyric.endsWith("…"))
+        assertTrue(
+            lyric.toByteArray(Charsets.UTF_8).size <=
+                EXTERNAL_BLUETOOTH_METADATA_MAX_UTF8_BYTES
+        )
+        assertFalse(lyric.contains('\uFFFD'))
+    }
+
+    @Test
+    fun `resolveExternalBluetoothLyricPayload removes duplicate translation only when original is sent`() {
+        assertEquals(
+            ExternalBluetoothLyricPayload(lyric = "same line"),
+            resolveExternalBluetoothLyricPayload(
+                lyricEnabled = true,
+                translationEnabled = true,
+                lyricLine = "same line",
+                translationLine = "same line"
+            )
+        )
+        assertEquals(
+            ExternalBluetoothLyricPayload(translation = "same line"),
+            resolveExternalBluetoothLyricPayload(
+                lyricEnabled = false,
+                translationEnabled = true,
+                lyricLine = "same line",
+                translationLine = "same line"
+            )
+        )
+    }
+
+    @Test
+    fun `shouldUseExternalBluetoothLyrics requires bluetooth device and lyric payload`() {
+        assertTrue(
+            shouldUseExternalBluetoothLyrics(
+                audioDeviceType = AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+                payload = ExternalBluetoothLyricPayload(lyric = "current line")
+            )
+        )
+        assertFalse(
+            shouldUseExternalBluetoothLyrics(
+                audioDeviceType = AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+                payload = ExternalBluetoothLyricPayload()
+            )
+        )
+        assertFalse(
+            shouldUseExternalBluetoothLyrics(
+                audioDeviceType = AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+                payload = ExternalBluetoothLyricPayload(translation = "translated line")
+            )
+        )
+        assertFalse(
+            shouldUseExternalBluetoothLyrics(
+                audioDeviceType = null,
+                payload = ExternalBluetoothLyricPayload(lyric = "current line")
+            )
+        )
+    }
+
+    @Test
+    fun `resolveExternalBluetoothMetadataText submits original and translation in separate fields`() {
         val metadata = resolveExternalBluetoothMetadataText(
             normalTitle = "Song",
             normalArtist = "Artist",
-            lyricLine = "current line",
+            payload = ExternalBluetoothLyricPayload(
+                lyric = "current line",
+                translation = "当前翻译"
+            ),
             useBluetoothLyrics = true
         )
 
         assertEquals("current line", metadata.title)
-        assertEquals("Song - Artist", metadata.artist)
+        assertEquals("当前翻译", metadata.artist)
+        assertEquals("Song - Artist", metadata.album)
         assertEquals("current line", metadata.displayTitle)
+        assertEquals("当前翻译", metadata.displaySubtitle)
+        assertEquals("Song - Artist", metadata.displayDescription)
+    }
+
+    @Test
+    fun `resolveExternalBluetoothMetadataText falls back to song info for a single lyric field`() {
+        val metadata = resolveExternalBluetoothMetadataText(
+            normalTitle = "Song",
+            normalArtist = "Artist",
+            payload = ExternalBluetoothLyricPayload(translation = "当前翻译"),
+            useBluetoothLyrics = true
+        )
+
+        assertEquals("当前翻译", metadata.title)
+        assertEquals("Song - Artist", metadata.artist)
+        assertNull(metadata.album)
+        assertEquals("当前翻译", metadata.displayTitle)
         assertEquals("Song - Artist", metadata.displaySubtitle)
+        assertNull(metadata.displayDescription)
+    }
+
+    @Test
+    fun `resolveExternalBluetoothMetadataText preserves normal metadata without a payload`() {
+        val metadata = resolveExternalBluetoothMetadataText(
+            normalTitle = "Song",
+            normalArtist = "Artist",
+            payload = ExternalBluetoothLyricPayload(),
+            useBluetoothLyrics = false
+        )
+
+        assertEquals("Song", metadata.title)
+        assertEquals("Artist", metadata.artist)
+        assertNull(metadata.album)
+        assertEquals("Song", metadata.displayTitle)
+        assertEquals("Artist", metadata.displaySubtitle)
+        assertNull(metadata.displayDescription)
     }
 }

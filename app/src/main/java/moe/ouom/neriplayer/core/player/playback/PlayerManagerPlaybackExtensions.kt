@@ -23,6 +23,7 @@ import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.lifecycle.clearUsbExclusiveInterruptedPlaybackIntent
 import moe.ouom.neriplayer.core.player.lifecycle.prepareUsbExclusiveRouteForManualPlayback
 import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
+import moe.ouom.neriplayer.core.player.lyrics.isExternalBluetoothLyricCadenceActive
 import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
 import moe.ouom.neriplayer.core.player.metadata.shouldAutoMatchExternalLyrics
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
@@ -1794,7 +1795,8 @@ internal fun PlayerManager.startProgressUpdates() {
         while (isActive) {
             val updateIntervalMs = resolvePlaybackProgressUpdateIntervalMs(
                 playbackProgressAdvanceReported = playbackProgressAdvanceReported,
-                interactiveNowPlayingVisible = interactiveNowPlayingVisible
+                interactiveNowPlayingVisible = interactiveNowPlayingVisible,
+                realtimeExternalLyricsActive = isExternalBluetoothLyricCadenceActive()
             )
             val positionMs = runCatching {
                 resolveDisplayedPlaybackPosition(player.currentPosition.coerceAtLeast(0L))
