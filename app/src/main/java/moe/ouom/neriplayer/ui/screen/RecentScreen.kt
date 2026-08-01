@@ -114,6 +114,7 @@ import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.util.search.SearchTextMatcher
 import kotlin.random.Random
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -139,13 +140,19 @@ fun RecentScreen(
     var showSearch by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
 
-    val displayedSongs = remember(baseSongs, query) {
-        if (query.isBlank()) baseSongs
-        else baseSongs.filter {
-            it.name.contains(query, ignoreCase = true) ||
-                    (it.localFileName?.contains(query, ignoreCase = true) == true) ||
-                    it.artist.contains(query, ignoreCase = true) ||
-                    it.displayAlbum(context).contains(query, ignoreCase = true)
+    val displayedSongs = remember(baseSongs, query, context) {
+        SearchTextMatcher.filterAndRank(query, baseSongs) { song ->
+            listOfNotNull(
+                song.name,
+                song.artist,
+                song.customName,
+                song.customArtist,
+                song.displayAlbum(context),
+                song.localFileName,
+                song.localFilePath,
+                song.originalName,
+                song.originalArtist
+            )
         }
     }
 

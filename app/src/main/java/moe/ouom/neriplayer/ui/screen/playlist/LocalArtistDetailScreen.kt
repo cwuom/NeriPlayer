@@ -5,7 +5,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,7 +38,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -58,14 +56,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -100,6 +96,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.util.format.formatTotalDuration
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.util.search.playlistSearchValues
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 
 private fun hasCachedLocalArtistDownload(song: SongItem): Boolean {
@@ -107,26 +104,10 @@ private fun hasCachedLocalArtistDownload(song: SongItem): Boolean {
         ManagedDownloadStorage.peekDownloadedAudio(song) != null
 }
 
-private fun SongItem.matchesLocalArtistSongSearch(
-    query: String,
+private fun SongItem.localArtistSongSearchTokens(
     context: android.content.Context
-): Boolean {
-    val keyword = query.trim()
-    if (keyword.isBlank()) return true
-
-    return listOfNotNull(
-        name,
-        artist,
-        customName,
-        customArtist,
-        displayAlbum(context),
-        localFileName,
-        localFilePath,
-        originalName,
-        originalArtist
-    ).any { field ->
-        field.contains(keyword, ignoreCase = true)
-    }
+): List<Any?> {
+    return playlistSearchValues(context)
 }
 
 internal fun shouldRemoveMissingLocalArtistUsage(
@@ -164,17 +145,11 @@ fun LocalArtistDetailScreen(
     val searchFocusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
-    val displayedSongs by remember(baseSongs, searchQuery, context) {
-        derivedStateOf {
-            if (searchQuery.isBlank()) {
-                baseSongs
-            } else {
-                baseSongs.filter { song ->
-                    song.matchesLocalArtistSongSearch(searchQuery, context)
-                }
-            }
-        }
-    }
+    val displayedSongs = rememberPlaylistSearchResults(
+        query = searchQuery,
+        items = baseSongs,
+        tokens = { song -> song.localArtistSongSearchTokens(context) }
+    )
     var selectionMode by remember(artistKey) { mutableStateOf(false) }
     var selectedKeys by remember(artistKey) { mutableStateOf<Set<String>>(emptySet()) }
     var showExportSheet by remember(artistKey) { mutableStateOf(false) }
@@ -425,27 +400,17 @@ fun LocalArtistDetailScreen(
                     .fillMaxSize()
             ) {
                 AnimatedVisibility(showSearch && !selectionMode) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                            .focusRequester(searchFocusRequester),
-                        placeholder = { Text(stringResource(R.string.search_artist_songs)) },
-                        singleLine = true,
-                        trailingIcon = {
-                            if (searchQuery.isNotEmpty()) {
-                                HapticIconButton(onClick = { searchQuery = "" }) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Close,
-                                        contentDescription = stringResource(R.string.action_clear)
-                                    )
-                                }
-                            }
-                        },
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
-                    )
+                    PlaylistModernVisualColorsProvider(
+                        coverUrl = headerCover,
+                        offlineMode = offlineMode
+                    ) {
+                        PlaylistModernDockedSearchField(
+                            query = searchQuery,
+                            onQueryChange = { searchQuery = it },
+                            placeholder = stringResource(R.string.search_artist_songs),
+                            focusRequester = searchFocusRequester
+                        )
+                    }
                 }
 
                 LazyColumn(

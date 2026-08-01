@@ -36,7 +36,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -122,11 +121,13 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
@@ -195,7 +196,14 @@ import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.format.formatTotalDuration
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.util.search.playlistSearchValues
+import moe.ouom.neriplayer.util.search.SearchTextMatcher
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialogContent
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import org.burnoutcrew.reorderable.ItemPosition
 import org.burnoutcrew.reorderable.ReorderableItem
 import org.burnoutcrew.reorderable.detectReorder
@@ -273,7 +281,7 @@ private fun SongItem.optimisticPlaylistInsertKeys(): Set<String> {
 }
 
 internal fun normalizeLocalPlaylistHeaderCoverModel(headerCover: String?): String {
-    return headerCover?.takeIf { it.isNotBlank() } ?: BLANK_COVER_MODEL
+    return headerCover?.trim()?.takeIf { it.isNotEmpty() } ?: BLANK_COVER_MODEL
 }
 
 internal fun resolveDisplayedLocalPlaylistDetailState(
@@ -815,12 +823,12 @@ fun LocalPlaylistDetailScreen(
             }
 
             if (showRename) {
-                AlertDialog(
+                MiuixSettingsDialog(
                     onDismissRequest = { showRename = false },
                     confirmButton = {
                         val trimmed = normalizedRenameName(renameText.text)
                         val disabled = renameError != null || isSameRenameName(renameText.text)
-                        HapticTextButton(
+                        MiuixSettingsButton(
                             onClick = {
                                 val error = validateRename(renameText.text)
                                 if (error != null) {
@@ -834,25 +842,30 @@ fun LocalPlaylistDetailScreen(
                         ) { Text(stringResource(R.string.action_confirm)) }
                     },
                     dismissButton = {
-                        HapticTextButton(onClick = {
+                        MiuixSettingsTextButton(onClick = {
                             showRename = false
                         }) { Text(stringResource(R.string.action_cancel)) }
                     },
                     text = {
-                        OutlinedTextField(
-                            value = renameText,
-                            onValueChange = {
-                                val limitedValue = limitedPlaylistNameFieldValue(it, maxNameLength)
-                                renameText = limitedValue
-                                renameError = validateRename(limitedValue.text)
-                            },
-                            singleLine = true,
-                            isError = renameError != null,
-                            supportingText = {
-                                val err = renameError
-                                if (err != null) Text(err, color = MaterialTheme.colorScheme.error)
+                        MiuixSettingsDialogContent(verticalSpacing = 12.dp) {
+                            MiuixSettingsTextField(
+                                value = renameText.text,
+                                onValueChange = {
+                                    val limitedValue = playlistNameFieldValue(it, maxNameLength)
+                                    renameText = limitedValue
+                                    renameError = validateRename(limitedValue.text)
+                                },
+                                placeholder = { Text(playlist.name) },
+                                singleLine = true
+                            )
+                            renameError?.let { error ->
+                                Text(
+                                    text = error,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
                             }
-                        )
+                        }
                     },
                     title = { Text(stringResource(R.string.local_playlist_rename)) }
                 )
@@ -910,27 +923,11 @@ fun LocalPlaylistDetailScreen(
                 playlist = displayOrderPlaylistForCover,
                 resolveLocalFallback = true
             )
-            val displayedSongs by remember(baseQueue, searchQuery, context) {
-                derivedStateOf {
-                    val base = baseQueue
-                    if (searchQuery.isBlank()) base
-                    else base.filter { song ->
-                        listOfNotNull(
-                            song.name,
-                            song.artist,
-                            song.customName,
-                            song.customArtist,
-                            song.displayAlbum(context),
-                            song.localFileName,
-                            song.localFilePath,
-                            song.originalName,
-                            song.originalArtist
-                        ).any { field ->
-                            field.contains(searchQuery, ignoreCase = true)
-                        }
-                    }
-                }
-            }
+            val displayedSongs = rememberPlaylistSearchResults(
+                query = searchQuery,
+                items = baseQueue,
+                tokens = { song -> song.playlistSearchValues(context) }
+            )
 
             LaunchedEffect(listState) {
                 snapshotFlow {
@@ -1122,39 +1119,125 @@ fun LocalPlaylistDetailScreen(
                 return@Surface
             }
 
-            val playlistChromeColor = rememberPlaylistModernHeroBackgroundColor(
+            PlaylistModernVisualColorsProvider(
                 coverUrl = headerCover,
                 offlineMode = offlineMode
-            )
-            val playlistChromeCollapsed by remember(reorderState.listState) {
-                derivedStateOf { reorderState.listState.firstVisibleItemIndex > 0 }
-            }
-            val playlistTopBarColor = if (playlistChromeCollapsed) {
-                playlistModernCollapsedTopBarColor()
-            } else {
-                playlistChromeColor
-            }
-            val playlistTopBarContentColor = if (playlistChromeCollapsed) {
-                playlistModernCollapsedTopBarContentColor()
-            } else {
-                Color.White
-            }
-            val playlistHeroHeight by animateDpAsState(
-                targetValue = if (showSearch && !selectionMode && !playlistChromeCollapsed) {
-                    PlaylistModernHeroSearchHeight
-                } else {
-                    PlaylistModernHeroHeight
-                },
-                label = "local-playlist-hero-height"
-            )
-            LaunchedEffect(showSearch, selectionMode, playlistChromeCollapsed, autoShowKeyboard) {
-                if (showSearch && !selectionMode && autoShowKeyboard) {
-                    delay(120)
-                    searchFocusRequester.requestFocus()
-                    keyboardController?.show()
+            ) {
+                val playlistChromeColor = rememberPlaylistModernHeroBackgroundColor(
+                    coverUrl = headerCover,
+                    offlineMode = offlineMode
+                )
+                val density = LocalDensity.current
+                val searchVisible = shouldShowPlaylistSearch(
+                    showSearch = showSearch,
+                    selectionMode = selectionMode
+                )
+                val searchVisibilityProgress by animateFloatAsState(
+                    targetValue = if (searchVisible) 1f else 0f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                    ),
+                    label = "playlist-search-visibility"
+                )
+                val searchSlotProgress = searchVisibilityProgress.coerceIn(0f, 1f)
+                val searchVisibilityEased = FastOutSlowInEasing.transform(searchSlotProgress)
+                val searchDockedRevealProgress by remember(
+                    reorderState.listState,
+                    density
+                ) {
+                    derivedStateOf {
+                        resolvePlaylistDockedSearchRevealProgress(
+                            firstVisibleItemIndex = reorderState.listState.firstVisibleItemIndex,
+                            firstVisibleItemScrollOffsetPx =
+                                reorderState.listState.firstVisibleItemScrollOffset,
+                            revealDistancePx = with(density) {
+                                PlaylistModernDockedSearchSlotHeight.roundToPx()
+                            }
+                        )
+                    }
                 }
-            }
-            Scaffold(
+                val searchDockedVisualProgress = FastOutSlowInEasing.transform(
+                    searchDockedRevealProgress
+                )
+                val dockedSearchProgress = resolvePlaylistDockedSearchSlotProgress(
+                    searchVisibilityProgress = searchSlotProgress,
+                    dockedRevealProgress = searchDockedRevealProgress
+                )
+                val searchSlotVisible = shouldComposePlaylistSearchSlot(
+                    searchVisible = searchVisible,
+                    visibilityProgress = dockedSearchProgress
+                )
+                val searchSlotHeight = interpolatePlaylistDp(
+                    start = 0.dp,
+                    end = PlaylistModernDockedSearchSlotHeight,
+                    fraction = dockedSearchProgress
+                )
+                val searchSlotAlpha = FastOutSlowInEasing.transform(dockedSearchProgress)
+                val playlistHeroHeight = interpolatePlaylistDp(
+                    start = PlaylistModernHeroHeight,
+                    end = PlaylistModernHeroSearchHeight,
+                    fraction = searchVisibilityEased
+                )
+                val playlistChromeCollapseProgress by remember(
+                    reorderState.listState,
+                    density,
+                    playlistHeroHeight
+                ) {
+                    derivedStateOf {
+                        resolvePlaylistChromeCollapseProgress(
+                            firstVisibleItemIndex = reorderState.listState.firstVisibleItemIndex,
+                            firstVisibleItemScrollOffsetPx =
+                                reorderState.listState.firstVisibleItemScrollOffset,
+                            expandedHeroHeightPx = with(density) {
+                                playlistHeroHeight.roundToPx()
+                            }
+                        )
+                    }
+                }
+                val playlistChromeVisualProgress =
+                    FastOutSlowInEasing.transform(playlistChromeCollapseProgress)
+                val headerSearchAlpha = resolvePlaylistHeaderSearchAlpha(
+                    searchVisibilityProgress = searchSlotProgress,
+                    chromeCollapseProgress = playlistChromeCollapseProgress
+                )
+                val headerSearchVisible = shouldComposePlaylistSearchSlot(
+                    searchVisible = searchVisible,
+                    visibilityProgress = headerSearchAlpha
+                )
+                val playlistTopBarColor = resolvePlaylistTranslucentTopBarColor(
+                    playlistColor = playlistChromeColor,
+                    collapseProgress = playlistChromeVisualProgress
+                )
+                val playlistTopBarContentColor = interpolatePlaylistColor(
+                    start = resolvePlaylistSolidTopBarContentColor(playlistChromeColor),
+                    end = playlistModernCollapsedTopBarContentColor(),
+                    fraction = playlistChromeVisualProgress
+                )
+                val dockedSearchGlassColor = playlistModernDockedSearchGlassColor(
+                    playlistColor = playlistChromeColor
+                )
+                val searchFieldFocusInHeader =
+                    headerSearchVisible && searchDockedRevealProgress < 0.5f
+                val searchFieldComposed = headerSearchVisible || searchSlotVisible
+                LaunchedEffect(
+                    showSearch,
+                    selectionMode,
+                    autoShowKeyboard,
+                    searchFieldComposed
+                ) {
+                    if (shouldRequestPlaylistSearchFocus(
+                            showSearch,
+                            selectionMode,
+                            autoShowKeyboard
+                        ) && searchFieldComposed
+                    ) {
+                        delay(120)
+                        searchFocusRequester.requestFocus()
+                        keyboardController?.show()
+                    }
+                }
+                Scaffold(
                 containerColor = Color.Transparent,
                 snackbarHost = { 
                     NeriSnackbarHost(
@@ -1187,12 +1270,13 @@ fun LocalPlaylistDetailScreen(
                             },
                             actions = {
                                 HapticIconButton(onClick = {
-                                    showSearch = !showSearch
-                                    if (!showSearch) {
+                                    val openingSearch = !showSearch
+                                    if (!openingSearch) {
                                         searchQuery = ""
                                         focusManager.clearFocus()
                                         keyboardController?.hide()
                                     }
+                                    showSearch = openingSearch
                                 }) { Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.cd_search_songs)) }
                                 
                                 if (hasDownloadManagerEntry) {
@@ -1352,20 +1436,40 @@ fun LocalPlaylistDetailScreen(
             ) { padding ->
                 val miniPlayerHeight = LocalMiniPlayerHeight.current
                 Column(Modifier.padding(padding).fillMaxSize()) {
-                    AnimatedVisibility(showSearch && !selectionMode && playlistChromeCollapsed) {
+                    if (searchSlotVisible) {
                         PlaylistModernVisualColorsProvider(
                             coverUrl = headerCover,
                             offlineMode = offlineMode
                         ) {
-                            PlaylistModernDockedSearchField(
-                                query = searchQuery,
-                                onQueryChange = { searchQuery = it },
-                                placeholder = stringResource(R.string.search_playlist),
-                                focusRequester = searchFocusRequester
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(searchSlotHeight)
+                                    .clipToBounds()
+                                    .graphicsLayer {
+                                        alpha = searchSlotAlpha
+                                    }
+                            ) {
+                                PlaylistModernStableSearchField(
+                                    query = searchQuery,
+                                    onQueryChange = { searchQuery = it },
+                                    placeholder = stringResource(R.string.search_playlist),
+                                    focusRequester = if (searchFieldFocusInHeader) {
+                                        null
+                                    } else {
+                                        searchFocusRequester
+                                    },
+                                    dockedProgress = searchDockedVisualProgress,
+                                    glassColor = dockedSearchGlassColor,
+                                    modifier = Modifier.graphicsLayer {
+                                        translationY = with(density) {
+                                            ((1f - searchSlotAlpha) * -8.dp.toPx())
+                                        }
+                                    }
+                                )
+                            }
                         }
                     }
-
                     Box(Modifier.fillMaxSize()) {
                         key(playlistId) {
                             PlaylistModernVisualColorsProvider(
@@ -1374,11 +1478,11 @@ fun LocalPlaylistDetailScreen(
                             ) {
                                 LazyColumn(
                                     state = reorderState.listState,
-                                    contentPadding = PaddingValues(bottom = 24.dp + miniPlayerHeight),
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .reorderable(reorderState)
-                                ) {
+	                                    contentPadding = PaddingValues(bottom = 24.dp + miniPlayerHeight),
+	                                    modifier = Modifier
+	                                        .fillMaxSize()
+	                                        .reorderable(reorderState)
+	                                ) {
                                 item(
                                     key = headerKey,
                                     contentType = "playlist_header"
@@ -1390,14 +1494,24 @@ fun LocalPlaylistDetailScreen(
                                         songCount = localSongs.size,
                                         offlineMode = offlineMode,
                                         height = playlistHeroHeight,
-                                        actions = if (showSearch && !selectionMode && !playlistChromeCollapsed) {
+                                        actions = if (headerSearchVisible) {
                                             {
-                                                PlaylistModernHeroSearchField(
-                                                    query = searchQuery,
-                                                    onQueryChange = { searchQuery = it },
-                                                    placeholder = stringResource(R.string.search_playlist),
-                                                    focusRequester = searchFocusRequester
-                                                )
+                                                Box(
+                                                    modifier = Modifier.graphicsLayer {
+                                                        alpha = headerSearchAlpha
+                                                    }
+                                                ) {
+                                                    PlaylistModernHeroSearchField(
+                                                        query = searchQuery,
+                                                        onQueryChange = { searchQuery = it },
+                                                        placeholder = stringResource(R.string.search_playlist),
+                                                        focusRequester = if (searchFieldFocusInHeader) {
+                                                            searchFocusRequester
+                                                        } else {
+                                                            null
+                                                        }
+                                                    )
+                                                }
                                             }
                                         } else {
                                             null
@@ -1689,7 +1803,6 @@ fun LocalPlaylistDetailScreen(
                         }
                         }
                         }
-
                         // 定位到正在播放
                         val currentIndexInDisplay = if (currentIndexInSource >= 0) {
                             displayedSongs.indexOfFirst { it.sameIdentityAs(currentSong) }
@@ -1957,6 +2070,7 @@ fun LocalPlaylistDetailScreen(
                 // 多选优先退出
                 BackHandler(enabled = selectionMode) { exitSelectionMode() }
             }
+            }
         }
     }
 }
@@ -2112,17 +2226,18 @@ private fun LocalScanPreviewScreen(
         hideExistingLocalPlaylistSongs,
         existingLocalPlaylistKeys
     ) {
-        val keyword = query.trim()
         value = withContext(Dispatchers.Default) {
-            previewItems
+            val candidates = previewItems
                 .asSequence()
                 .filter { item -> !metadataOnly || item.hasMetadata }
                 .filter {
                     item -> !hideExistingLocalPlaylistSongs ||
                         item.stableKey !in existingLocalPlaylistKeys
                 }
-                .filter { item -> keyword.isBlank() || item.searchText.contains(keyword, ignoreCase = true) }
                 .toList()
+            SearchTextMatcher.filterAndRank(query, candidates) { item ->
+                listOf(item.title, item.fileName, item.filePath, item.subtitle, item.searchText)
+            }
         }
     }
     LaunchedEffect(

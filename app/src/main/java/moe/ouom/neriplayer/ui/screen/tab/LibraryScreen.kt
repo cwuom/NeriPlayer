@@ -141,6 +141,11 @@ import moe.ouom.neriplayer.ui.util.rememberPlaylistDisplayCoverUrl
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialogContent
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.util.format.formatPlayCount
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
@@ -1243,7 +1248,7 @@ private fun LocalPlaylistList(
             }
 
             if (showDialog) {
-                AlertDialog(
+                MiuixSettingsDialog(
                     onDismissRequest = {
                         showDialog = false
                         newName = ""
@@ -1251,8 +1256,8 @@ private fun LocalPlaylistList(
                     },
                     title = { Text(stringResource(R.string.playlist_create)) },
                     text = {
-                        Column {
-                            OutlinedTextField(
+                        MiuixSettingsDialogContent(verticalSpacing = 12.dp) {
+                            MiuixSettingsTextField(
                                 value = newName,
                                 onValueChange = {
                                     newName = it.take(maxNameLength)
@@ -1260,28 +1265,29 @@ private fun LocalPlaylistList(
                                 },
                                 placeholder = { Text(stringResource(R.string.playlist_enter_name)) },
                                 singleLine = true,
-                                isError = nameError != null,
-                                supportingText = {
-                                    val err = nameError
-                                    if (err != null) Text(err, color = MaterialTheme.colorScheme.error)
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .focusRequester(focusRequester),
+                                modifier = Modifier.focusRequester(focusRequester),
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                                keyboardActions = KeyboardActions(
-                                    onDone = { tryCreate() }
-                                )
+                                keyboardActions = KeyboardActions(onDone = { tryCreate() })
                             )
+                            if (nameError != null) {
+                                Text(
+                                    text = nameError.orEmpty(),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                     },
                     confirmButton = {
-                        HapticTextButton(
-                            onClick = { tryCreate() }
-                        ) { Text(stringResource(R.string.action_create)) }
+                        MiuixSettingsButton(
+                            onClick = { tryCreate() },
+                            enabled = newName.trim().isNotBlank()
+                        ) {
+                            Text(stringResource(R.string.action_create))
+                        }
                     },
                     dismissButton = {
-                        HapticTextButton(
+                        MiuixSettingsTextButton(
                             onClick = {
                                 showDialog = false
                                 newName = ""
@@ -1561,30 +1567,33 @@ private fun LocalPlaylistList(
                 }
 
                 if (showRenameDialog) {
-                    AlertDialog(
+                    MiuixSettingsDialog(
                         onDismissRequest = { showRenameDialog = false },
                         title = { Text(stringResource(R.string.action_rename)) },
                         text = {
-                            OutlinedTextField(
-                                value = renameText,
-                                onValueChange = { renameText = it.take(maxNameLength) },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                            MiuixSettingsDialogContent(verticalSpacing = 12.dp) {
+                                MiuixSettingsTextField(
+                                    value = renameText,
+                                    onValueChange = { renameText = it.take(maxNameLength) },
+                                    placeholder = { Text(displayName) },
+                                    singleLine = true
+                                )
+                            }
                         },
                         confirmButton = {
-                            HapticTextButton(
+                            MiuixSettingsButton(
                                 onClick = {
                                     val trimmed = renameText.trim().take(maxNameLength)
                                     if (trimmed.isNotBlank()) {
                                         onRename(pl.id, trimmed)
                                         showRenameDialog = false
                                     }
-                                }
+                                },
+                                enabled = renameText.trim().isNotBlank()
                             ) { Text(stringResource(R.string.action_confirm)) }
                         },
                         dismissButton = {
-                            HapticTextButton(
+                            MiuixSettingsTextButton(
                                 onClick = { showRenameDialog = false }
                             ) { Text(stringResource(R.string.action_cancel)) }
                         }

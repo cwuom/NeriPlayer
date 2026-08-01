@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.sync.DEFAULT_SYNC_AUTO_ENABLED
 import moe.ouom.neriplayer.data.sync.github.*
 import moe.ouom.neriplayer.data.sync.model.SyncResult
 
@@ -304,7 +305,7 @@ data class GitHubSyncUiState(
     val isCheckingRepo: Boolean = false,
     val isSyncing: Boolean = false,
     val tokenValid: Boolean = false,
-    val autoSyncEnabled: Boolean = false,
+    val autoSyncEnabled: Boolean = DEFAULT_SYNC_AUTO_ENABLED,
     val username: String = "",
     val repoOwner: String = "",
     val repoName: String = "",

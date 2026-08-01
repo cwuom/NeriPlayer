@@ -24,4 +24,12 @@ class ExploreSearchHistoryPolicyTest {
 
         assertEquals(listOf("d", "a", "b"), next)
     }
+
+    @Test
+    fun `latin pinyin query can resolve to matching Chinese history`() {
+        val history = listOf("晴天", "夜曲")
+
+        assertEquals("晴天", resolveExploreSearchKeyword("qt", history))
+        assertEquals("晴天", resolveExploreSearchKeyword("qingtian", history))
+    }
 }

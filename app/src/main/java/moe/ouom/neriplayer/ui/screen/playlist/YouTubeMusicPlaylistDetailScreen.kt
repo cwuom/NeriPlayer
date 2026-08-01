@@ -26,7 +26,6 @@ package moe.ouom.neriplayer.ui.screen.playlist
 import android.app.Application
 import android.content.ClipData
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -88,10 +87,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -236,26 +237,80 @@ fun YouTubeMusicPlaylistDetailScreen(
         coverUrl = resolvedPlaylist.coverUrl,
         offlineMode = offlineMode
     )
-    val playlistChromeCollapsed by remember {
-        derivedStateOf { listState.firstVisibleItemIndex > 0 }
+    val density = LocalDensity.current
+    val searchVisible = shouldShowPlaylistSearch(
+        showSearch = showSearch,
+        selectionMode = selectionMode
+    )
+    val searchVisibilityProgress = playlistModernSearchVisibilityProgress(
+        searchVisible = searchVisible,
+        label = "youtube-music-playlist-search-visibility"
+    )
+    val searchVisibilityEased = resolvePlaylistEasedProgress(searchVisibilityProgress)
+    val playlistHeroHeight = interpolatePlaylistDp(
+        start = PlaylistModernHeroHeight,
+        end = PlaylistModernHeroSearchHeight,
+        fraction = searchVisibilityEased
+    )
+    val playlistChromeCollapseProgress by remember(
+        listState,
+        density,
+        playlistHeroHeight
+    ) {
+        derivedStateOf {
+            resolvePlaylistChromeCollapseProgress(
+                firstVisibleItemIndex = listState.firstVisibleItemIndex,
+                firstVisibleItemScrollOffsetPx = listState.firstVisibleItemScrollOffset,
+                expandedHeroHeightPx = with(density) {
+                    playlistHeroHeight.roundToPx()
+                }
+            )
+        }
     }
-    val playlistTopBarColor = if (playlistChromeCollapsed) {
-        playlistModernCollapsedTopBarColor(playlistChromeColor)
-    } else {
-        playlistModernExpandedTopBarColor(playlistChromeColor)
+    val playlistChromeVisualProgress = resolvePlaylistEasedProgress(
+        playlistChromeCollapseProgress
+    )
+    val dockedSearchRevealProgress by remember(listState, density) {
+        derivedStateOf {
+            resolvePlaylistDockedSearchRevealProgress(
+                firstVisibleItemIndex = listState.firstVisibleItemIndex,
+                firstVisibleItemScrollOffsetPx = listState.firstVisibleItemScrollOffset,
+                revealDistancePx = with(density) {
+                    PlaylistModernDockedSearchSlotHeight.roundToPx()
+                }
+            )
+        }
     }
-    val playlistTopBarContentColor = if (playlistChromeCollapsed) {
-        playlistModernCollapsedTopBarContentColor()
-    } else {
-        resolvePlaylistSolidTopBarContentColor(playlistChromeColor)
-    }
-    val playlistHeroHeight by animateDpAsState(
-        targetValue = if (showSearch && !selectionMode && !playlistChromeCollapsed) {
-            PlaylistModernHeroSearchHeight
-        } else {
-            PlaylistModernHeroHeight
-        },
-        label = "youtube-music-playlist-hero-height"
+    val searchDockedVisualProgress = resolvePlaylistEasedProgress(
+        dockedSearchRevealProgress
+    )
+    val dockedSearchProgress = resolvePlaylistDockedSearchSlotProgress(
+        searchVisibilityProgress = searchVisibilityProgress,
+        dockedRevealProgress = dockedSearchRevealProgress
+    )
+    val searchSlotVisible = shouldComposePlaylistSearchSlot(
+        searchVisible = searchVisible,
+        visibilityProgress = dockedSearchProgress
+    )
+    val headerSearchAlpha = resolvePlaylistHeaderSearchAlpha(
+        searchVisibilityProgress = searchVisibilityProgress,
+        chromeCollapseProgress = playlistChromeCollapseProgress
+    )
+    val headerSearchVisible = shouldComposePlaylistSearchSlot(
+        searchVisible = searchVisible,
+        visibilityProgress = headerSearchAlpha
+    )
+    val searchFieldFocusInHeader =
+        headerSearchVisible && dockedSearchRevealProgress < 0.5f
+    val searchFieldComposed = headerSearchVisible || searchSlotVisible
+    val playlistTopBarColor = resolvePlaylistTranslucentTopBarColor(
+        playlistColor = playlistChromeColor,
+        collapseProgress = playlistChromeVisualProgress
+    )
+    val playlistTopBarContentColor = interpolatePlaylistColor(
+        start = resolvePlaylistSolidTopBarContentColor(playlistChromeColor),
+        end = playlistModernCollapsedTopBarContentColor(),
+        fraction = playlistChromeVisualProgress
     )
     val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsState(
         initial = false
@@ -264,8 +319,18 @@ fun YouTubeMusicPlaylistDetailScreen(
         initial = null
     )
     val hasCustomBackground = backgroundImageUri != null
-    LaunchedEffect(showSearch, selectionMode, playlistChromeCollapsed, autoShowKeyboard) {
-        if (showSearch && !selectionMode && autoShowKeyboard) {
+    LaunchedEffect(
+        showSearch,
+        selectionMode,
+        searchFieldComposed,
+        autoShowKeyboard
+    ) {
+        if (shouldRequestPlaylistSearchFocus(
+                showSearch,
+                selectionMode,
+                autoShowKeyboard
+            ) && searchFieldComposed
+        ) {
             delay(120)
             searchFocusRequester.requestFocus()
             keyboardController?.show()
@@ -503,19 +568,20 @@ fun YouTubeMusicPlaylistDetailScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            if (showSearch && !selectionMode && playlistChromeCollapsed) {
-                PlaylistModernVisualColorsProvider(
-                    coverUrl = resolvedPlaylist.coverUrl,
-                    offlineMode = offlineMode
-                ) {
-                    PlaylistModernDockedSearchField(
-                        query = searchQuery,
-                        onQueryChange = { searchQuery = it },
-                        placeholder = stringResource(R.string.playlist_search_hint),
-                        focusRequester = searchFocusRequester
-                    )
-                }
-            }
+            PlaylistModernDockedSearchSlot(
+                revealProgress = dockedSearchProgress,
+                coverUrl = resolvedPlaylist.coverUrl,
+                offlineMode = offlineMode,
+                query = searchQuery,
+                onQueryChange = { searchQuery = it },
+                placeholder = stringResource(R.string.playlist_search_hint),
+                focusRequester = if (searchFieldFocusInHeader) {
+                    null
+                } else {
+                    searchFocusRequester
+                },
+                dockedProgress = searchDockedVisualProgress
+            )
 
             Box(
                 modifier = Modifier
@@ -539,14 +605,24 @@ fun YouTubeMusicPlaylistDetailScreen(
                                 offlineMode = offlineMode,
                                 height = playlistHeroHeight,
                                 coverContentDescription = resolvedPlaylist.title,
-                                actions = if (showSearch && !selectionMode && !playlistChromeCollapsed) {
+                                actions = if (headerSearchVisible) {
                                     {
-                                        PlaylistModernHeroSearchField(
-                                            query = searchQuery,
-                                            onQueryChange = { searchQuery = it },
-                                            placeholder = stringResource(R.string.playlist_search_hint),
-                                            focusRequester = searchFocusRequester
-                                        )
+                                        Box(
+                                            modifier = Modifier.graphicsLayer {
+                                                alpha = headerSearchAlpha
+                                            }
+                                        ) {
+                                            PlaylistModernHeroSearchField(
+                                                query = searchQuery,
+                                                onQueryChange = { searchQuery = it },
+                                                placeholder = stringResource(R.string.playlist_search_hint),
+                                                focusRequester = if (searchFieldFocusInHeader) {
+                                                    searchFocusRequester
+                                                } else {
+                                                    null
+                                                }
+                                            )
+                                        }
                                     }
                                 } else {
                                     null

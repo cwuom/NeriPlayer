@@ -37,13 +37,14 @@ internal fun rememberInterpolatedPlaybackPositionState(
     val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(currentTimeMs, isPlaying) {
-        state.anchorPositionMs = currentTimeMs
-        state.anchorRealtimeNanos = System.nanoTime()
-        state.renderedPositionMs = resolveAnchoredInterpolatedPlaybackPosition(
+        val resolvedRenderedPositionMs = resolveAnchoredInterpolatedPlaybackPosition(
             externalPositionMs = currentTimeMs,
             renderedPositionMs = state.renderedPositionMs,
             isPlaying = isPlaying
         )
+        state.anchorPositionMs = resolvedRenderedPositionMs
+        state.anchorRealtimeNanos = System.nanoTime()
+        state.renderedPositionMs = resolvedRenderedPositionMs
     }
 
     LaunchedEffect(isPlaying, playbackSpeed, lifecycleOwner, frameIntervalNanos) {

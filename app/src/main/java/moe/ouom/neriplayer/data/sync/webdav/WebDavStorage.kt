@@ -9,6 +9,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import moe.ouom.neriplayer.data.config.WebDavSyncConfigSnapshot
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.data.sync.DEFAULT_SYNC_AUTO_ENABLED
 
 class WebDavStorage(private val context: Context) {
     private val encryptedPrefs: SharedPreferences = openEncryptedPrefsWithRecovery()
@@ -100,7 +101,8 @@ class WebDavStorage(private val context: Context) {
         encryptedPrefs.edit { putBoolean(KEY_AUTO_SYNC_ENABLED, enabled) }
     }
 
-    fun isAutoSyncEnabled(): Boolean = encryptedPrefs.getBoolean(KEY_AUTO_SYNC_ENABLED, false)
+    fun isAutoSyncEnabled(): Boolean =
+        encryptedPrefs.getBoolean(KEY_AUTO_SYNC_ENABLED, DEFAULT_SYNC_AUTO_ENABLED)
 
     fun saveLastRemoteFingerprint(fingerprint: String) {
         encryptedPrefs.edit { putString(KEY_LAST_REMOTE_FINGERPRINT, fingerprint) }

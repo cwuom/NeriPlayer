@@ -127,4 +127,49 @@ class AppConfigBackupCodecTest {
         assertFalse(decoded.sections.neteaseAuth)
         assertEquals(false, decoded.payload.settings.booleans["dynamic_color"])
     }
+
+    @Test
+    fun `missing auto sync fields default to enabled when decoding older backups`() {
+        val payload = AppConfigBackup(
+            formatVersion = 1,
+            exportedAt = 1_717_171_717L,
+            listenTogether = ListenTogetherConfigSnapshot(
+                workerBaseUrl = "https://worker.example",
+                workerBaseUrlInput = "worker.example",
+                userUuid = "uuid-1",
+                nickname = "Neri",
+                allowMemberControl = false,
+                autoPauseOnMemberChange = false,
+                shareAudioLinks = false
+            ),
+            neteaseAuth = SavedCookieConfigSnapshot(cookies = linkedMapOf("MUSIC_U" to "cookie")),
+            biliAuth = SavedCookieConfigSnapshot(cookies = linkedMapOf("SESSDATA" to "cookie")),
+            youTubeAuth = YouTubeAuthConfigSnapshot(cookieHeader = "SID=1")
+        )
+
+        val legacyJson = AppConfigBackupCodec.encode(payload.copy(
+            gitHubSync = GitHubSyncConfigSnapshot(
+                token = "ghp_token",
+                repoOwner = "owner",
+                repoName = "repo",
+                autoSyncEnabled = true,
+                playHistoryUpdateMode = "BATCHED",
+                dataSaverMode = false
+            ),
+            webDavSync = WebDavSyncConfigSnapshot(
+                serverUrl = "https://dav.example",
+                basePath = "backup",
+                username = "user",
+                password = "pass",
+                autoSyncEnabled = true
+            )
+        ))
+            .replace(",\"autoSyncEnabled\":true,\"playHistoryUpdateMode\":\"BATCHED\"", "")
+            .replace(",\"autoSyncEnabled\":true}", "}")
+
+        val decoded = AppConfigBackupCodec.decode(legacyJson)
+
+        assertTrue(decoded.gitHubSync.autoSyncEnabled)
+        assertTrue(decoded.webDavSync.autoSyncEnabled)
+    }
 }

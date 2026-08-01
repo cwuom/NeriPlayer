@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.search
 
+import moe.ouom.neriplayer.util.search.SearchTextMatcher
+
 internal const val DEFAULT_EXPLORE_SEARCH_HISTORY_LIMIT = 12
 
 internal fun updatedExploreSearchHistory(
@@ -26,3 +28,32 @@ internal fun updatedExploreSearchHistory(
         }
     }.take(limit)
 }
+
+internal fun resolveExploreSearchKeyword(
+    query: String,
+    history: List<String>
+): String {
+    val normalizedQuery = query.trim()
+    if (normalizedQuery.length < 2) return normalizedQuery
+
+    val bestMatch = history
+        .mapNotNull { item ->
+            val normalizedItem = item.trim()
+            if (normalizedItem.isBlank() || normalizedItem.equals(normalizedQuery, ignoreCase = true)) {
+                return@mapNotNull null
+            }
+            val score = SearchTextMatcher.score(normalizedQuery, listOf(normalizedItem))
+                ?: return@mapNotNull null
+            normalizedItem to score
+        }
+        .filter { (_, score) -> score <= HISTORY_SEARCH_ALIAS_MAX_SCORE }
+        .minWithOrNull(
+            compareBy<Pair<String, Int>> { it.second }
+                .thenBy { it.first.length }
+        )
+        ?.first
+
+    return bestMatch ?: normalizedQuery
+}
+
+private const val HISTORY_SEARCH_ALIAS_MAX_SCORE = 12

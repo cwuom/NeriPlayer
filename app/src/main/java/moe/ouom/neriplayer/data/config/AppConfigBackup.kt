@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import moe.ouom.neriplayer.data.sync.DEFAULT_SYNC_AUTO_ENABLED
 
 private const val CONFIG_FILE_PREFIX = "neriplayer_config"
 private const val CONFIG_FILE_EXTENSION = ".json"
@@ -95,7 +96,7 @@ data class GitHubSyncConfigSnapshot(
     val token: String = "",
     val repoOwner: String = "",
     val repoName: String = "",
-    val autoSyncEnabled: Boolean = false,
+    val autoSyncEnabled: Boolean = DEFAULT_SYNC_AUTO_ENABLED,
     val playHistoryUpdateMode: String = "",
     val dataSaverMode: Boolean = true
 ) {
@@ -103,7 +104,7 @@ data class GitHubSyncConfigSnapshot(
         return token.isNotBlank() ||
             repoOwner.isNotBlank() ||
             repoName.isNotBlank() ||
-            autoSyncEnabled ||
+            autoSyncEnabled != DEFAULT_SYNC_AUTO_ENABLED ||
             playHistoryUpdateMode.isNotBlank() ||
             !dataSaverMode
     }
@@ -124,14 +125,14 @@ data class WebDavSyncConfigSnapshot(
     val basePath: String = "",
     val username: String = "",
     val password: String = "",
-    val autoSyncEnabled: Boolean = false
+    val autoSyncEnabled: Boolean = DEFAULT_SYNC_AUTO_ENABLED
 ) {
     fun hasData(): Boolean {
         return serverUrl.isNotBlank() ||
             basePath.isNotBlank() ||
             username.isNotBlank() ||
             password.isNotBlank() ||
-            autoSyncEnabled
+            autoSyncEnabled != DEFAULT_SYNC_AUTO_ENABLED
     }
 }
 

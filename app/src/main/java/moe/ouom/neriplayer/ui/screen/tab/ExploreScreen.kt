@@ -65,6 +65,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -120,6 +121,8 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
+import moe.ouom.neriplayer.data.search.ExploreSearchHistoryRepository
+import moe.ouom.neriplayer.data.search.resolveExploreSearchKeyword
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -150,6 +153,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
 import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
+import moe.ouom.neriplayer.util.search.SearchTextMatcher
 
 private const val SEARCH_INPUT_DEBOUNCE_MS = 300L
 private val ExplorePrimaryTabShape = RoundedCornerShape(20.dp)
@@ -216,6 +220,18 @@ fun ExploreScreen(
     var searchQuery by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
+    val searchHistoryRepository = remember(context) {
+        ExploreSearchHistoryRepository(context)
+    }
+    val searchHistory by searchHistoryRepository.historyFlow.collectAsStateWithLifecycle(
+        initialValue = emptyList()
+    )
+    val effectiveSearchKeyword = remember(searchQuery, searchHistory) {
+        resolveExploreSearchKeyword(searchQuery, searchHistory)
+    }
+    val visibleSearchHistory = remember(searchQuery, searchHistory) {
+        filteredExploreSearchHistory(searchQuery, searchHistory)
+    }
     val backgroundImageUri by AppContainer.settingsRepo.backgroundImageUriFlow.collectAsStateWithLifecycle(
         initialValue = null
     )
@@ -330,13 +346,25 @@ fun ExploreScreen(
         }
     }
 
-    LaunchedEffect(searchQuery, ui.selectedSearchSource) {
+    LaunchedEffect(searchQuery, effectiveSearchKeyword, ui.selectedSearchSource) {
         if (searchQuery.isBlank()) {
             vm.search("")
             return@LaunchedEffect
         }
         delay(SEARCH_INPUT_DEBOUNCE_MS)
-        vm.search(searchQuery)
+        vm.search(effectiveSearchKeyword, displayQuery = searchQuery)
+    }
+
+    fun submitExploreSearch(query: String = searchQuery) {
+        val normalizedQuery = query.trim()
+        if (normalizedQuery.isBlank()) return
+        val keyword = resolveExploreSearchKeyword(normalizedQuery, searchHistory)
+        searchQuery = normalizedQuery
+        focusManager.clearFocus()
+        vm.search(keyword, displayQuery = normalizedQuery)
+        scope.launch {
+            searchHistoryRepository.record(keyword)
+        }
     }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
@@ -391,11 +419,21 @@ fun ExploreScreen(
                         },
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         keyboardActions = KeyboardActions(onSearch = {
-                            focusManager.clearFocus()
+                            submitExploreSearch()
                         }),
                         singleLine = true,
                         shape = ExploreSearchFieldShape,
                         modifier = Modifier.fillMaxWidth()
+                    )
+                    ExploreSearchHistoryRow(
+                        history = visibleSearchHistory,
+                        query = searchQuery,
+                        onHistoryClick = { item -> submitExploreSearch(item) },
+                        onClearHistory = {
+                            scope.launch {
+                                searchHistoryRepository.clear()
+                            }
+                        }
                     )
                     if (ui.selectedSearchSource == SearchSource.NETEASE && !ui.isNeteaseLoggedIn) {
                         Spacer(Modifier.height(6.dp))
@@ -793,6 +831,108 @@ private fun ExploreOfflineContent(topAppBarState: TopAppBarState) {
         }
     }
 }
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ExploreSearchHistoryRow(
+    history: List<String>,
+    query: String,
+    onHistoryClick: (String) -> Unit,
+    onClearHistory: () -> Unit
+) {
+    AnimatedVisibility(visible = history.isNotEmpty()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.History,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = stringResource(R.string.search_history),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (query.isBlank()) {
+                    HapticTextButton(onClick = onClearHistory) {
+                        Text(stringResource(R.string.action_clear))
+                    }
+                }
+            }
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                history.forEach { item ->
+                    ExploreSearchHistoryChip(
+                        text = item,
+                        onClick = { onHistoryClick(item) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExploreSearchHistoryChip(
+    text: String,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.72f),
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+internal fun filteredExploreSearchHistory(
+    query: String,
+    history: List<String>
+): List<String> {
+    val normalizedQuery = query.trim()
+    if (normalizedQuery.isBlank()) return history.take(EXPLORE_HISTORY_DISPLAY_LIMIT)
+    if (normalizedQuery.length < 2) return emptyList()
+
+    return history
+        .mapNotNull { item ->
+            val score = SearchTextMatcher.score(normalizedQuery, listOf(item))
+                ?: return@mapNotNull null
+            item to score
+        }
+        .sortedWith(
+            compareBy<Pair<String, Int>> { it.second }
+                .thenBy { it.first.length }
+        )
+        .map { it.first }
+        .take(EXPLORE_HISTORY_DISPLAY_LIMIT)
+}
+
+private const val EXPLORE_HISTORY_DISPLAY_LIMIT = 8
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)

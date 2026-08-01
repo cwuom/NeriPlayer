@@ -36,6 +36,7 @@ import com.google.gson.reflect.TypeToken
 import moe.ouom.neriplayer.data.config.GitHubSyncConfigSnapshot
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.data.sync.DEFAULT_SYNC_AUTO_ENABLED
 import moe.ouom.neriplayer.data.sync.PlayHistoryUpdateMode
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
@@ -219,7 +220,7 @@ class SecureTokenStorage(private val context: Context) {
 
     /** 获取自动同步开关状态 */
     fun isAutoSyncEnabled(): Boolean {
-        return encryptedPrefs.getBoolean(KEY_AUTO_SYNC_ENABLED, false)
+        return encryptedPrefs.getBoolean(KEY_AUTO_SYNC_ENABLED, DEFAULT_SYNC_AUTO_ENABLED)
     }
 
     /** 保存上次同步的远程SHA */

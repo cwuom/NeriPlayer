@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.sync.DEFAULT_SYNC_AUTO_ENABLED
 import moe.ouom.neriplayer.data.sync.webdav.WebDavApiClient
 import moe.ouom.neriplayer.data.sync.webdav.WebDavAuthException
 import moe.ouom.neriplayer.data.sync.webdav.WebDavStorage
@@ -174,7 +175,7 @@ data class WebDavSyncUiState(
     val isConfigured: Boolean = false,
     val isValidating: Boolean = false,
     val isSyncing: Boolean = false,
-    val autoSyncEnabled: Boolean = false,
+    val autoSyncEnabled: Boolean = DEFAULT_SYNC_AUTO_ENABLED,
     val serverUrl: String = "",
     val basePath: String = "",
     val username: String = "",

@@ -23,7 +23,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -45,8 +44,9 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
-import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,53 +97,52 @@ internal fun PlaylistExportSheet(
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 16.dp)
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge
-            )
-            Text(
-                text = pluralStringResource(
-                    R.plurals.common_selected_count,
-                    selectedCount,
-                    selectedCount
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge
+                )
+                Text(
+                    text = pluralStringResource(
+                        R.plurals.common_selected_count,
+                        selectedCount,
+                        selectedCount
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
-            Spacer(Modifier.height(16.dp))
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                OutlinedTextField(
+                MiuixSettingsTextField(
                     value = newName,
                     onValueChange = { newName = it },
-                    modifier = Modifier.weight(1f),
                     placeholder = { Text(stringResource(R.string.playlist_create_name)) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(16.dp)
+                    singleLine = true
                 )
-                HapticTextButton(
-                    enabled = newName.isNotBlank() && selectedCount > 0,
-                    onClick = {
-                        val name = newName.trim()
-                        if (name.isBlank()) return@HapticTextButton
-                        runThenDismiss { onCreateAndExport(name) }
-                    }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
                 ) {
-                    Icon(Icons.Outlined.Add, contentDescription = null)
-                    Spacer(Modifier.width(4.dp))
-                    Text(resolvedCreateActionLabel)
+                    MiuixSettingsButton(
+                        enabled = newName.isNotBlank() && selectedCount > 0,
+                        onClick = {
+                            val name = newName.trim()
+                            if (name.isBlank()) return@MiuixSettingsButton
+                            runThenDismiss { onCreateAndExport(name) }
+                        }
+                    ) {
+                        Icon(Icons.Outlined.Add, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text(resolvedCreateActionLabel)
+                    }
                 }
+
+                HorizontalDivider(
+                    thickness = DividerDefaults.Thickness,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+                )
             }
 
-            Spacer(Modifier.height(14.dp))
-            HorizontalDivider(
-                thickness = DividerDefaults.Thickness,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
-            )
             Spacer(Modifier.height(8.dp))
 
             LazyColumn(modifier = Modifier.playlistExportListHeight()) {

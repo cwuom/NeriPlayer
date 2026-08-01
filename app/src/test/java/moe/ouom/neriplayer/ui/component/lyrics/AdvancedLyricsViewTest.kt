@@ -432,6 +432,24 @@ class AdvancedLyricsViewTest {
     }
 
     @Test
+    fun `anchored interpolation continues forward after stale external position`() {
+        val resolved = resolveAnchoredInterpolatedPlaybackPosition(
+            externalPositionMs = 1_000L,
+            renderedPositionMs = 1_120L,
+            isPlaying = true
+        )
+        val nextFramePosition = resolveInterpolatedPlaybackPosition(
+            anchorPositionMs = resolved,
+            anchorRealtimeNanos = 1_000_000_000L,
+            frameRealtimeNanos = 1_033_000_000L,
+            playbackSpeed = 1f,
+            previousRenderedPositionMs = resolved
+        )
+
+        assertEquals(1_153L, nextFramePosition)
+    }
+
+    @Test
     fun `resolveInterpolatedPlaybackPosition keeps continuous interpolation during long frame stalls`() {
         val predicted = resolveInterpolatedPlaybackPosition(
             anchorPositionMs = 5_000L,

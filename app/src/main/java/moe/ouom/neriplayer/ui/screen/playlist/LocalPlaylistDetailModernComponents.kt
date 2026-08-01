@@ -1,6 +1,11 @@
 package moe.ouom.neriplayer.ui.screen.playlist
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,7 +14,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentHeight
@@ -31,13 +35,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -49,10 +56,13 @@ import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.addOutline
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -60,6 +70,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.ColorUtils
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
@@ -67,6 +80,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.util.media.CoverArtColorCache
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.util.search.SearchTextMatcher
 
 internal const val PLAYLIST_HEADER_KEY = "header"
 internal const val PLAYLIST_ACTIONS_KEY = "playlist_actions"
@@ -75,11 +89,212 @@ internal const val LOCAL_PLAYLIST_ACTIONS_KEY = PLAYLIST_ACTIONS_KEY
 internal const val LOCAL_PLAYLIST_METADATA_PROCESSING_KEY = "metadata_processing_card"
 internal val PlaylistModernHeroHeight = 122.dp
 internal val PlaylistModernHeroSearchHeight = 190.dp
+internal val PlaylistModernHeroSearchFieldOffset = 106.dp
+private const val PlaylistHeroLightFallbackSeedArgb = 0xFF5F6875.toInt()
+private const val PlaylistHeroDarkFallbackSeedArgb = 0xFF303846.toInt()
+
+internal fun shouldRequestPlaylistSearchFocus(
+    showSearch: Boolean,
+    selectionMode: Boolean,
+    autoShowKeyboard: Boolean
+): Boolean {
+    return showSearch && !selectionMode && autoShowKeyboard
+}
+
+internal fun shouldShowPlaylistSearch(
+    showSearch: Boolean,
+    selectionMode: Boolean
+): Boolean {
+    return showSearch && !selectionMode
+}
+
+internal fun resolvePlaylistSearchFieldOffsetPx(
+    firstVisibleItemIndex: Int,
+    firstVisibleItemScrollOffsetPx: Int,
+    expandedOffsetPx: Int
+): Int {
+    if (firstVisibleItemIndex > 0) return 0
+    return (expandedOffsetPx - firstVisibleItemScrollOffsetPx).coerceAtLeast(0)
+}
+
+internal fun resolvePlaylistHeroFallbackSeedArgb(isDarkTheme: Boolean): Int {
+    return if (isDarkTheme) {
+        PlaylistHeroDarkFallbackSeedArgb
+    } else {
+        PlaylistHeroLightFallbackSeedArgb
+    }
+}
+
+internal fun shouldComposePlaylistSearchSlot(
+    searchVisible: Boolean,
+    visibilityProgress: Float
+): Boolean {
+    return searchVisible || visibilityProgress > 0.001f
+}
+
+@Composable
+internal fun playlistModernSearchVisibilityProgress(
+    searchVisible: Boolean,
+    label: String
+): Float {
+    val progress by animateFloatAsState(
+        targetValue = if (searchVisible) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = label
+    )
+    return progress.coerceIn(0f, 1f)
+}
+
+internal fun resolvePlaylistEasedProgress(progress: Float): Float {
+    return FastOutSlowInEasing.transform(progress.coerceIn(0f, 1f))
+}
+
+internal fun resolvePlaylistDockedSearchSlotProgress(
+    searchVisibilityProgress: Float,
+    dockedRevealProgress: Float
+): Float {
+    return searchVisibilityProgress.coerceIn(0f, 1f) *
+        resolvePlaylistEasedProgress(dockedRevealProgress)
+}
+
+internal fun resolvePlaylistHeaderSearchAlpha(
+    searchVisibilityProgress: Float,
+    chromeCollapseProgress: Float
+): Float {
+    return resolvePlaylistEasedProgress(searchVisibilityProgress) *
+        (1f - resolvePlaylistEasedProgress(chromeCollapseProgress))
+}
+
+internal fun resolvePlaylistSearchDockedProgress(
+    firstVisibleItemIndex: Int,
+    firstVisibleItemScrollOffsetPx: Int,
+    expandedOffsetPx: Int
+): Float {
+    if (firstVisibleItemIndex > 0) return 1f
+    if (expandedOffsetPx <= 0) return 0f
+    return (firstVisibleItemScrollOffsetPx.toFloat() / expandedOffsetPx)
+        .coerceIn(0f, 1f)
+}
+
+internal fun resolvePlaylistDockedSearchRevealProgress(
+    firstVisibleItemIndex: Int,
+    firstVisibleItemScrollOffsetPx: Int,
+    revealDistancePx: Int
+): Float {
+    if (firstVisibleItemIndex <= 1) return 0f
+    if (firstVisibleItemIndex > 2) return 1f
+    if (revealDistancePx <= 0) return 1f
+    return (firstVisibleItemScrollOffsetPx.toFloat() / revealDistancePx)
+        .coerceIn(0f, 1f)
+}
+
+internal fun resolvePlaylistDockedSearchGlassColor(
+    playlistColor: Color,
+    isDarkSurface: Boolean
+): Color {
+    val playlistLuminance = playlistColor.luminance()
+    return when {
+        isDarkSurface && playlistLuminance > 0.58f -> Color.White.copy(alpha = 0.14f)
+        isDarkSurface -> Color.Black.copy(alpha = 0.28f)
+        else -> Color.White.copy(alpha = if (playlistLuminance < 0.34f) 0.42f else 0.50f)
+    }
+}
+
+@Composable
+internal fun playlistModernDockedSearchGlassColor(
+    playlistColor: Color
+): Color {
+    return resolvePlaylistDockedSearchGlassColor(
+        playlistColor = playlistColor,
+        isDarkSurface = playlistModernUsesDarkSurface()
+    )
+}
+
+internal fun resolvePlaylistSearchListTopPaddingPx(
+    searchVisible: Boolean,
+    firstVisibleItemIndex: Int,
+    firstVisibleItemScrollOffsetPx: Int,
+    revealDistancePx: Int,
+    dockedSlotHeightPx: Int
+): Int {
+    if (!searchVisible) return 0
+    val safeDockedSlotHeight = dockedSlotHeightPx.coerceAtLeast(0)
+    if (firstVisibleItemIndex <= 1) return 0
+    if (firstVisibleItemIndex > 2) return safeDockedSlotHeight
+    if (revealDistancePx <= 0) return safeDockedSlotHeight
+    val progress = (firstVisibleItemScrollOffsetPx.toFloat() / revealDistancePx)
+        .coerceIn(0f, 1f)
+    return (safeDockedSlotHeight * progress).toInt()
+}
+
+@Composable
+internal fun rememberPlaylistSearchInputState(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    delayMillis: Long = 80L
+): MutableState<String> {
+    val inputState = remember { mutableStateOf(query) }
+    LaunchedEffect(query) {
+        if (query.isBlank() && inputState.value.isNotBlank()) {
+            inputState.value = ""
+        }
+    }
+    LaunchedEffect(inputState.value) {
+        val pendingQuery = inputState.value
+        if (pendingQuery == query) return@LaunchedEffect
+        delay(delayMillis)
+        if (inputState.value == pendingQuery) {
+            onQueryChange(pendingQuery)
+        }
+    }
+    return inputState
+}
+
+@Composable
+internal fun <T> rememberPlaylistSearchResults(
+    query: String,
+    items: List<T>,
+    tokens: (T) -> Iterable<Any?>
+): List<T> {
+    val indexState = produceState<SearchTextMatcher.Index<T>?>(
+        initialValue = null,
+        key1 = items
+    ) {
+        value = withContext(Dispatchers.Default) {
+            SearchTextMatcher.index(items, tokens)
+        }
+    }
+    val displayedItems by produceState(
+        initialValue = items,
+        key1 = items,
+        key2 = indexState.value,
+        key3 = query
+    ) {
+        val index = indexState.value
+        value = if (index == null) {
+            items
+        } else {
+            withContext(Dispatchers.Default) {
+                index.filterAndRank(query)
+            }
+        }
+    }
+    return displayedItems
+}
 
 private val PlaylistHeroCoverSize = 88.dp
 private val PlaylistHeroCoverCornerRadius = 14.dp
 private val PlaylistHeroSearchTopPadding = 14.dp
 private val PlaylistDockedSearchTopPadding = 10.dp
+private val PlaylistDockedSearchBottomPadding = 8.dp
+private val PlaylistSearchFieldMinHeight = 60.dp
+internal val PlaylistModernDockedSearchSlotHeight =
+    PlaylistDockedSearchTopPadding +
+        PlaylistSearchFieldMinHeight +
+        PlaylistDockedSearchBottomPadding
 private val PlaylistActionBarHeight = 44.dp
 private val PlaylistCompactActionButtonSize = 40.dp
 private val PlaylistSearchFieldShape = RoundedCornerShape(18.dp)
@@ -180,11 +395,54 @@ internal fun resolvePlaylistHeroAccentArgb(
     return ColorUtils.HSLToColor(floatArrayOf(hsl[0], targetSaturation, targetLightness))
 }
 
+internal fun resolvePlaylistChromeCollapseProgress(
+    firstVisibleItemIndex: Int,
+    firstVisibleItemScrollOffsetPx: Int,
+    expandedHeroHeightPx: Int
+): Float {
+    if (firstVisibleItemIndex > 0) return 1f
+    if (expandedHeroHeightPx <= 0) return 0f
+    return (firstVisibleItemScrollOffsetPx.toFloat() / expandedHeroHeightPx)
+        .coerceIn(0f, 1f)
+}
+
+internal fun interpolatePlaylistDp(
+    start: Dp,
+    end: Dp,
+    fraction: Float
+): Dp {
+    val progress = fraction.coerceIn(0f, 1f)
+    return start + (end - start) * progress
+}
+
+internal fun interpolatePlaylistColor(
+    start: Color,
+    end: Color,
+    fraction: Float
+): Color {
+    return Color(
+        ColorUtils.blendARGB(
+            start.toArgb(),
+            end.toArgb(),
+            fraction.coerceIn(0f, 1f)
+        )
+    )
+}
+
 private data class PlaylistHeroVisualColors(
     val background: Color,
     val accent: Color,
     val readableAccent: Color,
     val controlContent: Color
+)
+
+private data class PlaylistSearchGlassStyle(
+    val fallbackColor: Color,
+    val tintColor: Color,
+    val contentColor: Color,
+    val accentColor: Color,
+    val focusedBorderColor: Color,
+    val unfocusedBorderColor: Color
 )
 
 private val LocalPlaylistHeroVisualColors = staticCompositionLocalOf<PlaylistHeroVisualColors?> {
@@ -199,7 +457,7 @@ private fun rememberResolvedPlaylistHeroVisualColors(
     val context = LocalContext.current
     val isDarkTheme = playlistModernUsesDarkSurface()
     val normalizedCoverModel = normalizeLocalPlaylistHeaderCoverModel(coverUrl)
-    val fallbackArgb = MaterialTheme.colorScheme.primary.toArgb()
+    val fallbackArgb = resolvePlaylistHeroFallbackSeedArgb(isDarkTheme)
     val cachedColorSample = remember(normalizedCoverModel) {
         CoverArtColorCache.peek(normalizedCoverModel)
     }
@@ -222,6 +480,7 @@ private fun rememberResolvedPlaylistHeroVisualColors(
                 isDarkTheme = isDarkTheme
             )
         ),
+        animationSpec = tween(360, easing = FastOutSlowInEasing),
         label = "playlist-hero-background"
     )
     val accentColor by animateColorAsState(
@@ -232,10 +491,12 @@ private fun rememberResolvedPlaylistHeroVisualColors(
                 isDarkTheme = isDarkTheme
             )
         ),
+        animationSpec = tween(360, easing = FastOutSlowInEasing),
         label = "playlist-hero-accent"
     )
     val readableAccentColor by animateColorAsState(
         targetValue = resolveReadablePlaylistAccentColor(accentColor, isDarkTheme),
+        animationSpec = tween(220, easing = FastOutSlowInEasing),
         label = "playlist-readable-accent"
     )
     val controlContentColor = if (isDarkTheme) {
@@ -269,10 +530,11 @@ internal fun PlaylistModernVisualColorsProvider(
     offlineMode: Boolean,
     content: @Composable () -> Unit
 ) {
-    val visualColors = rememberResolvedPlaylistHeroVisualColors(
-        coverUrl = coverUrl,
-        offlineMode = offlineMode
-    )
+    val visualColors = LocalPlaylistHeroVisualColors.current
+        ?: rememberResolvedPlaylistHeroVisualColors(
+            coverUrl = coverUrl,
+            offlineMode = offlineMode
+        )
     CompositionLocalProvider(LocalPlaylistHeroVisualColors provides visualColors) {
         content()
     }
@@ -302,6 +564,164 @@ private fun resolveReadablePlaylistAccentColor(
         hsl[2].coerceAtMost(0.38f)
     }
     return Color(ColorUtils.HSLToColor(hsl))
+}
+
+@Composable
+private fun resolvePlaylistSearchGlassStyle(
+    glassColor: Color?,
+    playlistColor: Color?,
+    isDarkSurface: Boolean,
+    progress: Float,
+    fallbackContentColor: Color,
+    fallbackAccentColor: Color
+): PlaylistSearchGlassStyle {
+    if (glassColor == null) {
+        return PlaylistSearchGlassStyle(
+            fallbackColor = interpolatePlaylistColor(
+                start = Color.White.copy(alpha = 0.16f),
+                end = playlistModernSheetFallbackColor(hasCustomBackground = false),
+                fraction = progress
+            ),
+            tintColor = interpolatePlaylistColor(
+                start = Color.White.copy(alpha = 0.28f),
+                end = playlistModernSheetTintColor(hasCustomBackground = false),
+                fraction = progress
+            ),
+            contentColor = fallbackContentColor,
+            accentColor = fallbackAccentColor,
+            focusedBorderColor = interpolatePlaylistColor(
+                start = Color.White.copy(alpha = 0.42f),
+                end = fallbackAccentColor.copy(alpha = 0.58f),
+                fraction = progress
+            ),
+            unfocusedBorderColor = interpolatePlaylistColor(
+                start = Color.White.copy(alpha = 0.18f),
+                end = fallbackContentColor.copy(alpha = 0.20f),
+                fraction = progress
+            )
+        )
+    }
+
+    val usesDarkContent = glassColor.luminance() > 0.48f
+    val contentColor = if (usesDarkContent) {
+        Color(0xFF22252D)
+    } else {
+        Color.White.copy(alpha = 0.94f)
+    }
+    val playlistTint = playlistColor?.copy(alpha = if (isDarkSurface) 0.16f else 0.10f)
+        ?: glassColor
+    return PlaylistSearchGlassStyle(
+        fallbackColor = glassColor,
+        tintColor = interpolatePlaylistColor(
+            start = glassColor,
+            end = playlistTint,
+            fraction = 0.22f
+        ),
+        contentColor = contentColor,
+        accentColor = contentColor.copy(alpha = 0.92f),
+        focusedBorderColor = contentColor.copy(alpha = if (usesDarkContent) 0.20f else 0.18f),
+        unfocusedBorderColor = contentColor.copy(alpha = if (usesDarkContent) 0.12f else 0.10f)
+    )
+}
+
+@Composable
+internal fun PlaylistModernStableSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    placeholder: String,
+    focusRequester: FocusRequester?,
+    dockedProgress: Float,
+    glassColor: Color? = null,
+    modifier: Modifier = Modifier
+) {
+    val inputState = rememberPlaylistSearchInputState(
+        query = query,
+        onQueryChange = onQueryChange
+    )
+    val progress = dockedProgress.coerceIn(0f, 1f)
+    val visualColors = LocalPlaylistHeroVisualColors.current
+    val fallbackContentColor = interpolatePlaylistColor(
+        start = Color.White,
+        end = playlistModernSheetContentColor(),
+        fraction = progress
+    )
+    val fallbackAccentColor = interpolatePlaylistColor(
+        start = visualColors?.accent ?: MaterialTheme.colorScheme.primary,
+        end = visualColors?.readableAccent ?: MaterialTheme.colorScheme.primary,
+        fraction = progress
+    )
+    val glassStyle = resolvePlaylistSearchGlassStyle(
+        glassColor = glassColor,
+        playlistColor = visualColors?.background,
+        isDarkSurface = playlistModernUsesDarkSurface(),
+        progress = progress,
+        fallbackContentColor = fallbackContentColor,
+        fallbackAccentColor = fallbackAccentColor
+    )
+    val contentColor = glassStyle.contentColor
+    val accentColor = glassStyle.accentColor
+    val fieldModifier = modifier
+        .fillMaxWidth()
+        .padding(
+            start = interpolatePlaylistDp(20.dp, 16.dp, progress),
+            top = interpolatePlaylistDp(0.dp, PlaylistDockedSearchTopPadding, progress),
+            end = interpolatePlaylistDp(20.dp, 16.dp, progress),
+            bottom = interpolatePlaylistDp(0.dp, PlaylistDockedSearchBottomPadding, progress)
+        )
+    val searchFieldContent: @Composable () -> Unit = {
+        OutlinedTextField(
+            value = inputState.value,
+            onValueChange = { inputState.value = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(PlaylistSearchFieldMinHeight)
+                .let { baseModifier ->
+                    if (focusRequester == null) {
+                        baseModifier
+                    } else {
+                        baseModifier.focusRequester(focusRequester)
+                    }
+                },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Filled.Search,
+                    contentDescription = null
+                )
+            },
+            placeholder = {
+                Text(
+                    text = placeholder,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            },
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyLarge,
+            shape = PlaylistSearchFieldShape,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = contentColor,
+                unfocusedTextColor = contentColor.copy(alpha = 0.94f),
+                cursorColor = accentColor,
+                focusedBorderColor = glassStyle.focusedBorderColor,
+                unfocusedBorderColor = glassStyle.unfocusedBorderColor,
+                focusedContainerColor = Color.Transparent,
+                unfocusedContainerColor = Color.Transparent,
+                focusedLeadingIconColor = contentColor.copy(alpha = 0.86f),
+                unfocusedLeadingIconColor = contentColor.copy(alpha = 0.74f),
+                focusedPlaceholderColor = contentColor.copy(alpha = 0.70f),
+                unfocusedPlaceholderColor = contentColor.copy(alpha = 0.62f)
+            )
+        )
+    }
+    AdvancedGlassSurface(
+        role = AdvancedGlassRole.SemanticCard,
+        modifier = fieldModifier,
+        shape = PlaylistSearchFieldShape,
+        fallbackColor = glassStyle.fallbackColor,
+        tintColor = glassStyle.tintColor
+    ) {
+        searchFieldContent()
+    }
 }
 
 @Composable
@@ -340,13 +760,52 @@ private fun playlistModernSheetContentColor(): Color {
 }
 
 @Composable
-internal fun playlistModernCollapsedTopBarColor(): Color {
-    return Color.Transparent
+internal fun playlistModernExpandedTopBarColor(
+    playlistColor: Color
+): Color {
+    return resolvePlaylistTranslucentTopBarColor(
+        playlistColor = playlistColor,
+        collapseProgress = 0f
+    )
 }
 
 @Composable
-internal fun playlistModernCollapsedTopBarContentColor(): Color {
-    return playlistModernListPrimaryContentColor()
+internal fun playlistModernCollapsedTopBarColor(
+    playlistColor: Color? = null
+): Color {
+    return playlistColor?.let {
+        resolvePlaylistTranslucentTopBarColor(
+            playlistColor = it,
+            collapseProgress = 1f
+        )
+    } ?: Color.Transparent
+}
+
+@Composable
+internal fun playlistModernCollapsedTopBarContentColor(
+    playlistColor: Color? = null
+): Color {
+    if (playlistColor == null) return playlistModernListPrimaryContentColor()
+    return resolvePlaylistSolidTopBarContentColor(playlistColor)
+}
+
+internal fun resolvePlaylistSolidTopBarContentColor(
+    playlistColor: Color
+): Color {
+    return if (playlistColor.luminance() > 0.48f) {
+        Color(0xFF17191F)
+    } else {
+        Color.White.copy(alpha = 0.95f)
+    }
+}
+
+internal fun resolvePlaylistTranslucentTopBarColor(
+    playlistColor: Color,
+    collapseProgress: Float
+): Color {
+    val progress = collapseProgress.coerceIn(0f, 1f)
+    val alpha = 1f - progress
+    return playlistColor.copy(alpha = alpha)
 }
 
 @Composable
@@ -507,6 +966,10 @@ internal fun PlaylistModernHeroSearchField(
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester? = null
 ) {
+    val inputState = rememberPlaylistSearchInputState(
+        query = query,
+        onQueryChange = onQueryChange
+    )
     val visualColors = LocalPlaylistHeroVisualColors.current
     val accentColor = visualColors?.accent ?: MaterialTheme.colorScheme.primary
     val focusModifier = focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier
@@ -518,11 +981,11 @@ internal fun PlaylistModernHeroSearchField(
         tintColor = Color.White.copy(alpha = 0.28f)
     ) {
         OutlinedTextField(
-            value = query,
-            onValueChange = onQueryChange,
+            value = inputState.value,
+            onValueChange = { inputState.value = it },
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 50.dp)
+                .height(PlaylistSearchFieldMinHeight)
                 .then(focusModifier),
             leadingIcon = {
                 Icon(
@@ -538,7 +1001,7 @@ internal fun PlaylistModernHeroSearchField(
                 )
             },
             singleLine = true,
-            textStyle = MaterialTheme.typography.bodyMedium,
+            textStyle = MaterialTheme.typography.bodyLarge,
             shape = PlaylistSearchFieldShape,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = Color.White,
@@ -565,9 +1028,24 @@ internal fun PlaylistModernDockedSearchField(
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester? = null
 ) {
+    val inputState = rememberPlaylistSearchInputState(
+        query = query,
+        onQueryChange = onQueryChange
+    )
     val visualColors = LocalPlaylistHeroVisualColors.current
-    val contentColor = playlistModernSheetContentColor()
-    val accentColor = visualColors?.readableAccent ?: MaterialTheme.colorScheme.primary
+    val glassColor = playlistModernDockedSearchGlassColor(
+        playlistColor = visualColors?.background ?: MaterialTheme.colorScheme.primary
+    )
+    val glassStyle = resolvePlaylistSearchGlassStyle(
+        glassColor = glassColor,
+        playlistColor = visualColors?.background,
+        isDarkSurface = playlistModernUsesDarkSurface(),
+        progress = 1f,
+        fallbackContentColor = playlistModernSheetContentColor(),
+        fallbackAccentColor = visualColors?.readableAccent ?: MaterialTheme.colorScheme.primary
+    )
+    val contentColor = glassStyle.contentColor
+    val accentColor = glassStyle.accentColor
     val focusModifier = focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier
 
     Box(
@@ -577,22 +1055,22 @@ internal fun PlaylistModernDockedSearchField(
                 start = 16.dp,
                 top = PlaylistDockedSearchTopPadding,
                 end = 16.dp,
-                bottom = 8.dp
+                bottom = PlaylistDockedSearchBottomPadding
             )
     ) {
         AdvancedGlassSurface(
             role = AdvancedGlassRole.SemanticCard,
             modifier = Modifier.fillMaxWidth(),
             shape = PlaylistSearchFieldShape,
-            fallbackColor = playlistModernSheetFallbackColor(hasCustomBackground = false),
-            tintColor = playlistModernSheetTintColor(hasCustomBackground = false)
+            fallbackColor = glassStyle.fallbackColor,
+            tintColor = glassStyle.tintColor
         ) {
             OutlinedTextField(
-                value = query,
-                onValueChange = onQueryChange,
+                value = inputState.value,
+                onValueChange = { inputState.value = it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 50.dp)
+                    .height(PlaylistSearchFieldMinHeight)
                     .then(focusModifier),
                 leadingIcon = {
                     Icon(
@@ -608,14 +1086,14 @@ internal fun PlaylistModernDockedSearchField(
                     )
                 },
                 singleLine = true,
-                textStyle = MaterialTheme.typography.bodyMedium,
+                textStyle = MaterialTheme.typography.bodyLarge,
                 shape = PlaylistSearchFieldShape,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = contentColor,
                     unfocusedTextColor = contentColor.copy(alpha = 0.92f),
                     cursorColor = accentColor,
-                    focusedBorderColor = accentColor.copy(alpha = 0.58f),
-                    unfocusedBorderColor = contentColor.copy(alpha = 0.20f),
+                    focusedBorderColor = glassStyle.focusedBorderColor,
+                    unfocusedBorderColor = glassStyle.unfocusedBorderColor,
                     focusedContainerColor = Color.Transparent,
                     unfocusedContainerColor = Color.Transparent,
                     focusedLeadingIconColor = contentColor.copy(alpha = 0.84f),
@@ -623,6 +1101,68 @@ internal fun PlaylistModernDockedSearchField(
                     focusedPlaceholderColor = contentColor.copy(alpha = 0.58f),
                     unfocusedPlaceholderColor = contentColor.copy(alpha = 0.50f)
                 )
+            )
+        }
+    }
+}
+
+@Composable
+internal fun PlaylistModernDockedSearchSlot(
+    revealProgress: Float,
+    coverUrl: String?,
+    offlineMode: Boolean,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    placeholder: String,
+    focusRequester: FocusRequester?,
+    dockedProgress: Float = revealProgress,
+    modifier: Modifier = Modifier
+) {
+    val slotProgress = revealProgress.coerceIn(0f, 1f)
+    val slotAlpha = resolvePlaylistEasedProgress(slotProgress)
+    if (!shouldComposePlaylistSearchSlot(
+            searchVisible = slotProgress > 0.001f,
+            visibilityProgress = slotProgress
+        )
+    ) {
+        return
+    }
+    val density = LocalDensity.current
+    PlaylistModernVisualColorsProvider(
+        coverUrl = coverUrl,
+        offlineMode = offlineMode
+    ) {
+        val visualColors = LocalPlaylistHeroVisualColors.current
+        val glassColor = playlistModernDockedSearchGlassColor(
+            playlistColor = visualColors?.background ?: MaterialTheme.colorScheme.primary
+        )
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .height(
+                    interpolatePlaylistDp(
+                        start = 0.dp,
+                        end = PlaylistModernDockedSearchSlotHeight,
+                        fraction = slotProgress
+                    )
+                )
+                .clipToBounds()
+                .graphicsLayer {
+                    alpha = slotAlpha
+                }
+        ) {
+            PlaylistModernStableSearchField(
+                query = query,
+                onQueryChange = onQueryChange,
+                placeholder = placeholder,
+                focusRequester = focusRequester,
+                dockedProgress = dockedProgress,
+                glassColor = glassColor,
+                modifier = Modifier.graphicsLayer {
+                    translationY = with(density) {
+                        ((1f - slotAlpha) * -8.dp.toPx())
+                    }
+                }
             )
         }
     }

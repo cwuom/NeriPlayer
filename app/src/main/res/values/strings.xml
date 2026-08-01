@@ -444,8 +444,8 @@
     <string name="library_netease_search_empty_hint">试试输入名称、ID、播放数或曲目数</string>
     <string name="library_netease_playlist_empty">还没有加载到网易云歌单</string>
     <string name="library_netease_album_empty">还没有加载到网易云专辑</string>
-    <string name="library_bili_empty">还没有加载到 B 站收藏夹或合集</string>
-    <string name="library_bili_hint">确认已登录 B 站后，会加载创建的收藏夹、订阅收藏夹和收藏的合集</string>
+    <string name="library_bili_empty">还没有加载到哔哩哔哩收藏夹或合集</string>
+    <string name="library_bili_hint">确认已登录哔哩哔哩后，会加载创建的收藏夹、订阅收藏夹和收藏的合集</string>
     <string name="library_bili_search_hint">搜索收藏夹 / 合集</string>
     <string name="library_bili_search_empty">没有找到匹配的收藏夹或合集</string>
     <string name="library_bili_search_empty_hint">试试输入标题、备注、类型名或者 ID</string>
@@ -636,6 +636,7 @@
     <string name="search_result_play_keep_queue">播放（保留队列）</string>
     <string name="search_result_add_to_current_queue">添加到当前播放列表</string>
     <string name="search_recent">搜索最近播放</string>
+    <string name="search_history">搜索历史</string>
     <string name="search_no_result">无搜索结果</string>
     <string name="search_not_found">未找到结果</string>
     <string name="search_no_match">未找到匹配的歌曲</string>
@@ -709,7 +710,7 @@
     <string name="language_japanese">日语</string>
     <string name="language_korean">韩语</string>
     <string name="language_cantonese">粤语</string>
-    <string name="explore_bili_desc">在 Bilibili 中发现更多精彩视频</string>
+    <string name="explore_bili_desc">在哔哩哔哩中发现更多精彩视频</string>
     <string name="explore_offline_disabled">探索需要网络连接，恢复网络后会自动启用。</string>
     <string name="explore_tag_netease">网易云</string>
     <string name="explore_tag_bilibili">哔哩哔哩</string>
@@ -1820,7 +1821,7 @@
     <string name="safe_mode_export_playlists_done">歌单数据已导出：%1$s</string>
     <string name="safe_mode_export_failed">导出失败：%1$s</string>
     <string name="safe_mode_reset_login">清空 Cookie 并重置登录</string>
-    <string name="safe_mode_reset_login_desc">将清除 WebView Cookie，以及网易云、Bili、YouTube 的本地登录状态。</string>
+    <string name="safe_mode_reset_login_desc">将清除 WebView Cookie，以及网易云、哔哩哔哩、YouTube 的本地登录状态。</string>
     <string name="safe_mode_reset_login_confirm_title">确认重置登录状态？</string>
     <string name="safe_mode_reset_login_confirm_message">此操作会清空本机保存的 Cookie 和网页登录存储，之后需要重新登录。</string>
     <string name="safe_mode_reset_login_done">Cookie 和登录状态已重置</string>
@@ -1872,7 +1873,7 @@
     <string name="debug_copy_all">复制全部</string>
     <string name="debug_call_all_copy">一键调用全部并复制到剪贴板</string>
     <string name="debug_copied">已复制到剪贴板</string>
-    <string name="debug_bili_probe_title">B 站接口探针</string>
+    <string name="debug_bili_probe_title">哔哩哔哩接口探针</string>
     <string name="debug_bili_api_desc">搜索 / 取封面简介 / 统计 / 取流 / 收藏夹</string>
     <string name="debug_netease_api_desc">账户 / 歌单 / 歌曲 URL / 歌词</string>
     <string name="debug_search_api_desc">QQ / 网易云</string>
@@ -2140,7 +2141,7 @@
     <string name="snackbar_cookie_empty">未读取到 Cookie，请确认已完成登录</string>
     <string name="snackbar_read_failed">读取失败：%s</string>
     <string name="error_parse">解析/未知错误：%s</string>
-    <string name="error_bilibili_search">Bilibili 搜索失败: %s</string>
+    <string name="error_bilibili_search">哔哩哔哩搜索失败: %s</string>
     <string name="error_netease_search">网易云搜索失败: %s</string>
     <string name="error_youtube_search">YouTube 搜索失败: %s</string>
     <string name="error_load_playlist">加载歌单失败: %s</string>

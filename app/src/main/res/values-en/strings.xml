@@ -636,6 +636,7 @@
     <string name="search_result_play_keep_queue">Play (Keep Queue)</string>
     <string name="search_result_add_to_current_queue">Add to Current Queue</string>
     <string name="search_recent">Search Recent</string>
+    <string name="search_history">Search History</string>
     <string name="search_no_result">No Results</string>
     <string name="search_not_found">Not Found</string>
     <string name="search_no_match">No Matching Songs</string>
@@ -1820,7 +1821,7 @@
     <string name="safe_mode_export_playlists_done">Playlists exported: %1$s</string>
     <string name="safe_mode_export_failed">Export failed: %1$s</string>
     <string name="safe_mode_reset_login">Clear Cookies and reset sign-ins</string>
-    <string name="safe_mode_reset_login_desc">Clears WebView Cookies and the local NetEase, Bili, and YouTube sign-in states.</string>
+    <string name="safe_mode_reset_login_desc">Clears WebView Cookies and the local NetEase, Bilibili, and YouTube sign-in states.</string>
     <string name="safe_mode_reset_login_confirm_title">Reset sign-in state?</string>
     <string name="safe_mode_reset_login_confirm_message">This will clear saved Cookies and web sign-in storage on this device. You will need to sign in again.</string>
     <string name="safe_mode_reset_login_done">Cookies and sign-in states were reset</string>
