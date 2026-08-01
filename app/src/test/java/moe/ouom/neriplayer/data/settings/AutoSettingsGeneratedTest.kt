@@ -31,6 +31,10 @@ class AutoSettingsGeneratedTest {
             "haptic_feedback_enabled" in booleanKeyNames
         )
         assertTrue(
+            "explore search history switch should be exportable",
+            "explore_search_history_enabled" in booleanKeyNames
+        )
+        assertTrue(
             "display tab switch should be exportable",
             "always_use_new_tab_style" in booleanKeyNames
         )
@@ -265,6 +269,15 @@ class AutoSettingsGeneratedTest {
 
         assertEquals("haptic_feedback_enabled", setting.preferencesKey.name)
         assertEquals(true, setting.defaultValue)
+    }
+
+    @Test
+    fun exploreSearchHistorySettingDefaultsToEnabled() {
+        val setting = AutoSettingsSchema.general.exploreSearchHistoryEnabled
+
+        assertEquals("explore_search_history_enabled", setting.preferencesKey.name)
+        assertEquals(true, setting.defaultValue)
+        assertEquals(SettingUiType.Switch, AutoSettingsMetadata.setting(setting.key)?.ui)
     }
 
     @Test

@@ -165,6 +165,9 @@ class SettingsRepository(private val context: Context) {
     val alwaysRecordLogsEnabledFlow: Flow<Boolean> =
         settingFlow(AutoSettingsSchema.general.alwaysRecordLogsEnabled)
 
+    val exploreSearchHistoryEnabledFlow: Flow<Boolean> =
+        settingFlow(AutoSettingsSchema.general.exploreSearchHistoryEnabled)
+
     val playbackServiceIdleShutdownMinutesFlow: Flow<Int> =
         autoSettingsRepository.playbackServiceIdleShutdownMinutesFlow
 

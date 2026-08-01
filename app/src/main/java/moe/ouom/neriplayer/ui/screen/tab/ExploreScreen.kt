@@ -46,19 +46,23 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Clear
@@ -89,6 +93,7 @@ import androidx.compose.material3.TopAppBarState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -122,6 +127,8 @@ import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
 import moe.ouom.neriplayer.data.search.ExploreSearchHistoryRepository
+import moe.ouom.neriplayer.data.search.exploreSearchHistoryRecordKeyword
+import moe.ouom.neriplayer.data.search.exploreSearchHistoryForDisplay
 import moe.ouom.neriplayer.data.search.resolveExploreSearchKeyword
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
@@ -135,16 +142,21 @@ import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreSearchResult
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreUiState
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreViewModel
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseExploreSearchType
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseSearchArtistResult
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.SearchSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.shouldLoadExploreSearchMore
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
@@ -153,7 +165,6 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
 import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
-import moe.ouom.neriplayer.util.search.SearchTextMatcher
 
 private const val SEARCH_INPUT_DEBOUNCE_MS = 300L
 private val ExplorePrimaryTabShape = RoundedCornerShape(20.dp)
@@ -164,18 +175,20 @@ internal fun exploreSearchSourceDisplayOrder(
     youtubeEnabled: Boolean
 ): List<SearchSource> {
     return if (!youtubeEnabled) {
-        listOf(SearchSource.NETEASE, SearchSource.BILIBILI)
+        listOf(SearchSource.NETEASE, SearchSource.BILIBILI, SearchSource.LINK_RECOGNITION)
     } else if (isInternational) {
         listOf(
             SearchSource.YOUTUBE_MUSIC,
             SearchSource.NETEASE,
-            SearchSource.BILIBILI
+            SearchSource.BILIBILI,
+            SearchSource.LINK_RECOGNITION
         )
     } else {
         listOf(
             SearchSource.NETEASE,
             SearchSource.BILIBILI,
-            SearchSource.YOUTUBE_MUSIC
+            SearchSource.YOUTUBE_MUSIC,
+            SearchSource.LINK_RECOGNITION
         )
     }
 }
@@ -186,6 +199,16 @@ private fun searchSourceLabel(source: SearchSource): String {
         SearchSource.YOUTUBE_MUSIC -> stringResource(R.string.explore_tag_youtube_music)
         SearchSource.NETEASE -> stringResource(R.string.platform_netease_short)
         SearchSource.BILIBILI -> stringResource(R.string.platform_bilibili)
+        SearchSource.LINK_RECOGNITION -> stringResource(R.string.explore_tag_link_recognition)
+    }
+}
+
+@Composable
+private fun neteaseSearchTypeLabel(type: NeteaseExploreSearchType): String {
+    return when (type) {
+        NeteaseExploreSearchType.SONG -> stringResource(R.string.explore_search_type_song)
+        NeteaseExploreSearchType.PLAYLIST -> stringResource(R.string.explore_search_type_playlist)
+        NeteaseExploreSearchType.ARTIST -> stringResource(R.string.explore_search_type_artist)
     }
 }
 
@@ -198,6 +221,7 @@ fun ExploreScreen(
     offlineMode: Boolean = false,
     onPlay: (PlaylistSummary) -> Unit,
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
+    onNeteaseArtistClick: (NeteaseArtistSummary) -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
     onSongPlayPreservingQueue: (SongItem) -> Unit = {},
     onSongPlayNext: (SongItem) -> Unit = {},
@@ -226,11 +250,24 @@ fun ExploreScreen(
     val searchHistory by searchHistoryRepository.historyFlow.collectAsStateWithLifecycle(
         initialValue = emptyList()
     )
-    val effectiveSearchKeyword = remember(searchQuery, searchHistory) {
-        resolveExploreSearchKeyword(searchQuery, searchHistory)
+    val searchHistoryEnabled by AppContainer.settingsRepo.exploreSearchHistoryEnabledFlow
+        .collectAsStateWithLifecycle(initialValue = true)
+    val availableSearchHistory = remember(searchHistoryEnabled, searchHistory) {
+        exploreSearchHistoryForDisplay(searchHistoryEnabled, searchHistory)
     }
-    val visibleSearchHistory = remember(searchQuery, searchHistory) {
-        filteredExploreSearchHistory(searchQuery, searchHistory)
+    val effectiveSearchKeyword = remember(searchQuery, availableSearchHistory, ui.selectedSearchSource) {
+        if (ui.selectedSearchSource == SearchSource.LINK_RECOGNITION) {
+            searchQuery.trim()
+        } else {
+            resolveExploreSearchKeyword(searchQuery, availableSearchHistory)
+        }
+    }
+    val visibleSearchHistory = remember(availableSearchHistory, ui.selectedSearchSource) {
+        if (ui.selectedSearchSource == SearchSource.LINK_RECOGNITION) {
+            emptyList()
+        } else {
+            filteredExploreSearchHistory(availableSearchHistory)
+        }
     }
     val backgroundImageUri by AppContainer.settingsRepo.backgroundImageUriFlow.collectAsStateWithLifecycle(
         initialValue = null
@@ -282,9 +319,30 @@ fun ExploreScreen(
     val isTabletLayout = windowWidthDp >= 720.dp
     val searchPanelHorizontalPadding = if (isTabletLayout) 28.dp else 16.dp
     val searchResultHorizontalPadding = if (isTabletLayout) 88.dp else 0.dp
+    val searchListState = rememberLazyListState()
     val tagChipSelectedAlpha = if (backgroundImageUri == null) 1f else 0.86f
     val tagChipUnselectedAlpha = if (backgroundImageUri == null) 1f else 0.74f
     val tagChipBorderAlpha = if (backgroundImageUri == null) 1f else 0.58f
+
+    val shouldLoadMoreSearch by remember(
+        searchListState,
+        ui.searchItems.size,
+        ui.searchHasMore,
+        ui.searching,
+        ui.searchLoadingMore
+    ) {
+        derivedStateOf {
+            shouldLoadExploreSearchMore(
+                resultCount = ui.searchItems.size,
+                lastVisibleItemIndex = searchListState.layoutInfo.visibleItemsInfo
+                    .lastOrNull()
+                    ?.index,
+                hasMore = ui.searchHasMore,
+                searching = ui.searching,
+                loadingMore = ui.searchLoadingMore
+            )
+        }
+    }
 
     fun exitPartsSelection() {
         partsSelectionMode = false
@@ -346,25 +404,81 @@ fun ExploreScreen(
         }
     }
 
-    LaunchedEffect(searchQuery, effectiveSearchKeyword, ui.selectedSearchSource) {
+    var lastRecordedSearchKeyword by remember { mutableStateOf<String?>(null) }
+    var pendingSearchHistoryRecord by remember { mutableStateOf<String?>(null) }
+
+    fun queueExploreSearchRecord(query: String) {
+        if (ui.selectedSearchSource == SearchSource.LINK_RECOGNITION) {
+            return
+        }
+        val keyword = exploreSearchHistoryRecordKeyword(
+            query = query,
+            enabled = searchHistoryEnabled,
+            history = searchHistory
+        ) ?: return
+        if (keyword.equals(lastRecordedSearchKeyword, ignoreCase = true)) {
+            return
+        }
+        lastRecordedSearchKeyword = keyword
+        pendingSearchHistoryRecord = keyword
+    }
+
+    LaunchedEffect(pendingSearchHistoryRecord) {
+        val keyword = pendingSearchHistoryRecord ?: return@LaunchedEffect
+        searchHistoryRepository.record(keyword)
+        if (pendingSearchHistoryRecord == keyword) {
+            pendingSearchHistoryRecord = null
+        }
+    }
+
+    LaunchedEffect(
+        searchQuery,
+        effectiveSearchKeyword,
+        searchHistoryEnabled,
+        ui.selectedSearchSource,
+        ui.selectedNeteaseSearchType
+    ) {
         if (searchQuery.isBlank()) {
+            lastRecordedSearchKeyword = null
+            pendingSearchHistoryRecord = null
             vm.search("")
             return@LaunchedEffect
         }
         delay(SEARCH_INPUT_DEBOUNCE_MS)
         vm.search(effectiveSearchKeyword, displayQuery = searchQuery)
+        delay(EXPLORE_HISTORY_RECORD_DEBOUNCE_MS - SEARCH_INPUT_DEBOUNCE_MS)
+        queueExploreSearchRecord(searchQuery)
+    }
+
+    LaunchedEffect(
+        effectiveSearchKeyword,
+        ui.selectedSearchSource,
+        ui.selectedNeteaseSearchType
+    ) {
+        if (searchQuery.isNotBlank()) {
+            searchListState.scrollToItem(0)
+        }
+    }
+
+    LaunchedEffect(
+        shouldLoadMoreSearch,
+        ui.searchItems.size,
+        ui.selectedSearchSource,
+        ui.selectedNeteaseSearchType
+    ) {
+        if (shouldLoadMoreSearch) {
+            vm.loadMoreSearchResults()
+        }
     }
 
     fun submitExploreSearch(query: String = searchQuery) {
         val normalizedQuery = query.trim()
         if (normalizedQuery.isBlank()) return
-        val keyword = resolveExploreSearchKeyword(normalizedQuery, searchHistory)
+        val keyword = resolveExploreSearchKeyword(normalizedQuery, availableSearchHistory)
         searchQuery = normalizedQuery
         focusManager.clearFocus()
         vm.search(keyword, displayQuery = normalizedQuery)
-        scope.launch {
-            searchHistoryRepository.record(keyword)
-        }
+        queueExploreSearchRecord(normalizedQuery)
     }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
@@ -404,8 +518,13 @@ fun ExploreScreen(
                         },
                         label = { Text(stringResource(R.string.search_keyword)) },
                         placeholder = {
-                            if (ui.selectedSearchSource == SearchSource.NETEASE && !ui.isNeteaseLoggedIn) {
-                                Text(stringResource(R.string.netease_login_required_search_placeholder))
+                            when {
+                                ui.selectedSearchSource == SearchSource.LINK_RECOGNITION -> {
+                                    Text(stringResource(R.string.explore_link_input_placeholder))
+                                }
+                                ui.selectedSearchSource == SearchSource.NETEASE && !ui.isNeteaseLoggedIn -> {
+                                    Text(stringResource(R.string.netease_login_required_search_placeholder))
+                                }
                             }
                         },
                         leadingIcon = { Icon(Icons.Default.Search, "Search") },
@@ -430,6 +549,8 @@ fun ExploreScreen(
                         query = searchQuery,
                         onHistoryClick = { item -> submitExploreSearch(item) },
                         onClearHistory = {
+                            lastRecordedSearchKeyword = null
+                            pendingSearchHistoryRecord = null
                             scope.launch {
                                 searchHistoryRepository.clear()
                             }
@@ -440,6 +561,14 @@ fun ExploreScreen(
                         Text(
                             text = stringResource(R.string.netease_login_required_search),
                             color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    if (ui.selectedSearchSource == SearchSource.LINK_RECOGNITION) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = stringResource(R.string.explore_link_input_hint),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -465,6 +594,26 @@ fun ExploreScreen(
                                         }
                                     },
                                     text = { Text(searchSourceLabel(source)) }
+                                )
+                            }
+                        }
+                    }
+                    AnimatedVisibility(visible = ui.selectedSearchSource == SearchSource.NETEASE) {
+                        FlowRow(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            NeteaseExploreSearchType.entries.forEach { type ->
+                                ExploreTagChip(
+                                    label = neteaseSearchTypeLabel(type),
+                                    selected = ui.selectedNeteaseSearchType == type,
+                                    onClick = { vm.setNeteaseSearchType(type) },
+                                    selectedAlpha = tagChipSelectedAlpha,
+                                    unselectedAlpha = tagChipUnselectedAlpha,
+                                    borderAlpha = tagChipBorderAlpha
                                 )
                             }
                         }
@@ -608,6 +757,14 @@ fun ExploreScreen(
                                 offlineMode = offlineMode,
                                 isTabletLayout = isTabletLayout
                             )
+                        }
+                        SearchSource.LINK_RECOGNITION -> {
+                            Box(Modifier.fillMaxSize(), Alignment.Center) {
+                                Text(
+                                    text = stringResource(R.string.explore_link_recognition_placeholder),
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                            }
                         }
                     }
                 }
@@ -910,29 +1067,12 @@ private fun ExploreSearchHistoryChip(
     }
 }
 
-internal fun filteredExploreSearchHistory(
-    query: String,
-    history: List<String>
-): List<String> {
-    val normalizedQuery = query.trim()
-    if (normalizedQuery.isBlank()) return history.take(EXPLORE_HISTORY_DISPLAY_LIMIT)
-    if (normalizedQuery.length < 2) return emptyList()
-
-    return history
-        .mapNotNull { item ->
-            val score = SearchTextMatcher.score(normalizedQuery, listOf(item))
-                ?: return@mapNotNull null
-            item to score
-        }
-        .sortedWith(
-            compareBy<Pair<String, Int>> { it.second }
-                .thenBy { it.first.length }
-        )
-        .map { it.first }
-        .take(EXPLORE_HISTORY_DISPLAY_LIMIT)
+internal fun filteredExploreSearchHistory(history: List<String>): List<String> {
+    return history.take(EXPLORE_HISTORY_DISPLAY_LIMIT)
 }
 
-private const val EXPLORE_HISTORY_DISPLAY_LIMIT = 8
+private const val EXPLORE_HISTORY_DISPLAY_LIMIT = 15
+private const val EXPLORE_HISTORY_RECORD_DEBOUNCE_MS = 1_200L
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)

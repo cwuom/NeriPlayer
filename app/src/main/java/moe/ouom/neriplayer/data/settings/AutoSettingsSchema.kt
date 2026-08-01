@@ -83,6 +83,15 @@ object AutoSettingsSchema {
             icon = AutoSettingIcon.AdsClick
         )
 
+        @AutoSetting(order = 42)
+        val exploreSearchHistoryEnabled = autoSwitchSetting(
+            key = "explore_search_history_enabled",
+            defaultValue = true,
+            titleRes = R.string.settings_explore_search_history,
+            descriptionRes = R.string.settings_explore_search_history_desc,
+            icon = AutoSettingIcon.Keyboard
+        )
+
         @AutoSetting(
             key = "playback_service_idle_shutdown_minutes",
             type = SettingValueType.Int,

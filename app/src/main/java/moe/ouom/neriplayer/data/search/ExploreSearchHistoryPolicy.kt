@@ -2,7 +2,36 @@ package moe.ouom.neriplayer.data.search
 
 import moe.ouom.neriplayer.util.search.SearchTextMatcher
 
-internal const val DEFAULT_EXPLORE_SEARCH_HISTORY_LIMIT = 12
+internal const val DEFAULT_EXPLORE_SEARCH_HISTORY_LIMIT = 15
+
+internal fun exploreSearchHistoryForDisplay(
+    enabled: Boolean,
+    history: List<String>
+): List<String> {
+    return if (enabled) history else emptyList()
+}
+
+internal fun shouldRecordExploreSearchHistory(
+    query: String,
+    enabled: Boolean
+): Boolean {
+    return enabled && query.trim().isNotBlank()
+}
+
+internal fun exploreSearchHistoryRecordKeyword(
+    query: String,
+    enabled: Boolean,
+    history: List<String>
+): String? {
+    val normalizedQuery = query.trim()
+    if (!shouldRecordExploreSearchHistory(normalizedQuery, enabled)) {
+        return null
+    }
+    return resolveExploreSearchKeyword(
+        query = normalizedQuery,
+        history = exploreSearchHistoryForDisplay(enabled, history)
+    )
+}
 
 internal fun updatedExploreSearchHistory(
     current: List<String>,

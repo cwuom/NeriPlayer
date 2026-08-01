@@ -646,6 +646,21 @@
     <string name="netease_login_required_search_placeholder">登录网易云后才能搜索</string>
     <string name="netease_login_required_home_search">网易云未登录，首页暂不展示网易云搜索推荐</string>
     <string name="netease_login_required_metadata">网易云未登录，暂不支持补全歌曲信息</string>
+    <string name="explore_search_type_song">歌曲</string>
+    <string name="explore_search_type_playlist">歌单</string>
+    <string name="explore_search_type_artist">歌手</string>
+    <string name="explore_tag_link_recognition">链接识别</string>
+    <string name="explore_link_input_placeholder">粘贴网易云、B 站或 YouTube 链接</string>
+    <string name="explore_link_input_hint">支持歌曲、视频、歌单和歌手链接，识别结果会显示在下方</string>
+    <string name="explore_link_recognition_placeholder">粘贴音乐链接即可识别</string>
+    <string name="explore_link_invalid">无法识别这个链接</string>
+    <string name="explore_link_unsupported_title">暂不支持的链接</string>
+    <string name="explore_link_unsupported_message">%1$s 的 %2$s 链接暂不支持</string>
+    <string name="explore_link_netease_song_fallback">网易云歌曲 %1$d</string>
+    <string name="explore_link_netease_playlist_fallback">网易云歌单 %1$d</string>
+    <string name="explore_link_netease_artist_fallback">网易云歌手 %1$d</string>
+    <string name="explore_link_youtube_video_fallback">YouTube 视频 %1$s</string>
+    <string name="explore_link_youtube_playlist_fallback">YouTube 播放列表 %1$s</string>
     <string name="youtube_search_type_song">YouTube 歌曲</string>
     <string name="youtube_search_type_video">YouTube 视频</string>
 
@@ -864,6 +879,8 @@
     <string name="settings_about_desc">版本信息、项目主页和开发者模式</string>
     <string name="settings_always_record_logs">始终记录日志</string>
     <string name="settings_always_record_logs_desc">持续写入运行日志</string>
+    <string name="settings_explore_search_history">探索页搜索历史</string>
+    <string name="settings_explore_search_history_desc">显示并记录探索页的搜索关键词</string>
     <string name="settings_playback_idle_shutdown">暂停后退出播放服务</string>
     <string name="settings_playback_idle_shutdown_desc">暂停超时后移除通知，保留队列和进度</string>
     <string name="settings_playback_idle_shutdown_dialog_title">暂停多久后退出</string>
@@ -2144,6 +2161,7 @@
     <string name="error_bilibili_search">哔哩哔哩搜索失败: %s</string>
     <string name="error_netease_search">网易云搜索失败: %s</string>
     <string name="error_youtube_search">YouTube 搜索失败: %s</string>
+    <string name="error_link_recognition">链接识别失败: %s</string>
     <string name="error_load_playlist">加载歌单失败: %s</string>
     <string name="error_search_failed">搜索失败: %s</string>
     <string name="error_get_user_id">无法获取用户ID，请重新登录</string>

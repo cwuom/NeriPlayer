@@ -646,6 +646,21 @@
     <string name="netease_login_required_search_placeholder">Sign in to NetEase to search</string>
     <string name="netease_login_required_home_search">NetEase is not signed in, home search-based recommendations are unavailable</string>
     <string name="netease_login_required_metadata">NetEase is not signed in, metadata completion is unavailable</string>
+    <string name="explore_search_type_song">Songs</string>
+    <string name="explore_search_type_playlist">Playlists</string>
+    <string name="explore_search_type_artist">Artists</string>
+    <string name="explore_tag_link_recognition">Link Recognition</string>
+    <string name="explore_link_input_placeholder">Paste a NetEase, Bilibili, or YouTube link</string>
+    <string name="explore_link_input_hint">Supports song, video, playlist, and artist links; recognized results appear below</string>
+    <string name="explore_link_recognition_placeholder">Paste a music link to recognize it</string>
+    <string name="explore_link_invalid">This link could not be recognized</string>
+    <string name="explore_link_unsupported_title">Unsupported link</string>
+    <string name="explore_link_unsupported_message">%1$s %2$s links are not supported yet</string>
+    <string name="explore_link_netease_song_fallback">NetEase song %1$d</string>
+    <string name="explore_link_netease_playlist_fallback">NetEase playlist %1$d</string>
+    <string name="explore_link_netease_artist_fallback">NetEase artist %1$d</string>
+    <string name="explore_link_youtube_video_fallback">YouTube video %1$s</string>
+    <string name="explore_link_youtube_playlist_fallback">YouTube playlist %1$s</string>
     <string name="youtube_search_type_song">YouTube Song</string>
     <string name="youtube_search_type_video">YouTube Video</string>
 
@@ -864,6 +879,8 @@
     <string name="settings_about_desc">Version, project home, and developer mode</string>
     <string name="settings_always_record_logs">Always Record Logs</string>
     <string name="settings_always_record_logs_desc">Record runtime logs continuously</string>
+    <string name="settings_explore_search_history">Explore Search History</string>
+    <string name="settings_explore_search_history_desc">Show and record search keywords on Explore</string>
     <string name="settings_playback_idle_shutdown">Exit playback service when paused</string>
     <string name="settings_playback_idle_shutdown_desc">Remove notification after timeout; keep queue and progress</string>
     <string name="settings_playback_idle_shutdown_dialog_title">Exit after being paused for</string>
@@ -2144,6 +2161,7 @@
     <string name="error_bilibili_search">Bilibili search failed: %s</string>
     <string name="error_netease_search">Netease search failed: %s</string>
     <string name="error_youtube_search">YouTube search failed: %s</string>
+    <string name="error_link_recognition">Link recognition failed: %s</string>
     <string name="error_load_playlist">Load playlist failed: %s</string>
     <string name="error_search_failed">Search failed: %s</string>
     <string name="error_get_user_id">Cannot get user ID, please log in again</string>
