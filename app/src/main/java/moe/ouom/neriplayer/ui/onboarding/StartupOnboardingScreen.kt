@@ -132,6 +132,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticOutlinedButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.util.platform.LanguageManager
 import moe.ouom.neriplayer.util.platform.getDisplayName
+import moe.ouom.neriplayer.util.platform.resolveOnePlusHighDensityUiScale
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -333,8 +334,19 @@ fun StartupOnboardingScreen() {
     }
 
     val baseDensity = LocalDensity.current
-    val previewDensity = remember(baseDensity, pendingUiScale) {
-        Density(baseDensity.density * pendingUiScale, baseDensity.fontScale)
+    val effectivePendingUiScale = remember(
+        pendingUiScale,
+        composeResources.displayMetrics.densityDpi
+    ) {
+        resolveOnePlusHighDensityUiScale(
+            userScale = pendingUiScale,
+            manufacturer = Build.MANUFACTURER,
+            brand = Build.BRAND,
+            densityDpi = composeResources.displayMetrics.densityDpi
+        )
+    }
+    val previewDensity = remember(baseDensity, effectivePendingUiScale) {
+        Density(baseDensity.density * effectivePendingUiScale, baseDensity.fontScale)
     }
 
     fun selectLanguage(language: LanguageManager.Language) {

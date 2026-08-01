@@ -26,6 +26,35 @@ package moe.ouom.neriplayer.util.platform
 import android.app.Activity
 import android.content.pm.ActivityInfo
 
+internal const val ONEPLUS_HIGH_DENSITY_DPI_THRESHOLD = 500
+internal const val ONEPLUS_HIGH_DENSITY_UI_SCALE = 0.95f
+
+internal fun isOnePlusHighDensityDisplay(
+    manufacturer: String?,
+    brand: String?,
+    densityDpi: Int
+): Boolean {
+    if (densityDpi < ONEPLUS_HIGH_DENSITY_DPI_THRESHOLD) {
+        return false
+    }
+    return listOf(manufacturer, brand).any { value ->
+        value?.trim()?.equals("oneplus", ignoreCase = true) == true
+    }
+}
+
+internal fun resolveOnePlusHighDensityUiScale(
+    userScale: Float,
+    manufacturer: String?,
+    brand: String?,
+    densityDpi: Int
+): Float {
+    return if (isOnePlusHighDensityDisplay(manufacturer, brand, densityDpi)) {
+        userScale * ONEPLUS_HIGH_DENSITY_UI_SCALE
+    } else {
+        userScale
+    }
+}
+
 /**
  * 仅对手机锁定竖屏，平板等大屏设备保持系统默认方向
  */
