@@ -144,6 +144,21 @@ data class YouTubeMusicSearchResult(
     val type: YouTubeMusicSearchResultType
 )
 
+data class YouTubeMusicVideoMetadata(
+    val title: String,
+    val authorName: String,
+    val thumbnailUrl: String
+)
+
+internal fun parseYouTubeMusicVideoMetadata(raw: String): YouTubeMusicVideoMetadata {
+    val root = JSONObject(raw)
+    return YouTubeMusicVideoMetadata(
+        title = root.optString("title"),
+        authorName = root.optString("author_name"),
+        thumbnailUrl = root.optString("thumbnail_url")
+    )
+}
+
 /** 首页推荐栏 */
 data class YouTubeMusicHomeShelf(
     val title: String,
@@ -1671,6 +1686,28 @@ class YouTubeMusicClient(
 ) {
     @Volatile
     private var bootstrapCache: YouTubeMusicBootstrapConfig? = null
+
+    suspend fun getVideoMetadata(videoId: String): YouTubeMusicVideoMetadata? =
+        withContext(Dispatchers.IO) {
+            val normalizedVideoId = videoId.trim()
+            if (normalizedVideoId.isBlank()) {
+                return@withContext null
+            }
+            val request = Request.Builder()
+                .url(
+                    "https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=" +
+                        URLEncoder.encode(normalizedVideoId, Charsets.UTF_8.name()) +
+                        "&format=json"
+                )
+                .header("Accept", "application/json")
+                .build()
+            runCatching {
+                okHttpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use null
+                    parseYouTubeMusicVideoMetadata(response.body.string())
+                }
+            }.getOrNull()
+        }
 
     suspend fun debugBootstrap(
         hl: String = "",

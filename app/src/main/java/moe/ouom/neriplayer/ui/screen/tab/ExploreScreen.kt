@@ -151,6 +151,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreSearchResult
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreUiState
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreViewModel
+import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseExploreSearchType
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseSearchArtistResult
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
@@ -164,6 +165,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
 import moe.ouom.neriplayer.util.format.formatDuration
+import moe.ouom.neriplayer.util.format.formatPlayCount
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 
 private const val SEARCH_INPUT_DEBOUNCE_MS = 300L
@@ -193,6 +195,16 @@ internal fun exploreSearchSourceDisplayOrder(
     }
 }
 
+internal fun shouldClearExploreSearchQuery(
+    previous: SearchSource,
+    current: SearchSource
+): Boolean {
+    return previous != current && (
+        previous == SearchSource.LINK_RECOGNITION ||
+            current == SearchSource.LINK_RECOGNITION
+        )
+}
+
 @Composable
 private fun searchSourceLabel(source: SearchSource): String {
     return when (source) {
@@ -220,6 +232,7 @@ fun ExploreScreen(
     topAppBarState: TopAppBarState,
     offlineMode: Boolean = false,
     onPlay: (PlaylistSummary) -> Unit,
+    onBiliPlaylistClick: (BiliPlaylist) -> Unit = {},
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     onNeteaseArtistClick: (NeteaseArtistSummary) -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
@@ -323,13 +336,15 @@ fun ExploreScreen(
     val tagChipSelectedAlpha = if (backgroundImageUri == null) 1f else 0.86f
     val tagChipUnselectedAlpha = if (backgroundImageUri == null) 1f else 0.74f
     val tagChipBorderAlpha = if (backgroundImageUri == null) 1f else 0.58f
+    var previousSearchSource by remember { mutableStateOf(ui.selectedSearchSource) }
 
     val shouldLoadMoreSearch by remember(
         searchListState,
         ui.searchItems.size,
         ui.searchHasMore,
         ui.searching,
-        ui.searchLoadingMore
+        ui.searchLoadingMore,
+        ui.searchLoadMoreError
     ) {
         derivedStateOf {
             shouldLoadExploreSearchMore(
@@ -339,7 +354,8 @@ fun ExploreScreen(
                     ?.index,
                 hasMore = ui.searchHasMore,
                 searching = ui.searching,
-                loadingMore = ui.searchLoadingMore
+                loadingMore = ui.searchLoadingMore,
+                loadMoreFailed = ui.searchLoadMoreError != null
             )
         }
     }
@@ -450,6 +466,13 @@ fun ExploreScreen(
         queueExploreSearchRecord(searchQuery)
     }
 
+    LaunchedEffect(ui.selectedSearchSource) {
+        if (shouldClearExploreSearchQuery(previousSearchSource, ui.selectedSearchSource)) {
+            searchQuery = ""
+        }
+        previousSearchSource = ui.selectedSearchSource
+    }
+
     LaunchedEffect(
         effectiveSearchKeyword,
         ui.selectedSearchSource,
@@ -474,7 +497,11 @@ fun ExploreScreen(
     fun submitExploreSearch(query: String = searchQuery) {
         val normalizedQuery = query.trim()
         if (normalizedQuery.isBlank()) return
-        val keyword = resolveExploreSearchKeyword(normalizedQuery, availableSearchHistory)
+        val keyword = if (ui.selectedSearchSource == SearchSource.LINK_RECOGNITION) {
+            normalizedQuery
+        } else {
+            resolveExploreSearchKeyword(normalizedQuery, availableSearchHistory)
+        }
         searchQuery = normalizedQuery
         focusManager.clearFocus()
         vm.search(keyword, displayQuery = normalizedQuery)
@@ -516,7 +543,17 @@ fun ExploreScreen(
                         onValueChange = {
                             searchQuery = it
                         },
-                        label = { Text(stringResource(R.string.search_keyword)) },
+                        label = {
+                            Text(
+                                stringResource(
+                                    if (ui.selectedSearchSource == SearchSource.LINK_RECOGNITION) {
+                                        R.string.explore_link_input_label
+                                    } else {
+                                        R.string.search_keyword
+                                    }
+                                )
+                            )
+                        },
                         placeholder = {
                             when {
                                 ui.selectedSearchSource == SearchSource.LINK_RECOGNITION -> {
@@ -645,7 +682,7 @@ fun ExploreScreen(
                                 Text(ui.searchError!!, color = MaterialTheme.colorScheme.error)
                             }
                         }
-                        ui.searchResults.isEmpty() -> {
+                        ui.searchItems.isEmpty() -> {
                             Box(
                                 Modifier
                                     .fillMaxSize()
@@ -655,6 +692,7 @@ fun ExploreScreen(
                         }
                         else -> {
                             LazyColumn(
+                                state = searchListState,
                                 contentPadding = PaddingValues(
                                     start = searchResultHorizontalPadding,
                                     end = searchResultHorizontalPadding,
@@ -664,65 +702,108 @@ fun ExploreScreen(
                                 modifier = Modifier.fillMaxSize()
                             ) {
                                 itemsIndexed(
-                                    items = ui.searchResults,
-                                    key = { _, song ->
-                                        listOfNotNull(
-                                            song.channelId,
-                                            song.audioId,
-                                            song.subAudioId,
-                                            song.mediaUri,
-                                            song.id.toString()
-                                        ).joinToString("|")
-                                    }
-                                ) { index, song ->
-                                    val isFavoriteSong = favoriteSongKeys.contains(song.stableKey())
-                                    SongRow(
-                                        index = index + 1,
-                                        song = song,
-                                        isFavorite = isFavoriteSong,
-                                        favoriteActionEnabled = localPlaylistsReady,
-                                        offlineMode = offlineMode,
-                                        onClick = {
-                                            if (song.album == PlayerManager.BILI_SOURCE_TAG) {
-                                                scope.launch {
-                                                    try {
-                                                        val info = vm.getVideoInfoByAvid(song.id)
-                                                        if (info.pages.size <= 1) {
-                                                            onSongClick(ui.searchResults, index)
-                                                        } else {
-                                                            partsInfo = info
-                                                            clickedSongCoverUrl = song.coverUrl ?: ""
-                                                            showPartsSheet = true
+                                    items = ui.searchItems,
+                                    key = { _, item -> item.stableKey }
+                                ) { index, item ->
+                                    when (item) {
+                                        is ExploreSearchResult.Song -> {
+                                            val song = item.song
+                                            val songListIndex = ui.searchResults.indexOfFirst {
+                                                it.stableKey() == song.stableKey()
+                                            }.takeIf { it >= 0 } ?: index
+                                            val isFavoriteSong = favoriteSongKeys.contains(song.stableKey())
+                                            SongRow(
+                                                index = index + 1,
+                                                song = song,
+                                                isFavorite = isFavoriteSong,
+                                                favoriteActionEnabled = localPlaylistsReady,
+                                                offlineMode = offlineMode,
+                                                onClick = {
+                                                    if (song.album == PlayerManager.BILI_SOURCE_TAG) {
+                                                        scope.launch {
+                                                            try {
+                                                                val info = vm.getVideoInfoByAvid(song.id)
+                                                                if (info.pages.size <= 1) {
+                                                                    onSongClick(ui.searchResults, songListIndex)
+                                                                } else {
+                                                                    partsInfo = info
+                                                                    clickedSongCoverUrl = song.coverUrl ?: ""
+                                                                    showPartsSheet = true
+                                                                }
+                                                            } catch (e: Exception) {
+                                                                NPLogger.e("ExploreScreen", composeResources.getString(R.string.search_error), e)
+                                                            }
                                                         }
-                                                    } catch (e: Exception) {
-                                                        NPLogger.e("ExploreScreen", composeResources.getString(R.string.search_error), e)
-                                                    }
-                                                }
-                                            } else {
-                                                onSongClick(ui.searchResults, index)
-                                            }
-                                        },
-                                        onPlayNow = { onSongPlayPreservingQueue(song) },
-                                        onPlayNext = { onSongPlayNext(song) },
-                                        onAddToQueueEnd = { onSongAddToQueueEnd(song) },
-                                        onToggleFavorite = {
-                                            if (localPlaylistsReady) {
-                                                scope.launchLocalPlaylistMutation(
-                                                    "toggleFavoriteFromExplore"
-                                                ) {
-                                                    val isFavoriteAtAction = FavoritesPlaylist
-                                                        .firstOrNull(repo.playlists.value, context)
-                                                        ?.songs
-                                                        ?.any { it.sameIdentityAs(song) } == true
-                                                    if (isFavoriteAtAction) {
-                                                        repo.removeFromFavorites(song)
                                                     } else {
-                                                        repo.addToFavorites(song)
+                                                        onSongClick(ui.searchResults, songListIndex)
+                                                    }
+                                                },
+                                                onPlayNow = { onSongPlayPreservingQueue(song) },
+                                                onPlayNext = { onSongPlayNext(song) },
+                                                onAddToQueueEnd = { onSongAddToQueueEnd(song) },
+                                                onToggleFavorite = {
+                                                    if (localPlaylistsReady) {
+                                                        scope.launchLocalPlaylistMutation(
+                                                            "toggleFavoriteFromExplore"
+                                                        ) {
+                                                            val isFavoriteAtAction = FavoritesPlaylist
+                                                                .firstOrNull(repo.playlists.value, context)
+                                                                ?.songs
+                                                                ?.any { it.sameIdentityAs(song) } == true
+                                                            if (isFavoriteAtAction) {
+                                                                repo.removeFromFavorites(song)
+                                                            } else {
+                                                                repo.addToFavorites(song)
+                                                            }
+                                                        }
                                                     }
                                                 }
-                                            }
+                                            )
                                         }
-                                    )
+                                        is ExploreSearchResult.Playlist -> {
+                                            NeteasePlaylistSearchRow(
+                                                playlist = item.playlist,
+                                                offlineMode = offlineMode,
+                                                onClick = { onPlay(item.playlist) }
+                                            )
+                                        }
+                                        is ExploreSearchResult.YouTubePlaylist -> {
+                                            YouTubePlaylistSearchRow(
+                                                playlist = item.playlist,
+                                                offlineMode = offlineMode,
+                                                onClick = { onYouTubeMusicPlaylistClick(item.playlist) }
+                                            )
+                                        }
+                                        is ExploreSearchResult.BilibiliPlaylist -> {
+                                            BiliPlaylistSearchRow(
+                                                playlist = item.playlist,
+                                                offlineMode = offlineMode,
+                                                onClick = { onBiliPlaylistClick(item.playlist) }
+                                            )
+                                        }
+                                        is ExploreSearchResult.Artist -> {
+                                            NeteaseArtistSearchRow(
+                                                result = item.result,
+                                                offlineMode = offlineMode,
+                                                onClick = { onNeteaseArtistClick(item.result.artist) }
+                                            )
+                                        }
+                                        is ExploreSearchResult.Notice -> {
+                                            ExploreSearchNoticeRow(item)
+                                        }
+                                    }
+                                }
+                                if (ui.searchLoadingMore) {
+                                    item(key = "search-loading-more") {
+                                        SearchLoadingMoreRow()
+                                    }
+                                } else if (ui.searchLoadMoreError != null) {
+                                    item(key = "search-load-more-error") {
+                                        SearchLoadMoreErrorRow(
+                                            error = ui.searchLoadMoreError!!,
+                                            onRetry = vm::loadMoreSearchResults
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1215,6 +1296,246 @@ private fun ExploreTagChip(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+    }
+}
+
+@Composable
+private fun NeteasePlaylistSearchRow(
+    playlist: PlaylistSummary,
+    offlineMode: Boolean,
+    onClick: () -> Unit
+) {
+    val context = LocalContext.current
+    LinkedCollectionRow(
+        title = playlist.name,
+        subtitle = stringResource(
+            R.string.playlist_play_count_format,
+            formatPlayCount(context, playlist.playCount),
+            playlist.trackCount
+        ),
+        coverUrl = playlist.picUrl,
+        offlineMode = offlineMode,
+        fallbackIcon = {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(30.dp)
+            )
+        },
+        onClick = onClick
+    )
+}
+
+@Composable
+private fun BiliPlaylistSearchRow(
+    playlist: BiliPlaylist,
+    offlineMode: Boolean,
+    onClick: () -> Unit
+) {
+    LinkedCollectionRow(
+        title = playlist.title,
+        subtitle = listOfNotNull(
+            playlist.subtitle.takeIf { it.isNotBlank() },
+            pluralStringResource(
+                R.plurals.bili_content_count,
+                playlist.count,
+                playlist.count
+            )
+        ).joinToString(" · "),
+        coverUrl = playlist.coverUrl,
+        offlineMode = offlineMode,
+        fallbackIcon = {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(30.dp)
+            )
+        },
+        onClick = onClick
+    )
+}
+
+@Composable
+private fun YouTubePlaylistSearchRow(
+    playlist: YouTubeMusicPlaylist,
+    offlineMode: Boolean,
+    onClick: () -> Unit
+) {
+    LinkedCollectionRow(
+        title = playlist.title,
+        subtitle = listOfNotNull(
+            playlist.subtitle.takeIf { it.isNotBlank() },
+            pluralStringResource(
+                R.plurals.count_songs_format,
+                playlist.trackCount,
+                playlist.trackCount
+            ).takeIf { playlist.trackCount > 0 }
+        ).joinToString(" · "),
+        coverUrl = playlist.coverUrl,
+        offlineMode = offlineMode,
+        fallbackIcon = {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(30.dp)
+            )
+        },
+        onClick = onClick
+    )
+}
+
+@Composable
+private fun NeteaseArtistSearchRow(
+    result: NeteaseSearchArtistResult,
+    offlineMode: Boolean,
+    onClick: () -> Unit
+) {
+    LinkedCollectionRow(
+        title = result.artist.name,
+        subtitle = listOf(
+            pluralStringResource(
+                R.plurals.artist_song_count,
+                result.musicSize,
+                result.musicSize
+            ),
+            pluralStringResource(
+                R.plurals.artist_album_count,
+                result.albumSize,
+                result.albumSize
+            )
+        ).joinToString(" · "),
+        coverUrl = result.picUrl,
+        offlineMode = offlineMode,
+        fallbackIcon = {
+            Icon(
+                imageVector = Icons.Filled.AccountCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(34.dp)
+            )
+        },
+        onClick = onClick
+    )
+}
+
+@Composable
+private fun LinkedCollectionRow(
+    title: String,
+    subtitle: String,
+    coverUrl: String?,
+    offlineMode: Boolean,
+    fallbackIcon: @Composable () -> Unit,
+    onClick: () -> Unit
+) {
+    val context = LocalContext.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                context.performHapticFeedback()
+                onClick()
+            }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .clip(RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (!coverUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = fastScrollableImageRequest(
+                        context = context,
+                        data = coverUrl,
+                        sizePx = 144,
+                        offlineMode = offlineMode
+                    ),
+                    contentDescription = title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                fallbackIcon()
+            }
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun ExploreSearchNoticeRow(item: ExploreSearchResult.Notice) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            text = item.title,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = item.message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun SearchLoadingMoreRow() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 18.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator(modifier = Modifier.size(28.dp))
+    }
+}
+
+@Composable
+private fun SearchLoadMoreErrorRow(
+    error: String,
+    onRetry: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = error,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            textAlign = TextAlign.Center
+        )
+        HapticTextButton(onClick = onRetry) {
+            Text(stringResource(R.string.action_retry))
         }
     }
 }

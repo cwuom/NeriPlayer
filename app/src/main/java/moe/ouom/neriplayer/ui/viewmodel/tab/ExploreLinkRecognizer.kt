@@ -4,12 +4,22 @@ import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.util.Locale
+import moe.ouom.neriplayer.util.network.awaitResponse
+import okhttp3.OkHttpClient
+import okhttp3.Request
 
 internal sealed class ExploreLinkTarget {
     data class NeteaseSong(val id: Long) : ExploreLinkTarget()
     data class NeteasePlaylist(val id: Long) : ExploreLinkTarget()
     data class NeteaseArtist(val id: Long) : ExploreLinkTarget()
+    data class NeteaseShortLink(val url: String) : ExploreLinkTarget()
     data class BiliVideo(val avid: Long? = null, val bvid: String? = null) : ExploreLinkTarget()
+    data class BiliFavoriteFolder(val mediaId: Long) : ExploreLinkTarget()
+    data class BiliFavoriteFolderByOwner(
+        val ownerMid: Long,
+        val folderId: Long
+    ) : ExploreLinkTarget()
+    data class BiliCollection(val ownerMid: Long, val seasonId: Long) : ExploreLinkTarget()
     data class BiliShortLink(val url: String) : ExploreLinkTarget()
     data class YouTubeVideo(val videoId: String, val playlistId: String? = null) : ExploreLinkTarget()
     data class YouTubePlaylist(val playlistId: String) : ExploreLinkTarget()
@@ -23,6 +33,7 @@ internal fun recognizeExploreLink(input: String): ExploreLinkTarget? {
 
     return when {
         host.endsWith("music.163.com") -> recognizeNeteaseLink(uri)
+        host == "163cn.tv" -> ExploreLinkTarget.NeteaseShortLink(normalized)
         host.endsWith("bilibili.com") || host == "b23.tv" -> recognizeBiliLink(uri, normalized)
         host == "youtu.be" || host.endsWith("youtube.com") || host.endsWith("youtube-nocookie.com") -> {
             recognizeYouTubeLink(uri)
@@ -66,11 +77,64 @@ private fun recognizeBiliLink(uri: URI, raw: String): ExploreLinkTarget? {
         return ExploreLinkTarget.BiliVideo(avid = aid)
     }
 
-    return if (uri.host?.lowercase(Locale.US) == "b23.tv") {
-        ExploreLinkTarget.BiliShortLink(raw)
-    } else {
-        null
+    if (uri.host?.lowercase(Locale.US) == "b23.tv") {
+        return ExploreLinkTarget.BiliShortLink(raw)
     }
+
+    return recognizeBiliCollectionLink(uri)
+        ?: recognizeBiliFavoriteFolderLink(uri)
+        ?: recognizeBiliArtistLink(uri)
+}
+
+private fun recognizeBiliCollectionLink(uri: URI): ExploreLinkTarget? {
+    if (uri.host?.lowercase(Locale.US) != "space.bilibili.com") return null
+    val segments = uri.pathSegments()
+    val ownerMid = segments.getOrNull(0)?.toLongOrNull()?.takeIf { it > 0L } ?: return null
+    if (segments.getOrNull(1) != "lists") return null
+    val seasonId = segments.getOrNull(2)?.toLongOrNull()?.takeIf { it > 0L } ?: return null
+    val listType = queryParameters(uri.rawQuery)["type"]?.lowercase(Locale.US)
+    return if (listType == "series") {
+        ExploreLinkTarget.Unsupported(platform = "Bilibili", type = "series playlist")
+    } else {
+        ExploreLinkTarget.BiliCollection(ownerMid = ownerMid, seasonId = seasonId)
+    }
+}
+
+private fun recognizeBiliFavoriteFolderLink(uri: URI): ExploreLinkTarget? {
+    val host = uri.host?.lowercase(Locale.US)
+    val path = uri.path.orEmpty()
+    BILI_MEDIA_LIST_REGEX.find(path)?.groupValues?.getOrNull(1)
+        ?.toLongOrNull()
+        ?.takeIf { it > 0L }
+        ?.let { return ExploreLinkTarget.BiliFavoriteFolder(it) }
+
+    if (host != "space.bilibili.com") return null
+    val segments = uri.pathSegments()
+    val ownerMid = segments.getOrNull(0)?.toLongOrNull()?.takeIf { it > 0L } ?: return null
+    if (segments.getOrNull(1) != "favlist") return null
+    val folderId = queryParameters(uri.rawQuery)["fid"]
+        ?.removePrefix("ml")
+        ?.toLongOrNull()
+        ?.takeIf { it > 0L }
+        ?: return null
+    return ExploreLinkTarget.BiliFavoriteFolderByOwner(
+        ownerMid = ownerMid,
+        folderId = folderId
+    )
+}
+
+private fun recognizeBiliArtistLink(uri: URI): ExploreLinkTarget? {
+    val host = uri.host?.lowercase(Locale.US)
+    val segments = uri.pathSegments()
+    val artistId = when {
+        host == "space.bilibili.com" -> segments.firstOrNull()?.toLongOrNull()
+        segments.firstOrNull() == "space" -> segments.getOrNull(1)?.toLongOrNull()
+        else -> null
+    }?.takeIf { it > 0L } ?: return null
+    return ExploreLinkTarget.Unsupported(
+        platform = "Bilibili",
+        type = "artist/UP $artistId"
+    )
 }
 
 private fun extractExploreHttpUrl(input: String): String? {
@@ -92,6 +156,7 @@ private fun recognizeYouTubeLink(uri: URI): ExploreLinkTarget? {
         host == "youtu.be" -> path.takeIf { it.isNotBlank() }?.substringBefore('/')
         path == "embed" || path.startsWith("embed/") -> path.substringAfter("embed/").takeIf { it.isNotBlank() }
         path == "shorts" || path.startsWith("shorts/") -> path.substringAfter("shorts/").takeIf { it.isNotBlank() }
+        path == "live" || path.startsWith("live/") -> path.substringAfter("live/").takeIf { it.isNotBlank() }
         else -> params["v"]?.takeIf { it.isNotBlank() }
     }
 
@@ -120,6 +185,28 @@ private fun parseUri(raw: String): URI? {
     return runCatching { URI(candidate) }.getOrNull()
 }
 
+internal suspend fun expandExploreRedirectUrl(
+    url: String,
+    client: OkHttpClient
+): String {
+    val request = Request.Builder()
+        .url(url)
+        .get()
+        .header("User-Agent", "Mozilla/5.0")
+        .build()
+    return client.newCall(request).awaitResponse { response ->
+        check(response.isSuccessful) { "HTTP ${response.code}" }
+        response.request.url.toString()
+    }
+}
+
+private fun URI.pathSegments(): List<String> {
+    return path.orEmpty()
+        .trim('/')
+        .split('/')
+        .filter { it.isNotBlank() }
+}
+
 private fun queryParameters(rawQuery: String?): Map<String, String> {
     if (rawQuery.isNullOrBlank()) return emptyMap()
     return rawQuery
@@ -141,4 +228,8 @@ private fun String.urlDecode(): String {
 
 private val BILI_BVID_REGEX = Regex("""BV[0-9A-Za-z]{10}""")
 private val BILI_AVID_REGEX = Regex("""(?:/video/av|[?&]aid=)(\d+)""")
+private val BILI_MEDIA_LIST_REGEX = Regex(
+    """/medialist/(?:detail|play)/(?:ml)?(\d+)""",
+    RegexOption.IGNORE_CASE
+)
 private val HTTP_URL_REGEX = Regex("""https?://[^\s]+""", RegexOption.IGNORE_CASE)

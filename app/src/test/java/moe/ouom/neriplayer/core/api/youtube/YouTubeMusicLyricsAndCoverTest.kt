@@ -9,6 +9,26 @@ import org.junit.Test
 
 class YouTubeMusicLyricsAndCoverTest {
 
+    @Test
+    fun parseYouTubeMusicVideoMetadata_readsOEmbedFields() {
+        val metadata = parseYouTubeMusicVideoMetadata(
+            """
+            {
+              "title": "Calc. / ジミーサムP【Covered by Kotoha】",
+              "author_name": "Kotoha",
+              "thumbnail_url": "https://i.ytimg.com/vi/OvLE3VQ18UY/hqdefault.jpg"
+            }
+            """.trimIndent()
+        )
+
+        assertEquals("Calc. / ジミーサムP【Covered by Kotoha】", metadata.title)
+        assertEquals("Kotoha", metadata.authorName)
+        assertEquals(
+            "https://i.ytimg.com/vi/OvLE3VQ18UY/hqdefault.jpg",
+            metadata.thumbnailUrl
+        )
+    }
+
     // ─── upgradeYouTubeThumbnailUrl ───
 
     @Test

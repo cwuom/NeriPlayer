@@ -50,15 +50,14 @@ import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.util.network.awaitResponse
 import moe.ouom.neriplayer.util.search.searchValues
 import moe.ouom.neriplayer.util.search.SearchTextMatcher
-import okhttp3.Request
 import org.json.JSONObject
 
 private const val TAG = "NERI-ExploreVM"
 private const val NETEASE_SEARCH_PAGE_SIZE = 30
 private const val YOUTUBE_MUSIC_SEARCH_LIMIT = 30
+private const val BILI_RESOURCE_TYPE_COLLECTION = 21
 
 /**
  * Tag key to Chinese API category mapping
@@ -133,6 +132,11 @@ sealed class ExploreSearchResult {
 
     data class YouTubePlaylist(val playlist: YouTubeMusicPlaylist) : ExploreSearchResult() {
         override val stableKey: String = "youtubeMusic|playlist|${playlist.playlistId.ifBlank { playlist.browseId }}"
+    }
+
+    data class BilibiliPlaylist(val playlist: BiliPlaylist) : ExploreSearchResult() {
+        override val stableKey: String =
+            "bilibili|playlist|${playlist.kind}|${playlist.mediaId}|${playlist.mid}"
     }
 
     data class Artist(val result: NeteaseSearchArtistResult) : ExploreSearchResult() {
@@ -270,9 +274,10 @@ internal fun shouldLoadExploreSearchMore(
     hasMore: Boolean,
     searching: Boolean,
     loadingMore: Boolean,
+    loadMoreFailed: Boolean = false,
     prefetchDistance: Int = 6
 ): Boolean {
-    if (!hasMore || searching || loadingMore || resultCount <= 0) return false
+    if (!hasMore || searching || loadingMore || loadMoreFailed || resultCount <= 0) return false
     val lastVisible = lastVisibleItemIndex ?: return false
     return lastVisible >= resultCount - prefetchDistance
 }
@@ -800,8 +805,20 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             is ExploreLinkTarget.NeteaseArtist -> ExploreSearchResult.Artist(
                 fetchLinkedNeteaseArtist(target.id)
             )
+            is ExploreLinkTarget.NeteaseShortLink -> resolveExploreLinkTarget(
+                resolveNeteaseShortLink(target.url)
+            )
             is ExploreLinkTarget.BiliVideo -> ExploreSearchResult.Song(
                 fetchLinkedBiliVideo(target)
+            )
+            is ExploreLinkTarget.BiliFavoriteFolder -> ExploreSearchResult.BilibiliPlaylist(
+                fetchLinkedBiliFavoriteFolder(target.mediaId)
+            )
+            is ExploreLinkTarget.BiliFavoriteFolderByOwner -> ExploreSearchResult.BilibiliPlaylist(
+                fetchLinkedBiliFavoriteFolder(target.ownerMid, target.folderId)
+            )
+            is ExploreLinkTarget.BiliCollection -> ExploreSearchResult.BilibiliPlaylist(
+                fetchLinkedBiliCollection(target.ownerMid, target.seasonId)
             )
             is ExploreLinkTarget.BiliShortLink -> resolveExploreLinkTarget(
                 resolveBiliShortLink(target.url)
@@ -824,16 +841,16 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private suspend fun resolveBiliShortLink(url: String): ExploreLinkTarget {
-        val request = Request.Builder()
-            .url(url)
-            .get()
-            .header("User-Agent", "Mozilla/5.0")
-            .build()
-        val finalUrl = AppContainer.sharedOkHttpClient.newCall(request).awaitResponse { response ->
-            response.request.url.toString()
-        }
+        val finalUrl = expandExploreRedirectUrl(url, AppContainer.sharedOkHttpClient)
         return recognizeExploreLink(finalUrl)
             ?.takeIf { it !is ExploreLinkTarget.BiliShortLink }
+            ?: error(app.getString(R.string.explore_link_invalid))
+    }
+
+    private suspend fun resolveNeteaseShortLink(url: String): ExploreLinkTarget {
+        val finalUrl = expandExploreRedirectUrl(url, AppContainer.sharedOkHttpClient)
+        return recognizeExploreLink(finalUrl)
+            ?.takeIf { it !is ExploreLinkTarget.NeteaseShortLink }
             ?: error(app.getString(R.string.explore_link_invalid))
     }
 
@@ -898,13 +915,98 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         return info.toSongItem()
     }
 
+    private suspend fun fetchLinkedBiliFavoriteFolder(mediaId: Long): BiliPlaylist {
+        val folder = biliClient.getFavFolderInfo(mediaId)
+        return folder.toExploreBiliPlaylist(BiliPlaylistKind.CREATED_FAVORITE)
+    }
+
+    private suspend fun fetchLinkedBiliFavoriteFolder(
+        ownerMid: Long,
+        folderId: Long
+    ): BiliPlaylist {
+        val created = biliClient.getUserCreatedFavFolders(ownerMid)
+        created.firstOrNull { it.fid == folderId || it.mediaId == folderId }?.let { folder ->
+            return hydrateLinkedBiliFolder(folder, BiliPlaylistKind.CREATED_FAVORITE)
+        }
+
+        val collected = runCatching {
+            biliClient.getUserCollectedFavFolders(ownerMid)
+        }.getOrDefault(emptyList())
+        collected.firstOrNull { it.fid == folderId || it.mediaId == folderId }?.let { folder ->
+            return hydrateLinkedBiliFolder(folder, BiliPlaylistKind.COLLECTED_FAVORITE)
+        }
+        error(app.getString(R.string.explore_link_invalid))
+    }
+
+    private suspend fun hydrateLinkedBiliFolder(
+        folder: BiliClient.FavFolder,
+        fallbackKind: BiliPlaylistKind
+    ): BiliPlaylist {
+        if (folder.itemType == BILI_RESOURCE_TYPE_COLLECTION) {
+            return fetchLinkedBiliCollection(folder.mid, folder.mediaId)
+        }
+        val detail = runCatching {
+            biliClient.getFavFolderInfo(folder.mediaId)
+        }.getOrDefault(folder)
+        return detail.toExploreBiliPlaylist(fallbackKind)
+    }
+
+    private suspend fun fetchLinkedBiliCollection(
+        ownerMid: Long,
+        seasonId: Long
+    ): BiliPlaylist {
+        val page = biliClient.getCollectionArchives(
+            mid = ownerMid,
+            seasonId = seasonId,
+            page = 1
+        )
+        val meta = page.meta
+        return BiliPlaylist(
+            mediaId = meta.seasonId.takeIf { it > 0L } ?: seasonId,
+            fid = 0L,
+            mid = meta.mid.takeIf { it > 0L } ?: ownerMid,
+            title = meta.title.ifBlank {
+                app.getString(R.string.explore_link_bili_playlist_fallback, seasonId)
+            },
+            count = meta.total,
+            coverUrl = meta.coverUrl,
+            kind = BiliPlaylistKind.COLLECTION
+        )
+    }
+
+    private fun BiliClient.FavFolder.toExploreBiliPlaylist(
+        fallbackKind: BiliPlaylistKind
+    ): BiliPlaylist {
+        val resolvedKind = if (itemType == BILI_RESOURCE_TYPE_COLLECTION) {
+            BiliPlaylistKind.COLLECTION
+        } else {
+            fallbackKind
+        }
+        return BiliPlaylist(
+            mediaId = mediaId,
+            fid = fid,
+            mid = mid,
+            title = title.ifBlank {
+                app.getString(R.string.explore_link_bili_playlist_fallback, mediaId)
+            },
+            count = count,
+            coverUrl = coverUrl.replaceFirst("http://", "https://"),
+            kind = resolvedKind,
+            subtitle = upperName
+        )
+    }
+
     private suspend fun fetchLinkedYouTubeVideo(target: ExploreLinkTarget.YouTubeVideo): SongItem {
         val matched = runCatching {
             AppContainer.youtubeMusicClient.search(target.videoId, limit = 5)
                 .firstOrNull { it.videoId == target.videoId }
         }.getOrNull()
         if (matched != null) {
-            return matched.toSongItem(app).copy(
+            val matchedSong = matched.toSongItem(app)
+            return matchedSong.copy(
+                coverUrl = matchedSong.coverUrl ?: youtubeMusicThumbnailUrl(matched.videoId),
+                originalCoverUrl = matchedSong.originalCoverUrl
+                    ?: youtubeMusicThumbnailUrl(matched.videoId),
                 mediaUri = buildYouTubeMusicMediaUri(
                     videoId = matched.videoId,
                     playlistId = target.playlistId
@@ -913,21 +1015,32 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             )
         }
 
+        val metadata = runCatching {
+            AppContainer.youtubeMusicClient.getVideoMetadata(target.videoId)
+        }.getOrNull()
         val displayAlbum = app.getString(R.string.youtube_search_type_video)
+        val displayName = metadata?.title.orEmpty().ifBlank {
+            app.getString(R.string.explore_link_youtube_video_fallback, target.videoId)
+        }
+        val displayArtist = metadata?.authorName.orEmpty().ifBlank { "YouTube" }
+        val coverUrl = metadata?.thumbnailUrl.orEmpty().ifBlank {
+            youtubeMusicThumbnailUrl(target.videoId)
+        }
         return SongItem(
             id = stableYouTubeMusicId(target.videoId),
-            name = app.getString(R.string.explore_link_youtube_video_fallback, target.videoId),
-            artist = "YouTube",
+            name = displayName,
+            artist = displayArtist,
             album = displayAlbum,
             albumId = stableYouTubeMusicId("${target.videoId}|$displayAlbum"),
             durationMs = 0L,
-            coverUrl = null,
+            coverUrl = coverUrl,
             mediaUri = buildYouTubeMusicMediaUri(
                 videoId = target.videoId,
                 playlistId = target.playlistId
             ),
-            originalName = app.getString(R.string.explore_link_youtube_video_fallback, target.videoId),
-            originalArtist = "YouTube",
+            originalName = displayName,
+            originalArtist = displayArtist,
+            originalCoverUrl = coverUrl,
             channelId = "youtubeMusic",
             audioId = target.videoId,
             playlistContextId = target.playlistId
@@ -1254,4 +1367,8 @@ private fun YouTubeMusicSearchResult.toSongItem(app: Application): SongItem {
         channelId = "youtubeMusic",
         audioId = videoId
     )
+}
+
+internal fun youtubeMusicThumbnailUrl(videoId: String): String {
+    return "https://i.ytimg.com/vi/${videoId.trim()}/hqdefault.jpg"
 }

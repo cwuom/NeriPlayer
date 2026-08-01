@@ -338,6 +338,17 @@ For release build and signing details, see
   favorites, and collections.
 - 🔍 **Layered search**:
   `Explore` searches NetEase / Bilibili / YouTube Music separately.
+  NetEase supports song, playlist, and artist categories, while NetEase and
+  Bilibili results load the next page near the end of the list. The Link
+  Recognition tab accepts either a direct URL or full share text containing a
+  title and short link. It classifies NetEase songs/playlists/artists, Bilibili
+  videos/favorites/collections/creators, and YouTube videos/playlists/channels;
+  types with an existing detail screen open directly, while unsupported detail
+  types are reported explicitly.
+  The search field shows local search history and records debounced search
+  keywords by default. You can disable Explore search history under Settings >
+  General; disabling it hides the history and stops new records without deleting
+  existing entries, which reappear when the setting is enabled again.
   Playback metadata completion uses NetEase / QQ Music and integrates LRCLIB
   as an external lyrics source. The lyrics editor lets users choose Kugou,
   NetEase, QQ Music, AMLL TTML, LRCLIB, and YouTube Music before manually
@@ -480,8 +491,9 @@ For release build and signing details, see
   are filtered, and `REQUEST_SET_TRACK` can only choose a song already in the current queue.
 - 🌈 **Personalization and themes**:
   auto/light/dark mode, dynamic color, seed colors, theme styles, UI scaling,
-  custom background image, haptic feedback, lyric font size, lyric blur,
-  default start destination, and Home card toggles. Android 13+ can optionally
+  custom background image, haptic feedback, lyric font size (separate cover and
+  lyrics-page controls), lyric blur, default start destination, and Home card
+  toggles. Android 13+ can optionally
   enable Enhanced Advanced Blur for top/bottom tabs and structural settings cards;
   its radius is adjustable from `12-64 dp`, and disabling the parent preserves the
   child choice and radius while removing enhanced drawing.
@@ -489,8 +501,9 @@ For release build and signing details, see
   `RuntimeShader` / GLSL fluid background, audio-reactive dynamic background,
   cover blur background, Apple Music-style lyrics, advanced lyrics, word-timed
   lyrics, translated lyrics, lyric offset, phonetic display, long-press lyric
-  sharing, lyric card generation, lyric editing, font scaling, lyric-aware
-  haptics, and a full Lyrics page. RuntimeShader animation is enabled on Android
+  sharing, lyric card generation, lyric editing, font scaling, independent cover
+  and lyrics-page lyric / translation font scales, lyric-aware haptics, and a
+  full Lyrics page. RuntimeShader animation is enabled on Android
   13+; cover blur requires Android 12+, while advanced blur requires Android 13+.
 - 👆 **Mini Player gestures**:
   the bottom Mini Player supports horizontal swipe for previous/next while
@@ -649,6 +662,10 @@ For release build and signing details, see
 
 - **UI search**:
   `Explore` integrates NetEase, Bilibili, and YouTube Music as separate sources.
+  NetEase can switch among songs, playlists, and artists; NetEase and Bilibili
+  support lazy pagination; Link Recognition accepts direct links and share text
+  containing short links. Search history is local and can be independently
+  hidden and disabled under Settings > General.
 - **Metadata completion**:
   the playback screen uses `SearchManager` with NetEase and QQ Music for cover,
   lyrics, and track metadata.

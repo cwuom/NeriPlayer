@@ -40,32 +40,55 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
+import moe.ouom.neriplayer.ui.screen.artist.NeteaseArtistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.ExploreScreen
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassHostNavigationTransition
 import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassSceneMotion
+import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
+import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
+import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.util.media.CoverArtColorCache
 
 // 探索页选中项
 private sealed class ExploreSelectedItem {
     data class Netease(val playlist: PlaylistSummary) : ExploreSelectedItem()
+    data class NeteaseArtist(val artist: NeteaseArtistSummary) : ExploreSelectedItem()
+    data class NeteaseArtistAlbum(
+        val artist: NeteaseArtistSummary,
+        val album: AlbumSummary
+    ) : ExploreSelectedItem()
+    data class Bilibili(val playlist: BiliPlaylist) : ExploreSelectedItem()
     data class YouTubeMusic(val playlist: YouTubeMusicPlaylist) : ExploreSelectedItem()
 }
 
 private val ExploreSelectedItem?.navigationDepth: Int
-    get() = if (this == null) 0 else 1
+    get() = when (this) {
+        null -> 0
+        is ExploreSelectedItem.NeteaseArtistAlbum -> 2
+        else -> 1
+    }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,8 +115,61 @@ fun ExploreHostScreen(
     }
 ) {
     var selected by remember { mutableStateOf<ExploreSelectedItem?>(null) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var pendingNeteaseCoverWarmupJob by remember { mutableStateOf<Job?>(null) }
+    var pendingNeteaseCoverWarmupToken by remember { mutableIntStateOf(0) }
+
+    fun cancelPendingNeteaseCoverWarmup() {
+        pendingNeteaseCoverWarmupToken += 1
+        pendingNeteaseCoverWarmupJob?.cancel()
+        pendingNeteaseCoverWarmupJob = null
+    }
+
+    fun openAfterNeteaseCoverWarmup(
+        coverUrl: String?,
+        item: ExploreSelectedItem
+    ) {
+        val token = pendingNeteaseCoverWarmupToken + 1
+        pendingNeteaseCoverWarmupToken = token
+        pendingNeteaseCoverWarmupJob?.cancel()
+        pendingNeteaseCoverWarmupJob = scope.launch {
+            CoverArtColorCache.preload(context, coverUrl, offlineMode)
+            if (pendingNeteaseCoverWarmupToken == token) {
+                selected = item
+                pendingNeteaseCoverWarmupJob = null
+            }
+        }
+    }
+
+    fun openExploreSelectedItem(item: ExploreSelectedItem) {
+        when (item) {
+            is ExploreSelectedItem.Netease -> {
+                openAfterNeteaseCoverWarmup(item.playlist.picUrl, item)
+            }
+            is ExploreSelectedItem.NeteaseArtistAlbum -> {
+                openAfterNeteaseCoverWarmup(item.album.picUrl, item)
+            }
+            else -> {
+                cancelPendingNeteaseCoverWarmup()
+                selected = item
+            }
+        }
+    }
+
+    fun closeSelectedDetail() {
+        cancelPendingNeteaseCoverWarmup()
+        selected = when (val current = selected) {
+            is ExploreSelectedItem.NeteaseArtistAlbum -> {
+                ExploreSelectedItem.NeteaseArtist(current.artist)
+            }
+            else -> null
+        }
+    }
+
     LaunchedEffect(offlineMode) {
         if (offlineMode) {
+            cancelPendingNeteaseCoverWarmup()
             selected = null
         }
     }
@@ -101,7 +177,7 @@ fun ExploreHostScreen(
     PredictiveBackHandler(enabled = selected != null) { progress ->
         try {
             progress.collect { }
-            selected = null
+            closeSelectedDetail()
         } catch (_: CancellationException) {
         }
     }
@@ -186,7 +262,11 @@ fun ExploreHostScreen(
                                     trackCount = pl.trackCount,
                                     source = "netease"
                                 )
-                                selected = ExploreSelectedItem.Netease(pl)
+                                openExploreSelectedItem(ExploreSelectedItem.Netease(pl))
+                            },
+                            onBiliPlaylistClick = { playlist ->
+                                captureExploreScrollPosition()
+                                openExploreSelectedItem(ExploreSelectedItem.Bilibili(playlist))
                             },
                             onYouTubeMusicPlaylistClick = { pl ->
                                 captureExploreScrollPosition()
@@ -201,7 +281,11 @@ fun ExploreHostScreen(
                                     browseId = pl.browseId,
                                     playlistId = pl.playlistId
                                 )
-                                selected = ExploreSelectedItem.YouTubeMusic(pl)
+                                openExploreSelectedItem(ExploreSelectedItem.YouTubeMusic(pl))
+                            },
+                            onNeteaseArtistClick = { artist ->
+                                captureExploreScrollPosition()
+                                openExploreSelectedItem(ExploreSelectedItem.NeteaseArtist(artist))
                             },
                             onSongClick = onSongClick,
                             onSongPlayPreservingQueue = onSongPlayPreservingQueue,
@@ -214,7 +298,7 @@ fun ExploreHostScreen(
                             is ExploreSelectedItem.Netease -> {
                                 NeteasePlaylistDetailScreen(
                                     playlist = current.playlist,
-                                    onBack = { selected = null },
+                                    onBack = ::closeSelectedDetail,
                                     onSongClick = { songs, index ->
                                         onSongClickWithSourceRoute(
                                             songs,
@@ -226,10 +310,48 @@ fun ExploreHostScreen(
                                 )
                             }
 
+                            is ExploreSelectedItem.NeteaseArtist -> {
+                                NeteaseArtistDetailScreen(
+                                    artist = current.artist,
+                                    onBack = ::closeSelectedDetail,
+                                    onSongClick = onSongClick,
+                                    onAlbumClick = { album ->
+                                        openExploreSelectedItem(
+                                            ExploreSelectedItem.NeteaseArtistAlbum(
+                                                artist = current.artist,
+                                                album = album
+                                            )
+                                        )
+                                    },
+                                    offlineMode = offlineMode
+                                )
+                            }
+
+                            is ExploreSelectedItem.NeteaseArtistAlbum -> {
+                                NeteaseAlbumDetailScreen(
+                                    album = current.album,
+                                    onBack = ::closeSelectedDetail,
+                                    onSongClick = onSongClick,
+                                    offlineMode = offlineMode
+                                )
+                            }
+
+                            is ExploreSelectedItem.Bilibili -> {
+                                BiliPlaylistDetailScreen(
+                                    playlist = current.playlist,
+                                    onBack = ::closeSelectedDetail,
+                                    onPlayAudio = { videos, index ->
+                                        onSongClick(videos.map(BiliVideoItem::toExploreSongItem), index)
+                                    },
+                                    onPlayParts = onPlayParts,
+                                    offlineMode = offlineMode
+                                )
+                            }
+
                             is ExploreSelectedItem.YouTubeMusic -> {
                                 YouTubeMusicPlaylistDetailScreen(
                                     playlist = current.playlist,
-                                    onBack = { selected = null },
+                                    onBack = ::closeSelectedDetail,
                                     onSongClick = onSongClick,
                                     offlineMode = offlineMode
                                 )
@@ -240,4 +362,18 @@ fun ExploreHostScreen(
             }
         }
     }
+}
+
+private fun BiliVideoItem.toExploreSongItem(): SongItem {
+    return SongItem(
+        id = id,
+        name = title,
+        artist = uploader,
+        album = PlayerManager.BILI_SOURCE_TAG,
+        albumId = 0L,
+        durationMs = durationSec * 1000L,
+        coverUrl = coverUrl,
+        channelId = "bilibili",
+        audioId = id.toString()
+    )
 }
