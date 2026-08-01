@@ -173,6 +173,12 @@ fun YouTubeMusicPlaylistDetailScreen(
     val scope = rememberCoroutineScope()
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var headerSearchFocused by remember { mutableStateOf(false) }
+    var dockedSearchFocused by remember { mutableStateOf(false) }
+    val searchInputState = rememberPlaylistSearchInputState(
+        query = searchQuery,
+        onQueryChange = { searchQuery = it }
+    )
     val searchFocusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -323,18 +329,26 @@ fun YouTubeMusicPlaylistDetailScreen(
         showSearch,
         selectionMode,
         searchFieldComposed,
-        autoShowKeyboard
+        autoShowKeyboard,
+        searchFieldFocusInHeader
     ) {
-        if (shouldRequestPlaylistSearchFocus(
-                showSearch,
-                selectionMode,
-                autoShowKeyboard
-            ) && searchFieldComposed
-        ) {
-            delay(120)
-            searchFocusRequester.requestFocus()
-            keyboardController?.show()
-        }
+        if (!searchFieldComposed) return@LaunchedEffect
+        val shouldAutoFocus = shouldRequestPlaylistSearchFocus(
+            showSearch,
+            selectionMode,
+            autoShowKeyboard
+        )
+        val shouldTransferFocus = shouldTransferPlaylistSearchFocus(
+            showSearch = showSearch,
+            selectionMode = selectionMode,
+            searchFieldComposed = searchFieldComposed,
+            searchInputFocused = headerSearchFocused || dockedSearchFocused,
+            searchQuery = searchQuery
+        )
+        if (!shouldAutoFocus && !shouldTransferFocus) return@LaunchedEffect
+        if (shouldAutoFocus) delay(120)
+        searchFocusRequester.requestFocus()
+        keyboardController?.show()
     }
     val playlistFavoriteId = remember(resolvedPlaylist.playlistId, resolvedPlaylist.browseId) {
         resolvedPlaylist.favoriteId()
@@ -575,6 +589,8 @@ fun YouTubeMusicPlaylistDetailScreen(
                 query = searchQuery,
                 onQueryChange = { searchQuery = it },
                 placeholder = stringResource(R.string.playlist_search_hint),
+                inputState = searchInputState,
+                onFocusChanged = { dockedSearchFocused = it },
                 focusRequester = if (searchFieldFocusInHeader) {
                     null
                 } else {
@@ -616,6 +632,8 @@ fun YouTubeMusicPlaylistDetailScreen(
                                                 query = searchQuery,
                                                 onQueryChange = { searchQuery = it },
                                                 placeholder = stringResource(R.string.playlist_search_hint),
+                                                inputState = searchInputState,
+                                                onFocusChanged = { headerSearchFocused = it },
                                                 focusRequester = if (searchFieldFocusInHeader) {
                                                     searchFocusRequester
                                                 } else {

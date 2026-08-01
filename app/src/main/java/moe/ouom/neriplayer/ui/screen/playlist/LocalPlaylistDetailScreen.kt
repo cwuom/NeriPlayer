@@ -471,6 +471,12 @@ fun LocalPlaylistDetailScreen(
 
             var showSearch by remember { mutableStateOf(false) }
             var searchQuery by remember { mutableStateOf("") }
+            var headerSearchFocused by remember { mutableStateOf(false) }
+            var dockedSearchFocused by remember { mutableStateOf(false) }
+            val searchInputState = rememberPlaylistSearchInputState(
+                query = searchQuery,
+                onQueryChange = { searchQuery = it }
+            )
             var showDownloadManager by remember { mutableStateOf(false) }
             var showLocalScanModeDialog by remember { mutableStateOf(false) }
             var showScanPlaylistExportSheet by remember { mutableStateOf(false) }
@@ -1236,18 +1242,26 @@ fun LocalPlaylistDetailScreen(
                     showSearch,
                     selectionMode,
                     autoShowKeyboard,
-                    searchFieldComposed
+                    searchFieldComposed,
+                    searchFieldFocusInHeader
                 ) {
-                    if (shouldRequestPlaylistSearchFocus(
-                            showSearch,
-                            selectionMode,
-                            autoShowKeyboard
-                        ) && searchFieldComposed
-                    ) {
-                        delay(120)
-                        searchFocusRequester.requestFocus()
-                        keyboardController?.show()
-                    }
+                    if (!searchFieldComposed) return@LaunchedEffect
+                    val shouldAutoFocus = shouldRequestPlaylistSearchFocus(
+                        showSearch,
+                        selectionMode,
+                        autoShowKeyboard
+                    )
+                    val shouldTransferFocus = shouldTransferPlaylistSearchFocus(
+                        showSearch = showSearch,
+                        selectionMode = selectionMode,
+                        searchFieldComposed = searchFieldComposed,
+                        searchInputFocused = headerSearchFocused || dockedSearchFocused,
+                        searchQuery = searchQuery
+                    )
+                    if (!shouldAutoFocus && !shouldTransferFocus) return@LaunchedEffect
+                    if (shouldAutoFocus) delay(120)
+                    searchFocusRequester.requestFocus()
+                    keyboardController?.show()
                 }
                 Scaffold(
                 containerColor = Color.Transparent,
@@ -1466,6 +1480,8 @@ fun LocalPlaylistDetailScreen(
                                     query = searchQuery,
                                     onQueryChange = { searchQuery = it },
                                     placeholder = stringResource(R.string.search_playlist),
+                                    inputState = searchInputState,
+                                    onFocusChanged = { dockedSearchFocused = it },
                                     focusRequester = if (searchFieldFocusInHeader) {
                                         null
                                     } else {
@@ -1517,6 +1533,8 @@ fun LocalPlaylistDetailScreen(
                                                         query = searchQuery,
                                                         onQueryChange = { searchQuery = it },
                                                         placeholder = stringResource(R.string.search_playlist),
+                                                        inputState = searchInputState,
+                                                        onFocusChanged = { headerSearchFocused = it },
                                                         focusRequester = if (searchFieldFocusInHeader) {
                                                             searchFocusRequester
                                                         } else {

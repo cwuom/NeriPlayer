@@ -217,6 +217,12 @@ fun BiliPlaylistDetailScreen(
 
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var headerSearchFocused by remember { mutableStateOf(false) }
+    var dockedSearchFocused by remember { mutableStateOf(false) }
+    val searchInputState = rememberPlaylistSearchInputState(
+        query = searchQuery,
+        onQueryChange = { searchQuery = it }
+    )
     val searchFocusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -327,18 +333,26 @@ fun BiliPlaylistDetailScreen(
         showSearch,
         selectionMode,
         searchFieldComposed,
-        autoShowKeyboard
+        autoShowKeyboard,
+        searchFieldFocusInHeader
     ) {
-        if (shouldRequestPlaylistSearchFocus(
-                showSearch,
-                selectionMode,
-                autoShowKeyboard
-            ) && searchFieldComposed
-        ) {
-            delay(120)
-            searchFocusRequester.requestFocus()
-            keyboardController?.show()
-        }
+        if (!searchFieldComposed) return@LaunchedEffect
+        val shouldAutoFocus = shouldRequestPlaylistSearchFocus(
+            showSearch,
+            selectionMode,
+            autoShowKeyboard
+        )
+        val shouldTransferFocus = shouldTransferPlaylistSearchFocus(
+            showSearch = showSearch,
+            selectionMode = selectionMode,
+            searchFieldComposed = searchFieldComposed,
+            searchInputFocused = headerSearchFocused || dockedSearchFocused,
+            searchQuery = searchQuery
+        )
+        if (!shouldAutoFocus && !shouldTransferFocus) return@LaunchedEffect
+        if (shouldAutoFocus) delay(120)
+        searchFocusRequester.requestFocus()
+        keyboardController?.show()
     }
     fun playBiliPlaylist(shuffle: Boolean) {
         val startIndex = resolvePlaylistPlaybackStartIndex(
@@ -508,6 +522,8 @@ fun BiliPlaylistDetailScreen(
                     query = searchQuery,
                     onQueryChange = { searchQuery = it },
                     placeholder = stringResource(R.string.search_playlist),
+                    inputState = searchInputState,
+                    onFocusChanged = { dockedSearchFocused = it },
                     focusRequester = if (searchFieldFocusInHeader) {
                         null
                     } else {
@@ -558,6 +574,8 @@ fun BiliPlaylistDetailScreen(
                                                     query = searchQuery,
                                                     onQueryChange = { searchQuery = it },
                                                     placeholder = stringResource(R.string.search_playlist),
+                                                    inputState = searchInputState,
+                                                    onFocusChanged = { headerSearchFocused = it },
                                                     focusRequester = if (searchFieldFocusInHeader) {
                                                         searchFocusRequester
                                                     } else {

@@ -48,6 +48,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -64,6 +65,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -100,6 +103,19 @@ internal fun shouldRequestPlaylistSearchFocus(
     autoShowKeyboard: Boolean
 ): Boolean {
     return showSearch && !selectionMode && autoShowKeyboard
+}
+
+internal fun shouldTransferPlaylistSearchFocus(
+    showSearch: Boolean,
+    selectionMode: Boolean,
+    searchFieldComposed: Boolean,
+    searchInputFocused: Boolean,
+    searchQuery: String
+): Boolean {
+    return showSearch &&
+        !selectionMode &&
+        searchFieldComposed &&
+        (searchInputFocused || searchQuery.isNotBlank())
 }
 
 internal fun shouldShowPlaylistSearch(
@@ -231,23 +247,56 @@ internal fun resolvePlaylistSearchListTopPaddingPx(
     return (safeDockedSlotHeight * progress).toInt()
 }
 
+internal fun resolvePlaylistSearchInputSyncValue(
+    inputValue: TextFieldValue,
+    lastSynchronizedQuery: String,
+    query: String
+): TextFieldValue? {
+    return when {
+        inputValue.composition == null && inputValue.text == lastSynchronizedQuery -> TextFieldValue(
+            text = query,
+            selection = TextRange(query.length)
+        )
+        inputValue.composition == null &&
+            query.isBlank() &&
+            inputValue.text.isBlank() -> TextFieldValue(
+            text = query,
+            selection = TextRange.Zero
+        )
+        else -> null
+    }
+}
+
 @Composable
 internal fun rememberPlaylistSearchInputState(
     query: String,
     onQueryChange: (String) -> Unit,
     delayMillis: Long = 80L
-): MutableState<String> {
-    val inputState = remember { mutableStateOf(query) }
+): MutableState<TextFieldValue> {
+    val inputState = remember {
+        mutableStateOf(
+            TextFieldValue(
+                text = query,
+                selection = TextRange(query.length)
+            )
+        )
+    }
+    val lastSynchronizedQueryState = remember { mutableStateOf(query) }
     LaunchedEffect(query) {
-        if (query.isBlank() && inputState.value.isNotBlank()) {
-            inputState.value = ""
+        resolvePlaylistSearchInputSyncValue(
+            inputValue = inputState.value,
+            lastSynchronizedQuery = lastSynchronizedQueryState.value,
+            query = query
+        )?.let { synchronizedValue ->
+            inputState.value = synchronizedValue
         }
+        lastSynchronizedQueryState.value = query
     }
     LaunchedEffect(inputState.value) {
-        val pendingQuery = inputState.value
+        val pendingQuery = inputState.value.text
         if (pendingQuery == query) return@LaunchedEffect
         delay(delayMillis)
-        if (inputState.value == pendingQuery) {
+        if (inputState.value.text == pendingQuery) {
             onQueryChange(pendingQuery)
         }
     }
@@ -656,10 +705,12 @@ internal fun PlaylistModernStableSearchField(
     placeholder: String,
     focusRequester: FocusRequester?,
     dockedProgress: Float,
+    modifier: Modifier = Modifier,
     glassColor: Color? = null,
-    modifier: Modifier = Modifier
+    onFocusChanged: ((Boolean) -> Unit)? = null,
+    inputState: MutableState<TextFieldValue>? = null
 ) {
-    val inputState = rememberPlaylistSearchInputState(
+    val resolvedInputState = inputState ?: rememberPlaylistSearchInputState(
         query = query,
         onQueryChange = onQueryChange
     )
@@ -695,8 +746,8 @@ internal fun PlaylistModernStableSearchField(
         )
     val searchFieldContent: @Composable () -> Unit = {
         OutlinedTextField(
-            value = inputState.value,
-            onValueChange = { inputState.value = it },
+            value = resolvedInputState.value,
+            onValueChange = { resolvedInputState.value = it },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(PlaylistSearchFieldMinHeight)
@@ -706,7 +757,8 @@ internal fun PlaylistModernStableSearchField(
                     } else {
                         baseModifier.focusRequester(focusRequester)
                     }
-                },
+                }
+                .onFocusChanged { state -> onFocusChanged?.invoke(state.isFocused) },
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Filled.Search,
@@ -989,9 +1041,11 @@ internal fun PlaylistModernHeroSearchField(
     onQueryChange: (String) -> Unit,
     placeholder: String,
     modifier: Modifier = Modifier,
-    focusRequester: FocusRequester? = null
+    focusRequester: FocusRequester? = null,
+    onFocusChanged: ((Boolean) -> Unit)? = null,
+    inputState: MutableState<TextFieldValue>? = null
 ) {
-    val inputState = rememberPlaylistSearchInputState(
+    val resolvedInputState = inputState ?: rememberPlaylistSearchInputState(
         query = query,
         onQueryChange = onQueryChange
     )
@@ -1006,12 +1060,13 @@ internal fun PlaylistModernHeroSearchField(
         tintColor = Color.White.copy(alpha = 0.28f)
     ) {
         OutlinedTextField(
-            value = inputState.value,
-            onValueChange = { inputState.value = it },
+            value = resolvedInputState.value,
+            onValueChange = { resolvedInputState.value = it },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(PlaylistSearchFieldMinHeight)
-                .then(focusModifier),
+                .then(focusModifier)
+                .onFocusChanged { state -> onFocusChanged?.invoke(state.isFocused) },
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Filled.Search,
@@ -1051,9 +1106,11 @@ internal fun PlaylistModernDockedSearchField(
     onQueryChange: (String) -> Unit,
     placeholder: String,
     modifier: Modifier = Modifier,
-    focusRequester: FocusRequester? = null
+    focusRequester: FocusRequester? = null,
+    onFocusChanged: ((Boolean) -> Unit)? = null,
+    inputState: MutableState<TextFieldValue>? = null
 ) {
-    val inputState = rememberPlaylistSearchInputState(
+    val resolvedInputState = inputState ?: rememberPlaylistSearchInputState(
         query = query,
         onQueryChange = onQueryChange
     )
@@ -1091,12 +1148,13 @@ internal fun PlaylistModernDockedSearchField(
             tintColor = glassStyle.tintColor
         ) {
             OutlinedTextField(
-                value = inputState.value,
-                onValueChange = { inputState.value = it },
+                value = resolvedInputState.value,
+                onValueChange = { resolvedInputState.value = it },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(PlaylistSearchFieldMinHeight)
-                    .then(focusModifier),
+                    .then(focusModifier)
+                    .onFocusChanged { state -> onFocusChanged?.invoke(state.isFocused) },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Filled.Search,
@@ -1140,8 +1198,10 @@ internal fun PlaylistModernDockedSearchSlot(
     onQueryChange: (String) -> Unit,
     placeholder: String,
     focusRequester: FocusRequester?,
+    modifier: Modifier = Modifier,
+    onFocusChanged: ((Boolean) -> Unit)? = null,
     dockedProgress: Float = revealProgress,
-    modifier: Modifier = Modifier
+    inputState: MutableState<TextFieldValue>? = null
 ) {
     val slotProgress = revealProgress.coerceIn(0f, 1f)
     val slotAlpha = resolvePlaylistEasedProgress(slotProgress)
@@ -1181,13 +1241,15 @@ internal fun PlaylistModernDockedSearchSlot(
                 onQueryChange = onQueryChange,
                 placeholder = placeholder,
                 focusRequester = focusRequester,
+                onFocusChanged = onFocusChanged,
                 dockedProgress = dockedProgress,
                 glassColor = glassColor,
                 modifier = Modifier.graphicsLayer {
                     translationY = with(density) {
                         ((1f - slotAlpha) * -8.dp.toPx())
                     }
-                }
+                },
+                inputState = inputState
             )
         }
     }

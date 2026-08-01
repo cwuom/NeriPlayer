@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.ui.screen.playlist
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -40,6 +42,112 @@ class PlaylistSearchFocusPolicyTest {
                 showSearch = true,
                 selectionMode = false,
                 autoShowKeyboard = false
+            )
+        )
+    }
+
+    @Test
+    fun transfersFocusWhenScrolledSearchStillHasInput() {
+        assertTrue(
+            shouldTransferPlaylistSearchFocus(
+                showSearch = true,
+                selectionMode = false,
+                searchFieldComposed = true,
+                searchInputFocused = false,
+                searchQuery = "已输入的内容"
+            )
+        )
+        assertTrue(
+            shouldTransferPlaylistSearchFocus(
+                showSearch = true,
+                selectionMode = false,
+                searchFieldComposed = true,
+                searchInputFocused = true,
+                searchQuery = ""
+            )
+        )
+        assertFalse(
+            shouldTransferPlaylistSearchFocus(
+                showSearch = true,
+                selectionMode = false,
+                searchFieldComposed = true,
+                searchInputFocused = false,
+                searchQuery = ""
+            )
+        )
+        assertFalse(
+            shouldTransferPlaylistSearchFocus(
+                showSearch = true,
+                selectionMode = true,
+                searchFieldComposed = true,
+                searchInputFocused = true,
+                searchQuery = "内容"
+            )
+        )
+    }
+
+    @Test
+    fun synchronizesUntouchedSearchNodeWithoutOverwritingActiveTyping() {
+        assertEquals(
+            TextFieldValue(
+                text = "最新查询",
+                selection = TextRange("最新查询".length)
+            ),
+            resolvePlaylistSearchInputSyncValue(
+                inputValue = TextFieldValue(
+                    text = "",
+                    selection = TextRange.Zero
+                ),
+                lastSynchronizedQuery = "",
+                query = "最新查询"
+            )
+        )
+        assertEquals(
+            TextFieldValue(
+                text = "",
+                selection = TextRange.Zero
+            ),
+            resolvePlaylistSearchInputSyncValue(
+                inputValue = TextFieldValue(
+                    text = "旧内容",
+                    selection = TextRange(1)
+                ),
+                lastSynchronizedQuery = "旧内容",
+                query = ""
+            )
+        )
+        assertEquals(
+            null,
+            resolvePlaylistSearchInputSyncValue(
+                inputValue = TextFieldValue(
+                    text = "正在输入",
+                    selection = TextRange(2)
+                ),
+                lastSynchronizedQuery = "旧查询",
+                query = "旧查询"
+            )
+        )
+        assertEquals(
+            null,
+            resolvePlaylistSearchInputSyncValue(
+                inputValue = TextFieldValue(
+                    text = "正在输入",
+                    selection = TextRange(2)
+                ),
+                lastSynchronizedQuery = "旧查询",
+                query = ""
+            )
+        )
+        assertEquals(
+            null,
+            resolvePlaylistSearchInputSyncValue(
+                inputValue = TextFieldValue(
+                    text = "拼音",
+                    selection = TextRange(2),
+                    composition = TextRange(0, 2)
+                ),
+                lastSynchronizedQuery = "拼音",
+                query = "最新查询"
             )
         )
     }
