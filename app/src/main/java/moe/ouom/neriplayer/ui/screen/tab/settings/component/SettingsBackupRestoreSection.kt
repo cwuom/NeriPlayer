@@ -81,7 +81,9 @@ import moe.ouom.neriplayer.data.sync.SyncPreferences
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.ui.viewmodel.ConfigTransferUiState
 import moe.ouom.neriplayer.ui.viewmodel.BackupRestoreUiState
+import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncUiState
 import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncViewModel
+import moe.ouom.neriplayer.ui.viewmodel.WebDavSyncUiState
 import moe.ouom.neriplayer.ui.viewmodel.WebDavSyncViewModel
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
@@ -138,45 +140,78 @@ internal fun SettingsBackupRestoreSection(
         )
     }
 
-    LazyAnimatedVisibility(
-        visible = expanded || !showHeader,
-        enter = fadeIn() + expandVertically(),
-        exit = fadeOut() + shrinkVertically()
-    ) {
+    val content: @Composable () -> Unit = {
         val context = androidx.compose.ui.platform.LocalContext.current
-        val githubVm: GitHubSyncViewModel = viewModel()
-        val webDavVm: WebDavSyncViewModel = viewModel()
-        val githubState by githubVm.uiState.collectAsStateWithLifecycleCompat()
-        val webDavState by webDavVm.uiState.collectAsStateWithLifecycleCompat()
+        val needsGitHubState = shouldShowCard(2) || shouldShowCard(4)
+        val needsWebDavState = shouldShowCard(3) || shouldShowCard(4)
+        val needsPlayHistoryMode = shouldShowCard(1)
+        val needsDataSaverMode = shouldShowCard(2)
+        val githubVm: GitHubSyncViewModel? = if (needsGitHubState) {
+            viewModel<GitHubSyncViewModel>()
+        } else {
+            null
+        }
+        val webDavVm: WebDavSyncViewModel? = if (needsWebDavState) {
+            viewModel<WebDavSyncViewModel>()
+        } else {
+            null
+        }
+        val githubState = if (githubVm != null) {
+            githubVm.uiState.collectAsStateWithLifecycleCompat().value
+        } else {
+            GitHubSyncUiState()
+        }
+        val webDavState = if (webDavVm != null) {
+            webDavVm.uiState.collectAsStateWithLifecycleCompat().value
+        } else {
+            WebDavSyncUiState()
+        }
         var showPlayHistoryModeDialog by remember { mutableStateOf(false) }
         var showConfigExportWarningDialog by remember { mutableStateOf(false) }
-        val storage = remember(context) { SecureTokenStorage(context) }
-        val syncPreferences = remember(context) { SyncPreferences(context) }
+        val storage = if (needsPlayHistoryMode || needsDataSaverMode) {
+            remember(context) { SecureTokenStorage(context) }
+        } else {
+            null
+        }
+        val syncPreferences = if (needsPlayHistoryMode) {
+            remember(context) { SyncPreferences(context) }
+        } else {
+            null
+        }
         val currentMode = remember(storage, syncPreferences) {
             mutableStateOf(
-                syncPreferences.getUpdateMode(storage.getLegacyPlayHistoryUpdateModeName())
+                syncPreferences?.getUpdateMode(storage?.getLegacyPlayHistoryUpdateModeName())
+                    ?: PlayHistoryUpdateMode.IMMEDIATE
             )
         }
-        var dataSaverMode by remember { mutableStateOf(storage.isDataSaverMode()) }
+        var dataSaverMode by remember(storage) {
+            mutableStateOf(storage?.isDataSaverMode() ?: true)
+        }
         var pendingDataSaverMode by remember { mutableStateOf<Boolean?>(null) }
 
-        LaunchedEffect(githubVm, context) {
-            githubVm.initialize(context)
+        githubVm?.let { viewModel ->
+            LaunchedEffect(viewModel, context) {
+                viewModel.initialize(context)
+            }
         }
-        LaunchedEffect(webDavVm, context) {
-            webDavVm.initialize(context)
+        webDavVm?.let { viewModel ->
+            LaunchedEffect(viewModel, context) {
+                viewModel.initialize(context)
+            }
         }
         LaunchedEffect(
             configTransferUiState.isImporting,
             configTransferUiState.lastImportSuccess
         ) {
             if (!configTransferUiState.isImporting && configTransferUiState.lastImportSuccess == true) {
-                githubVm.initialize(context)
-                webDavVm.initialize(context)
-                currentMode.value = syncPreferences.getUpdateMode(
-                    storage.getLegacyPlayHistoryUpdateModeName()
-                )
-                dataSaverMode = storage.isDataSaverMode()
+                githubVm?.initialize(context)
+                webDavVm?.initialize(context)
+                if (syncPreferences != null) {
+                    currentMode.value = syncPreferences.getUpdateMode(
+                        storage?.getLegacyPlayHistoryUpdateModeName()
+                    )
+                }
+                dataSaverMode = storage?.isDataSaverMode() ?: dataSaverMode
                 pendingDataSaverMode = null
             }
         }
@@ -192,7 +227,6 @@ internal fun SettingsBackupRestoreSection(
                 )
         ) {
             val localBackupTargets = setOf("manual:backup_local")
-            val historyTargets = setOf("manual:backup_history")
             val messageTargets = setOf("manual:backup_messages")
             val isSyncConfigDialogOpen = showGitHubConfigDialog || showWebDavConfigDialog
             val hasSyncMessage =
@@ -245,7 +279,14 @@ internal fun SettingsBackupRestoreSection(
                 },
                 headlineContent = { Text(stringResource(R.string.playlist_export)) },
                 supportingContent = { Text(stringResource(R.string.playlist_export_desc)) },
-                modifier = Modifier.settingsItemClickable(onClick = onExportClick),
+                modifier = Modifier
+                    .settingsHighlightTarget(
+                        targetId = "manual:playlist_export",
+                        highlightTargetId = highlightTargetId,
+                        highlightPulse = highlightPulse,
+                        onHighlightFinished = onHighlightFinished
+                    )
+                    .settingsItemClickable(onClick = onExportClick),
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
             )
 
@@ -259,7 +300,14 @@ internal fun SettingsBackupRestoreSection(
                 },
                 headlineContent = { Text(stringResource(R.string.playlist_import)) },
                 supportingContent = { Text(stringResource(R.string.playlist_import_desc)) },
-                modifier = Modifier.settingsItemClickable(onClick = onImportClick),
+                modifier = Modifier
+                    .settingsHighlightTarget(
+                        targetId = "manual:playlist_import",
+                        highlightTargetId = highlightTargetId,
+                        highlightPulse = highlightPulse,
+                        onHighlightFinished = onHighlightFinished
+                    )
+                    .settingsItemClickable(onClick = onImportClick),
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
             )
 
@@ -273,11 +321,18 @@ internal fun SettingsBackupRestoreSection(
                 },
                 headlineContent = { Text(stringResource(R.string.settings_export_config)) },
                 supportingContent = { Text(stringResource(R.string.settings_export_config_desc)) },
-                modifier = Modifier.settingsItemClickable {
-                    if (!configTransferUiState.isExporting) {
-                        showConfigExportWarningDialog = true
-                    }
-                },
+                modifier = Modifier
+                    .settingsHighlightTarget(
+                        targetId = "manual:config_export",
+                        highlightTargetId = highlightTargetId,
+                        highlightPulse = highlightPulse,
+                        onHighlightFinished = onHighlightFinished
+                    )
+                    .settingsItemClickable {
+                        if (!configTransferUiState.isExporting) {
+                            showConfigExportWarningDialog = true
+                        }
+                    },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
             )
 
@@ -291,7 +346,14 @@ internal fun SettingsBackupRestoreSection(
                 },
                 headlineContent = { Text(stringResource(R.string.settings_import_config)) },
                 supportingContent = { Text(stringResource(R.string.settings_import_config_desc)) },
-                modifier = Modifier.settingsItemClickable(onClick = onImportConfigClick),
+                modifier = Modifier
+                    .settingsHighlightTarget(
+                        targetId = "manual:config_import",
+                        highlightTargetId = highlightTargetId,
+                        highlightPulse = highlightPulse,
+                        onHighlightFinished = onHighlightFinished
+                    )
+                    .settingsItemClickable(onClick = onImportConfigClick),
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
             )
 
@@ -431,7 +493,7 @@ internal fun SettingsBackupRestoreSection(
             if (cardIndex == null) BackupDetailGap(showHeader)
             if (shouldShowCard(1)) BackupDetailCard(
                 showCard = !showHeader,
-                highlighted = highlightTargetId in historyTargets,
+                highlighted = false,
                 highlightPulse = highlightPulse,
                 onHighlightFinished = onHighlightFinished
             ) {
@@ -452,9 +514,16 @@ internal fun SettingsBackupRestoreSection(
                 supportingContent = {
                     Text(playHistoryUpdateModeSummary(currentMode.value))
                 },
-                modifier = Modifier.settingsItemClickable {
-                    showPlayHistoryModeDialog = true
-                },
+                modifier = Modifier
+                    .settingsHighlightTarget(
+                        targetId = "manual:backup_history",
+                        highlightTargetId = highlightTargetId,
+                        highlightPulse = highlightPulse,
+                        onHighlightFinished = onHighlightFinished
+                    )
+                    .settingsItemClickable {
+                        showPlayHistoryModeDialog = true
+                    },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
             )
 
@@ -534,7 +603,7 @@ internal fun SettingsBackupRestoreSection(
                     trailingContent = {
                         MiuixSettingsSwitch(
                             checked = githubState.autoSyncEnabled,
-                            onCheckedChange = { githubVm.toggleAutoSync(context, it) }
+                            onCheckedChange = { githubVm?.toggleAutoSync(context, it) }
                         )
                     },
                     modifier = Modifier.settingsHighlightTarget(
@@ -574,7 +643,7 @@ internal fun SettingsBackupRestoreSection(
                                 strokeWidth = 2.dp
                             )
                         } else {
-                            MiuixSettingsTextButton(onClick = { githubVm.performSync(context) }) {
+                            MiuixSettingsTextButton(onClick = { githubVm?.performSync(context) }) {
                                 Text(stringResource(R.string.sync_title))
                             }
                         }
@@ -701,7 +770,7 @@ internal fun SettingsBackupRestoreSection(
                     trailingContent = {
                         MiuixSettingsSwitch(
                             checked = webDavState.autoSyncEnabled,
-                            onCheckedChange = { webDavVm.toggleAutoSync(context, it) }
+                            onCheckedChange = { webDavVm?.toggleAutoSync(context, it) }
                         )
                     },
                     modifier = Modifier.settingsHighlightTarget(
@@ -741,7 +810,7 @@ internal fun SettingsBackupRestoreSection(
                                 strokeWidth = 2.dp
                             )
                         } else {
-                            MiuixSettingsTextButton(onClick = { webDavVm.performSync(context) }) {
+                            MiuixSettingsTextButton(onClick = { webDavVm?.performSync(context) }) {
                                 Text(stringResource(R.string.sync_title))
                             }
                         }
@@ -778,7 +847,7 @@ internal fun SettingsBackupRestoreSection(
                         SyncMessageCard(
                             message = error,
                             isSuccess = false,
-                            onClose = githubVm::clearMessages
+                            onClose = { githubVm?.clearMessages() }
                         )
                     }
 
@@ -786,7 +855,7 @@ internal fun SettingsBackupRestoreSection(
                         SyncMessageCard(
                             message = message,
                             isSuccess = true,
-                            onClose = githubVm::clearMessages
+                            onClose = { githubVm?.clearMessages() }
                         )
                     }
 
@@ -794,7 +863,7 @@ internal fun SettingsBackupRestoreSection(
                         SyncMessageCard(
                             message = error,
                             isSuccess = false,
-                            onClose = webDavVm::clearMessages
+                            onClose = { webDavVm?.clearMessages() }
                         )
                     }
 
@@ -802,7 +871,7 @@ internal fun SettingsBackupRestoreSection(
                         SyncMessageCard(
                             message = message,
                             isSuccess = true,
-                            onClose = webDavVm::clearMessages
+                            onClose = { webDavVm?.clearMessages() }
                         )
                     }
                 }
@@ -814,7 +883,7 @@ internal fun SettingsBackupRestoreSection(
                 currentMode = currentMode.value,
                 onDismiss = { showPlayHistoryModeDialog = false },
                 onSelect = { mode ->
-                    syncPreferences.setUpdateMode(mode)
+                    syncPreferences?.setUpdateMode(mode)
                     currentMode.value = mode
                     showPlayHistoryModeDialog = false
                 }
@@ -863,7 +932,7 @@ internal fun SettingsBackupRestoreSection(
                         onClick = {
                             val enabled = pendingDataSaverMode ?: return@MiuixSettingsTextButton
                             dataSaverMode = enabled
-                            storage.setDataSaverMode(enabled)
+                            storage?.setDataSaverMode(enabled)
                             pendingDataSaverMode = null
                         }
                     ) {
@@ -877,6 +946,18 @@ internal fun SettingsBackupRestoreSection(
                 }
             )
         }
+    }
+
+    if (showHeader) {
+        LazyAnimatedVisibility(
+            visible = expanded,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            content()
+        }
+    } else {
+        content()
     }
 }
 

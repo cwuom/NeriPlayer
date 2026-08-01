@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.data.config
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class AppConfigBackupCodecTest {
@@ -76,5 +78,53 @@ class AppConfigBackupCodecTest {
 
         assertTrue(fileName.startsWith("neriplayer_config_"))
         assertTrue(fileName.endsWith(".json"))
+    }
+
+    @Test
+    fun `decode rejects unrelated json without config marker`() {
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            AppConfigBackupCodec.decode("""{"hello":"world"}""")
+        }
+
+        assertTrue(error.message.orEmpty().contains("NeriPlayer config"))
+    }
+
+    @Test
+    fun `decode rejects config marker without restorable sections`() {
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            AppConfigBackupCodec.decode(
+                """
+                {
+                  "kind": "moe.ouom.neriplayer.config",
+                  "formatVersion": 1,
+                  "exportedAt": 1717171717
+                }
+                """.trimIndent()
+            )
+        }
+
+        assertTrue(error.message.orEmpty().contains("no restorable content"))
+    }
+
+    @Test
+    fun `decode for import reports raw top level sections`() {
+        val decoded = AppConfigBackupCodec.decodeForImport(
+            """
+            {
+              "kind": "moe.ouom.neriplayer.config",
+              "formatVersion": 1,
+              "settings": {
+                "booleans": {
+                  "dynamic_color": false
+                }
+              }
+            }
+            """.trimIndent()
+        )
+
+        assertTrue(decoded.sections.settings)
+        assertFalse(decoded.sections.listenTogether)
+        assertFalse(decoded.sections.neteaseAuth)
+        assertEquals(false, decoded.payload.settings.booleans["dynamic_color"])
     }
 }

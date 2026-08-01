@@ -92,39 +92,69 @@ class ConfigFileManager(private val context: Context) {
     suspend fun importConfig(uri: Uri): Result<AppConfigImportResult> = withContext(Dispatchers.IO) {
         try {
             val raw = LimitedTextReader.readUtf8(context, uri, MAX_CONFIG_IMPORT_BYTES)
-            val payload = AppConfigBackupCodec.decode(raw)
+            val decoded = AppConfigBackupCodec.decodeForImport(raw)
+            val payload = decoded.payload
+            val sections = decoded.sections
             SyncCoordinator.withExclusive {
                 val warnings = mutableListOf<String>()
 
-                val sanitizedSettings = ConfigSettingsSanitizer(context).sanitize(payload.settings, warnings)
-                restoreSettings(sanitizedSettings)
-                AppContainer.listenTogetherPreferences.restore(payload.listenTogether)
+                val sanitizedSettings = if (sections.settings) {
+                    ConfigSettingsSanitizer(context).sanitize(payload.settings, warnings)
+                } else {
+                    TypedPreferenceSnapshot()
+                }
+                if (sections.settings) {
+                    restoreSettings(sanitizedSettings)
+                }
+                if (sections.listenTogether) {
+                    AppContainer.listenTogetherPreferences.restore(payload.listenTogether)
+                }
 
                 val currentLanguage = LanguageManager.getCurrentLanguage(context)
-                val importedLanguage = payload.language.toLanguageOrNull()
+                val importedLanguage = if (sections.language) {
+                    payload.language.toLanguageOrNull()
+                } else {
+                    null
+                }
                 if (importedLanguage != null) {
                     LanguageManager.setLanguage(context, importedLanguage)
                 }
 
-                val restoredAuthCount = restoreAuth(payload, warnings)
+                val restoredAuthCount = restoreAuth(payload, sections, warnings)
                 val gitHubStorage = SecureTokenStorage(context)
                 val webDavStorage = WebDavStorage(context)
                 val syncPreferences = SyncPreferences(context)
-                syncPreferences.restore(
-                    snapshot = payload.syncPreferences,
-                    legacyModeName = payload.gitHubSync.playHistoryUpdateMode
-                )
-                gitHubStorage.restore(payload.gitHubSync)
-                webDavStorage.restore(payload.webDavSync)
-                gitHubStorage.markSyncMutation()
-                reconcileSyncWorkers(gitHubStorage, webDavStorage)
+                val hasLegacyPlayHistoryMode = sections.gitHubSync &&
+                    payload.gitHubSync.playHistoryUpdateMode.isNotBlank()
+                if (sections.syncPreferences || hasLegacyPlayHistoryMode) {
+                    syncPreferences.restore(
+                        snapshot = payload.syncPreferences,
+                        legacyModeName = payload.gitHubSync.playHistoryUpdateMode
+                    )
+                }
+                if (sections.gitHubSync) {
+                    gitHubStorage.restore(payload.gitHubSync)
+                }
+                if (sections.webDavSync) {
+                    webDavStorage.restore(payload.webDavSync)
+                }
+                if (sections.hasSyncSection) {
+                    gitHubStorage.markSyncMutation()
+                }
+                if (sections.gitHubSync || sections.webDavSync) {
+                    reconcileSyncWorkers(gitHubStorage, webDavStorage)
+                }
 
                 Result.success(
                     AppConfigImportResult(
                         restoredSettingsCount = sanitizedSettings.entryCount(),
-                        restoredListenTogetherCount = payload.listenTogether.entryCount(),
+                        restoredListenTogetherCount = if (sections.listenTogether) {
+                            payload.listenTogether.entryCount()
+                        } else {
+                            0
+                        },
                         restoredAuthCount = restoredAuthCount,
-                        restoredSyncCount = payload.syncSectionCount(),
+                        restoredSyncCount = payload.syncSectionCount(sections),
                         warnings = warnings,
                         requiresActivityRecreate = importedLanguage != null && importedLanguage != currentLanguage
                     )
@@ -170,38 +200,48 @@ class ConfigFileManager(private val context: Context) {
         persistPlaybackPreferenceSnapshot(context, restoredPrefs.toPlaybackPreferenceSnapshot())
     }
 
-    private fun restoreAuth(payload: AppConfigBackup, warnings: MutableList<String>): Int {
+    private fun restoreAuth(
+        payload: AppConfigBackup,
+        sections: AppConfigBackupSections,
+        warnings: MutableList<String>
+    ): Int {
         var restoredCount = 0
 
-        if (payload.neteaseAuth.hasData()) {
-            val saved = AppContainer.neteaseCookieRepo.saveCookies(
-                cookies = payload.neteaseAuth.cookies,
-                savedAt = payload.neteaseAuth.savedAt.takeIf { it > 0L } ?: System.currentTimeMillis()
-            )
-            if (!saved) {
-                warnings += context.getString(R.string.config_import_warning_netease_cookie)
+        if (sections.neteaseAuth) {
+            if (payload.neteaseAuth.hasData()) {
+                val saved = AppContainer.neteaseCookieRepo.saveCookies(
+                    cookies = payload.neteaseAuth.cookies,
+                    savedAt = payload.neteaseAuth.savedAt.takeIf { it > 0L } ?: System.currentTimeMillis()
+                )
+                if (!saved) {
+                    warnings += context.getString(R.string.config_import_warning_netease_cookie)
+                } else {
+                    restoredCount++
+                }
             } else {
-                restoredCount++
+                AppContainer.neteaseCookieRepo.clear()
             }
-        } else {
-            AppContainer.neteaseCookieRepo.clear()
         }
 
-        if (payload.biliAuth.hasData()) {
-            AppContainer.biliCookieRepo.saveCookies(
-                cookies = payload.biliAuth.cookies,
-                savedAt = payload.biliAuth.savedAt.takeIf { it > 0L } ?: System.currentTimeMillis()
-            )
-            restoredCount++
-        } else {
-            AppContainer.biliCookieRepo.clear()
+        if (sections.biliAuth) {
+            if (payload.biliAuth.hasData()) {
+                AppContainer.biliCookieRepo.saveCookies(
+                    cookies = payload.biliAuth.cookies,
+                    savedAt = payload.biliAuth.savedAt.takeIf { it > 0L } ?: System.currentTimeMillis()
+                )
+                restoredCount++
+            } else {
+                AppContainer.biliCookieRepo.clear()
+            }
         }
 
-        if (payload.youTubeAuth.hasData()) {
-            AppContainer.youtubeAuthRepo.saveAuth(payload.youTubeAuth.toAuthBundle())
-            restoredCount++
-        } else {
-            AppContainer.youtubeAuthRepo.clear()
+        if (sections.youTubeAuth) {
+            if (payload.youTubeAuth.hasData()) {
+                AppContainer.youtubeAuthRepo.saveAuth(payload.youTubeAuth.toAuthBundle())
+                restoredCount++
+            } else {
+                AppContainer.youtubeAuthRepo.clear()
+            }
         }
 
         return restoredCount
@@ -247,8 +287,12 @@ private fun Preferences.toTypedPreferenceSnapshot(): TypedPreferenceSnapshot {
     )
 }
 
-private fun AppConfigBackup.syncSectionCount(): Int {
-    return listOf(gitHubSync.hasData(), webDavSync.hasData(), syncPreferences.hasData()).count { it }
+private fun AppConfigBackup.syncSectionCount(sections: AppConfigBackupSections): Int {
+    return listOf(
+        sections.gitHubSync && gitHubSync.hasData(),
+        sections.webDavSync && webDavSync.hasData(),
+        sections.syncPreferences && syncPreferences.hasData()
+    ).count { it }
 }
 
 private fun LanguageConfigSnapshot.toLanguageOrNull(): LanguageManager.Language? {

@@ -245,6 +245,10 @@ private fun storageCardIndex(targetId: String): Int {
 
 private fun backupCardIndex(targetId: String): Int {
     return when (targetId) {
+        "manual:playlist_export",
+        "manual:playlist_import",
+        "manual:config_export",
+        "manual:config_import" -> 0
         "manual:backup_history" -> 1
         "manual:github_sync",
         "manual:github_auto_sync",
@@ -352,7 +356,7 @@ private fun SettingsPage.searchAliases(): List<String> {
     return PageSearchAliases[this].orEmpty()
 }
 
-private fun manualSettingsSearchEntries(context: Context): List<SettingsSearchEntry> {
+internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchEntry> {
     fun entry(
         page: SettingsPage,
         titleRes: Int,
@@ -510,6 +514,88 @@ private fun manualSettingsSearchEntries(context: Context): List<SettingsSearchEn
             descriptionRes = R.string.settings_theme_color_desc,
             id = "theme_seed_color",
             aliases = listOf("accent", "seed", "custom color", "zhutise", "yanse")
+        ),
+        entry(
+            page = SettingsPage.Backup,
+            titleRes = R.string.playlist_export,
+            descriptionRes = R.string.playlist_export_desc,
+            id = "playlist_export",
+            aliases = listOf(
+                "导出歌单",
+                "歌单导出",
+                "备份歌单",
+                "导出播放列表",
+                "playlist export",
+                "export playlist",
+                "daochugedan",
+                "dcgd",
+                "beifengedan",
+                "bfgd"
+            ),
+            targetId = "manual:playlist_export",
+            order = SettingsPage.Backup.ordinal * 100 + 10
+        ),
+        entry(
+            page = SettingsPage.Backup,
+            titleRes = R.string.playlist_import,
+            descriptionRes = R.string.playlist_import_desc,
+            id = "playlist_import",
+            aliases = listOf(
+                "导入歌单",
+                "歌单导入",
+                "恢复歌单",
+                "导入播放列表",
+                "playlist import",
+                "import playlist",
+                "daorugedan",
+                "drgd",
+                "huifugedan",
+                "hfgd"
+            ),
+            targetId = "manual:playlist_import",
+            order = SettingsPage.Backup.ordinal * 100 + 12
+        ),
+        entry(
+            page = SettingsPage.Backup,
+            titleRes = R.string.settings_export_config,
+            descriptionRes = R.string.settings_export_config_desc,
+            id = "config_export",
+            aliases = listOf(
+                "导出配置",
+                "配置导出",
+                "备份配置",
+                "导出设置",
+                "config export",
+                "export config",
+                "settings backup",
+                "daochupeizhi",
+                "dcpz",
+                "beifenpeizhi",
+                "bfpz"
+            ),
+            targetId = "manual:config_export",
+            order = SettingsPage.Backup.ordinal * 100 + 14
+        ),
+        entry(
+            page = SettingsPage.Backup,
+            titleRes = R.string.settings_import_config,
+            descriptionRes = R.string.settings_import_config_desc,
+            id = "config_import",
+            aliases = listOf(
+                "导入配置",
+                "配置导入",
+                "恢复配置",
+                "导入设置",
+                "config import",
+                "import config",
+                "settings restore",
+                "daorupeizhi",
+                "drpz",
+                "huifupeizhi",
+                "hfpz"
+            ),
+            targetId = "manual:config_import",
+            order = SettingsPage.Backup.ordinal * 100 + 16
         ),
         entry(
             page = SettingsPage.Backup,

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.page
 
+import android.content.Context
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSections
@@ -9,6 +10,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.mockito.Mockito
+import org.mockito.stubbing.Answer
 
 class SettingsPageTest {
     @Test
@@ -344,6 +347,34 @@ class SettingsPageTest {
     @Test
     fun backupSearchUsesProviderCardAnchors() {
         assertEquals(
+            1,
+            settingsSearchScrollAnchor(
+                page = SettingsPage.Backup,
+                targetId = "manual:playlist_export"
+            ).itemIndex
+        )
+        assertEquals(
+            1,
+            settingsSearchScrollAnchor(
+                page = SettingsPage.Backup,
+                targetId = "manual:playlist_import"
+            ).itemIndex
+        )
+        assertEquals(
+            1,
+            settingsSearchScrollAnchor(
+                page = SettingsPage.Backup,
+                targetId = "manual:config_export"
+            ).itemIndex
+        )
+        assertEquals(
+            1,
+            settingsSearchScrollAnchor(
+                page = SettingsPage.Backup,
+                targetId = "manual:config_import"
+            ).itemIndex
+        )
+        assertEquals(
             2,
             settingsSearchScrollAnchor(
                 page = SettingsPage.Backup,
@@ -384,6 +415,28 @@ class SettingsPageTest {
                 page = SettingsPage.Backup,
                 targetId = "manual:webdav_auto_sync"
             ).itemIndex
+        )
+    }
+
+    @Test
+    fun backupImportExportActionsAreSearchable() {
+        val entries = manualSettingsSearchEntries(settingsStringContext())
+
+        assertEquals(
+            listOf("manual:playlist_export"),
+            searchSettingsEntries(entries, "导出歌单").map { it.targetId }
+        )
+        assertEquals(
+            listOf("manual:playlist_import"),
+            searchSettingsEntries(entries, "drgd").map { it.targetId }
+        )
+        assertEquals(
+            listOf("manual:config_export"),
+            searchSettingsEntries(entries, "导出配置").map { it.targetId }
+        )
+        assertEquals(
+            listOf("manual:config_import"),
+            searchSettingsEntries(entries, "drpz").map { it.targetId }
         )
     }
 
@@ -579,5 +632,29 @@ class SettingsPageTest {
         val results = searchSettingsEntries(entries, "github")
 
         assertEquals(listOf("page:About"), results.map { it.id })
+    }
+
+    private fun settingsStringContext(): Context {
+        return Mockito.mock(Context::class.java, Answer { invocation ->
+            val resourceId = invocation.arguments.firstOrNull() as? Int
+            if (invocation.method.name == "getString" && resourceId != null) {
+                TestSettingsStrings[resourceId] ?: "res:$resourceId"
+            } else {
+                Mockito.RETURNS_DEFAULTS.answer(invocation)
+            }
+        })
+    }
+
+    private companion object {
+        val TestSettingsStrings = mapOf(
+            R.string.playlist_export to "导出歌单",
+            R.string.playlist_import to "导入歌单",
+            R.string.playlist_export_desc to "将歌单导出为备份文件",
+            R.string.playlist_import_desc to "从备份文件恢复歌单",
+            R.string.settings_export_config to "导出配置文件",
+            R.string.settings_import_config to "导入配置文件",
+            R.string.settings_export_config_desc to "导出设置、登录信息和同步配置",
+            R.string.settings_import_config_desc to "从配置文件恢复设置、登录信息和同步配置"
+        )
     }
 }
