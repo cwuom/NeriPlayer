@@ -885,6 +885,27 @@ internal fun resolvePlaylistTranslucentTopBarColor(
     return playlistColor.copy(alpha = alpha)
 }
 
+internal fun resolvePlaylistSelectionTopBarColor(
+    playlistColor: Color,
+    collapseProgress: Float
+): Color {
+    val progress = collapseProgress.coerceIn(0f, 1f)
+    return if (progress < 1f) playlistColor else Color.Transparent
+}
+
+internal fun resolvePlaylistSelectionTopBarContentColor(
+    playlistColor: Color,
+    collapsedContentColor: Color,
+    collapseProgress: Float
+): Color {
+    val progress = collapseProgress.coerceIn(0f, 1f)
+    return if (progress < 1f) {
+        resolvePlaylistSolidTopBarContentColor(playlistColor)
+    } else {
+        collapsedContentColor
+    }
+}
+
 @Composable
 internal fun playlistModernListPrimaryContentColor(): Color {
     return if (playlistModernUsesDarkSurface()) {

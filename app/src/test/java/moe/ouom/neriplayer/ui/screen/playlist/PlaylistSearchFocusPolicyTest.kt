@@ -271,6 +271,50 @@ class PlaylistSearchFocusPolicyTest {
     }
 
     @Test
+    fun keepsSelectionTopBarSolidUntilPlaylistHeaderScrollsAway() {
+        val playlistColor = Color(0xFF70523D)
+        val collapsedContentColor = Color(0xFF191712)
+
+        assertEquals(
+            playlistColor.toArgb(),
+            resolvePlaylistSelectionTopBarColor(
+                playlistColor = playlistColor,
+                collapseProgress = 0f
+            ).toArgb()
+        )
+        assertEquals(
+            playlistColor.toArgb(),
+            resolvePlaylistSelectionTopBarColor(
+                playlistColor = playlistColor,
+                collapseProgress = 0.75f
+            ).toArgb()
+        )
+        assertEquals(
+            Color.Transparent.toArgb(),
+            resolvePlaylistSelectionTopBarColor(
+                playlistColor = playlistColor,
+                collapseProgress = 1f
+            ).toArgb()
+        )
+        assertEquals(
+            resolvePlaylistSolidTopBarContentColor(playlistColor).toArgb(),
+            resolvePlaylistSelectionTopBarContentColor(
+                playlistColor = playlistColor,
+                collapsedContentColor = collapsedContentColor,
+                collapseProgress = 0.75f
+            ).toArgb()
+        )
+        assertEquals(
+            collapsedContentColor.toArgb(),
+            resolvePlaylistSelectionTopBarContentColor(
+                playlistColor = playlistColor,
+                collapsedContentColor = collapsedContentColor,
+                collapseProgress = 1f
+            ).toArgb()
+        )
+    }
+
+    @Test
     fun revealsDockedSearchOnlyAfterActionBarHasScrolledAway() {
         assertEquals(
             0f,

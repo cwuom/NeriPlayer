@@ -451,6 +451,15 @@ fun DetailScreen(
         end = playlistModernCollapsedTopBarContentColor(),
         fraction = playlistChromeVisualProgress
     )
+    val playlistSelectionTopBarColor = resolvePlaylistSelectionTopBarColor(
+        playlistColor = playlistChromeColor,
+        collapseProgress = playlistChromeCollapseProgress
+    )
+    val playlistSelectionTopBarContentColor = resolvePlaylistSelectionTopBarContentColor(
+        playlistColor = playlistChromeColor,
+        collapsedContentColor = playlistModernCollapsedTopBarContentColor(),
+        collapseProgress = playlistChromeCollapseProgress
+    )
     val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsState(
         initial = false
     )
@@ -637,8 +646,11 @@ fun DetailScreen(
                             },
                             windowInsets = WindowInsets.statusBars,
                             colors = TopAppBarDefaults.topAppBarColors(
-                                containerColor = Color.Transparent,
-                                scrolledContainerColor = MaterialTheme.colorScheme.surface
+                                containerColor = playlistSelectionTopBarColor,
+                                scrolledContainerColor = playlistSelectionTopBarColor,
+                                titleContentColor = playlistSelectionTopBarContentColor,
+                                navigationIconContentColor = playlistSelectionTopBarContentColor,
+                                actionIconContentColor = playlistSelectionTopBarContentColor
                             )
                         )
                     }
