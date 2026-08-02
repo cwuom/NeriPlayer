@@ -61,7 +61,7 @@ class PlayerManagerNeteaseLocalFallbackTest {
     }
 
     @Test
-    fun select_ignoresLocalSongsWithoutMatchedInfo() {
+    fun select_acceptsMetadataOnlyLocalSongAsRestrictedFallback() {
         val song = neteaseSong(id = 123L, name = "晴天", artist = "周杰伦", durationMs = 269_000L)
         val unmatched = localSong(
             path = "/music/unmatched.flac",
@@ -74,7 +74,7 @@ class PlayerManagerNeteaseLocalFallbackTest {
 
         val candidates = selectNeteaseLocalFallbackCandidates(song, listOf(unmatched))
 
-        assertTrue(candidates.isEmpty())
+        assertEquals(listOf(unmatched), candidates)
     }
 
     @Test

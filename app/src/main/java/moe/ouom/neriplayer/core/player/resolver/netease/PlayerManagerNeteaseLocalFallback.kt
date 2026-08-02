@@ -56,19 +56,19 @@ internal fun selectNeteaseLocalFallbackCandidates(
     song: SongItem,
     localSongs: List<SongItem>
 ): List<SongItem> {
-    val matchedLocals = localSongs.filter { candidate ->
-        !candidate.matchedSongId.isNullOrBlank() && LocalSongSupport.isLocalSong(candidate)
+    val localCandidates = localSongs.filter { candidate ->
+        LocalSongSupport.isLocalSong(candidate)
     }
-    if (matchedLocals.isEmpty()) return emptyList()
+    if (localCandidates.isEmpty()) return emptyList()
 
     val targetId = song.id.toString()
-    val exact = matchedLocals.filter { candidate ->
+    val exact = localCandidates.filter { candidate ->
         candidate.matchedLyricSource == MusicPlatform.CLOUD_MUSIC &&
             candidate.matchedSongId == targetId &&
             isNeteaseLocalFallbackDurationCompatible(song, candidate)
     }
     val exactKeys = exact.mapTo(mutableSetOf()) { it.stableKey() }
-    val rest = matchedLocals.filterNot { it.stableKey() in exactKeys }
+    val rest = localCandidates.filterNot { it.stableKey() in exactKeys }
     val fuzzy = rest.filter { candidate ->
         matchesNeteaseLocalFallbackMetadata(song, candidate)
     }
