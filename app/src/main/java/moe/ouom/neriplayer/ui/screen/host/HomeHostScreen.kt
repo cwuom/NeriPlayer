@@ -68,6 +68,7 @@ import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.HomeScreen
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassHostNavigationTransition
 import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassSceneMotion
+import moe.ouom.neriplayer.ui.rememberMainTabSceneRestoredEntry
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
@@ -246,12 +247,15 @@ fun HomeHostScreen(
         targetState = selected,
         label = "home_host_switch"
     )
+    val suppressRestoredSceneEntry = rememberMainTabSceneRestoredEntry()
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
         navigationTransition.AnimatedContent(
             modifier = Modifier.fillMaxSize(),
             transitionSpec = {
-                if (targetState == null && skipDetailCloseAnimation) {
+                if (suppressRestoredSceneEntry && targetState != initialState) {
+                    EnterTransition.None togetherWith ExitTransition.None
+                } else if (targetState == null && skipDetailCloseAnimation) {
                     EnterTransition.None togetherWith ExitTransition.None
                 } else {
                     advancedGlassHostNavigationTransition(

@@ -194,6 +194,7 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneLayer
 import moe.ouom.neriplayer.ui.effect.glass.DRAWER_BACKGROUND_SINK_FRACTION
 import moe.ouom.neriplayer.ui.effect.glass.DRAWER_RECESSED_CONTENT_SCALE
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassMainTabTransitionSpec
+import moe.ouom.neriplayer.ui.effect.glass.advancedGlassSceneZIndex
 import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassVisibilitySceneMotion
 import moe.ouom.neriplayer.ui.effect.glass.captureAdvancedGlassBackdrop
 import moe.ouom.neriplayer.ui.effect.glass.isAdvancedGlassBackendSupported
@@ -2282,11 +2283,13 @@ private fun NeriAppContent(
                 revealTopFraction: Float = 0f,
                 contentTranslationYFraction: Float = 0f,
                 contentScale: Float = 1f,
+                navigationDepth: Int = 0,
                 fixedBackground: Boolean = false,
                 content: @Composable () -> Unit
             ) {
                 AdvancedGlassSceneLayer(
                     controller = advancedGlassController,
+                    modifier = Modifier.advancedGlassSceneZIndex(navigationDepth),
                     motion = AdvancedGlassSceneMotion(
                         revealTopFraction = revealTopFraction,
                         contentTranslationYFraction = contentTranslationYFraction,
@@ -2335,6 +2338,7 @@ private fun NeriAppContent(
                     revealTopFraction = motion.revealTopFraction,
                     contentTranslationYFraction = motion.contentTranslationYFraction,
                     contentScale = motion.contentScale,
+                    navigationDepth = sceneDepth,
                     fixedBackground = false,
                     content = content
                 )
@@ -2363,6 +2367,7 @@ private fun NeriAppContent(
                     } else {
                         1f
                     },
+                    navigationDepth = sceneDepth,
                     // 只有 tab 根列表 (sceneDepth 0) 走固定背景, 横滑切 tab 时壁纸不动
                     // 嵌套详情必须保留不透明自背景, 靠揭示裁剪盖住退出列表, 否则两页内容互透叠印
                     fixedBackground = backgroundImageUri != null && sceneDepth == 0,

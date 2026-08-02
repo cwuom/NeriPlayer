@@ -136,4 +136,15 @@ class AdvancedGlassNavigationTransitionTest {
         assertEquals(1f, intermediateDownloadManager.contentScale)
         assertEquals(AdvancedGlassSceneMotion.None, restoredSettingsPage)
     }
+
+    @Test
+    fun restoredDetailSceneStaysAboveTheRootListLayer() {
+        val rootLayer = resolveAdvancedGlassSceneZIndex(navigationDepth = 0)
+        val detailLayer = resolveAdvancedGlassSceneZIndex(navigationDepth = 1)
+        val nestedDetailLayer = resolveAdvancedGlassSceneZIndex(navigationDepth = 2)
+
+        assertTrue("详情场景必须覆盖根列表", detailLayer > rootLayer)
+        assertTrue("更深详情必须覆盖上一层详情", nestedDetailLayer > detailLayer)
+        assertEquals(0f, resolveAdvancedGlassSceneZIndex(navigationDepth = -1))
+    }
 }

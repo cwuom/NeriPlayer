@@ -4,17 +4,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.clipRect
-import androidx.compose.ui.layout.onSizeChanged
 
 @Composable
 internal fun AdvancedGlassSceneLayer(
@@ -27,21 +22,18 @@ internal fun AdvancedGlassSceneLayer(
     background: @Composable BoxScope.() -> Unit,
     content: @Composable BoxScope.() -> Unit
 ) {
-    var sceneHeightPx by remember { mutableIntStateOf(0) }
-
     if (fixedBackground) {
         Box(
             modifier = modifier
                 .fillMaxSize()
                 .clipToBounds()
                 .clipSceneReveal(motion.revealTopFraction)
-                .onSizeChanged { size -> sceneHeightPx = size.height }
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
-                        translationY = sceneHeightPx *
+                        translationY = size.height *
                             motion.contentTranslationYFraction.coerceIn(0f, 1f)
                         scaleX = motion.contentScale.coerceIn(0.8f, 1f)
                         scaleY = motion.contentScale.coerceIn(0.8f, 1f)
@@ -66,7 +58,6 @@ internal fun AdvancedGlassSceneLayer(
             modifier = modifier
                 .fillMaxSize()
                 .clipToBounds()
-                .onSizeChanged { size -> sceneHeightPx = size.height }
         ) {
             Box(
                 modifier = Modifier
@@ -79,7 +70,7 @@ internal fun AdvancedGlassSceneLayer(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
-                        translationY = sceneHeightPx *
+                        translationY = size.height *
                             motion.contentTranslationYFraction.coerceIn(0f, 1f)
                         scaleX = motion.contentScale.coerceIn(0.8f, 1f)
                         scaleY = motion.contentScale.coerceIn(0.8f, 1f)

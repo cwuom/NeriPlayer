@@ -36,6 +36,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -175,6 +176,7 @@ import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.rememberMainTabSceneRestoredEntry
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.local.LocalSongDetailsDialog
@@ -374,11 +376,17 @@ fun LocalPlaylistDetailScreen(
         }
     }
 
+    val detailEnterTransition = if (rememberMainTabSceneRestoredEntry()) {
+        EnterTransition.None
+    } else {
+        slideInVertically(
+            tween(300, easing = FastOutSlowInEasing),
+            initialOffsetY = { it }
+        ) + fadeIn(tween(150))
+    }
     AnimatedVisibility(
         visible = true,
-        enter = slideInVertically(
-            tween(300, easing = FastOutSlowInEasing),
-            initialOffsetY = { it }) + fadeIn(tween(150)),
+        enter = detailEnterTransition,
         exit = slideOutVertically(
             tween(250, easing = FastOutSlowInEasing),
             targetOffsetY = { it }) + fadeOut(tween(150))

@@ -171,6 +171,107 @@ class NeriAppNavigationTransitionTest {
     }
 
     @Test
+    fun returningToAVisitedMainTabMarksItsSceneAsRestored() {
+        lateinit var selectedRoute: MutableState<String>
+        composeRule.mainClock.autoAdvance = false
+        composeRule.setContent {
+            selectedRoute = remember { mutableStateOf(Destinations.Home.route) }
+            MainTabLayerHost(
+                selectedRoute = selectedRoute.value,
+                modifier = Modifier
+                    .size(240.dp, 320.dp)
+                    .testTag(RestoredSceneRootTag)
+            ) { route ->
+                val tag = if (
+                    route == Destinations.Home.route &&
+                        LocalMainTabSceneRestored.current
+                ) {
+                    RestoredHomeSceneTag
+                } else {
+                    FreshHomeSceneTag
+                }
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(FirstTabColor)
+                        .testTag(tag)
+                )
+            }
+        }
+
+        composeRule.runOnIdle {
+            selectedRoute.value = Destinations.Explore.route
+        }
+        composeRule.mainClock.autoAdvance = true
+        composeRule.waitForIdle()
+        composeRule.mainClock.autoAdvance = false
+
+        composeRule.runOnIdle {
+            selectedRoute.value = Destinations.Home.route
+        }
+        composeRule.mainClock.autoAdvance = true
+        composeRule.waitForIdle()
+        composeRule.mainClock.autoAdvance = false
+
+        assertTrue(
+            composeRule.onAllNodesWithTag(RestoredHomeSceneTag)
+                .fetchSemanticsNodes()
+                .size == 1
+        )
+    }
+
+    @Test
+    fun restoredSceneEntrySuppressionIsConsumedBeforeASecondDetailOpen() {
+        lateinit var selectedRoute: MutableState<String>
+        composeRule.mainClock.autoAdvance = false
+        composeRule.setContent {
+            selectedRoute = remember { mutableStateOf(Destinations.Home.route) }
+            MainTabLayerHost(selectedRoute = selectedRoute.value) { route ->
+                val tag = if (
+                    route == Destinations.Home.route &&
+                        rememberMainTabSceneRestoredEntry()
+                ) {
+                    RestoredEntryTag
+                } else {
+                    FreshEntryTag
+                }
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .testTag(tag)
+                )
+            }
+        }
+
+        composeRule.runOnIdle {
+            selectedRoute.value = Destinations.Explore.route
+        }
+        composeRule.mainClock.autoAdvance = true
+        composeRule.waitForIdle()
+        composeRule.mainClock.autoAdvance = false
+
+        composeRule.runOnIdle {
+            selectedRoute.value = Destinations.Home.route
+        }
+        composeRule.waitForIdle()
+        assertTrue(
+            "restored scene did not suppress its first entry frame",
+            composeRule.onAllNodesWithTag(RestoredEntryTag)
+                .fetchSemanticsNodes()
+                .size == 1
+        )
+
+        composeRule.mainClock.advanceTimeBy(FRAME_MS.toLong())
+        composeRule.waitForIdle()
+        assertTrue(
+            "restored entry suppression leaked into the next composition",
+            composeRule.onAllNodesWithTag(RestoredEntryTag)
+                .fetchSemanticsNodes()
+                .isEmpty()
+        )
+    }
+
+    @Test
     fun externalRouteChangeDuringMainTabTransitionStaysCoveredAndSettlesOnDetail() {
         lateinit var navController: NavHostController
         lateinit var selectedRoute: MutableState<String>
@@ -868,6 +969,11 @@ class NeriAppNavigationTransitionTest {
         const val RapidHomeTag = "rapid_home_scene"
         const val RapidExploreTag = "rapid_explore_scene"
         const val RapidLibraryTag = "rapid_library_scene"
+        const val RestoredSceneRootTag = "restored_scene_root"
+        const val FreshHomeSceneTag = "fresh_home_scene"
+        const val RestoredHomeSceneTag = "restored_home_scene"
+        const val RestoredEntryTag = "restored_entry_scene"
+        const val FreshEntryTag = "fresh_entry_scene"
         const val ExternalRootTag = "external_transition_root"
         const val ExternalHomeTag = "external_home_scene"
         const val ExternalExploreTag = "external_explore_scene"

@@ -10,10 +10,16 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableIntState
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -81,6 +87,83 @@ class AdvancedGlassSceneLayerIsolationTest {
         )
     }
 
+    @Test
+    fun recreatedSceneUsesLiveHeightForItsFirstExitFrame() {
+        lateinit var sceneGeneration: MutableIntState
+        var sceneTopPx = 0f
+        var sceneHeightPx = 0
+        val contentTopPositions = mutableListOf<Float>()
+
+        composeRule.setContent {
+            sceneGeneration = remember { mutableIntStateOf(0) }
+            Box(
+                modifier = Modifier
+                    .size(200.dp, 100.dp)
+                    .onGloballyPositioned { coordinates ->
+                        sceneTopPx = coordinates.positionInRoot().y
+                        sceneHeightPx = coordinates.size.height
+                    }
+                    .testTag(SceneRootTag)
+            ) {
+                key(sceneGeneration.intValue) {
+                    AdvancedGlassSceneLayer(
+                        controller = AdvancedGlassController(
+                            sdkInt = Build.VERSION.SDK_INT,
+                            advancedBlurEnabled = true,
+                            enhancedAdvancedBlurEnabled = true,
+                            backendReady = true
+                        ),
+                        motion = AdvancedGlassSceneMotion(
+                            revealTopFraction = 1f,
+                            contentTranslationYFraction = 1f,
+                            contentScale = 1f
+                        ),
+                        background = {
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Gray)
+                            )
+                        },
+                        content = {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .onGloballyPositioned { coordinates ->
+                                        contentTopPositions += coordinates
+                                            .positionInRoot()
+                                            .y
+                                    }
+                                    .testTag(RecreatedContentTag)
+                                    .background(Color.Red)
+                            )
+                        }
+                    )
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.runOnIdle {
+            contentTopPositions.clear()
+            sceneGeneration.intValue++
+        }
+        composeRule.waitForIdle()
+
+        assertTrue(
+            "重建场景没有记录内容位置",
+            contentTopPositions.isNotEmpty()
+        )
+        assertTrue(
+            "重建场景退出首帧仍覆盖根列表: " +
+                "top=${contentTopPositions.first()} sceneTop=$sceneTopPx " +
+                "sceneHeight=$sceneHeightPx",
+            contentTopPositions.first() >=
+                sceneTopPx + sceneHeightPx - PositionTolerancePx
+        )
+        composeRule.onNodeWithTag(RecreatedContentTag).assertExists()
+    }
+
     @Composable
     private fun TestScene(
         maskAlignment: Alignment,
@@ -121,5 +204,8 @@ class AdvancedGlassSceneLayerIsolationTest {
     private companion object {
         const val RootTag = "advanced_glass_scene_layer_isolation_root"
         const val StripeCount = 20
+        const val SceneRootTag = "advanced_glass_scene_root"
+        const val RecreatedContentTag = "advanced_glass_scene_recreated_content"
+        const val PositionTolerancePx = 1f
     }
 }

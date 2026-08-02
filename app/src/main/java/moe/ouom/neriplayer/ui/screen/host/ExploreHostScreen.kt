@@ -25,7 +25,10 @@ package moe.ouom.neriplayer.ui.screen.host
 
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -63,6 +66,7 @@ import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.ExploreScreen
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassHostNavigationTransition
 import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassSceneMotion
+import moe.ouom.neriplayer.ui.rememberMainTabSceneRestoredEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
@@ -224,15 +228,20 @@ fun ExploreHostScreen(
         targetState = selected,
         label = "explore_host_switch"
     )
+    val suppressRestoredSceneEntry = rememberMainTabSceneRestoredEntry()
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
         navigationTransition.AnimatedContent(
             modifier = Modifier.fillMaxSize(),
             transitionSpec = {
-                advancedGlassHostNavigationTransition(
-                    forward = targetState.navigationDepth > initialState.navigationDepth,
-                    coherentFeedbackEnabled = coherentFeedbackEnabled
-                ).using(SizeTransform(clip = true))
+                if (suppressRestoredSceneEntry && targetState != initialState) {
+                    EnterTransition.None togetherWith ExitTransition.None
+                } else {
+                    advancedGlassHostNavigationTransition(
+                        forward = targetState.navigationDepth > initialState.navigationDepth,
+                        coherentFeedbackEnabled = coherentFeedbackEnabled
+                    )
+                }.using(SizeTransform(clip = true))
             }
         ) { current ->
             val sceneMotion = navigationTransition.animateAdvancedGlassSceneMotion(

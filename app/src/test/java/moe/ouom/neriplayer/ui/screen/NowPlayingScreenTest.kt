@@ -329,6 +329,64 @@ class NowPlayingScreenTest {
     }
 
     @Test
+    fun `queue scroll target keeps distant current item precise`() {
+        assertEquals(
+            4_096,
+            resolveNowPlayingQueueScrollTarget(
+                queueSize = 5_000,
+                currentIndex = 4_096
+            )
+        )
+    }
+
+    @Test
+    fun `queue scroll target ignores unavailable current item`() {
+        assertEquals(
+            null,
+            resolveNowPlayingQueueScrollTarget(
+                queueSize = 10,
+                currentIndex = 10
+            )
+        )
+        assertEquals(
+            null,
+            resolveNowPlayingQueueScrollTarget(
+                queueSize = 0,
+                currentIndex = 0
+            )
+        )
+    }
+
+    @Test
+    fun `queue scroll skips work when initial list state is already at target`() {
+        assertFalse(
+            shouldUpdateNowPlayingQueueScroll(
+                targetIndex = 4_096,
+                firstVisibleItemIndex = 4_096,
+                firstVisibleItemScrollOffset = 0
+            )
+        )
+    }
+
+    @Test
+    fun `queue scroll updates when visible item or offset differs from target`() {
+        assertTrue(
+            shouldUpdateNowPlayingQueueScroll(
+                targetIndex = 4_096,
+                firstVisibleItemIndex = 0,
+                firstVisibleItemScrollOffset = 0
+            )
+        )
+        assertTrue(
+            shouldUpdateNowPlayingQueueScroll(
+                targetIndex = 4_096,
+                firstVisibleItemIndex = 4_096,
+                firstVisibleItemScrollOffset = 12
+            )
+        )
+    }
+
+    @Test
     fun `artist navigation ignores matched netease metadata for non netease songs`() {
         val biliSong = testSong(id = 6L, name = "Bili song").copy(
             album = "Bilibili|123",

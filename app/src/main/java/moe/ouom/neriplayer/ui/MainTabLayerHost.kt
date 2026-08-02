@@ -16,7 +16,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
@@ -41,8 +43,24 @@ internal data class MainTabGlassOwner(
 internal data class MainTabLayerScene(
     val route: String,
     val offsetFraction: Float,
-    val glassOwner: MainTabGlassOwner = MainTabGlassOwner(route)
+    val glassOwner: MainTabGlassOwner = MainTabGlassOwner(route),
+    val restored: Boolean = false
 )
+
+internal val LocalMainTabSceneRestored = staticCompositionLocalOf { false }
+
+@Composable
+internal fun rememberMainTabSceneRestoredEntry(): Boolean {
+    val restored = LocalMainTabSceneRestored.current
+    var suppressEntry by remember(restored) { mutableStateOf(restored) }
+    LaunchedEffect(restored) {
+        if (restored) {
+            withFrameNanos { }
+            suppressEntry = false
+        }
+    }
+    return suppressEntry
+}
 
 @Composable
 internal fun MainTabLayerHost(
@@ -52,8 +70,13 @@ internal fun MainTabLayerHost(
     content: @Composable (route: String) -> Unit
 ) {
     val controller = rememberMainTabLayerTransitionController(selectedRoute)
+    var visitedRoutes by remember {
+        mutableStateOf(setOf(selectedRoute))
+    }
     LaunchedEffect(controller, selectedRoute) {
-        controller.request(selectedRoute)
+        val restored = selectedRoute in visitedRoutes
+        controller.request(selectedRoute, restored)
+        visitedRoutes = visitedRoutes + selectedRoute
     }
     val visibleScenes = controller.visibleScenes
     var widthPx by remember { mutableIntStateOf(0) }
@@ -82,7 +105,8 @@ internal fun MainTabLayerHost(
                         .graphicsLayer()
                 ) {
                     CompositionLocalProvider(
-                        LocalAdvancedGlassNavigationOwner provides scene.glassOwner
+                        LocalAdvancedGlassNavigationOwner provides scene.glassOwner,
+                        LocalMainTabSceneRestored provides scene.restored
                     ) {
                         saveableStateHolder.SaveableStateProvider(scene.route) {
                             content(scene.route)
@@ -118,6 +142,7 @@ internal class MainTabLayerTransitionController(
     private var directionState by mutableIntStateOf(1)
     private var progressState by mutableFloatStateOf(1f)
     private var runningState by mutableStateOf(false)
+    private var targetSceneRestoredState by mutableStateOf(false)
     private var transitionJob: Job? = null
     private var generation = 0L
 
@@ -125,30 +150,39 @@ internal class MainTabLayerTransitionController(
         get() {
             val fromRoute = fromRouteState
             if (!runningState || fromRoute == null || fromRoute == toRouteState) {
-                return listOf(MainTabLayerScene(toRouteState, 0f))
+                return listOf(
+                    MainTabLayerScene(
+                        route = toRouteState,
+                        offsetFraction = 0f,
+                        restored = targetSceneRestoredState
+                    )
+                )
             }
             val direction = directionState.toFloat()
             return listOf(
                 MainTabLayerScene(
                     route = fromRoute,
-                    offsetFraction = -direction * progressState
+                    offsetFraction = -direction * progressState,
+                    restored = false
                 ),
                 MainTabLayerScene(
                     route = toRouteState,
-                    offsetFraction = direction * (1f - progressState)
+                    offsetFraction = direction * (1f - progressState),
+                    restored = targetSceneRestoredState
                 )
             )
         }
 
-    fun request(targetRoute: String) {
+    fun request(targetRoute: String, restored: Boolean = false) {
         if (targetRoute == toRouteState && (!runningState || fromRouteState == null)) return
-        val next = resolveNextTransition(targetRoute) ?: return
+        val next = resolveNextTransition(targetRoute, restored) ?: return
         val requestGeneration = ++generation
         transitionJob?.cancel()
         fromRouteState = next.fromRoute
         toRouteState = next.toRoute
         directionState = next.direction
         progressState = next.progress.coerceIn(0f, 1f)
+        targetSceneRestoredState = next.restored
         runningState = true
         transitionJob = scope.launch {
             try {
@@ -167,9 +201,13 @@ internal class MainTabLayerTransitionController(
         transitionJob = null
         runningState = false
         fromRouteState = null
+        targetSceneRestoredState = false
     }
 
-    private fun resolveNextTransition(targetRoute: String): TransitionStart? {
+    private fun resolveNextTransition(
+        targetRoute: String,
+        restored: Boolean
+    ): TransitionStart? {
         val currentFromRoute = fromRouteState
         val currentToRoute = toRouteState
         if (!runningState || currentFromRoute == null || currentFromRoute == currentToRoute) {
@@ -179,7 +217,8 @@ internal class MainTabLayerTransitionController(
                 fromRoute = currentToRoute,
                 toRoute = targetRoute,
                 direction = direction,
-                progress = 0f
+                progress = 0f,
+                restored = restored
             )
         }
         if (targetRoute == currentToRoute) return null
@@ -188,7 +227,8 @@ internal class MainTabLayerTransitionController(
                 fromRoute = currentToRoute,
                 toRoute = currentFromRoute,
                 direction = -directionState,
-                progress = 1f - progressState
+                progress = 1f - progressState,
+                restored = restored
             )
         }
 
@@ -217,7 +257,8 @@ internal class MainTabLayerTransitionController(
                     fromRoute = candidate.route,
                     toRoute = targetRoute,
                     direction = nextDirection,
-                    progress = nextProgress
+                    progress = nextProgress,
+                    restored = restored
                 ),
                 snapDistance = abs(projectedOffset - candidate.offsetFraction),
                 centerDistance = abs(candidate.offsetFraction)
@@ -262,7 +303,8 @@ internal class MainTabLayerTransitionController(
         val fromRoute: String,
         val toRoute: String,
         val direction: Int,
-        val progress: Float
+        val progress: Float,
+        val restored: Boolean
     )
 
     private data class RouteOffset(

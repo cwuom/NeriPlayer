@@ -20,7 +20,9 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.zIndex
 
 internal const val ADVANCED_GLASS_NAVIGATION_DAMPING_RATIO =
     Spring.DampingRatioNoBouncy
@@ -122,6 +124,12 @@ internal data class AdvancedGlassSceneMotion(
         )
     }
 }
+
+internal fun resolveAdvancedGlassSceneZIndex(navigationDepth: Int): Float =
+    navigationDepth.coerceAtLeast(0).toFloat()
+
+internal fun Modifier.advancedGlassSceneZIndex(navigationDepth: Int): Modifier =
+    zIndex(resolveAdvancedGlassSceneZIndex(navigationDepth))
 
 @Composable
 internal fun <S> Transition<S>.animateAdvancedGlassSceneMotion(

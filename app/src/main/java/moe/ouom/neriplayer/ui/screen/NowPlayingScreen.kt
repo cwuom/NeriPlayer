@@ -155,7 +155,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -426,6 +425,17 @@ internal fun resolveNowPlayingQueueCurrentIndexAfterReorder(
     if (currentIndexByKey in 0 until queueSize) return currentIndexByKey
     return currentIndex.coerceIn(0, queueSize - 1)
 }
+
+internal fun resolveNowPlayingQueueScrollTarget(
+    queueSize: Int,
+    currentIndex: Int
+): Int? = currentIndex.takeIf { it in 0 until queueSize }
+
+internal fun shouldUpdateNowPlayingQueueScroll(
+    targetIndex: Int,
+    firstVisibleItemIndex: Int,
+    firstVisibleItemScrollOffset: Int
+): Boolean = firstVisibleItemIndex != targetIndex || firstVisibleItemScrollOffset != 0
 
 internal fun resolveNowPlayingQueueSelectedSongs(
     queue: List<SongItem>,
@@ -828,11 +838,21 @@ internal fun NowPlayingQueueSheet(
     var selectionMode by remember { mutableStateOf(false) }
     var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showExportSheet by remember { mutableStateOf(false) }
-    var queueOrderDirty by remember { mutableStateOf(false) }
     val sourceEntries = remember(displayedQueue) {
         buildNowPlayingQueueEntries(displayedQueue)
     }
-    val queueEntries = remember { mutableStateListOf<NowPlayingQueueEntry>() }
+    val initialQueueScrollTarget = remember(sourceEntries, currentIndexInDisplay) {
+        resolveNowPlayingQueueScrollTarget(
+            queueSize = sourceEntries.size,
+            currentIndex = currentIndexInDisplay
+        )
+    }
+    val queueListState = rememberLazyListState(
+        initialFirstVisibleItemIndex = initialQueueScrollTarget ?: 0
+    )
+    var initialQueuePositioned by remember { mutableStateOf(initialQueueScrollTarget != null) }
+    var queueOrderDirty by remember(sourceEntries) { mutableStateOf(false) }
+    var queueEntries by remember(sourceEntries) { mutableStateOf(sourceEntries) }
     val currentEntryKey = displayedQueue
         .getOrNull(currentIndexInDisplay)
         ?.let { buildNowPlayingQueueItemKey(currentIndexInDisplay, it) }
@@ -840,16 +860,17 @@ internal fun NowPlayingQueueSheet(
         ?.let { key -> queueEntries.indexOfFirst { it.key == key } }
         ?.takeIf { it >= 0 }
         ?: currentIndexInDisplay
-    val queueItemKeys = remember(queueEntries.toList()) {
+    val queueItemKeys = remember(queueEntries) {
         queueEntries.mapTo(LinkedHashSet()) { it.key }
     }
-    val selectedSongs = remember(queueEntries.toList(), selectedKeys) {
+    val selectedSongs = remember(queueEntries, selectedKeys) {
         queueEntries.filter { it.key in selectedKeys }.map { it.song }
     }
     val allItemsSelected = queueEntries.isNotEmpty() &&
         selectedKeys.size == queueItemKeys.size &&
         selectedKeys.containsAll(queueItemKeys)
     val reorderState = rememberReorderableLazyListState(
+        listState = queueListState,
         onMove = { from: ItemPosition, to: ItemPosition ->
             if (!selectionMode) return@rememberReorderableLazyListState
             val fromKey = from.key as? String ?: return@rememberReorderableLazyListState
@@ -857,7 +878,9 @@ internal fun NowPlayingQueueSheet(
             val fromIndex = queueEntries.indexOfFirst { it.key == fromKey }
             val toIndex = queueEntries.indexOfFirst { it.key == toKey }
             if (fromIndex != -1 && toIndex != -1 && fromIndex != toIndex) {
-                queueEntries.add(toIndex, queueEntries.removeAt(fromIndex))
+                val reorderedEntries = queueEntries.toMutableList()
+                reorderedEntries.add(toIndex, reorderedEntries.removeAt(fromIndex))
+                queueEntries = reorderedEntries
                 queueOrderDirty = true
             }
         },
@@ -900,16 +923,26 @@ internal fun NowPlayingQueueSheet(
         }
     }
 
-    LaunchedEffect(sourceEntries) {
-        queueEntries.clear()
-        queueEntries.addAll(sourceEntries)
-        queueOrderDirty = false
-    }
-
-    LaunchedEffect(currentIndexInQueueEntries) {
-        if (currentIndexInQueueEntries >= 0) {
-            delay(150)
-            reorderState.listState.animateScrollToItem(currentIndexInQueueEntries)
+    LaunchedEffect(queueEntries.size, currentIndexInQueueEntries) {
+        val targetIndex = resolveNowPlayingQueueScrollTarget(
+            queueSize = queueEntries.size,
+            currentIndex = currentIndexInQueueEntries
+        ) ?: return@LaunchedEffect
+        if (targetIndex !in queueEntries.indices) return@LaunchedEffect
+        if (!shouldUpdateNowPlayingQueueScroll(
+                targetIndex = targetIndex,
+                firstVisibleItemIndex = queueListState.firstVisibleItemIndex,
+                firstVisibleItemScrollOffset = queueListState.firstVisibleItemScrollOffset
+            )
+        ) {
+            if (!initialQueuePositioned) initialQueuePositioned = true
+            return@LaunchedEffect
+        }
+        if (!initialQueuePositioned) {
+            queueListState.scrollToItem(targetIndex)
+            initialQueuePositioned = true
+        } else {
+            queueListState.animateScrollToItem(targetIndex)
         }
     }
 

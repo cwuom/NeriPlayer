@@ -27,6 +27,7 @@ import android.app.Application
 import android.content.ClipData
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.RepeatMode
@@ -142,6 +143,7 @@ import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.rememberMainTabSceneRestoredEntry
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionDetailUiState
@@ -468,9 +470,14 @@ fun DetailScreen(
         }
     }
 
+    val detailEnterTransition = if (rememberMainTabSceneRestoredEntry()) {
+        EnterTransition.None
+    } else {
+        fadeIn() + slideInVertically { it / 6 }
+    }
     AnimatedVisibility(
         visible = true,
-        enter = fadeIn() + slideInVertically { it / 6 },
+        enter = detailEnterTransition,
         exit = fadeOut() + slideOutVertically { it / 6 }
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
