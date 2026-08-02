@@ -126,7 +126,6 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
-import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.settings.LyricFontScales
@@ -652,11 +651,10 @@ fun SettingsScreen(
     
     // 备份与恢复
     val backupRestoreVm: BackupRestoreViewModel = viewModel()
-    val backupRestoreUiState by backupRestoreVm.uiState.collectAsState()
+    val backupRestoreUiState by backupRestoreVm.uiState.collectAsStateWithLifecycleCompat()
     val configTransferVm: ConfigTransferViewModel = viewModel()
-    val configTransferUiState by configTransferVm.uiState.collectAsState()
-    val localPlaylistRepo = remember(context) { LocalPlaylistRepository.getInstance(context) }
-    val localPlaylistCount by localPlaylistRepo.playlistCount.collectAsState(initial = 0)
+    val configTransferUiState by configTransferVm.uiState.collectAsStateWithLifecycleCompat()
+    val localPlaylistCount = backupRestoreUiState.currentPlaylistCount
     val defaultDownloadDirectorySummary = composeResources.getString(R.string.settings_download_directory_default_label)
     val downloadDirectoryChangeEnabled = !hasActiveDownloadOperations && !isMigratingDownloadDirectory
 
@@ -1088,6 +1086,11 @@ fun SettingsScreen(
     val isSettingsSplitLayout = currentWindowWidthDp() >= 840.dp
     var activeSettingsPage by rememberSaveable {
         mutableStateOf<SettingsPage?>(if (isSettingsSplitLayout) SettingsPage.General else null)
+    }
+    LaunchedEffect(activeSettingsPage, context) {
+        if (activeSettingsPage == SettingsPage.Backup) {
+            backupRestoreVm.observePlaylistCount(context)
+        }
     }
     val homeTopAppBarState = rememberTopAppBarState()
     val detailTopAppBarStates = SettingsPage.entries.associateWith { rememberTopAppBarState() }

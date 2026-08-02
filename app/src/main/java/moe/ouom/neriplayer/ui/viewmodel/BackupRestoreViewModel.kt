@@ -27,29 +27,69 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.backup.BackupManager
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 /**
  * 备份与恢复的ViewModel
  */
-class BackupRestoreViewModel : ViewModel() {
+class BackupRestoreViewModel internal constructor(
+    private val playlistCountSourceFactory: PlaylistCountSourceFactory
+) : ViewModel() {
+
+    constructor() : this(DefaultPlaylistCountSourceFactory)
 
     private val _uiState = MutableStateFlow(BackupRestoreUiState())
     val uiState: StateFlow<BackupRestoreUiState> = _uiState
 
     private var backupManager: BackupManager? = null
     private var strings: BackupRestoreStrings? = null
+    private var playlistCountJob: Job? = null
+    private var playlistCountContext: Context? = null
 
     fun initialize(context: Context) {
         val appContext = context.applicationContext
         strings = BackupRestoreStrings.from(appContext)
         if (backupManager == null) {
             backupManager = BackupManager(appContext)
+        }
+        observePlaylistCount(appContext)
+    }
+
+    fun observePlaylistCount(context: Context) {
+        val appContext = context.applicationContext
+        if (playlistCountJob?.isActive == true && playlistCountContext == appContext) {
+            return
+        }
+        playlistCountContext = appContext
+        playlistCountJob?.cancel()
+        playlistCountJob = viewModelScope.launch {
+            try {
+                val source = playlistCountSourceFactory.create(appContext)
+                if (!source.awaitInitialized()) {
+                    return@launch
+                }
+                source.playlistCount.collect { count ->
+                    _uiState.update { state ->
+                        state.copy(currentPlaylistCount = count)
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.e("BackupRestoreViewModel", "Failed to observe playlist count", error)
+            }
         }
     }
     
@@ -225,6 +265,7 @@ class BackupRestoreViewModel : ViewModel() {
  * 备份与恢复的UI状态
  */
 data class BackupRestoreUiState(
+    val currentPlaylistCount: Int = 0,
     val isExporting: Boolean = false,
     val isImporting: Boolean = false,
     val isAnalyzing: Boolean = false,
@@ -238,3 +279,31 @@ data class BackupRestoreUiState(
     val differenceAnalysis: BackupManager.DifferenceAnalysis? = null,
     val lastAnalysisError: String? = null
 )
+
+internal fun interface PlaylistCountSourceFactory {
+    suspend fun create(context: Context): PlaylistCountSource
+}
+
+internal interface PlaylistCountSource {
+    val playlistCount: StateFlow<Int>
+    suspend fun awaitInitialized(): Boolean
+}
+
+private object DefaultPlaylistCountSourceFactory : PlaylistCountSourceFactory {
+    override suspend fun create(context: Context): PlaylistCountSource {
+        val appContext = context.applicationContext
+        return withContext(Dispatchers.IO) {
+            LocalPlaylistRepositoryCountSource(LocalPlaylistRepository.getInstance(appContext))
+        }
+    }
+}
+
+private class LocalPlaylistRepositoryCountSource(
+    private val repository: LocalPlaylistRepository
+) : PlaylistCountSource {
+    override val playlistCount: StateFlow<Int> = repository.playlistCount
+
+    override suspend fun awaitInitialized(): Boolean {
+        return repository.awaitInitialized()
+    }
+}
