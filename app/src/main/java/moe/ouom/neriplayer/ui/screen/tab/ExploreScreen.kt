@@ -54,7 +54,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -209,6 +208,28 @@ internal fun shouldClearExploreSearchQuery(
         )
 }
 
+internal fun exploreSearchScrollContextKey(
+    keyword: String,
+    source: SearchSource,
+    neteaseSearchType: NeteaseExploreSearchType
+): String? {
+    val normalizedKeyword = keyword.trim()
+    if (normalizedKeyword.isBlank()) return null
+    val sourceType = if (source == SearchSource.NETEASE) {
+        neteaseSearchType.name
+    } else {
+        "-"
+    }
+    return "${source.name}|$sourceType|$normalizedKeyword"
+}
+
+internal fun shouldResetExploreSearchScroll(
+    previousContextKey: String?,
+    currentContextKey: String?
+): Boolean {
+    return currentContextKey != null && previousContextKey != currentContextKey
+}
+
 @Composable
 private fun searchSourceLabel(source: SearchSource): String {
     return when (source) {
@@ -242,6 +263,11 @@ private fun neteaseSearchTypeIcon(type: NeteaseExploreSearchType): ImageVector {
 fun ExploreScreen(
     gridState: LazyGridState,
     topAppBarState: TopAppBarState,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    searchListState: LazyListState,
+    searchScrollContextKey: String?,
+    onSearchScrollContextKeyChange: (String?) -> Unit,
     offlineMode: Boolean = false,
     onPlay: (PlaylistSummary) -> Unit,
     onBiliPlaylistClick: (BiliPlaylist) -> Unit = {},
@@ -266,7 +292,6 @@ fun ExploreScreen(
         }
     )
     val ui by vm.uiState.collectAsStateWithLifecycle()
-    var searchQuery by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     val searchHistoryRepository = remember(context) {
@@ -344,7 +369,6 @@ fun ExploreScreen(
     val isTabletLayout = windowWidthDp >= 720.dp
     val searchPanelHorizontalPadding = if (isTabletLayout) 28.dp else 16.dp
     val searchResultHorizontalPadding = if (isTabletLayout) 88.dp else 0.dp
-    val searchListState = rememberLazyListState()
     val youtubeGridState = rememberLazyGridState()
     val tagChipSelectedAlpha = if (backgroundImageUri == null) 1f else 0.86f
     val tagChipUnselectedAlpha = if (backgroundImageUri == null) 1f else 0.74f
@@ -498,25 +522,50 @@ fun ExploreScreen(
             return@LaunchedEffect
         }
         delay(SEARCH_INPUT_DEBOUNCE_MS)
-        vm.search(effectiveSearchKeyword, displayQuery = searchQuery)
+        val displayQuery = searchQuery.trim()
+        if (
+            ui.searchKeyword != effectiveSearchKeyword ||
+            ui.searchDisplayQuery != displayQuery
+        ) {
+            vm.search(effectiveSearchKeyword, displayQuery = displayQuery)
+        }
         delay(EXPLORE_HISTORY_RECORD_DEBOUNCE_MS - SEARCH_INPUT_DEBOUNCE_MS)
         queueExploreSearchRecord(searchQuery)
     }
 
     LaunchedEffect(ui.selectedSearchSource) {
         if (shouldClearExploreSearchQuery(previousSearchSource, ui.selectedSearchSource)) {
-            searchQuery = ""
+            onSearchQueryChange("")
         }
         previousSearchSource = ui.selectedSearchSource
     }
 
-    LaunchedEffect(
+    val currentSearchScrollContextKey = remember(
         effectiveSearchKeyword,
         ui.selectedSearchSource,
         ui.selectedNeteaseSearchType
     ) {
-        if (searchQuery.isNotBlank()) {
+        exploreSearchScrollContextKey(
+            keyword = effectiveSearchKeyword,
+            source = ui.selectedSearchSource,
+            neteaseSearchType = ui.selectedNeteaseSearchType
+        )
+    }
+
+    LaunchedEffect(
+        currentSearchScrollContextKey,
+        searchScrollContextKey
+    ) {
+        if (
+            shouldResetExploreSearchScroll(
+                previousContextKey = searchScrollContextKey,
+                currentContextKey = currentSearchScrollContextKey
+            )
+        ) {
             searchListState.scrollToItem(0)
+        }
+        if (searchScrollContextKey != currentSearchScrollContextKey) {
+            onSearchScrollContextKeyChange(currentSearchScrollContextKey)
         }
     }
 
@@ -539,7 +588,7 @@ fun ExploreScreen(
         } else {
             resolveExploreSearchKeyword(normalizedQuery, availableSearchHistory)
         }
-        searchQuery = normalizedQuery
+        onSearchQueryChange(normalizedQuery)
         focusManager.clearFocus()
         vm.search(keyword, displayQuery = normalizedQuery)
         queueExploreSearchRecord(normalizedQuery)
@@ -578,7 +627,7 @@ fun ExploreScreen(
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = {
-                            searchQuery = it
+                            onSearchQueryChange(it)
                         },
                         label = {
                             Text(
@@ -605,7 +654,7 @@ fun ExploreScreen(
                         trailingIcon = {
                             if (searchQuery.isNotEmpty()) {
                                 HapticIconButton(onClick = {
-                                    searchQuery = ""
+                                    onSearchQueryChange("")
                                     vm.search("")
                                 }) { Icon(Icons.Default.Clear, "Clear") }
                             }

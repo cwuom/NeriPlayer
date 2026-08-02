@@ -32,6 +32,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Surface
@@ -194,7 +195,13 @@ fun ExploreHostScreen(
     val gridState = rememberSaveable(saver = gridStateSaver) {
         LazyGridState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
+    val searchListStateSaver: Saver<LazyListState, *> = LazyListState.Saver
+    val searchListState = rememberSaveable(saver = searchListStateSaver) {
+        LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
     val topAppBarState = rememberTopAppBarState()
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var searchScrollContextKey by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingGridRestoreIndex by rememberSaveable { mutableStateOf<Int?>(null) }
     var pendingGridRestoreOffset by rememberSaveable { mutableIntStateOf(0) }
     var pendingTopAppBarHeightOffset by rememberSaveable { mutableFloatStateOf(Float.NaN) }
@@ -291,48 +298,55 @@ fun ExploreHostScreen(
                                 )
                         ) {
                             ExploreScreen(
-                            gridState = gridState,
-                            topAppBarState = topAppBarState,
-                            offlineMode = offlineMode,
-                            onPlay = { pl ->
-                                captureExploreScrollPosition()
-                                AppContainer.playlistUsageRepo.recordOpen(
-                                    id = pl.id,
-                                    name = pl.name,
-                                    picUrl = pl.picUrl,
-                                    trackCount = pl.trackCount,
-                                    source = "netease"
-                                )
-                                openExploreSelectedItem(ExploreSelectedItem.Netease(pl))
-                            },
-                            onBiliPlaylistClick = { playlist ->
-                                captureExploreScrollPosition()
-                                openExploreSelectedItem(ExploreSelectedItem.Bilibili(playlist))
-                            },
-                            onYouTubeMusicPlaylistClick = { pl ->
-                                captureExploreScrollPosition()
-                                AppContainer.playlistUsageRepo.recordOpen(
-                                    id = stableYouTubeMusicId(
-                                        pl.playlistId.ifBlank { pl.browseId }
-                                    ),
-                                    name = pl.title,
-                                    picUrl = pl.coverUrl,
-                                    trackCount = pl.trackCount,
-                                    source = "youtubeMusic",
-                                    browseId = pl.browseId,
-                                    playlistId = pl.playlistId
-                                )
-                                openExploreSelectedItem(ExploreSelectedItem.YouTubeMusic(pl))
-                            },
-                            onNeteaseArtistClick = { artist ->
-                                captureExploreScrollPosition()
-                                openExploreSelectedItem(ExploreSelectedItem.NeteaseArtist(artist))
-                            },
-                            onSongClick = onSongClick,
-                            onSongPlayPreservingQueue = onSongPlayPreservingQueue,
-                            onSongPlayNext = onSongPlayNext,
-                            onSongAddToQueueEnd = onSongAddToQueueEnd,
-                            onPlayParts = onPlayParts
+                                gridState = gridState,
+                                topAppBarState = topAppBarState,
+                                searchQuery = searchQuery,
+                                onSearchQueryChange = { searchQuery = it },
+                                searchListState = searchListState,
+                                searchScrollContextKey = searchScrollContextKey,
+                                onSearchScrollContextKeyChange = {
+                                    searchScrollContextKey = it
+                                },
+                                offlineMode = offlineMode,
+                                onPlay = { pl ->
+                                    captureExploreScrollPosition()
+                                    AppContainer.playlistUsageRepo.recordOpen(
+                                        id = pl.id,
+                                        name = pl.name,
+                                        picUrl = pl.picUrl,
+                                        trackCount = pl.trackCount,
+                                        source = "netease"
+                                    )
+                                    openExploreSelectedItem(ExploreSelectedItem.Netease(pl))
+                                },
+                                onBiliPlaylistClick = { playlist ->
+                                    captureExploreScrollPosition()
+                                    openExploreSelectedItem(ExploreSelectedItem.Bilibili(playlist))
+                                },
+                                onYouTubeMusicPlaylistClick = { pl ->
+                                    captureExploreScrollPosition()
+                                    AppContainer.playlistUsageRepo.recordOpen(
+                                        id = stableYouTubeMusicId(
+                                            pl.playlistId.ifBlank { pl.browseId }
+                                        ),
+                                        name = pl.title,
+                                        picUrl = pl.coverUrl,
+                                        trackCount = pl.trackCount,
+                                        source = "youtubeMusic",
+                                        browseId = pl.browseId,
+                                        playlistId = pl.playlistId
+                                    )
+                                    openExploreSelectedItem(ExploreSelectedItem.YouTubeMusic(pl))
+                                },
+                                onNeteaseArtistClick = { artist ->
+                                    captureExploreScrollPosition()
+                                    openExploreSelectedItem(ExploreSelectedItem.NeteaseArtist(artist))
+                                },
+                                onSongClick = onSongClick,
+                                onSongPlayPreservingQueue = onSongPlayPreservingQueue,
+                                onSongPlayNext = onSongPlayNext,
+                                onSongAddToQueueEnd = onSongAddToQueueEnd,
+                                onPlayParts = onPlayParts
                             )
                         }
                     } else {
