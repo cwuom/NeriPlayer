@@ -3597,9 +3597,6 @@ internal fun PlayerManager.releaseImpl() {
 
         currentPlaylist = emptyList()
         currentIndex = -1
-        shuffleBag.clear()
-        shuffleHistory.clear()
-        shuffleFuture.clear()
         consecutivePlayFailures = 0
 
         NPLogger.d("NERI-PlayerManager", "release(): completed")

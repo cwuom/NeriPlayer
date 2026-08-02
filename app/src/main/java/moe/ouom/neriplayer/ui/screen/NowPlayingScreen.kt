@@ -109,6 +109,7 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SpeakerGroup
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Info
@@ -154,10 +155,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -220,6 +223,7 @@ import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.forSource
 import moe.ouom.neriplayer.core.player.model.PlaybackQualityOption
+import moe.ouom.neriplayer.core.player.model.PlayerQueueDisplayItem
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
@@ -283,6 +287,11 @@ import moe.ouom.neriplayer.ui.component.lyrics.resolvePreferredLyricContent
 import moe.ouom.neriplayer.ui.component.lyrics.resolveStoredLyricText
 import moe.ouom.neriplayer.ui.component.lyrics.toEditableLyricsText
 import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherRoomPanel
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialogContent
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
@@ -312,7 +321,6 @@ private const val CoverSourceBadgeRevealDelayMs =
     LyricsPageTransitionDurationMs + CoverSourceBadgeRevealBufferMs
 private const val QueueSheetMaxHeightFraction = 0.9f
 internal val NowPlayingQueueReorderAutoScrollMaxPerFrame = 2.dp
-internal val NowPlayingQueueReorderPlacementStiffness = Spring.StiffnessLow
 private val QueueReorderDragCancelStiffness = Spring.StiffnessMediumLow
 private const val QueueReorderDraggedItemScale = 1.01f
 private val QueueReorderDraggedItemElevation = 10.dp
@@ -407,20 +415,57 @@ internal fun shouldHideDownloadActionForSong(
 
 internal data class NowPlayingQueueEntry(
     val key: String,
+    val queueIndex: Int,
     val song: SongItem
 )
 
 internal fun buildNowPlayingQueueEntries(queue: List<SongItem>): List<NowPlayingQueueEntry> {
+    return buildNowPlayingQueueEntriesFromDisplayItems(
+        queue.mapIndexed { index, song ->
+            PlayerQueueDisplayItem(
+                queueIndex = index,
+                song = song
+            )
+        }
+    )
+}
+
+internal fun buildNowPlayingQueueEntriesFromDisplayItems(
+    displayItems: List<PlayerQueueDisplayItem>
+): List<NowPlayingQueueEntry> {
     val occurrenceByStableKey = mutableMapOf<String, Int>()
-    return queue.map { song ->
-        val stableKey = song.stableKey()
+    return displayItems.map { item ->
+        val stableKey = item.song.stableKey()
         val occurrence = occurrenceByStableKey.getOrDefault(stableKey, 0)
         occurrenceByStableKey[stableKey] = occurrence + 1
         NowPlayingQueueEntry(
             key = "$occurrence:$stableKey",
-            song = song
+            queueIndex = item.queueIndex,
+            song = item.song
         )
     }
+}
+
+internal fun moveNowPlayingQueueEntry(
+    entries: MutableList<NowPlayingQueueEntry>,
+    fromKey: String,
+    toKey: String
+): Boolean {
+    val fromIndex = entries.indexOfFirst { it.key == fromKey }
+    val toIndex = entries.indexOfFirst { it.key == toKey }
+    if (fromIndex == -1 || toIndex == -1 || fromIndex == toIndex) return false
+    entries.add(toIndex, entries.removeAt(fromIndex))
+    return true
+}
+
+internal fun syncNowPlayingQueueEntries(
+    entries: MutableList<NowPlayingQueueEntry>,
+    sourceEntries: List<NowPlayingQueueEntry>
+): Boolean {
+    if (entries == sourceEntries) return false
+    entries.clear()
+    entries.addAll(sourceEntries)
+    return true
 }
 
 internal fun shouldShowNowPlayingQueueQuickActions(
@@ -488,6 +533,7 @@ private fun NowPlayingQueueRow(
     index: Int,
     song: SongItem,
     isCurrent: Boolean,
+    isFavoriteSong: Boolean,
     offlineMode: Boolean,
     selectionMode: Boolean,
     selected: Boolean,
@@ -496,6 +542,8 @@ private fun NowPlayingQueueRow(
     onToggleSelect: () -> Unit,
     onPlayNext: () -> Unit,
     onAddToEnd: () -> Unit,
+    onFavoriteToggle: () -> Unit,
+    onRemoveFromQueue: () -> Unit,
     dragHandle: @Composable (() -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -637,6 +685,12 @@ private fun NowPlayingQueueRow(
                     ) {
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.local_playlist_play_next)) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.SkipNext,
+                                    contentDescription = null
+                                )
+                            },
                             onClick = {
                                 onPlayNext()
                                 showMoreMenu = false
@@ -644,8 +698,54 @@ private fun NowPlayingQueueRow(
                         )
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.playlist_add_to_end)) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                                    contentDescription = null
+                                )
+                            },
                             onClick = {
                                 onAddToEnd()
+                                showMoreMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    stringResource(
+                                        if (isFavoriteSong) {
+                                            R.string.favorite_remove
+                                        } else {
+                                            R.string.favorite_add
+                                        }
+                                    )
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = if (isFavoriteSong) {
+                                        Icons.Filled.Favorite
+                                    } else {
+                                        Icons.Outlined.FavoriteBorder
+                                    },
+                                    contentDescription = null
+                                )
+                            },
+                            onClick = {
+                                onFavoriteToggle()
+                                showMoreMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.nowplaying_queue_remove)) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.DeleteOutline,
+                                    contentDescription = null
+                                )
+                            },
+                            onClick = {
+                                onRemoveFromQueue()
                                 showMoreMenu = false
                             }
                         )
@@ -844,10 +944,10 @@ private fun NowPlayingQueueSelectionToolbar(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun NowPlayingQueueSheet(
-    displayedQueue: List<SongItem>,
+    displayedQueueItems: List<PlayerQueueDisplayItem>,
     currentIndexInDisplay: Int,
     offlineMode: Boolean,
     onDismissRequest: () -> Unit,
@@ -860,14 +960,20 @@ internal fun NowPlayingQueueSheet(
     val allLocalPlaylists by localPlaylistRepo.playlists.collectAsStateWithLifecycle(
         initialValue = playerPlaylists
     )
+    val displayedQueue = remember(displayedQueueItems) {
+        displayedQueueItems.map { it.song }
+    }
+    val favoriteSongs = remember(allLocalPlaylists, context) {
+        FavoritesPlaylist.firstOrNull(allLocalPlaylists, context)?.songs.orEmpty()
+    }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectionMode by remember { mutableStateOf(false) }
     var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showExportSheet by remember { mutableStateOf(false) }
     var showQueueIndexJumpDialog by remember { mutableStateOf(false) }
     var queueIndexInput by remember { mutableStateOf("") }
-    val sourceEntries = remember(displayedQueue) {
-        buildNowPlayingQueueEntries(displayedQueue)
+    val sourceEntries = remember(displayedQueueItems) {
+        buildNowPlayingQueueEntriesFromDisplayItems(displayedQueueItems)
     }
     val initialQueueScrollTarget = remember(sourceEntries, currentIndexInDisplay) {
         resolveNowPlayingQueueScrollTarget(
@@ -880,7 +986,11 @@ internal fun NowPlayingQueueSheet(
     )
     var initialQueuePositioned by remember { mutableStateOf(initialQueueScrollTarget != null) }
     var queueOrderDirty by remember { mutableStateOf(false) }
-    var queueEntries by remember { mutableStateOf(sourceEntries) }
+    val queueEntries = remember {
+        mutableStateListOf<NowPlayingQueueEntry>().apply {
+            addAll(sourceEntries)
+        }
+    }
     val currentEntryKey = sourceEntries.getOrNull(currentIndexInDisplay)?.key
     val currentIndexInQueueEntries = currentEntryKey
         ?.let { key -> queueEntries.indexOfFirst { it.key == key } }
@@ -888,11 +998,15 @@ internal fun NowPlayingQueueSheet(
         ?: currentIndexInDisplay
     val latestCurrentEntryKey by rememberUpdatedState(currentEntryKey)
     val latestCurrentIndexInQueueEntries by rememberUpdatedState(currentIndexInQueueEntries)
-    val queueItemKeys = remember(queueEntries) {
-        queueEntries.mapTo(LinkedHashSet()) { it.key }
+    val queueItemKeys by remember {
+        derivedStateOf {
+            queueEntries.mapTo(LinkedHashSet()) { it.key }
+        }
     }
-    val selectedSongs = remember(queueEntries, selectedKeys) {
-        queueEntries.filter { it.key in selectedKeys }.map { it.song }
+    val selectedSongs by remember {
+        derivedStateOf {
+            queueEntries.filter { it.key in selectedKeys }.map { it.song }
+        }
     }
     val allItemsSelected = queueEntries.isNotEmpty() &&
         selectedKeys.size == queueItemKeys.size &&
@@ -903,12 +1017,7 @@ internal fun NowPlayingQueueSheet(
             if (!selectionMode) return@rememberReorderableLazyListState
             val fromKey = from.key as? String ?: return@rememberReorderableLazyListState
             val toKey = to.key as? String ?: return@rememberReorderableLazyListState
-            val fromIndex = queueEntries.indexOfFirst { it.key == fromKey }
-            val toIndex = queueEntries.indexOfFirst { it.key == toKey }
-            if (fromIndex != -1 && toIndex != -1 && fromIndex != toIndex) {
-                val reorderedEntries = queueEntries.toMutableList()
-                reorderedEntries.add(toIndex, reorderedEntries.removeAt(fromIndex))
-                queueEntries = reorderedEntries
+            if (moveNowPlayingQueueEntry(queueEntries, fromKey, toKey)) {
                 queueOrderDirty = true
             }
         },
@@ -981,6 +1090,22 @@ internal fun NowPlayingQueueSheet(
         }
     }
 
+    fun toggleQueueSongFavorite(song: SongItem, isFavoriteSong: Boolean) {
+        screenScope.launchLocalPlaylistMutation("toggleNowPlayingQueueSongFavorite") {
+            if (isFavoriteSong) {
+                localPlaylistRepo.removeFromFavorites(song)
+            } else {
+                localPlaylistRepo.addToFavorites(song)
+            }
+        }
+    }
+
+    LaunchedEffect(sourceEntries) {
+        if (!queueOrderDirty) {
+            syncNowPlayingQueueEntries(queueEntries, sourceEntries)
+        }
+    }
+
     LaunchedEffect(queueEntries.size, currentIndexInQueueEntries, selectionMode, queueOrderDirty) {
         if (!shouldAutoLocateNowPlayingQueue(selectionMode, queueOrderDirty)) {
             return@LaunchedEffect
@@ -1005,11 +1130,6 @@ internal fun NowPlayingQueueSheet(
         } else {
             queueListState.animateScrollToItem(targetIndex)
         }
-    }
-
-    LaunchedEffect(sourceEntries) {
-        queueEntries = sourceEntries
-        queueOrderDirty = false
     }
 
     LaunchedEffect(queueItemKeys, selectedKeys) {
@@ -1152,18 +1272,10 @@ internal fun NowPlayingQueueSheet(
                         key = { _, entry -> entry.key },
                         contentType = { _, _ -> "queue_song" }
                     ) { index, entry ->
-                        ReorderableItem(
-                            state = reorderState,
-                            key = entry.key,
-                            modifier = Modifier.animateItem(
-                                fadeInSpec = null,
-                                fadeOutSpec = null,
-                                placementSpec = spring(
-                                    dampingRatio = Spring.DampingRatioNoBouncy,
-                                    stiffness = NowPlayingQueueReorderPlacementStiffness
-                                )
-                            )
-                        ) { isDragging ->
+                        ReorderableItem(state = reorderState, key = entry.key) { isDragging ->
+                            val isFavoriteSong = remember(favoriteSongs, entry.song) {
+                                favoriteSongs.any { it.sameIdentityAs(entry.song) }
+                            }
                             val rowScale by animateFloatAsState(
                                 targetValue = if (isDragging) {
                                     QueueReorderDraggedItemScale
@@ -1200,6 +1312,7 @@ internal fun NowPlayingQueueSheet(
                                 index = index,
                                 song = entry.song,
                                 isCurrent = entry.key == currentEntryKey,
+                                isFavoriteSong = isFavoriteSong,
                                 offlineMode = offlineMode,
                                 selectionMode = selectionMode,
                                 selected = entry.key in selectedKeys,
@@ -1214,6 +1327,12 @@ internal fun NowPlayingQueueSheet(
                                 onToggleSelect = { toggleItem(entry.key) },
                                 onPlayNext = { PlayerManager.addToQueueNext(entry.song) },
                                 onAddToEnd = { PlayerManager.addToQueueEnd(entry.song) },
+                                onFavoriteToggle = {
+                                    toggleQueueSongFavorite(entry.song, isFavoriteSong)
+                                },
+                                onRemoveFromQueue = {
+                                    PlayerManager.removeQueueItem(index)
+                                },
                                 dragHandle = {
                                     Box(
                                         modifier = Modifier
@@ -1261,6 +1380,7 @@ internal fun NowPlayingQueueSheet(
                         .padding(end = 20.dp, bottom = 20.dp)
                 )
             }
+
         }
     }
 
@@ -1303,41 +1423,48 @@ private fun NowPlayingQueueIndexJumpDialog(
     val targetIndex = remember(input, queueSize) {
         resolveNowPlayingQueueIndexInput(input, queueSize)
     }
+    val isInputError = input.isNotBlank() && targetIndex == null
 
     fun submit() {
         targetIndex?.let(onJump)
     }
 
-    AlertDialog(
+    MiuixSettingsDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.nowplaying_queue_jump_title)) },
         text = {
-            OutlinedTextField(
-                value = input,
-                onValueChange = { value ->
-                    onInputChange(value.filter { it.isDigit() }.take(6))
-                },
-                label = { Text(stringResource(R.string.nowplaying_queue_jump_input_label)) },
-                supportingText = {
-                    Text(
-                        stringResource(
-                            R.string.nowplaying_queue_jump_input_supporting,
-                            queueSize
-                        )
-                    )
-                },
-                isError = input.isNotBlank() && targetIndex == null,
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Number,
-                    imeAction = ImeAction.Done
-                ),
-                keyboardActions = KeyboardActions(onDone = { submit() }),
-                modifier = Modifier.fillMaxWidth()
-            )
+            MiuixSettingsDialogContent(verticalSpacing = 8.dp) {
+                MiuixSettingsTextField(
+                    value = input,
+                    onValueChange = { value ->
+                        onInputChange(value.filter { it.isDigit() }.take(6))
+                    },
+                    placeholder = {
+                        Text(stringResource(R.string.nowplaying_queue_jump_input_label))
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { submit() })
+                )
+                Text(
+                    text = stringResource(
+                        R.string.nowplaying_queue_jump_input_supporting,
+                        queueSize
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isInputError) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            }
         },
         confirmButton = {
-            HapticTextButton(
+            MiuixSettingsButton(
                 onClick = ::submit,
                 enabled = targetIndex != null
             ) {
@@ -1345,7 +1472,7 @@ private fun NowPlayingQueueIndexJumpDialog(
             }
         },
         dismissButton = {
-            HapticTextButton(onClick = onDismiss) {
+            MiuixSettingsTextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.action_cancel))
             }
         }
@@ -1555,12 +1682,13 @@ fun NowPlayingScreen(
     val isFavorite = favOverride ?: isFavoriteComputed
 
     val queue by PlayerManager.currentQueueFlow.collectAsStateWithLifecycle()
-    val displayedQueue = remember(queue) { queue }
-    val currentIndexInDisplay = remember(displayedQueue, currentSong) {
-        displayedQueue.indexOfFirst {
-            it.sameIdentityAs(currentSong)
-        }
+    val queueDisplayRevision by PlayerManager.currentQueueDisplayRevisionFlow.collectAsStateWithLifecycle()
+    val queueDisplayState = remember(queue, currentSong, shuffleEnabled, queueDisplayRevision) {
+        PlayerManager.currentQueueDisplaySnapshot()
     }
+    val displayedQueueItems = queueDisplayState.items
+    val displayedQueue = remember(displayedQueueItems) { displayedQueueItems.map { it.song } }
+    val currentIndexInDisplay = queueDisplayState.currentDisplayIndex
 
     var showAddSheet by remember { mutableStateOf(false) }
     var showQueueSheet by remember { mutableStateOf(false) }
@@ -2847,7 +2975,7 @@ fun NowPlayingScreen(
             // 播放队列弹窗
             if (showQueueSheet) {
                 NowPlayingQueueSheet(
-                    displayedQueue = displayedQueue,
+                    displayedQueueItems = displayedQueueItems,
                     currentIndexInDisplay = currentIndexInDisplay,
                     offlineMode = offlineMode,
                     onDismissRequest = { showQueueSheet = false },

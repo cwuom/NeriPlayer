@@ -11,27 +11,16 @@ internal enum class PlaybackFailureAdvanceAction {
 internal fun resolvePlaybackFailureAdvanceAction(
     currentIndex: Int,
     playlistSize: Int,
-    repeatMode: Int,
-    shuffleEnabled: Boolean,
-    shuffleFutureSize: Int,
-    shuffleBagSize: Int
+    repeatMode: Int
 ): PlaybackFailureAdvanceAction {
     if (playlistSize <= 0 || currentIndex !in 0 until playlistSize) {
         return PlaybackFailureAdvanceAction.STOP
     }
 
     val canWrap = repeatMode == Player.REPEAT_MODE_ALL && playlistSize > 1
-    return if (shuffleEnabled) {
-        when {
-            shuffleFutureSize > 0 || shuffleBagSize > 0 -> PlaybackFailureAdvanceAction.NEXT
-            canWrap -> PlaybackFailureAdvanceAction.WRAP
-            else -> PlaybackFailureAdvanceAction.STOP
-        }
-    } else {
-        when {
-            currentIndex < playlistSize - 1 -> PlaybackFailureAdvanceAction.NEXT
-            canWrap -> PlaybackFailureAdvanceAction.WRAP
-            else -> PlaybackFailureAdvanceAction.STOP
-        }
+    return when {
+        currentIndex < playlistSize - 1 -> PlaybackFailureAdvanceAction.NEXT
+        canWrap -> PlaybackFailureAdvanceAction.WRAP
+        else -> PlaybackFailureAdvanceAction.STOP
     }
 }

@@ -93,9 +93,11 @@ import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
 import moe.ouom.neriplayer.core.player.model.PlaybackSoundConfig
 import moe.ouom.neriplayer.core.player.model.PlaybackSoundState
+import moe.ouom.neriplayer.core.player.model.PlayerQueueDisplayState
 import moe.ouom.neriplayer.core.player.model.PlaybackUrlCandidate
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
+import moe.ouom.neriplayer.core.player.model.buildPlayerQueueDisplayState
 import moe.ouom.neriplayer.core.player.policy.progress.LONG_FORM_PLAYBACK_MIN_DURATION_MS
 import moe.ouom.neriplayer.core.player.policy.progress.resolveLongFormPlaybackPositionForPersistence
 import moe.ouom.neriplayer.core.player.policy.progress.resolveLongFormPlaybackResumePosition
@@ -177,6 +179,7 @@ import moe.ouom.neriplayer.core.player.persistence.playBiliVideoAsAudioImpl
 import moe.ouom.neriplayer.core.player.persistence.playFromQueueImpl
 import moe.ouom.neriplayer.core.player.persistence.rebaseUserLyricOffsetsForSourceImpl
 import moe.ouom.neriplayer.core.player.persistence.removeCurrentFromFavoritesImpl
+import moe.ouom.neriplayer.core.player.persistence.removeQueueItemImpl
 import moe.ouom.neriplayer.core.player.persistence.replaceCurrentInQueueAndPlayImpl
 import moe.ouom.neriplayer.core.player.persistence.replaceMetadataFromSearchImpl
 import moe.ouom.neriplayer.core.player.persistence.resumeRestoredPlaybackIfNeededImpl
@@ -440,11 +443,6 @@ object PlayerManager {
     @Volatile
     internal var currentIndex = -1
 
-    /** 记录随机播放历史, 支持上一首和跨轮次回退 */
-    internal val shuffleHistory = mutableListOf<Int>()   // 已播放过的随机索引历史
-    internal val shuffleFuture  = mutableListOf<Int>()   // queued next items for shuffle history
-    internal var shuffleBag     = mutableListOf<Int>()   // remaining shuffle candidates for current cycle
-
     @Volatile
     internal var consecutivePlayFailures = 0
     internal const val MAX_CONSECUTIVE_FAILURES = 10
@@ -512,6 +510,8 @@ object PlayerManager {
 
     internal val _currentQueueFlow = MutableStateFlow<List<SongItem>>(emptyList())
     val currentQueueFlow: StateFlow<List<SongItem>> = _currentQueueFlow
+    internal val _currentQueueDisplayRevisionFlow = MutableStateFlow(0L)
+    val currentQueueDisplayRevisionFlow: StateFlow<Long> = _currentQueueDisplayRevisionFlow
 
     internal val _isPlayingFlow = MutableStateFlow(false)
     val isPlayingFlow: StateFlow<Boolean> = _isPlayingFlow
@@ -1396,6 +1396,17 @@ object PlayerManager {
 
     internal fun queueIndexOf(song: SongItem, playlist: List<SongItem> = currentPlaylist): Int {
         return playlist.indexOfFirst { it.sameIdentityAs(song) }
+    }
+
+    fun currentQueueDisplaySnapshot(): PlayerQueueDisplayState {
+        return buildPlayerQueueDisplayState(
+            playlist = currentPlaylist,
+            currentIndex = currentIndex
+        )
+    }
+
+    internal fun bumpCurrentQueueDisplayRevision() {
+        _currentQueueDisplayRevisionFlow.value = _currentQueueDisplayRevisionFlow.value + 1
     }
 
     internal fun localMediaSource(song: SongItem): String? {
@@ -2501,6 +2512,8 @@ object PlayerManager {
     fun addToQueueEnd(song: SongItem) = addToQueueEndImpl(song)
 
     fun moveQueueItem(fromIndex: Int, toIndex: Int) = moveQueueItemImpl(fromIndex, toIndex)
+
+    fun removeQueueItem(index: Int) = removeQueueItemImpl(index)
 
     fun reorderQueue(queue: List<SongItem>, currentIndexInQueue: Int) =
         reorderQueueImpl(queue, currentIndexInQueue)

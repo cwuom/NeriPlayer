@@ -192,10 +192,13 @@ fun LyricsScreen(
 
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val queue by PlayerManager.currentQueueFlow.collectAsState()
-    val displayedQueue = remember(queue) { queue }
-    val currentIndexInDisplay = remember(displayedQueue, currentSong) {
-        displayedQueue.indexOfFirst { it.sameIdentityAs(currentSong) }
+    val queueDisplayRevision by PlayerManager.currentQueueDisplayRevisionFlow.collectAsState()
+    val queueDisplayState = remember(queue, currentSong, queueDisplayRevision) {
+        PlayerManager.currentQueueDisplaySnapshot()
     }
+    val displayedQueueItems = queueDisplayState.items
+    val displayedQueue = remember(displayedQueueItems) { displayedQueueItems.map { it.song } }
+    val currentIndexInDisplay = queueDisplayState.currentDisplayIndex
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsState()
     val usbPlaybackPreparing by PlayerManager.usbExclusivePlaybackPreparingFlow.collectAsState()
@@ -919,7 +922,7 @@ fun LyricsScreen(
             // 播放队列弹窗
             if (showQueueSheet) {
                 NowPlayingQueueSheet(
-                    displayedQueue = displayedQueue,
+                    displayedQueueItems = displayedQueueItems,
                     currentIndexInDisplay = currentIndexInDisplay,
                     offlineMode = offlineMode,
                     onDismissRequest = { showQueueSheet = false },

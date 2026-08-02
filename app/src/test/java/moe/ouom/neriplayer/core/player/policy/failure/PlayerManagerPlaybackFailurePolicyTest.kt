@@ -11,10 +11,7 @@ class PlayerManagerPlaybackFailurePolicyTest {
         val action = resolvePlaybackFailureAdvanceAction(
             currentIndex = 1,
             playlistSize = 4,
-            repeatMode = Player.REPEAT_MODE_ONE,
-            shuffleEnabled = false,
-            shuffleFutureSize = 0,
-            shuffleBagSize = 0
+            repeatMode = Player.REPEAT_MODE_ONE
         )
 
         assertEquals(PlaybackFailureAdvanceAction.NEXT, action)
@@ -25,10 +22,7 @@ class PlayerManagerPlaybackFailurePolicyTest {
         val action = resolvePlaybackFailureAdvanceAction(
             currentIndex = 2,
             playlistSize = 3,
-            repeatMode = Player.REPEAT_MODE_ONE,
-            shuffleEnabled = false,
-            shuffleFutureSize = 0,
-            shuffleBagSize = 0
+            repeatMode = Player.REPEAT_MODE_ONE
         )
 
         assertEquals(PlaybackFailureAdvanceAction.STOP, action)
@@ -39,24 +33,18 @@ class PlayerManagerPlaybackFailurePolicyTest {
         val action = resolvePlaybackFailureAdvanceAction(
             currentIndex = 2,
             playlistSize = 3,
-            repeatMode = Player.REPEAT_MODE_ALL,
-            shuffleEnabled = false,
-            shuffleFutureSize = 0,
-            shuffleBagSize = 0
+            repeatMode = Player.REPEAT_MODE_ALL
         )
 
         assertEquals(PlaybackFailureAdvanceAction.WRAP, action)
     }
 
     @Test
-    fun `shuffle failure uses queued alternative before considering wrap`() {
+    fun `failure follows queue order after shuffle has already reordered playlist`() {
         val action = resolvePlaybackFailureAdvanceAction(
             currentIndex = 0,
             playlistSize = 3,
-            repeatMode = Player.REPEAT_MODE_ONE,
-            shuffleEnabled = true,
-            shuffleFutureSize = 0,
-            shuffleBagSize = 2
+            repeatMode = Player.REPEAT_MODE_ONE
         )
 
         assertEquals(PlaybackFailureAdvanceAction.NEXT, action)

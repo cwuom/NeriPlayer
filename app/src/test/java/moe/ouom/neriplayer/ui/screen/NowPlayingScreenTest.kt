@@ -1,17 +1,18 @@
 package moe.ouom.neriplayer.ui.screen
 
-import androidx.compose.animation.core.Spring
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
+import moe.ouom.neriplayer.core.player.model.PlayerQueueDisplayItem
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
 import moe.ouom.neriplayer.data.model.SongItem
 import kotlin.math.pow
@@ -305,6 +306,24 @@ class NowPlayingScreenTest {
     }
 
     @Test
+    fun `queue entries preserve source queue indices for shuffled display rows`() {
+        val first = testSong(id = 1L, name = "First")
+        val second = testSong(id = 2L, name = "Second")
+        val third = testSong(id = 3L, name = "Third")
+
+        val entries = buildNowPlayingQueueEntriesFromDisplayItems(
+            listOf(
+                PlayerQueueDisplayItem(queueIndex = 2, song = third),
+                PlayerQueueDisplayItem(queueIndex = 0, song = first),
+                PlayerQueueDisplayItem(queueIndex = 1, song = second)
+            )
+        )
+
+        assertEquals(listOf(2, 0, 1), entries.map { it.queueIndex })
+        assertEquals(listOf(third, first, second), entries.map { it.song })
+    }
+
+    @Test
     fun `queue selected songs keep duplicate entries by row key`() {
         val song = testSong(id = 1L, name = "Song")
         val queue = listOf(song, song, testSong(id = 2L, name = "Other"))
@@ -315,6 +334,61 @@ class NowPlayingScreenTest {
         val selectedSongs = resolveNowPlayingQueueSelectedSongs(queue, selectedKeys)
 
         assertEquals(listOf(song, song), selectedSongs)
+    }
+
+    @Test
+    fun `queue reorder moves entries by stable row key`() {
+        val first = testSong(id = 1L, name = "First")
+        val second = testSong(id = 2L, name = "Second")
+        val third = testSong(id = 3L, name = "Third")
+        val entries = buildNowPlayingQueueEntries(listOf(first, second, third)).toMutableList()
+
+        assertTrue(moveNowPlayingQueueEntry(entries, entries[0].key, entries[2].key))
+
+        assertEquals(listOf(second, third, first), entries.map { it.song })
+    }
+
+    @Test
+    fun `queue reorder ignores missing and unchanged row keys`() {
+        val entries = buildNowPlayingQueueEntries(
+            listOf(
+                testSong(id = 1L, name = "First"),
+                testSong(id = 2L, name = "Second")
+            )
+        ).toMutableList()
+        val initialOrder = entries.toList()
+
+        assertFalse(moveNowPlayingQueueEntry(entries, "missing", entries[1].key))
+        assertFalse(moveNowPlayingQueueEntry(entries, entries[0].key, entries[0].key))
+
+        assertEquals(initialOrder, entries)
+    }
+
+    @Test
+    fun `queue entry sync keeps the same mutable list after commit`() {
+        val first = testSong(id = 1L, name = "First")
+        val second = testSong(id = 2L, name = "Second")
+        val third = testSong(id = 3L, name = "Third")
+        val entries = buildNowPlayingQueueEntries(listOf(first, second, third)).toMutableList()
+        val originalEntries = entries
+        val committedEntries = buildNowPlayingQueueEntries(listOf(third, first, second))
+
+        assertTrue(syncNowPlayingQueueEntries(entries, committedEntries))
+
+        assertSame(originalEntries, entries)
+        assertEquals(committedEntries, entries)
+    }
+
+    @Test
+    fun `queue entry sync ignores unchanged source entries`() {
+        val entries = buildNowPlayingQueueEntries(
+            listOf(
+                testSong(id = 1L, name = "First"),
+                testSong(id = 2L, name = "Second")
+            )
+        ).toMutableList()
+
+        assertFalse(syncNowPlayingQueueEntries(entries, entries.toList()))
     }
 
     @Test
@@ -404,15 +478,6 @@ class NowPlayingScreenTest {
     @Test
     fun `queue reorder autoscroll uses gentle per frame step`() {
         assertEquals(2.dp, NowPlayingQueueReorderAutoScrollMaxPerFrame)
-    }
-
-    @Test
-    fun `queue reorder placement uses low stiffness spring`() {
-        assertEquals(
-            Spring.StiffnessLow,
-            NowPlayingQueueReorderPlacementStiffness,
-            0.01f
-        )
     }
 
     @Test
