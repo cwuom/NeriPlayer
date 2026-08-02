@@ -130,15 +130,18 @@ class NowPlayingDialogsTest {
     @Test
     fun lyricFontSizeSheet_doneCommitsScaleAndDismisses() {
         val context = targetContext
-        val committedScales = mutableListOf<Float>()
+        val committedLyricScales = mutableListOf<Float>()
+        val committedTranslationScales = mutableListOf<Float>()
         var dismissed = false
 
         composeRule.setContent {
             MaterialTheme {
                 Box {
                     LyricFontSizeSheet(
-                        currentScale = 1.25f,
-                        onScaleCommit = { committedScales += it },
+                        currentLyricScale = 1.25f,
+                        currentTranslationScale = 1.25f,
+                        onLyricScaleCommit = { committedLyricScales += it },
+                        onTranslationScaleCommit = { committedTranslationScales += it },
                         onDismiss = { dismissed = true }
                     )
                 }
@@ -149,7 +152,8 @@ class NowPlayingDialogsTest {
         composeRule.onNodeWithText(context.getString(R.string.action_done)).performClick()
 
         composeRule.runOnIdle {
-            assertEquals(listOf(1.25f), committedScales)
+            assertEquals(listOf(1.25f), committedLyricScales)
+            assertEquals(listOf(1.25f), committedTranslationScales)
             assertTrue(dismissed)
         }
     }

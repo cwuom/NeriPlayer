@@ -580,6 +580,7 @@ fun LyricsScreen(
                 plainTranslatedLyrics = plainTranslatedLyrics,
                 translatedLyrics = translatedLyrics.orEmpty(),
                 phoneticLyrics = effectivePhoneticLyrics,
+                playbackSessionKey = currentSong?.stableKey(),
                 previewPositionOverrideMs = previewPositionOverrideMs,
                 advancedLyricsEnabled = advancedLyricsEnabled,
                 showLyricTranslation = showLyricTranslation,
@@ -1018,6 +1019,7 @@ private fun LyricsContentPane(
     plainTranslatedLyrics: List<LyricEntry>,
     translatedLyrics: List<LyricEntry>,
     phoneticLyrics: List<LyricEntry>,
+    playbackSessionKey: String?,
     previewPositionOverrideMs: Long?,
     advancedLyricsEnabled: Boolean,
     showLyricTranslation: Boolean,
@@ -1128,7 +1130,9 @@ private fun LyricsContentPane(
         translationFontSize = scaledLyricFontSize(16f, translationFontScale).sp,
         isPlaying = shouldAnimateFromPlayback,
         playbackSpeed = playbackSpeed,
-        interpolatePlaybackPosition = !lowPowerRendering
+        interpolatePlaybackPosition = !lowPowerRendering,
+        playbackSessionKey = playbackSessionKey,
+        stableEmbeddedViewport = true
     )
 }
 

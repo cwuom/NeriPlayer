@@ -85,7 +85,7 @@ internal fun estimateUsbExclusiveLoudness(
         UsbExclusiveLoudnessPeakSource.VolumeCeiling
     }
     val estimatedPeakDbfs = if (observedPeakDominates) {
-        observedPeakDbfs ?: ceilingPeakDbfs
+        observedPeakDbfs
     } else {
         ceilingPeakDbfs
     }

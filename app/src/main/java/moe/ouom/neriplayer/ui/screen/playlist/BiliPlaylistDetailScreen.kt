@@ -26,7 +26,6 @@ package moe.ouom.neriplayer.ui.screen.playlist
 import android.app.Application
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -88,7 +87,7 @@ import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
-import moe.ouom.neriplayer.ui.rememberMainTabSceneRestoredEntry
+import moe.ouom.neriplayer.ui.rememberMainTabDetailVisibilityState
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
@@ -375,14 +374,10 @@ fun BiliPlaylistDetailScreen(
         onPlayAudio(ui.videos, startIndex)
     }
 
-    val detailEnterTransition = if (rememberMainTabSceneRestoredEntry()) {
-        EnterTransition.None
-    } else {
-        fadeIn() + slideInVertically { it / 6 }
-    }
+    val detailVisibilityState = rememberMainTabDetailVisibilityState(playlist.mediaId)
     AnimatedVisibility(
-        visible = true,
-        enter = detailEnterTransition,
+        visibleState = detailVisibilityState,
+        enter = fadeIn() + slideInVertically { it / 6 },
         exit = fadeOut() + slideOutVertically { it / 6 }
     ) {
         Surface(

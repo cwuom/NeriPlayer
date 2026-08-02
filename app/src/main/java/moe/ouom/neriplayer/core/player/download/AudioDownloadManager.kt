@@ -1310,7 +1310,6 @@ object AudioDownloadManager {
                                 activeTransportKind = transportKind
                             }
                             val workingFile = tempFile
-                                ?: throw IOException("无法创建下载缓存文件: $fileName")
                             ManagedDownloadStorage.saveWorkingResumeMetadata(
                                 workingFile = workingFile,
                                 song = workingSong
@@ -1850,7 +1849,7 @@ object AudioDownloadManager {
             if (!response.isSuccessful) {
                 throw IOException("封面请求失败: HTTP ${response.code}")
             }
-            val body: ResponseBody = response.body ?: throw IOException("封面响应为空")
+            val body: ResponseBody = response.body
             val contentType: String = body.contentType()?.toString().orEmpty()
             if (contentType.isNotBlank() && !contentType.startsWith("image/", ignoreCase = true)) {
                 throw IOException("封面响应不是图片: $contentType")

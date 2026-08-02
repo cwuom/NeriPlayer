@@ -52,12 +52,13 @@ internal class DownloadedAudioMetadataStore(
                 )
                 return true
             }
-            lastError = result.exceptionOrNull()
+            val error = result.exceptionOrNull()
                 ?: IllegalStateException("下载元数据写入读回校验失败")
+            lastError = error
             if (attempt < maxWriteAttempts - 1) {
                 NPLogger.w(
                     loggerTag,
-                    "写入下载元数据失败(第${attempt + 1}次): ${audio.name} - ${lastError?.message}"
+                    "写入下载元数据失败(第${attempt + 1}次): ${audio.name} - ${error.message}"
                 )
                 delay(writeRetryDelayMs)
             }

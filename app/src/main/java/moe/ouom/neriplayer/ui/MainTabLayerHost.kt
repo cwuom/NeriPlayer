@@ -1,7 +1,12 @@
 package moe.ouom.neriplayer.ui
 
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.Transition
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -21,6 +26,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,6 +38,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.ui.effect.glass.ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS
+import moe.ouom.neriplayer.ui.effect.glass.DRAWER_NAVIGATION_CLOSE_DURATION_MS
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassNavigationOwner
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassMainTabTransitionSpec
 import kotlin.math.abs
@@ -49,6 +57,12 @@ internal data class MainTabLayerScene(
 
 internal val LocalMainTabSceneRestored = staticCompositionLocalOf { false }
 
+internal fun shouldSuppressRestoredMainTabHostEntry(
+    restoredEntry: Boolean,
+    initialDepth: Int,
+    targetDepth: Int
+): Boolean = restoredEntry && targetDepth > initialDepth
+
 @Composable
 internal fun rememberMainTabSceneRestoredEntry(): Boolean {
     val restored = LocalMainTabSceneRestored.current
@@ -60,6 +74,48 @@ internal fun rememberMainTabSceneRestoredEntry(): Boolean {
         }
     }
     return suppressEntry
+}
+
+@Composable
+internal fun rememberMainTabDetailVisibilityState(
+    detailKey: Any?
+): MutableTransitionState<Boolean> {
+    val restored = LocalMainTabSceneRestored.current
+    return remember(detailKey) {
+        MutableTransitionState(restored).apply {
+            targetState = true
+        }
+    }
+}
+
+@Composable
+internal fun <S> Transition<S>.animateMainTabDetailCloseRootRevealFraction(
+    navigationDepth: (S) -> Int,
+    label: String
+): Float {
+    val revealFraction by animateFloat(
+        transitionSpec = {
+            tween(
+                durationMillis = DRAWER_NAVIGATION_CLOSE_DURATION_MS,
+                easing = FastOutSlowInEasing
+            )
+        },
+        label = "${label}_root_reveal"
+    ) { state ->
+        if (navigationDepth(state) == 0) 1f else 0f
+    }
+    val closingToRoot = navigationDepth(currentState) > 0 &&
+        navigationDepth(targetState) == 0
+    return if (closingToRoot) revealFraction else 1f
+}
+
+internal fun Modifier.clipMainTabDetailCloseRoot(
+    revealFraction: Float
+): Modifier = drawWithContent {
+    val revealBottom = size.height * revealFraction.coerceIn(0f, 1f)
+    clipRect(bottom = revealBottom) {
+        this@drawWithContent.drawContent()
+    }
 }
 
 @Composable
@@ -297,6 +353,7 @@ internal class MainTabLayerTransitionController(
         fromRouteState = null
         runningState = false
         transitionJob = null
+        targetSceneRestoredState = false
     }
 
     private data class TransitionStart(

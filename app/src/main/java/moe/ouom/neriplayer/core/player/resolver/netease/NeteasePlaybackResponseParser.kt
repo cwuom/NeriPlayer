@@ -101,37 +101,50 @@ internal object NeteasePlaybackResponseParser {
     }
 
     private fun extractDataObject(root: JSONObject): JSONObject? {
-        return when (val data = root.opt("data")) {
-            is JSONObject -> data
-            is JSONArray -> data.optJSONObject(0)
-            else -> null
-        }
+        val data = root.opt("data")
+        return data as? JSONObject
+            ?: if (data is JSONArray) {
+                data.optJSONObject(0)
+            } else {
+                null
+            }
     }
 
     private fun JSONObject.optCleanString(key: String): String? {
-        val value = when (val raw = opt(key)) {
-            null, JSONObject.NULL -> null
-            is String -> raw.trim()
-            else -> raw.toString().trim()
+        val raw = opt(key)
+        val value = if (raw == null || raw == JSONObject.NULL) {
+            null
+        } else if (raw is String) {
+            raw.trim()
+        } else {
+            raw.toString().trim()
         }
         return value?.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }
     }
 
     private fun JSONObject.optIntOrNull(key: String): Int? {
-        return when (val value = opt(key)) {
-            null, JSONObject.NULL -> null
-            is Number -> value.toInt()
-            is String -> value.toIntOrNull()
-            else -> null
+        val value = opt(key)
+        return if (value == null || value == JSONObject.NULL) {
+            null
+        } else if (value is Number) {
+            value.toInt()
+        } else if (value is String) {
+            value.toIntOrNull()
+        } else {
+            null
         }
     }
 
     private fun JSONObject.optLongOrNull(key: String): Long? {
-        return when (val value = opt(key)) {
-            null, JSONObject.NULL -> null
-            is Number -> value.toLong()
-            is String -> value.toLongOrNull()
-            else -> null
+        val value = opt(key)
+        return if (value == null || value == JSONObject.NULL) {
+            null
+        } else if (value is Number) {
+            value.toLong()
+        } else if (value is String) {
+            value.toLongOrNull()
+        } else {
+            null
         }
     }
 }

@@ -1,8 +1,10 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeItem
+import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HomeScreenMappingTest {
@@ -22,5 +24,50 @@ class HomeScreenMappingTest {
         assertEquals(207_000L, song?.durationMs)
         assertEquals("陈芳语", song?.artist)
         assertEquals("爱你", song?.album)
+    }
+
+    @Test
+    fun continueCardsFitPhonePageWithoutPeekingNextCard() {
+        val containerWidthDp = 360f
+        val cardsPerPage = resolveHomeContinueCardsPerPage(containerWidthDp)
+        val cardWidthDp = resolveHomeContinueCardWidthDp(containerWidthDp, cardsPerPage)
+        val occupiedWidthDp = cardWidthDp * cardsPerPage + 12f * (cardsPerPage - 1) + 16f
+
+        assertEquals(2, cardsPerPage)
+        assertEquals(140f, cardWidthDp, 0.01f)
+        assertTrue(occupiedWidthDp <= containerWidthDp)
+    }
+
+    @Test
+    fun continueCardsShrinkInsteadOfOverflowingNarrowPages() {
+        val containerWidthDp = 240f
+        val cardsPerPage = resolveHomeContinueCardsPerPage(containerWidthDp)
+        val cardWidthDp = resolveHomeContinueCardWidthDp(containerWidthDp, cardsPerPage)
+        val occupiedWidthDp = cardWidthDp * cardsPerPage + 12f * (cardsPerPage - 1) + 16f
+
+        assertEquals(2, cardsPerPage)
+        assertEquals(106f, cardWidthDp, 0.01f)
+        assertTrue(occupiedWidthDp <= containerWidthDp)
+    }
+
+    @Test
+    fun continueCardsUseMoreSlotsOnWidePages() {
+        assertEquals(4, resolveHomeContinueCardsPerPage(600f))
+        assertEquals(5, resolveHomeContinueCardsPerPage(840f))
+    }
+
+    @Test
+    fun buildHomeSongInfoMatchesPlaylistCopyFormat() {
+        val song = SongItem(
+            id = 1L,
+            name = "海屿你",
+            artist = "马也_Crabbbit",
+            album = "海屿你",
+            albumId = 1L,
+            durationMs = 1_000L,
+            coverUrl = null
+        )
+
+        assertEquals("海屿你-马也_Crabbbit", buildHomeSongInfo(song))
     }
 }

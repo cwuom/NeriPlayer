@@ -79,9 +79,13 @@ import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneMotion
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassHostNavigationTransition
 import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassSceneMotion
+import moe.ouom.neriplayer.ui.animateMainTabDetailCloseRootRevealFraction
+import moe.ouom.neriplayer.ui.clipMainTabDetailCloseRoot
 import moe.ouom.neriplayer.ui.rememberMainTabSceneRestoredEntry
+import moe.ouom.neriplayer.ui.shouldSuppressRestoredMainTabHostEntry
 import moe.ouom.neriplayer.ui.util.toSaveMap
 import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
 import moe.ouom.neriplayer.ui.util.restoreAlbumSummary
@@ -317,7 +321,16 @@ fun LibraryHostScreen(
         regularSource
     }
 
-    LaunchedEffect(selected, pendingScrollSource, pendingListRestoreIndex) {
+    val navigationTransition = updateTransition(
+        targetState = selected,
+        label = "library_host_switch"
+    )
+
+    LaunchedEffect(
+        selected,
+        pendingScrollSource,
+        pendingListRestoreIndex
+    ) {
         val source = pendingScrollSource ?: return@LaunchedEffect
         val restoreIndex = pendingListRestoreIndex ?: return@LaunchedEffect
         if (selected != null) return@LaunchedEffect
@@ -339,17 +352,24 @@ fun LibraryHostScreen(
         pendingTopAppBarHeightOffset = Float.NaN
         pendingTopAppBarContentOffset = Float.NaN
     }
-    val navigationTransition = updateTransition(
-        targetState = selected,
-        label = "library_host_switch"
-    )
     val suppressRestoredSceneEntry = rememberMainTabSceneRestoredEntry()
+    val detailCloseRootRevealFraction =
+        navigationTransition.animateMainTabDetailCloseRootRevealFraction(
+            navigationDepth = { item -> item.navigationDepth },
+            label = "library_host_detail_close"
+        )
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
         navigationTransition.AnimatedContent(
             modifier = Modifier.fillMaxSize(),
             transitionSpec = {
-                if (suppressRestoredSceneEntry && targetState != initialState) {
+                if (
+                    shouldSuppressRestoredMainTabHostEntry(
+                        restoredEntry = suppressRestoredSceneEntry,
+                        initialDepth = initialState.navigationDepth,
+                        targetDepth = targetState.navigationDepth
+                    )
+                ) {
                     EnterTransition.None togetherWith ExitTransition.None
                 } else if (targetState == null && skipDetailCloseAnimation) {
                     EnterTransition.None togetherWith ExitTransition.None
@@ -361,12 +381,21 @@ fun LibraryHostScreen(
                 }.using(SizeTransform(clip = true))
             }
         ) { current ->
-            val sceneMotion = navigationTransition.animateAdvancedGlassSceneMotion(
-                sceneState = current,
-                coherentFeedbackEnabled = coherentFeedbackEnabled,
-                navigationDepth = { item -> item.navigationDepth },
-                label = "library_host_scene"
+            val suppressRestoredSceneMotion = shouldSuppressRestoredMainTabHostEntry(
+                restoredEntry = suppressRestoredSceneEntry,
+                initialDepth = navigationTransition.currentState.navigationDepth,
+                targetDepth = navigationTransition.targetState.navigationDepth
             )
+            val sceneMotion = if (suppressRestoredSceneMotion) {
+                AdvancedGlassSceneMotion.None
+            } else {
+                navigationTransition.animateAdvancedGlassSceneMotion(
+                    sceneState = current,
+                    coherentFeedbackEnabled = coherentFeedbackEnabled,
+                    navigationDepth = { item -> item.navigationDepth },
+                    label = "library_host_scene"
+                )
+            }
             renderScene(
                 sceneMotion.revealTopFraction,
                 sceneMotion.contentTranslationYFraction,
@@ -375,8 +404,15 @@ fun LibraryHostScreen(
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     if (current == null) {
-                        libraryStateHolder.SaveableStateProvider("library_screen") {
-                        LibraryScreen(
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clipMainTabDetailCloseRoot(
+                                    detailCloseRootRevealFraction
+                                )
+                        ) {
+                            libraryStateHolder.SaveableStateProvider("library_screen") {
+                                LibraryScreen(
                             initialTab = selectedTab,
                             onTabChange = { selectedTab = it },
                             localListState = localListState,
@@ -488,6 +524,7 @@ fun LibraryHostScreen(
                             onOpenRecent = onOpenRecent,
                             onOpenStats = onOpenStats
                         )
+                        }
                         }
                     } else {
                         when (current) {

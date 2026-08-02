@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.ui.screen
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -11,6 +14,7 @@ import moe.ouom.neriplayer.core.download.DownloadTask
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
 import moe.ouom.neriplayer.data.model.SongItem
+import kotlin.math.pow
 
 class NowPlayingScreenTest {
 
@@ -123,6 +127,74 @@ class NowPlayingScreenTest {
                 toolbarDockEnabled = true,
                 useCompactPortraitLayout = false
             )
+        )
+    }
+
+    @Test
+    fun `active icon color boosts muted primary on dark now playing background`() {
+        val mutedPrimary = Color(0xFFC9C4B8)
+        val seedColor = Color(0xFF00897B)
+        val inactiveContentColor = Color(0xFFECE7DC)
+        val backgroundColor = Color(0xFF101A16)
+
+        val activeColor = resolveNowPlayingActiveIconColor(
+            accentColor = mutedPrimary,
+            seedColor = seedColor,
+            inactiveContentColor = inactiveContentColor,
+            backgroundColor = backgroundColor
+        )
+
+        assertFalse(activeColor.toArgb() == mutedPrimary.toArgb())
+        assertTrue(
+            isNowPlayingActiveIconReadable(
+                activeColor = activeColor,
+                inactiveContentColor = inactiveContentColor,
+                backgroundColor = backgroundColor
+            )
+        )
+        assertTrue(nowPlayingTestSaturation(activeColor) >= 0.32f)
+    }
+
+    @Test
+    fun `active icon color keeps already readable accent unchanged`() {
+        val accentColor = Color(0xFF6FE0C0)
+        val inactiveContentColor = Color(0xFFF1EEE7)
+        val backgroundColor = Color(0xFF111816)
+
+        val activeColor = resolveNowPlayingActiveIconColor(
+            accentColor = accentColor,
+            seedColor = Color(0xFF00897B),
+            inactiveContentColor = inactiveContentColor,
+            backgroundColor = backgroundColor
+        )
+
+        assertEquals(accentColor.toArgb(), activeColor.toArgb())
+    }
+
+    @Test
+    fun `active icon color falls back when palette and seed are neutral`() {
+        val inactiveContentColor = Color(0xFFECE7DC)
+        val backgroundColor = Color(0xFF101A16)
+
+        val activeColor = resolveNowPlayingActiveIconColor(
+            accentColor = Color(0xFFC9C4B8),
+            seedColor = Color(0xFF777777),
+            inactiveContentColor = inactiveContentColor,
+            backgroundColor = backgroundColor
+        )
+
+        assertTrue(
+            isNowPlayingActiveIconReadable(
+                activeColor = activeColor,
+                inactiveContentColor = inactiveContentColor,
+                backgroundColor = backgroundColor
+            )
+        )
+        assertTrue(
+            nowPlayingTestContrastRatio(
+                activeColor.toArgb(),
+                backgroundColor.toArgb()
+            ) >= 3.0
         )
     }
 
@@ -335,6 +407,15 @@ class NowPlayingScreenTest {
     }
 
     @Test
+    fun `queue reorder placement uses low stiffness spring`() {
+        assertEquals(
+            Spring.StiffnessLow,
+            NowPlayingQueueReorderPlacementStiffness,
+            0.01f
+        )
+    }
+
+    @Test
     fun `queue index input resolves one based numbers`() {
         assertEquals(0, resolveNowPlayingQueueIndexInput("1", queueSize = 10))
         assertEquals(9, resolveNowPlayingQueueIndexInput("10", queueSize = 10))
@@ -513,5 +594,47 @@ class NowPlayingScreenTest {
             durationMs = 1_000L,
             coverUrl = null
         )
+    }
+
+    private fun nowPlayingTestSaturation(color: Color): Float {
+        val argb = color.toArgb()
+        val red = ((argb shr 16) and 0xFF) / 255f
+        val green = ((argb shr 8) and 0xFF) / 255f
+        val blue = (argb and 0xFF) / 255f
+        val max = maxOf(red, green, blue)
+        val min = minOf(red, green, blue)
+        val delta = max - min
+        val lightness = (max + min) / 2f
+        return if (delta == 0f) {
+            0f
+        } else if (lightness > 0.5f) {
+            delta / (2f - max - min)
+        } else {
+            delta / (max + min)
+        }
+    }
+
+    private fun nowPlayingTestContrastRatio(firstArgb: Int, secondArgb: Int): Double {
+        val firstLuminance = nowPlayingTestRelativeLuminance(firstArgb)
+        val secondLuminance = nowPlayingTestRelativeLuminance(secondArgb)
+        val lighter = maxOf(firstLuminance, secondLuminance)
+        val darker = minOf(firstLuminance, secondLuminance)
+        return (lighter + 0.05) / (darker + 0.05)
+    }
+
+    private fun nowPlayingTestRelativeLuminance(argb: Int): Double {
+        val red = nowPlayingTestLinearRgb((argb shr 16) and 0xFF)
+        val green = nowPlayingTestLinearRgb((argb shr 8) and 0xFF)
+        val blue = nowPlayingTestLinearRgb(argb and 0xFF)
+        return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+    }
+
+    private fun nowPlayingTestLinearRgb(channel: Int): Double {
+        val normalized = channel / 255.0
+        return if (normalized <= 0.03928) {
+            normalized / 12.92
+        } else {
+            ((normalized + 0.055) / 1.055).pow(2.4)
+        }
     }
 }

@@ -550,19 +550,21 @@ internal object PlayerLyricsProvider {
                     null
                 }
 
-                if (!lrcLibResult?.syncedLyrics.isNullOrBlank()) {
+                val syncedLyrics = lrcLibResult?.syncedLyrics?.takeIf { it.isNotBlank() }
+                if (syncedLyrics != null) {
                     NPLogger.d("NERI-PlayerManager", "Using LRCLIB synced lyrics for '${song.name}'")
-                    val entries = parseNeteaseLyricsAuto(lrcLibResult!!.syncedLyrics!!)
+                    val entries = parseNeteaseLyricsAuto(syncedLyrics)
                     if (entries.isNotEmpty()) {
                         ytMusicLyricsCache.put(cacheKey, entries)
                     }
                     return@withContext entries
                 }
 
-                if (!lrcLibResult?.plainLyrics.isNullOrBlank()) {
+                val plainLyrics = lrcLibResult?.plainLyrics?.takeIf { it.isNotBlank() }
+                if (plainLyrics != null) {
                     NPLogger.d("NERI-PlayerManager", "Using LRCLIB plain lyrics for '${song.name}'")
                     val entries = convertPlainLyricsToEntries(
-                        lrcLibResult!!.plainLyrics!!,
+                        plainLyrics,
                         song.durationMs
                     )
                     if (entries.isNotEmpty()) {

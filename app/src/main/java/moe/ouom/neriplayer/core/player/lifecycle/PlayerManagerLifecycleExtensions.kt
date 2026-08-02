@@ -1307,8 +1307,9 @@ private fun PlayerManager.handleDeviceChange(
     val previousDevice = _currentAudioDevice.value
     val newDevice = getCurrentAudioDevice(audioManager)
     _currentAudioDevice.value = newDevice
-    val usbRouteChanged = previousDevice?.type != newDevice.type ||
-        previousDevice?.name != newDevice.name
+    val usbRouteChanged = previousDevice == null ||
+        previousDevice.type != newDevice.type ||
+        previousDevice.name != newDevice.name
     val nativeOpenGate = UsbExclusiveSessionController.playerPcmOpenGateReason()
     val nextRouteIsUsbOutput = isUsbOutputType(newDevice.type)
     if (
@@ -3471,7 +3472,7 @@ private fun PlayerManager.shouldTreatAsUsbExclusiveRouteJitter(
     val previousUsb = previousDevice?.type?.let(::isUsbOutputType) == true
     val newUsb = newDevice?.type?.let(::isUsbOutputType) == true
     if (previousUsb && newUsb) {
-        return previousDevice?.type != newDevice?.type || previousDevice?.name != newDevice?.name
+        return previousDevice.type != newDevice.type || previousDevice.name != newDevice.name
     }
     return previousUsb != newUsb
 }

@@ -43,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -86,11 +87,12 @@ fun WaveformSlider(
     onValueChangeStarted: (Float) -> Unit = {},
     onValueChangeCanceled: () -> Unit = {},
     enabled: Boolean = true,
-    isPlaybackWaiting: Boolean = false
+    isPlaybackWaiting: Boolean = false,
+    activeTint: Color = MaterialTheme.colorScheme.primary
 ) {
-    val activeColor = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else 0.55f)
+    val activeColor = activeTint.copy(alpha = if (enabled) 1f else 0.55f)
     val inactiveColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 0.3f else 0.18f)
-    val thumbColor = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else 0.55f)
+    val thumbColor = activeTint.copy(alpha = if (enabled) 1f else 0.55f)
 
     var isDragging by remember { mutableStateOf(false) }
     val latestOnValueChangeCanceled by rememberUpdatedState(onValueChangeCanceled)

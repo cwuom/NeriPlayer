@@ -1751,7 +1751,7 @@ internal fun PlayerManager.applyListenTogetherPlaybackModeImpl(
     val shuffleChanged = shuffleEnabled != null && _shuffleModeFlow.value != shuffleEnabled
     if (!repeatChanged && !shuffleChanged) return
     if (repeatChanged) {
-        repeatModeSetting = normalizedRepeatMode ?: Player.REPEAT_MODE_OFF
+        repeatModeSetting = normalizedRepeatMode
         if (isPlayerInitialized()) {
             syncExoRepeatMode()
         }

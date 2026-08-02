@@ -43,7 +43,10 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -239,6 +242,7 @@ import moe.ouom.neriplayer.data.settings.MAX_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.MIN_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
+import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.normalizeLyricFontScale
 import moe.ouom.neriplayer.data.settings.resolveLyricDefaultOffsetMs
 import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
@@ -295,6 +299,7 @@ import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.util.media.saveCoverToPictures
 import org.burnoutcrew.reorderable.ItemPosition
 import org.burnoutcrew.reorderable.ReorderableItem
+import org.burnoutcrew.reorderable.SpringDragCancelledAnimation
 import org.burnoutcrew.reorderable.detectReorder
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
 import org.burnoutcrew.reorderable.reorderable
@@ -307,6 +312,10 @@ private const val CoverSourceBadgeRevealDelayMs =
     LyricsPageTransitionDurationMs + CoverSourceBadgeRevealBufferMs
 private const val QueueSheetMaxHeightFraction = 0.9f
 internal val NowPlayingQueueReorderAutoScrollMaxPerFrame = 2.dp
+internal val NowPlayingQueueReorderPlacementStiffness = Spring.StiffnessLow
+private val QueueReorderDragCancelStiffness = Spring.StiffnessMediumLow
+private const val QueueReorderDraggedItemScale = 1.01f
+private val QueueReorderDraggedItemElevation = 10.dp
 private const val HighUiDensityScaleThreshold = 1.1f
 private const val CompactNowPlayingPortraitMaxHeightDp = 600f
 private const val PlaybackActionToolbarItemCount = 5
@@ -835,7 +844,7 @@ private fun NowPlayingQueueSelectionToolbar(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 internal fun NowPlayingQueueSheet(
     displayedQueue: List<SongItem>,
@@ -920,7 +929,10 @@ internal fun NowPlayingQueueSheet(
             )
             queueOrderDirty = false
         },
-        maxScrollPerFrame = NowPlayingQueueReorderAutoScrollMaxPerFrame
+        maxScrollPerFrame = NowPlayingQueueReorderAutoScrollMaxPerFrame,
+        dragCancelledAnimation = SpringDragCancelledAnimation(
+            stiffness = QueueReorderDragCancelStiffness
+        )
     )
 
     fun exitSelection() {
@@ -1140,21 +1152,50 @@ internal fun NowPlayingQueueSheet(
                         key = { _, entry -> entry.key },
                         contentType = { _, _ -> "queue_song" }
                     ) { index, entry ->
-                        ReorderableItem(state = reorderState, key = entry.key) { isDragging ->
+                        ReorderableItem(
+                            state = reorderState,
+                            key = entry.key,
+                            modifier = Modifier.animateItem(
+                                fadeInSpec = null,
+                                fadeOutSpec = null,
+                                placementSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = NowPlayingQueueReorderPlacementStiffness
+                                )
+                            )
+                        ) { isDragging ->
                             val rowScale by animateFloatAsState(
-                                targetValue = if (isDragging) 1.008f else 1f,
-                                animationSpec = tween(
-                                    durationMillis = 180,
-                                    easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+                                targetValue = if (isDragging) {
+                                    QueueReorderDraggedItemScale
+                                } else {
+                                    1f
+                                },
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessMediumLow
                                 ),
                                 label = "queue_row_scale"
                             )
+                            val rowElevation by animateDpAsState(
+                                targetValue = if (isDragging) {
+                                    QueueReorderDraggedItemElevation
+                                } else {
+                                    0.dp
+                                },
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessMediumLow
+                                ),
+                                label = "queue_row_elevation"
+                            )
+                            val rowShadowShape = RoundedCornerShape(20.dp)
                             NowPlayingQueueRow(
                                 modifier = Modifier
                                     .graphicsLayer {
                                         scaleX = rowScale
                                         scaleY = rowScale
-                                        shadowElevation = if (isDragging) 8f else 0f
+                                        shape = rowShadowShape
+                                        shadowElevation = rowElevation.toPx()
                                     },
                                 index = index,
                                 song = entry.song,
@@ -1420,6 +1461,15 @@ fun NowPlayingScreen(
     val preferredQualityKeys by PlayerManager.preferredQualityKeys.collectAsStateWithLifecycle()
     val playbackSoundState by PlayerManager.playbackSoundStateFlow.collectAsStateWithLifecycle()
     val settingsRepo = remember { AppContainer.settingsRepo }
+    val themeSeedColorHex by settingsRepo.themeSeedColorFlow.collectAsStateWithLifecycle(
+        initialValue = ThemeDefaults.DEFAULT_SEED_COLOR_HEX
+    )
+    val nowPlayingActiveIconColor = resolveNowPlayingActiveIconColor(
+        accentColor = MaterialTheme.colorScheme.primary,
+        seedColor = resolveNowPlayingThemeSeedColor(themeSeedColorHex),
+        inactiveContentColor = MaterialTheme.colorScheme.onSurface,
+        backgroundColor = MaterialTheme.colorScheme.background
+    )
     val listenTogetherSessionManager = remember { AppContainer.listenTogetherSessionManager }
     val listenTogetherSessionState by listenTogetherSessionManager.sessionState.collectAsStateWithLifecycle()
     val listenTogetherRoomState by listenTogetherSessionManager.roomState.collectAsStateWithLifecycle()
@@ -2323,6 +2373,7 @@ fun NowPlayingScreen(
                         isPlaybackWaiting = isPlaybackWaiting,
                         progressInfoSegments = progressInfoSegments,
                         seekEnabled = playbackProgressSeekEnabled,
+                        activeContentColor = nowPlayingActiveIconColor,
                         useWideLandscapeLayout = useWideLandscapeLayout,
                         onPreviewPositionChange = { previewPositionOverrideMs = it },
                         modifier = Modifier
@@ -2348,7 +2399,7 @@ fun NowPlayingScreen(
                             Icon(
                                 Icons.Outlined.Shuffle,
                                 contentDescription = stringResource(R.string.player_shuffle),
-                                tint = if (shuffleEnabled) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                                tint = if (shuffleEnabled) nowPlayingActiveIconColor else LocalContentColor.current
                             )
                         }
 
@@ -2398,7 +2449,11 @@ fun NowPlayingScreen(
                             Icon(
                                 imageVector = if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Filled.RepeatOne else Icons.Outlined.Repeat,
                                 contentDescription = stringResource(R.string.player_repeat),
-                                tint = if (repeatMode != Player.REPEAT_MODE_OFF) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                                tint = if (repeatMode != Player.REPEAT_MODE_OFF) {
+                                    nowPlayingActiveIconColor
+                                } else {
+                                    LocalContentColor.current
+                                }
                             )
                         }
                     }
@@ -2409,6 +2464,7 @@ fun NowPlayingScreen(
 
                         NowPlayingLyricsPane(
                             lyrics = plainLyrics,
+                            playbackSessionKey = currentSong?.stableKey(),
                             previewPositionOverrideMs = previewPositionOverrideMs,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -2527,7 +2583,11 @@ fun NowPlayingScreen(
                                     Icon(
                                         Icons.Outlined.Timer,
                                         contentDescription = stringResource(R.string.sleep_timer_short),
-                                        tint = if (sleepTimerState.isActive) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                                        tint = if (sleepTimerState.isActive) {
+                                            nowPlayingActiveIconColor
+                                        } else {
+                                            LocalContentColor.current
+                                        },
                                         modifier = Modifier.size(toolbarLayout.iconSize)
                                     )
                                 }
@@ -2572,7 +2632,7 @@ fun NowPlayingScreen(
                                             tint = if (lyrics.isEmpty()) {
                                                 LocalContentColor.current.copy(alpha = 0.38f)
                                             } else if (isShowingLyrics) {
-                                                MaterialTheme.colorScheme.primary
+                                                nowPlayingActiveIconColor
                                             } else {
                                                 LocalContentColor.current
                                             },
@@ -2695,6 +2755,7 @@ fun NowPlayingScreen(
                                 NowPlayingWideLyricsMode.SYNCED -> {
                                     NowPlayingLyricsPane(
                                         lyrics = plainLyrics,
+                                        playbackSessionKey = currentSong?.stableKey(),
                                         previewPositionOverrideMs = previewPositionOverrideMs,
                                         modifier = Modifier.fillMaxSize(),
                                         textColor = MaterialTheme.colorScheme.onBackground,
@@ -3266,6 +3327,7 @@ private fun formatNowPlayingPlaybackSpeed(playbackSpeed: Float): String {
 @Composable
 private fun NowPlayingProgressInfoRow(
     segments: List<NowPlayingProgressInfoSegment>,
+    highlightedContentColor: Color,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -3291,7 +3353,7 @@ private fun NowPlayingProgressInfoRow(
                     text = segment.label,
                     style = MaterialTheme.typography.labelSmall,
                     color = if (segment.highlighted) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.92f)
+                        highlightedContentColor.copy(alpha = 0.92f)
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
                     }
@@ -4341,6 +4403,7 @@ private fun NowPlayingProgressSection(
     isPlaybackWaiting: Boolean,
     progressInfoSegments: List<NowPlayingProgressInfoSegment>,
     seekEnabled: Boolean,
+    activeContentColor: Color,
     useWideLandscapeLayout: Boolean,
     onPreviewPositionChange: (Long?) -> Unit,
     modifier: Modifier = Modifier
@@ -4450,7 +4513,8 @@ private fun NowPlayingProgressSection(
                 },
                 isPlaying = isPlaying,
                 enabled = seekEnabled,
-                isPlaybackWaiting = delayedPlaybackWaiting
+                isPlaybackWaiting = delayedPlaybackWaiting,
+                activeTint = activeContentColor
             )
 
             Text(
@@ -4464,6 +4528,7 @@ private fun NowPlayingProgressSection(
             Spacer(Modifier.height(0.dp))
             NowPlayingProgressInfoRow(
                 segments = progressInfoSegments,
+                highlightedContentColor = activeContentColor,
                 modifier = Modifier
                     .fillMaxWidth()
                     .offset(y = if (useWideLandscapeLayout) (-5).dp else (-6).dp)
@@ -4475,6 +4540,7 @@ private fun NowPlayingProgressSection(
 @Composable
 private fun NowPlayingLyricsPane(
     lyrics: List<LyricEntry>,
+    playbackSessionKey: String?,
     previewPositionOverrideMs: Long?,
     modifier: Modifier = Modifier,
     textColor: Color,
@@ -4514,6 +4580,7 @@ private fun NowPlayingLyricsPane(
         smoothActiveLineProgress = false,
         edgeFadeHeight = resolveLyricEdgeFadeHeight(isEmbedded = true),
         showEmbeddedTranslations = showEmbeddedTranslations,
+        playbackSessionKey = playbackSessionKey,
         stableEmbeddedViewport = true
     )
 }

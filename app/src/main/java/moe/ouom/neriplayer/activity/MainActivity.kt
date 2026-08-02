@@ -35,6 +35,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -242,6 +243,17 @@ private fun AppUiDensityRoot(
     )
 }
 
+private fun MainActivity.setNeriContent(
+    content: @Composable () -> Unit
+) {
+    setContent {
+        CompositionLocalProvider(
+            LocalActivityResultRegistryOwner provides this@setNeriContent,
+            content = content
+        )
+    }
+}
+
 class MainActivity : ComponentActivity() {
     private val settingsRepository by lazy { SettingsRepository(applicationContext) }
     private val startupCrashReportManager by lazy { StartupCrashReportManager(applicationContext) }
@@ -287,47 +299,47 @@ class MainActivity : ComponentActivity() {
         )
 
         if (safeModeActive) {
-            setContent {
+            setNeriContent {
                 val uiDensityScale by settingsRepository.uiDensityScaleFlow
                     .collectAsStateWithLifecycle(initialValue = 1.0f)
                 AppUiDensityRoot(uiDensityScale) {
-                val systemDark = rememberActualSystemDarkTheme()
-                val useDark = remember(systemDark) {
-                    StartupThemeResolver.resolveSnapshotUseDark(
-                        snapshot = startupThemeSnapshot,
-                        systemDark = systemDark
-                    )
-                }
-                NeriTheme(useDark = useDark, useDynamic = false) {
-                    SideEffect {
-                        val controller = WindowInsetsControllerCompat(window, window.decorView)
-                        controller.isAppearanceLightStatusBars = !useDark
-                        controller.isAppearanceLightNavigationBars = !useDark
+                    val systemDark = rememberActualSystemDarkTheme()
+                    val useDark = remember(systemDark) {
+                        StartupThemeResolver.resolveSnapshotUseDark(
+                            snapshot = startupThemeSnapshot,
+                            systemDark = systemDark
+                        )
                     }
-                    SafeModeScreen(
-                        onRestoreNormal = ::restoreFromSafeMode
-                    )
-                }
+                    NeriTheme(useDark = useDark, useDynamic = false) {
+                        SideEffect {
+                            val controller = WindowInsetsControllerCompat(window, window.decorView)
+                            controller.isAppearanceLightStatusBars = !useDark
+                            controller.isAppearanceLightNavigationBars = !useDark
+                        }
+                        SafeModeScreen(
+                            onRestoreNormal = ::restoreFromSafeMode
+                        )
+                    }
                 }
             }
             return
         }
 
-        setContent {
+        setNeriContent {
             val uiDensityScale by settingsRepository.uiDensityScaleFlow
                 .collectAsStateWithLifecycle(initialValue = 1.0f)
             AppUiDensityRoot(uiDensityScale) {
-            val devModeEnabled by settingsRepository.devModeEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
-            val alwaysRecordLogsEnabled by settingsRepository.alwaysRecordLogsEnabledFlow.collectAsStateWithLifecycle(
-                initialValue = false
-            )
-            LaunchedEffect(devModeEnabled, alwaysRecordLogsEnabled) {
-                StartupLogInitializer.sync(
-                    context = this@MainActivity,
-                    devModeEnabled = devModeEnabled,
-                    alwaysRecordLogsEnabled = alwaysRecordLogsEnabled
+                val devModeEnabled by settingsRepository.devModeEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
+                val alwaysRecordLogsEnabled by settingsRepository.alwaysRecordLogsEnabledFlow.collectAsStateWithLifecycle(
+                    initialValue = false
                 )
-            }
+                LaunchedEffect(devModeEnabled, alwaysRecordLogsEnabled) {
+                    StartupLogInitializer.sync(
+                        context = this@MainActivity,
+                        devModeEnabled = devModeEnabled,
+                        alwaysRecordLogsEnabled = alwaysRecordLogsEnabled
+                    )
+                }
 
             val dynamicColor by settingsRepository.dynamicColorFlow.collectAsStateWithLifecycle(
                 initialValue = startupThemeSnapshot.dynamicColor
@@ -915,7 +927,7 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                 }
-            }
+                }
             }
         }
 

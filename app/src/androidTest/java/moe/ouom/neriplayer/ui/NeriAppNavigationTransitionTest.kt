@@ -1,7 +1,15 @@
 package moe.ouom.neriplayer.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
@@ -45,6 +54,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.math.roundToInt
+
+private val Boolean.testNavigationDepth: Int
+    get() = if (this) 1 else 0
 
 @RunWith(AndroidJUnit4::class)
 class NeriAppNavigationTransitionTest {
@@ -171,7 +183,7 @@ class NeriAppNavigationTransitionTest {
     }
 
     @Test
-    fun returningToAVisitedMainTabMarksItsSceneAsRestored() {
+    fun restoredMainTabSceneStateEndsWhenItsTabTransitionSettles() {
         lateinit var selectedRoute: MutableState<String>
         composeRule.mainClock.autoAdvance = false
         composeRule.setContent {
@@ -200,7 +212,7 @@ class NeriAppNavigationTransitionTest {
         }
 
         composeRule.runOnIdle {
-            selectedRoute.value = Destinations.Explore.route
+            selectedRoute.value = Destinations.Settings.route
         }
         composeRule.mainClock.autoAdvance = true
         composeRule.waitForIdle()
@@ -209,42 +221,175 @@ class NeriAppNavigationTransitionTest {
         composeRule.runOnIdle {
             selectedRoute.value = Destinations.Home.route
         }
-        composeRule.mainClock.autoAdvance = true
+        composeRule.mainClock.advanceTimeBy(FRAME_MS.toLong())
         composeRule.waitForIdle()
-        composeRule.mainClock.autoAdvance = false
 
         assertTrue(
             composeRule.onAllNodesWithTag(RestoredHomeSceneTag)
                 .fetchSemanticsNodes()
                 .size == 1
         )
+
+        composeRule.mainClock.advanceTimeBy(
+            (ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS + FRAME_MS * 4).toLong()
+        )
+        composeRule.waitForIdle()
+        assertTrue(
+            "restored state remained active after the Tab transition settled",
+            composeRule.onAllNodesWithTag(RestoredHomeSceneTag)
+                .fetchSemanticsNodes()
+                .isEmpty()
+        )
     }
 
     @Test
-    fun restoredSceneEntrySuppressionIsConsumedBeforeASecondDetailOpen() {
+    fun restoredDetailVisibilityDoesNotLeakIntoLaterDetailOpens() {
         lateinit var selectedRoute: MutableState<String>
+        lateinit var detailKey: MutableState<String>
         composeRule.mainClock.autoAdvance = false
         composeRule.setContent {
             selectedRoute = remember { mutableStateOf(Destinations.Home.route) }
+            detailKey = remember { mutableStateOf("restored_playlist") }
             MainTabLayerHost(selectedRoute = selectedRoute.value) { route ->
-                val tag = if (
-                    route == Destinations.Home.route &&
-                        rememberMainTabSceneRestoredEntry()
-                ) {
-                    RestoredEntryTag
-                } else {
-                    FreshEntryTag
+                if (route == Destinations.Home.route) {
+                    val visibilityState = rememberMainTabDetailVisibilityState(detailKey.value)
+                    val tag = if (visibilityState.currentState) {
+                        RestoredEntryTag
+                    } else {
+                        FreshEntryTag
+                    }
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .testTag(tag)
+                    )
                 }
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .testTag(tag)
-                )
             }
         }
 
         composeRule.runOnIdle {
-            selectedRoute.value = Destinations.Explore.route
+            selectedRoute.value = Destinations.Settings.route
+        }
+        composeRule.mainClock.autoAdvance = true
+        composeRule.waitForIdle()
+        composeRule.mainClock.autoAdvance = false
+
+        composeRule.runOnIdle {
+            selectedRoute.value = Destinations.Home.route
+        }
+        composeRule.mainClock.advanceTimeBy(FRAME_MS.toLong())
+        composeRule.waitForIdle()
+        assertTrue(
+            "restored detail did not start in its already-visible state",
+            composeRule.onAllNodesWithTag(RestoredEntryTag)
+                .fetchSemanticsNodes()
+                .size == 1
+        )
+
+        composeRule.mainClock.advanceTimeBy(
+            (ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS + FRAME_MS * 4).toLong()
+        )
+        composeRule.waitForIdle()
+        assertTrue(
+            "restored detail restarted its entry animation after the Tab transition settled",
+            composeRule.onAllNodesWithTag(RestoredEntryTag)
+                .fetchSemanticsNodes()
+                .size == 1
+        )
+
+        composeRule.runOnIdle {
+            detailKey.value = "new_playlist"
+        }
+        composeRule.waitForIdle()
+        assertTrue(
+            "later detail open inherited the restored entry state",
+            composeRule.onAllNodesWithTag(FreshEntryTag)
+                .fetchSemanticsNodes()
+                .size == 1
+        )
+    }
+
+    @Test
+    fun closingRestoredHostDetailAfterTabSwitchKeepsCloseAnimation() {
+        lateinit var selectedRoute: MutableState<String>
+        lateinit var detailVisible: MutableState<Boolean>
+        composeRule.mainClock.autoAdvance = false
+        composeRule.setContent {
+            selectedRoute = remember { mutableStateOf(Destinations.Home.route) }
+            MainTabLayerHost(selectedRoute = selectedRoute.value) { route ->
+                if (route == Destinations.Home.route) {
+                    detailVisible = rememberSaveable { mutableStateOf(false) }
+                    val suppressRestoredEntry = rememberMainTabSceneRestoredEntry()
+                    val detailTransition = updateTransition(
+                        targetState = detailVisible.value,
+                        label = "restored_host_detail_transition"
+                    )
+                    val rootRevealFraction =
+                        detailTransition.animateMainTabDetailCloseRootRevealFraction(
+                            navigationDepth = { visible -> visible.testNavigationDepth },
+                            label = "restored_host_detail_close"
+                        )
+                    detailTransition.AnimatedContent(
+                        transitionSpec = {
+                            if (
+                                shouldSuppressRestoredMainTabHostEntry(
+                                    restoredEntry = suppressRestoredEntry,
+                                    initialDepth = initialState.testNavigationDepth,
+                                    targetDepth = targetState.testNavigationDepth
+                                )
+                            ) {
+                                EnterTransition.None togetherWith ExitTransition.None
+                            } else {
+                                fadeIn(tween(200)) togetherWith fadeOut(tween(200))
+                            }.using(SizeTransform(clip = true))
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    ) { detail ->
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .testTag(
+                                    if (detail) {
+                                        RestoredHostDetailTag
+                                    } else {
+                                        RestoredHostRootSceneTag
+                                    }
+                                )
+                        ) {
+                            if (!detail) {
+                                Box(
+                                    Modifier
+                                        .fillMaxSize()
+                                        .clipMainTabDetailCloseRoot(rootRevealFraction)
+                                        .background(FirstTabColor)
+                                        .testTag(RestoredHostRootContentTag)
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .testTag(RestoredHostOtherTabTag)
+                    )
+                }
+            }
+        }
+
+        composeRule.runOnIdle {
+            detailVisible.value = true
+        }
+        composeRule.mainClock.autoAdvance = true
+        composeRule.waitForIdle()
+        composeRule.mainClock.autoAdvance = false
+        assertTrue(
+            "test detail did not open before switching tabs",
+            nodeCount(RestoredHostDetailTag) == 1
+        )
+
+        composeRule.runOnIdle {
+            selectedRoute.value = Destinations.Settings.route
         }
         composeRule.mainClock.autoAdvance = true
         composeRule.waitForIdle()
@@ -255,19 +400,41 @@ class NeriAppNavigationTransitionTest {
         }
         composeRule.waitForIdle()
         assertTrue(
-            "restored scene did not suppress its first entry frame",
-            composeRule.onAllNodesWithTag(RestoredEntryTag)
-                .fetchSemanticsNodes()
-                .size == 1
+            "restored host detail was not visible after returning to its Tab",
+            nodeCount(RestoredHostDetailTag) == 1
         )
 
-        composeRule.mainClock.advanceTimeBy(FRAME_MS.toLong())
+        composeRule.runOnIdle {
+            detailVisible.value = false
+        }
+        advanceRapidSwitchFrame()
+        assertTrue(
+            "restored host close animation was cut at its first frame",
+            nodeCount(RestoredHostRootSceneTag) == 1 &&
+                nodeCount(RestoredHostDetailTag) == 1
+        )
+        assertTrue(
+            "restored root content disappeared during the close",
+            nodeCount(RestoredHostRootContentTag) == 1
+        )
+        val firstCloseFramePixels = composeRule
+            .onNodeWithTag(RestoredHostRootContentTag)
+            .captureToImage()
+            .toPixelMap()
+        assertTrue(
+            "restored root content was fully exposed behind the closing detail",
+            countDominantPixelsInBottomHalf(
+                pixels = firstCloseFramePixels,
+                dominantRed = true
+            ) == 0
+        )
+
+        composeRule.mainClock.advanceTimeBy(240)
         composeRule.waitForIdle()
         assertTrue(
-            "restored entry suppression leaked into the next composition",
-            composeRule.onAllNodesWithTag(RestoredEntryTag)
-                .fetchSemanticsNodes()
-                .isEmpty()
+            "restored host detail remained after close animation",
+            nodeCount(RestoredHostDetailTag) == 0 &&
+                nodeCount(RestoredHostRootContentTag) == 1
         )
     }
 
@@ -960,6 +1127,25 @@ class NeriAppNavigationTransitionTest {
         return count
     }
 
+    private fun countDominantPixelsInBottomHalf(
+        pixels: androidx.compose.ui.graphics.PixelMap,
+        dominantRed: Boolean
+    ): Int {
+        var count = 0
+        for (y in pixels.height / 2 until pixels.height) {
+            for (x in 0 until pixels.width) {
+                val color = pixels[x, y]
+                val isDominant = if (dominantRed) {
+                    color.red > 0.15f && color.red > color.blue * 2f
+                } else {
+                    color.blue > 0.15f && color.blue > color.red * 2f
+                }
+                if (isDominant) count++
+            }
+        }
+        return count
+    }
+
     private companion object {
         const val RootTag = "navigation_transition_root"
         const val MainTabRootTag = "main_tab_transition_root"
@@ -974,6 +1160,10 @@ class NeriAppNavigationTransitionTest {
         const val RestoredHomeSceneTag = "restored_home_scene"
         const val RestoredEntryTag = "restored_entry_scene"
         const val FreshEntryTag = "fresh_entry_scene"
+        const val RestoredHostRootSceneTag = "restored_host_root_scene"
+        const val RestoredHostRootContentTag = "restored_host_root_content"
+        const val RestoredHostDetailTag = "restored_host_detail"
+        const val RestoredHostOtherTabTag = "restored_host_other_tab"
         const val ExternalRootTag = "external_transition_root"
         const val ExternalHomeTag = "external_home_scene"
         const val ExternalExploreTag = "external_explore_scene"
