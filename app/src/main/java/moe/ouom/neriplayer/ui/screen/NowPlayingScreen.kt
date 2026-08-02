@@ -44,7 +44,6 @@ import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.snap
@@ -323,7 +322,6 @@ private const val QueueSheetMaxHeightFraction = 0.9f
 internal val NowPlayingQueueReorderAutoScrollMaxPerFrame = 2.dp
 private val QueueReorderDragCancelStiffness = Spring.StiffnessMediumLow
 private const val QueueReorderDraggedItemScale = 1.01f
-private val QueueReorderDraggedItemElevation = 10.dp
 private const val HighUiDensityScaleThreshold = 1.1f
 private const val CompactNowPlayingPortraitMaxHeightDp = 600f
 private const val PlaybackActionToolbarItemCount = 5
@@ -1288,26 +1286,11 @@ internal fun NowPlayingQueueSheet(
                                 ),
                                 label = "queue_row_scale"
                             )
-                            val rowElevation by animateDpAsState(
-                                targetValue = if (isDragging) {
-                                    QueueReorderDraggedItemElevation
-                                } else {
-                                    0.dp
-                                },
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioNoBouncy,
-                                    stiffness = Spring.StiffnessMediumLow
-                                ),
-                                label = "queue_row_elevation"
-                            )
-                            val rowShadowShape = RoundedCornerShape(20.dp)
                             NowPlayingQueueRow(
                                 modifier = Modifier
                                     .graphicsLayer {
                                         scaleX = rowScale
                                         scaleY = rowScale
-                                        shape = rowShadowShape
-                                        shadowElevation = rowElevation.toPx()
                                     },
                                 index = index,
                                 song = entry.song,
