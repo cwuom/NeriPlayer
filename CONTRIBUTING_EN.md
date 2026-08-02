@@ -546,6 +546,13 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    `BootstrapSettingsSnapshot`, `ThemePreferenceSnapshot`, or `PlaybackPreferenceSnapshot`.
 5. UI usually belongs in the matching `SettingsPage` in `SettingsScreen.kt` or
    under `ui/screen/tab/settings/component/`.
+6. Explore search history is stored by `ExploreSearchHistoryRepository`. When
+   `explore_search_history_enabled` is off, Explore must hide the history and stop
+   new records without silently deleting existing entries on toggle.
+7. Lyrics font size is now split between cover and lyrics pages, with separate
+   lyric and translation scales. When touching related UI, update
+   `SettingsRepository.lyricFontScalesFlow`, `setLyricFontScale(target, scale)`,
+   and the matching preview/playback call sites together.
 
 #### 6. Modify USB exclusive playback
 
@@ -674,6 +681,9 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    elapsed realtime; preserve foreground/background timing when changing progress.
 5. Keep Lyricon, SuperLyric, status-bar lyrics, advanced Now Playing lyrics,
    and external Bluetooth lyrics compatible when changing lyric structures.
+6. Original and translated Bluetooth lyrics are independent switches. When both
+   are active, update title/artist through one atomic snapshot and keep tests for
+   track identity, field bounds, whitespace normalization, and duplicate suppression.
 
 #### 13. Modify Listen Together
 

@@ -477,6 +477,12 @@
    `BootstrapSettingsSnapshot`、`ThemePreferenceSnapshot` 或 `PlaybackPreferenceSnapshot`。
 5. UI 入口通常放在 `SettingsScreen.kt` 对应 `SettingsPage` 或
    `ui/screen/tab/settings/component/` 下。
+6. 探索页搜索历史由 `ExploreSearchHistoryRepository` 保存；
+   `explore_search_history_enabled` 关闭时，探索页必须隐藏历史并停止新增记录，
+   不要在开关切换时静默删除已有记录。
+7. 歌词字号现在分成封面页和歌词页两组，且歌词和翻译各自独立；
+   修改相关 UI 时同时更新 `SettingsRepository.lyricFontScalesFlow`、
+   `setLyricFontScale(target, scale)` 和对应的预览/播放调用点。
 
 #### 6. 修改 USB 独占播放
 
@@ -584,6 +590,8 @@
    做死区重算；修改进度节奏时，必须保持前后台时序一致。
 5. 修改时要保持 Lyricon、SuperLyric、状态栏歌词、播放页高级歌词
    和外部蓝牙歌词的歌词结构兼容。
+6. 蓝牙歌词的原文与翻译是独立开关；同时输出时必须通过同一个原子快照更新
+   标题/艺术家字段，并保留曲目信息、字段长度限制、空白清洗和重复提交去重测试。
 
 #### 13. 修改一起听
 

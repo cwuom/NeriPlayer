@@ -232,6 +232,9 @@ Current positioning:
   lyric blur, two-level advanced blur, Coherent Feedback, the fluid Now Playing background,
   Home card toggles, default start
   destination, haptic feedback, and custom song title/artist/cover metadata.
+  OnePlus devices with high-density displays (`densityDpi >= 500`) automatically apply
+  an additional `0.95x` UI correction; normal-density devices skip it, while the
+  user's manual scale remains an additional multiplier.
   Enhanced Advanced Blur and Coherent Feedback are off by default. With Coherent
   Feedback off, playlist and related detail pages use a drawer-style transition.
   Enhanced Advanced Blur is available only on Android 13+ while its parent blur
