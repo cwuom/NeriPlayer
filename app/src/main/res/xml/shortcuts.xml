@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="continue_playback"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_play"
+        android:shortcutShortLabel="@string/launcher_shortcut_continue_short"
+        android:shortcutLongLabel="@string/launcher_shortcut_continue_long">
+        <intent
+            android:action="moe.ouom.neriplayer.action.CONTINUE_PLAYBACK"
+            android:targetPackage="moe.ouom.neriplayer"
+            android:targetClass="moe.ouom.neriplayer.activity.MainActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="open_explore"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_search"
+        android:shortcutShortLabel="@string/launcher_shortcut_explore_short"
+        android:shortcutLongLabel="@string/launcher_shortcut_explore_long">
+        <intent
+            android:action="moe.ouom.neriplayer.action.OPEN_EXPLORE"
+            android:targetPackage="moe.ouom.neriplayer"
+            android:targetClass="moe.ouom.neriplayer.activity.MainActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="open_library"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_library"
+        android:shortcutShortLabel="@string/launcher_shortcut_library_short"
+        android:shortcutLongLabel="@string/launcher_shortcut_library_long">
+        <intent
+            android:action="moe.ouom.neriplayer.action.OPEN_LIBRARY"
+            android:targetPackage="moe.ouom.neriplayer"
+            android:targetClass="moe.ouom.neriplayer.activity.MainActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="shuffle_favorites"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_shuffle"
+        android:shortcutShortLabel="@string/launcher_shortcut_shuffle_favorites_short"
+        android:shortcutLongLabel="@string/launcher_shortcut_shuffle_favorites_long">
+        <intent
+            android:action="moe.ouom.neriplayer.action.SHUFFLE_FAVORITES"
+            android:targetPackage="moe.ouom.neriplayer"
+            android:targetClass="moe.ouom.neriplayer.activity.MainActivity" />
+    </shortcut>
+</shortcuts>

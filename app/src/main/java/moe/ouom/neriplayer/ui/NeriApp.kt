@@ -139,6 +139,9 @@ import com.materialkolor.dynamiccolor.ColorSpec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -166,6 +169,7 @@ import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.settings.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
@@ -178,6 +182,9 @@ import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotCached
 import moe.ouom.neriplayer.data.storage.clearExtraStorageCaches
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.navigation.Destinations
+import moe.ouom.neriplayer.navigation.LauncherShortcutAction
+import moe.ouom.neriplayer.navigation.LauncherShortcutRequest
+import moe.ouom.neriplayer.navigation.launcherShortcutMainTabRoute
 import moe.ouom.neriplayer.ui.component.navigation.NeriBottomBar
 import moe.ouom.neriplayer.ui.component.navigation.resolveBottomBarSelectionAlpha
 import moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayer
@@ -255,8 +262,12 @@ import moe.ouom.neriplayer.ui.haptic.syncHapticFeedbackSetting
 import kotlin.coroutines.resume
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.random.Random
 
 private val navigationGson: Gson by lazy(LazyThreadSafetyMode.PUBLICATION) { Gson() }
+private val EmptyLauncherShortcutRequestFlow =
+    MutableStateFlow<LauncherShortcutRequest?>(null)
+private const val LAUNCHER_SHORTCUT_PLAYLIST_READY_TIMEOUT_MS = 5000L
 private val MAIN_TAB_ROUTES = listOf(
     Destinations.Home.route,
     Destinations.Explore.route,
@@ -1217,6 +1228,9 @@ private fun OfflineModeBottomBanner() {
 @Composable
 fun NeriApp(
     initialThemeSnapshot: ThemePreferenceSnapshot = ThemePreferenceSnapshot(),
+    launcherShortcutRequestFlow: StateFlow<LauncherShortcutRequest?> =
+        EmptyLauncherShortcutRequestFlow,
+    onLauncherShortcutRequestConsumed: (LauncherShortcutRequest) -> Unit = {},
     onIsDarkChanged: (Boolean) -> Unit = {},
     onNowPlayingVisibilityChanged: (Boolean) -> Unit = {}
 ) {
@@ -1244,6 +1258,8 @@ fun NeriApp(
 
     NeriAppContent(
         initialThemeSnapshot = initialThemeSnapshot,
+        launcherShortcutRequestFlow = launcherShortcutRequestFlow,
+        onLauncherShortcutRequestConsumed = onLauncherShortcutRequestConsumed,
         onIsDarkChanged = onIsDarkChanged,
         onNowPlayingVisibilityChanged = onNowPlayingVisibilityChanged
     )
@@ -1275,6 +1291,9 @@ private fun StartupGlassGateOverlay(
 @Composable
 private fun NeriAppContent(
     initialThemeSnapshot: ThemePreferenceSnapshot = ThemePreferenceSnapshot(),
+    launcherShortcutRequestFlow: StateFlow<LauncherShortcutRequest?> =
+        EmptyLauncherShortcutRequestFlow,
+    onLauncherShortcutRequestConsumed: (LauncherShortcutRequest) -> Unit = {},
     onIsDarkChanged: (Boolean) -> Unit = {},
     onNowPlayingVisibilityChanged: (Boolean) -> Unit = {}
 ) {
@@ -1283,6 +1302,10 @@ private fun NeriAppContent(
     val latestOnNowPlayingVisibilityChanged by rememberUpdatedState(
         onNowPlayingVisibilityChanged
     )
+    val latestOnLauncherShortcutRequestConsumed by rememberUpdatedState(
+        onLauncherShortcutRequestConsumed
+    )
+    val launcherShortcutRequest by launcherShortcutRequestFlow.collectAsStateWithLifecycle()
     val offlineMode by rememberOfflineModeState()
     val rootView = LocalView.current
     val repo = remember { AppContainer.settingsRepo }
@@ -1587,6 +1610,7 @@ private fun NeriAppContent(
             )
         }
     }
+    var playbackBootstrapReady by remember { mutableStateOf(false) }
 
     fun updateStartupAudioFocus(reason: String) {
         startupAudioFocusRefresher.refreshForeground(
@@ -1599,6 +1623,7 @@ private fun NeriAppContent(
     }
 
     LaunchedEffect(application) {
+        playbackBootstrapReady = false
         PlayerStartupBootstrapper(
             app = application,
             context = context,
@@ -1608,6 +1633,7 @@ private fun NeriAppContent(
         ).bootstrap().serviceStart?.let { serviceStart ->
             scheduleAudioServiceStart(serviceStart.source, serviceStart.forceForeground)
         }
+        playbackBootstrapReady = true
 
         launch {
             serviceSyncCoordinator.collectLocalPlaybackCommands()
@@ -2177,6 +2203,74 @@ private fun NeriAppContent(
                     launchSingleTop = true
                     restoreState = true
                 }
+            }
+            fun showLauncherShortcutToast(messageRes: Int) {
+                AppFeedback.showToast(
+                    context = context,
+                    message = composeResources.getString(messageRes)
+                )
+            }
+            LaunchedEffect(launcherShortcutRequest, playbackBootstrapReady) {
+                val request = launcherShortcutRequest ?: return@LaunchedEffect
+                if (!playbackBootstrapReady) return@LaunchedEffect
+
+                launcherShortcutMainTabRoute(request.action)?.let { route ->
+                    navigateToMainTab(route)
+                    latestOnLauncherShortcutRequestConsumed(request)
+                    return@LaunchedEffect
+                }
+
+                when (request.action) {
+                    LauncherShortcutAction.ContinuePlayback -> {
+                        if (PlayerManager.hasItems()) {
+                            showNowPlaying = true
+                            PlayerManager.play()
+                            scheduleAudioServiceStart(
+                                "launcher_shortcut_continue_playback",
+                                true
+                            )
+                        } else {
+                            navigateToMainTab(Destinations.Library.route)
+                            showLauncherShortcutToast(
+                                R.string.launcher_shortcut_no_resumable_queue
+                            )
+                        }
+                    }
+                    LauncherShortcutAction.ShuffleFavorites -> {
+                        val playlistsReady = withTimeoutOrNull(
+                            LAUNCHER_SHORTCUT_PLAYLIST_READY_TIMEOUT_MS
+                        ) {
+                            PlayerManager.localPlaylistsReadyFlow.first { ready -> ready }
+                        } == true
+                        val favoritesSongs = if (playlistsReady) {
+                            FavoritesPlaylist
+                                .firstOrNull(PlayerManager.playlistsFlow.value, context)
+                                ?.songs
+                                .orEmpty()
+                        } else {
+                            emptyList()
+                        }
+                        if (favoritesSongs.isEmpty()) {
+                            navigateToMainTab(Destinations.Library.route)
+                            showLauncherShortcutToast(
+                                R.string.launcher_shortcut_favorites_empty
+                            )
+                        } else {
+                            PlayerManager.setShuffle(true)
+                            playSongsAndOpenNowPlaying(
+                                songs = favoritesSongs,
+                                index = Random.nextInt(favoritesSongs.size),
+                                sourceRoute = localPlaylistSourceRoute(
+                                    FavoritesPlaylist.SYSTEM_ID
+                                )
+                            )
+                        }
+                    }
+                    LauncherShortcutAction.OpenExplore,
+                    LauncherShortcutAction.OpenLibrary -> Unit
+                }
+
+                latestOnLauncherShortcutRequestConsumed(request)
             }
             suspend fun preloadNeteaseDetailRouteCover(route: String) {
                 val coverUrl = runCatching {

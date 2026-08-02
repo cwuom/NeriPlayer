@@ -104,6 +104,18 @@
     <string name="nav_settings">设置</string>
     <string name="nav_debug">调试</string>
 
+    <!-- Launcher Shortcuts -->
+    <string name="launcher_shortcut_continue_short">继续播放</string>
+    <string name="launcher_shortcut_continue_long">继续播放上次队列</string>
+    <string name="launcher_shortcut_explore_short">探索</string>
+    <string name="launcher_shortcut_explore_long">打开探索</string>
+    <string name="launcher_shortcut_library_short">媒体库</string>
+    <string name="launcher_shortcut_library_long">打开媒体库</string>
+    <string name="launcher_shortcut_shuffle_favorites_short">随机喜欢</string>
+    <string name="launcher_shortcut_shuffle_favorites_long">随机播放我喜欢的音乐</string>
+    <string name="launcher_shortcut_no_resumable_queue">暂无可继续播放的队列</string>
+    <string name="launcher_shortcut_favorites_empty">我喜欢的音乐暂无可播放歌曲</string>
+
     <!-- Platform Names -->
     <string name="platform_bilibili">哔哩哔哩</string>
     <string name="platform_netease">网易云音乐</string>

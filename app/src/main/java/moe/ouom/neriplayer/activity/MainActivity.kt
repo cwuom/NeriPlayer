@@ -143,6 +143,8 @@ import moe.ouom.neriplayer.listentogether.invite.ListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.validation.normalizeListenTogetherRoomId
 import moe.ouom.neriplayer.listentogether.invite.parseListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherInviteJoinBaseUrl
+import moe.ouom.neriplayer.navigation.LauncherShortcutRequest
+import moe.ouom.neriplayer.navigation.launcherShortcutActionFromIntentAction
 import moe.ouom.neriplayer.ui.MobileDataDownloadInterruptionDialog
 import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.ui.component.overlay.LocalOverlaySurfaceScale
@@ -261,6 +263,10 @@ class MainActivity : ComponentActivity() {
     private var externalAudioMetadataHydrationJob: Job? = null
     private var externalAudioRequestToken = 0L
     private var pendingExternalAudioServiceStart: PendingAudioServiceStart? = null
+    private var launcherShortcutRequestToken = 0L
+    private val pendingLauncherShortcutRequest =
+        MutableStateFlow<LauncherShortcutRequest?>(null)
+    private val launcherShortcutRequestFlow = pendingLauncherShortcutRequest.asStateFlow()
     private val pendingListenTogetherInvite = MutableStateFlow<ListenTogetherInvite?>(null)
     private val listenTogetherInviteFlow = pendingListenTogetherInvite.asStateFlow()
     private val listenTogetherStatusMessage = MutableStateFlow<String?>(null)
@@ -852,6 +858,9 @@ class MainActivity : ComponentActivity() {
 
                             NeriApp(
                                 initialThemeSnapshot = startupThemeSnapshot,
+                                launcherShortcutRequestFlow = launcherShortcutRequestFlow,
+                                onLauncherShortcutRequestConsumed =
+                                    ::clearLauncherShortcutRequest,
                                 onIsDarkChanged = { isDark ->
                                     // 主题切换时保留窗口底色与内容主题一致
                                     applyWindowBackground(isDark)
@@ -1011,8 +1020,25 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIncomingIntent(intent: Intent?) {
+        if (handleLauncherShortcutIntent(intent)) return
         if (handleListenTogetherInviteIntent(intent)) return
         handleExternalAudioIntent(intent)
+    }
+
+    private fun handleLauncherShortcutIntent(intent: Intent?): Boolean {
+        val action = launcherShortcutActionFromIntentAction(intent?.action) ?: return false
+        pendingLauncherShortcutRequest.value = LauncherShortcutRequest(
+            token = ++launcherShortcutRequestToken,
+            action = action
+        )
+        setIntent(Intent(this, MainActivity::class.java))
+        return true
+    }
+
+    private fun clearLauncherShortcutRequest(request: LauncherShortcutRequest) {
+        if (pendingLauncherShortcutRequest.value?.token == request.token) {
+            pendingLauncherShortcutRequest.value = null
+        }
     }
 
     private fun handleListenTogetherInviteIntent(intent: Intent?): Boolean {
