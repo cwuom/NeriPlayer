@@ -3,7 +3,6 @@ package moe.ouom.neriplayer.ui.screen
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
@@ -213,31 +212,33 @@ class NowPlayingScreenTest {
     }
 
     @Test
-    fun `queue item key keeps duplicate songs visible`() {
-        val song = SongItem(
-            id = 1L,
-            name = "Song",
-            artist = "Artist",
-            album = "Album",
-            albumId = 1L,
-            durationMs = 1_000L,
-            coverUrl = null
-        )
+    fun `queue entry keys survive reorder for unique songs`() {
+        val first = testSong(id = 1L, name = "First")
+        val second = testSong(id = 2L, name = "Second")
+        val third = testSong(id = 3L, name = "Third")
+        val initialKeys = buildNowPlayingQueueEntries(listOf(first, second, third))
+            .associate { it.song.name to it.key }
+        val reorderedKeys = buildNowPlayingQueueEntries(listOf(third, first, second))
+            .associate { it.song.name to it.key }
 
-        assertNotEquals(
-            buildNowPlayingQueueItemKey(index = 0, song = song),
-            buildNowPlayingQueueItemKey(index = 1, song = song)
-        )
+        assertEquals(initialKeys, reorderedKeys)
+    }
+
+    @Test
+    fun `queue entry keys keep duplicate songs visible without row index`() {
+        val song = testSong(id = 1L, name = "Song")
+        val entries = buildNowPlayingQueueEntries(listOf(song, song))
+
+        assertTrue(entries[0].key != entries[1].key)
     }
 
     @Test
     fun `queue selected songs keep duplicate entries by row key`() {
         val song = testSong(id = 1L, name = "Song")
         val queue = listOf(song, song, testSong(id = 2L, name = "Other"))
-        val selectedKeys = setOf(
-            buildNowPlayingQueueItemKey(index = 0, song = song),
-            buildNowPlayingQueueItemKey(index = 1, song = song)
-        )
+        val selectedKeys = buildNowPlayingQueueEntries(queue)
+            .take(2)
+            .mapTo(LinkedHashSet()) { it.key }
 
         val selectedSongs = resolveNowPlayingQueueSelectedSongs(queue, selectedKeys)
 
@@ -250,14 +251,14 @@ class NowPlayingScreenTest {
         val second = testSong(id = 2L, name = "Second")
         val third = testSong(id = 3L, name = "Third")
         val queue = listOf(first, second, third)
-        val selectedKeys = setOf(buildNowPlayingQueueItemKey(index = 1, song = second))
+        val selectedKeys = setOf(buildNowPlayingQueueEntries(queue)[1].key)
 
         val invertedKeys = invertNowPlayingQueueSelection(queue, selectedKeys)
 
         assertEquals(
             setOf(
-                buildNowPlayingQueueItemKey(index = 0, song = first),
-                buildNowPlayingQueueItemKey(index = 2, song = third)
+                buildNowPlayingQueueEntries(queue)[0].key,
+                buildNowPlayingQueueEntries(queue)[2].key
             ),
             invertedKeys
         )
@@ -329,6 +330,27 @@ class NowPlayingScreenTest {
     }
 
     @Test
+    fun `queue reorder autoscroll uses gentle per frame step`() {
+        assertEquals(2.dp, NowPlayingQueueReorderAutoScrollMaxPerFrame)
+    }
+
+    @Test
+    fun `queue index input resolves one based numbers`() {
+        assertEquals(0, resolveNowPlayingQueueIndexInput("1", queueSize = 10))
+        assertEquals(9, resolveNowPlayingQueueIndexInput("10", queueSize = 10))
+        assertEquals(4, resolveNowPlayingQueueIndexInput(" 5 ", queueSize = 10))
+    }
+
+    @Test
+    fun `queue index input rejects empty zero and out of range numbers`() {
+        assertEquals(null, resolveNowPlayingQueueIndexInput("", queueSize = 10))
+        assertEquals(null, resolveNowPlayingQueueIndexInput("0", queueSize = 10))
+        assertEquals(null, resolveNowPlayingQueueIndexInput("11", queueSize = 10))
+        assertEquals(null, resolveNowPlayingQueueIndexInput("1", queueSize = 0))
+        assertEquals(null, resolveNowPlayingQueueIndexInput("abc", queueSize = 10))
+    }
+
+    @Test
     fun `queue scroll target keeps distant current item precise`() {
         assertEquals(
             4_096,
@@ -382,6 +404,28 @@ class NowPlayingScreenTest {
                 targetIndex = 4_096,
                 firstVisibleItemIndex = 4_096,
                 firstVisibleItemScrollOffset = 12
+            )
+        )
+    }
+
+    @Test
+    fun `queue auto locate pauses while sorting or pending reorder commit`() {
+        assertTrue(
+            shouldAutoLocateNowPlayingQueue(
+                selectionMode = false,
+                queueOrderDirty = false
+            )
+        )
+        assertFalse(
+            shouldAutoLocateNowPlayingQueue(
+                selectionMode = true,
+                queueOrderDirty = false
+            )
+        )
+        assertFalse(
+            shouldAutoLocateNowPlayingQueue(
+                selectionMode = false,
+                queueOrderDirty = true
             )
         )
     }

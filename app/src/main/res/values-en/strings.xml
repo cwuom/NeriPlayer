@@ -237,6 +237,9 @@
     <string name="nowplaying_lyrics_sample">Sample lyrics: Spring breeze is not as good as you</string>
     <string name="nowplaying_youtube_music">YouTube</string>
     <string name="nowplaying_queue_current_position">No. %d</string>
+    <string name="nowplaying_queue_jump_title">Jump to Song</string>
+    <string name="nowplaying_queue_jump_input_label">Song Number</string>
+    <string name="nowplaying_queue_jump_input_supporting">Enter a number from 1 to %d</string>
 
     <!-- Lyrics -->
     <string name="lyrics_title">Lyrics</string>

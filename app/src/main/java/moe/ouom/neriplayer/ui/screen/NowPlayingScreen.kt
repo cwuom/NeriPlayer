@@ -181,6 +181,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -305,6 +306,7 @@ private const val CoverSourceBadgeRevealBufferMs = 120
 private const val CoverSourceBadgeRevealDelayMs =
     LyricsPageTransitionDurationMs + CoverSourceBadgeRevealBufferMs
 private const val QueueSheetMaxHeightFraction = 0.9f
+internal val NowPlayingQueueReorderAutoScrollMaxPerFrame = 2.dp
 private const val HighUiDensityScaleThreshold = 1.1f
 private const val CompactNowPlayingPortraitMaxHeightDp = 600f
 private const val PlaybackActionToolbarItemCount = 5
@@ -394,19 +396,19 @@ internal fun shouldHideDownloadActionForSong(
     currentTask: moe.ouom.neriplayer.core.download.DownloadTask?
 ): Boolean = shouldHideRemoteDownloadAction(hasLocalDownload, currentTask)
 
-internal fun buildNowPlayingQueueItemKey(index: Int, song: SongItem): String {
-    return "$index:${song.stableKey()}"
-}
-
-private data class NowPlayingQueueEntry(
+internal data class NowPlayingQueueEntry(
     val key: String,
     val song: SongItem
 )
 
-private fun buildNowPlayingQueueEntries(queue: List<SongItem>): List<NowPlayingQueueEntry> {
-    return queue.mapIndexed { index, song ->
+internal fun buildNowPlayingQueueEntries(queue: List<SongItem>): List<NowPlayingQueueEntry> {
+    val occurrenceByStableKey = mutableMapOf<String, Int>()
+    return queue.map { song ->
+        val stableKey = song.stableKey()
+        val occurrence = occurrenceByStableKey.getOrDefault(stableKey, 0)
+        occurrenceByStableKey[stableKey] = occurrence + 1
         NowPlayingQueueEntry(
-            key = buildNowPlayingQueueItemKey(index, song),
+            key = "$occurrence:$stableKey",
             song = song
         )
     }
@@ -439,13 +441,26 @@ internal fun shouldUpdateNowPlayingQueueScroll(
     firstVisibleItemScrollOffset: Int
 ): Boolean = firstVisibleItemIndex != targetIndex || firstVisibleItemScrollOffset != 0
 
+internal fun shouldAutoLocateNowPlayingQueue(
+    selectionMode: Boolean,
+    queueOrderDirty: Boolean
+): Boolean = !selectionMode && !queueOrderDirty
+
+internal fun resolveNowPlayingQueueIndexInput(
+    input: String,
+    queueSize: Int
+): Int? {
+    val targetNumber = input.trim().toIntOrNull() ?: return null
+    return (targetNumber - 1).takeIf { it in 0 until queueSize }
+}
+
 internal fun resolveNowPlayingQueueSelectedSongs(
     queue: List<SongItem>,
     selectedKeys: Set<String>
 ): List<SongItem> {
     if (selectedKeys.isEmpty()) return emptyList()
-    return queue.filterIndexed { index, song ->
-        buildNowPlayingQueueItemKey(index, song) in selectedKeys
+    return buildNowPlayingQueueEntries(queue).mapNotNull { entry ->
+        entry.song.takeIf { entry.key in selectedKeys }
     }
 }
 
@@ -453,8 +468,8 @@ internal fun invertNowPlayingQueueSelection(
     queue: List<SongItem>,
     selectedKeys: Set<String>
 ): Set<String> {
-    return queue.mapIndexedNotNullTo(LinkedHashSet()) { index, song ->
-        buildNowPlayingQueueItemKey(index, song).takeUnless(selectedKeys::contains)
+    return buildNowPlayingQueueEntries(queue).mapNotNullTo(LinkedHashSet()) { entry ->
+        entry.key.takeUnless(selectedKeys::contains)
     }
 }
 
@@ -840,6 +855,8 @@ internal fun NowPlayingQueueSheet(
     var selectionMode by remember { mutableStateOf(false) }
     var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showExportSheet by remember { mutableStateOf(false) }
+    var showQueueIndexJumpDialog by remember { mutableStateOf(false) }
+    var queueIndexInput by remember { mutableStateOf("") }
     val sourceEntries = remember(displayedQueue) {
         buildNowPlayingQueueEntries(displayedQueue)
     }
@@ -853,15 +870,15 @@ internal fun NowPlayingQueueSheet(
         initialFirstVisibleItemIndex = initialQueueScrollTarget ?: 0
     )
     var initialQueuePositioned by remember { mutableStateOf(initialQueueScrollTarget != null) }
-    var queueOrderDirty by remember(sourceEntries) { mutableStateOf(false) }
-    var queueEntries by remember(sourceEntries) { mutableStateOf(sourceEntries) }
-    val currentEntryKey = displayedQueue
-        .getOrNull(currentIndexInDisplay)
-        ?.let { buildNowPlayingQueueItemKey(currentIndexInDisplay, it) }
+    var queueOrderDirty by remember { mutableStateOf(false) }
+    var queueEntries by remember { mutableStateOf(sourceEntries) }
+    val currentEntryKey = sourceEntries.getOrNull(currentIndexInDisplay)?.key
     val currentIndexInQueueEntries = currentEntryKey
         ?.let { key -> queueEntries.indexOfFirst { it.key == key } }
         ?.takeIf { it >= 0 }
         ?: currentIndexInDisplay
+    val latestCurrentEntryKey by rememberUpdatedState(currentEntryKey)
+    val latestCurrentIndexInQueueEntries by rememberUpdatedState(currentIndexInQueueEntries)
     val queueItemKeys = remember(queueEntries) {
         queueEntries.mapTo(LinkedHashSet()) { it.key }
     }
@@ -888,13 +905,13 @@ internal fun NowPlayingQueueSheet(
         },
         onDragEnd = { _, _ ->
             if (!queueOrderDirty) return@rememberReorderableLazyListState
-            val currentKey = currentEntryKey
+            val currentKey = latestCurrentEntryKey
             val currentIndexByKey = currentKey
                 ?.let { key -> queueEntries.indexOfFirst { it.key == key } }
                 ?: -1
             val currentIndexAfterReorder = resolveNowPlayingQueueCurrentIndexAfterReorder(
                 queueSize = queueEntries.size,
-                currentIndex = currentIndexInQueueEntries,
+                currentIndex = latestCurrentIndexInQueueEntries,
                 currentIndexByKey = currentIndexByKey
             )
             PlayerManager.reorderQueue(
@@ -903,7 +920,7 @@ internal fun NowPlayingQueueSheet(
             )
             queueOrderDirty = false
         },
-        maxScrollPerFrame = 8.dp
+        maxScrollPerFrame = NowPlayingQueueReorderAutoScrollMaxPerFrame
     )
 
     fun exitSelection() {
@@ -911,10 +928,37 @@ internal fun NowPlayingQueueSheet(
         selectedKeys = emptySet()
     }
 
+    var dismissingQueue by remember { mutableStateOf(false) }
+
     fun dismissQueue() {
+        if (dismissingQueue) return
+        dismissingQueue = true
         showExportSheet = false
+        showQueueIndexJumpDialog = false
         exitSelection()
-        onDismissRequest()
+        screenScope.launch {
+            runCatching { sheetState.hide() }
+            onDismissRequest()
+        }
+    }
+
+    fun scrollToQueueIndex(index: Int) {
+        val targetIndex = index.takeIf { it in queueEntries.indices } ?: return
+        screenScope.launch {
+            reorderState.listState.animateScrollToItem(targetIndex)
+        }
+    }
+
+    fun locateCurrentQueueItem() {
+        scrollToQueueIndex(currentIndexInQueueEntries)
+    }
+
+    fun openQueueIndexJumpDialog() {
+        context.performHapticFeedback(HapticFeedbackEffect.Click)
+        queueIndexInput = (currentIndexInQueueEntries + 1)
+            .coerceIn(1, queueEntries.size.coerceAtLeast(1))
+            .toString()
+        showQueueIndexJumpDialog = true
     }
 
     fun toggleItem(key: String) {
@@ -925,7 +969,10 @@ internal fun NowPlayingQueueSheet(
         }
     }
 
-    LaunchedEffect(queueEntries.size, currentIndexInQueueEntries) {
+    LaunchedEffect(queueEntries.size, currentIndexInQueueEntries, selectionMode, queueOrderDirty) {
+        if (!shouldAutoLocateNowPlayingQueue(selectionMode, queueOrderDirty)) {
+            return@LaunchedEffect
+        }
         val targetIndex = resolveNowPlayingQueueScrollTarget(
             queueSize = queueEntries.size,
             currentIndex = currentIndexInQueueEntries
@@ -948,10 +995,14 @@ internal fun NowPlayingQueueSheet(
         }
     }
 
+    LaunchedEffect(sourceEntries) {
+        queueEntries = sourceEntries
+        queueOrderDirty = false
+    }
+
     LaunchedEffect(queueItemKeys, selectedKeys) {
         val cleanedKeys = selectedKeys.intersect(queueItemKeys)
         if (cleanedKeys != selectedKeys) selectedKeys = cleanedKeys
-        if (selectionMode && cleanedKeys.isEmpty()) selectionMode = false
     }
 
     ModalBottomSheet(
@@ -965,6 +1016,19 @@ internal fun NowPlayingQueueSheet(
 
         BackHandler(enabled = showExportSheet) {
             showExportSheet = false
+        }
+
+        if (showQueueIndexJumpDialog) {
+            NowPlayingQueueIndexJumpDialog(
+                queueSize = queueEntries.size,
+                input = queueIndexInput,
+                onInputChange = { queueIndexInput = it },
+                onDismiss = { showQueueIndexJumpDialog = false },
+                onJump = { targetIndex ->
+                    scrollToQueueIndex(targetIndex)
+                    showQueueIndexJumpDialog = false
+                }
+            )
         }
 
         Box(
@@ -988,7 +1052,7 @@ internal fun NowPlayingQueueSheet(
                         },
                         onInvertSelection = {
                             selectedKeys = invertNowPlayingQueueSelection(
-                                displayedQueue,
+                                queueEntries.map { it.song },
                                 selectedKeys
                             )
                             if (selectedKeys.isEmpty()) selectionMode = false
@@ -1024,8 +1088,12 @@ internal fun NowPlayingQueueSheet(
                             )
                         }
                         if (currentIndexInQueueEntries >= 0) {
+                            val queueIndexButtonShape = RoundedCornerShape(999.dp)
                             Surface(
-                                shape = RoundedCornerShape(999.dp),
+                                modifier = Modifier
+                                    .clip(queueIndexButtonShape)
+                                    .clickable(onClick = ::openQueueIndexJumpDialog),
+                                shape = queueIndexButtonShape,
                                 color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.76f)
                             ) {
                                 Row(
@@ -1137,11 +1205,7 @@ internal fun NowPlayingQueueSheet(
                     currentIndex = currentIndexInQueueEntries,
                     hasSourceRoute = onOpenCurrentPlaybackSource != null,
                     onLocateCurrent = {
-                        if (currentIndexInQueueEntries >= 0) {
-                            screenScope.launch {
-                                reorderState.listState.animateScrollToItem(currentIndexInQueueEntries)
-                            }
-                        }
+                        locateCurrentQueueItem()
                     },
                     onOpenSource = {
                         dismissQueue()
@@ -1185,6 +1249,66 @@ internal fun NowPlayingQueueSheet(
             }
         )
     }
+}
+
+@Composable
+private fun NowPlayingQueueIndexJumpDialog(
+    queueSize: Int,
+    input: String,
+    onInputChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onJump: (Int) -> Unit
+) {
+    val targetIndex = remember(input, queueSize) {
+        resolveNowPlayingQueueIndexInput(input, queueSize)
+    }
+
+    fun submit() {
+        targetIndex?.let(onJump)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.nowplaying_queue_jump_title)) },
+        text = {
+            OutlinedTextField(
+                value = input,
+                onValueChange = { value ->
+                    onInputChange(value.filter { it.isDigit() }.take(6))
+                },
+                label = { Text(stringResource(R.string.nowplaying_queue_jump_input_label)) },
+                supportingText = {
+                    Text(
+                        stringResource(
+                            R.string.nowplaying_queue_jump_input_supporting,
+                            queueSize
+                        )
+                    )
+                },
+                isError = input.isNotBlank() && targetIndex == null,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(onDone = { submit() }),
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            HapticTextButton(
+                onClick = ::submit,
+                enabled = targetIndex != null
+            ) {
+                Text(stringResource(R.string.action_confirm))
+            }
+        },
+        dismissButton = {
+            HapticTextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        }
+    )
 }
 
 internal fun resolveNowPlayingPlaybackSourceType(

@@ -237,6 +237,9 @@
     <string name="nowplaying_lyrics_sample">示例歌词：春风十里不如你</string>
     <string name="nowplaying_youtube_music">YouTube</string>
     <string name="nowplaying_queue_current_position">第 %d 首</string>
+    <string name="nowplaying_queue_jump_title">跳转到歌曲</string>
+    <string name="nowplaying_queue_jump_input_label">歌曲序号</string>
+    <string name="nowplaying_queue_jump_input_supporting">输入 1 到 %d 之间的序号</string>
 
     <!-- Lyrics -->
     <string name="lyrics_title">歌词</string>
