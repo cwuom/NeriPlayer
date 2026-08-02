@@ -898,6 +898,8 @@
     <string name="settings_always_record_logs_desc">Record runtime logs continuously</string>
     <string name="settings_explore_search_history">Explore Search History</string>
     <string name="settings_explore_search_history_desc">Show and record search keywords on Explore</string>
+    <string name="settings_usb_device_attach_handling">Handle USB DAC Attach</string>
+    <string name="settings_usb_device_attach_handling_desc">Turn off to stop NeriPlayer from opening to handle USB DACs or FreeDSP cables when attached</string>
     <string name="settings_playback_idle_shutdown">Exit playback service when paused</string>
     <string name="settings_playback_idle_shutdown_desc">Remove notification after timeout; keep queue and progress</string>
     <string name="settings_playback_idle_shutdown_dialog_title">Exit after being paused for</string>

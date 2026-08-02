@@ -60,12 +60,6 @@
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
             <intent-filter>
-                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
-            </intent-filter>
-            <meta-data
-                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
-                android:resource="@xml/usb_audio_device_filter" />
-            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <action android:name="android.intent.action.SEND" />
                 <action android:name="android.intent.action.SEND_MULTIPLE" />
@@ -83,6 +77,19 @@
                     android:pathPrefix="/join" />
             </intent-filter>
         </activity>
+        <activity-alias
+            android:name=".activity.UsbDeviceAttachedActivityAlias"
+            android:enabled="true"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:targetActivity=".activity.MainActivity">
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/usb_audio_device_filter" />
+        </activity-alias>
         <activity
             android:name=".activity.auth.NeteaseWebLoginActivity"
             android:exported="false"

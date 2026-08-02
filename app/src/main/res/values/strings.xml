@@ -898,6 +898,8 @@
     <string name="settings_always_record_logs_desc">持续写入运行日志</string>
     <string name="settings_explore_search_history">探索页搜索历史</string>
     <string name="settings_explore_search_history_desc">显示并记录探索页的搜索关键词</string>
+    <string name="settings_usb_device_attach_handling">处理 USB DAC 插入</string>
+    <string name="settings_usb_device_attach_handling_desc">关闭后，插入 USB DAC 或 FreeDSP 线束时不会唤起音理音理处理此设备</string>
     <string name="settings_playback_idle_shutdown">暂停后退出播放服务</string>
     <string name="settings_playback_idle_shutdown_desc">暂停超时后移除通知，保留队列和进度</string>
     <string name="settings_playback_idle_shutdown_dialog_title">暂停多久后退出</string>

@@ -78,6 +78,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
+import moe.ouom.neriplayer.activity.shouldProcessUsbDeviceAttachedAction
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -556,6 +557,7 @@ class AudioPlayerService : Service() {
         line = null,
     )
     private var floatingLyricsEnabledForNotification = false
+    private var usbDeviceAttachHandlingEnabled = true
     private var usbExclusiveKeepAliveJob: Job? = null
     private var usbExclusiveKeepAliveTick: Long = 0L
     private var lastUsbExclusiveKeepAliveAtMs: Long = 0L
@@ -1207,6 +1209,12 @@ class AudioPlayerService : Service() {
                 }
         }
         serviceScope.launch {
+            AppContainer.settingsRepo.usbDeviceAttachHandlingEnabledFlow
+                .collectSafely("usbDeviceAttachHandlingEnabledFlow") { enabled ->
+                    usbDeviceAttachHandlingEnabled = enabled
+                }
+        }
+        serviceScope.launch {
             PlayerManager.currentSongFlow.collectSafely("currentSongFlow") {
                 if (it == null && !hasPlaybackSurfaceContent()) {
                     if (!hasReceivedStartCommand || pendingStartCommands.isNotEmpty()) {
@@ -1405,6 +1413,15 @@ class AudioPlayerService : Service() {
                         updateNotification()
                     }
                     UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
+                        if (
+                            !shouldProcessUsbDeviceAttachedAction(
+                                intent.action,
+                                usbDeviceAttachHandlingEnabled
+                            )
+                        ) {
+                            NPLogger.i("NERI-APS", "Ignored USB audio device attach by settings")
+                            return
+                        }
                         val attachedDevice = intent.usbDeviceExtra()
                         if (
                             !UsbExclusiveSessionController.handleUsbDeviceAttached(

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Tab
 import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Usb
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material.icons.outlined.ZoomInMap
 import androidx.compose.material3.Icon
@@ -228,6 +229,7 @@ private fun autoSettingSpecIconVector(icon: AutoSettingIcon): ImageVector? {
         AutoSettingIcon.Tab -> Icons.Outlined.Tab
         AutoSettingIcon.Translate -> Icons.Outlined.Translate
         AutoSettingIcon.Tune -> Icons.Outlined.Tune
+        AutoSettingIcon.Usb -> Icons.Outlined.Usb
         AutoSettingIcon.Wallpaper -> Icons.Outlined.Wallpaper
         AutoSettingIcon.ZoomInMap -> Icons.Outlined.ZoomInMap
     }

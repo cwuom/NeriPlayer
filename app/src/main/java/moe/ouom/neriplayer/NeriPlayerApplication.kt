@@ -25,6 +25,8 @@ package moe.ouom.neriplayer
 
 import android.app.Application
 import android.webkit.WebView
+import kotlinx.coroutines.flow.collect
+import moe.ouom.neriplayer.activity.UsbDeviceAttachHandling
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -107,6 +109,14 @@ class NeriPlayerApplication : Application() {
             }
             AppContainer.launchBackgroundIo {
                 AppContainer.playHistoryRepo
+            }
+            AppContainer.launchBackgroundIo {
+                AppContainer.settingsRepo.usbDeviceAttachHandlingEnabledFlow.collect { enabled ->
+                    UsbDeviceAttachHandling.applyComponentState(
+                        this@NeriPlayerApplication,
+                        enabled
+                    )
+                }
             }
 
             // 提前注册前后台回调, 避免等播放器初始化后才开始统计 Activity 状态

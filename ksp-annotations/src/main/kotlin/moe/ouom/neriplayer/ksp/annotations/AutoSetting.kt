@@ -232,6 +232,7 @@ enum class AutoSettingIcon {
     Tab,
     Translate,
     Tune,
+    Usb,
     Wallpaper,
     ZoomInMap
 }

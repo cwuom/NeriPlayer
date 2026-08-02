@@ -92,6 +92,15 @@ object AutoSettingsSchema {
             icon = AutoSettingIcon.Keyboard
         )
 
+        @AutoSetting(order = 43)
+        val usbDeviceAttachHandlingEnabled = autoSwitchSetting(
+            key = "usb_device_attach_handling_enabled",
+            defaultValue = true,
+            titleRes = R.string.settings_usb_device_attach_handling,
+            descriptionRes = R.string.settings_usb_device_attach_handling_desc,
+            icon = AutoSettingIcon.Usb
+        )
+
         @AutoSetting(
             key = "ui_density_scale",
             type = SettingValueType.Float,

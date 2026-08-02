@@ -3,8 +3,12 @@
 package moe.ouom.neriplayer.core.player.service
 
 import android.media.AudioManager
+import android.content.pm.PackageManager
+import android.hardware.usb.UsbManager
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.lifecycle.Lifecycle
+import moe.ouom.neriplayer.activity.shouldProcessUsbDeviceAttachedAction
+import moe.ouom.neriplayer.activity.usbDeviceAttachAliasComponentState
 import moe.ouom.neriplayer.core.player.audio.focus.shouldPauseUsbExclusiveForFocusChange
 import moe.ouom.neriplayer.core.player.audio.focus.shouldSuppressUsbExclusiveForFocusChange
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherPlaybackState
@@ -307,6 +311,38 @@ class AudioPlayerServicePolicyTest {
                 hasItems = true,
                 usbExclusivePlaybackActive = true
             )
+        )
+    }
+
+    @Test
+    fun `USB attach action is ignored when handling setting is off`() {
+        assertFalse(
+            shouldProcessUsbDeviceAttachedAction(
+                UsbManager.ACTION_USB_DEVICE_ATTACHED,
+                handlingEnabled = false
+            )
+        )
+    }
+
+    @Test
+    fun `non USB attach action is still processed when handling setting is off`() {
+        assertTrue(
+            shouldProcessUsbDeviceAttachedAction(
+                AudioManager.ACTION_AUDIO_BECOMING_NOISY,
+                handlingEnabled = false
+            )
+        )
+    }
+
+    @Test
+    fun `USB attach alias follows handling setting`() {
+        assertEquals(
+            PackageManager.COMPONENT_ENABLED_STATE_DEFAULT,
+            usbDeviceAttachAliasComponentState(handlingEnabled = true)
+        )
+        assertEquals(
+            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+            usbDeviceAttachAliasComponentState(handlingEnabled = false)
         )
     }
 

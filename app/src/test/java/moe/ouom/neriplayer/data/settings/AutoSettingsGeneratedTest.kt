@@ -35,6 +35,10 @@ class AutoSettingsGeneratedTest {
             "explore_search_history_enabled" in booleanKeyNames
         )
         assertTrue(
+            "USB attach handling switch should be exportable",
+            "usb_device_attach_handling_enabled" in booleanKeyNames
+        )
+        assertTrue(
             "display tab switch should be exportable",
             "always_use_new_tab_style" in booleanKeyNames
         )
@@ -322,6 +326,19 @@ class AutoSettingsGeneratedTest {
         assertEquals("explore_search_history_enabled", setting.preferencesKey.name)
         assertEquals(true, setting.defaultValue)
         assertEquals(SettingUiType.Switch, AutoSettingsMetadata.setting(setting.key)?.ui)
+    }
+
+    @Test
+    fun usbDeviceAttachHandlingDefaultsToEnabledInGeneralSettings() {
+        val setting = AutoSettingsSchema.general.usbDeviceAttachHandlingEnabled
+        val metadata = AutoSettingsMetadata.setting(setting.key)
+
+        assertEquals("usb_device_attach_handling_enabled", setting.preferencesKey.name)
+        assertEquals(true, setting.defaultValue)
+        assertEquals(SettingValueType.Boolean, metadata?.valueType)
+        assertEquals(SettingUiType.Switch, metadata?.ui)
+        assertEquals(AutoSettingsSections.general, metadata?.section)
+        assertEquals(AutoSettingIcon.Usb, metadata?.icon)
     }
 
     @Test

@@ -168,6 +168,9 @@ class SettingsRepository(private val context: Context) {
     val exploreSearchHistoryEnabledFlow: Flow<Boolean> =
         settingFlow(AutoSettingsSchema.general.exploreSearchHistoryEnabled)
 
+    val usbDeviceAttachHandlingEnabledFlow: Flow<Boolean> =
+        settingFlow(AutoSettingsSchema.general.usbDeviceAttachHandlingEnabled)
+
     val playbackServiceIdleShutdownMinutesFlow: Flow<Int> =
         autoSettingsRepository.playbackServiceIdleShutdownMinutesFlow
 
