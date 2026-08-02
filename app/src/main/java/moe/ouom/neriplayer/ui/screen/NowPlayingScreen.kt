@@ -4513,7 +4513,8 @@ private fun NowPlayingLyricsPane(
         visualEffectsEnabled = false,
         smoothActiveLineProgress = false,
         edgeFadeHeight = resolveLyricEdgeFadeHeight(isEmbedded = true),
-        showEmbeddedTranslations = showEmbeddedTranslations
+        showEmbeddedTranslations = showEmbeddedTranslations,
+        stableEmbeddedViewport = true
     )
 }
 

@@ -117,6 +117,161 @@ class SyncedLyricsViewTimingTest {
     }
 
     @Test
+    fun `synced lyrics keep placement under scroll control`() {
+        assertFalse(shouldAnimateLyricItemPlacement())
+    }
+
+    @Test
+    fun `song change owns the embedded lyric scroll session`() {
+        val lyrics = listOf(
+            LyricEntry(text = "A", startTimeMs = 0L, endTimeMs = 1_000L)
+        )
+
+        assertEquals("song-b", resolveLyricScrollSessionKey("song-b", lyrics))
+        assertEquals(lyrics, resolveLyricScrollSessionKey(null, lyrics))
+    }
+
+    @Test
+    fun `stable lyric viewport starts on the active line`() {
+        assertEquals(
+            3,
+            resolveInitialLyricScrollIndex(
+                currentIndex = 3,
+                lyricsSize = 6,
+                stabilizeViewport = true
+            )
+        )
+        assertEquals(
+            0,
+            resolveInitialLyricScrollIndex(
+                currentIndex = 3,
+                lyricsSize = 6,
+                stabilizeViewport = false
+            )
+        )
+        assertEquals(
+            0,
+            resolveInitialLyricScrollIndex(
+                currentIndex = -1,
+                lyricsSize = 6,
+                stabilizeViewport = true
+            )
+        )
+    }
+
+    @Test
+    fun `auto scroll waits for the user gesture to settle`() {
+        assertFalse(
+            shouldAutoScrollLyricViewport(
+                currentIndex = 2,
+                lyricsSize = 5,
+                firstVisibleItemIndex = 0,
+                firstVisibleItemScrollOffset = 0,
+                isUserInteracting = true
+            )
+        )
+        assertFalse(
+            shouldAutoScrollLyricViewport(
+                currentIndex = 2,
+                lyricsSize = 5,
+                firstVisibleItemIndex = 2,
+                firstVisibleItemScrollOffset = 0,
+                isUserInteracting = false
+            )
+        )
+        assertTrue(
+            shouldAutoScrollLyricViewport(
+                currentIndex = 2,
+                lyricsSize = 5,
+                firstVisibleItemIndex = 2,
+                firstVisibleItemScrollOffset = 12,
+                isUserInteracting = false
+            )
+        )
+    }
+
+    @Test
+    fun `manual lyric scroll holds the viewport until playback advances`() {
+        assertTrue(
+            shouldHoldLyricViewportForManualScroll(
+                manualScrollAnchorIndex = 2,
+                currentIndex = 2
+            )
+        )
+        assertFalse(
+            shouldAutoScrollLyricViewport(
+                currentIndex = 2,
+                lyricsSize = 5,
+                firstVisibleItemIndex = 0,
+                firstVisibleItemScrollOffset = 0,
+                isUserInteracting = false,
+                manualScrollAnchorIndex = 2
+            )
+        )
+        assertFalse(
+            shouldAutoScrollLyricViewport(
+                currentIndex = 3,
+                lyricsSize = 5,
+                firstVisibleItemIndex = 0,
+                firstVisibleItemScrollOffset = 0,
+                isUserInteracting = true,
+                manualScrollAnchorIndex = 2
+            )
+        )
+        assertTrue(
+            shouldAutoScrollLyricViewport(
+                currentIndex = 3,
+                lyricsSize = 5,
+                firstVisibleItemIndex = 0,
+                firstVisibleItemScrollOffset = 0,
+                isUserInteracting = false,
+                manualScrollAnchorIndex = 2
+            )
+        )
+    }
+
+    @Test
+    fun `manual translation reveal uses the dedicated transition mode`() {
+        assertEquals(
+            LyricTranslationTransitionMode.MANUAL_EXPANSION,
+            resolveLyricTranslationTransitionMode(isManualReveal = true)
+        )
+        assertEquals(
+            LyricTranslationTransitionMode.PLAYBACK_CHANGE,
+            resolveLyricTranslationTransitionMode(isManualReveal = false)
+        )
+    }
+
+    @Test
+    fun `stale lyric auto scroll cannot clear the latest scroll state`() {
+        val staleTarget = LyricAutoScrollTarget(lineIndex = 1, lyricsSize = 4)
+        val latestTarget = LyricAutoScrollTarget(lineIndex = 2, lyricsSize = 4)
+
+        assertFalse(shouldFinishLyricAutoScroll(staleTarget, latestTarget))
+        assertTrue(shouldFinishLyricAutoScroll(latestTarget, latestTarget))
+    }
+
+    @Test
+    fun `embedded lyric scale stays subtle across active state`() {
+        assertEquals(1.025f, resolveEmbeddedLyricScale(isActive = true), 0f)
+        assertEquals(0.985f, resolveEmbeddedLyricScale(isActive = false), 0f)
+    }
+
+    @Test
+    fun `manual lyric presentation transitions between playback and clear states`() {
+        assertEquals(1f, resolveLyricClearPresentationTarget(true), 0f)
+        assertEquals(0f, resolveLyricClearPresentationTarget(false), 0f)
+    }
+
+    @Test
+    fun `translation scale uses a centered upper anchor`() {
+        val transformOrigin = resolveEmbeddedTranslationTransformOrigin()
+
+        assertEquals(0.5f, transformOrigin.pivotFractionX, 0f)
+        assertEquals(0.35f, transformOrigin.pivotFractionY, 0f)
+    }
+
+    @Test
     fun `translation gap follows both font sizes and stays bounded`() {
         assertEquals(4.dp, resolveLyricTranslationGap(18.sp, 14.sp))
         assertEquals(
@@ -143,12 +298,11 @@ class SyncedLyricsViewTimingTest {
     }
 
     @Test
-    fun `stale lyric auto scroll cannot clear the latest scroll state`() {
-        val staleTarget = LyricAutoScrollTarget(lineIndex = 1, lyricsSize = 4)
-        val latestTarget = LyricAutoScrollTarget(lineIndex = 2, lyricsSize = 4)
-
-        assertFalse(shouldFinishLyricAutoScroll(staleTarget, latestTarget))
-        assertTrue(shouldFinishLyricAutoScroll(latestTarget, latestTarget))
+    fun `lyrics page Japanese lyric translation gets extra gap`() {
+        assertEquals(3f, resolveLyricTranslationExtraGap("昨日の僕守る為に", true).value, 0f)
+        assertEquals(0f, resolveLyricTranslationExtraGap("昨日の僕守る為に", false).value, 0f)
+        assertEquals(0f, resolveLyricTranslationExtraGap("只是为了守护昨天的我", true).value, 0f)
+        assertEquals(0f, resolveLyricTranslationExtraGap("Let it rain", true).value, 0f)
     }
 
     @Test
