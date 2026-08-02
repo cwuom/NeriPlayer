@@ -252,6 +252,7 @@
     <string name="nowplaying_queue_jump_title">跳转到歌曲</string>
     <string name="nowplaying_queue_jump_input_label">歌曲序号</string>
     <string name="nowplaying_queue_jump_input_supporting">输入 1 到 %d 之间的序号</string>
+    <string name="nowplaying_queue_remove">移除</string>
 
     <!-- Lyrics -->
     <string name="lyrics_title">歌词</string>

@@ -252,6 +252,7 @@
     <string name="nowplaying_queue_jump_title">Jump to Song</string>
     <string name="nowplaying_queue_jump_input_label">Song Number</string>
     <string name="nowplaying_queue_jump_input_supporting">Enter a number from 1 to %d</string>
+    <string name="nowplaying_queue_remove">Remove</string>
 
     <!-- Lyrics -->
     <string name="lyrics_title">Lyrics</string>
