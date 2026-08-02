@@ -24,6 +24,14 @@ internal object SyncPlaybackStatsMergePolicy {
         val shards: List<SyncPlaybackCounterShard>
     )
 
+    private data class BucketTotals(
+        val totalListenMs: Long,
+        val playCount: Long,
+        val firstPlayedAt: Long,
+        val lastPlayedAt: Long,
+        val latestBucket: SyncPlaybackStatBucket
+    )
+
     fun merge(
         local: List<SyncTrackStat>,
         remote: List<SyncTrackStat>,
@@ -106,28 +114,100 @@ internal object SyncPlaybackStatsMergePolicy {
         stats: List<SyncTrackStat>,
         buckets: List<SyncPlaybackStatBucket>
     ): List<SyncTrackStat> {
-        if (stats.isEmpty()) return stats
-        val bucketListenByKey = HashMap<String, Long>()
-        val bucketPlayByKey = HashMap<String, Long>()
+        if (buckets.isEmpty()) return stats
+        val bucketTotalsByKey = LinkedHashMap<String, BucketTotals>()
         for (bucket in buckets) {
             val key = bucket.identityKey
-            bucketListenByKey[key] =
-                (bucketListenByKey[key] ?: 0L) + bucket.totalListenMs.coerceAtLeast(0L)
-            bucketPlayByKey[key] =
-                (bucketPlayByKey[key] ?: 0L) + bucket.playCount.coerceAtLeast(0).toLong()
-        }
-        return stats.map { stat ->
-            val liftedListen = maxOf(stat.totalListenMs, bucketListenByKey[stat.identityKey] ?: 0L)
-            val liftedPlayLong = maxOf(
-                stat.playCount.toLong(),
-                bucketPlayByKey[stat.identityKey] ?: 0L
-            )
-            val liftedPlay = liftedPlayLong.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-            if (liftedListen == stat.totalListenMs && liftedPlay == stat.playCount) {
-                stat
+            val current = bucketTotalsByKey[key]
+            bucketTotalsByKey[key] = if (current == null) {
+                BucketTotals(
+                    totalListenMs = bucket.totalListenMs.coerceAtLeast(0L),
+                    playCount = bucket.playCount.coerceAtLeast(0).toLong(),
+                    firstPlayedAt = bucket.firstPlayedAt,
+                    lastPlayedAt = bucket.lastPlayedAt,
+                    latestBucket = bucket
+                )
             } else {
-                stat.copy(totalListenMs = liftedListen, playCount = liftedPlay)
+                current.copy(
+                    totalListenMs = saturatedNonNegativeSum(
+                        current.totalListenMs,
+                        bucket.totalListenMs
+                    ),
+                    playCount = saturatedNonNegativeSum(
+                        current.playCount,
+                        bucket.playCount.toLong()
+                    ),
+                    firstPlayedAt = minPositivePlayedAt(
+                        current.firstPlayedAt,
+                        bucket.firstPlayedAt
+                    ),
+                    lastPlayedAt = maxOf(current.lastPlayedAt, bucket.lastPlayedAt),
+                    latestBucket = if (
+                        bucket.lastPlayedAt > current.latestBucket.lastPlayedAt ||
+                        (
+                            bucket.lastPlayedAt == current.latestBucket.lastPlayedAt &&
+                                bucket.dayStartAt > current.latestBucket.dayStartAt
+                            )
+                    ) {
+                        bucket
+                    } else {
+                        current.latestBucket
+                    }
+                )
             }
+        }
+
+        val statKeys = stats.mapTo(HashSet()) { it.identityKey }
+        return buildList(stats.size + bucketTotalsByKey.size) {
+            stats.forEach { stat ->
+                val bucketTotals = bucketTotalsByKey[stat.identityKey]
+                val liftedListen = maxOf(stat.totalListenMs, bucketTotals?.totalListenMs ?: 0L)
+                val liftedPlayLong = maxOf(
+                    stat.playCount.toLong(),
+                    bucketTotals?.playCount ?: 0L
+                )
+                val liftedPlay = liftedPlayLong.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                add(
+                    if (liftedListen == stat.totalListenMs && liftedPlay == stat.playCount) {
+                        stat
+                    } else {
+                        stat.copy(totalListenMs = liftedListen, playCount = liftedPlay)
+                    }
+                )
+            }
+            bucketTotalsByKey.forEach { (identityKey, bucketTotals) ->
+                if (identityKey !in statKeys) {
+                    add(bucketTotals.toTrackStat(identityKey))
+                }
+            }
+        }
+    }
+
+    private fun BucketTotals.toTrackStat(identityKey: String): SyncTrackStat {
+        return SyncTrackStat(
+            identityKey = identityKey,
+            name = latestBucket.name,
+            artist = latestBucket.artist,
+            album = latestBucket.album,
+            totalListenMs = totalListenMs,
+            playCount = playCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+            lastPlayedAt = lastPlayedAt,
+            firstPlayedAt = firstPlayedAt,
+            coverUrl = latestBucket.coverUrl,
+            durationMs = latestBucket.durationMs,
+            mediaUri = latestBucket.mediaUri,
+            id = latestBucket.id,
+            albumId = latestBucket.albumId
+        )
+    }
+
+    private fun saturatedNonNegativeSum(left: Long, right: Long): Long {
+        val normalizedLeft = left.coerceAtLeast(0L)
+        val normalizedRight = right.coerceAtLeast(0L)
+        return if (Long.MAX_VALUE - normalizedLeft < normalizedRight) {
+            Long.MAX_VALUE
+        } else {
+            normalizedLeft + normalizedRight
         }
     }
 

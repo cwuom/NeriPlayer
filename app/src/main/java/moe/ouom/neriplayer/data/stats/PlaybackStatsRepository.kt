@@ -73,6 +73,87 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
     val dailyStatsFlow: StateFlow<List<PlaybackStatBucket>> = _dailyStats
     val statsClearedAtFlow: StateFlow<Long> = _statsClearedAt
 
+    init {
+        reconcileLoadedStats()
+    }
+
+    private fun reconcileLoadedStats() {
+        if (_stats.value.isEmpty() && _dailyStats.value.isEmpty()) return
+
+        val counterSnapshot = counterStore.snapshot()
+        val reconciled = SyncPlaybackStatsMergePolicy.liftStatsToBucketTotals(
+            stats = _stats.value.map { stat ->
+                SyncPlaybackStatMapper.fromTrackStat(
+                    stat = stat,
+                    counterShards = counterSnapshot.trackShards(stat.identityKey)
+                )
+            },
+            buckets = _dailyStats.value.map { bucket ->
+                SyncPlaybackStatMapper.fromPlaybackStatBucket(
+                    bucket = bucket,
+                    counterShards = counterSnapshot.dailyShards(
+                        dayStartAt = bucket.dayStartAt,
+                        identityKey = bucket.identityKey
+                    )
+                )
+            }
+        )
+        val localStats = _stats.value.associateBy { it.identityKey }
+        val updated = reconciled.map { stat ->
+            localStats[stat.identityKey]?.applySyncedCounters(stat) ?: stat.toTrackStat()
+        }
+        if (updated == _stats.value) return
+
+        _stats.value = updated
+        persistenceDirty = true
+        scope.launch {
+            mutex.withLock {
+                persistSnapshot(
+                    PlaybackStatsPersistenceSnapshot(
+                        stats = _stats.value,
+                        dailyStats = _dailyStats.value
+                    )
+                )
+            }
+        }
+    }
+
+    private fun SyncTrackStat.toTrackStat(): TrackStat {
+        return TrackStat(
+            id = id,
+            name = name,
+            artist = artist,
+            album = album,
+            albumId = albumId,
+            coverUrl = coverUrl,
+            durationMs = durationMs,
+            totalListenMs = totalListenMs,
+            playCount = playCount,
+            lastPlayedAt = lastPlayedAt,
+            firstPlayedAt = firstPlayedAt,
+            mediaUri = mediaUri,
+            localFilePath = null,
+            localFileName = null,
+            customName = null,
+            customArtist = null,
+            customCoverUrl = null,
+            identityKey = identityKey
+        )
+    }
+
+    private fun TrackStat.applySyncedCounters(remote: SyncTrackStat): TrackStat {
+        val useRemoteMetadata = remote.lastPlayedAt > lastPlayedAt
+        return copy(
+            totalListenMs = remote.totalListenMs,
+            playCount = remote.playCount,
+            lastPlayedAt = remote.lastPlayedAt,
+            firstPlayedAt = remote.firstPlayedAt,
+            name = if (useRemoteMetadata) remote.name else name,
+            artist = if (useRemoteMetadata) remote.artist else artist,
+            coverUrl = if (useRemoteMetadata) remote.coverUrl else coverUrl
+        )
+    }
+
     private fun loadFromDisk(): List<TrackStat> {
         return try {
             if (!file.exists()) return emptyList()
@@ -451,12 +532,11 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
             } else {
                 playbackStatsClearedAt
             }
-            val current = _stats.value
+            val currentStats = _stats.value
                 .filter { shouldKeepTrackStatAfterClear(it, effectiveClearedAt) }
                 .associateBy { it.identityKey }
-                .toMutableMap()
             val normalizedRemoteStats = SyncPlaybackStatsMergePolicy.merge(
-                local = current.values.map { stat ->
+                local = currentStats.values.map { stat ->
                     SyncPlaybackStatMapper.fromTrackStat(
                         stat = stat,
                         counterShards = counterSnapshot.trackShards(stat.identityKey)
@@ -465,57 +545,10 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                 remote = syncStats,
                 playbackStatsClearedAt = effectiveClearedAt
             )
-            for (remote in normalizedRemoteStats) {
-                val local = current[remote.identityKey]
-                if (local == null) {
-                    current[remote.identityKey] = TrackStat(
-                        id = remote.id,
-                        name = remote.name,
-                        artist = remote.artist,
-                        album = remote.album,
-                        albumId = remote.albumId,
-                        coverUrl = remote.coverUrl,
-                        durationMs = remote.durationMs,
-                        totalListenMs = remote.totalListenMs,
-                        playCount = remote.playCount,
-                        lastPlayedAt = remote.lastPlayedAt,
-                        firstPlayedAt = remote.firstPlayedAt,
-                        mediaUri = remote.mediaUri,
-                        localFilePath = null,
-                        localFileName = null,
-                        customName = null,
-                        customArtist = null,
-                        customCoverUrl = null,
-                        identityKey = remote.identityKey
-                    )
-                } else {
-                    current[remote.identityKey] = local.copy(
-                        totalListenMs = remote.totalListenMs,
-                        playCount = remote.playCount,
-                        lastPlayedAt = remote.lastPlayedAt,
-                        firstPlayedAt = remote.firstPlayedAt,
-                        name = if (remote.lastPlayedAt > local.lastPlayedAt) remote.name else local.name,
-                        artist = if (remote.lastPlayedAt > local.lastPlayedAt) remote.artist else local.artist,
-                        coverUrl = if (remote.lastPlayedAt > local.lastPlayedAt) remote.coverUrl else local.coverUrl
-                    )
-                }
-            }
-            val updated = current.values.toList()
-            _stats.value = updated
-            val shouldUpdateClearBarrier = if (respectLocalClear) {
-                effectiveClearedAt > _statsClearedAt.value
-            } else {
-                syncStats.isNotEmpty() && effectiveClearedAt != _statsClearedAt.value
-            }
-            if (shouldUpdateClearBarrier) {
-                _statsClearedAt.value = effectiveClearedAt
-                persistMetadata(effectiveClearedAt)
-            }
 
             val currentDailyStats = _dailyStats.value
                 .filter { shouldKeepDailyBucketAfterClear(it, effectiveClearedAt) }
                 .associateBy { it.dayStartAt to it.identityKey }
-                .toMutableMap()
             val normalizedRemoteDailyStats = SyncPlaybackStatsMergePolicy.mergeBuckets(
                 local = currentDailyStats.values.map { bucket ->
                     SyncPlaybackStatMapper.fromPlaybackStatBucket(
@@ -529,17 +562,16 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                 remote = syncDailyStats,
                 playbackStatsClearedAt = effectiveClearedAt
             )
-            for (remote in normalizedRemoteDailyStats) {
-                val key = remote.dayStartAt to remote.identityKey
-                val local = currentDailyStats[key]
-                currentDailyStats[key] = if (local == null) {
-                    remote.toPlaybackStatBucket()
-                } else {
-                    mergeDailyBucket(local, remote)
-                }
-            }
 
-            val updatedDailyStats = trimPlaybackStatBuckets(if (
+            val finalized = SyncPlaybackStatsMergePolicy.finalizeMergedStats(
+                mergedStats = normalizedRemoteStats,
+                mergedBuckets = normalizedRemoteDailyStats
+            )
+            val updated = finalized.stats.map { remote ->
+                currentStats[remote.identityKey]?.applySyncedCounters(remote)
+                    ?: remote.toTrackStat()
+            }
+            val updatedDailyStats = if (
                 currentDailyStats.isEmpty() &&
                 normalizedRemoteDailyStats.isEmpty() &&
                 _dailyStats.value.isEmpty() &&
@@ -547,16 +579,30 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
             ) {
                 buildLegacyDailyStats(updated, effectiveClearedAt)
             } else {
-                currentDailyStats.values.toList()
-            })
+                finalized.buckets.map { remote ->
+                    currentDailyStats[remote.dayStartAt to remote.identityKey]?.let { local ->
+                        mergeDailyBucket(local, remote)
+                    } ?: remote.toPlaybackStatBucket()
+                }
+            }
+            _stats.value = updated
             _dailyStats.value = updatedDailyStats
+            val shouldUpdateClearBarrier = if (respectLocalClear) {
+                effectiveClearedAt > _statsClearedAt.value
+            } else {
+                syncStats.isNotEmpty() && effectiveClearedAt != _statsClearedAt.value
+            }
+            if (shouldUpdateClearBarrier) {
+                _statsClearedAt.value = effectiveClearedAt
+                persistMetadata(effectiveClearedAt)
+            }
             cancelScheduledPersistenceLocked()
             val statsSaved = persistToDisk(updated)
             val dailyStatsSaved = persistDailyStatsToDisk(updatedDailyStats)
             persistenceDirty = !(statsSaved && dailyStatsSaved)
             counterStore.replaceFromSync(
-                syncStats = normalizedRemoteStats,
-                syncDailyStats = normalizedRemoteDailyStats,
+                syncStats = finalized.stats,
+                syncDailyStats = finalized.buckets,
                 epochStartedAt = effectiveClearedAt
             )
         }

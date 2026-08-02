@@ -403,6 +403,100 @@ class SyncPlaybackStatsMergePolicyTest {
         assertEquals(once, twice)
     }
 
+    @Test
+    fun `lift creates aggregate stat when legacy data only has daily buckets`() {
+        val day = 86_400_000L
+        val buckets = listOf(
+            trackBucket(
+                identityKey = "bucket-only",
+                dayStartAt = day,
+                totalListenMs = 120L,
+                playCount = 2,
+                firstPlayedAt = day + 1L,
+                lastPlayedAt = day + 2L,
+                name = "first"
+            ),
+            trackBucket(
+                identityKey = "bucket-only",
+                dayStartAt = 2 * day,
+                totalListenMs = 180L,
+                playCount = 3,
+                firstPlayedAt = 2 * day + 1L,
+                lastPlayedAt = 2 * day + 2L,
+                name = "latest"
+            )
+        )
+
+        val once = SyncPlaybackStatsMergePolicy.liftStatsToBucketTotals(emptyList(), buckets)
+        val twice = SyncPlaybackStatsMergePolicy.liftStatsToBucketTotals(once, buckets)
+        val finalized = SyncPlaybackStatsMergePolicy.finalizeMergedStats(emptyList(), buckets)
+
+        assertEquals(1, once.size)
+        assertEquals("bucket-only", once.single().identityKey)
+        assertEquals("latest", once.single().name)
+        assertEquals(300L, once.single().totalListenMs)
+        assertEquals(5, once.single().playCount)
+        assertEquals(day + 1L, once.single().firstPlayedAt)
+        assertEquals(2 * day + 2L, once.single().lastPlayedAt)
+        assertEquals(once, twice)
+        assertEquals(once, finalized.stats)
+    }
+
+    @Test
+    fun `bucket only stats from separate devices converge into one total`() {
+        val day = 86_400_000L
+        val localBuckets = listOf(
+            trackBucket(
+                identityKey = "bucket-only",
+                dayStartAt = day,
+                totalListenMs = 120L,
+                playCount = 2,
+                firstPlayedAt = day + 1L,
+                lastPlayedAt = day + 2L
+            )
+        )
+        val remoteBuckets = listOf(
+            trackBucket(
+                identityKey = "bucket-only",
+                dayStartAt = 2 * day,
+                totalListenMs = 180L,
+                playCount = 3,
+                firstPlayedAt = 2 * day + 1L,
+                lastPlayedAt = 2 * day + 2L
+            )
+        )
+
+        val finalized = SyncPlaybackStatsMergePolicy.finalizeMergedStats(
+            mergedStats = SyncPlaybackStatsMergePolicy.merge(
+                local = emptyList(),
+                remote = emptyList(),
+                playbackStatsClearedAt = 0L
+            ),
+            mergedBuckets = SyncPlaybackStatsMergePolicy.mergeBuckets(
+                local = localBuckets,
+                remote = remoteBuckets,
+                playbackStatsClearedAt = 0L
+            )
+        )
+        val replayed = SyncPlaybackStatsMergePolicy.finalizeMergedStats(
+            mergedStats = SyncPlaybackStatsMergePolicy.merge(
+                local = finalized.stats,
+                remote = emptyList(),
+                playbackStatsClearedAt = 0L
+            ),
+            mergedBuckets = SyncPlaybackStatsMergePolicy.mergeBuckets(
+                local = finalized.buckets,
+                remote = remoteBuckets,
+                playbackStatsClearedAt = 0L
+            )
+        )
+
+        assertEquals(1, finalized.stats.size)
+        assertEquals(300L, finalized.stats.single().totalListenMs)
+        assertEquals(5, finalized.stats.single().playCount)
+        assertEquals(finalized, replayed)
+    }
+
     // ---- M1 收尾顺序: lift 必须用"未裁剪"桶 (与桌面 three_way_merge 逐字对齐) ----
 
     @Test

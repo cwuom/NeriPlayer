@@ -11,7 +11,7 @@ import java.util.TimeZone
 class PlaybackStatsPeriodTest {
 
     @Test
-    fun `resolvePlaybackStatsTimeRange returns local day week month and year boundaries`() {
+    fun `resolvePlaybackStatsTimeRange returns nested rolling day windows`() {
         withCalendarDefaults {
             val now = utcMillis(2026, Calendar.JULY, 2, 10)
 
@@ -23,14 +23,30 @@ class PlaybackStatsPeriodTest {
 
             assertEquals(utcMillis(2026, Calendar.JULY, 2), day.startInclusive)
             assertEquals(utcMillis(2026, Calendar.JULY, 3), day.endExclusive)
-            assertEquals(utcMillis(2026, Calendar.JUNE, 29), week.startInclusive)
-            assertEquals(utcMillis(2026, Calendar.JULY, 6), week.endExclusive)
-            assertEquals(utcMillis(2026, Calendar.JULY, 1), month.startInclusive)
-            assertEquals(utcMillis(2026, Calendar.AUGUST, 1), month.endExclusive)
-            assertEquals(utcMillis(2026, Calendar.JANUARY, 1), year.startInclusive)
-            assertEquals(utcMillis(2027, Calendar.JANUARY, 1), year.endExclusive)
+            assertEquals(utcMillis(2026, Calendar.JUNE, 26), week.startInclusive)
+            assertEquals(utcMillis(2026, Calendar.JULY, 3), week.endExclusive)
+            assertEquals(utcMillis(2026, Calendar.JUNE, 3), month.startInclusive)
+            assertEquals(utcMillis(2026, Calendar.JULY, 3), month.endExclusive)
+            assertEquals(utcMillis(2025, Calendar.JULY, 3), year.startInclusive)
+            assertEquals(utcMillis(2026, Calendar.JULY, 3), year.endExclusive)
             assertNull(all.startInclusive)
             assertEquals(Long.MAX_VALUE, all.endExclusive)
+        }
+    }
+
+    @Test
+    fun `rolling periods stay nested across a month boundary`() {
+        withCalendarDefaults {
+            val now = utcMillis(2026, Calendar.AUGUST, 2, 10)
+
+            val week = PlaybackStatsPeriod.WEEK.resolvePlaybackStatsTimeRange(now)
+            val month = PlaybackStatsPeriod.MONTH.resolvePlaybackStatsTimeRange(now)
+
+            assertEquals(utcMillis(2026, Calendar.JULY, 27), week.startInclusive)
+            assertEquals(utcMillis(2026, Calendar.AUGUST, 3), week.endExclusive)
+            assertEquals(utcMillis(2026, Calendar.JULY, 4), month.startInclusive)
+            assertEquals(utcMillis(2026, Calendar.AUGUST, 3), month.endExclusive)
+            assertTrue(month.startInclusive!! <= week.startInclusive!!)
         }
     }
 
@@ -94,7 +110,7 @@ class PlaybackStatsPeriodTest {
             )
             val spanning = stat(
                 key = "netease:2",
-                firstPlayedAt = utcMillis(2026, Calendar.JUNE, 30, 9),
+                firstPlayedAt = utcMillis(2026, Calendar.JUNE, 10, 9),
                 lastPlayedAt = utcMillis(2026, Calendar.JULY, 4, 9)
             )
 
@@ -114,7 +130,7 @@ class PlaybackStatsPeriodTest {
         withCalendarDefaults {
             val spanning = stat(
                 key = "netease:2",
-                firstPlayedAt = utcMillis(2026, Calendar.JUNE, 30, 9),
+                firstPlayedAt = utcMillis(2026, Calendar.JUNE, 10, 9),
                 lastPlayedAt = utcMillis(2026, Calendar.JULY, 4, 9)
             )
 

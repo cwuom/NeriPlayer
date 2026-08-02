@@ -47,23 +47,20 @@ fun PlaybackStatsPeriod.resolvePlaybackStatsTimeRange(
         )
     }
 
-    val start = Calendar.getInstance().apply {
+    val end = Calendar.getInstance().apply {
         timeInMillis = nowMillis
-        when (this@resolvePlaybackStatsTimeRange) {
-            PlaybackStatsPeriod.DAY -> moveToDayStart()
-            PlaybackStatsPeriod.WEEK -> moveToWeekStart()
-            PlaybackStatsPeriod.MONTH -> moveToMonthStart()
-            PlaybackStatsPeriod.YEAR -> moveToYearStart()
-            PlaybackStatsPeriod.ALL -> Unit
-        }
+        moveToDayStart()
+        add(Calendar.DAY_OF_YEAR, 1)
     }
-    val end = start.clone() as Calendar
-    when (this) {
-        PlaybackStatsPeriod.DAY -> end.add(Calendar.DAY_OF_MONTH, 1)
-        PlaybackStatsPeriod.WEEK -> end.add(Calendar.WEEK_OF_YEAR, 1)
-        PlaybackStatsPeriod.MONTH -> end.add(Calendar.MONTH, 1)
-        PlaybackStatsPeriod.YEAR -> end.add(Calendar.YEAR, 1)
-        PlaybackStatsPeriod.ALL -> Unit
+    val days = when (this) {
+        PlaybackStatsPeriod.DAY -> 1
+        PlaybackStatsPeriod.WEEK -> 7
+        PlaybackStatsPeriod.MONTH -> 30
+        PlaybackStatsPeriod.YEAR -> 365
+        PlaybackStatsPeriod.ALL -> 0
+    }
+    val start = (end.clone() as Calendar).apply {
+        add(Calendar.DAY_OF_YEAR, -days)
     }
     return PlaybackStatsTimeRange(
         startInclusive = start.timeInMillis,
@@ -127,24 +124,6 @@ private fun Calendar.moveToDayStart() {
     set(Calendar.MINUTE, 0)
     set(Calendar.SECOND, 0)
     set(Calendar.MILLISECOND, 0)
-}
-
-private fun Calendar.moveToWeekStart() {
-    firstDayOfWeek = Calendar.MONDAY
-    moveToDayStart()
-    while (get(Calendar.DAY_OF_WEEK) != firstDayOfWeek) {
-        add(Calendar.DAY_OF_MONTH, -1)
-    }
-}
-
-private fun Calendar.moveToMonthStart() {
-    set(Calendar.DAY_OF_MONTH, 1)
-    moveToDayStart()
-}
-
-private fun Calendar.moveToYearStart() {
-    set(Calendar.DAY_OF_YEAR, 1)
-    moveToDayStart()
 }
 
 private fun TrackStat.mergeWith(bucket: PlaybackStatBucket): TrackStat {
