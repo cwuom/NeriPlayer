@@ -62,7 +62,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.Surface
@@ -73,6 +73,7 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -85,9 +86,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.graphics.toColorInt
@@ -141,6 +144,7 @@ import moe.ouom.neriplayer.listentogether.invite.parseListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherInviteJoinBaseUrl
 import moe.ouom.neriplayer.ui.MobileDataDownloadInterruptionDialog
 import moe.ouom.neriplayer.ui.NeriApp
+import moe.ouom.neriplayer.ui.component.overlay.LocalOverlaySurfaceScale
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.onboarding.StartupOnboardingScreen
 import moe.ouom.neriplayer.ui.screen.safemode.SafeModeScreen
@@ -154,6 +158,8 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.platform.NightModeHelper
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
 import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
+import moe.ouom.neriplayer.util.platform.applyOnePlusHighDensityDisplayCorrection
+import moe.ouom.neriplayer.util.platform.resolveOnePlusHighDensityUiScale
 
 private data class PendingAudioServiceStart(
     val requestToken: Long,
@@ -205,6 +211,37 @@ private fun GitHubSyncWarningDialog(
     )
 }
 
+@Composable
+private fun AppUiDensityRoot(
+    userScale: Float,
+    content: @Composable () -> Unit
+) {
+    val baseContext = LocalContext.current
+    val baseDensity = LocalDensity.current
+    val scaledDensity = remember(baseDensity, userScale) {
+        Density(
+            density = baseDensity.density * userScale,
+            fontScale = baseDensity.fontScale
+        )
+    }
+    val uncorrectedDensityDpi = baseContext.applicationContext.resources
+        .displayMetrics.densityDpi
+    val surfaceScale = remember(userScale, uncorrectedDensityDpi) {
+        resolveOnePlusHighDensityUiScale(
+            userScale = userScale,
+            manufacturer = Build.MANUFACTURER,
+            brand = Build.BRAND,
+            densityDpi = uncorrectedDensityDpi
+        )
+    }
+
+    CompositionLocalProvider(
+        LocalDensity provides scaledDensity,
+        LocalOverlaySurfaceScale provides surfaceScale,
+        content = content
+    )
+}
+
 class MainActivity : ComponentActivity() {
     private val settingsRepository by lazy { SettingsRepository(applicationContext) }
     private val startupCrashReportManager by lazy { StartupCrashReportManager(applicationContext) }
@@ -224,7 +261,8 @@ class MainActivity : ComponentActivity() {
     private var safeModeActive = false
 
     override fun attachBaseContext(newBase: Context) {
-        super.attachBaseContext(LanguageManager.applyLanguage(newBase))
+        val localizedContext = LanguageManager.applyLanguage(newBase)
+        super.attachBaseContext(applyOnePlusHighDensityDisplayCorrection(localizedContext))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -250,6 +288,9 @@ class MainActivity : ComponentActivity() {
 
         if (safeModeActive) {
             setContent {
+                val uiDensityScale by settingsRepository.uiDensityScaleFlow
+                    .collectAsStateWithLifecycle(initialValue = 1.0f)
+                AppUiDensityRoot(uiDensityScale) {
                 val systemDark = rememberActualSystemDarkTheme()
                 val useDark = remember(systemDark) {
                     StartupThemeResolver.resolveSnapshotUseDark(
@@ -267,11 +308,15 @@ class MainActivity : ComponentActivity() {
                         onRestoreNormal = ::restoreFromSafeMode
                     )
                 }
+                }
             }
             return
         }
 
         setContent {
+            val uiDensityScale by settingsRepository.uiDensityScaleFlow
+                .collectAsStateWithLifecycle(initialValue = 1.0f)
+            AppUiDensityRoot(uiDensityScale) {
             val devModeEnabled by settingsRepository.devModeEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
             val alwaysRecordLogsEnabled by settingsRepository.alwaysRecordLogsEnabledFlow.collectAsStateWithLifecycle(
                 initialValue = false
@@ -870,6 +915,7 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                 }
+            }
             }
         }
 

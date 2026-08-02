@@ -143,6 +143,7 @@ import moe.ouom.neriplayer.ui.component.playback.PlaybackControlIndicator
 import moe.ouom.neriplayer.ui.component.playback.rememberDelayedPlaybackWaiting
 import moe.ouom.neriplayer.ui.component.playback.WaveformSlider
 import moe.ouom.neriplayer.ui.component.playback.resolvePlaybackWaiting
+import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
@@ -906,7 +907,7 @@ fun LyricsScreen(
 
             // 音量控制弹窗
             if (showVolumeSheet) {
-                androidx.compose.material3.ModalBottomSheet(
+                DensityScaledModalBottomSheet(
                     onDismissRequest = { showVolumeSheet = false },
                     sheetGesturesEnabled = false
                 ) {
@@ -931,7 +932,7 @@ fun LyricsScreen(
                 val selectablePlaylists = remember(playlists, context) {
                     playlists.filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
                 }
-                androidx.compose.material3.ModalBottomSheet(
+                DensityScaledModalBottomSheet(
                     onDismissRequest = { showAddSheet = false },
                     sheetState = addSheetState,
                     sheetGesturesEnabled = false

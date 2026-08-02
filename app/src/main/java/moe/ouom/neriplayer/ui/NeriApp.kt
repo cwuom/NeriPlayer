@@ -72,7 +72,7 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material3.AlertDialog
+import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
@@ -109,11 +109,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -248,7 +246,6 @@ import moe.ouom.neriplayer.util.media.adjustedAccentColorArgb
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.util.platform.openAppBackgroundSettings
 import moe.ouom.neriplayer.util.platform.readBackgroundBehaviorAllowance
-import moe.ouom.neriplayer.util.platform.resolveOnePlusHighDensityUiScale
 import moe.ouom.neriplayer.util.platform.requestIgnoreBatteryOptimizationsCompat
 import moe.ouom.neriplayer.util.format.formatFileSize
 import moe.ouom.neriplayer.util.media.isRemoteImageSource
@@ -1365,17 +1362,6 @@ private fun NeriAppContent(
         )
     )
     val uiDensityScale by repo.uiDensityScaleFlow.collectAsStateWithLifecycle(initialValue = 1.0f)
-    val effectiveUiDensityScale = remember(
-        uiDensityScale,
-        composeResources.displayMetrics.densityDpi
-    ) {
-        resolveOnePlusHighDensityUiScale(
-            userScale = uiDensityScale,
-            manufacturer = Build.MANUFACTURER,
-            brand = Build.BRAND,
-            densityDpi = composeResources.displayMetrics.densityDpi
-        )
-    }
     val bypassProxy by repo.bypassProxyFlow.collectAsStateWithLifecycle(initialValue = true)
     val backgroundImageUri by repo.backgroundImageUriFlow.collectAsStateWithLifecycle(initialValue = null)
     val downloadDirectoryUri by repo.downloadDirectoryUriFlow.collectAsStateWithLifecycle(initialValue = null)
@@ -1711,15 +1697,7 @@ private fun NeriAppContent(
         syncHapticFeedbackSetting(hapticFeedbackEnabled)
     }
 
-    val defaultDensity = LocalDensity.current
     var bottomBarHeightPx by remember { mutableIntStateOf(0) }
-
-    val finalDensity = remember(defaultDensity, effectiveUiDensityScale) {
-        Density(
-            density = defaultDensity.density * effectiveUiDensityScale,
-            fontScale = defaultDensity.fontScale
-        )
-    }
 
     val isDark = StartupThemeResolver.resolveModeUseDark(
         mode = themeMode,
@@ -2054,8 +2032,7 @@ private fun NeriAppContent(
         return "local_playlist_detail/$id"
     }
 
-    CompositionLocalProvider(LocalDensity provides finalDensity) {
-        val activeCoverSeedHex = if (playbackVisualCoverUrl == null) null else coverSeedHex
+    val activeCoverSeedHex = if (playbackVisualCoverUrl == null) null else coverSeedHex
         val effectiveSeedHex = if (dynamicColorEnabled) {
             activeCoverSeedHex ?: themeSeedColor
         } else {
@@ -2064,7 +2041,7 @@ private fun NeriAppContent(
         val useSystemDynamic =
             dynamicColorEnabled && activeCoverSeedHex == null && playbackVisualCoverUrl == null
 
-        NeriTheme(
+    NeriTheme(
             followSystemDark = followSystemDark,
             forceDark = forceDark,
             dynamicColor = useSystemDynamic,
@@ -2072,7 +2049,7 @@ private fun NeriAppContent(
             paletteStyle = themePaletteStyle,
             colorSpec = themeColorSpec,
             systemDark = systemDark
-        ) {
+    ) {
             // changing NavHost's start destination rebuilds its graph and clears the live stack
             val navHostStartDestination = remember { initialMainStartDestination }
             val navController = rememberNavController()
@@ -4105,8 +4082,6 @@ private fun NeriAppContent(
                         isDark = isDark,
                         modifier = Modifier.fillMaxSize()
                     )
-                }
-
                 }
             }
         }

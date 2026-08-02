@@ -90,6 +90,7 @@ import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.rememberMainTabSceneRestoredEntry
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
+import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
@@ -864,7 +865,7 @@ fun BiliPlaylistDetailScreen(
             if (showPartsSheet && partsInfo != null) {
                 val currentPartsInfo = partsInfo!!
                 BackHandler(enabled = partsSelectionMode) { exitPartsSelection() }
-                ModalBottomSheet(
+                DensityScaledModalBottomSheet(
                     onDismissRequest = {
                         showPartsSheet = false
                         exitPartsSelection()

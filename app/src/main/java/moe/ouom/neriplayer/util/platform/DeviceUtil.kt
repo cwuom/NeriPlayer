@@ -24,7 +24,13 @@ package moe.ouom.neriplayer.util.platform
  */
 
 import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.res.Configuration
 import android.content.pm.ActivityInfo
+import android.os.Build
+import android.view.ContextThemeWrapper
+import kotlin.math.roundToInt
 
 internal const val ONEPLUS_HIGH_DENSITY_DPI_THRESHOLD = 500
 internal const val ONEPLUS_HIGH_DENSITY_UI_SCALE = 0.95f
@@ -53,6 +59,53 @@ internal fun resolveOnePlusHighDensityUiScale(
     } else {
         userScale
     }
+}
+
+internal fun resolveOnePlusHighDensityDensityDpi(
+    manufacturer: String?,
+    brand: String?,
+    densityDpi: Int
+): Int {
+    return if (isOnePlusHighDensityDisplay(manufacturer, brand, densityDpi)) {
+        (densityDpi * ONEPLUS_HIGH_DENSITY_UI_SCALE).roundToInt()
+    } else {
+        densityDpi
+    }
+}
+
+internal fun applyOnePlusHighDensityDisplayCorrection(context: Context): Context {
+    if (context.hasOnePlusHighDensityCorrection()) {
+        return context
+    }
+    val densityDpi = context.resources.displayMetrics.densityDpi
+    val correctedDensityDpi = resolveOnePlusHighDensityDensityDpi(
+        manufacturer = Build.MANUFACTURER,
+        brand = Build.BRAND,
+        densityDpi = densityDpi
+    )
+    if (correctedDensityDpi == densityDpi) {
+        return context
+    }
+    val configuration = Configuration(context.resources.configuration)
+    configuration.densityDpi = correctedDensityDpi
+    return OnePlusHighDensityContextWrapper(context, configuration)
+}
+
+// use the configuration context as the base so independent windows receive the same metrics
+private class OnePlusHighDensityContextWrapper(
+    base: Context,
+    configuration: Configuration
+) : ContextThemeWrapper(base.createConfigurationContext(configuration), 0)
+
+private fun Context.hasOnePlusHighDensityCorrection(): Boolean {
+    var current: Context? = this
+    while (current is ContextWrapper) {
+        if (current is OnePlusHighDensityContextWrapper) {
+            return true
+        }
+        current = current.baseContext
+    }
+    return false
 }
 
 /**

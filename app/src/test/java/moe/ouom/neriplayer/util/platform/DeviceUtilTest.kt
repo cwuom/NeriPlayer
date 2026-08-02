@@ -82,4 +82,32 @@ class DeviceUtilTest {
             0.001f
         )
     }
+
+    @Test
+    fun `high density correction also changes window density`() {
+        assertEquals(
+            532,
+            resolveOnePlusHighDensityDensityDpi(
+                manufacturer = "OnePlus",
+                brand = "ONEPLUS",
+                densityDpi = 560
+            )
+        )
+        assertEquals(
+            450,
+            resolveOnePlusHighDensityDensityDpi(
+                manufacturer = "OnePlus",
+                brand = "ONEPLUS",
+                densityDpi = 450
+            )
+        )
+        assertEquals(
+            560,
+            resolveOnePlusHighDensityDensityDpi(
+                manufacturer = "OPPO",
+                brand = "OPPO",
+                densityDpi = 560
+            )
+        )
+    }
 }
