@@ -66,9 +66,13 @@ import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.HomeScreen
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneMotion
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassHostNavigationTransition
 import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassSceneMotion
+import moe.ouom.neriplayer.ui.animateMainTabDetailCloseRootRevealFraction
+import moe.ouom.neriplayer.ui.clipMainTabDetailCloseRoot
 import moe.ouom.neriplayer.ui.rememberMainTabSceneRestoredEntry
+import moe.ouom.neriplayer.ui.shouldSuppressRestoredMainTabHostEntry
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
@@ -142,6 +146,42 @@ fun HomeHostScreen(
     val scope = rememberCoroutineScope()
     var pendingNeteaseCoverWarmupJob by remember { mutableStateOf<Job?>(null) }
     var pendingNeteaseCoverWarmupToken by remember { mutableIntStateOf(0) }
+    val gridState = rememberSaveable(saver = LazyGridState.Saver) {
+        LazyGridState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
+    val topAppBarState = rememberTopAppBarState()
+    var pendingGridRestoreIndex by rememberSaveable { mutableStateOf<Int?>(null) }
+    var pendingGridRestoreOffset by rememberSaveable { mutableIntStateOf(0) }
+    var pendingGridRestoreKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingGridRestoreArmed by rememberSaveable { mutableStateOf(false) }
+    var pendingTopAppBarHeightOffset by rememberSaveable { mutableFloatStateOf(Float.NaN) }
+    var pendingTopAppBarContentOffset by rememberSaveable { mutableFloatStateOf(Float.NaN) }
+    var homeScrollAnchorIndexes by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
+
+    fun clearPendingHomeScrollRestore() {
+        pendingGridRestoreIndex = null
+        pendingGridRestoreOffset = 0
+        pendingGridRestoreKey = null
+        pendingGridRestoreArmed = false
+        pendingTopAppBarHeightOffset = Float.NaN
+        pendingTopAppBarContentOffset = Float.NaN
+    }
+
+    fun captureHomeScrollPosition() {
+        val position = gridState.captureHostScrollPosition()
+        pendingGridRestoreIndex = position.index
+        pendingGridRestoreOffset = position.offset
+        pendingGridRestoreKey = position.key
+        pendingGridRestoreArmed = false
+        pendingTopAppBarHeightOffset = topAppBarState.heightOffset
+        pendingTopAppBarContentOffset = topAppBarState.contentOffset
+    }
+
+    fun ensureHomeScrollPositionCaptured() {
+        if (pendingGridRestoreIndex == null) {
+            captureHomeScrollPosition()
+        }
+    }
 
     fun cancelPendingNeteaseCoverWarmup() {
         pendingNeteaseCoverWarmupToken += 1
@@ -159,6 +199,7 @@ fun HomeHostScreen(
         pendingNeteaseCoverWarmupJob = scope.launch {
             CoverArtColorCache.preload(context, coverUrl, offlineMode)
             if (pendingNeteaseCoverWarmupToken == token) {
+                ensureHomeScrollPositionCaptured()
                 selected = item
                 pendingNeteaseCoverWarmupJob = null
             }
@@ -175,6 +216,7 @@ fun HomeHostScreen(
             }
             else -> {
                 cancelPendingNeteaseCoverWarmup()
+                ensureHomeScrollPositionCaptured()
                 selected = item
             }
         }
@@ -195,6 +237,10 @@ fun HomeHostScreen(
     LaunchedEffect(selected) {
         if (selected != null) {
             skipDetailCloseAnimation = false
+            if (pendingGridRestoreIndex != null) {
+                pendingGridRestoreArmed = true
+                homeScrollAnchorIndexes = emptyMap()
+            }
         }
     }
 
@@ -206,31 +252,33 @@ fun HomeHostScreen(
         }
     }
 
-    val gridState = rememberSaveable(saver = LazyGridState.Saver) {
-        LazyGridState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
-    }
-    val topAppBarState = rememberTopAppBarState()
-    var pendingGridRestoreIndex by rememberSaveable { mutableStateOf<Int?>(null) }
-    var pendingGridRestoreOffset by rememberSaveable { mutableIntStateOf(0) }
-    var pendingTopAppBarHeightOffset by rememberSaveable { mutableFloatStateOf(Float.NaN) }
-    var pendingTopAppBarContentOffset by rememberSaveable { mutableFloatStateOf(Float.NaN) }
+    val navigationTransition = updateTransition(
+        targetState = selected,
+        label = "home_host_switch"
+    )
 
-    fun captureHomeScrollPosition() {
-        val position = gridState.captureHostScrollPosition()
-        pendingGridRestoreIndex = position.index
-        pendingGridRestoreOffset = position.offset
-        pendingTopAppBarHeightOffset = topAppBarState.heightOffset
-        pendingTopAppBarContentOffset = topAppBarState.contentOffset
-    }
-
-    LaunchedEffect(selected, pendingGridRestoreIndex) {
+    LaunchedEffect(
+        selected,
+        pendingGridRestoreIndex,
+        pendingGridRestoreKey,
+        pendingGridRestoreArmed,
+        homeScrollAnchorIndexes
+    ) {
         val restoreIndex = pendingGridRestoreIndex ?: return@LaunchedEffect
         if (selected != null) return@LaunchedEffect
+        if (!pendingGridRestoreArmed) return@LaunchedEffect
+        val restoreKey = pendingGridRestoreKey
+        val resolvedIndex = restoreKey?.let { homeScrollAnchorIndexes[it] }
+        if (restoreKey != null && resolvedIndex == null && homeScrollAnchorIndexes.isEmpty()) {
+            return@LaunchedEffect
+        }
         gridState.restoreHostScrollPosition(
             HostScrollPosition(
                 index = restoreIndex,
-                offset = pendingGridRestoreOffset
-            )
+                offset = pendingGridRestoreOffset,
+                key = restoreKey
+            ),
+            resolvedIndex = resolvedIndex
         )
         if (!pendingTopAppBarHeightOffset.isNaN()) {
             topAppBarState.heightOffset = pendingTopAppBarHeightOffset
@@ -238,22 +286,26 @@ fun HomeHostScreen(
         if (!pendingTopAppBarContentOffset.isNaN()) {
             topAppBarState.contentOffset = pendingTopAppBarContentOffset
         }
-        pendingGridRestoreIndex = null
-        pendingGridRestoreOffset = 0
-        pendingTopAppBarHeightOffset = Float.NaN
-        pendingTopAppBarContentOffset = Float.NaN
+        clearPendingHomeScrollRestore()
     }
-    val navigationTransition = updateTransition(
-        targetState = selected,
-        label = "home_host_switch"
-    )
     val suppressRestoredSceneEntry = rememberMainTabSceneRestoredEntry()
+    val detailCloseRootRevealFraction =
+        navigationTransition.animateMainTabDetailCloseRootRevealFraction(
+            navigationDepth = { item -> item.navigationDepth },
+            label = "home_host_detail_close"
+        )
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
         navigationTransition.AnimatedContent(
             modifier = Modifier.fillMaxSize(),
             transitionSpec = {
-                if (suppressRestoredSceneEntry && targetState != initialState) {
+                if (
+                    shouldSuppressRestoredMainTabHostEntry(
+                        restoredEntry = suppressRestoredSceneEntry,
+                        initialDepth = initialState.navigationDepth,
+                        targetDepth = targetState.navigationDepth
+                    )
+                ) {
                     EnterTransition.None togetherWith ExitTransition.None
                 } else if (targetState == null && skipDetailCloseAnimation) {
                     EnterTransition.None togetherWith ExitTransition.None
@@ -265,12 +317,21 @@ fun HomeHostScreen(
                 }.using(SizeTransform(clip = true))
             }
         ) { current ->
-            val sceneMotion = navigationTransition.animateAdvancedGlassSceneMotion(
-                sceneState = current,
-                coherentFeedbackEnabled = coherentFeedbackEnabled,
-                navigationDepth = { item -> item.navigationDepth },
-                label = "home_host_scene"
+            val suppressRestoredSceneMotion = shouldSuppressRestoredMainTabHostEntry(
+                restoredEntry = suppressRestoredSceneEntry,
+                initialDepth = navigationTransition.currentState.navigationDepth,
+                targetDepth = navigationTransition.targetState.navigationDepth
             )
+            val sceneMotion = if (suppressRestoredSceneMotion) {
+                AdvancedGlassSceneMotion.None
+            } else {
+                navigationTransition.animateAdvancedGlassSceneMotion(
+                    sceneState = current,
+                    coherentFeedbackEnabled = coherentFeedbackEnabled,
+                    navigationDepth = { item -> item.navigationDepth },
+                    label = "home_host_scene"
+                )
+            }
             renderScene(
                 sceneMotion.revealTopFraction,
                 sceneMotion.contentTranslationYFraction,
@@ -279,7 +340,14 @@ fun HomeHostScreen(
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     if (current == null) {
-                        HomeScreen(
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clipMainTabDetailCloseRoot(
+                                    detailCloseRootRevealFraction
+                                )
+                        ) {
+                            HomeScreen(
                             showContinueCard = showContinueCard,
                             showTrendingCard = showTrendingCard,
                             showRadarCard = showRadarCard,
@@ -287,6 +355,11 @@ fun HomeHostScreen(
                             offlineMode = offlineMode,
                             gridState = gridState,
                             topAppBarState = topAppBarState,
+                            onScrollAnchorIndexesChanged = { indexes ->
+                                if (homeScrollAnchorIndexes != indexes) {
+                                    homeScrollAnchorIndexes = indexes
+                                }
+                            },
                             onItemClick = { pl ->
                                 skipDetailCloseAnimation = false
                                 captureHomeScrollPosition()
@@ -321,7 +394,8 @@ fun HomeHostScreen(
                                 openRecent(entry, ::openHomeSelectedItem)
                             },
                             onSongClick = onSongClick
-                        )
+                            )
+                        }
                     } else {
                         when (current) {
                             is HomeSelectedItem.NeteaseAlbumList -> {

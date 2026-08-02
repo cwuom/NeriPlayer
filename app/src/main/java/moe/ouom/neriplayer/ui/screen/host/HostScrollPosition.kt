@@ -6,38 +6,57 @@ import androidx.compose.runtime.withFrameNanos
 
 internal data class HostScrollPosition(
     val index: Int,
-    val offset: Int
+    val offset: Int,
+    val key: String? = null
 )
 
-internal fun LazyGridState.captureHostScrollPosition(): HostScrollPosition =
-    HostScrollPosition(
-        index = firstVisibleItemIndex,
-        offset = firstVisibleItemScrollOffset
-    )
-
-internal fun LazyListState.captureHostScrollPosition(): HostScrollPosition =
-    HostScrollPosition(
-        index = firstVisibleItemIndex,
-        offset = firstVisibleItemScrollOffset
-    )
-
-internal suspend fun LazyGridState.restoreHostScrollPosition(position: HostScrollPosition) {
-    val itemCount = awaitHostItemCount(position.index) { layoutInfo.totalItemsCount }
-    if (itemCount <= 0) return
-    val safeIndex = position.index.coerceAtMost(itemCount - 1)
-    scrollToItem(
-        index = safeIndex,
-        scrollOffset = if (safeIndex == position.index) position.offset else 0
+internal fun LazyGridState.captureHostScrollPosition(): HostScrollPosition {
+    val index = firstVisibleItemIndex
+    return HostScrollPosition(
+        index = index,
+        offset = firstVisibleItemScrollOffset,
+        key = layoutInfo.visibleItemsInfo
+            .firstOrNull { it.index == index }
+            ?.key as? String
     )
 }
 
-internal suspend fun LazyListState.restoreHostScrollPosition(position: HostScrollPosition) {
-    val itemCount = awaitHostItemCount(position.index) { layoutInfo.totalItemsCount }
+internal fun LazyListState.captureHostScrollPosition(): HostScrollPosition {
+    val index = firstVisibleItemIndex
+    return HostScrollPosition(
+        index = index,
+        offset = firstVisibleItemScrollOffset,
+        key = layoutInfo.visibleItemsInfo
+            .firstOrNull { it.index == index }
+            ?.key as? String
+    )
+}
+
+internal suspend fun LazyGridState.restoreHostScrollPosition(
+    position: HostScrollPosition,
+    resolvedIndex: Int? = null
+) {
+    val requestedIndex = resolvedIndex ?: position.index
+    val itemCount = awaitHostItemCount(requestedIndex) { layoutInfo.totalItemsCount }
     if (itemCount <= 0) return
-    val safeIndex = position.index.coerceAtMost(itemCount - 1)
+    val safeIndex = requestedIndex.coerceAtMost(itemCount - 1)
     scrollToItem(
         index = safeIndex,
-        scrollOffset = if (safeIndex == position.index) position.offset else 0
+        scrollOffset = if (safeIndex == requestedIndex) position.offset else 0
+    )
+}
+
+internal suspend fun LazyListState.restoreHostScrollPosition(
+    position: HostScrollPosition,
+    resolvedIndex: Int? = null
+) {
+    val requestedIndex = resolvedIndex ?: position.index
+    val itemCount = awaitHostItemCount(requestedIndex) { layoutInfo.totalItemsCount }
+    if (itemCount <= 0) return
+    val safeIndex = requestedIndex.coerceAtMost(itemCount - 1)
+    scrollToItem(
+        index = safeIndex,
+        scrollOffset = if (safeIndex == requestedIndex) position.offset else 0
     )
 }
 

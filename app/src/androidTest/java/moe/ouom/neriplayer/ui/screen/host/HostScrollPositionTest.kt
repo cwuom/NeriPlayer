@@ -10,6 +10,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
@@ -126,6 +130,100 @@ class HostScrollPositionTest {
         composeRule.runOnIdle {
             assertEquals(captured.index, listState.firstVisibleItemIndex)
             assertEquals(captured.offset, listState.firstVisibleItemScrollOffset)
+        }
+    }
+
+    @Test
+    fun drawerRoundTripRestoresMovedGridAnchorPosition() {
+        lateinit var navigationDepth: androidx.compose.runtime.MutableIntState
+        lateinit var gridState: LazyGridState
+        lateinit var requestRestore: (HostScrollPosition) -> Unit
+        lateinit var scrollGrid: (Int, Int) -> Unit
+        lateinit var prependItems: () -> Unit
+        composeRule.mainClock.autoAdvance = false
+        composeRule.setContent {
+            navigationDepth = remember { mutableIntStateOf(0) }
+            gridState = remember { LazyGridState() }
+            var gridItemKeys by remember {
+                mutableStateOf((0..80).map { "item-$it" })
+            }
+            var pendingRestore by remember { mutableStateOf<HostScrollPosition?>(null) }
+            val scope = rememberCoroutineScope()
+            requestRestore = { position -> pendingRestore = position }
+            scrollGrid = { index, offset ->
+                scope.launch { gridState.scrollToItem(index, offset) }
+            }
+            prependItems = {
+                gridItemKeys = listOf("inserted-a", "inserted-b", "inserted-c") + gridItemKeys
+            }
+            LaunchedEffect(navigationDepth.intValue, pendingRestore, gridItemKeys) {
+                val position = pendingRestore ?: return@LaunchedEffect
+                if (navigationDepth.intValue != 0) return@LaunchedEffect
+                val resolvedIndex = position.key?.let { key ->
+                    gridItemKeys.indexOf(key).takeIf { index -> index >= 0 }
+                }
+                gridState.restoreHostScrollPosition(position, resolvedIndex)
+                pendingRestore = null
+            }
+            MaterialTheme {
+                val transition = updateTransition(
+                    targetState = navigationDepth.intValue,
+                    label = "host_grid_scroll_round_trip"
+                )
+                transition.AnimatedContent(
+                    modifier = Modifier.fillMaxSize(),
+                    transitionSpec = {
+                        advancedGlassHostNavigationTransition(
+                            forward = targetState > initialState,
+                            coherentFeedbackEnabled = false
+                        ).using(SizeTransform(clip = true))
+                    }
+                ) { depth ->
+                    if (depth == 0) {
+                        LazyVerticalGrid(
+                            modifier = Modifier.fillMaxSize(),
+                            state = gridState,
+                            columns = GridCells.Fixed(2)
+                        ) {
+                            gridItems(gridItemKeys, key = { it }) { item ->
+                                Text(
+                                    text = item,
+                                    fontSize = 20.sp,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        Box(Modifier.fillMaxSize())
+                    }
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { scrollGrid(24, 11) }
+        composeRule.mainClock.advanceTimeByFrame()
+        composeRule.waitForIdle()
+        lateinit var captured: HostScrollPosition
+        composeRule.runOnIdle { captured = gridState.captureHostScrollPosition() }
+        assertEquals("item-24", captured.key)
+
+        composeRule.runOnIdle {
+            requestRestore(captured)
+            navigationDepth.intValue = 1
+            prependItems()
+        }
+        composeRule.mainClock.advanceTimeByFrame()
+        composeRule.waitForIdle()
+        finishCurrentTransition()
+
+        composeRule.runOnIdle { navigationDepth.intValue = 0 }
+        finishCurrentTransition()
+        composeRule.runOnIdle {
+            assertEquals(27, gridState.firstVisibleItemIndex)
+            assertEquals(captured.offset, gridState.firstVisibleItemScrollOffset)
         }
     }
 
