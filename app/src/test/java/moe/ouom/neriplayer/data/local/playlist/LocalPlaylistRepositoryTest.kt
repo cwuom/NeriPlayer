@@ -14,7 +14,9 @@ import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.sync.github.SyncPlaylistDeletionPolicy
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
+import moe.ouom.neriplayer.data.sync.model.SyncSong
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
@@ -907,7 +909,7 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
-    fun `deleted playlists can be restored at original positions`() = runTest {
+    fun `deleted playlists restore at original positions with a newer timestamp`() = runTest {
         val first = LocalPlaylist(id = 201L, name = "first")
         val second = LocalPlaylist(id = 202L, name = "second")
         val third = LocalPlaylist(id = 203L, name = "third")
@@ -935,6 +937,9 @@ class LocalPlaylistRepositoryTest {
             listOf(first.id, second.id, third.id, fourth.id),
             repository.playlists.value.map { it.id }
         )
+        assertTrue(
+            repository.playlists.value.single { it.id == second.id }.modifiedAt > second.modifiedAt
+        )
         assertEquals(
             listOf(second.id, fourth.id),
             syncStore.applied.last().restoredPlaylistIds
@@ -942,12 +947,16 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
-    fun `removed songs can be restored at original positions`() = runTest {
+    fun `removed songs restore at original positions with renewed sync membership`() = runTest {
         val playlistId = 305L
         val first = remoteNeteaseSong(id = 306L, name = "first", addedAt = 4L)
+            .copy(syncMembershipTokens = listOf(SyncCausalToken("old", 1L)))
         val second = remoteNeteaseSong(id = 307L, name = "second", addedAt = 3L)
+            .copy(syncMembershipTokens = listOf(SyncCausalToken("old", 2L)))
         val third = remoteNeteaseSong(id = 308L, name = "third", addedAt = 2L)
+            .copy(syncMembershipTokens = listOf(SyncCausalToken("old", 3L)))
         val fourth = remoteNeteaseSong(id = 309L, name = "fourth", addedAt = 1L)
+            .copy(syncMembershipTokens = listOf(SyncCausalToken("old", 4L)))
         val syncStore = RecordingSyncMutationStore()
         val repository = LocalPlaylistRepository.createForTest(
             context = mockContext(),
@@ -982,6 +991,17 @@ class LocalPlaylistRepositoryTest {
         assertEquals(
             listOf(first.id, second.id, third.id, fourth.id),
             repository.playlists.value.single().songs.map { it.id }
+        )
+        val restoredSecond = repository.playlists.value.single().songs.single { it.id == second.id }
+        val deletion = syncStore.applied.first().addedSongDeletions
+            .single { it.songId == second.id }
+        assertEquals(listOf(SyncCausalToken("test-device", 1L)), restoredSecond.syncMembershipTokens)
+        assertTrue(
+            SyncPlaylistDeletionPolicy.applyDeletions(
+                playlistId = playlistId,
+                songs = listOf(SyncSong.fromSongItem(restoredSecond)),
+                deletions = listOf(deletion)
+            ).isNotEmpty()
         )
         assertTrue(syncStore.applied.last().removedSongDeletions.isNotEmpty())
     }

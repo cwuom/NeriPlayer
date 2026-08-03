@@ -675,6 +675,18 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
+    private fun renewSongsForPlaylistRestore(songs: List<SongItem>): List<SongItem> {
+        if (songs.isEmpty()) return emptyList()
+
+        val membershipTokens = syncMutationStore.nextSyncCausalTokens(songs.size)
+        check(membershipTokens.size == songs.size) {
+            "Expected ${songs.size} sync membership tokens, got ${membershipTokens.size}"
+        }
+        return songs.mapIndexed { index, song ->
+            song.copy(syncMembershipTokens = listOf(membershipTokens[index]))
+        }
+    }
+
     private fun nextPlaylistSongAddedAt(playlist: LocalPlaylist, now: Long): Long {
         val latestExistingAddedAt = playlist.songs.maxOfOrNull { it.addedAt } ?: 0L
         return maxOf(now, latestExistingAddedAt + 1L)
@@ -1120,10 +1132,13 @@ class LocalPlaylistRepository private constructor(
                     return@commitPlaylistMutation false
                 }
 
+                val readdedSongs = renewSongsForPlaylistRestore(
+                    restoreResults.map(LocalPlaylistSongDeleteResult::song)
+                )
                 val restoredSongs = currentPlaylist.songs.toMutableList()
-                restoreResults.forEach { result ->
+                restoreResults.zip(readdedSongs).forEach { (result, song) ->
                     val insertIndex = result.index.coerceIn(0, restoredSongs.size)
-                    restoredSongs.add(insertIndex, result.song)
+                    restoredSongs.add(insertIndex, song)
                 }
                 val modifiedAt = System.currentTimeMillis()
                 val updated = current.map { playlist ->
@@ -1141,7 +1156,7 @@ class LocalPlaylistRepository private constructor(
                     playlists = updated,
                     syncMutation = buildPlaylistSongDeletionRemoval(
                         playlistId = playlistId,
-                        songs = restoreResults.map { it.song }
+                        songs = readdedSongs
                     )
                 )
                 true
@@ -1244,10 +1259,21 @@ class LocalPlaylistRepository private constructor(
                     return@commitPlaylistMutation false
                 }
 
+                val restoredModifiedAt = System.currentTimeMillis()
+                    .coerceAtMost(Long.MAX_VALUE - 1L) + 1L
                 val restored = current.toMutableList()
                 restoreResults.forEach { result ->
                     val insertIndex = result.index.coerceIn(0, restored.size)
-                    restored.add(insertIndex, result.playlist)
+                    restored.add(
+                        insertIndex,
+                        result.playlist.copy(
+                            modifiedAt = maxOf(
+                                restoredModifiedAt,
+                                result.playlist.modifiedAt
+                                    .coerceAtMost(Long.MAX_VALUE - 1L) + 1L
+                            )
+                        )
+                    )
                 }
                 publishLocked(
                     playlists = restored,

@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.sync.model.SyncSong
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -468,6 +469,26 @@ class SyncPlaylistDeletionPolicyTest {
         )
 
         assertEquals(listOf(causalDeletion), retained)
+    }
+
+    @Test
+    fun `newer restored playlist overrides older tombstone while tie keeps deletion`() {
+        val active = SyncPlaylist(
+            id = 7L,
+            name = "playlist",
+            modifiedAt = 300L
+        )
+        val deleted = active.copy(
+            modifiedAt = 200L,
+            isDeleted = true
+        )
+
+        assertFalse(SyncPlaylistDeletionPolicy.shouldKeepPlaylistDeleted(active, deleted))
+        assertFalse(SyncPlaylistDeletionPolicy.shouldKeepPlaylistDeleted(deleted, active))
+
+        val tiedDeletion = deleted.copy(modifiedAt = active.modifiedAt)
+        assertTrue(SyncPlaylistDeletionPolicy.shouldKeepPlaylistDeleted(active, tiedDeletion))
+        assertTrue(SyncPlaylistDeletionPolicy.shouldKeepPlaylistDeleted(tiedDeletion, active))
     }
 
     @Test

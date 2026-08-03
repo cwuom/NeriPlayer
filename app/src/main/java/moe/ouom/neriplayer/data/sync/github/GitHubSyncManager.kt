@@ -444,8 +444,33 @@ class GitHubSyncManager private constructor(context: Context) {
 
                 localPlaylist != null && remotePlaylist != null -> {
                     if (localPlaylist.isDeleted || remotePlaylist.isDeleted) {
-                        mergedPlaylistsById[playlistId] = mergeDeletedPlaylist(localPlaylist, remotePlaylist)
-                        playlistsDeleted++
+                        if (SyncPlaylistDeletionPolicy.shouldKeepPlaylistDeleted(
+                                localPlaylist,
+                                remotePlaylist
+                            )
+                        ) {
+                            mergedPlaylistsById[playlistId] = mergeDeletedPlaylist(
+                                localPlaylist,
+                                remotePlaylist
+                            )
+                            playlistsDeleted++
+                        } else {
+                            val activePlaylist = if (localPlaylist.isDeleted) {
+                                remotePlaylist
+                            } else {
+                                localPlaylist
+                            }
+                            val merged = mergePlaylist(
+                                local = activePlaylist,
+                                remote = activePlaylist,
+                                lastSyncTime = lastSyncTime,
+                                playlistSongDeletions = mergedPlaylistSongDeletions
+                            )
+                            mergedPlaylistsById[merged.playlist.id] = merged.playlist
+                            songsAdded += merged.songsAdded
+                            songsRemoved += merged.songsRemoved
+                            playlistsUpdated++
+                        }
                     } else {
                         val merged = mergePlaylist(
                             local = localPlaylist,

@@ -161,6 +161,15 @@ internal object SyncPlaylistDeletionPolicy {
         }
     }
 
+    fun shouldKeepPlaylistDeleted(left: SyncPlaylist, right: SyncPlaylist): Boolean {
+        if (!left.isDeleted && !right.isDeleted) return false
+        if (left.isDeleted && right.isDeleted) return true
+
+        val deleted = if (left.isDeleted) left else right
+        val active = if (left.isDeleted) right else left
+        return deleted.modifiedAt >= active.modifiedAt
+    }
+
     fun mergeFavoritePlaylists(
         left: SyncFavoritePlaylist,
         right: SyncFavoritePlaylist
