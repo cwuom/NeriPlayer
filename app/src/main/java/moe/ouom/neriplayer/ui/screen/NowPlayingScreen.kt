@@ -1559,9 +1559,10 @@ internal fun resolveNowPlayingPlaybackSourceType(
     isFromNeteaseTag: Boolean,
     isFromBiliTag: Boolean,
     currentMediaUrl: String?,
-    playbackAudioSource: PlaybackAudioSource?
+    playbackAudioSource: PlaybackAudioSource?,
+    isNeteaseLocalFallback: Boolean = false
 ): PlaybackSourceType? {
-    if (isLocalSong) return PlaybackSourceType.LOCAL
+    if (isLocalSong || isNeteaseLocalFallback) return PlaybackSourceType.LOCAL
 
     when (playbackAudioSource) {
         PlaybackAudioSource.NETEASE -> return PlaybackSourceType.NETEASE
@@ -1728,7 +1729,8 @@ fun NowPlayingScreen(
         isFromNeteaseTag = isFromNeteaseTag,
         isFromBiliTag = isFromBiliTag,
         currentMediaUrl = currentMediaUrl,
-        playbackAudioSource = currentPlaybackAudioInfo?.source
+        playbackAudioSource = currentPlaybackAudioInfo?.source,
+        isNeteaseLocalFallback = currentPlaybackAudioInfo?.isNeteaseLocalFallback == true
     )
     val playbackSourceSongKey = currentSong?.let {
         listOf(it.id.toString(), it.album, it.mediaUri.orEmpty(), it.localFilePath.orEmpty())

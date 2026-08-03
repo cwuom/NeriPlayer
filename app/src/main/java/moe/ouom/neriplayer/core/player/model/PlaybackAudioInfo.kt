@@ -16,6 +16,7 @@ data class PlaybackQualityOption(
 
 data class PlaybackAudioInfo(
     val source: PlaybackAudioSource,
+    val isNeteaseLocalFallback: Boolean = false,
     val qualityKey: String? = null,
     val qualityLabel: String? = null,
     val qualityOptions: List<PlaybackQualityOption> = emptyList(),

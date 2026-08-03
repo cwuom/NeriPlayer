@@ -717,6 +717,21 @@ class NowPlayingScreenTest {
         assertTrue(sourceType == PlaybackSourceType.NETEASE)
     }
 
+    @Test
+    fun `netease local fallback shows local file badge`() {
+        val sourceType = resolveNowPlayingPlaybackSourceType(
+            isLocalSong = false,
+            isYouTubeMusicSong = false,
+            isFromNeteaseTag = true,
+            isFromBiliTag = false,
+            currentMediaUrl = "content://media/external/audio/media/42",
+            playbackAudioSource = PlaybackAudioSource.LOCAL,
+            isNeteaseLocalFallback = true
+        )
+
+        assertEquals(PlaybackSourceType.LOCAL, sourceType)
+    }
+
     private fun testSong(
         id: Long,
         name: String
