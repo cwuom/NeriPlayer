@@ -188,6 +188,73 @@ class NeriAppNavigationTransitionTest {
     }
 
     @Test
+    fun rapidMainTabRetargetingKeepsTheFullMotionDuration() {
+        lateinit var selectedRoute: MutableState<String>
+        composeRule.mainClock.autoAdvance = false
+        composeRule.setContent {
+            selectedRoute = remember { mutableStateOf(Destinations.Home.route) }
+            MainTabLayerHost(
+                selectedRoute = selectedRoute.value,
+                modifier = Modifier.size(240.dp, 320.dp)
+            ) { route ->
+                RapidMainTabTestScene(route)
+            }
+        }
+
+        composeRule.runOnIdle { selectedRoute.value = Destinations.Explore.route }
+        repeat(18) { advanceRapidSwitchFrame() }
+        composeRule.runOnIdle { selectedRoute.value = Destinations.Library.route }
+        composeRule.mainClock.advanceTimeBy(
+            (ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS / 2).toLong()
+        )
+        composeRule.waitForIdle()
+
+        assertTrue(
+            "Retargeted Tab animation completed before its full duration elapsed",
+            nodeCount(RapidHomeTag) == 1 && nodeCount(RapidLibraryTag) == 1
+        )
+
+        composeRule.mainClock.advanceTimeBy(
+            (ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS + FRAME_MS * 2).toLong()
+        )
+        composeRule.waitForIdle()
+        assertTrue(
+            "Retargeted Tab animation did not settle on the latest route",
+            nodeCount(RapidLibraryTag) == 1 &&
+                nodeCount(RapidHomeTag) == 0 &&
+                nodeCount(RapidExploreTag) == 0
+        )
+    }
+
+    @Test
+    fun mainTabTransitionWaitsForFirstNonzeroContainerWidth() {
+        lateinit var selectedRoute: MutableState<String>
+        lateinit var hostWidth: MutableState<androidx.compose.ui.unit.Dp>
+        composeRule.mainClock.autoAdvance = false
+        composeRule.setContent {
+            selectedRoute = remember { mutableStateOf(Destinations.Home.route) }
+            hostWidth = remember { mutableStateOf(0.dp) }
+            MainTabLayerHost(
+                selectedRoute = selectedRoute.value,
+                modifier = Modifier.size(hostWidth.value, 320.dp)
+            ) { route ->
+                RapidMainTabTestScene(route)
+            }
+        }
+
+        composeRule.runOnIdle { selectedRoute.value = Destinations.Explore.route }
+        composeRule.waitForIdle()
+        assertTrue(
+            "Tab transition advanced before its container had a width",
+            nodeCount(RapidHomeTag) == 1 && nodeCount(RapidExploreTag) == 0
+        )
+
+        composeRule.runOnIdle { hostWidth.value = 240.dp }
+        waitForNodeCount(RapidHomeTag, expected = 1)
+        waitForNodeCount(RapidExploreTag, expected = 1)
+    }
+
+    @Test
     fun immediateMainTabRequestsDoNotWaitForRouteRecomposition() {
         lateinit var transitionState: MainTabLayerTransitionState
         composeRule.mainClock.autoAdvance = false
@@ -240,14 +307,15 @@ class NeriAppNavigationTransitionTest {
 
     @Test
     fun mainTabAnimationDoesNotRecomposeStableSceneContentEveryFrame() {
-        lateinit var selectedRoute: MutableState<String>
+        lateinit var transitionState: MainTabLayerTransitionState
         lateinit var sceneCompositionCounts: MutableMap<String, Int>
         composeRule.mainClock.autoAdvance = false
         composeRule.setContent {
-            selectedRoute = remember { mutableStateOf(Destinations.Home.route) }
+            transitionState = rememberMainTabLayerTransitionState(Destinations.Home.route)
             sceneCompositionCounts = remember { mutableMapOf() }
             MainTabLayerHost(
-                selectedRoute = selectedRoute.value,
+                selectedRoute = Destinations.Home.route,
+                transitionState = transitionState,
                 modifier = Modifier.size(240.dp, 320.dp)
             ) { route ->
                 SideEffect {
@@ -258,8 +326,10 @@ class NeriAppNavigationTransitionTest {
             }
         }
 
-        composeRule.runOnIdle { selectedRoute.value = Destinations.Explore.route }
         composeRule.waitForIdle()
+        composeRule.runOnIdle { transitionState.request(Destinations.Explore.route) }
+        waitForNodeCount(RapidHomeTag, expected = 1)
+        waitForNodeCount(RapidExploreTag, expected = 1)
         val countsAfterTransitionStarts = sceneCompositionCounts.toMap()
 
         repeat(4) {
