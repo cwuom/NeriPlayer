@@ -142,6 +142,7 @@ import moe.ouom.neriplayer.ui.component.local.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.component.lyrics.LyricVisualSpec
 import moe.ouom.neriplayer.ui.component.playback.PlaybackControlIndicator
+import moe.ouom.neriplayer.ui.component.playback.NowPlayingSongTitle
 import moe.ouom.neriplayer.ui.component.playback.scaleButtonSize
 import moe.ouom.neriplayer.ui.component.playback.scaleIconSize
 import moe.ouom.neriplayer.ui.component.playback.rememberDelayedPlaybackWaiting
@@ -196,6 +197,9 @@ fun LyricsScreen(
 
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val settingsRepo = remember { AppContainer.settingsRepo }
+    val nowPlayingSongTitleMarqueeEnabled by settingsRepo
+        .nowPlayingSongTitleMarqueeEnabledFlow
+        .collectAsState(initial = false)
     val playbackControlLayoutPreferences by settingsRepo
         .playbackControlLayoutPreferencesFlow
         .collectAsState(initial = PlaybackControlLayoutPreferences())
@@ -433,13 +437,13 @@ fun LyricsScreen(
                 modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.Start
             ) {
-                Box {
-                    Text(
+                BoxWithConstraints {
+                    NowPlayingSongTitle(
                         text = currentSong?.displayName() ?: stringResource(R.string.lyrics_unknown_song),
+                        marqueeEnabled = nowPlayingSongTitleMarqueeEnabled,
                         style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier
+                            .widthIn(max = maxWidth)
                             .then(
                                 if (sharedTransitionScope != null && animatedContentScope != null) {
                                     with(sharedTransitionScope) {

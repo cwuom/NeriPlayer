@@ -84,6 +84,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -266,6 +267,7 @@ import moe.ouom.neriplayer.ui.component.playback.PlaybackSoundSheet
 import moe.ouom.neriplayer.ui.component.playback.SongMetadataSearchContent
 import moe.ouom.neriplayer.ui.component.playback.NowPlayingCoverPreviewDialog
 import moe.ouom.neriplayer.ui.component.playback.PlaybackControlIndicator
+import moe.ouom.neriplayer.ui.component.playback.NowPlayingSongTitle
 import moe.ouom.neriplayer.ui.component.playback.scaleButtonSize
 import moe.ouom.neriplayer.ui.component.playback.scaleIconSize
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceBadge
@@ -1692,6 +1694,9 @@ fun NowPlayingScreen(
     val nowPlayingCoverLyricsEnabled by settingsRepo
         .nowPlayingCoverLyricsEnabledFlow
         .collectAsStateWithLifecycle(initialValue = true)
+    val nowPlayingSongTitleMarqueeEnabled by settingsRepo
+        .nowPlayingSongTitleMarqueeEnabledFlow
+        .collectAsStateWithLifecycle(initialValue = false)
     val uiDensityScale by settingsRepo
         .uiDensityScaleFlow
         .collectAsStateWithLifecycle(initialValue = 1.0f)
@@ -2674,13 +2679,13 @@ fun NowPlayingScreen(
                         ) + fadeIn(animationSpec = tween(durationMillis = 400, delayMillis = 150))
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Box {
-                                Text(
+                            BoxWithConstraints {
+                                NowPlayingSongTitle(
                                     text = currentSong?.customName ?: currentSong?.name ?: "",
+                                    marqueeEnabled = nowPlayingSongTitleMarqueeEnabled,
                                     style = MaterialTheme.typography.headlineSmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier
+                                        .widthIn(max = maxWidth)
                                         .sharedElement(
                                             rememberSharedContentState(
                                                 key = NowPlayingLyricsSharedTransitionElement.TITLE.key

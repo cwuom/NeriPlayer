@@ -112,6 +112,9 @@ class SettingsRepository(private val context: Context) {
     val nowPlayingShowTitleFlow: Flow<Boolean> =
         autoSettingsRepository.nowPlayingShowTitleFlow
 
+    val nowPlayingSongTitleMarqueeEnabledFlow: Flow<Boolean> =
+        autoSettingsRepository.nowPlayingSongTitleMarqueeEnabledFlow
+
     val nowPlayingProgressShowQualitySwitchFlow: Flow<Boolean> =
         autoSettingsRepository.nowPlayingProgressShowQualitySwitchFlow
 

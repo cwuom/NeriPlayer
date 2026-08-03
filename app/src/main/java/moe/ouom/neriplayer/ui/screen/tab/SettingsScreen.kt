@@ -2948,6 +2948,9 @@ private fun SettingsPersonalizationPageContent(
         val showCoverSourceBadge by autoSettingsRepository.showCoverSourceBadgeFlow.collectAsState(initial = true)
         val alwaysUseNewTabStyle by autoSettingsRepository.alwaysUseNewTabStyleFlow.collectAsState(initial = true)
         val nowPlayingShowTitle by autoSettingsRepository.nowPlayingShowTitleFlow.collectAsState(initial = true)
+        val nowPlayingSongTitleMarqueeEnabled by autoSettingsRepository
+            .nowPlayingSongTitleMarqueeEnabledFlow
+            .collectAsState(initial = false)
         val nowPlayingKeepScreenOn by autoSettingsRepository.nowPlayingKeepScreenOnFlow.collectAsState(initial = true)
         val nowPlayingToolbarDockEnabled by autoSettingsRepository.nowPlayingToolbarDockEnabledFlow.collectAsState(
             initial = true
@@ -3118,6 +3121,20 @@ private fun SettingsPersonalizationPageContent(
                 checked = nowPlayingShowTitle,
                 onCheckedChange = { enabled ->
                     scope.launch { autoSettingsRepository.setNowPlayingShowTitle(enabled) }
+                },
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            )
+            PersonalizationSwitchItem(
+                setting = AutoSettingsMetadata.requireSetting(
+                    AutoSettingsKeys.NOW_PLAYING_SONG_TITLE_MARQUEE_ENABLED
+                ),
+                checked = nowPlayingSongTitleMarqueeEnabled,
+                onCheckedChange = { enabled ->
+                    scope.launch {
+                        autoSettingsRepository.setNowPlayingSongTitleMarqueeEnabled(enabled)
+                    }
                 },
                 highlightTargetId = highlightTargetId,
                 highlightPulse = highlightPulse,

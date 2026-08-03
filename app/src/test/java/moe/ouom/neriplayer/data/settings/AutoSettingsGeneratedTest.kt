@@ -27,6 +27,10 @@ class AutoSettingsGeneratedTest {
             "nowplaying_keep_screen_on" in booleanKeyNames
         )
         assertTrue(
+            "song title marquee switch should be exportable",
+            "nowplaying_song_title_marquee_enabled" in booleanKeyNames
+        )
+        assertTrue(
             "general switch should be exportable",
             "haptic_feedback_enabled" in booleanKeyNames
         )
@@ -409,6 +413,18 @@ class AutoSettingsGeneratedTest {
             "cover lyrics icon must be unique within display settings",
             visualIdentity !in otherDisplayVisualIdentities
         )
+    }
+
+    @Test
+    fun longSongTitleMarqueeUsesAnOptInDisplaySwitch() {
+        val setting = AutoSettingsSchema.display.nowPlayingSongTitleMarqueeEnabled
+        val metadata = AutoSettingsMetadata.setting("nowplaying_song_title_marquee_enabled")
+
+        assertEquals(false, setting.defaultValue)
+        assertEquals(SettingValueType.Boolean, metadata?.valueType)
+        assertEquals(SettingUiType.Switch, metadata?.ui)
+        assertEquals(AutoSettingsSections.display, metadata?.section)
+        assertEquals(AutoSettingIcon.FormatSize, metadata?.icon)
     }
 
     @Test

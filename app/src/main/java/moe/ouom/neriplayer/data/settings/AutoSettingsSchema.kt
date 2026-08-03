@@ -532,6 +532,15 @@ object AutoSettingsSchema {
             icon = AutoSettingIcon.LibraryMusic
         )
 
+        @AutoSetting(order = 25)
+        val nowPlayingSongTitleMarqueeEnabled = autoSwitchSetting(
+            key = "nowplaying_song_title_marquee_enabled",
+            defaultValue = false,
+            titleRes = R.string.settings_nowplaying_song_title_marquee,
+            descriptionRes = R.string.settings_nowplaying_song_title_marquee_desc,
+            icon = AutoSettingIcon.FormatSize
+        )
+
         @AutoSetting(
             key = "nowplaying_keep_screen_on",
             type = SettingValueType.Boolean,

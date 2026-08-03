@@ -244,6 +244,13 @@ class SettingsPageTest {
             ).itemIndex
         )
         assertEquals(
+            3,
+            settingsSearchScrollAnchor(
+                page = SettingsPage.Personalization,
+                targetId = "setting:nowplaying_song_title_marquee_enabled"
+            ).itemIndex
+        )
+        assertEquals(
             4,
             settingsSearchScrollAnchor(
                 page = SettingsPage.Personalization,

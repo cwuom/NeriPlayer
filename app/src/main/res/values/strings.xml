@@ -1310,6 +1310,8 @@
     <string name="settings_cover_source_badge_desc">在封面区域显示当前歌曲的平台来源</string>
     <string name="settings_nowplaying_title">显示“正在播放”标题</string>
     <string name="settings_nowplaying_title_desc">控制播放页顶部是否显示“正在播放”四个字</string>
+    <string name="settings_nowplaying_song_title_marquee">滚动显示长歌曲名</string>
+    <string name="settings_nowplaying_song_title_marquee_desc">在播放页和歌词页中，歌曲名超出可用宽度时平滑往返显示完整标题</string>
     <string name="settings_nowplaying_keep_screen_on">播放页常亮显示</string>
     <string name="settings_nowplaying_keep_screen_on_desc">打开播放页时保持屏幕唤醒，离开后恢复系统自动锁屏</string>
     <string name="settings_nowplaying_cover_lyrics">封面页显示歌词</string>

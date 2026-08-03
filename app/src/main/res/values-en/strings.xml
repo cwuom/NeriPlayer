@@ -1310,6 +1310,8 @@
     <string name="settings_cover_source_badge_desc">Display the platform badge for the current song on the cover area</string>
     <string name="settings_nowplaying_title">Show &quot;Now Playing&quot; title</string>
     <string name="settings_nowplaying_title_desc">Controls whether the &quot;Now Playing&quot; title appears at the top of the player page</string>
+    <string name="settings_nowplaying_song_title_marquee">Scroll long song titles</string>
+    <string name="settings_nowplaying_song_title_marquee_desc">Smoothly scroll full song titles back and forth on the Now Playing and Lyrics pages only when they exceed the available width</string>
     <string name="settings_nowplaying_keep_screen_on">Keep screen on in Now Playing</string>
     <string name="settings_nowplaying_keep_screen_on_desc">Prevent the screen from timing out while the Now Playing page is open</string>
     <string name="settings_nowplaying_cover_lyrics">Show lyrics on the cover page</string>
