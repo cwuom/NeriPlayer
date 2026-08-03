@@ -808,9 +808,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             is ExploreLinkTarget.NeteaseShortLink -> resolveExploreLinkTarget(
                 resolveNeteaseShortLink(target.url)
             )
-            is ExploreLinkTarget.BiliVideo -> ExploreSearchResult.Song(
-                fetchLinkedBiliVideo(target)
-            )
+            is ExploreLinkTarget.BiliVideo -> fetchLinkedBiliVideo(target)
             is ExploreLinkTarget.BiliFavoriteFolder -> ExploreSearchResult.BilibiliPlaylist(
                 fetchLinkedBiliFavoriteFolder(target.mediaId)
             )
@@ -906,13 +904,24 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    private suspend fun fetchLinkedBiliVideo(target: ExploreLinkTarget.BiliVideo): SongItem {
+    private suspend fun fetchLinkedBiliVideo(
+        target: ExploreLinkTarget.BiliVideo
+    ): ExploreSearchResult {
         val info = target.bvid
             ?.let { biliClient.getVideoBasicInfoByBvid(it) }
             ?: target.avid
                 ?.let { biliClient.getVideoBasicInfoByAvid(it) }
             ?: error(app.getString(R.string.explore_link_invalid))
-        return info.toSongItem()
+        val collectionTarget = info.toExploreLinkCollectionTarget(target)
+        if (collectionTarget != null) {
+            return ExploreSearchResult.BilibiliPlaylist(
+                fetchLinkedBiliCollection(
+                    ownerMid = collectionTarget.ownerMid,
+                    seasonId = collectionTarget.seasonId
+                )
+            )
+        }
+        return ExploreSearchResult.Song(info.toExploreLinkSong(target))
     }
 
     private suspend fun fetchLinkedBiliFavoriteFolder(mediaId: Long): BiliPlaylist {
@@ -1341,6 +1350,37 @@ private fun BiliClient.VideoBasicInfo.toSongItem(): SongItem {
         coverUrl = coverUrl,
         channelId = "bilibili",
         audioId = aid.toString()
+    )
+}
+
+internal fun BiliClient.VideoBasicInfo.toExploreLinkSong(
+    target: ExploreLinkTarget.BiliVideo
+): SongItem {
+    val selectedPage = target.cid
+        ?.let { cid -> pages.firstOrNull { page -> page.cid == cid } }
+        ?: target.page?.let { pageNumber ->
+            pages.firstOrNull { page -> page.page == pageNumber }
+        }
+    return selectedPage?.let { page ->
+        toSongItem().copy(
+            album = "${PlayerManager.BILI_SOURCE_TAG}|${page.cid}",
+            durationMs = page.durationSec * 1_000L,
+            subAudioId = page.cid.toString()
+        )
+    } ?: toSongItem()
+}
+
+internal fun BiliClient.VideoBasicInfo.toExploreLinkCollectionTarget(
+    target: ExploreLinkTarget.BiliVideo
+): ExploreLinkTarget.BiliCollection? {
+    if (!target.isCollectionShare) return null
+    val season = ugcSeason ?: return null
+    val collectionOwnerMid = season.mid.takeIf { it > 0L }
+        ?: ownerMid.takeIf { it > 0L }
+        ?: return null
+    return ExploreLinkTarget.BiliCollection(
+        ownerMid = collectionOwnerMid,
+        seasonId = season.id
     )
 }
 

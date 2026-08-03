@@ -234,6 +234,11 @@ internal fun shouldResetExploreSearchScroll(
     return currentContextKey != null && previousContextKey != currentContextKey
 }
 
+internal fun shouldShowBiliPartsPicker(song: SongItem): Boolean {
+    return song.album == PlayerManager.BILI_SOURCE_TAG ||
+        song.album.startsWith("${PlayerManager.BILI_SOURCE_TAG}|")
+}
+
 @Composable
 private fun searchSourceLabel(source: SearchSource): String {
     return when (source) {
@@ -822,7 +827,7 @@ fun ExploreScreen(
                                                 favoriteActionEnabled = localPlaylistsReady,
                                                 offlineMode = offlineMode,
                                                 onClick = {
-                                                    if (song.album == PlayerManager.BILI_SOURCE_TAG) {
+                                                    if (shouldShowBiliPartsPicker(song)) {
                                                         scope.launch {
                                                             try {
                                                                 val info = vm.getVideoInfoByAvid(song.id)

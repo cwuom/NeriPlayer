@@ -13,7 +13,13 @@ internal sealed class ExploreLinkTarget {
     data class NeteasePlaylist(val id: Long) : ExploreLinkTarget()
     data class NeteaseArtist(val id: Long) : ExploreLinkTarget()
     data class NeteaseShortLink(val url: String) : ExploreLinkTarget()
-    data class BiliVideo(val avid: Long? = null, val bvid: String? = null) : ExploreLinkTarget()
+    data class BiliVideo(
+        val avid: Long? = null,
+        val bvid: String? = null,
+        val page: Int? = null,
+        val cid: Long? = null,
+        val isCollectionShare: Boolean = false
+    ) : ExploreLinkTarget()
     data class BiliFavoriteFolder(val mediaId: Long) : ExploreLinkTarget()
     data class BiliFavoriteFolderByOwner(
         val ownerMid: Long,
@@ -65,16 +71,29 @@ private fun recognizeNeteaseLink(uri: URI): ExploreLinkTarget? {
 }
 
 private fun recognizeBiliLink(uri: URI, raw: String): ExploreLinkTarget? {
+    val params = queryParameters(uri.rawQuery)
+    val page = params["p"]?.toIntOrNull()?.takeIf { it > 0 }
+    val cid = params["cid"]?.toLongOrNull()?.takeIf { it > 0L }
+    val isCollectionShare = params.isBiliCollectionShare()
     val bvid = BILI_BVID_REGEX.find(raw)?.value
     if (!bvid.isNullOrBlank()) {
-        return ExploreLinkTarget.BiliVideo(bvid = bvid)
+        return ExploreLinkTarget.BiliVideo(
+            bvid = bvid,
+            page = page,
+            cid = cid,
+            isCollectionShare = isCollectionShare
+        )
     }
 
-    val params = queryParameters(uri.rawQuery)
     val aid = params["aid"]?.toLongOrNull()
         ?: BILI_AVID_REGEX.find(raw)?.groupValues?.getOrNull(1)?.toLongOrNull()
     if (aid != null && aid > 0L) {
-        return ExploreLinkTarget.BiliVideo(avid = aid)
+        return ExploreLinkTarget.BiliVideo(
+            avid = aid,
+            page = page,
+            cid = cid,
+            isCollectionShare = isCollectionShare
+        )
     }
 
     if (uri.host?.lowercase(Locale.US) == "b23.tv") {
@@ -218,6 +237,11 @@ private fun queryParameters(rawQuery: String?): Map<String, String> {
             key to value
         }
         .toMap()
+}
+
+private fun Map<String, String>.isBiliCollectionShare(): Boolean {
+    return this["share_from"].equals("season", ignoreCase = true) ||
+        this["season_id"]?.toLongOrNull()?.let { it > 0L } == true
 }
 
 private fun String.urlDecode(): String {

@@ -34,6 +34,47 @@ class ExploreLinkRecognizerTest {
     }
 
     @Test
+    fun `Bilibili video link preserves selected part`() {
+        assertEquals(
+            ExploreLinkTarget.BiliVideo(
+                bvid = "BV1rXNY6CE2u",
+                page = 2,
+                cid = 123456789L
+            ),
+            recognizeExploreLink(
+                "https://www.bilibili.com/video/BV1rXNY6CE2u/?p=2&cid=123456789"
+            )
+        )
+    }
+
+    @Test
+    fun `Bilibili Android share redirect preserves the first part`() {
+        assertEquals(
+            ExploreLinkTarget.BiliVideo(
+                bvid = "BV15D3X6uEpF",
+                page = 1
+            ),
+            recognizeExploreLink(
+                "https://www.bilibili.com/video/BV15D3X6uEpF?" +
+                    "share_from=ugc&share_medium=android&p=1"
+            )
+        )
+    }
+
+    @Test
+    fun `Bilibili season share preserves collection context`() {
+        assertEquals(
+            ExploreLinkTarget.BiliVideo(
+                bvid = "BV1V4m2BMEWN",
+                isCollectionShare = true
+            ),
+            recognizeExploreLink(
+                "https://www.bilibili.com/video/BV1V4m2BMEWN?share_from=season"
+            )
+        )
+    }
+
+    @Test
     fun `Bilibili playlist and artist links are classified`() {
         assertEquals(
             ExploreLinkTarget.BiliCollection(ownerMid = 123L, seasonId = 456L),
@@ -119,7 +160,7 @@ class ExploreLinkRecognizerTest {
     fun `redirect expansion follows final URL`() = runBlocking {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/short") { exchange ->
-            exchange.responseHeaders.add("Location", "/video/BV1rXNY6CE2u")
+            exchange.responseHeaders.add("Location", "/video/BV1rXNY6CE2u?p=1")
             exchange.sendResponseHeaders(302, -1)
             exchange.close()
         }
@@ -133,7 +174,7 @@ class ExploreLinkRecognizerTest {
         try {
             val baseUrl = "http://127.0.0.1:${server.address.port}"
             assertEquals(
-                "$baseUrl/video/BV1rXNY6CE2u",
+                "$baseUrl/video/BV1rXNY6CE2u?p=1",
                 expandExploreRedirectUrl("$baseUrl/short", OkHttpClient())
             )
         } finally {

@@ -263,7 +263,14 @@ class BiliClient(
         val ownerName: String,
         val ownerFace: String,
         val stats: VideoStats,
-        val pages: List<VideoPage>
+        val pages: List<VideoPage>,
+        val ugcSeason: UgcSeason? = null
+    )
+
+    data class UgcSeason(
+        val id: Long,
+        val mid: Long,
+        val title: String
     )
 
     data class VideoPage(
@@ -506,6 +513,18 @@ class BiliClient(
                 out
             } else emptyList()
 
+            val ugcSeason = data.optJSONObject("ugc_season")
+                ?.let { season ->
+                    val seasonId = season.optLong("id", season.optLong("season_id"))
+                    seasonId.takeIf { it > 0L }?.let {
+                        UgcSeason(
+                            id = it,
+                            mid = season.optLong("mid"),
+                            title = season.optString("title")
+                        )
+                    }
+                }
+
             VideoBasicInfo(
                 aid = aid,
                 bvid = bvid,
@@ -517,7 +536,8 @@ class BiliClient(
                 ownerName = ownerName,
                 ownerFace = ownerFace,
                 stats = stats,
-                pages = pages
+                pages = pages,
+                ugcSeason = ugcSeason
             )
         }
 
