@@ -318,6 +318,9 @@ internal const val MAIN_TAB_DETAIL_OPEN_DURATION_MS = 220
 internal const val MAIN_TAB_DETAIL_CLOSE_DURATION_MS = 240
 internal const val DRAWER_DETAIL_OPEN_DURATION_MS = 300
 internal const val DRAWER_DETAIL_CLOSE_DURATION_MS = 280
+internal const val MAIN_TAB_LAYER_Z_INDEX = 0f
+internal const val NAV_HOST_LAYER_Z_INDEX = 1f
+internal const val MINI_PLAYER_OVERLAY_Z_INDEX = 2f
 private const val DRAWER_ROOT_RETAIN_ALPHA = 0.999f
 internal const val DEBUG_NAVIGATION_OPEN_DURATION_MS = 220
 internal const val DEBUG_NAVIGATION_CLOSE_DURATION_MS = 240
@@ -3183,7 +3186,7 @@ private fun NeriAppContent(
                                                 alpha = mainTabLayerTransform.alpha
                                                 transformOrigin = TransformOrigin.Center
                                             }
-                                            .zIndex(0f),
+                                            .zIndex(MAIN_TAB_LAYER_Z_INDEX),
                                         onVisibleGlassOwnersChanged = {
                                             visibleMainTabGlassOwners = it
                                         },
@@ -3199,7 +3202,7 @@ private fun NeriAppContent(
                                             startDestination = navHostStartDestination,
                                             modifier = Modifier
                                                 .fillMaxSize()
-                                                .zIndex(1f)
+                                                .zIndex(NAV_HOST_LAYER_Z_INDEX)
                                         ) {
                                 composable(
                                     Destinations.Home.route,
@@ -3781,7 +3784,8 @@ private fun NeriAppContent(
                                         .align(Alignment.BottomStart)
                                         .padding(
                                             bottom = bottomBarLayoutInsets.miniPlayerBottomPadding
-                                        ),
+                                        )
+                                        .zIndex(MINI_PLAYER_OVERLAY_Z_INDEX),
                                 enter = slideInVertically(
                                     animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
                                     initialOffsetY = { it / 2 }

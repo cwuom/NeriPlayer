@@ -69,16 +69,22 @@ internal fun AdvancedGlassSceneLayer(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer {
-                        translationY = size.height *
-                            motion.contentTranslationYFraction.coerceIn(0f, 1f)
-                        scaleX = motion.contentScale.coerceIn(0.8f, 1f)
-                        scaleY = motion.contentScale.coerceIn(0.8f, 1f)
-                        transformOrigin = TransformOrigin(0.5f, 0f)
-                    }
-                    .captureAdvancedGlassBackdrop(contentBackdrop),
-                content = content
-            )
+                    .clipSceneReveal(motion.revealTopFraction)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            translationY = size.height *
+                                motion.contentTranslationYFraction.coerceIn(0f, 1f)
+                            scaleX = motion.contentScale.coerceIn(0.8f, 1f)
+                            scaleY = motion.contentScale.coerceIn(0.8f, 1f)
+                            transformOrigin = TransformOrigin(0.5f, 0f)
+                        }
+                        .captureAdvancedGlassBackdrop(contentBackdrop),
+                    content = content
+                )
+            }
         }
     }
 }

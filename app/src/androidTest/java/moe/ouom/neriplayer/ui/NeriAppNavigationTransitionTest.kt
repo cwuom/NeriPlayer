@@ -294,6 +294,63 @@ class NeriAppNavigationTransitionTest {
     }
 
     @Test
+    fun restoredDetailVisibilitySurvivesDelayedDetailComposition() {
+        lateinit var selectedRoute: MutableState<String>
+        lateinit var detailComposed: MutableState<Boolean>
+        composeRule.mainClock.autoAdvance = false
+        composeRule.setContent {
+            selectedRoute = remember { mutableStateOf(Destinations.Home.route) }
+            detailComposed = remember { mutableStateOf(true) }
+            MainTabLayerHost(selectedRoute = selectedRoute.value) { route ->
+                if (route == Destinations.Home.route && detailComposed.value) {
+                    val visibilityState = rememberMainTabDetailVisibilityState(
+                        "restored_playlist"
+                    )
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .testTag(
+                                if (visibilityState.currentState) {
+                                    DelayedRestoredDetailTag
+                                } else {
+                                    DelayedFreshDetailTag
+                                }
+                            )
+                    )
+                }
+            }
+        }
+
+        composeRule.runOnIdle {
+            selectedRoute.value = Destinations.Settings.route
+        }
+        composeRule.mainClock.autoAdvance = true
+        composeRule.waitForIdle()
+        composeRule.mainClock.autoAdvance = false
+        composeRule.runOnIdle {
+            detailComposed.value = false
+        }
+
+        composeRule.runOnIdle {
+            selectedRoute.value = Destinations.Home.route
+        }
+        composeRule.mainClock.advanceTimeBy(
+            (ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS + FRAME_MS * 4).toLong()
+        )
+        composeRule.waitForIdle()
+        composeRule.runOnIdle {
+            detailComposed.value = true
+        }
+        waitForNodeCount(DelayedRestoredDetailTag, expected = 1)
+        assertTrue(
+            "delayed restored detail replayed its entry animation",
+            composeRule.onAllNodesWithTag(DelayedFreshDetailTag)
+                .fetchSemanticsNodes()
+                .isEmpty()
+        )
+    }
+
+    @Test
     fun closingRestoredHostDetailAfterTabSwitchKeepsCloseAnimation() {
         lateinit var selectedRoute: MutableState<String>
         lateinit var detailVisible: MutableState<Boolean>
@@ -1156,6 +1213,8 @@ class NeriAppNavigationTransitionTest {
         const val RestoredHomeSceneTag = "restored_home_scene"
         const val RestoredEntryTag = "restored_entry_scene"
         const val FreshEntryTag = "fresh_entry_scene"
+        const val DelayedRestoredDetailTag = "delayed_restored_detail_scene"
+        const val DelayedFreshDetailTag = "delayed_fresh_detail_scene"
         const val RestoredHostRootSceneTag = "restored_host_root_scene"
         const val RestoredHostRootContentTag = "restored_host_root_content"
         const val RestoredHostDetailTag = "restored_host_detail"

@@ -13,7 +13,11 @@ class SettingsHostNavigationStateTest {
                 targetState = SettingsScreenState.DownloadManager,
                 currentState = SettingsScreenState.DownloadProgress,
                 isRunning = false,
-                requestedState = SettingsScreenState.Settings
+                requestedState = SettingsScreenState.Settings,
+                renderedScreenStates = setOf(
+                    SettingsScreenState.DownloadManager,
+                    SettingsScreenState.DownloadProgress
+                )
             )
         )
 
@@ -22,7 +26,8 @@ class SettingsHostNavigationStateTest {
                 targetState = SettingsScreenState.DownloadManager,
                 currentState = SettingsScreenState.DownloadManager,
                 isRunning = false,
-                requestedState = SettingsScreenState.Settings
+                requestedState = SettingsScreenState.Settings,
+                renderedScreenStates = setOf(SettingsScreenState.DownloadManager)
             )
         )
         assertEquals(
@@ -40,6 +45,22 @@ class SettingsHostNavigationStateTest {
         assertEquals(
             SettingsScreenState.DownloadManager,
             SettingsScreenState.DownloadProgress.nextTowards(SettingsScreenState.Settings)
+        )
+    }
+
+    @Test
+    fun queuedBackWaitsUntilTheRetainedExitIsDisposed() {
+        assertFalse(
+            shouldAdvanceSettingsScreenTransition(
+                targetState = SettingsScreenState.DownloadManager,
+                currentState = SettingsScreenState.DownloadManager,
+                isRunning = false,
+                requestedState = SettingsScreenState.Settings,
+                renderedScreenStates = setOf(
+                    SettingsScreenState.DownloadManager,
+                    SettingsScreenState.DownloadProgress
+                )
+            )
         )
     }
 }

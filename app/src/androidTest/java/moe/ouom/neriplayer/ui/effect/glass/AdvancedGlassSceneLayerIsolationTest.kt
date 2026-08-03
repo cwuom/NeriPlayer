@@ -17,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -162,6 +163,59 @@ class AdvancedGlassSceneLayerIsolationTest {
                 sceneTopPx + sceneHeightPx - PositionTolerancePx
         )
         composeRule.onNodeWithTag(RecreatedContentTag).assertExists()
+    }
+
+    @Test
+    fun exitingSceneClipsContentToItsRevealBoundary() {
+        composeRule.setContent {
+            MaterialTheme {
+                Box(
+                    modifier = Modifier
+                        .size(200.dp, 100.dp)
+                        .background(Color.Blue)
+                        .testTag(SceneRootTag)
+                ) {
+                    AdvancedGlassSceneLayer(
+                        controller = AdvancedGlassController(
+                            sdkInt = Build.VERSION.SDK_INT,
+                            advancedBlurEnabled = true,
+                            enhancedAdvancedBlurEnabled = true,
+                            backendReady = true
+                        ),
+                        motion = AdvancedGlassSceneMotion(
+                            revealTopFraction = 0.5f,
+                            contentTranslationYFraction = 0.5f,
+                            contentScale = 1f
+                        ),
+                        background = {
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Gray)
+                            )
+                        },
+                        content = {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        translationY = -size.height * 0.5f
+                                    }
+                                    .background(Color.Red)
+                            )
+                        }
+                    )
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+        val image = composeRule.onNodeWithTag(SceneRootTag).captureToImage().toPixelMap()
+        val topPixel = image[image.width / 2, image.height / 4]
+        val bottomPixel = image[image.width / 2, image.height * 3 / 4]
+
+        assertTrue("退出场景内容越过揭示边界: $topPixel", topPixel.blue > topPixel.red)
+        assertTrue("退出场景内容没有保留在揭示边界下方: $bottomPixel", bottomPixel.red > bottomPixel.blue)
     }
 
     @Composable

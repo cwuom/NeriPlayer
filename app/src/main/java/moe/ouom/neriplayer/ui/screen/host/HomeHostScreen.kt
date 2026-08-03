@@ -319,7 +319,8 @@ fun HomeHostScreen(
                 } else {
                     advancedGlassHostNavigationTransition(
                         forward = targetState.navigationDepth > initialState.navigationDepth,
-                        coherentFeedbackEnabled = coherentFeedbackEnabled
+                        coherentFeedbackEnabled = coherentFeedbackEnabled,
+                        targetContentZIndex = targetState.navigationDepth.toFloat()
                     )
                 }.using(SizeTransform(clip = true))
             }

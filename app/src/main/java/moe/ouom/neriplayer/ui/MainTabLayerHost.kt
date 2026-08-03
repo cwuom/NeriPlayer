@@ -20,6 +20,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.setValue
@@ -65,29 +66,24 @@ internal fun shouldSuppressRestoredMainTabHostEntry(
 ): Boolean = restoredEntry && targetDepth > initialDepth
 
 @Composable
-internal fun rememberMainTabSceneRestoredEntry(): Boolean {
-    val restored = LocalMainTabSceneRestored.current
-    var suppressEntry by remember { mutableStateOf(restored) }
-    LaunchedEffect(restored) {
-        if (restored) {
-            suppressEntry = true
-        }
-        withFrameNanos { }
-        suppressEntry = false
-    }
-    return suppressEntry
-}
+internal fun rememberMainTabSceneRestoredEntry(): Boolean =
+    LocalMainTabSceneRestored.current
 
 @Composable
 internal fun rememberMainTabDetailVisibilityState(
     detailKey: Any?
 ): MutableTransitionState<Boolean> {
-    val restored = LocalMainTabSceneRestored.current
-    val restoredDetailKey = remember { detailKey }
-    val restoredOnHostEntry = remember { restored }
+    val restoredDetailVisibility = key(detailKey) {
+        var wasVisibleBeforeTabSwitch by rememberSaveable { mutableStateOf(false) }
+        val startsVisible = wasVisibleBeforeTabSwitch
+        SideEffect {
+            wasVisibleBeforeTabSwitch = true
+        }
+        startsVisible
+    }
     return remember(detailKey) {
         MutableTransitionState(
-            restoredOnHostEntry && detailKey == restoredDetailKey
+            restoredDetailVisibility
         ).apply {
             targetState = true
         }

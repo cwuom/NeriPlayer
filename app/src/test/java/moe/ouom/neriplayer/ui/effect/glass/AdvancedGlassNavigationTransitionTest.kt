@@ -93,6 +93,25 @@ class AdvancedGlassNavigationTransitionTest {
     }
 
     @Test
+    fun drawerTransitionCanKeepNestedScenesInDepthOrder() {
+        val root = buildAdvancedGlassDrawerTransition(
+            forward = false,
+            targetContentZIndex = 0f
+        )
+        val detail = buildAdvancedGlassDrawerTransition(
+            forward = false,
+            targetContentZIndex = 1f
+        )
+        val nestedDetail = buildAdvancedGlassDrawerTransition(
+            forward = true,
+            targetContentZIndex = 2f
+        )
+
+        assertTrue(root.targetContentZIndex < detail.targetContentZIndex)
+        assertTrue(detail.targetContentZIndex < nestedDetail.targetContentZIndex)
+    }
+
+    @Test
     fun drawerMotionKeepsTheOldPagePositionFixedWhileRecedingItsContent() {
         val recededList = resolveAdvancedGlassDrawerSceneMotion(
             sceneState = 0,

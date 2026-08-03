@@ -31,10 +31,13 @@ import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -88,8 +91,12 @@ internal fun shouldAdvanceSettingsScreenTransition(
     targetState: SettingsScreenState,
     currentState: SettingsScreenState,
     isRunning: Boolean,
-    requestedState: SettingsScreenState
-): Boolean = !isRunning && currentState == targetState && targetState != requestedState
+    requestedState: SettingsScreenState,
+    renderedScreenStates: Set<SettingsScreenState>
+): Boolean = !isRunning &&
+    currentState == targetState &&
+    targetState != requestedState &&
+    renderedScreenStates == setOf(targetState)
 
 @Composable
 fun SettingsHostScreen(
@@ -253,6 +260,8 @@ fun SettingsHostScreen(
         targetState = screenState,
         label = "settings_screen_switch"
     )
+    val renderedScreenStates = remember { mutableStateListOf<SettingsScreenState>() }
+    val settledRenderedScreenStates = renderedScreenStates.toSet()
 
     fun captureSettingsListPosition() {
         val position = settingsListState.captureHostScrollPosition()
@@ -268,30 +277,22 @@ fun SettingsHostScreen(
             captureSettingsListPosition()
         }
         requestedScreenState = target
-        if (
-            shouldAdvanceSettingsScreenTransition(
-                targetState = screenState,
-                currentState = navigationTransition.currentState,
-                isRunning = navigationTransition.isRunning,
-                requestedState = requestedScreenState
-            )
-        ) {
-            screenState = screenState.nextTowards(requestedScreenState)
-        }
     }
 
     LaunchedEffect(
         navigationTransition.currentState,
         navigationTransition.isRunning,
         requestedScreenState,
-        screenState
+        screenState,
+        settledRenderedScreenStates
     ) {
         if (
             shouldAdvanceSettingsScreenTransition(
                 targetState = screenState,
                 currentState = navigationTransition.currentState,
                 isRunning = navigationTransition.isRunning,
-                requestedState = requestedScreenState
+                requestedState = requestedScreenState,
+                renderedScreenStates = settledRenderedScreenStates
             )
         ) {
             screenState = screenState.nextTowards(requestedScreenState)
@@ -339,10 +340,17 @@ fun SettingsHostScreen(
             transitionSpec = {
                 advancedGlassHostNavigationTransition(
                     forward = targetState.navigationDepth > initialState.navigationDepth,
-                    coherentFeedbackEnabled = coherentFeedbackEnabled
+                    coherentFeedbackEnabled = coherentFeedbackEnabled,
+                    targetContentZIndex = targetState.navigationDepth.toFloat()
                 ).using(SizeTransform(clip = true))
             }
         ) { state ->
+            DisposableEffect(state) {
+                renderedScreenStates += state
+                onDispose {
+                    renderedScreenStates.remove(state)
+                }
+            }
             val sceneMotion = navigationTransition.animateAdvancedGlassSceneMotion(
                 sceneState = state,
                 coherentFeedbackEnabled = coherentFeedbackEnabled,

@@ -90,7 +90,8 @@ internal fun isolatedAdvancedGlassVerticalTransition(
 
 internal fun buildAdvancedGlassDrawerTransition(
     forward: Boolean,
-    retainedExit: ExitTransition = ExitTransition.None
+    retainedExit: ExitTransition = ExitTransition.None,
+    targetContentZIndex: Float = if (forward) 1f else -1f
 ): ContentTransform {
     val durationMillis = if (forward) {
         DRAWER_NAVIGATION_OPEN_DURATION_MS
@@ -107,7 +108,7 @@ internal fun buildAdvancedGlassDrawerTransition(
             animationSpec = animationSpec
         ),
         initialContentExit = retainedExit,
-        targetContentZIndex = if (forward) 1f else -1f
+        targetContentZIndex = targetContentZIndex
     )
 }
 
@@ -326,13 +327,15 @@ internal fun resolveAdvancedGlassVisibilitySceneMotion(
 
 internal fun <S> AnimatedContentTransitionScope<S>.advancedGlassHostNavigationTransition(
     forward: Boolean,
-    coherentFeedbackEnabled: Boolean
+    coherentFeedbackEnabled: Boolean,
+    targetContentZIndex: Float = if (forward) 1f else -1f
 ): ContentTransform = if (coherentFeedbackEnabled) {
     isolatedAdvancedGlassVerticalTransition(forward)
 } else {
     buildAdvancedGlassDrawerTransition(
         forward = forward,
-        retainedExit = ExitTransition.KeepUntilTransitionsFinished
+        retainedExit = ExitTransition.KeepUntilTransitionsFinished,
+        targetContentZIndex = targetContentZIndex
     )
 }
 
