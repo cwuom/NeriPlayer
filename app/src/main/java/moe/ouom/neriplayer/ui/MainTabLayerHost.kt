@@ -83,8 +83,12 @@ internal fun rememberMainTabDetailVisibilityState(
     detailKey: Any?
 ): MutableTransitionState<Boolean> {
     val restored = LocalMainTabSceneRestored.current
+    val restoredDetailKey = remember { detailKey }
+    val restoredOnHostEntry = remember { restored }
     return remember(detailKey) {
-        MutableTransitionState(restored).apply {
+        MutableTransitionState(
+            restoredOnHostEntry && detailKey == restoredDetailKey
+        ).apply {
             targetState = true
         }
     }
