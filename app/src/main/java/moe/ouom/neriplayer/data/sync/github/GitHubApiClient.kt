@@ -105,8 +105,7 @@ class GitHubApiClient(
 
             client.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
-                    val body = response.body?.string()
-                        ?: return@withContext Result.failure(IOException("Empty response"))
+                    val body = response.body.string()
                     val user = gson.fromJson(body, Map::class.java)
                     val username = user["login"] as? String ?: "Unknown"
                     return@withContext Result.success(username)
@@ -141,12 +140,11 @@ class GitHubApiClient(
 
             client.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
-                    val body = response.body?.string()
-                        ?: return@withContext Result.failure(IOException("Empty response"))
+                    val body = response.body.string()
                     val repo = gson.fromJson(body, GitHubRepoResponse::class.java)
                     return@withContext Result.success(repo)
                 }
-                val errorBody = response.body?.string() ?: "Unknown error"
+                val errorBody = response.body.string()
                 Result.failure(IOException("Failed to create repository: ${response.code} - $errorBody"))
             }
         } catch (e: Exception) {
@@ -168,12 +166,12 @@ class GitHubApiClient(
 
             client.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
-                    val body = response.body?.string() ?: return@withContext Result.failure(IOException("Empty response"))
+                    val body = response.body.string()
                     val repoInfo = gson.fromJson(body, GitHubRepoResponse::class.java)
                     return@withContext Result.success(repoInfo)
                 }
 
-                val errorBody = response.body?.string()?.takeIf { it.isNotBlank() }
+                val errorBody = response.body.string().takeIf { it.isNotBlank() }
                 val error = when (response.code) {
                     401 -> TokenExpiredException(appContext.getString(R.string.github_token_expired_message))
                     else -> GitHubApiException(

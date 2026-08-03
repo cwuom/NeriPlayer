@@ -120,7 +120,7 @@ class ListenTogetherApi(
             .build()
         runCatching {
             okHttpClient.newCall(request).execute().use { response ->
-                val body = response.body?.limitedString().orEmpty()
+                val body = response.body.limitedString()
                 val looksLikeListenTogetherService = body.contains(
                     "neriplayer-listen-together-worker",
                     ignoreCase = true
@@ -157,7 +157,7 @@ class ListenTogetherApi(
         }
         val request = requestBuilder.build()
         okHttpClient.newCall(request).execute().use { response ->
-            val body = response.body?.limitedString().orEmpty()
+            val body = response.body.limitedString()
             if (!response.isSuccessful) {
                 throw IOException("ListenTogether GET failed (${response.code}): $body")
             }
@@ -180,7 +180,7 @@ class ListenTogetherApi(
             requestBuilder.header("Authorization", "Bearer $it")
         }
         okHttpClient.newCall(requestBuilder.build()).execute().use { response ->
-            val responseBody = response.body?.limitedString().orEmpty()
+            val responseBody = response.body.limitedString()
             if (!response.isSuccessful) {
                 throw IOException("ListenTogether POST failed (${response.code}): $responseBody")
             }

@@ -16,7 +16,7 @@ internal fun shouldIgnoreListenTogetherIncomingState(
     if (cause?.type?.startsWith("REQUEST_") == true) return false
     if (!eventId.isNullOrBlank() && hasRecentOutboundEvent(eventId)) return true
     if (!eventId.isNullOrBlank() && hasRecentInboundEvent(eventId)) return true
-    if (!eventId.isNullOrBlank() && cause?.userUuid == currentUserId) return true
+    if (!eventId.isNullOrBlank() && cause.userUuid == currentUserId) return true
     return false
 }
 

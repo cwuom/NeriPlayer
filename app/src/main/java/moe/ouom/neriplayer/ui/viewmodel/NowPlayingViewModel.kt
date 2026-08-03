@@ -363,7 +363,7 @@ class NowPlayingViewModel : ViewModel() {
                     // 一次性更新歌词和翻译歌词, 避免数据竞争
                     PlayerManager.updateSongLyricsAndTranslation(
                         song,
-                        songDetails.lyric!!,
+                        songDetails.lyric,
                         songDetails.translatedLyric
                     )
                     NPLogger.d("NowPlayingViewModel", "歌词已保存: songId=${song.id}, album=${song.album}, lyrics length=${songDetails.lyric.length}, hasTranslation=${!songDetails.translatedLyric.isNullOrBlank()}")
@@ -436,25 +436,21 @@ class NowPlayingViewModel : ViewModel() {
                 } else {
                     // 网易云音乐: 从网易云获取原始信息
                     val appContainer = AppContainer
-                    val songDetails = appContainer.cloudMusicSearchApi?.getSongInfo(originalSong.id.toString())
+                    val songDetails = appContainer.cloudMusicSearchApi.getSongInfo(originalSong.id.toString())
 
-                    if (songDetails != null) {
-                        val coverUrl = songDetails.coverUrl?.let {
-                            if (it.startsWith("http://")) it.replaceFirst("http://", "https://") else it
-                        }
-
-                        val info = OriginalSongInfo(
-                            name = songDetails.songName,
-                            artist = songDetails.singer,
-                            coverUrl = coverUrl,
-                            shouldClearLyrics = false,  // 网易云音源不清除歌词
-                            lyric = songDetails.lyric,  // 保存原始歌词
-                            translatedLyric = songDetails.translatedLyric  // 保存原始翻译歌词
-                        )
-                        onResult(true, info, context.getString(R.string.music_restore_success))
-                    } else {
-                        onResult(false, null, context.getString(R.string.music_restore_failed))
+                    val coverUrl = songDetails.coverUrl?.let {
+                        if (it.startsWith("http://")) it.replaceFirst("http://", "https://") else it
                     }
+
+                    val info = OriginalSongInfo(
+                        name = songDetails.songName,
+                        artist = songDetails.singer,
+                        coverUrl = coverUrl,
+                        shouldClearLyrics = false,  // 网易云音源不清除歌词
+                        lyric = songDetails.lyric,  // 保存原始歌词
+                        translatedLyric = songDetails.translatedLyric  // 保存原始翻译歌词
+                    )
+                    onResult(true, info, context.getString(R.string.music_restore_success))
                 }
             } catch (e: Exception) {
                 NPLogger.e("NowPlayingViewModel", "获取原始信息失败", e)

@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.engine
 
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor.AudioFormat
+import androidx.media3.common.audio.AudioProcessor.StreamMetadata
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.abs
@@ -152,7 +153,7 @@ class VolumeNormalizationAudioProcessorTest {
         val warmup = repeatedDirectPcm16Buffer(sample = 320, count = 2_000)
         processor.queueInput(warmup)
         processor.getOutput()
-        processor.flush()
+        processor.flush(StreamMetadata.DEFAULT)
         val input = repeatedDirectPcm16Buffer(sample = 320, count = 100)
 
         processor.queueInput(input)
@@ -166,7 +167,7 @@ class VolumeNormalizationAudioProcessorTest {
         var state = PlaybackVolumeNormalizationSnapshot(enabled = true, generation = 1L)
         val processor = VolumeNormalizationAudioProcessor { state }
         processor.configure(AudioFormat(100, 1, C.ENCODING_PCM_16BIT))
-        processor.flush()
+        processor.flush(StreamMetadata.DEFAULT)
         processor.queueInput(repeatedDirectPcm16Buffer(sample = 320, count = 2_000))
         processor.getOutput()
         state = state.copy(generation = 2L)
@@ -311,7 +312,7 @@ class VolumeNormalizationAudioProcessorTest {
             PlaybackVolumeNormalizationSnapshot(enabled = enabled, generation = 1L)
         }
         processor.configure(AudioFormat(100, 1, C.ENCODING_PCM_16BIT))
-        processor.flush()
+        processor.flush(StreamMetadata.DEFAULT)
         return processor
     }
 
@@ -320,7 +321,7 @@ class VolumeNormalizationAudioProcessorTest {
             PlaybackVolumeNormalizationSnapshot(enabled = enabled, generation = 1L)
         }
         processor.configure(AudioFormat(100, 1, C.ENCODING_PCM_FLOAT))
-        processor.flush()
+        processor.flush(StreamMetadata.DEFAULT)
         return processor
     }
 

@@ -104,7 +104,7 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
         playlistId = playlist.id
         val previous = _uiState.value.takeIf {
             val header = it.header
-            forceRefresh && header?.id == playlist.id && header?.isAlbum == false
+            forceRefresh && header?.id == playlist.id && header.isAlbum == false
         }
 
         // 用入口数据把 header 预填

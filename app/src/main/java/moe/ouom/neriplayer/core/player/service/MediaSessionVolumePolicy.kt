@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.service
 
 import android.media.AudioManager
-import androidx.media.VolumeProviderCompat
+import android.media.VolumeProvider
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 
 internal fun shouldUseUsbExclusiveRemoteVolumeRouting(
@@ -65,7 +65,7 @@ internal class UsbExclusiveLockScreenVolumeProvider(
     maxVolume: Int,
     initialVolume: Int,
     private val onVolumeFractionChanged: (Float) -> Unit
-) : VolumeProviderCompat(
+) : VolumeProvider(
     VOLUME_CONTROL_ABSOLUTE,
     maxVolume.coerceAtLeast(1),
     initialVolume.coerceIn(0, maxVolume.coerceAtLeast(1))

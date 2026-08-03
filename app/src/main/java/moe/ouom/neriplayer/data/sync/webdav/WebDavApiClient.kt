@@ -103,7 +103,7 @@ class WebDavApiClient(
                     }
 
                     else -> {
-                        val errorBody = response.body?.string().orEmpty()
+                        val errorBody = response.body.string()
                         throw WebDavApiException(
                             response.code,
                             "WebDAV validate failed: ${response.code}${errorBody.takeIf { it.isNotBlank() }?.let { " - $it" } ?: ""}"
@@ -127,8 +127,7 @@ class WebDavApiClient(
             client.newCall(request).execute().use { response ->
                 when {
                     response.isSuccessful -> {
-                        val body = response.body?.bytes()
-                            ?: throw IOException("Empty response")
+                        val body = response.body.bytes()
                         RemoteFileSnapshot(
                             content = body,
                             fingerprint = calculateFingerprint(body),
@@ -147,7 +146,7 @@ class WebDavApiClient(
                     }
 
                     else -> {
-                        val errorBody = response.body?.string().orEmpty()
+                        val errorBody = response.body.string()
                         throw WebDavApiException(
                             response.code,
                             "Failed to get file: ${response.code}${errorBody.takeIf { it.isNotBlank() }?.let { " - $it" } ?: ""}"
@@ -216,7 +215,7 @@ class WebDavApiClient(
                     response.code == 409 ||
                         response.code == 412 ||
                         response.code == 423 -> {
-                        val errorBody = response.body?.string().orEmpty()
+                        val errorBody = response.body.string()
                         throw WebDavContentConflictException(
                             statusCode = response.code,
                             message = "Failed to update file: ${response.code}${errorBody.takeIf { it.isNotBlank() }?.let { " - $it" } ?: ""}"
@@ -224,7 +223,7 @@ class WebDavApiClient(
                     }
 
                     else -> {
-                        val errorBody = response.body?.string().orEmpty()
+                        val errorBody = response.body.string()
                         throw WebDavApiException(
                             response.code,
                             "Failed to update file: ${response.code}${errorBody.takeIf { it.isNotBlank() }?.let { " - $it" } ?: ""}"

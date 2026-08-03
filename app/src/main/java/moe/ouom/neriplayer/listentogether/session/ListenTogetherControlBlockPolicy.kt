@@ -24,7 +24,7 @@ internal fun resolveListenTogetherControlBlockReason(
     }
     if (
         sessionRole == "listener" &&
-        roomState?.settings.normalized()?.allowMemberControl == false &&
+        roomState?.settings.normalized().allowMemberControl == false &&
         commandType in controlledPlaybackCommandTypes
     ) {
         return context.getString(R.string.listen_together_error_member_control_disabled)

@@ -266,7 +266,7 @@ internal fun NowPlayingCoverPreviewDialog(
                                 songName
                             )
                         }
-                        val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
+                        val transformableState = rememberTransformableState { _, zoomChange, panChange, _ ->
                             transform = updateCoverPreviewTransform(
                                 current = transform,
                                 zoomChange = zoomChange,

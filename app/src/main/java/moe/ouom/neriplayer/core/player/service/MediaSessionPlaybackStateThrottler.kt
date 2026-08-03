@@ -1,6 +1,6 @@
 package moe.ouom.neriplayer.core.player.service
 
-import android.support.v4.media.session.PlaybackStateCompat
+import android.media.session.PlaybackState
 import kotlin.math.abs
 
 private data class MediaSessionPlaybackStateSnapshot(
@@ -46,7 +46,7 @@ internal class MediaSessionPlaybackStateThrottler(
         if (snapshot.speed != speed) return true
         if (force) return true
 
-        if (playbackState == PlaybackStateCompat.STATE_PLAYING) {
+        if (playbackState == PlaybackState.STATE_PLAYING) {
             val expectedPositionMs = snapshot.positionMs +
                     ((nowElapsedRealtimeMs - snapshot.elapsedRealtimeMs) * snapshot.speed).toLong()
             val positionDriftMs = abs(positionMs - expectedPositionMs)

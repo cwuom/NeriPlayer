@@ -374,7 +374,7 @@ private fun ArtistHeaderCard(
                         )
                         if (!header?.alias.isNullOrBlank()) {
                             Text(
-                                text = header?.alias.orEmpty(),
+                                text = header.alias.orEmpty(),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = Color.White.copy(alpha = 0.82f),
                                 maxLines = 1,
@@ -416,7 +416,7 @@ private fun ArtistHeaderCard(
             if (!header?.briefDesc.isNullOrBlank()) {
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    text = header?.briefDesc.orEmpty(),
+                    text = header.briefDesc.orEmpty(),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 3,

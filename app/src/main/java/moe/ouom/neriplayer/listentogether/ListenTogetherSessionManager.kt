@@ -522,48 +522,55 @@ class ListenTogetherSessionManager(
                             if (error.isNullOrBlank() && message.ok != false && appliedCauseType == "TRACK_FINISHED") {
                                 pendingTrackFinishedLegacyFallback = null
                             }
-                            if (
-                                error.isNullOrBlank() &&
-                                applied?.state != null &&
-                                (
-                                            appliedCauseType == "UPDATE_SETTINGS" ||
-                                        (
-                                            appliedCauseType == "TRACK_FINISHED" &&
-                                                appliedCause?.userUuid == _sessionState.value.userUuid
-                                            ) ||
-                                        (
-                                            appliedCauseType?.startsWith("REQUEST_") == true &&
-                                                appliedCause?.userUuid == _sessionState.value.userUuid
-                                            )
+                            applied?.let { appliedEvent ->
+                                val appliedState = appliedEvent.state
+                                val appliedEventCause = appliedEvent.causedBy
+                                val shouldApplyCommittedState = appliedEventCause?.let { cause ->
+                                    when (cause.type) {
+                                        "UPDATE_SETTINGS" -> true
+                                        "TRACK_FINISHED" -> {
+                                            cause.userUuid == _sessionState.value.userUuid
+                                        }
+                                        else -> {
+                                            cause.type?.startsWith("REQUEST_") == true &&
+                                                cause.userUuid == _sessionState.value.userUuid
+                                        }
+                                    }
+                                } == true
+                                if (
+                                    error.isNullOrBlank() &&
+                                    appliedState != null &&
+                                    appliedEventCause != null &&
+                                    shouldApplyCommittedState
+                                ) {
+                                    NPLogger.d(
+                                        TAG,
+                                        "websocket.controlResult(): apply committed state locally, type=${appliedEventCause.type}, version=${appliedEvent.version}"
                                     )
-                            ) {
-                                NPLogger.d(
-                                    TAG,
-                                    "websocket.controlResult(): apply committed state locally, type=${applied.causedBy?.type}, version=${applied.version}"
-                                )
-                                val previousState = _roomState.value
-                                val accepted = acceptRoomState(
-                                    state = applied.state,
-                                    expectedPositionMs = applied.expectedPositionMs,
-                                    source = RoomStateSource.WEB_SOCKET_CONTROL_RESULT,
-                                    cause = applied.causedBy
-                                )
-                                if (accepted != null) {
-                                    maybePublishControllerLinkAfterAudioSharingEnabled(
-                                        previousState = previousState,
-                                        currentState = accepted.state,
-                                        reason = "control_result:${applied.causedBy?.type}"
+                                    val previousState = _roomState.value
+                                    val accepted = acceptRoomState(
+                                        state = appliedState,
+                                        expectedPositionMs = appliedEvent.expectedPositionMs,
+                                        source = RoomStateSource.WEB_SOCKET_CONTROL_RESULT,
+                                        cause = appliedEventCause
                                     )
-                                }
-                                if (accepted != null && applied.causedBy?.type == "TRACK_FINISHED") {
-                                    awaitingTrackFinishStableKey = null
-                                }
-                                if (accepted != null && !isCurrentUserController()) {
-                                    applyRoomStateToPlayer(
-                                        accepted.state,
-                                        applied.causedBy?.type,
-                                        accepted.expectedPositionMs
-                                    )
+                                    if (accepted != null) {
+                                        maybePublishControllerLinkAfterAudioSharingEnabled(
+                                            previousState = previousState,
+                                            currentState = accepted.state,
+                                            reason = "control_result:${appliedEventCause.type}"
+                                        )
+                                    }
+                                    if (accepted != null && appliedEventCause.type == "TRACK_FINISHED") {
+                                        awaitingTrackFinishStableKey = null
+                                    }
+                                    if (accepted != null && !isCurrentUserController()) {
+                                        applyRoomStateToPlayer(
+                                            accepted.state,
+                                            appliedEventCause.type,
+                                            accepted.expectedPositionMs
+                                        )
+                                    }
                                 }
                             }
                             if (!error.isNullOrBlank() || message.ok == false) {
@@ -1630,7 +1637,7 @@ class ListenTogetherSessionManager(
         }
         NPLogger.w(
             TAG,
-            "shouldRejectForwardedMemberControl(): stale target, requestType=$requestType, requested=$requestedStableKey, current=$currentStableKey, requester=${message.causedBy?.userUuid}"
+            "shouldRejectForwardedMemberControl(): stale target, requestType=$requestType, requested=$requestedStableKey, current=$currentStableKey, requester=${message.causedBy.userUuid}"
         )
         publishControllerHeartbeatIfNeeded(force = true, reason = "reject_stale_member_control")
         return true
@@ -2470,7 +2477,7 @@ class ListenTogetherSessionManager(
         currentState: ListenTogetherRoomState,
         reason: String
     ) {
-        if (previousState?.settings.normalized()?.shareAudioLinks != false) return
+        if (previousState?.settings.normalized().shareAudioLinks != false) return
         if (!currentState.settings.normalized().shareAudioLinks) return
         val currentStableKey = PlayerManager.currentSongFlow.value
             ?.toListenTogetherTrackOrNull()

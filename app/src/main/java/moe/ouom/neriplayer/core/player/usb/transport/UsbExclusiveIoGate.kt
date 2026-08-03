@@ -2,11 +2,14 @@ package moe.ouom.neriplayer.core.player.usb.transport
 
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 internal class UsbExclusiveIoGate {
     private val acceptingWrites = AtomicBoolean(false)
     private val activeWriters = AtomicInteger(0)
-    private val drainMonitor = Object()
+    private val drainLock = ReentrantLock()
+    private val drainedCondition = drainLock.newCondition()
 
     fun open() {
         acceptingWrites.set(true)
@@ -40,25 +43,24 @@ internal class UsbExclusiveIoGate {
         } else {
             Long.MAX_VALUE
         }
-        synchronized(drainMonitor) {
+        return drainLock.withLock {
             while (activeWriters.get() > 0) {
                 if (timeoutMs <= 0L) {
-                    drainMonitor.wait()
+                    drainedCondition.await()
                     continue
                 }
                 val remainingNs = deadlineNs - System.nanoTime()
-                if (remainingNs <= 0L) return false
-                val waitMs = (remainingNs / NANOS_PER_MILLISECOND).coerceAtLeast(1L)
-                drainMonitor.wait(waitMs)
+                if (remainingNs <= 0L) return@withLock false
+                drainedCondition.awaitNanos(remainingNs)
             }
+            true
         }
-        return true
     }
 
     private fun signalIfDrained() {
         if (activeWriters.get() != 0) return
-        synchronized(drainMonitor) {
-            drainMonitor.notifyAll()
+        drainLock.withLock {
+            drainedCondition.signalAll()
         }
     }
 

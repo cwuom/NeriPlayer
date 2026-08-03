@@ -5,7 +5,7 @@ package moe.ouom.neriplayer.core.player.service
 import android.media.AudioManager
 import android.content.pm.PackageManager
 import android.hardware.usb.UsbManager
-import android.support.v4.media.session.PlaybackStateCompat
+import android.media.session.PlaybackState
 import androidx.lifecycle.Lifecycle
 import moe.ouom.neriplayer.activity.shouldProcessUsbDeviceAttachedAction
 import moe.ouom.neriplayer.activity.usbDeviceAttachAliasComponentState
@@ -45,12 +45,12 @@ class AudioPlayerServicePolicyTest {
     fun `media session actions no longer advertise stop`() {
         val actions = mediaSessionPlaybackActions()
 
-        assertEquals(0L, actions and PlaybackStateCompat.ACTION_STOP)
-        assertTrue(actions and PlaybackStateCompat.ACTION_PLAY != 0L)
-        assertTrue(actions and PlaybackStateCompat.ACTION_PAUSE != 0L)
-        assertTrue(actions and PlaybackStateCompat.ACTION_SKIP_TO_NEXT != 0L)
-        assertTrue(actions and PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS != 0L)
-        assertTrue(actions and PlaybackStateCompat.ACTION_SEEK_TO != 0L)
+        assertEquals(0L, actions and PlaybackState.ACTION_STOP)
+        assertTrue(actions and PlaybackState.ACTION_PLAY != 0L)
+        assertTrue(actions and PlaybackState.ACTION_PAUSE != 0L)
+        assertTrue(actions and PlaybackState.ACTION_SKIP_TO_NEXT != 0L)
+        assertTrue(actions and PlaybackState.ACTION_SKIP_TO_PREVIOUS != 0L)
+        assertTrue(actions and PlaybackState.ACTION_SEEK_TO != 0L)
     }
 
     @Test

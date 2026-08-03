@@ -504,7 +504,7 @@ object UsbExclusiveSessionController {
                 _state.value = _state.value.copy(
                     available = UsbExclusiveNativeBridge.ensureLoaded(),
                     transitioning = false,
-                    selectedDeviceName = targetDevice.productName?.toString(),
+                    selectedDeviceName = targetDevice.productName,
                     runtimeReport = openError,
                     lastError = openError
                 )
@@ -530,7 +530,7 @@ object UsbExclusiveSessionController {
                 _state.value = _state.value.copy(
                     available = UsbExclusiveNativeBridge.ensureLoaded(),
                     transitioning = false,
-                    selectedDeviceName = targetDevice.productName?.toString(),
+                    selectedDeviceName = targetDevice.productName,
                     runtimeReport = startError,
                     lastError = startError
                 )
@@ -547,7 +547,7 @@ object UsbExclusiveSessionController {
                     transitioning = false,
                     source = "tone",
                     handle = handle,
-                    selectedDeviceName = targetDevice.productName?.toString() ?: targetDevice.deviceName,
+                    selectedDeviceName = targetDevice.productName ?: targetDevice.deviceName,
                     lastError = null
                 ).withRuntimeReport(UsbExclusiveNativeBridge.runtimeReport(handle))
                 startedHandle = handle
@@ -917,7 +917,7 @@ object UsbExclusiveSessionController {
                     _state.value = _state.value.copy(
                         available = UsbExclusiveNativeBridge.ensureLoaded(),
                         source = "idle",
-                        selectedDeviceName = targetDevice.productName?.toString(),
+                        selectedDeviceName = targetDevice.productName,
                         runtimeReport = openError,
                         lastError = openError
                     )
@@ -969,7 +969,7 @@ object UsbExclusiveSessionController {
                     _state.value = _state.value.copy(
                         available = UsbExclusiveNativeBridge.ensureLoaded(),
                         source = "idle",
-                        selectedDeviceName = targetDevice.productName?.toString(),
+                        selectedDeviceName = targetDevice.productName,
                         runtimeReport = prepareError,
                         lastError = prepareError
                     )
@@ -992,7 +992,7 @@ object UsbExclusiveSessionController {
                     transitioning = false,
                     source = "player_pcm",
                     handle = handle,
-                    selectedDeviceName = targetDevice.productName?.toString() ?: targetDevice.deviceName,
+                    selectedDeviceName = targetDevice.productName ?: targetDevice.deviceName,
                     inputFormat = describeUsbInputFormat(
                         inputSampleRate,
                         inputChannelCount,

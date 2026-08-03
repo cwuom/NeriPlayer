@@ -38,7 +38,7 @@ suspend fun saveCoverToPictures(
                 throw IOException("HTTP ${response.code}")
             }
 
-            val body = response.body ?: throw IOException("empty response body")
+            val body = response.body
             val mimeType = resolveMimeType(response.header("Content-Type"), imageUrl)
             val extension = mimeTypeToExtension(mimeType)
             val displayName = buildDisplayName(suggestedName, extension)

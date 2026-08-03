@@ -42,20 +42,23 @@ import android.graphics.Canvas
 import android.graphics.drawable.Icon
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
+import android.media.AudioAttributes
 import android.media.AudioManager
+import android.media.MediaMetadata
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.SystemClock
-import android.support.v4.media.MediaMetadataCompat
-import android.support.v4.media.session.MediaSessionCompat
-import android.support.v4.media.session.PlaybackStateCompat
 import android.util.TypedValue
+import android.view.KeyEvent
 import androidx.annotation.DrawableRes
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.graphics.drawable.IconCompat
@@ -63,7 +66,6 @@ import androidx.core.graphics.drawable.toBitmap
 import androidx.core.graphics.scale
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
-import androidx.media.session.MediaButtonReceiver
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -227,12 +229,12 @@ internal fun shouldStopServiceForExternalPauseCommand(
 }
 
 internal fun mediaSessionPlaybackActions(): Long {
-    return PlaybackStateCompat.ACTION_PLAY or
-        PlaybackStateCompat.ACTION_PAUSE or
-        PlaybackStateCompat.ACTION_PLAY_PAUSE or
-        PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
-        PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
-        PlaybackStateCompat.ACTION_SEEK_TO
+    return PlaybackState.ACTION_PLAY or
+        PlaybackState.ACTION_PAUSE or
+        PlaybackState.ACTION_PLAY_PAUSE or
+        PlaybackState.ACTION_SKIP_TO_NEXT or
+        PlaybackState.ACTION_SKIP_TO_PREVIOUS or
+        PlaybackState.ACTION_SEEK_TO
 }
 
 internal fun shouldUseForegroundServiceStart(
@@ -599,7 +601,11 @@ class AudioPlayerService : Service() {
 
     private lateinit var becomingNoisyReceiver: BroadcastReceiver
 
-    private lateinit var mediaSession: MediaSessionCompat
+    private val mediaSessionAudioAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_MEDIA)
+        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+        .build()
+    private lateinit var mediaSession: MediaSession
     private var mediaSessionUsesUsbExclusiveVolumeProvider = false
     private var usbExclusiveVolumeProvider: UsbExclusiveLockScreenVolumeProvider? = null
 
@@ -992,7 +998,7 @@ class AudioPlayerService : Service() {
         }
     }
 
-    private val mediaSessionCallback = object : MediaSessionCompat.Callback() {
+    private val mediaSessionCallback = object : MediaSession.Callback() {
         override fun onPlay() {
             runWhenPlayerRuntimeReady("media_session_play") {
                 keepPlayerRuntimeAfterServiceStop = false
@@ -1031,7 +1037,7 @@ class AudioPlayerService : Service() {
                 updatePlaybackWidget(force = true)
             }
         }
-        override fun onCustomAction(action: String?, extras: Bundle?) {
+        override fun onCustomAction(action: String, extras: Bundle?) {
             when (action) {
                 ACTION_TOGGLE_FAV -> {
                     runWhenPlayerRuntimeReady("media_session_favorite") {
@@ -1055,6 +1061,17 @@ class AudioPlayerService : Service() {
                 }
             }
         }
+    }
+
+    private fun dispatchMediaButtonIntent(intent: Intent?) {
+        val mediaButtonIntent = intent ?: return
+        if (mediaButtonIntent.action != Intent.ACTION_MEDIA_BUTTON) return
+        val keyEvent = IntentCompat.getParcelableExtra(
+            mediaButtonIntent,
+            Intent.EXTRA_KEY_EVENT,
+            KeyEvent::class.java
+        ) ?: return
+        mediaSession.controller.dispatchMediaButtonEvent(keyEvent)
     }
 
     private fun updateMediaSessionVolumeRouting(pathState: UsbExclusiveAudioPathState) {
@@ -1089,7 +1106,7 @@ class AudioPlayerService : Service() {
             usbExclusiveVolumeProvider = null
             UsbExclusiveSystemVolumeBridge.clearSessionVolumeFraction()
             runCatching {
-                mediaSession.setPlaybackToLocal(AudioManager.STREAM_MUSIC)
+                mediaSession.setPlaybackToLocal(mediaSessionAudioAttributes)
             }
             NPLogger.w("NERI-APS", "USB exclusive MediaSession volume routing failed", error)
         }
@@ -1101,7 +1118,7 @@ class AudioPlayerService : Service() {
         usbExclusiveVolumeProvider = null
         if (wasRemote && this::mediaSession.isInitialized) {
             runCatching {
-                mediaSession.setPlaybackToLocal(AudioManager.STREAM_MUSIC)
+                mediaSession.setPlaybackToLocal(mediaSessionAudioAttributes)
             }.onFailure { error ->
                 NPLogger.w(
                     "NERI-APS",
@@ -1211,9 +1228,9 @@ class AudioPlayerService : Service() {
         NPLogger.d("NERI-APS", "onCreate begin ${buildStateSummary()}")
         ensurePlaybackNotificationChannel()
 
-        mediaSession = MediaSessionCompat(this, "NeriPlayerSession").apply {
+        mediaSession = MediaSession(this, "NeriPlayerSession").apply {
             setCallback(mediaSessionCallback)
-            setPlaybackToLocal(AudioManager.STREAM_MUSIC)
+            setPlaybackToLocal(mediaSessionAudioAttributes)
             isActive = true
         }
         UsbExclusiveSystemVolumeBridge.clearSessionVolumeFraction()
@@ -1631,13 +1648,15 @@ class AudioPlayerService : Service() {
             }
         }
 
-        // 处理媒体按钮
-        MediaButtonReceiver.handleIntent(mediaSession, intent)
+        dispatchMediaButtonIntent(intent)
 
         when (action) {
             ACTION_PLAY -> {
-                @Suppress("DEPRECATION")
-                val songList = intent.getParcelableArrayListExtra<SongItem>("playlist")
+                val songList = IntentCompat.getParcelableArrayListExtra(
+                    intent,
+                    "playlist",
+                    SongItem::class.java
+                )
                 val startIndex = intent.getIntExtra("index", 0)
                 if (!songList.isNullOrEmpty()) {
                     PlayerManager.playPlaylist(songList, startIndex)
@@ -1789,52 +1808,78 @@ class AudioPlayerService : Service() {
             toggleFavIntent
         }
 
-        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_small)
             .setContentIntent(contentIntent)
             .setCategory(Notification.CATEGORY_TRANSPORT)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setStyle(
-                androidx.media.app.NotificationCompat.MediaStyle()
+                Notification.MediaStyle()
                     .setMediaSession(mediaSession.sessionToken)
                     .setShowActionsInCompactView(0, 1, 3)
             )
+            .applyForegroundServiceBehavior()
 
         val isFav = isFavoriteSong(song)
 
-        val favIcon = IconCompat.createWithResource(
-            this,
-            if (isFav) R.drawable.ic_baseline_favorite_24 else R.drawable.ic_outline_favorite_24
-        )
-        val favAction = NotificationCompat.Action.Builder(
-            favIcon,
+        val favAction = Notification.Action.Builder(
+            Icon.createWithResource(
+                this,
+                if (isFav) R.drawable.ic_baseline_favorite_24 else R.drawable.ic_outline_favorite_24
+            ),
             if (isFav) getString(R.string.favorite_remove) else getString(R.string.favorite_add),
             favoriteActionIntent
         ).build()
 
-        builder.addAction(R.drawable.round_skip_previous_24, getString(R.string.player_previous), prevIntent)
         builder.addAction(
-            if (isPlaybackControlPlaying) R.drawable.round_pause_24 else R.drawable.round_play_arrow_24,
-            if (isPlaybackControlPlaying) getString(R.string.player_pause) else getString(R.string.player_play),
-            if (isPlaybackControlPlaying) pauseIntent else playIntent
+            mediaNotificationAction(
+                iconRes = R.drawable.round_skip_previous_24,
+                title = getString(R.string.player_previous),
+                pendingIntent = prevIntent
+            )
+        )
+        builder.addAction(
+            mediaNotificationAction(
+                iconRes = if (isPlaybackControlPlaying) {
+                    R.drawable.round_pause_24
+                } else {
+                    R.drawable.round_play_arrow_24
+                },
+                title = if (isPlaybackControlPlaying) {
+                    getString(R.string.player_pause)
+                } else {
+                    getString(R.string.player_play)
+                },
+                pendingIntent = if (isPlaybackControlPlaying) pauseIntent else playIntent
+            )
         )
         builder.addAction(favAction)
-        builder.addAction(R.drawable.round_skip_next_24, getString(R.string.player_next), nextIntent)
+        builder.addAction(
+            mediaNotificationAction(
+                iconRes = R.drawable.round_skip_next_24,
+                title = getString(R.string.player_next),
+                pendingIntent = nextIntent
+            )
+        )
         val floatingLyricsEnabled = isFloatingLyricsCurrentlyEnabled()
         builder.addAction(
-            if (floatingLyricsEnabled) R.drawable.ic_lyrics_off_24 else R.drawable.ic_lyrics_24,
-            getString(
-                if (floatingLyricsEnabled) {
-                    R.string.notification_hide_floating_lyrics
+            mediaNotificationAction(
+                iconRes = if (floatingLyricsEnabled) {
+                    R.drawable.ic_lyrics_off_24
                 } else {
-                    R.string.notification_show_floating_lyrics
-                }
-            ),
-            toggleFloatingLyricsIntent,
+                    R.drawable.ic_lyrics_24
+                },
+                title = getString(
+                    if (floatingLyricsEnabled) {
+                        R.string.notification_hide_floating_lyrics
+                    } else {
+                        R.string.notification_show_floating_lyrics
+                    }
+                ),
+                pendingIntent = toggleFloatingLyricsIntent
+            )
         )
 
         builder.setContentTitle(song?.displayName() ?: "NeriPlayer")
@@ -1922,25 +1967,43 @@ class AudioPlayerService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_small)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(getString(R.string.player_notification_preparing))
             .setContentIntent(contentIntent)
             .setCategory(Notification.CATEGORY_TRANSPORT)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .applyForegroundServiceBehavior()
         // mediaSession 尚未初始化时降级为不带媒体样式的通知,避免读取 lateinit 崩溃
         if (this::mediaSession.isInitialized) {
             builder.setStyle(
-                androidx.media.app.NotificationCompat.MediaStyle()
+                Notification.MediaStyle()
                     .setMediaSession(mediaSession.sessionToken)
             )
         }
         return builder.build()
+    }
+
+    private fun mediaNotificationAction(
+        @DrawableRes iconRes: Int,
+        title: CharSequence,
+        pendingIntent: PendingIntent
+    ): Notification.Action {
+        return Notification.Action.Builder(
+            Icon.createWithResource(this, iconRes),
+            title,
+            pendingIntent
+        ).build()
+    }
+
+    private fun Notification.Builder.applyForegroundServiceBehavior(): Notification.Builder {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
+        }
+        return this
     }
 
     /**
@@ -2185,29 +2248,29 @@ class AudioPlayerService : Service() {
         }
         lastMetadataSnapshot = snapshot
 
-        val metadataBuilder = MediaMetadataCompat.Builder()
-            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, metadataText.title)
-            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, metadataText.artist)
-            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, metadataText.displayTitle)
+        val metadataBuilder = MediaMetadata.Builder()
+            .putString(MediaMetadata.METADATA_KEY_TITLE, metadataText.title)
+            .putString(MediaMetadata.METADATA_KEY_ARTIST, metadataText.artist)
+            .putString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE, metadataText.displayTitle)
             .putString(
-                MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE,
+                MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE,
                 metadataText.displaySubtitle
             )
-            .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
-            .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, currentMediaArtwork)
+            .putLong(MediaMetadata.METADATA_KEY_DURATION, duration)
+            .putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, currentMediaArtwork)
 
         metadataText.album?.let { album ->
-            metadataBuilder.putString(MediaMetadataCompat.METADATA_KEY_ALBUM, album)
+            metadataBuilder.putString(MediaMetadata.METADATA_KEY_ALBUM, album)
         }
         metadataText.displayDescription?.let { description ->
             metadataBuilder.putString(
-                MediaMetadataCompat.METADATA_KEY_DISPLAY_DESCRIPTION,
+                MediaMetadata.METADATA_KEY_DISPLAY_DESCRIPTION,
                 description
             )
         }
 
         resolveRemoteMetadataArtworkUri(currentCoverSource)?.let { artworkUri ->
-            metadataBuilder.putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, artworkUri)
+            metadataBuilder.putString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, artworkUri)
         }
 
         // Do not set local URIs to METADATA_KEY_ALBUM_ART_URI, as it may prompt the System UI
@@ -2287,11 +2350,11 @@ class AudioPlayerService : Service() {
         else R.drawable.ic_outline_favorite_24
         val favText = if (isFav) getString(R.string.favorite_remove) else getString(R.string.favorite_add)
 
-        val favCustom = PlaybackStateCompat.CustomAction.Builder(
+        val favCustom = PlaybackState.CustomAction.Builder(
             ACTION_TOGGLE_FAV, favText, favIconRes
         ).build()
         val floatingLyricsEnabled = isFloatingLyricsCurrentlyEnabled()
-        val floatingLyricsCustom = PlaybackStateCompat.CustomAction.Builder(
+        val floatingLyricsCustom = PlaybackState.CustomAction.Builder(
             ACTION_TOGGLE_FLOATING_LYRICS,
             getString(
                 if (floatingLyricsEnabled) {
@@ -2306,12 +2369,12 @@ class AudioPlayerService : Service() {
         val actions = mediaSessionPlaybackActions()
 
         val playbackState = when {
-            isBuffering -> PlaybackStateCompat.STATE_BUFFERING
-            isTransportActive -> PlaybackStateCompat.STATE_PLAYING
-            fallbackSongActive && isListenTogetherRemotePlaying() -> PlaybackStateCompat.STATE_BUFFERING
-            else -> PlaybackStateCompat.STATE_PAUSED
+            isBuffering -> PlaybackState.STATE_BUFFERING
+            isTransportActive -> PlaybackState.STATE_PLAYING
+            fallbackSongActive && isListenTogetherRemotePlaying() -> PlaybackState.STATE_BUFFERING
+            else -> PlaybackState.STATE_PAUSED
         }
-        val playbackSpeed = if (playbackState == PlaybackStateCompat.STATE_PLAYING) {
+        val playbackSpeed = if (playbackState == PlaybackState.STATE_PLAYING) {
             PlayerManager.playbackSoundStateFlow.value.speed
         } else {
             0.0f
@@ -2339,7 +2402,7 @@ class AudioPlayerService : Service() {
             return
         }
 
-        val stateBuilder = PlaybackStateCompat.Builder()
+        val stateBuilder = PlaybackState.Builder()
             .setActions(actions)
             .setState(
                 playbackState,

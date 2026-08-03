@@ -1,8 +1,6 @@
-@file:Suppress("DEPRECATION")
-
 package moe.ouom.neriplayer.core.player
 
-import android.support.v4.media.session.PlaybackStateCompat
+import android.media.session.PlaybackState
 import moe.ouom.neriplayer.core.player.service.buildMediaSessionControlFingerprint
 import moe.ouom.neriplayer.core.player.service.MediaSessionPlaybackStateThrottler
 import org.junit.Assert.assertFalse
@@ -21,7 +19,7 @@ class MediaSessionPlaybackStateThrottlerTest {
     fun `playing progress updates are throttled inside interval`() {
         assertTrue(
             throttler.shouldDispatch(
-                playbackState = PlaybackStateCompat.STATE_PLAYING,
+                playbackState = PlaybackState.STATE_PLAYING,
                 positionMs = 0L,
                 speed = 1.0f,
                 controlFingerprint = defaultControlFingerprint,
@@ -29,7 +27,7 @@ class MediaSessionPlaybackStateThrottlerTest {
             )
         )
         throttler.recordDispatch(
-            playbackState = PlaybackStateCompat.STATE_PLAYING,
+            playbackState = PlaybackState.STATE_PLAYING,
             positionMs = 0L,
             speed = 1.0f,
             controlFingerprint = defaultControlFingerprint,
@@ -38,7 +36,7 @@ class MediaSessionPlaybackStateThrottlerTest {
 
         assertFalse(
             throttler.shouldDispatch(
-                playbackState = PlaybackStateCompat.STATE_PLAYING,
+                playbackState = PlaybackState.STATE_PLAYING,
                 positionMs = 40L,
                 speed = 1.0f,
                 controlFingerprint = defaultControlFingerprint,
@@ -47,7 +45,7 @@ class MediaSessionPlaybackStateThrottlerTest {
         )
         assertFalse(
             throttler.shouldDispatch(
-                playbackState = PlaybackStateCompat.STATE_PLAYING,
+                playbackState = PlaybackState.STATE_PLAYING,
                 positionMs = 900L,
                 speed = 1.0f,
                 controlFingerprint = defaultControlFingerprint,
@@ -56,7 +54,7 @@ class MediaSessionPlaybackStateThrottlerTest {
         )
         assertTrue(
             throttler.shouldDispatch(
-                playbackState = PlaybackStateCompat.STATE_PLAYING,
+                playbackState = PlaybackState.STATE_PLAYING,
                 positionMs = 1_000L,
                 speed = 1.0f,
                 controlFingerprint = defaultControlFingerprint,
@@ -68,7 +66,7 @@ class MediaSessionPlaybackStateThrottlerTest {
     @Test
     fun `playing seek drift bypasses interval throttle`() {
         throttler.recordDispatch(
-            playbackState = PlaybackStateCompat.STATE_PLAYING,
+            playbackState = PlaybackState.STATE_PLAYING,
             positionMs = 0L,
             speed = 1.0f,
             controlFingerprint = defaultControlFingerprint,
@@ -77,7 +75,7 @@ class MediaSessionPlaybackStateThrottlerTest {
 
         assertTrue(
             throttler.shouldDispatch(
-                playbackState = PlaybackStateCompat.STATE_PLAYING,
+                playbackState = PlaybackState.STATE_PLAYING,
                 positionMs = 8_000L,
                 speed = 1.0f,
                 controlFingerprint = defaultControlFingerprint,
@@ -89,7 +87,7 @@ class MediaSessionPlaybackStateThrottlerTest {
     @Test
     fun `paused position change dispatches immediately`() {
         throttler.recordDispatch(
-            playbackState = PlaybackStateCompat.STATE_PAUSED,
+            playbackState = PlaybackState.STATE_PAUSED,
             positionMs = 5_000L,
             speed = 0.0f,
             controlFingerprint = defaultControlFingerprint,
@@ -98,7 +96,7 @@ class MediaSessionPlaybackStateThrottlerTest {
 
         assertFalse(
             throttler.shouldDispatch(
-                playbackState = PlaybackStateCompat.STATE_PAUSED,
+                playbackState = PlaybackState.STATE_PAUSED,
                 positionMs = 5_000L,
                 speed = 0.0f,
                 controlFingerprint = defaultControlFingerprint,
@@ -107,7 +105,7 @@ class MediaSessionPlaybackStateThrottlerTest {
         )
         assertTrue(
             throttler.shouldDispatch(
-                playbackState = PlaybackStateCompat.STATE_PAUSED,
+                playbackState = PlaybackState.STATE_PAUSED,
                 positionMs = 5_250L,
                 speed = 0.0f,
                 controlFingerprint = defaultControlFingerprint,
@@ -119,7 +117,7 @@ class MediaSessionPlaybackStateThrottlerTest {
     @Test
     fun `state changes and forced updates always dispatch`() {
         throttler.recordDispatch(
-            playbackState = PlaybackStateCompat.STATE_PLAYING,
+            playbackState = PlaybackState.STATE_PLAYING,
             positionMs = 0L,
             speed = 1.0f,
             controlFingerprint = defaultControlFingerprint,
@@ -128,7 +126,7 @@ class MediaSessionPlaybackStateThrottlerTest {
 
         assertTrue(
             throttler.shouldDispatch(
-                playbackState = PlaybackStateCompat.STATE_PAUSED,
+                playbackState = PlaybackState.STATE_PAUSED,
                 positionMs = 200L,
                 speed = 0.0f,
                 controlFingerprint = defaultControlFingerprint,
@@ -137,7 +135,7 @@ class MediaSessionPlaybackStateThrottlerTest {
         )
         assertTrue(
             throttler.shouldDispatch(
-                playbackState = PlaybackStateCompat.STATE_PLAYING,
+                playbackState = PlaybackState.STATE_PLAYING,
                 positionMs = 40L,
                 speed = 1.0f,
                 controlFingerprint = defaultControlFingerprint,
@@ -150,7 +148,7 @@ class MediaSessionPlaybackStateThrottlerTest {
     @Test
     fun `forced duplicate snapshot is still suppressed`() {
         throttler.recordDispatch(
-            playbackState = PlaybackStateCompat.STATE_BUFFERING,
+            playbackState = PlaybackState.STATE_BUFFERING,
             positionMs = 4_235L,
             speed = 0.0f,
             controlFingerprint = defaultControlFingerprint,
@@ -159,7 +157,7 @@ class MediaSessionPlaybackStateThrottlerTest {
 
         assertFalse(
             throttler.shouldDispatch(
-                playbackState = PlaybackStateCompat.STATE_BUFFERING,
+                playbackState = PlaybackState.STATE_BUFFERING,
                 positionMs = 4_235L,
                 speed = 0.0f,
                 controlFingerprint = defaultControlFingerprint,
@@ -172,7 +170,7 @@ class MediaSessionPlaybackStateThrottlerTest {
     @Test
     fun `control changes bypass duplicate suppression`() {
         throttler.recordDispatch(
-            playbackState = PlaybackStateCompat.STATE_PLAYING,
+            playbackState = PlaybackState.STATE_PLAYING,
             positionMs = 12_000L,
             speed = 1.0f,
             controlFingerprint = defaultControlFingerprint,
@@ -181,7 +179,7 @@ class MediaSessionPlaybackStateThrottlerTest {
 
         assertTrue(
             throttler.shouldDispatch(
-                playbackState = PlaybackStateCompat.STATE_PLAYING,
+                playbackState = PlaybackState.STATE_PLAYING,
                 positionMs = 12_000L,
                 speed = 1.0f,
                 controlFingerprint = defaultControlFingerprint + 1,
@@ -203,7 +201,7 @@ class MediaSessionPlaybackStateThrottlerTest {
         )
 
         throttler.recordDispatch(
-            playbackState = PlaybackStateCompat.STATE_PLAYING,
+            playbackState = PlaybackState.STATE_PLAYING,
             positionMs = 12_000L,
             speed = 1.0f,
             controlFingerprint = floatingLyricsDisabledFingerprint,
@@ -212,7 +210,7 @@ class MediaSessionPlaybackStateThrottlerTest {
 
         assertTrue(
             throttler.shouldDispatch(
-                playbackState = PlaybackStateCompat.STATE_PLAYING,
+                playbackState = PlaybackState.STATE_PLAYING,
                 positionMs = 12_000L,
                 speed = 1.0f,
                 controlFingerprint = floatingLyricsEnabledFingerprint,

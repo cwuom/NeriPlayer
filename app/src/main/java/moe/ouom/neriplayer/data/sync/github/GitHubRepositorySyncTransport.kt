@@ -99,7 +99,7 @@ internal class GitHubRepositorySyncTransport(
             if (!response.isSuccessful) {
                 throwForResponse(response, "resolve repository")
             }
-            val body = response.body?.string().orEmpty()
+            val body = response.body.string()
             parseObject(body, "repository").requiredString("default_branch").ifBlank { "main" }
         }
     }
@@ -113,7 +113,7 @@ internal class GitHubRepositorySyncTransport(
             if (!response.isSuccessful) {
                 throwForResponse(response, "read sync branch")
             }
-            val body = response.body?.string().orEmpty()
+            val body = response.body.string()
             parseObject(body, "branch reference")
                 .getAsJsonObject("object")
                 ?.requiredString("sha")
@@ -171,7 +171,7 @@ internal class GitHubRepositorySyncTransport(
             if (!response.isSuccessful) {
                 throwForResponse(response, "read sync commit")
             }
-            parseObject(response.body?.string().orEmpty(), "sync commit")
+            parseObject(response.body.string(), "sync commit")
                 .getAsJsonObject("tree")
                 ?.requiredString("sha")
                 ?: throw IOException("GitHub sync commit has no tree SHA")
@@ -192,7 +192,7 @@ internal class GitHubRepositorySyncTransport(
             if (!response.isSuccessful) {
                 throwForResponse(response, "create sync binary blob")
             }
-            parseObject(response.body?.string().orEmpty(), "sync binary blob").requiredString("sha")
+            parseObject(response.body.string(), "sync binary blob").requiredString("sha")
         }
     }
 
@@ -221,7 +221,7 @@ internal class GitHubRepositorySyncTransport(
             if (!response.isSuccessful) {
                 throwForResponse(response, "create sync binary tree")
             }
-            parseObject(response.body?.string().orEmpty(), "sync binary tree").requiredString("sha")
+            parseObject(response.body.string(), "sync binary tree").requiredString("sha")
         }
     }
 
@@ -245,7 +245,7 @@ internal class GitHubRepositorySyncTransport(
             if (!response.isSuccessful) {
                 throwForResponse(response, "create sync binary commit")
             }
-            parseObject(response.body?.string().orEmpty(), "sync binary commit").requiredString("sha")
+            parseObject(response.body.string(), "sync binary commit").requiredString("sha")
         }
     }
 
@@ -275,7 +275,7 @@ internal class GitHubRepositorySyncTransport(
     private fun endpoint(path: String): String = "$apiBase/${path.trimStart('/')}"
 
     private fun readBoundedBytes(response: Response, operation: String): ByteArray {
-        val body = response.body ?: throw IOException("GitHub $operation returned no body")
+        val body = response.body
         val declaredSize = body.contentLength()
         require(declaredSize < 0L || declaredSize <= MAX_SYNC_FILE_BYTES) {
             "GitHub sync payload is too large"
@@ -300,7 +300,7 @@ internal class GitHubRepositorySyncTransport(
     }
 
     private fun throwForResponse(response: Response, operation: String, detectConflict: Boolean = false): Nothing {
-        throwForResponse(response.code, response.body?.string().orEmpty(), operation, detectConflict)
+        throwForResponse(response.code, response.body.string(), operation, detectConflict)
     }
 
     private fun throwForResponse(
