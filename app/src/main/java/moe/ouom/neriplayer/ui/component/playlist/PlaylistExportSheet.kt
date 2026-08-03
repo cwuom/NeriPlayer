@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.ui.component.playlist
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,12 +34,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -51,6 +56,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
+import java.util.concurrent.atomic.AtomicBoolean
 
 private class PendingPlaylistExport(
     val targetName: String,
@@ -74,16 +80,11 @@ internal fun PlaylistExportSheet(
     val playlistListState = rememberLazyListState()
     var newName by remember { mutableStateOf("") }
     var pendingExport by remember { mutableStateOf<PendingPlaylistExport?>(null) }
-    var isTargetPickerVisible by remember { mutableStateOf(true) }
-    var isTargetPickerClosing by remember { mutableStateOf(false) }
-    var isExportConfirmationVisible by remember { mutableStateOf(false) }
     val resolvedCreateActionLabel =
         createActionLabel ?: stringResource(R.string.playlist_create_and_export)
 
     fun clearPendingExport() {
         pendingExport = null
-        isExportConfirmationVisible = false
-        isTargetPickerClosing = false
     }
 
     fun dismissAnimated() {
@@ -99,129 +100,105 @@ internal fun PlaylistExportSheet(
         dismissAnimated()
     }
 
-    fun restoreTargetPicker() {
-        clearPendingExport()
-        isTargetPickerVisible = true
-    }
-
     fun requestExportConfirmation(targetName: String, action: () -> Unit) {
-        if (isTargetPickerClosing || isExportConfirmationVisible) return
-        val export = PendingPlaylistExport(targetName) {
+        if (pendingExport != null) return
+        pendingExport = PendingPlaylistExport(targetName) {
             runThenDismiss(action)
         }
-        pendingExport = export
-        isTargetPickerClosing = true
-        scope.launch {
-            runCatching { sheetState.hide() }
-            try {
-                if (pendingExport === export) {
-                    isTargetPickerVisible = false
-                    // wait until the sheet dialog is removed before opening the confirmation dialog
-                    withFrameNanos { }
-                    if (pendingExport === export) {
-                        isExportConfirmationVisible = true
-                    }
-                }
-            } finally {
-                isTargetPickerClosing = false
-            }
-        }
     }
 
-    if (isTargetPickerVisible) {
-        ModalBottomSheet(
-            onDismissRequest = { dismissAnimated() },
-            sheetState = sheetState,
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            containerColor = MaterialTheme.colorScheme.surface,
-            tonalElevation = 8.dp,
-            scrimColor = Color.Black.copy(alpha = 0.46f),
-            dragHandle = {
-                BottomSheetDefaults.DragHandle(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
+    ModalBottomSheet(
+        onDismissRequest = { dismissAnimated() },
+        sheetState = sheetState,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
+        tonalElevation = 8.dp,
+        scrimColor = Color.Black.copy(alpha = 0.46f),
+        dragHandle = {
+            BottomSheetDefaults.DragHandle(
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
+            )
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .bottomSheetScrollGuard()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 16.dp)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge
+                )
+                Text(
+                    text = pluralStringResource(
+                        R.plurals.common_selected_count,
+                        selectedCount,
+                        selectedCount
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                MiuixSettingsTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    placeholder = { Text(stringResource(R.string.playlist_create_name)) },
+                    singleLine = true
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    MiuixSettingsButton(
+                        enabled = newName.isNotBlank() && selectedCount > 0,
+                        onClick = {
+                            val name = newName.trim()
+                            if (name.isBlank()) return@MiuixSettingsButton
+                            requestExportConfirmation(name) { onCreateAndExport(name) }
+                        }
+                    ) {
+                        Icon(Icons.Outlined.Add, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text(resolvedCreateActionLabel)
+                    }
+                }
+
+                HorizontalDivider(
+                    thickness = DividerDefaults.Thickness,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
                 )
             }
-        ) {
-            Column(
-                modifier = Modifier
-                    .bottomSheetScrollGuard()
-                    .padding(horizontal = 20.dp)
-                    .padding(bottom = 16.dp)
+
+            Spacer(Modifier.height(8.dp))
+
+            LazyColumn(
+                state = playlistListState,
+                modifier = Modifier.playlistExportListHeight(),
+                overscrollEffect = null
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    Text(
-                        text = pluralStringResource(
-                            R.plurals.common_selected_count,
-                            selectedCount,
-                            selectedCount
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    MiuixSettingsTextField(
-                        value = newName,
-                        onValueChange = { newName = it },
-                        placeholder = { Text(stringResource(R.string.playlist_create_name)) },
-                        singleLine = true
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        MiuixSettingsButton(
-                            enabled = !isTargetPickerClosing &&
-                                newName.isNotBlank() && selectedCount > 0,
-                            onClick = {
-                                val name = newName.trim()
-                                if (name.isBlank()) return@MiuixSettingsButton
-                                requestExportConfirmation(name) { onCreateAndExport(name) }
+                items(playlists, key = { it.id }) { playlist ->
+                    PlaylistExportRow(
+                        playlist = playlist,
+                        enabled = pendingExport == null,
+                        onClick = {
+                            context.performHapticFeedback()
+                            requestExportConfirmation(playlist.name) {
+                                onExportToPlaylist(playlist)
                             }
-                        ) {
-                            Icon(Icons.Outlined.Add, contentDescription = null)
-                            Spacer(Modifier.width(4.dp))
-                            Text(resolvedCreateActionLabel)
                         }
-                    }
-
-                    HorizontalDivider(
-                        thickness = DividerDefaults.Thickness,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
                     )
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                LazyColumn(
-                    state = playlistListState,
-                    modifier = Modifier.playlistExportListHeight()
-                ) {
-                    items(playlists, key = { it.id }) { playlist ->
-                        PlaylistExportRow(
-                            playlist = playlist,
-                            enabled = !isTargetPickerClosing,
-                            onClick = {
-                                context.performHapticFeedback()
-                                requestExportConfirmation(playlist.name) {
-                                    onExportToPlaylist(playlist)
-                                }
-                            }
-                        )
-                    }
                 }
             }
         }
     }
 
-    if (isExportConfirmationVisible) pendingExport?.let { export ->
+    pendingExport?.let { export ->
         AlertDialog(
             onDismissRequest = {
-                restoreTargetPicker()
+                clearPendingExport()
             },
             title = { Text(stringResource(R.string.playlist_batch_export_confirm_title)) },
             text = {
@@ -248,7 +225,7 @@ internal fun PlaylistExportSheet(
             dismissButton = {
                 HapticTextButton(
                     onClick = {
-                        restoreTargetPicker()
+                        clearPendingExport()
                     }
                 ) {
                     Text(stringResource(R.string.action_cancel))
@@ -271,7 +248,7 @@ private fun PlaylistExportRow(
             .padding(vertical = 4.dp)
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.62f))
-            .clickable(enabled = enabled, onClick = onClick)
+            .playlistExportRowClick(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -298,4 +275,46 @@ private fun PlaylistExportRow(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+internal fun Modifier.playlistExportRowClick(
+    enabled: Boolean,
+    onClick: () -> Unit
+): Modifier = composed {
+    val currentOnClick by rememberUpdatedState(onClick)
+    val regularClickHandled = remember { AtomicBoolean(false) }
+
+    pointerInput(enabled) {
+        awaitEachGesture {
+            val down = awaitFirstDown(
+                requireUnconsumed = false,
+                pass = PointerEventPass.Initial
+            )
+            regularClickHandled.set(false)
+            val touchSlopSquared = viewConfiguration.touchSlop * viewConfiguration.touchSlop
+            var movedBeyondTapSlop = false
+
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Final)
+                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                val distanceX = change.position.x - down.position.x
+                val distanceY = change.position.y - down.position.y
+                if (distanceX * distanceX + distanceY * distanceY > touchSlopSquared) {
+                    movedBeyondTapSlop = true
+                }
+                if (!change.pressed) {
+                    if (enabled && !movedBeyondTapSlop && !regularClickHandled.get()) {
+                        currentOnClick()
+                    }
+                    break
+                }
+            }
+        }
+    }.clickable(
+        enabled = enabled,
+        onClick = {
+            regularClickHandled.set(true)
+            currentOnClick()
+        }
+    )
 }
