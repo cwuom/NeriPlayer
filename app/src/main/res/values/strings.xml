@@ -687,6 +687,8 @@
     <string name="explore_search_type_playlist">歌单</string>
     <string name="explore_search_type_artist">歌手</string>
     <string name="explore_tag_link_recognition">链接识别</string>
+    <string name="explore_tab_youtube">YouTube</string>
+    <string name="explore_tab_links">链接</string>
     <string name="explore_link_input_label">链接或分享文案</string>
     <string name="explore_link_input_placeholder">粘贴网易云、B 站或 YouTube 链接</string>
     <string name="explore_link_input_hint">支持歌曲、视频、歌单和歌手链接，也可直接粘贴含标题和短链接的整段分享文案</string>

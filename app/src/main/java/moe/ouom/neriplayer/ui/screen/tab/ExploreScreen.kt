@@ -84,7 +84,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -242,10 +242,10 @@ internal fun shouldShowBiliPartsPicker(song: SongItem): Boolean {
 @Composable
 private fun searchSourceLabel(source: SearchSource): String {
     return when (source) {
-        SearchSource.YOUTUBE_MUSIC -> stringResource(R.string.explore_tag_youtube_music)
+        SearchSource.YOUTUBE_MUSIC -> stringResource(R.string.explore_tab_youtube)
         SearchSource.NETEASE -> stringResource(R.string.platform_netease_short)
         SearchSource.BILIBILI -> stringResource(R.string.platform_bilibili)
-        SearchSource.LINK_RECOGNITION -> stringResource(R.string.explore_tag_link_recognition)
+        SearchSource.LINK_RECOGNITION -> stringResource(R.string.explore_tab_links)
     }
 }
 
@@ -724,8 +724,9 @@ fun ExploreScreen(
                             .clip(ExplorePrimaryTabShape),
                         shape = ExplorePrimaryTabShape
                     ) {
-                        PrimaryTabRow(
+                        PrimaryScrollableTabRow(
                             selectedTabIndex = pagerState.currentPage,
+                            edgePadding = 0.dp,
                             containerColor = Color.Transparent,
                             contentColor = MaterialTheme.colorScheme.primary
                         ) {
@@ -737,7 +738,14 @@ fun ExploreScreen(
                                             pagerState.animateScrollToPage(index)
                                         }
                                     },
-                                    text = { Text(searchSourceLabel(source)) }
+                                    text = {
+                                        Text(
+                                            text = searchSourceLabel(source),
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 )
                             }
                         }

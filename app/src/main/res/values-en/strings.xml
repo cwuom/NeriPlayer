@@ -687,6 +687,8 @@
     <string name="explore_search_type_playlist">Playlists</string>
     <string name="explore_search_type_artist">Artists</string>
     <string name="explore_tag_link_recognition">Link Recognition</string>
+    <string name="explore_tab_youtube">YouTube</string>
+    <string name="explore_tab_links">Links</string>
     <string name="explore_link_input_label">Link or share text</string>
     <string name="explore_link_input_placeholder">Paste a NetEase, Bilibili, or YouTube link</string>
     <string name="explore_link_input_hint">Supports song, video, playlist, and artist links, including full share text containing a title and short link</string>
