@@ -112,8 +112,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
         youtubeQualityOverride = youtubeRecoveryStrategy?.preferredQualityOverride,
         youtubePreferM4aOverride = youtubeRecoveryStrategy?.preferM4a
     )
-    val bypassCompleteCache = forceRefresh
-    val hasCachedData = if (bypassCompleteCache) {
+    val hasCachedData = if (forceRefresh) {
         NPLogger.d(
             "NERI-PlayerManager",
             "resolveSongUrl: bypass complete YouTube cache for forced refresh: $cacheKey"
@@ -130,12 +129,20 @@ internal suspend fun PlayerManager.resolveSongUrl(
         val cachedAudioInfo = _currentPlaybackAudioInfo.value
             ?.takeIf { _currentSongFlow.value?.sameIdentityAs(song) == true }
             ?.takeIf { youtubeRecoveryStrategy == null }
-            ?: if (isYouTubeTrack) {
-                buildYouTubeOfflineCacheAudioInfo(resolvedYouTubeQuality) {
-                    getLocalizedString(it)
+            ?: when {
+                isYouTubeTrack -> {
+                    buildYouTubeOfflineCacheAudioInfo(resolvedYouTubeQuality) {
+                        getLocalizedString(it)
+                    }
                 }
-            } else {
-                null
+
+                !isBiliTrack(song) -> {
+                    buildNeteaseOfflineCacheAudioInfo(effectiveNeteaseQuality()) {
+                        getLocalizedString(it)
+                    }
+                }
+
+                else -> null
             }
         prepareBiliSponsorBlockForCachedPlayback(song)
         return SongUrlResult.Success(

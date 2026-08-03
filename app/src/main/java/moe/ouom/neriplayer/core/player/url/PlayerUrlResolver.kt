@@ -184,6 +184,22 @@ internal fun buildYouTubeOfflineCacheAudioInfo(
     )
 }
 
+internal fun buildNeteaseOfflineCacheAudioInfo(
+    preferredQualityKey: String,
+    getLocalizedString: (Int) -> String
+): PlaybackAudioInfo {
+    val qualityKey = preferredQualityKey
+        .trim()
+        .lowercase()
+        .ifBlank { "exhigh" }
+    return PlaybackAudioInfo(
+        source = PlaybackAudioSource.NETEASE,
+        qualityKey = qualityKey,
+        qualityLabel = qualityLabelForNetease(qualityKey, getLocalizedString),
+        qualityOptions = buildNeteaseQualityOptions(getLocalizedString)
+    )
+}
+
 internal fun buildNeteaseQualityCandidates(preferredQuality: String): List<String> {
     val normalizedQuality = preferredQuality.trim().lowercase().ifBlank { "exhigh" }
     val preferredIndex = NETEASE_QUALITY_FALLBACK_ORDER.indexOf(normalizedQuality)

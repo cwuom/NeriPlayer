@@ -246,7 +246,10 @@ class NeriAppNavigationTransitionTest {
             MainTabLayerHost(selectedRoute = selectedRoute.value) { route ->
                 if (route == Destinations.Home.route) {
                     val visibilityState = rememberMainTabDetailVisibilityState(detailKey.value)
-                    val tag = if (visibilityState.currentState) {
+                    val startedVisible = remember(detailKey.value) {
+                        visibilityState.currentState
+                    }
+                    val tag = if (startedVisible) {
                         RestoredEntryTag
                     } else {
                         FreshEntryTag
