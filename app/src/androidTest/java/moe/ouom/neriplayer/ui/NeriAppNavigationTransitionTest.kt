@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -159,6 +160,10 @@ class NeriAppNavigationTransitionTest {
             assertMainTabFrameCovered(sampledFrame, RapidSwitchRootTag)
             val bounds = listOf(RapidHomeTag, RapidExploreTag, RapidLibraryTag)
                 .mapNotNull(::singleNodeBoundsOrNull)
+            assertTrue(
+                "Rapid Tab retargeting removed every content scene at frame $sampledFrame",
+                bounds.isNotEmpty()
+            )
             assertHorizontalScenesDoNotOverlap(sampledFrame, bounds)
             sampledFrame++
         }
@@ -179,6 +184,93 @@ class NeriAppNavigationTransitionTest {
             composeRule.onAllNodesWithTag(RapidHomeTag).fetchSemanticsNodes().size == 1 &&
                 composeRule.onAllNodesWithTag(RapidExploreTag).fetchSemanticsNodes().isEmpty() &&
                 composeRule.onAllNodesWithTag(RapidLibraryTag).fetchSemanticsNodes().isEmpty()
+        )
+    }
+
+    @Test
+    fun immediateMainTabRequestsDoNotWaitForRouteRecomposition() {
+        lateinit var transitionState: MainTabLayerTransitionState
+        composeRule.mainClock.autoAdvance = false
+        composeRule.setContent {
+            transitionState = rememberMainTabLayerTransitionState(Destinations.Home.route)
+            Box(
+                modifier = Modifier
+                    .size(240.dp, 320.dp)
+                    .background(Color.Black)
+                    .testTag(RapidSwitchRootTag)
+            ) {
+                MainTabLayerHost(
+                    selectedRoute = Destinations.Home.route,
+                    transitionState = transitionState,
+                    modifier = Modifier.fillMaxSize()
+                ) { route ->
+                    RapidMainTabTestScene(route)
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { transitionState.request(Destinations.Explore.route) }
+        repeat(3) { advanceRapidSwitchFrame() }
+        composeRule.runOnIdle { transitionState.request(Destinations.Home.route) }
+
+        var observedPairedScenes = false
+        repeat((ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS / FRAME_MS) + 8) { frame ->
+            advanceRapidSwitchFrame()
+            assertMainTabFrameCovered(frame, RapidSwitchRootTag)
+            val bounds = listOf(RapidHomeTag, RapidExploreTag)
+                .mapNotNull(::singleNodeBoundsOrNull)
+            assertTrue(
+                "Immediate Tab request exposed no content scene at frame $frame",
+                bounds.isNotEmpty()
+            )
+            if (bounds.size == 2) {
+                observedPairedScenes = true
+                assertHorizontalScenesDoNotOverlap(frame, bounds)
+            }
+        }
+
+        assertTrue("Immediate Tab request did not keep paired scenes during reversal", observedPairedScenes)
+        assertTrue(
+            "Immediate Tab request did not settle on the latest tab",
+            composeRule.onAllNodesWithTag(RapidHomeTag).fetchSemanticsNodes().size == 1 &&
+                composeRule.onAllNodesWithTag(RapidExploreTag).fetchSemanticsNodes().isEmpty()
+        )
+    }
+
+    @Test
+    fun mainTabAnimationDoesNotRecomposeStableSceneContentEveryFrame() {
+        lateinit var selectedRoute: MutableState<String>
+        lateinit var sceneCompositionCounts: MutableMap<String, Int>
+        composeRule.mainClock.autoAdvance = false
+        composeRule.setContent {
+            selectedRoute = remember { mutableStateOf(Destinations.Home.route) }
+            sceneCompositionCounts = remember { mutableMapOf() }
+            MainTabLayerHost(
+                selectedRoute = selectedRoute.value,
+                modifier = Modifier.size(240.dp, 320.dp)
+            ) { route ->
+                SideEffect {
+                    sceneCompositionCounts[route] =
+                        sceneCompositionCounts.getOrDefault(route, 0) + 1
+                }
+                RapidMainTabTestScene(route)
+            }
+        }
+
+        composeRule.runOnIdle { selectedRoute.value = Destinations.Explore.route }
+        composeRule.waitForIdle()
+        val countsAfterTransitionStarts = sceneCompositionCounts.toMap()
+
+        repeat(4) {
+            composeRule.mainClock.advanceTimeBy(FRAME_MS.toLong())
+            composeRule.waitForIdle()
+        }
+
+        assertTrue(
+            "Stable Tab content recomposed while only the frame offset changed: " +
+                "before=$countsAfterTransitionStarts after=$sceneCompositionCounts",
+            sceneCompositionCounts == countsAfterTransitionStarts
         )
     }
 

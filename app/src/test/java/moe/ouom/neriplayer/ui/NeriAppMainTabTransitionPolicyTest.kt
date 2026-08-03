@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.effect.glass.DRAWER_BACKGROUND_SINK_FRACTION
 import moe.ouom.neriplayer.ui.effect.glass.DRAWER_RECESSED_CONTENT_SCALE
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -57,6 +58,67 @@ class NeriAppMainTabTransitionPolicyTest {
             resolveMainTabTransitionDirection(
                 initialRoute = Destinations.Settings.route,
                 targetRoute = Destinations.Library.route
+            )
+        )
+    }
+
+    @Test
+    fun `tab scene offsets preserve directional continuity across animation frames`() {
+        assertEquals(
+            -0.4f,
+            resolveMainTabLayerSceneOffsetFraction(
+                phase = MainTabLayerScenePhase.Exiting,
+                direction = 1,
+                progress = 0.4f
+            ),
+            0f
+        )
+        assertEquals(
+            0.6f,
+            resolveMainTabLayerSceneOffsetFraction(
+                phase = MainTabLayerScenePhase.Entering,
+                direction = 1,
+                progress = 0.4f
+            ),
+            0f
+        )
+        assertEquals(
+            0f,
+            resolveMainTabLayerSceneOffsetFraction(
+                phase = MainTabLayerScenePhase.Settled,
+                direction = -1,
+                progress = 0.4f
+            ),
+            0f
+        )
+    }
+
+    @Test
+    fun `new tab intent is dispatched before stale navigation catches up`() {
+        assertTrue(
+            shouldDispatchMainTabNavigation(
+                currentRoute = Destinations.Home.route,
+                pendingRoute = Destinations.Explore.route,
+                targetRoute = Destinations.Home.route
+            )
+        )
+        assertFalse(
+            shouldDispatchMainTabNavigation(
+                currentRoute = Destinations.Home.route,
+                pendingRoute = Destinations.Explore.route,
+                targetRoute = Destinations.Explore.route
+            )
+        )
+        assertFalse(
+            shouldAcceptObservedMainTabRoute(
+                observedRoute = Destinations.Explore.route,
+                pendingRoute = Destinations.Home.route
+            )
+        )
+        assertTrue(
+            shouldAcceptObservedMainTabRoute(
+                observedRoute = Destinations.Home.route,
+                pendingRoute = Destinations.Home.route
             )
         )
     }

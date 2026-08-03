@@ -49,9 +49,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyListState
@@ -352,6 +350,27 @@ internal fun resolveMainTabTransitionDirection(
     return if (targetIndex > initialIndex) 1 else -1
 }
 
+internal fun shouldDispatchMainTabNavigation(
+    currentRoute: String?,
+    pendingRoute: String?,
+    targetRoute: String
+): Boolean = pendingRoute != targetRoute &&
+    (currentRoute != targetRoute || pendingRoute != null)
+
+internal fun shouldAcceptObservedMainTabRoute(
+    observedRoute: String?,
+    pendingRoute: String?
+): Boolean = observedRoute != null &&
+    observedRoute in MAIN_TAB_ROUTES &&
+    (pendingRoute == null || pendingRoute == observedRoute)
+
+internal fun shouldUseAdvancedGlassNavigationHandoff(
+    visibleRoutes: Collection<String?>
+): Boolean {
+    val routes = visibleRoutes.filterNotNull().toSet()
+    return routes.size > 1 && routes.any { it !in MAIN_TAB_ROUTES }
+}
+
 internal fun resolveMainTabDetailHandoff(
     initialRoute: String?,
     targetRoute: String?
@@ -485,14 +504,7 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabEnterTrans
         targetRoute = targetRoute
     )
     if (direction != null) {
-        return slideIntoContainer(
-            towards = if (direction > 0) {
-                AnimatedContentTransitionScope.SlideDirection.Left
-            } else {
-                AnimatedContentTransitionScope.SlideDirection.Right
-            },
-            animationSpec = advancedGlassMainTabTransitionSpec()
-        )
+        return EnterTransition.None
     }
     val debugDirection = resolveDebugNavigationTransitionDirection(
         initialRoute = initialRoute,
@@ -540,14 +552,7 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabExitTransi
         targetRoute = targetRoute
     )
     if (direction != null) {
-        return slideOutOfContainer(
-            towards = if (direction > 0) {
-                AnimatedContentTransitionScope.SlideDirection.Left
-            } else {
-                AnimatedContentTransitionScope.SlideDirection.Right
-            },
-            animationSpec = advancedGlassMainTabTransitionSpec()
-        )
+        return ExitTransition.None
     }
     val debugDirection = resolveDebugNavigationTransitionDirection(
         initialRoute = initialRoute,
@@ -2180,9 +2185,24 @@ private fun NeriAppContent(
             var selectedMainTabRoute by rememberSaveable(navHostStartDestination) {
                 mutableStateOf(navHostStartDestination)
             }
+            var pendingMainTabRoute by remember(navHostStartDestination) {
+                mutableStateOf<String?>(null)
+            }
+            val mainTabTransitionState = rememberMainTabLayerTransitionState(
+                selectedMainTabRoute
+            )
             LaunchedEffect(currentRoute, navHostStartDestination) {
-                if (currentRoute in MAIN_TAB_ROUTES) {
-                    selectedMainTabRoute = currentRoute ?: navHostStartDestination
+                val observedRoute = currentRoute
+                if (
+                    shouldAcceptObservedMainTabRoute(
+                        observedRoute = observedRoute,
+                        pendingRoute = pendingMainTabRoute
+                    )
+                ) {
+                    selectedMainTabRoute = checkNotNull(observedRoute)
+                    if (pendingMainTabRoute == observedRoute) {
+                        pendingMainTabRoute = null
+                    }
                 }
             }
             var visibleMainTabGlassOwners by remember(navHostStartDestination) {
@@ -2200,6 +2220,20 @@ private fun NeriAppContent(
                     MainTabGlassOwner(selectedMainTabRoute)
             }
             fun navigateToMainTab(route: String) {
+                if (selectedMainTabRoute != route) {
+                    selectedMainTabRoute = route
+                }
+                mainTabTransitionState.request(route)
+                if (
+                    !shouldDispatchMainTabNavigation(
+                        currentRoute = currentRoute,
+                        pendingRoute = pendingMainTabRoute,
+                        targetRoute = route
+                    )
+                ) {
+                    return
+                }
+                pendingMainTabRoute = route
                 navController.navigate(route) {
                     popUpTo(navController.graph.startDestinationId) {
                         saveState = true
@@ -3128,9 +3162,7 @@ private fun NeriAppContent(
                                         items = bottomBarItems,
                                         currentDestination = backEntry?.destination,
                                         onItemSelected = { dest ->
-                                            if (currentRoute != dest.route) {
-                                                navigateToMainTab(dest.route)
-                                            }
+                                            navigateToMainTab(dest.route)
                                         }
                                     )
                                 }
@@ -3163,6 +3195,7 @@ private fun NeriAppContent(
                                 ) {
                                     MainTabLayerHost(
                                         selectedRoute = selectedMainTabRoute,
+                                        transitionState = mainTabTransitionState,
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .onSizeChanged { size ->
@@ -3195,7 +3228,9 @@ private fun NeriAppContent(
                                         }
                                     )
                                     AdvancedGlassNavigationHandoff(
-                                        enabled = visibleNavigationEntries.size > 1
+                                        enabled = shouldUseAdvancedGlassNavigationHandoff(
+                                            visibleNavigationRoutes
+                                        )
                                     ) {
                                         NavHost(
                                             navController = navController,

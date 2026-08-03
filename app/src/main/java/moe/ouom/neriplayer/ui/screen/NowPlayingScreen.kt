@@ -273,7 +273,7 @@ import moe.ouom.neriplayer.ui.component.playback.WaveformSlider
 import moe.ouom.neriplayer.ui.component.playback.resolvePlaybackWaiting
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
-import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
+import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
@@ -1367,9 +1367,8 @@ internal fun NowPlayingQueueSheet(
                 )
             }
 
-            NeriSnackbarHost(
+            NeriOverlaySnackbarHost(
                 hostState = snackbarHostState,
-                modifier = Modifier.align(Alignment.BottomCenter),
                 applyNavigationBarsPadding = false
             )
         }
@@ -3286,6 +3285,7 @@ fun MoreOptionsSheet(
             dismissSheet()
         }
 
+        Box(modifier = Modifier.fillMaxWidth()) {
         AnimatedContent(
             targetState = page,
             transitionSpec = {
@@ -3413,11 +3413,12 @@ fun MoreOptionsSheet(
                     )
                 }
             }
+        }
 
-            NeriSnackbarHost(
-                hostState = snackbarHostState,
-                bottomPadding = LocalMiniPlayerHeight.current
-            )
+        NeriOverlaySnackbarHost(
+            hostState = snackbarHostState,
+            bottomPadding = LocalMiniPlayerHeight.current
+        )
         }
     }
 }

@@ -50,7 +50,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.util.crash.CrashReportStore
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
-import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
+import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 
 @Composable
@@ -273,10 +273,7 @@ fun SafeModeScreen(
                 )
             }
         }
-        NeriSnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter)
-        )
+        NeriOverlaySnackbarHost(hostState = snackbarHostState)
     }
 }
 

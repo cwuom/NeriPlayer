@@ -158,7 +158,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.haptic.HapticFloatingActionButton
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
-import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
+import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.format.formatDuration
@@ -1019,10 +1019,8 @@ fun DetailScreen(
                 // 允许返回键优先退出多选
                 BackHandler(enabled = selectionMode) { exitSelection() }
 
-                NeriSnackbarHost(
+                NeriOverlaySnackbarHost(
                     hostState = snackbarHostState,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter),
                     bottomPadding = LocalMiniPlayerHeight.current
                 )
             }

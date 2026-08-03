@@ -6,13 +6,13 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameNanos
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -31,6 +31,14 @@ internal data class AdvancedGlassBackdrops(
     val background: AdvancedGlassBackdrop,
     val content: AdvancedGlassBackdrop,
     val regionRegistry: AdvancedGlassRegionRegistry
+)
+
+private data class AdvancedGlassRenderRegionState(
+    val background: List<AdvancedGlassRenderRegion>,
+    val content: List<AdvancedGlassRenderRegion>,
+    val hasNavigationSceneRegion: Boolean,
+    val backgroundBackdropReady: Boolean,
+    val contentBackdropReady: Boolean
 )
 
 internal val LocalAdvancedGlassBackdrops = staticCompositionLocalOf<AdvancedGlassBackdrops?> { null }
@@ -87,18 +95,39 @@ internal fun AdvancedGlassHost(
     val shaderSource = remember(assetManager) {
         AdvancedGlassShaderSource(assetManager)
     }
-    val renderedRegions = regionRegistry.regions.filter { region ->
-        region.navigationOwner == null ||
-            activeNavigationOwners == null ||
-            region.navigationOwner in activeNavigationOwners
-    }
-    val contentRegions = renderedRegions.filter { region ->
-        region.role == AdvancedGlassRole.MiniPlayer ||
-            region.role == AdvancedGlassRole.BottomNavigation
-    }
-    val hasNavigationSceneRegion = renderedRegions.any { region ->
-        region.role != AdvancedGlassRole.MiniPlayer &&
-            region.role != AdvancedGlassRole.BottomNavigation
+    val renderRegionState by remember(
+        backgroundBackdrop,
+        contentBackdrop,
+        regionRegistry,
+        activeNavigationOwners
+    ) {
+        derivedStateOf {
+            val renderedRegions = regionRegistry.regions.filter { region ->
+                region.navigationOwner == null ||
+                    activeNavigationOwners == null ||
+                    region.navigationOwner in activeNavigationOwners
+            }
+            val contentRegions = renderedRegions.filter { region ->
+                region.role == AdvancedGlassRole.MiniPlayer ||
+                    region.role == AdvancedGlassRole.BottomNavigation
+            }
+            AdvancedGlassRenderRegionState(
+                background = resolveStableAdvancedGlassRenderRegions(
+                    backdropPositionInWindow = backgroundBackdrop.positionInWindow,
+                    regions = renderedRegions
+                ),
+                content = resolveStableAdvancedGlassRenderRegions(
+                    backdropPositionInWindow = contentBackdrop.positionInWindow,
+                    regions = contentRegions
+                ),
+                hasNavigationSceneRegion = renderedRegions.any { region ->
+                    region.role != AdvancedGlassRole.MiniPlayer &&
+                        region.role != AdvancedGlassRole.BottomNavigation
+                },
+                backgroundBackdropReady = backgroundBackdrop.positionInWindow.isSpecified,
+                contentBackdropReady = contentBackdrop.positionInWindow.isSpecified
+            )
+        }
     }
     var sessionHealthy by remember { mutableStateOf(true) }
     val sessionController = if (sessionHealthy) controller else controller.afterBackendFailure()
@@ -135,28 +164,26 @@ internal fun AdvancedGlassHost(
     val backgroundEffectResult = remember(
         sessionController.isBaseBlurEnabled,
         blurRadiusPx,
-        backgroundBackdrop.positionInWindow,
-        renderedRegions
+        renderRegionState.background,
+        backgroundRenderEffectSession
     ) {
         buildBackdropEffect(
             controller = sessionController,
             radiusPx = blurRadiusPx,
-            backdropPositionInWindow = backgroundBackdrop.positionInWindow,
-            regions = renderedRegions,
+            renderRegions = renderRegionState.background,
             renderEffectSession = backgroundRenderEffectSession
         )
     }
     val contentEffectResult = remember(
         sessionController.isBaseBlurEnabled,
         blurRadiusPx,
-        contentBackdrop.positionInWindow,
-        contentRegions
+        renderRegionState.content,
+        contentRenderEffectSession
     ) {
         buildBackdropEffect(
             controller = sessionController,
             radiusPx = blurRadiusPx,
-            backdropPositionInWindow = contentBackdrop.positionInWindow,
-            regions = contentRegions,
+            renderRegions = renderRegionState.content,
             renderEffectSession = contentRenderEffectSession
         )
     }
@@ -169,13 +196,13 @@ internal fun AdvancedGlassHost(
         backdrop = backgroundBackdrop,
         effectResult = backgroundEffectResult,
         retainCurrentEffect = regionRegistry.retainsEffectDuringHandoff &&
-            !hasNavigationSceneRegion &&
+            !renderRegionState.hasNavigationSceneRegion &&
             sessionController.isBaseBlurEnabled &&
             backgroundEffectResult.isSuccess &&
-            backgroundBackdrop.positionInWindow.isSpecified,
+            renderRegionState.backgroundBackdropReady,
         allowOneFrameHandoff = sessionController.isBaseBlurEnabled &&
             backgroundEffectResult.isSuccess &&
-            backgroundBackdrop.positionInWindow.isSpecified
+            renderRegionState.backgroundBackdropReady
     )
     ApplyBackdropEffect(
         backdrop = contentBackdrop,
@@ -183,7 +210,7 @@ internal fun AdvancedGlassHost(
         retainCurrentEffect = false,
         allowOneFrameHandoff = sessionController.isBaseBlurEnabled &&
             contentEffectResult.isSuccess &&
-            contentBackdrop.positionInWindow.isSpecified
+            renderRegionState.contentBackdropReady
     )
     DisposableEffect(backgroundBackdrop, contentBackdrop) {
         onDispose {
@@ -223,6 +250,9 @@ private fun ApplyBackdropEffect(
     if (retainCurrentEffect && backdrop.renderEffect != null) {
         return
     }
+    if (nextEffect === backdrop.renderEffect) {
+        return
+    }
     val shouldHoldPrevious = allowOneFrameHandoff &&
         nextEffect == null &&
         backdrop.renderEffect != null
@@ -241,25 +271,13 @@ private fun ApplyBackdropEffect(
 private fun buildBackdropEffect(
     controller: AdvancedGlassController,
     radiusPx: Float,
-    backdropPositionInWindow: Offset,
-    regions: List<AdvancedGlassRegion>,
+    renderRegions: List<AdvancedGlassRenderRegion>,
     renderEffectSession: AdvancedGlassRenderEffectSession
 ): Result<androidx.compose.ui.graphics.RenderEffect?> {
     if (!controller.isBaseBlurEnabled ||
-        !backdropPositionInWindow.isSpecified ||
-        regions.isEmpty()
+        renderRegions.isEmpty()
     ) {
         return Result.success(null)
-    }
-    val renderRegions = regions.map { region ->
-        val bounds = region.boundsInWindow
-        AdvancedGlassRenderRegion(
-            left = bounds.left - backdropPositionInWindow.x,
-            top = bounds.top - backdropPositionInWindow.y,
-            right = bounds.right - backdropPositionInWindow.x,
-            bottom = bounds.bottom - backdropPositionInWindow.y,
-            cornerRadiiPx = region.cornerRadiiPx
-        )
     }
     return runCatching {
         renderEffectSession.update(

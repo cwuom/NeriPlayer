@@ -81,35 +81,41 @@ internal fun AdvancedGlassSurface(
         }
     }
 
+    val regionRegistrationModifier = if (registersBackdrop) {
+        Modifier.onGloballyPositioned { coordinates ->
+            val registry = availableBackdrops.regionRegistry
+            if (!coordinates.isAttached) {
+                registry.remove(regionKey)
+                return@onGloballyPositioned
+            }
+            val bounds = coordinates.boundsInWindow()
+            if (bounds.width <= 0f || bounds.height <= 0f) {
+                registry.remove(regionKey)
+                return@onGloballyPositioned
+            }
+            registry.update(
+                regionKey,
+                AdvancedGlassRegion(
+                    role = role,
+                    boundsInWindow = bounds,
+                    cornerRadiiPx = resolveCornerRadiiPx(
+                        shape = shape,
+                        size = bounds.size,
+                        layoutDirection = layoutDirection,
+                        density = density
+                    ),
+                    navigationOwner = if (requiresContentBackdrop) null else navigationOwner
+                )
+            )
+        }
+    } else {
+        Modifier
+    }
+
     Box(
         modifier = modifier
             .clip(shape)
-            .onGloballyPositioned { coordinates ->
-                val registry = availableBackdrops?.regionRegistry ?: return@onGloballyPositioned
-                if (!registersBackdrop || !coordinates.isAttached) {
-                    registry.remove(regionKey)
-                    return@onGloballyPositioned
-                }
-                val bounds = coordinates.boundsInWindow()
-                if (bounds.width <= 0f || bounds.height <= 0f) {
-                    registry.remove(regionKey)
-                    return@onGloballyPositioned
-                }
-                registry.update(
-                    regionKey,
-                    AdvancedGlassRegion(
-                        role = role,
-                        boundsInWindow = bounds,
-                        cornerRadiiPx = resolveCornerRadiiPx(
-                            shape = shape,
-                            size = bounds.size,
-                            layoutDirection = layoutDirection,
-                            density = density
-                        ),
-                        navigationOwner = if (requiresContentBackdrop) null else navigationOwner
-                    )
-                )
-            }
+            .then(regionRegistrationModifier)
     ) {
         if (glassEnabled) {
             GlassColorLayer(

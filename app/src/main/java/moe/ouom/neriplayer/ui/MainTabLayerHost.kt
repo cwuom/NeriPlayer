@@ -10,6 +10,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
@@ -45,17 +46,39 @@ import moe.ouom.neriplayer.ui.effect.glass.advancedGlassMainTabTransitionSpec
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+@Immutable
 internal data class MainTabGlassOwner(
     val route: String
 )
 
+internal enum class MainTabLayerScenePhase {
+    Settled,
+    Exiting,
+    Entering
+}
+
+@Immutable
 internal data class MainTabLayerScene(
     val route: String,
-    val offsetFraction: Float,
+    val phase: MainTabLayerScenePhase,
+    val direction: Int = 0,
     val glassOwner: MainTabGlassOwner = MainTabGlassOwner(route),
     val restored: Boolean = false,
     val restorationToken: Long = 0L
 )
+
+internal fun resolveMainTabLayerSceneOffsetFraction(
+    phase: MainTabLayerScenePhase,
+    direction: Int,
+    progress: Float
+): Float {
+    val clampedProgress = progress.coerceIn(0f, 1f)
+    return when (phase) {
+        MainTabLayerScenePhase.Settled -> 0f
+        MainTabLayerScenePhase.Exiting -> -direction * clampedProgress
+        MainTabLayerScenePhase.Entering -> direction * (1f - clampedProgress)
+    }
+}
 
 internal val LocalMainTabSceneRestored = staticCompositionLocalOf { false }
 
@@ -121,23 +144,80 @@ internal fun Modifier.clipMainTabDetailCloseRoot(
 }
 
 @Composable
+internal fun rememberMainTabLayerTransitionState(
+    initialRoute: String
+): MainTabLayerTransitionState {
+    val scope = rememberCoroutineScope()
+    val transitionState = remember(scope) {
+        MainTabLayerTransitionState(
+            controller = MainTabLayerTransitionController(scope, initialRoute),
+            initialRoute = initialRoute
+        )
+    }
+    DisposableEffect(transitionState) {
+        onDispose(transitionState::dispose)
+    }
+    return transitionState
+}
+
+@Stable
+internal class MainTabLayerTransitionState internal constructor(
+    private val controller: MainTabLayerTransitionController,
+    initialRoute: String
+) {
+    private val visitedRoutes = mutableSetOf(initialRoute)
+
+    val visibleScenes: List<MainTabLayerScene>
+        get() = controller.visibleScenes
+
+    fun request(targetRoute: String) {
+        controller.request(
+            targetRoute = targetRoute,
+            restored = !visitedRoutes.add(targetRoute)
+        )
+    }
+
+    fun offsetFractionFor(scene: MainTabLayerScene): Float =
+        controller.offsetFractionFor(scene)
+
+    fun consumeRestoredScene(restorationToken: Long) {
+        controller.consumeRestoredScene(restorationToken)
+    }
+
+    fun dispose() {
+        controller.dispose()
+    }
+}
+
+@Composable
 internal fun MainTabLayerHost(
     selectedRoute: String,
     modifier: Modifier = Modifier,
     onVisibleGlassOwnersChanged: (Set<MainTabGlassOwner>) -> Unit = {},
     content: @Composable (route: String) -> Unit
 ) {
-    val controller = rememberMainTabLayerTransitionController(selectedRoute)
-    val visitedRoutes = remember { mutableSetOf(selectedRoute) }
-    LaunchedEffect(controller, selectedRoute) {
-        val restored = selectedRoute in visitedRoutes
-        visitedRoutes += selectedRoute
-        controller.request(
-            targetRoute = selectedRoute,
-            restored = restored
-        )
+    val transitionState = rememberMainTabLayerTransitionState(selectedRoute)
+    MainTabLayerHost(
+        selectedRoute = selectedRoute,
+        transitionState = transitionState,
+        modifier = modifier,
+        onVisibleGlassOwnersChanged = onVisibleGlassOwnersChanged,
+        content = content
+    )
+}
+
+@Composable
+internal fun MainTabLayerHost(
+    selectedRoute: String,
+    transitionState: MainTabLayerTransitionState,
+    modifier: Modifier = Modifier,
+    onVisibleGlassOwnersChanged: (Set<MainTabGlassOwner>) -> Unit = {},
+    content: @Composable (route: String) -> Unit
+) {
+    LaunchedEffect(transitionState, selectedRoute) {
+        transitionState.request(selectedRoute)
     }
-    val visibleScenes = controller.visibleScenes
+    val visibleScenes = transitionState.visibleScenes
     var widthPx by remember { mutableIntStateOf(0) }
     SideEffect {
         onVisibleGlassOwnersChanged(visibleScenes.mapTo(linkedSetOf()) { scene ->
@@ -157,7 +237,9 @@ internal fun MainTabLayerHost(
                         .fillMaxSize()
                         .offset {
                             IntOffset(
-                                x = (scene.offsetFraction * widthPx).roundToInt(),
+                                x = (
+                                    transitionState.offsetFractionFor(scene) * widthPx
+                                ).roundToInt(),
                                 y = 0
                             )
                         }
@@ -173,7 +255,7 @@ internal fun MainTabLayerHost(
                         if (scene.restored) {
                             LaunchedEffect(scene.restorationToken) {
                                 withFrameNanos { }
-                                controller.consumeRestoredScene(scene.restorationToken)
+                                transitionState.consumeRestoredScene(scene.restorationToken)
                             }
                         }
                     }
@@ -181,20 +263,6 @@ internal fun MainTabLayerHost(
             }
         }
     }
-}
-
-@Composable
-private fun rememberMainTabLayerTransitionController(
-    initialRoute: String
-): MainTabLayerTransitionController {
-    val scope = rememberCoroutineScope()
-    val controller = remember(scope) {
-        MainTabLayerTransitionController(scope, initialRoute)
-    }
-    DisposableEffect(controller) {
-        onDispose(controller::dispose)
-    }
-    return controller
 }
 
 @Stable
@@ -219,27 +287,35 @@ internal class MainTabLayerTransitionController(
                 return listOf(
                     MainTabLayerScene(
                         route = toRouteState,
-                        offsetFraction = 0f,
+                        phase = MainTabLayerScenePhase.Settled,
                         restored = targetSceneRestoredState,
                         restorationToken = targetSceneRestorationToken
                     )
                 )
             }
-            val direction = directionState.toFloat()
             return listOf(
                 MainTabLayerScene(
                     route = fromRoute,
-                    offsetFraction = -direction * progressState,
+                    phase = MainTabLayerScenePhase.Exiting,
+                    direction = directionState,
                     restored = false
                 ),
                 MainTabLayerScene(
                     route = toRouteState,
-                    offsetFraction = direction * (1f - progressState),
+                    phase = MainTabLayerScenePhase.Entering,
+                    direction = directionState,
                     restored = targetSceneRestoredState,
                     restorationToken = targetSceneRestorationToken
                 )
             )
         }
+
+    fun offsetFractionFor(scene: MainTabLayerScene): Float =
+        resolveMainTabLayerSceneOffsetFraction(
+            phase = scene.phase,
+            direction = scene.direction,
+            progress = progressState
+        )
 
     fun request(targetRoute: String, restored: Boolean = false) {
         if (targetRoute == toRouteState && (!runningState || fromRouteState == null)) return

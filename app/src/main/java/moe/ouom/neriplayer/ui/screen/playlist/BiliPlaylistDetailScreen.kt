@@ -96,7 +96,7 @@ import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
-import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
+import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliPlaylistDetailViewModel
@@ -785,9 +785,8 @@ fun BiliPlaylistDetailScreen(
                         }
                     }
 
-                    NeriSnackbarHost(
+                    NeriOverlaySnackbarHost(
                         hostState = snackbarHostState,
-                        modifier = Modifier.align(Alignment.BottomCenter),
                         bottomPadding = miniPlayerHeight,
                         applyNavigationBarsPadding = false
                     )

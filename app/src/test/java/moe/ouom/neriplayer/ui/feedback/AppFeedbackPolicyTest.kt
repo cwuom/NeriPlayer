@@ -67,6 +67,39 @@ class AppFeedbackPolicyTest {
     }
 
     @Test
+    fun snackbarWithActionUsesOneMessageLine() {
+        assertEquals(
+            1,
+            resolveNeriSnackbarMessageMaxLines(
+                actionLabel = "Undo",
+                withDismissAction = false
+            )
+        )
+    }
+
+    @Test
+    fun snackbarWithDismissActionUsesOneMessageLine() {
+        assertEquals(
+            1,
+            resolveNeriSnackbarMessageMaxLines(
+                actionLabel = null,
+                withDismissAction = true
+            )
+        )
+    }
+
+    @Test
+    fun plainSnackbarCanUseTwoMessageLines() {
+        assertEquals(
+            2,
+            resolveNeriSnackbarMessageMaxLines(
+                actionLabel = null,
+                withDismissAction = false
+            )
+        )
+    }
+
+    @Test
     fun duplicateFeedbackWithinWindowIsSkipped() {
         assertTrue(
             isDuplicateFeedbackMessage(

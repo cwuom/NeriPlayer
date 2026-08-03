@@ -10,7 +10,7 @@ import com.google.android.material.snackbar.Snackbar
 
 private const val ViewSnackbarElevationDp = 12
 private const val ViewSnackbarBottomMarginDp = 16
-private const val ViewSnackbarMaxLines = 4
+private const val ViewSnackbarMaxLines = 2
 
 fun showNeriViewSnackbar(
     anchor: View,

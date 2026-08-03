@@ -2,10 +2,31 @@ package moe.ouom.neriplayer.ui
 
 import moe.ouom.neriplayer.navigation.Destinations
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NeriAppNavigationIsolationPolicyTest {
+    @Test
+    fun `glass handoff skips empty main tab placeholder transitions`() {
+        assertFalse(
+            shouldUseAdvancedGlassNavigationHandoff(
+                listOf(Destinations.Home.route, Destinations.Explore.route)
+            )
+        )
+        assertTrue(
+            shouldUseAdvancedGlassNavigationHandoff(
+                listOf(Destinations.Library.route, Destinations.Recent.route)
+            )
+        )
+        assertTrue(
+            shouldUseAdvancedGlassNavigationHandoff(
+                listOf(Destinations.Debug.route, Destinations.DebugLogsList.route)
+            )
+        )
+    }
+
     @Test
     fun `every transparent detail route uses paired main tab handoff`() {
         val detailRoutes = listOf(
