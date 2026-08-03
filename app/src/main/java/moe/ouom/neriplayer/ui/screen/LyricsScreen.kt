@@ -523,8 +523,6 @@ fun LyricsScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.width(6.dp))
-
             // 更多按钮
             var showMoreOptions by remember { mutableStateOf(false) }
             HapticIconButton(
