@@ -27,13 +27,11 @@ import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -73,13 +71,11 @@ internal fun PlaylistExportSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var newName by remember { mutableStateOf("") }
     var pendingExport by remember { mutableStateOf<PendingPlaylistExport?>(null) }
-    var visibleExportConfirmation by remember { mutableStateOf<PendingPlaylistExport?>(null) }
     val resolvedCreateActionLabel =
         createActionLabel ?: stringResource(R.string.playlist_create_and_export)
 
     fun clearPendingExport() {
         pendingExport = null
-        visibleExportConfirmation = null
     }
 
     fun dismissAnimated() {
@@ -96,17 +92,8 @@ internal fun PlaylistExportSheet(
     }
 
     fun requestExportConfirmation(targetName: String, action: () -> Unit) {
-        visibleExportConfirmation = null
         pendingExport = PendingPlaylistExport(targetName) {
             runThenDismiss(action)
-        }
-    }
-
-    LaunchedEffect(pendingExport) {
-        val export = pendingExport ?: return@LaunchedEffect
-        withFrameNanos { }
-        if (pendingExport === export) {
-            visibleExportConfirmation = export
         }
     }
 
@@ -193,7 +180,7 @@ internal fun PlaylistExportSheet(
         }
     }
 
-    visibleExportConfirmation?.let { export ->
+    pendingExport?.let { export ->
         AlertDialog(
             onDismissRequest = {
                 clearPendingExport()
