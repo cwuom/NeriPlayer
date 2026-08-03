@@ -290,13 +290,7 @@ class NeriAppNavigationTransitionTest {
         composeRule.runOnIdle {
             detailKey.value = "new_playlist"
         }
-        composeRule.waitForIdle()
-        assertTrue(
-            "later detail open inherited the restored entry state",
-            composeRule.onAllNodesWithTag(FreshEntryTag)
-                .fetchSemanticsNodes()
-                .size == 1
-        )
+        waitForNodeCount(FreshEntryTag, expected = 1)
     }
 
     @Test
