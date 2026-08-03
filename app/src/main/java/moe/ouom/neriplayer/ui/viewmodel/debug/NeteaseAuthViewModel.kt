@@ -55,7 +55,6 @@ data class NeteaseAuthUiState(
 sealed interface NeteaseAuthEvent {
     data class ShowSnack(val message: String) : NeteaseAuthEvent
     data class AskConfirmSend(val masked: String) : NeteaseAuthEvent
-    data class ShowCookies(val cookies: Map<String, String>) : NeteaseAuthEvent
     data object LoginSuccess : NeteaseAuthEvent
 }
 
@@ -219,8 +218,6 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
                     }
 
                     _uiState.value = _uiState.value.copy(isLoggedIn = true)
-                    emitSnack("Login successful")
-                    _events.tryEmit(NeteaseAuthEvent.ShowCookies(cookieStore.toMap()))
                     _events.tryEmit(NeteaseAuthEvent.LoginSuccess)
                 } else {
                     val msg = obj.optString("msg", "Login failed, please try another method")
@@ -256,9 +253,7 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             _uiState.value = _uiState.value.copy(isLoggedIn = true)
-            _events.tryEmit(NeteaseAuthEvent.ShowCookies(cookieStore.toMap()))
             _events.tryEmit(NeteaseAuthEvent.LoginSuccess)
-            emitSnack(getApplication<Application>().getString(R.string.auth_cookie_saved))
         }
     }
 

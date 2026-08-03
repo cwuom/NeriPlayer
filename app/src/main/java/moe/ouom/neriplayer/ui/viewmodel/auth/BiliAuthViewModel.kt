@@ -48,7 +48,6 @@ data class BiliAuthUiState(
 
 sealed interface BiliAuthEvent {
     data class ShowSnack(val message: String) : BiliAuthEvent
-    data class ShowCookies(val cookies: Map<String, String>) : BiliAuthEvent
     data object LoginSuccess : BiliAuthEvent
 }
 
@@ -128,12 +127,6 @@ class BiliAuthViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             repo.saveCookies(map)
-            _events.send(BiliAuthEvent.ShowCookies(map))
-            _events.send(
-                BiliAuthEvent.ShowSnack(
-                    getApplication<Application>().getString(R.string.auth_cookie_saved)
-                )
-            )
             _events.send(BiliAuthEvent.LoginSuccess)
         }
     }

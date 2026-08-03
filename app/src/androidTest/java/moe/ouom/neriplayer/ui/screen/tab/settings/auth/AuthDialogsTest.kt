@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.auth
 import android.app.Application
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -49,15 +50,12 @@ class AuthDialogsTest {
                         showSheet = true,
                         initialTab = 0,
                         onDismissSheet = { },
-                        inlineMsg = context.getString(R.string.auth_cookie_saved),
+                        inlineMsg = context.getString(R.string.settings_netease_login_success),
                         onInlineMsgChange = { },
                         showConfirmDialog = false,
                         confirmPhoneMasked = null,
                         onDismissConfirmDialog = { },
                         vm = vm,
-                        showCookieDialog = false,
-                        cookieText = "",
-                        onDismissCookieDialog = { },
                         onBrowserLogin = { }
                     )
                 }
@@ -67,6 +65,8 @@ class AuthDialogsTest {
         waitForText(context.getString(R.string.login_qr))
         waitForText(context.getString(R.string.settings_netease_login_browser_hint))
         waitForText(context.getString(R.string.login_start_netease_qr))
+        waitForText(context.getString(R.string.settings_netease_login_success))
+        composeRule.onAllNodesWithText(context.getString(R.string.action_ok)).assertCountEquals(0)
 
         composeRule.onNodeWithText(context.getString(R.string.login_paste_cookie)).performClick()
         waitForText(context.getString(R.string.login_paste_cookie_hint))
@@ -90,9 +90,6 @@ class AuthDialogsTest {
                         inlineMsg = null,
                         onInlineMsgChange = { },
                         vm = vm,
-                        showCookieDialog = false,
-                        cookieText = "",
-                        onDismissCookieDialog = { },
                         showSavedCookieDialog = true,
                         onDismissSavedCookieDialog = { dismissedCount++ },
                         onOpenSheetAtTab = { openedTabs += it },
@@ -131,9 +128,6 @@ class AuthDialogsTest {
                         inlineMsg = null,
                         onInlineMsgChange = { },
                         vm = vm,
-                        showCookieDialog = false,
-                        cookieText = "",
-                        onDismissCookieDialog = { },
                         showSavedCookieDialog = true,
                         onDismissSavedCookieDialog = { dismissedCount++ },
                         onOpenSheetAtTab = { },
@@ -175,9 +169,6 @@ class AuthDialogsTest {
                         confirmPhoneMasked = null,
                         onDismissConfirmDialog = { },
                         vm = vm,
-                        showCookieDialog = false,
-                        cookieText = "",
-                        onDismissCookieDialog = { },
                         showSavedCookieDialog = true,
                         onDismissSavedCookieDialog = { dismissedCount++ },
                         onOpenSheetAtTab = { openedTabs += it },
@@ -219,9 +210,6 @@ class AuthDialogsTest {
                         confirmPhoneMasked = null,
                         onDismissConfirmDialog = { },
                         vm = vm,
-                        showCookieDialog = false,
-                        cookieText = "",
-                        onDismissCookieDialog = { },
                         showSavedCookieDialog = true,
                         onDismissSavedCookieDialog = { dismissedCount++ },
                         onOpenSheetAtTab = { },
@@ -255,12 +243,9 @@ class AuthDialogsTest {
                         showSheet = true,
                         initialTab = 0,
                         onDismissSheet = { },
-                        inlineMsg = context.getString(R.string.auth_cookie_saved),
+                        inlineMsg = context.getString(R.string.settings_youtube_login_success),
                         onInlineMsgChange = { },
                         vm = vm,
-                        showCookieDialog = false,
-                        cookieText = "",
-                        onDismissCookieDialog = { },
                         onBrowserLogin = { }
                     )
                 }
@@ -268,6 +253,8 @@ class AuthDialogsTest {
         }
 
         waitForText(context.getString(R.string.settings_youtube_login_browser_hint))
+        waitForText(context.getString(R.string.settings_youtube_login_success))
+        composeRule.onAllNodesWithText(context.getString(R.string.action_ok)).assertCountEquals(0)
         composeRule.onNodeWithText(context.getString(R.string.login_paste_cookie)).performClick()
         waitForText(context.getString(R.string.login_paste_youtube_cookie_hint))
         waitForText(context.getString(R.string.login_save_cookie))
@@ -290,9 +277,6 @@ class AuthDialogsTest {
                         inlineMsg = null,
                         onInlineMsgChange = { },
                         vm = vm,
-                        showCookieDialog = false,
-                        cookieText = "",
-                        onDismissCookieDialog = { },
                         showSavedCookieDialog = true,
                         onDismissSavedCookieDialog = { dismissedCount++ },
                         onOpenSheetAtTab = { openedTabs += it },
@@ -331,9 +315,6 @@ class AuthDialogsTest {
                         inlineMsg = null,
                         onInlineMsgChange = { },
                         vm = vm,
-                        showCookieDialog = false,
-                        cookieText = "",
-                        onDismissCookieDialog = { },
                         showSavedCookieDialog = true,
                         onDismissSavedCookieDialog = { dismissedCount++ },
                         onOpenSheetAtTab = { },
@@ -367,12 +348,9 @@ class AuthDialogsTest {
                         showSheet = true,
                         initialTab = 0,
                         onDismissSheet = { },
-                        inlineMsg = context.getString(R.string.auth_cookie_saved),
+                        inlineMsg = context.getString(R.string.settings_bili_login_success),
                         onInlineMsgChange = { },
                         vm = vm,
-                        showCookieDialog = false,
-                        cookieText = "",
-                        onDismissCookieDialog = { },
                         onBrowserLogin = { }
                     )
                 }
@@ -380,54 +358,36 @@ class AuthDialogsTest {
         }
 
         waitForText(context.getString(R.string.settings_bili_login_browser_hint))
+        waitForText(context.getString(R.string.settings_bili_login_success))
+        composeRule.onAllNodesWithText(context.getString(R.string.action_ok)).assertCountEquals(0)
         composeRule.onNodeWithText(context.getString(R.string.login_paste_cookie)).performClick()
         waitForText(context.getString(R.string.login_paste_bili_cookie_hint))
         waitForText(context.getString(R.string.login_save_cookie))
     }
 
     @Test
-    fun cookieTextDialog_showsPlaceholderAndDismisses() {
+    fun loginSuccessDialog_showsPlatformSpecificTitleAndDismisses() {
         val context = targetContext
         var dismissedCount = 0
 
         composeRule.setContent {
             MaterialTheme {
                 Box {
-                    CookieTextDialog(
-                        title = context.getString(R.string.login_success),
-                        cookieText = "",
+                    LoginSuccessDialog(
+                        title = context.getString(R.string.settings_youtube_login_success),
                         onDismiss = { dismissedCount++ }
                     )
                 }
             }
         }
 
-        waitForText(context.getString(R.string.settings_empty_placeholder))
+        waitForText(context.getString(R.string.settings_youtube_login_success))
         waitForText(context.getString(R.string.action_ok))
         composeRule.onNodeWithText(context.getString(R.string.action_ok)).performClick()
 
         composeRule.runOnIdle {
             assertEquals(1, dismissedCount)
         }
-    }
-
-    @Test
-    fun cookieTextDialog_showsRawCookieText() {
-        val context = targetContext
-
-        composeRule.setContent {
-            MaterialTheme {
-                Box {
-                    CookieTextDialog(
-                        title = context.getString(R.string.login_success),
-                        cookieText = "MUSIC_U=abc; __csrf=def",
-                        onDismiss = { }
-                    )
-                }
-            }
-        }
-
-        waitForText("MUSIC_U=abc; __csrf=def")
     }
 
     private fun waitForText(text: String) {

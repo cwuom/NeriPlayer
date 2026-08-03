@@ -50,7 +50,6 @@ data class YouTubeAuthUiState(
 
 sealed interface YouTubeAuthEvent {
     data class ShowSnack(val message: String) : YouTubeAuthEvent
-    data class ShowCookies(val cookies: Map<String, String>) : YouTubeAuthEvent
     data object LoginSuccess : YouTubeAuthEvent
 }
 
@@ -148,16 +147,6 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
             _uiState.value = YouTubeAuthUiState(
                 health = repo.getAuthHealthOnce(),
                 hasSavedAuth = true
-            )
-            _events.send(
-                YouTubeAuthEvent.ShowCookies(
-                    normalized.cookies
-                )
-            )
-            _events.send(
-                YouTubeAuthEvent.ShowSnack(
-                    getApplication<Application>().getString(R.string.auth_cookie_saved)
-                )
             )
             _events.send(YouTubeAuthEvent.LoginSuccess)
         }

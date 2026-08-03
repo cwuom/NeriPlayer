@@ -76,9 +76,6 @@ internal fun SettingsBiliAuthDialogs(
     inlineMsg: String?,
     onInlineMsgChange: (String?) -> Unit,
     vm: BiliAuthViewModel,
-    showCookieDialog: Boolean,
-    cookieText: String,
-    onDismissCookieDialog: () -> Unit,
     showSavedCookieDialog: Boolean = false,
     onDismissSavedCookieDialog: () -> Unit = {},
     onOpenSheetAtTab: (Int) -> Unit = {},
@@ -156,13 +153,6 @@ internal fun SettingsBiliAuthDialogs(
         )
     }
 
-    if (showCookieDialog) {
-        CookieTextDialog(
-            title = stringResource(R.string.settings_bili_login_success),
-            cookieText = cookieText,
-            onDismiss = onDismissCookieDialog
-        )
-    }
 }
 
 @Composable
@@ -173,9 +163,6 @@ internal fun SettingsYouTubeAuthDialogs(
     inlineMsg: String?,
     onInlineMsgChange: (String?) -> Unit,
     vm: YouTubeAuthViewModel,
-    showCookieDialog: Boolean,
-    cookieText: String,
-    onDismissCookieDialog: () -> Unit,
     showSavedCookieDialog: Boolean = false,
     onDismissSavedCookieDialog: () -> Unit = {},
     onOpenSheetAtTab: (Int) -> Unit = {},
@@ -258,13 +245,6 @@ internal fun SettingsYouTubeAuthDialogs(
         )
     }
 
-    if (showCookieDialog) {
-        CookieTextDialog(
-            title = stringResource(R.string.settings_youtube_login_success),
-            cookieText = cookieText,
-            onDismiss = onDismissCookieDialog
-        )
-    }
 }
 
 @Composable
@@ -395,6 +375,22 @@ internal fun SavedCookieActionDialog(
         dismissButton = {
             MiuixSettingsTextButton(onClick = onLogout) {
                 Text(stringResource(R.string.settings_saved_cookie_logout))
+            }
+        }
+    )
+}
+
+@Composable
+internal fun LoginSuccessDialog(
+    title: String,
+    onDismiss: () -> Unit
+) {
+    MiuixSettingsDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        confirmButton = {
+            MiuixSettingsTextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_ok))
             }
         }
     )

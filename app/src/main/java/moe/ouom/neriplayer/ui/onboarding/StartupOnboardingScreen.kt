@@ -111,12 +111,12 @@ import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
 import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import moe.ouom.neriplayer.ui.BlurTransformation
 import moe.ouom.neriplayer.ui.component.common.ThemeRevealOverlay
+import moe.ouom.neriplayer.ui.screen.tab.settings.auth.LoginSuccessDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsBiliAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsNeteaseAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsYouTubeAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.InlineMessage
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeModeActionButton
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.maskCookieValue
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsGitHubDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
 import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncUiState
@@ -196,6 +196,7 @@ fun StartupOnboardingScreen() {
     }
 
     var inlineMessage by remember { mutableStateOf<String?>(null) }
+    var loginSuccessTitle by remember { mutableStateOf<String?>(null) }
     var finishing by remember { mutableStateOf(false) }
     val rootView = LocalView.current
     var themeRevealSnapshot by remember { mutableStateOf<ImageBitmap?>(null) }
@@ -206,22 +207,16 @@ fun StartupOnboardingScreen() {
 
     var showNeteaseSheet by remember { mutableStateOf(false) }
     var showNeteaseConfirm by remember { mutableStateOf(false) }
-    var showNeteaseCookieDialog by remember { mutableStateOf(false) }
     var showNeteaseSavedCookieDialog by remember { mutableStateOf(false) }
     var neteaseMaskedPhone by remember { mutableStateOf<String?>(null) }
-    var neteaseCookieText by remember { mutableStateOf("") }
     var neteaseSheetTab by rememberSaveable { mutableIntStateOf(0) }
 
     var showBiliSheet by remember { mutableStateOf(false) }
-    var showBiliCookieDialog by remember { mutableStateOf(false) }
     var showBiliSavedCookieDialog by remember { mutableStateOf(false) }
-    var biliCookieText by remember { mutableStateOf("") }
     var biliSheetTab by rememberSaveable { mutableIntStateOf(0) }
 
     var showYouTubeSheet by remember { mutableStateOf(false) }
-    var showYouTubeCookieDialog by remember { mutableStateOf(false) }
     var showYouTubeSavedCookieDialog by remember { mutableStateOf(false) }
-    var youTubeCookieText by remember { mutableStateOf("") }
     var youTubeSheetTab by rememberSaveable { mutableIntStateOf(0) }
     var showGitHubConfigDialog by remember { mutableStateOf(false) }
     var showClearGitHubConfigDialog by remember { mutableStateOf(false) }
@@ -276,16 +271,13 @@ fun StartupOnboardingScreen() {
                     neteaseMaskedPhone = event.masked
                     showNeteaseConfirm = true
                 }
-                is NeteaseAuthEvent.ShowCookies -> {
-                    neteaseCookieText = event.cookies.entries.joinToString("\n") { (k, v) ->
-                        "$k=${maskCookieValue(v)}"
-                    }
-                    showNeteaseCookieDialog = true
-                }
                 NeteaseAuthEvent.LoginSuccess -> {
                     showNeteaseSavedCookieDialog = false
-                    inlineMessage = composeResources.getString(R.string.settings_netease_login_success)
+                    inlineMessage = null
                     showNeteaseSheet = false
+                    loginSuccessTitle = composeResources.getString(
+                        R.string.settings_netease_login_success
+                    )
                     neteaseVm.refreshAuthHealth()
                 }
             }
@@ -296,16 +288,13 @@ fun StartupOnboardingScreen() {
         biliVm.events.collect { event ->
             when (event) {
                 is BiliAuthEvent.ShowSnack -> inlineMessage = event.message
-                is BiliAuthEvent.ShowCookies -> {
-                    biliCookieText = event.cookies.entries.joinToString("\n") { (k, v) ->
-                        "$k=${maskCookieValue(v)}"
-                    }
-                    showBiliCookieDialog = true
-                }
                 BiliAuthEvent.LoginSuccess -> {
                     showBiliSavedCookieDialog = false
-                    inlineMessage = composeResources.getString(R.string.settings_bili_login_success)
+                    inlineMessage = null
                     showBiliSheet = false
+                    loginSuccessTitle = composeResources.getString(
+                        R.string.settings_bili_login_success
+                    )
                     biliVm.refreshAuthHealth()
                 }
             }
@@ -316,16 +305,13 @@ fun StartupOnboardingScreen() {
         youTubeVm.events.collect { event ->
             when (event) {
                 is YouTubeAuthEvent.ShowSnack -> inlineMessage = event.message
-                is YouTubeAuthEvent.ShowCookies -> {
-                    youTubeCookieText = event.cookies.entries.joinToString("\n") { (k, v) ->
-                        "$k=${maskCookieValue(v)}"
-                    }
-                    showYouTubeCookieDialog = true
-                }
                 YouTubeAuthEvent.LoginSuccess -> {
                     showYouTubeSavedCookieDialog = false
-                    inlineMessage = composeResources.getString(R.string.settings_youtube_login_success)
+                    inlineMessage = null
                     showYouTubeSheet = false
+                    loginSuccessTitle = composeResources.getString(
+                        R.string.settings_youtube_login_success
+                    )
                     youTubeVm.refreshAuthHealth()
                 }
             }
@@ -667,9 +653,6 @@ fun StartupOnboardingScreen() {
                 confirmPhoneMasked = neteaseMaskedPhone,
                 onDismissConfirmDialog = { showNeteaseConfirm = false },
                 vm = neteaseVm,
-                showCookieDialog = showNeteaseCookieDialog,
-                cookieText = neteaseCookieText,
-                onDismissCookieDialog = { showNeteaseCookieDialog = false },
                 showSavedCookieDialog = showNeteaseSavedCookieDialog,
                 onDismissSavedCookieDialog = { showNeteaseSavedCookieDialog = false },
                 onOpenSheetAtTab = { tab ->
@@ -690,9 +673,6 @@ fun StartupOnboardingScreen() {
                 inlineMsg = inlineMessage,
                 onInlineMsgChange = { inlineMessage = it },
                 vm = biliVm,
-                showCookieDialog = showBiliCookieDialog,
-                cookieText = biliCookieText,
-                onDismissCookieDialog = { showBiliCookieDialog = false },
                 showSavedCookieDialog = showBiliSavedCookieDialog,
                 onDismissSavedCookieDialog = { showBiliSavedCookieDialog = false },
                 onOpenSheetAtTab = { tab ->
@@ -713,9 +693,6 @@ fun StartupOnboardingScreen() {
                 inlineMsg = inlineMessage,
                 onInlineMsgChange = { inlineMessage = it },
                 vm = youTubeVm,
-                showCookieDialog = showYouTubeCookieDialog,
-                cookieText = youTubeCookieText,
-                onDismissCookieDialog = { showYouTubeCookieDialog = false },
                 showSavedCookieDialog = showYouTubeSavedCookieDialog,
                 onDismissSavedCookieDialog = { showYouTubeSavedCookieDialog = false },
                 onOpenSheetAtTab = { tab ->
@@ -734,6 +711,12 @@ fun StartupOnboardingScreen() {
                 showClearGitHubConfigDialog = showClearGitHubConfigDialog,
                 onShowClearGitHubConfigDialogChange = { showClearGitHubConfigDialog = it }
             )
+            loginSuccessTitle?.let { title ->
+                LoginSuccessDialog(
+                    title = title,
+                    onDismiss = { loginSuccessTitle = null }
+                )
+            }
             val revealOrigin = themeRevealOriginWindow
             val revealFallbackColor = themeRevealFallbackColor
             if (revealOrigin != null && revealFallbackColor != null) {

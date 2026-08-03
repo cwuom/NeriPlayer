@@ -28,10 +28,6 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.auth
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,8 +35,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.auth.NeteaseQrLoginActivity
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -60,9 +54,6 @@ internal fun SettingsNeteaseAuthDialogs(
     confirmPhoneMasked: String?,
     onDismissConfirmDialog: () -> Unit,
     vm: NeteaseAuthViewModel,
-    showCookieDialog: Boolean,
-    cookieText: String,
-    onDismissCookieDialog: () -> Unit,
     showSavedCookieDialog: Boolean = false,
     onDismissSavedCookieDialog: () -> Unit = {},
     onOpenSheetAtTab: (Int) -> Unit = {},
@@ -168,42 +159,6 @@ internal fun SettingsNeteaseAuthDialogs(
         )
     }
 
-    if (showCookieDialog) {
-        CookieTextDialog(
-            title = stringResource(R.string.login_success),
-            cookieText = cookieText,
-            onDismiss = onDismissCookieDialog
-        )
-    }
-}
-
-@Composable
-internal fun CookieTextDialog(
-    title: String,
-    cookieText: String,
-    onDismiss: () -> Unit
-) {
-    MiuixSettingsDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Text(
-                    text = cookieText.ifBlank { stringResource(R.string.settings_empty_placeholder) },
-                    fontFamily = FontFamily.Monospace
-                )
-            }
-        },
-        confirmButton = {
-            MiuixSettingsTextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_ok))
-            }
-        }
-    )
 }
 
 private fun parseCookieMap(json: String): Map<String, String> {

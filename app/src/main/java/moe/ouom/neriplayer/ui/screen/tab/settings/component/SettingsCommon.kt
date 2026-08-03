@@ -82,13 +82,6 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
 
-internal fun maskCookieValue(value: String): String {
-    return when {
-        value.length <= 4 -> "***"
-        else -> "${value.take(2)}***${value.takeLast(2)}"
-    }
-}
-
 private val SettingsItemShape = RoundedCornerShape(18.dp)
 
 internal fun Modifier.settingsItemClickable(

@@ -161,6 +161,7 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassController
 import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassHorizontalTransition
 import moe.ouom.neriplayer.ui.screen.tab.settings.about.SettingsAboutContent
+import moe.ouom.neriplayer.ui.screen.tab.settings.auth.LoginSuccessDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsBiliAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsNeteaseAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsYouTubeAuthDialogs
@@ -177,7 +178,6 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsTrafficManag
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeModeActionButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeSeedListItem
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.UsbExclusiveSettingsSection
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.maskCookieValue
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsGitHubDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsPreferenceDialogs
@@ -606,13 +606,10 @@ fun SettingsScreen(
     var showMobileDataBiliQualityDialog by remember { mutableStateOf(false) }
     var showDefaultStartDestinationDialog by remember { mutableStateOf(false) }
     var showConfirmDialog by remember { mutableStateOf(false) }
-    var showCookieDialog by remember { mutableStateOf(false) }
     var showNeteaseSavedCookieDialog by remember { mutableStateOf(false) }
     var showBiliSheet by remember { mutableStateOf(false) }
-    var showBiliCookieDialog by remember { mutableStateOf(false) }
     var showBiliSavedCookieDialog by remember { mutableStateOf(false) }
     var showYouTubeSheet by remember { mutableStateOf(false) }
-    var showYouTubeCookieDialog by remember { mutableStateOf(false) }
     var showYouTubeSavedCookieDialog by remember { mutableStateOf(false) }
 
     var showColorPickerDialog by remember { mutableStateOf(false) }
@@ -633,19 +630,17 @@ fun SettingsScreen(
 
     val neteaseVm: NeteaseAuthViewModel = viewModel()
     var inlineMsg by remember { mutableStateOf<String?>(null) }
+    var loginSuccessTitle by remember { mutableStateOf<String?>(null) }
     var showDownloadDirectorySwitchWarningDialog by remember { mutableStateOf(false) }
     var pendingDownloadDirectoryChange by remember { mutableStateOf<PendingDownloadDirectoryChange?>(null) }
     var isMigratingDownloadDirectory by remember { mutableStateOf(false) }
     val migrationProgress by ManagedDownloadStorage.migrationProgressFlow.collectAsState()
     val hasActiveDownloadOperations by GlobalDownloadManager.activeDownloadOperationsFlow.collectAsState()
     var confirmPhoneMasked by remember { mutableStateOf<String?>(null) }
-    var cookieText by remember { mutableStateOf("") }
     var versionTapCount by remember { mutableIntStateOf(0) }
-    var biliCookieText by remember { mutableStateOf("") }
     val biliVm: BiliAuthViewModel = viewModel()
     var biliSheetInitialTab by rememberSaveable { mutableIntStateOf(0) }
     var neteaseSheetInitialTab by rememberSaveable { mutableIntStateOf(0) }
-    var youtubeCookieText by remember { mutableStateOf("") }
     val youtubeVm: YouTubeAuthViewModel = viewModel()
     var youtubeSheetInitialTab by rememberSaveable { mutableIntStateOf(0) }
     
@@ -1033,12 +1028,10 @@ fun SettingsScreen(
                     showNeteaseSavedCookieDialog = false
                     inlineMsg = null
                     showNeteaseSheet = false
-                    inlineMsg = composeResources.getString(R.string.settings_netease_login_success)
+                    loginSuccessTitle = composeResources.getString(
+                        R.string.settings_netease_login_success
+                    )
                     neteaseVm.refreshAuthHealth()
-                }
-                is NeteaseAuthEvent.ShowCookies -> {
-                    cookieText = e.cookies.entries.joinToString("\n") { (k, v) -> "$k=${maskCookieValue(v)}" }
-                    showCookieDialog = true
                 }
             }
         }
@@ -1048,14 +1041,13 @@ fun SettingsScreen(
         biliVm.events.collect { e ->
             when (e) {
                 is BiliAuthEvent.ShowSnack -> inlineMsg = e.message
-                is BiliAuthEvent.ShowCookies -> {
-                    biliCookieText = e.cookies.entries.joinToString("\n") { (k, v) -> "$k=${maskCookieValue(v)}" }
-                    showBiliCookieDialog = true
-                }
                 BiliAuthEvent.LoginSuccess -> {
                     showBiliSavedCookieDialog = false
+                    inlineMsg = null
                     showBiliSheet = false
-                    inlineMsg = composeResources.getString(R.string.settings_bili_login_success)
+                    loginSuccessTitle = composeResources.getString(
+                        R.string.settings_bili_login_success
+                    )
                     biliVm.refreshAuthHealth()
                 }
             }
@@ -1066,16 +1058,13 @@ fun SettingsScreen(
         youtubeVm.events.collect { e ->
             when (e) {
                 is YouTubeAuthEvent.ShowSnack -> inlineMsg = e.message
-                is YouTubeAuthEvent.ShowCookies -> {
-                    youtubeCookieText = e.cookies.entries.joinToString("\n") { (k, v) ->
-                        "$k=${maskCookieValue(v)}"
-                    }
-                    showYouTubeCookieDialog = true
-                }
                 YouTubeAuthEvent.LoginSuccess -> {
                     showYouTubeSavedCookieDialog = false
+                    inlineMsg = null
                     showYouTubeSheet = false
-                    inlineMsg = composeResources.getString(R.string.settings_youtube_login_success)
+                    loginSuccessTitle = composeResources.getString(
+                        R.string.settings_youtube_login_success
+                    )
                     youtubeVm.refreshAuthHealth()
                 }
 
@@ -2116,9 +2105,6 @@ fun SettingsScreen(
         confirmPhoneMasked = confirmPhoneMasked,
         onDismissConfirmDialog = { showConfirmDialog = false },
         vm = neteaseVm,
-        showCookieDialog = showCookieDialog,
-        cookieText = cookieText,
-        onDismissCookieDialog = { showCookieDialog = false },
         showSavedCookieDialog = showNeteaseSavedCookieDialog,
         onDismissSavedCookieDialog = { showNeteaseSavedCookieDialog = false },
         onOpenSheetAtTab = { tab ->
@@ -2140,9 +2126,6 @@ fun SettingsScreen(
         inlineMsg = inlineMsg,
         onInlineMsgChange = { inlineMsg = it },
         vm = biliVm,
-        showCookieDialog = showBiliCookieDialog,
-        cookieText = biliCookieText,
-        onDismissCookieDialog = { showBiliCookieDialog = false },
         showSavedCookieDialog = showBiliSavedCookieDialog,
         onDismissSavedCookieDialog = { showBiliSavedCookieDialog = false },
         onOpenSheetAtTab = { tab ->
@@ -2164,9 +2147,6 @@ fun SettingsScreen(
         inlineMsg = inlineMsg,
         onInlineMsgChange = { inlineMsg = it },
         vm = youtubeVm,
-        showCookieDialog = showYouTubeCookieDialog,
-        cookieText = youtubeCookieText,
-        onDismissCookieDialog = { showYouTubeCookieDialog = false },
         showSavedCookieDialog = showYouTubeSavedCookieDialog,
         onDismissSavedCookieDialog = { showYouTubeSavedCookieDialog = false },
         onOpenSheetAtTab = { tab ->
@@ -2179,6 +2159,12 @@ fun SettingsScreen(
             youtubeVm.clearAuth()
         }
     )
+    loginSuccessTitle?.let { title ->
+        LoginSuccessDialog(
+            title = title,
+            onDismiss = { loginSuccessTitle = null }
+        )
+    }
     SettingsPreferenceDialogs(
         showDefaultStartDestinationDialog = showDefaultStartDestinationDialog,
         onShowDefaultStartDestinationDialogChange = { showDefaultStartDestinationDialog = it },
