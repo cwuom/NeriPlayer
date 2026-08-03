@@ -84,9 +84,11 @@
 - **本地数据**：歌单 JSON 原子写入、本地元信息补全、配置导入导出、
   授权加密存储和 DataStore 设置。
 - **歌词与播放页 UI**：`AdvancedLyricsView`、`SyncedLyricsView`、
-  `LyricShareSheet`、歌词音译显示、歌词长按分享和 Lyrics 全屏页。
+  `LyricShareSheet`、歌词音译显示、日语歌词翻译间距、歌词长按分享和 Lyrics 全屏页。
 - **导航与玻璃 UI**：`MainTabLayerHost`、详情页抽屉/连贯反馈、
-  可打断主标签切换、页面状态保留和 Advanced Glass owner 接力。
+  可打断主标签切换、页面状态保留、标准化 Snackbar 覆盖层和 Advanced Glass owner 接力。
+- **系统入口与桌面外壳**：`LauncherShortcuts`、桌面小组件、
+  `USB_DEVICE_ATTACHED` 处理开关和播放服务控制入口。
 - **存储与缓存 UI**：`StorageUsageAnalyzer`、缓存清理选项、下载目录索引和 SAF 快照。
 - **一起听**：Android 客户端、Worker 协议字段、角色权限、队列、
   版本门控更新、直链共享开关和房主离线恢复。
@@ -193,6 +195,8 @@
     启动引导、外部音频导入、一起听深链和顶层 Compose 宿主。
   - 平台登录 Activity 位于 `activity/auth/`，并在独立次进程中运行；
     `activity/sync/` 保存 Activity 侧的同步告警状态。
+  - `UsbDeviceAttachHandling.kt` 负责按设置启停 USB 设备插入 Activity alias，
+    播放服务也会复用同一策略过滤 `USB_DEVICE_ATTACHED` 广播。
   - `NeteaseWebLoginActivity.kt`、`NeteaseQrLoginActivity.kt`、
     `BiliWebLoginActivity.kt`、`BiliQrLoginActivity.kt` 与 `YouTubeWebLoginActivity.kt`
     是内部平台登录页。
@@ -202,6 +206,8 @@
     `MiniPlayer`、`Now Playing` 覆盖层、Debug 路由、主题、缓存清理和播放服务同步。
   - 主标签页面由 `MainTabLayerHost.kt` 保留出场/入场双场景，
     按标签顺序执行可打断横向转场，并为各场景保留 saveable state 和玻璃 owner。
+  - `ui/feedback/` 承载应用级 Snackbar/Toast 反馈策略；新增全局反馈前先确认
+    `AppFeedback` 与 `ViewSnackbar` 是否已经覆盖所需场景。
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/component/lyrics/`
   - `AdvancedLyricsView.kt` 与 `SyncedLyricsView.kt` 负责高级歌词排版、
@@ -237,6 +243,8 @@
 - `app/src/main/java/moe/ouom/neriplayer/core/api/`
   - `netease/`：网易云接口、加密和账号能力。
   - `bili/`：Bilibili 搜索、二维码登录、收藏夹、合集、播放信息和音频拉流。
+    Explore 链接识别会保留 Bilibili 分 P、`cid` 和 `season_id` 上下文；
+    改动时同步检查 `ExploreLinkRecognizer` 与 `ExploreViewModel`。
   - `youtube/`：YouTube Music 客户端（NewPipe Extractor）、
     首页/歌单/搜索/播放、PoToken 和 JS Challenge 支持。
   - `search/`：播放页元数据/歌词补全接口，
@@ -264,6 +272,8 @@
     `prefetch/YouTubePrefetchRunner.kt`：YouTube Music 播放兼容策略。
   - `metadata/`：歌词、元数据、外部蓝牙歌词等播放页数据处理。
   - `model/`：播放器专用状态模型；跨数据层共享的歌曲模型不在此处。
+    随机播放展示状态通过 `PlayerQueueDisplayState` 表达；不要把乱序显示队列退回
+    只靠索引重映射的隐式语义。
   - `usb/`：按 `device/`、`path/`、`session/`、`sink/`、`system/` 与
     `transport/` 拆分 USB 独占会话、Native 桥、运行态快照和恢复控制，
     当前实现覆盖 **UAC1.0** 和兼容 **UAC2.0 Type I PCM** 设备，
@@ -321,6 +331,12 @@
   - 词幕适配（Lyricon Provider）与 SuperLyric 输出，
     同步歌曲、播放状态、进度、逐字歌词和翻译。
 
+- `app/src/main/java/moe/ouom/neriplayer/navigation/`
+  - `LauncherShortcuts.kt` 负责桌面图标快捷方式到导航/播放请求的映射。
+
+- `app/src/main/java/moe/ouom/neriplayer/widget/`
+  - 桌面播放小组件的 provider、状态快照、封面取色视觉和 RemoteViews 更新逻辑。
+
 ---
 
 ### 当前能力边界 / Current Boundaries
@@ -335,6 +351,7 @@
 - 网易云艺术家详情依赖网易云 artist 元数据和接口；
   关注状态会保存到本地收藏分类。
 - `Bilibili` 已支持搜索、收藏夹和音频播放/下载，但不是完整视频发现流或评论区。
+  链接识别支持选中分 P、合集分享和 `season_id` 上下文，但仍不代表完整 B 站客户端。
 - `YouTube Music` 已支持登录、匿名播放、首页/歌单浏览、详情、搜索、播放与下载；
   有效身份 Cookie 会保留并支持轮换，取流会复用 bootstrap/player.js/PoToken 与挑战
   结果缓存，签名或直链失败时可回退 EJS/HLS，
@@ -397,6 +414,7 @@
   指纹与已读快照一致的情况下回退无条件写入，否则必须按并发冲突失败。
 - 播放统计与流量统计采用延迟批量写入；播放统计在播放器/Activity 关键生命周期
   flush，流量累积器在请求或下载尝试结束时 flush，播放每日桶按保留窗口和数量上限裁剪。
+  同步合并需要同时维护全量累计、每日桶和旧版 bucket-only 载荷提升，不能先裁剪窗口再抬升。
 - 平台 Cookie / 鉴权信息、GitHub Token、WebDAV 密码使用
   `Android Keystore + EncryptedSharedPreferences` 加密保存。
 - `DataStore` 只承担常规设置与非敏感状态，不承载平台登录凭据。
@@ -412,6 +430,8 @@
   设置页的后台权限提示不是装饰，改动相关逻辑时要同时考虑息屏场景。
 - USB 设置还包含比特完美音量模式；启用后软件增益保持 0 dB，音量由 DAC 硬件控制，
   不能把它与普通系统音量或应用内响度处理混为一谈。
+- USB 设备插入响应是独立设置；关闭时 Activity alias 和播放服务广播入口都必须跳过
+  `USB_DEVICE_ATTACHED`，不能只隐藏设置项或只改其中一个入口。
 - 前后台 USB runtime report 若返回 `native_refresh_deferred`，播放器只在有限次数内
   延迟重试；其他无效报告仍按 fail-closed 处理。
 - 本地扫描结果可能先用快速元数据返回，再由后台任务补全歌曲名、歌手、
@@ -507,7 +527,10 @@
 6. Runtime Report v2 字段必须保持 fail-closed 解析；修改反馈端点、状态、
    holdover、恢复 action 或代次字段时，要同步更新 Kotlin parser 和边界测试。
 7. 错误语义或恢复策略变化时，要同步更新设置页 / Debug 页诊断展示和对应测试。
-8. Native 变更至少运行三组 host gate 和四 ABI Android 编译；
+8. 如改动 USB 设备插入响应，必须同时检查 `UsbDeviceAttachHandling.kt`、
+   `AudioPlayerService.kt`、`AndroidManifest.xml` 中的 Activity alias 和
+   `AutoSettingsSchema.kt` 设置生成链路。
+9. Native 变更至少运行三组 host gate 和四 ABI Android 编译；
    host 模型、ABI 编译和真实 DAC 验证是三个不同的通过条件。
 
 #### 7. 修改 GitHub / WebDAV 同步
@@ -524,6 +547,7 @@
 4. 歌单成员使用 `syncMembershipTokens` / `removedMembershipTokens` 表达
    observed-remove 语义；新增字段必须兼容旧 JSON 与 ProtoBuf 的缺字段载荷，
    带 token 的成员不能退回只比较 `addedAt/deletedAt` 的删除裁决。
+   删除后撤销、备份恢复和跨设备同步要一起验证，避免旧删除记录再次移除已恢复成员。
 5. 缺字段或畸形快照必须先清洗再合并；`SyncSong` 至少要有 id、audioId 或 mediaUri
    之一，删除记录还需要有效删除时间，缺失 `addedAt` 的歌曲只能作为低优先级展示项。
 6. `CoverUrlMapper.kt` 位于 provider 无关的 `data/sync/`；
@@ -557,9 +581,12 @@
 2. 全屏歌词页在 `LyricsScreen.kt`，歌词分享入口复用 `LyricShareSheet.kt`。
 3. 音译显示通过 `lyric_translation_use_phonetic` 设置控制，
    需要先开启翻译且当前歌词存在音译数据。
-4. 长按歌词用于打开分享面板；修改手势时要同时检查点击跳转、
+4. 日语歌词翻译间距需要区分假名和普通 CJK 文本；修改时同时检查
+   app 侧 `resolveLyricTranslationExtraGap` 与 `:accompanist-lyrics-ui`
+   子模块的 `resolveJapaneseLyricTranslationTopPadding`。
+5. 长按歌词用于打开分享面板；修改手势时要同时检查点击跳转、
    手动歌词偏移和高级歌词视口滚动。
-5. 歌词卡片通过 `FileProvider` 分享缓存文件；
+6. 歌词卡片通过 `FileProvider` 分享缓存文件；
    修改输出位置时要同步检查 `file_paths.xml` 和缓存清理。
 
 #### 10. 修改存储占用与缓存清理
@@ -632,6 +659,23 @@
 6. 至少同步检查 `NeriAppMainTabTransitionPolicyTest`、
    `AdvancedGlassNavigationTransitionTest`、`NeriAppNavigationTransitionTest`
    和 `HostNavigationTransitionGeometryTest`。
+
+#### 15. 修改桌面小组件、启动器快捷方式或全局反馈
+
+1. 桌面小组件入口在 `widget/PlaybackWidgetProviders.kt`，
+   状态和取色策略在 `PlaybackWidgetState.kt` 与 `PlaybackWidgetVisuals.kt`。
+2. RemoteViews 布局同时有普通资源和 API 31 专用资源；视觉、裁剪或预览图变更要检查
+   `layout/`、`layout-v31/`、`xml/` 与 `xml-v31/` 是否都保持一致。
+3. 播放控制动作最终进入 `AudioPlayerService`，新增动作必须检查前台服务启动策略、
+   媒体会话状态刷新和无歌曲/缓冲状态下的反馈。
+4. 启动器快捷方式由 `navigation/LauncherShortcuts.kt` 映射；
+   新增快捷方式时同步更新 `res/xml/shortcuts.xml`、中英文字符串和
+   `LauncherShortcutsTest`。
+5. 全局 Snackbar 优先走 `AppFeedback` / `ViewSnackbar`，不要让各页面各自持有
+   无法跨覆盖层显示的 SnackbarHost。
+6. 歌单批量导出、删除撤销和同步删除记录有关联；修改其中任一项时同时检查
+   `PlaylistExportSheetTest`、`AppFeedbackPolicyTest`、`LocalPlaylistRepositoryTest`
+   和 `SyncPlaylistDeletionPolicyTest`。
 
 ---
 
@@ -720,18 +764,20 @@ adb logcat | grep NeriPlayer
 - 网易云歌词、本地 smoke test、自动换源和播放响应解析
 - USB 独占 keep-alive、启动看门狗、前后台恢复、32-bit/float 输出、
   UAC2 显式反馈、长调度间隙重捕获、协调式重配置、Runtime Report v2、
-  背压恢复、延迟 runtime 刷新重试、比特完美音量和音频焦点策略
+  背压恢复、延迟 runtime 刷新重试、比特完美音量、USB 插入响应开关和音频焦点策略
 - 主标签双 scene 转场、快速反向切换、抽屉/连贯详情反馈、玻璃 owner 隔离
   和未布局 scene 几何过滤
+- 桌面小组件状态/取色/RemoteViews 资源、启动器快捷方式映射和全局 Snackbar 覆盖层
 - 下载元数据、命名、目录迁移、快照缓存、`.nomedia`、删除语义和启动恢复
 - 启动阶段、通知权限、播放服务启动、历史记录与安全模式恢复规划
 - 本地扫描、元信息补全、封面回退、系统歌单去重和歌单顺序稳定性
 - GitHub/WebDAV 同步序列化、缺字段快照清洗、旧歌单顺序迁移、删除策略、
-  播放统计合并、WebDAV 并发回退、原子文件写入和上传重试
+  播放统计滚动窗口、全量累计合并、旧版 bucket-only 兼容、WebDAV 并发回退、
+  原子文件写入和上传重试
 - 长音频进度阈值、显式位置优先、BilibiliSponsorBlock 本地跳转与一起听禁用策略
 - 一起听地址校验、版本门控、循环/随机模式、stable track key 目标校验、
   播放同步规划、候选直链回退、邀请/成员密钥、显式离开/重连、事件排序、Session 控制/取消与协议兼容
-- 歌词视图、逐词时间、外部蓝牙歌词、播放音效和播放策略
+- 歌词视图、日语假名翻译间距、逐词时间、外部蓝牙歌词、播放音效和播放策略
 - 配置备份、设置生成、安全守卫、崩溃日志文件和安全模式相关逻辑
 
 PR 建议包含：

@@ -95,11 +95,13 @@ NeriPlayer covers a broad product surface. Protect these paths first:
 - **Local data**: atomic playlist JSON writes, local metadata hydration,
   config import/export, encrypted auth storage, and DataStore settings.
 - **Lyrics and Now Playing UI**: `AdvancedLyricsView`, `SyncedLyricsView`,
-  `LyricShareSheet`, phonetic lyric display, long-press lyric sharing, and the
-  full-screen Lyrics page.
+  `LyricShareSheet`, phonetic lyric display, Japanese lyric translation spacing,
+  long-press lyric sharing, and the full-screen Lyrics page.
 - **Navigation and glass UI**: `MainTabLayerHost`, drawer/coherent detail feedback,
-  interruptible main-tab switching, page-state retention, and Advanced Glass
-  owner handoff.
+  interruptible main-tab switching, page-state retention, standardized Snackbar
+  overlays, and Advanced Glass owner handoff.
+- **System entry points and desktop shell**: `LauncherShortcuts`, home-screen widgets,
+  `USB_DEVICE_ATTACHED` handling, and playback-service control entry points.
 - **Storage and cache UI**: `StorageUsageAnalyzer`, cache cleanup options,
   download directory indexes, and SAF snapshots.
 - **Listen Together**: Android client, Worker protocol fields, roles, queues,
@@ -214,6 +216,9 @@ Security reminders:
     Compose host.
   - Platform login activities live under `activity/auth/` and run in dedicated
     secondary processes. `activity/sync/` stores Activity-side sync warning state.
+  - `UsbDeviceAttachHandling.kt` enables or disables the USB attach Activity alias
+    from settings; the playback service reuses the same policy for
+    `USB_DEVICE_ATTACHED` broadcasts.
   - `NeteaseWebLoginActivity.kt`, `NeteaseQrLoginActivity.kt`,
     `BiliWebLoginActivity.kt`, `BiliQrLoginActivity.kt`, and `YouTubeWebLoginActivity.kt`:
     internal platform sign-in pages.
@@ -224,6 +229,8 @@ Security reminders:
   - `MainTabLayerHost.kt` retains outgoing and incoming main-tab scenes,
     performs interruptible directional transitions, and preserves saveable state
     plus a glass owner for each scene.
+  - `ui/feedback/` owns app-wide Snackbar/Toast feedback policy. Before adding a
+    new global feedback surface, check `AppFeedback` and `ViewSnackbar` first.
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/component/lyrics/`
   - `AdvancedLyricsView.kt` and `SyncedLyricsView.kt`: advanced lyric layout,
@@ -263,6 +270,9 @@ Security reminders:
   - `netease/`: NetEase endpoints, crypto, and account capabilities.
   - `bili/`: Bilibili search, QR login, favorites, collections, playback info,
     and audio stream extraction.
+    Explore link recognition preserves Bilibili selected parts, `cid`, and
+    `season_id` context; changes should check both `ExploreLinkRecognizer` and
+    `ExploreViewModel`.
   - `youtube/`: YouTube Music client based on NewPipe Extractor, home/playlist/search/playback,
     PoToken, and JS Challenge support.
   - `search/`: playback metadata/lyrics completion APIs. Current implementations:
@@ -293,6 +303,8 @@ Security reminders:
     `prefetch/YouTubePrefetchRunner.kt`: YouTube Music playback compatibility policies.
   - `metadata/`: lyrics, metadata, and external Bluetooth lyrics handling.
   - `model/`: player-specific state models. Cross-layer song models do not live here.
+    Shuffle display state is represented by `PlayerQueueDisplayState`; avoid
+    returning to implicit index-remapping semantics for a shuffled queue.
   - `usb/`: split into `device/`, `path/`, `session/`, `sink/`, `system/`, and
     `transport/` for USB-exclusive sessions, the native bridge, runtime snapshots,
     and recovery controls. The current implementation covers **UAC1.0** and
@@ -356,6 +368,13 @@ Security reminders:
   - Lyricon integration and SuperLyric output for current song, playback state, position,
     word-level lyrics, and translations.
 
+- `app/src/main/java/moe/ouom/neriplayer/navigation/`
+  - `LauncherShortcuts.kt` maps app-icon shortcuts to navigation or playback requests.
+
+- `app/src/main/java/moe/ouom/neriplayer/widget/`
+  - Home-screen playback widget providers, state snapshots, artwork-derived visuals,
+    and RemoteViews updates.
+
 ---
 
 ### Current Boundaries
@@ -372,6 +391,8 @@ Security reminders:
   follow state is saved into the local Favorites category.
 - `Bilibili` supports search, favorites, audio playback, and downloads, but is
   not a full video discovery or comments client.
+  Link recognition supports selected parts, collection shares, and `season_id`
+  context, but this is still not a full Bilibili client.
 - `YouTube Music` supports login, anonymous playback, home/playlist browsing,
   details, search, playback, and downloads. Valid identity cookies are preserved
   and rotated when needed; bootstrap, `player.js`, PoToken, and challenge-result
@@ -450,7 +471,8 @@ Security reminders:
 - Playback and traffic statistics use delayed batch writes. Playback stats flush at
   important player/activity lifecycle points, while traffic accumulators flush when
   a request or download attempt ends; playback daily buckets are bounded by retention
-  window and count.
+  window and count. Sync merging must preserve aggregate totals, daily buckets,
+  and legacy bucket-only lifting; do not trim a visible window before lifting totals.
 - Platform cookies/auth data, GitHub tokens, and WebDAV passwords are encrypted
   with `Android Keystore + EncryptedSharedPreferences`.
 - `DataStore` stores regular settings and non-sensitive state, not platform login credentials.
@@ -471,6 +493,9 @@ Security reminders:
   so screen-off behavior must stay in scope.
 - USB settings include bit-perfect volume mode: software gain remains at 0 dB and
   the DAC hardware controls volume. Do not treat it as ordinary app/system volume.
+- USB attach handling is a separate setting. When disabled, both the Activity alias
+  and playback-service broadcast entry must skip `USB_DEVICE_ATTACHED`; do not only
+  hide the setting or change one entry point.
 - If a foreground/background USB runtime report returns `native_refresh_deferred`,
   the player retries it only within a bounded budget; other invalid reports remain
   fail-closed.
@@ -584,7 +609,10 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    Kotlin parser and boundary tests together.
 7. If error semantics or recovery behavior changes, update the Settings / Debug
    diagnostics surfaces and the matching tests.
-8. Native changes should run all three host gates plus the four-ABI Android
+8. If USB attach behavior changes, check `UsbDeviceAttachHandling.kt`,
+   `AudioPlayerService.kt`, the Activity alias in `AndroidManifest.xml`, and
+   `AutoSettingsSchema.kt` setting generation together.
+9. Native changes should run all three host gates plus the four-ABI Android
    compile. Host models, ABI compilation, and real-DAC validation are separate gates.
 
 #### 7. Modify GitHub / WebDAV sync
@@ -604,6 +632,8 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    for observed-remove semantics. New fields must remain readable when legacy JSON
    or ProtoBuf payloads omit them; tokenized membership must not fall back to a
    timestamp-only deletion decision.
+   Deletion undo, backup restore, and cross-device sync should be tested together
+   so stale deletion records cannot remove restored membership again.
 5. Missing-field or malformed snapshots must be cleaned before merging. `SyncSong`
    needs at least one of id, audioId, or mediaUri; deletion records also need a
    valid deletion time; songs with missing `addedAt` are low-priority display items.
@@ -644,9 +674,12 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 3. Phonetic display is controlled by the `lyric_translation_use_phonetic` setting,
    requires lyric translation to be enabled, and only works when the current lyrics
    include phonetic data.
-4. Long-press opens the lyric sharing sheet. When changing gestures, also check
+4. Japanese lyric translation spacing must distinguish kana from ordinary CJK text.
+   When changing it, check both app-side `resolveLyricTranslationExtraGap` and the
+   `:accompanist-lyrics-ui` submodule's `resolveJapaneseLyricTranslationTopPadding`.
+5. Long-press opens the lyric sharing sheet. When changing gestures, also check
    click-to-seek, manual lyric offset, and advanced lyric viewport scrolling.
-5. Lyric cards are shared through `FileProvider` cache files. If the output location
+6. Lyric cards are shared through `FileProvider` cache files. If the output location
    changes, update `file_paths.xml` and cache cleanup behavior as well.
 
 #### 10. Modify storage usage and cache cleanup
@@ -734,6 +767,26 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 6. At minimum, check `NeriAppMainTabTransitionPolicyTest`,
    `AdvancedGlassNavigationTransitionTest`, `NeriAppNavigationTransitionTest`,
    and `HostNavigationTransitionGeometryTest`.
+
+#### 15. Modify home-screen widgets, launcher shortcuts, or global feedback
+
+1. Widget entry points live in `widget/PlaybackWidgetProviders.kt`; state and
+   color extraction live in `PlaybackWidgetState.kt` and `PlaybackWidgetVisuals.kt`.
+2. RemoteViews layouts have both regular and API 31 variants. Visual, clipping,
+   or preview changes should keep `layout/`, `layout-v31/`, `xml/`, and
+   `xml-v31/` aligned.
+3. Playback widget actions end in `AudioPlayerService`. New actions must check
+   foreground-service start policy, MediaSession refreshes, and empty/buffering
+   feedback behavior.
+4. Launcher shortcuts are mapped by `navigation/LauncherShortcuts.kt`. New
+   shortcuts should update `res/xml/shortcuts.xml`, localized strings, and
+   `LauncherShortcutsTest`.
+5. Prefer `AppFeedback` / `ViewSnackbar` for global Snackbar behavior. Avoid
+   page-local Snackbar hosts that cannot surface above app overlays.
+6. Batch playlist export, deletion undo, and sync deletion records are linked.
+   Changes in any of these areas should also check `PlaylistExportSheetTest`,
+   `AppFeedbackPolicyTest`, `LocalPlaylistRepositoryTest`, and
+   `SyncPlaylistDeletionPolicyTest`.
 
 ---
 
@@ -827,15 +880,18 @@ Existing focused tests cover areas such as:
 - USB-exclusive keep-alive, startup watchdogs, foreground/background recovery,
   32-bit/float output, UAC2 explicit feedback, long-gap clock reacquisition,
   coordinated reconfiguration, Runtime Report v2, deferred-refresh retry,
-  backpressure recovery, and
+  backpressure recovery, USB attach handling, and
   audio-focus policies
 - Dual-scene main-tab transitions, rapid reverse switching, drawer/coherent
   detail feedback, glass-owner isolation, and unlaid-out scene geometry filtering
+- Home-screen widget state/color/RemoteViews resources, launcher shortcut mapping,
+  and app-wide Snackbar overlays
 - Download metadata, naming, directory migration, snapshot caches, `.nomedia`, delete semantics, and startup recovery
 - Startup stages, notification permission, playback-service startup, history recording, and safe-mode recovery planning
 - Local scanning, metadata hydration, cover fallback resolution, system-playlist de-duplication, and stable playlist order
 - GitHub/WebDAV sync serialization, missing-field snapshot cleanup,
-  legacy playlist-order migration, deletion policy, playback-stat merging,
+  legacy playlist-order migration, deletion policy, playback-stat rolling windows,
+  aggregate-total merging, legacy bucket-only compatibility,
   WebDAV concurrency fallback, atomic writes, and upload retry
 - Long-form progress thresholds, explicit-position precedence, BilibiliSponsorBlock
   local skips, and its Listen Together disable policy
@@ -843,7 +899,8 @@ Existing focused tests cover areas such as:
   stable-track-key target validation, session-only stream candidates, invite/member secrets,
   explicit leave/reconnect behavior, event ordering, playback sync planning,
   session control/cancellation, and protocol compatibility
-- Lyrics UI, word timing, external Bluetooth lyrics, playback sound controls, and playback policies
+- Lyrics UI, Japanese kana translation spacing, word timing, external Bluetooth lyrics,
+  playback sound controls, and playback policies
 - Config backup, generated settings, security guards, crash log files, and safe-mode behavior
 
 PRs should include:
