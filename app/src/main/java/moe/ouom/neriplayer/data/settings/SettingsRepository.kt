@@ -264,6 +264,8 @@ class SettingsRepository(private val context: Context) {
                 enabled = prefs[SettingsKeys.FLOATING_LYRICS_ENABLED] ?: false,
                 hideInApp = prefs[SettingsKeys.FLOATING_LYRICS_HIDE_IN_APP] ?: false,
                 textColorHex = prefs[SettingsKeys.FLOATING_LYRICS_TEXT_COLOR] ?: "FFFFFF",
+                renderStyle = prefs[SettingsKeys.FLOATING_LYRICS_RENDER_STYLE]
+                    ?: FLOATING_LYRICS_RENDER_STYLE_SHADOW,
                 outlineColorHex = prefs[SettingsKeys.FLOATING_LYRICS_OUTLINE_COLOR] ?: "121212",
                 fontSizeSp = prefs[SettingsKeys.FLOATING_LYRICS_FONT_SIZE_SP] ?: 22f,
                 outlineWidthDp = outlineWidthDp,
@@ -809,6 +811,7 @@ class SettingsRepository(private val context: Context) {
             prefs[SettingsKeys.FLOATING_LYRICS_ENABLED] = normalized.enabled
             prefs[SettingsKeys.FLOATING_LYRICS_HIDE_IN_APP] = normalized.hideInApp
             prefs[SettingsKeys.FLOATING_LYRICS_TEXT_COLOR] = normalized.textColorHex
+            prefs[SettingsKeys.FLOATING_LYRICS_RENDER_STYLE] = normalized.renderStyle
             prefs[SettingsKeys.FLOATING_LYRICS_OUTLINE_COLOR] = normalized.outlineColorHex
             prefs[SettingsKeys.FLOATING_LYRICS_FONT_SIZE_SP] = normalized.fontSizeSp
             prefs[SettingsKeys.FLOATING_LYRICS_OUTLINE_WIDTH_DP] = normalized.outlineWidthDp

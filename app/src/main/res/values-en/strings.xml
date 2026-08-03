@@ -1435,6 +1435,10 @@
     <string name="settings_floating_lyrics_hide_in_app">Hide inside app</string>
     <string name="settings_floating_lyrics_hide_in_app_desc">Hide floating lyrics while NeriPlayer is open to avoid covering the UI</string>
     <string name="settings_floating_lyrics_text_color">Lyrics Color</string>
+    <string name="settings_floating_lyrics_render_style">Rendering style</string>
+    <string name="settings_floating_lyrics_render_shadow">Shadow</string>
+    <string name="settings_floating_lyrics_render_outline">Outline</string>
+    <string name="settings_floating_lyrics_shadow_color">Shadow Color</string>
     <string name="settings_floating_lyrics_outline_color">Outline Color</string>
     <string name="settings_floating_lyrics_color_white">White</string>
     <string name="settings_floating_lyrics_color_black">Black</string>
@@ -1451,6 +1455,9 @@
     <string name="settings_floating_lyrics_lyric_outline_width">Lyric outline width</string>
     <string name="settings_floating_lyrics_translation_outline_width">Translation outline width</string>
     <string name="settings_floating_lyrics_outline_width_value">%1$.1f dp</string>
+    <string name="settings_floating_lyrics_lyric_shadow_blur">Lyric shadow blur</string>
+    <string name="settings_floating_lyrics_translation_shadow_blur">Translation shadow blur</string>
+    <string name="settings_floating_lyrics_shadow_blur_value">%1$.1f dp</string>
     <string name="settings_floating_lyrics_lyric_alpha">Lyric opacity</string>
     <string name="settings_floating_lyrics_translation_alpha">Translation opacity</string>
     <string name="settings_floating_lyrics_alpha_value">%1$d%%</string>

@@ -21,10 +21,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -38,6 +40,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_LEFT
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_RIGHT
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
+import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_RENDER_STYLE_OUTLINE
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_TRANSLATION_STYLE_SCALE
 import moe.ouom.neriplayer.data.settings.MIN_FLOATING_LYRICS_MAX_WIDTH_DP
 import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsColorHex
@@ -51,7 +54,7 @@ internal fun FloatingLyricsPreview(preferences: FloatingLyricsPreferences) {
     val textColor = Color(
         ("#${normalizeFloatingLyricsColorHex(preferences.textColorHex)}").toColorInt()
     )
-    val outlineColor = Color(
+    val effectColor = Color(
         ("#${normalizeFloatingLyricsColorHex(preferences.outlineColorHex)}").toColorInt()
     )
     val density = LocalDensity.current
@@ -127,7 +130,7 @@ internal fun FloatingLyricsPreview(preferences: FloatingLyricsPreferences) {
                     .width(animatedWidth)
                     .border(
                         width = 1.dp,
-                        color = outlineColor.copy(alpha = 0.32f),
+                        color = effectColor.copy(alpha = 0.32f),
                         shape = FloatingLyricsWidthShape
                     )
                     .padding(horizontal = 8.dp, vertical = 6.dp)
@@ -142,22 +145,24 @@ internal fun FloatingLyricsPreview(preferences: FloatingLyricsPreferences) {
                         Arrangement.Center
                     }
                 ) {
-                    OutlinedFloatingPreviewText(
+                    FloatingPreviewText(
                         text = stringResource(R.string.settings_floating_lyrics_preview_line),
                         textColor = textColor.copy(alpha = preferences.lyricAlpha),
-                        outlineColor = outlineColor.copy(alpha = preferences.lyricAlpha),
+                        effectColor = effectColor.copy(alpha = preferences.lyricAlpha),
                         fontSizeSp = preferences.fontSizeSp,
-                        outlineWidthDp = preferences.outlineWidthDp,
+                        effectWidthDp = preferences.outlineWidthDp,
+                        usesOutline = preferences.renderStyle == FLOATING_LYRICS_RENDER_STYLE_OUTLINE,
                         textAlign = preferences.toTextAlign(),
                         modifier = Modifier.fillMaxWidth()
                     )
                     if (preferences.showTranslation) {
-                        OutlinedFloatingPreviewText(
+                        FloatingPreviewText(
                             text = stringResource(R.string.settings_floating_lyrics_preview_translation),
                             textColor = textColor.copy(alpha = preferences.translationAlpha),
-                            outlineColor = outlineColor.copy(alpha = preferences.translationAlpha),
+                            effectColor = effectColor.copy(alpha = preferences.translationAlpha),
                             fontSizeSp = translationFontSizeSp,
-                            outlineWidthDp = preferences.translationOutlineWidthDp,
+                            effectWidthDp = preferences.translationOutlineWidthDp,
+                            usesOutline = preferences.renderStyle == FLOATING_LYRICS_RENDER_STYLE_OUTLINE,
                             textAlign = preferences.toTextAlign(),
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -169,28 +174,33 @@ internal fun FloatingLyricsPreview(preferences: FloatingLyricsPreferences) {
 }
 
 @Composable
-private fun OutlinedFloatingPreviewText(
+private fun FloatingPreviewText(
     text: String,
     textColor: Color,
-    outlineColor: Color,
+    effectColor: Color,
     fontSizeSp: Float,
-    outlineWidthDp: Float,
+    effectWidthDp: Float,
+    usesOutline: Boolean,
     textAlign: TextAlign,
     modifier: Modifier = Modifier
 ) {
-    val strokeWidth = with(LocalDensity.current) { outlineWidthDp.dp.toPx() }
+    val effectWidthPx = with(LocalDensity.current) { effectWidthDp.dp.toPx() }
     Box(modifier = modifier) {
-        Text(
-            text = text,
-            modifier = Modifier.fillMaxWidth(),
-            color = outlineColor,
-            fontSize = fontSizeSp.sp,
-            lineHeight = (fontSizeSp + 4f).sp,
-            textAlign = textAlign,
-            maxLines = 1,
-            overflow = TextOverflow.Clip,
-            style = MaterialTheme.typography.bodyLarge.copy(drawStyle = Stroke(width = strokeWidth))
-        )
+        if (usesOutline) {
+            Text(
+                text = text,
+                modifier = Modifier.fillMaxWidth(),
+                color = effectColor,
+                fontSize = fontSizeSp.sp,
+                lineHeight = (fontSizeSp + 4f).sp,
+                textAlign = textAlign,
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    drawStyle = Stroke(width = effectWidthPx)
+                )
+            )
+        }
         Text(
             text = text,
             modifier = Modifier.fillMaxWidth(),
@@ -199,7 +209,18 @@ private fun OutlinedFloatingPreviewText(
             lineHeight = (fontSizeSp + 4f).sp,
             textAlign = textAlign,
             maxLines = 1,
-            overflow = TextOverflow.Clip
+            overflow = TextOverflow.Clip,
+            style = if (usesOutline) {
+                MaterialTheme.typography.bodyLarge
+            } else {
+                MaterialTheme.typography.bodyLarge.copy(
+                    shadow = Shadow(
+                        color = effectColor,
+                        offset = Offset(0f, effectWidthPx * 0.5f),
+                        blurRadius = effectWidthPx
+                    )
+                )
+            }
         )
     }
 }

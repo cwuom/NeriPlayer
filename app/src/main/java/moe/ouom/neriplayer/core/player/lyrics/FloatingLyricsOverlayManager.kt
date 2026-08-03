@@ -41,6 +41,7 @@ object FloatingLyricsOverlayManager {
     private var translationTextView: AnimatedOutlinedLyricTextView? = null
     private var layoutParams: WindowManager.LayoutParams? = null
     private var preferences = FloatingLyricsPreferences()
+    private var appliedStylePreferences: FloatingLyricsPreferences? = null
     private var lyricLine: String? = null
     private var translationLine: String? = null
     private var pendingLyricLine: String? = null
@@ -247,6 +248,10 @@ object FloatingLyricsOverlayManager {
     }
 
     private fun updateOverlayStyle() {
+        val root = rootView ?: return
+        if (appliedStylePreferences == preferences) {
+            return
+        }
         val textColor = "#${normalizeFloatingLyricsColorHex(preferences.textColorHex)}".toColorInt()
         val outlineColor = (
             "#${normalizeFloatingLyricsColorHex(preferences.outlineColorHex)}"
@@ -256,16 +261,17 @@ object FloatingLyricsOverlayManager {
             FLOATING_LYRICS_ALIGNMENT_RIGHT -> 1f
             else -> 0.5f
         }
-        rootView?.background = null
+        root.background = null
         layoutParams?.width = dp(preferences.maxWidthDp).roundToInt()
         lyricTextView?.apply {
             setRevealAnimationEnabled(preferences.revealAnimationEnabled)
             setAlignmentFactor(alignmentFactor)
             setLyricStyle(
                 textColor = withAlpha(textColor, preferences.lyricAlpha),
-                outlineColor = withAlpha(outlineColor, preferences.lyricAlpha),
+                effectColor = withAlpha(outlineColor, preferences.lyricAlpha),
                 textSizePx = sp(preferences.fontSizeSp),
-                outlineWidthPx = dp(preferences.outlineWidthDp),
+                effectWidthPx = dp(preferences.outlineWidthDp),
+                renderStyle = preferences.renderStyle,
                 bold = true
             )
         }
@@ -274,17 +280,19 @@ object FloatingLyricsOverlayManager {
             setAlignmentFactor(alignmentFactor)
             setLyricStyle(
                 textColor = withAlpha(textColor, preferences.translationAlpha),
-                outlineColor = withAlpha(outlineColor, preferences.translationAlpha),
+                effectColor = withAlpha(outlineColor, preferences.translationAlpha),
                 textSizePx = sp(
                     (preferences.fontSizeSp * FLOATING_LYRICS_TRANSLATION_STYLE_SCALE)
                         .coerceAtLeast(7f)
                 ),
-                outlineWidthPx = dp(preferences.translationOutlineWidthDp),
+                effectWidthPx = dp(preferences.translationOutlineWidthDp),
+                renderStyle = preferences.renderStyle,
                 bold = false
             )
         }
         updateOverlayMinimumHeight()
         scheduleLayoutUpdate()
+        appliedStylePreferences = preferences
     }
 
     private fun updateOverlayMinimumHeight() {
@@ -340,6 +348,7 @@ object FloatingLyricsOverlayManager {
         lyricTextView = null
         translationTextView = null
         layoutParams = null
+        appliedStylePreferences = null
         mainHandler.removeCallbacks(contentUpdateRunnable)
         mainHandler.removeCallbacks(layoutUpdateRunnable)
         contentUpdateScheduled = false

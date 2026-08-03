@@ -1001,6 +1001,16 @@ object AutoSettingsSchema {
         val floatingLyricsTextColor = Unit
 
         @AutoSetting(
+            key = "floating_lyrics_render_style",
+            type = SettingValueType.String,
+            defaultString = FLOATING_LYRICS_RENDER_STYLE_SHADOW,
+            order = 17,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsRenderStyle = Unit
+
+        @AutoSetting(
             key = "floating_lyrics_outline_color",
             type = SettingValueType.String,
             defaultString = "121212",

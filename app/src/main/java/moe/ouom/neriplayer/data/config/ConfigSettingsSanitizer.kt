@@ -27,6 +27,7 @@ import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsFontSizeSp
 import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsMaxWidthDp
 import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsOutlineWidthDp
 import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsPosition
+import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsRenderStyle
 import moe.ouom.neriplayer.data.settings.normalizeLyricDefaultOffsetMs
 import moe.ouom.neriplayer.data.settings.normalizeLyricFontScale
 import java.util.Locale
@@ -265,6 +266,9 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
         }
         sanitizeStringValue(strings, SettingsKeys.FLOATING_LYRICS_OUTLINE_COLOR.name, onAdjusted) {
             normalizeFloatingLyricsColorHex(it)
+        }
+        sanitizeStringValue(strings, SettingsKeys.FLOATING_LYRICS_RENDER_STYLE.name, onAdjusted) {
+            normalizeFloatingLyricsRenderStyle(it)
         }
         sanitizeStringValue(strings, SettingsKeys.FLOATING_LYRICS_ALIGNMENT.name, onAdjusted) {
             normalizeFloatingLyricsAlignment(it)

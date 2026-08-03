@@ -5,6 +5,8 @@ import java.util.Locale
 const val FLOATING_LYRICS_ALIGNMENT_LEFT = "left"
 const val FLOATING_LYRICS_ALIGNMENT_CENTER = "center"
 const val FLOATING_LYRICS_ALIGNMENT_RIGHT = "right"
+const val FLOATING_LYRICS_RENDER_STYLE_SHADOW = "shadow"
+const val FLOATING_LYRICS_RENDER_STYLE_OUTLINE = "outline"
 const val FLOATING_LYRICS_TRANSLATION_STYLE_SCALE = 0.72f
 
 const val MIN_FLOATING_LYRICS_FONT_SIZE_SP = 8f
@@ -36,6 +38,7 @@ data class FloatingLyricsPreferences(
     val enabled: Boolean = false,
     val hideInApp: Boolean = false,
     val textColorHex: String = DEFAULT_FLOATING_LYRICS_TEXT_COLOR,
+    val renderStyle: String = FLOATING_LYRICS_RENDER_STYLE_SHADOW,
     val outlineColorHex: String = DEFAULT_FLOATING_LYRICS_OUTLINE_COLOR,
     val fontSizeSp: Float = DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP,
     val outlineWidthDp: Float = DEFAULT_FLOATING_LYRICS_OUTLINE_WIDTH_DP,
@@ -64,7 +67,8 @@ data class FloatingLyricsPreferences(
             maxWidthDp = normalizeFloatingLyricsMaxWidthDp(maxWidthDp),
             positionX = normalizeFloatingLyricsPosition(positionX),
             positionY = normalizeFloatingLyricsPosition(positionY),
-            alignment = normalizeFloatingLyricsAlignment(alignment)
+            alignment = normalizeFloatingLyricsAlignment(alignment),
+            renderStyle = normalizeFloatingLyricsRenderStyle(renderStyle)
         )
     }
 }
@@ -124,6 +128,13 @@ fun normalizeFloatingLyricsAlignment(value: String?): String {
         FLOATING_LYRICS_ALIGNMENT_LEFT -> FLOATING_LYRICS_ALIGNMENT_LEFT
         FLOATING_LYRICS_ALIGNMENT_RIGHT -> FLOATING_LYRICS_ALIGNMENT_RIGHT
         else -> FLOATING_LYRICS_ALIGNMENT_CENTER
+    }
+}
+
+fun normalizeFloatingLyricsRenderStyle(value: String?): String {
+    return when (value?.trim()?.lowercase(Locale.ROOT)) {
+        FLOATING_LYRICS_RENDER_STYLE_OUTLINE -> FLOATING_LYRICS_RENDER_STYLE_OUTLINE
+        else -> FLOATING_LYRICS_RENDER_STYLE_SHADOW
     }
 }
 

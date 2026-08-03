@@ -1435,6 +1435,10 @@
     <string name="settings_floating_lyrics_hide_in_app">应用内隐藏</string>
     <string name="settings_floating_lyrics_hide_in_app_desc">打开 NeriPlayer 时隐藏悬浮歌词，避免遮挡页面</string>
     <string name="settings_floating_lyrics_text_color">歌词颜色</string>
+    <string name="settings_floating_lyrics_render_style">渲染方式</string>
+    <string name="settings_floating_lyrics_render_shadow">阴影</string>
+    <string name="settings_floating_lyrics_render_outline">描边</string>
+    <string name="settings_floating_lyrics_shadow_color">阴影颜色</string>
     <string name="settings_floating_lyrics_outline_color">描边颜色</string>
     <string name="settings_floating_lyrics_color_white">白色</string>
     <string name="settings_floating_lyrics_color_black">黑色</string>
@@ -1451,6 +1455,9 @@
     <string name="settings_floating_lyrics_lyric_outline_width">歌词描边宽度</string>
     <string name="settings_floating_lyrics_translation_outline_width">翻译描边宽度</string>
     <string name="settings_floating_lyrics_outline_width_value">%1$.1f dp</string>
+    <string name="settings_floating_lyrics_lyric_shadow_blur">歌词阴影模糊</string>
+    <string name="settings_floating_lyrics_translation_shadow_blur">翻译阴影模糊</string>
+    <string name="settings_floating_lyrics_shadow_blur_value">%1$.1f dp</string>
     <string name="settings_floating_lyrics_lyric_alpha">主歌词透明度</string>
     <string name="settings_floating_lyrics_translation_alpha">翻译透明度</string>
     <string name="settings_floating_lyrics_alpha_value">%1$d%%</string>

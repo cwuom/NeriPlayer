@@ -106,6 +106,10 @@ class AutoSettingsGeneratedTest {
             "theme_color_palette_v2" in stringKeyNames
         )
         assertTrue(
+            "floating lyrics render style should be exportable",
+            "floating_lyrics_render_style" in stringKeyNames
+        )
+        assertTrue(
             "download string should be exportable",
             "download_directory_uri" in stringKeyNames
         )
