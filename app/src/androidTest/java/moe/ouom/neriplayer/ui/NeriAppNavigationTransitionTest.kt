@@ -194,9 +194,10 @@ class NeriAppNavigationTransitionTest {
                     .size(240.dp, 320.dp)
                     .testTag(RestoredSceneRootTag)
             ) { route ->
+                val restoredEntry = rememberMainTabSceneRestoredEntry()
                 val tag = if (
                     route == Destinations.Home.route &&
-                        LocalMainTabSceneRestored.current
+                        restoredEntry
                 ) {
                     RestoredHomeSceneTag
                 } else {

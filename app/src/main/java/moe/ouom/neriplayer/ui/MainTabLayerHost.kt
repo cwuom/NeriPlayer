@@ -52,7 +52,8 @@ internal data class MainTabLayerScene(
     val route: String,
     val offsetFraction: Float,
     val glassOwner: MainTabGlassOwner = MainTabGlassOwner(route),
-    val restored: Boolean = false
+    val restored: Boolean = false,
+    val restorationToken: Long = 0L
 )
 
 internal val LocalMainTabSceneRestored = staticCompositionLocalOf { false }
@@ -66,12 +67,13 @@ internal fun shouldSuppressRestoredMainTabHostEntry(
 @Composable
 internal fun rememberMainTabSceneRestoredEntry(): Boolean {
     val restored = LocalMainTabSceneRestored.current
-    var suppressEntry by remember(restored) { mutableStateOf(restored) }
+    var suppressEntry by remember { mutableStateOf(restored) }
     LaunchedEffect(restored) {
         if (restored) {
-            withFrameNanos { }
-            suppressEntry = false
+            suppressEntry = true
         }
+        withFrameNanos { }
+        suppressEntry = false
     }
     return suppressEntry
 }
@@ -168,6 +170,12 @@ internal fun MainTabLayerHost(
                         saveableStateHolder.SaveableStateProvider(scene.route) {
                             content(scene.route)
                         }
+                        if (scene.restored) {
+                            LaunchedEffect(scene.restorationToken) {
+                                withFrameNanos { }
+                                controller.consumeRestoredScene(scene.restorationToken)
+                            }
+                        }
                     }
                 }
             }
@@ -200,6 +208,7 @@ internal class MainTabLayerTransitionController(
     private var progressState by mutableFloatStateOf(1f)
     private var runningState by mutableStateOf(false)
     private var targetSceneRestoredState by mutableStateOf(false)
+    private var targetSceneRestorationToken = 0L
     private var transitionJob: Job? = null
     private var generation = 0L
 
@@ -211,7 +220,8 @@ internal class MainTabLayerTransitionController(
                     MainTabLayerScene(
                         route = toRouteState,
                         offsetFraction = 0f,
-                        restored = targetSceneRestoredState
+                        restored = targetSceneRestoredState,
+                        restorationToken = targetSceneRestorationToken
                     )
                 )
             }
@@ -225,7 +235,8 @@ internal class MainTabLayerTransitionController(
                 MainTabLayerScene(
                     route = toRouteState,
                     offsetFraction = direction * (1f - progressState),
-                    restored = targetSceneRestoredState
+                    restored = targetSceneRestoredState,
+                    restorationToken = targetSceneRestorationToken
                 )
             )
         }
@@ -240,6 +251,7 @@ internal class MainTabLayerTransitionController(
         directionState = next.direction
         progressState = next.progress.coerceIn(0f, 1f)
         targetSceneRestoredState = next.restored
+        targetSceneRestorationToken = requestGeneration
         runningState = true
         transitionJob = scope.launch {
             try {
@@ -259,6 +271,16 @@ internal class MainTabLayerTransitionController(
         runningState = false
         fromRouteState = null
         targetSceneRestoredState = false
+        targetSceneRestorationToken = 0L
+    }
+
+    fun consumeRestoredScene(restorationToken: Long) {
+        if (
+            targetSceneRestoredState &&
+            targetSceneRestorationToken == restorationToken
+        ) {
+            targetSceneRestoredState = false
+        }
     }
 
     private fun resolveNextTransition(
@@ -354,17 +376,7 @@ internal class MainTabLayerTransitionController(
         fromRouteState = null
         runningState = false
         transitionJob = null
-        if (!targetSceneRestoredState) return
-
-        val settledGeneration = generation
-        scope.launch {
-            repeat(RESTORED_SCENE_FLAG_HOLD_FRAMES) {
-                withFrameNanos { }
-            }
-            if (settledGeneration == generation && !runningState) {
-                targetSceneRestoredState = false
-            }
-        }
+        targetSceneRestoredState = false
     }
 
     private data class TransitionStart(
@@ -388,6 +400,5 @@ internal class MainTabLayerTransitionController(
 
     private companion object {
         const val MIN_INTERRUPTED_MAIN_TAB_TRANSITION_MS = 120
-        const val RESTORED_SCENE_FLAG_HOLD_FRAMES = 2
     }
 }
