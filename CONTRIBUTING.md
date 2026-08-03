@@ -497,10 +497,16 @@
    `BootstrapSettingsSnapshot`、`ThemePreferenceSnapshot` 或 `PlaybackPreferenceSnapshot`。
 5. UI 入口通常放在 `SettingsScreen.kt` 对应 `SettingsPage` 或
    `ui/screen/tab/settings/component/` 下。
-6. 探索页搜索历史由 `ExploreSearchHistoryRepository` 保存；
+6. 新增或改名设置时，同步补齐中英文字符串、`SettingsSearchIndex.kt`
+   搜索关键词、设置页可见性/过滤测试和 `AutoSettingsGeneratedTest`。
+7. 设置控制 Activity alias、播放服务、系统入口或启动前行为时，必须同时验证
+   生成 key、手写 setter、启动 snapshot 和实际入口是否使用同一份偏好。
+8. 新增复杂偏好模型时，优先把归一化、边界裁剪和布局计算拆成可单测函数，
+   不要只在 Compose 组件内隐式处理。
+9. 探索页搜索历史由 `ExploreSearchHistoryRepository` 保存；
    `explore_search_history_enabled` 关闭时，探索页必须隐藏历史并停止新增记录，
    不要在开关切换时静默删除已有记录。
-7. 歌词字号现在分成封面页和歌词页两组，且歌词和翻译各自独立；
+10. 歌词字号现在分成封面页和歌词页两组，且歌词和翻译各自独立；
    修改相关 UI 时同时更新 `SettingsRepository.lyricFontScalesFlow`、
    `setLyricFontScale(target, scale)` 和对应的预览/播放调用点。
 

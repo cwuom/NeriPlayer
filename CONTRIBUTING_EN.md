@@ -571,10 +571,19 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    `BootstrapSettingsSnapshot`, `ThemePreferenceSnapshot`, or `PlaybackPreferenceSnapshot`.
 5. UI usually belongs in the matching `SettingsPage` in `SettingsScreen.kt` or
    under `ui/screen/tab/settings/component/`.
-6. Explore search history is stored by `ExploreSearchHistoryRepository`. When
+6. When adding or renaming a setting, update localized strings,
+   `SettingsSearchIndex.kt` keywords, Settings page visibility/filtering tests,
+   and `AutoSettingsGeneratedTest`.
+7. If a setting controls an Activity alias, playback service, system entry point,
+   or pre-startup behavior, verify that generated keys, handwritten setters,
+   startup snapshots, and the actual entry point all read the same preference.
+8. For complex preference models, prefer extracting normalization, bounds, and
+   layout math into unit-testable functions instead of keeping the behavior
+   implicit inside Compose.
+9. Explore search history is stored by `ExploreSearchHistoryRepository`. When
    `explore_search_history_enabled` is off, Explore must hide the history and stop
    new records without silently deleting existing entries on toggle.
-7. Lyrics font size is now split between cover and lyrics pages, with separate
+10. Lyrics font size is now split between cover and lyrics pages, with separate
    lyric and translation scales. When touching related UI, update
    `SettingsRepository.lyricFontScalesFlow`, `setLyricFontScale(target, scale)`,
    and the matching preview/playback call sites together.
