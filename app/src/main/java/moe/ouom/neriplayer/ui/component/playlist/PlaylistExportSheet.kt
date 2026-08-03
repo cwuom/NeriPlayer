@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
@@ -32,6 +33,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,13 +71,19 @@ internal fun PlaylistExportSheet(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val playlistListState = rememberLazyListState()
     var newName by remember { mutableStateOf("") }
     var pendingExport by remember { mutableStateOf<PendingPlaylistExport?>(null) }
+    var isTargetPickerVisible by remember { mutableStateOf(true) }
+    var isTargetPickerClosing by remember { mutableStateOf(false) }
+    var isExportConfirmationVisible by remember { mutableStateOf(false) }
     val resolvedCreateActionLabel =
         createActionLabel ?: stringResource(R.string.playlist_create_and_export)
 
     fun clearPendingExport() {
         pendingExport = null
+        isExportConfirmationVisible = false
+        isTargetPickerClosing = false
     }
 
     fun dismissAnimated() {
@@ -91,99 +99,129 @@ internal fun PlaylistExportSheet(
         dismissAnimated()
     }
 
+    fun restoreTargetPicker() {
+        clearPendingExport()
+        isTargetPickerVisible = true
+    }
+
     fun requestExportConfirmation(targetName: String, action: () -> Unit) {
-        pendingExport = PendingPlaylistExport(targetName) {
+        if (isTargetPickerClosing || isExportConfirmationVisible) return
+        val export = PendingPlaylistExport(targetName) {
             runThenDismiss(action)
         }
-    }
-
-    ModalBottomSheet(
-        onDismissRequest = { dismissAnimated() },
-        sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        containerColor = MaterialTheme.colorScheme.surface,
-        tonalElevation = 8.dp,
-        scrimColor = Color.Black.copy(alpha = 0.46f),
-        dragHandle = {
-            BottomSheetDefaults.DragHandle(
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
-            )
-        }
-    ) {
-        Column(
-            modifier = Modifier
-                .bottomSheetScrollGuard()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 16.dp)
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleLarge
-                )
-                Text(
-                    text = pluralStringResource(
-                        R.plurals.common_selected_count,
-                        selectedCount,
-                        selectedCount
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                MiuixSettingsTextField(
-                    value = newName,
-                    onValueChange = { newName = it },
-                    placeholder = { Text(stringResource(R.string.playlist_create_name)) },
-                    singleLine = true
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    MiuixSettingsButton(
-                        enabled = newName.isNotBlank() && selectedCount > 0,
-                        onClick = {
-                            val name = newName.trim()
-                            if (name.isBlank()) return@MiuixSettingsButton
-                            requestExportConfirmation(name) { onCreateAndExport(name) }
-                        }
-                    ) {
-                        Icon(Icons.Outlined.Add, contentDescription = null)
-                        Spacer(Modifier.width(4.dp))
-                        Text(resolvedCreateActionLabel)
+        pendingExport = export
+        isTargetPickerClosing = true
+        scope.launch {
+            runCatching { sheetState.hide() }
+            try {
+                if (pendingExport === export) {
+                    isTargetPickerVisible = false
+                    // wait until the sheet dialog is removed before opening the confirmation dialog
+                    withFrameNanos { }
+                    if (pendingExport === export) {
+                        isExportConfirmationVisible = true
                     }
                 }
+            } finally {
+                isTargetPickerClosing = false
+            }
+        }
+    }
 
-                HorizontalDivider(
-                    thickness = DividerDefaults.Thickness,
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+    if (isTargetPickerVisible) {
+        ModalBottomSheet(
+            onDismissRequest = { dismissAnimated() },
+            sheetState = sheetState,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+            tonalElevation = 8.dp,
+            scrimColor = Color.Black.copy(alpha = 0.46f),
+            dragHandle = {
+                BottomSheetDefaults.DragHandle(
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
                 )
             }
-
-            Spacer(Modifier.height(8.dp))
-
-            LazyColumn(modifier = Modifier.playlistExportListHeight()) {
-                items(playlists, key = { it.id }) { playlist ->
-                    PlaylistExportRow(
-                        playlist = playlist,
-                        onClick = {
-                            context.performHapticFeedback()
-                            requestExportConfirmation(playlist.name) {
-                                onExportToPlaylist(playlist)
-                            }
-                        }
+        ) {
+            Column(
+                modifier = Modifier
+                    .bottomSheetScrollGuard()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 16.dp)
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleLarge
                     )
+                    Text(
+                        text = pluralStringResource(
+                            R.plurals.common_selected_count,
+                            selectedCount,
+                            selectedCount
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    MiuixSettingsTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        placeholder = { Text(stringResource(R.string.playlist_create_name)) },
+                        singleLine = true
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        MiuixSettingsButton(
+                            enabled = !isTargetPickerClosing &&
+                                newName.isNotBlank() && selectedCount > 0,
+                            onClick = {
+                                val name = newName.trim()
+                                if (name.isBlank()) return@MiuixSettingsButton
+                                requestExportConfirmation(name) { onCreateAndExport(name) }
+                            }
+                        ) {
+                            Icon(Icons.Outlined.Add, contentDescription = null)
+                            Spacer(Modifier.width(4.dp))
+                            Text(resolvedCreateActionLabel)
+                        }
+                    }
+
+                    HorizontalDivider(
+                        thickness = DividerDefaults.Thickness,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                LazyColumn(
+                    state = playlistListState,
+                    modifier = Modifier.playlistExportListHeight()
+                ) {
+                    items(playlists, key = { it.id }) { playlist ->
+                        PlaylistExportRow(
+                            playlist = playlist,
+                            enabled = !isTargetPickerClosing,
+                            onClick = {
+                                context.performHapticFeedback()
+                                requestExportConfirmation(playlist.name) {
+                                    onExportToPlaylist(playlist)
+                                }
+                            }
+                        )
+                    }
                 }
             }
         }
     }
 
-    pendingExport?.let { export ->
+    if (isExportConfirmationVisible) pendingExport?.let { export ->
         AlertDialog(
             onDismissRequest = {
-                clearPendingExport()
+                restoreTargetPicker()
             },
             title = { Text(stringResource(R.string.playlist_batch_export_confirm_title)) },
             text = {
@@ -210,7 +248,7 @@ internal fun PlaylistExportSheet(
             dismissButton = {
                 HapticTextButton(
                     onClick = {
-                        clearPendingExport()
+                        restoreTargetPicker()
                     }
                 ) {
                     Text(stringResource(R.string.action_cancel))
@@ -223,6 +261,7 @@ internal fun PlaylistExportSheet(
 @Composable
 private fun PlaylistExportRow(
     playlist: LocalPlaylist,
+    enabled: Boolean,
     onClick: () -> Unit
 ) {
     val shape = RoundedCornerShape(18.dp)
@@ -232,7 +271,7 @@ private fun PlaylistExportRow(
             .padding(vertical = 4.dp)
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.62f))
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
