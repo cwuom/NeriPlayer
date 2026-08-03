@@ -28,6 +28,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
@@ -52,6 +53,12 @@ import java.util.Locale
 
 private val USB_EXCLUSIVE_BACKGROUND_PERMISSION_PROMPT_SUPPRESSED =
     booleanPreferencesKey("usb_exclusive_background_permission_prompt_suppressed")
+private val NOW_PLAYING_CONTROL_PLACEMENT =
+    intPreferencesKey("nowplaying_control_placement")
+private val NOW_PLAYING_CONTROL_SIZE =
+    intPreferencesKey("nowplaying_control_size")
+private val LYRICS_CONTROL_SIZE =
+    intPreferencesKey("lyrics_control_size")
 
 class SettingsRepository(private val context: Context) {
     private val autoSettingsRepository = AutoSettingsRepository(context)
@@ -89,6 +96,15 @@ class SettingsRepository(private val context: Context) {
 
     val nowPlayingToolbarDockEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.nowPlayingToolbarDockEnabledFlow
+
+    val playbackControlLayoutPreferencesFlow: Flow<PlaybackControlLayoutPreferences> =
+        dataStoreSettingFlow { preferences ->
+            resolvePlaybackControlLayoutPreferences(
+                nowPlayingPlacementValue = preferences[NOW_PLAYING_CONTROL_PLACEMENT],
+                nowPlayingSizeValue = preferences[NOW_PLAYING_CONTROL_SIZE],
+                lyricsSizeValue = preferences[LYRICS_CONTROL_SIZE]
+            )
+        }
 
     val nowPlayingKeepScreenOnFlow: Flow<Boolean> =
         autoSettingsRepository.nowPlayingKeepScreenOnFlow
@@ -857,6 +873,16 @@ class SettingsRepository(private val context: Context) {
                 SettingsKeys.LYRICS_PAGE_TRANSLATION_FONT_SCALE
         }
         context.dataStore.edit { it[key] = normalizeLyricFontScale(scale) }
+    }
+
+    suspend fun setPlaybackControlLayoutPreferences(
+        preferences: PlaybackControlLayoutPreferences
+    ) {
+        context.dataStore.edit {
+            it[NOW_PLAYING_CONTROL_PLACEMENT] = preferences.nowPlayingPlacement.ordinal
+            it[NOW_PLAYING_CONTROL_SIZE] = preferences.nowPlayingSize.ordinal
+            it[LYRICS_CONTROL_SIZE] = preferences.lyricsSize.ordinal
+        }
     }
 
     suspend fun setUiDensityScale(scale: Float) {

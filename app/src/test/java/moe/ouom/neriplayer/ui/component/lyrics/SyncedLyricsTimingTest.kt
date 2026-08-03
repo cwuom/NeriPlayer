@@ -111,8 +111,8 @@ class SyncedLyricsViewTimingTest {
     }
 
     @Test
-    fun `embedded lyrics use a shorter edge fade than the full lyrics page`() {
-        assertEquals(24.dp, resolveLyricEdgeFadeHeight(isEmbedded = true))
+    fun `embedded lyrics use a gradual edge fade while retaining a shorter full-page fade`() {
+        assertEquals(56.dp, resolveLyricEdgeFadeHeight(isEmbedded = true))
         assertEquals(72.dp, resolveLyricEdgeFadeHeight(isEmbedded = false))
     }
 

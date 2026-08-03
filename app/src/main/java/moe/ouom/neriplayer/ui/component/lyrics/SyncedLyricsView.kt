@@ -639,20 +639,31 @@ fun Modifier.verticalEdgeFade(fadeHeight: Dp): Modifier = this
     .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
     .drawWithContent {
         drawContent()
-        val edge = (fadeHeight.toPx() / size.height).coerceIn(0f, 0.5f)
+        val edge = (fadeHeight.toPx() / size.height).coerceIn(0f, 0.44f)
+        if (edge <= 0f) return@drawWithContent
+        val transparentMask = Color.Black.copy(alpha = 0f)
+        val lightMask = Color.Black.copy(alpha = 0.12f)
+        val mediumMask = Color.Black.copy(alpha = 0.58f)
+        val nearOpaqueMask = Color.Black.copy(alpha = 0.9f)
         val brush = Brush.verticalGradient(
             colorStops = arrayOf(
-                0.0f       to Color.Transparent,
-                edge       to Color.Black,
-                (1f - edge) to Color.Black,
-                1.0f       to Color.Transparent
+                0.0f to transparentMask,
+                edge * 0.3f to lightMask,
+                edge * 0.65f to mediumMask,
+                edge to nearOpaqueMask,
+                edge * 1.12f to Color.Black,
+                1f - edge * 1.12f to Color.Black,
+                1f - edge to nearOpaqueMask,
+                1f - edge * 0.65f to mediumMask,
+                1f - edge * 0.3f to lightMask,
+                1.0f to transparentMask
             )
         )
         drawRect(brush = brush, size = size, blendMode = BlendMode.DstIn)
     }
 
 internal fun resolveLyricEdgeFadeHeight(isEmbedded: Boolean): Dp {
-    return if (isEmbedded) 24.dp else 72.dp
+    return if (isEmbedded) 56.dp else 72.dp
 }
 
 @OptIn(ExperimentalFoundationApi::class)

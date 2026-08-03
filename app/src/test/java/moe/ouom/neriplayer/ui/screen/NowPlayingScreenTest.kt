@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlayerQueueDisplayItem
+import moe.ouom.neriplayer.data.settings.NowPlayingControlPlacement
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
 import moe.ouom.neriplayer.data.model.SongItem
 import kotlin.math.pow
@@ -129,6 +130,76 @@ class NowPlayingScreenTest {
                 useCompactPortraitLayout = false
             )
         )
+    }
+
+    @Test
+    fun `bottom playback layouts temporarily disable the dock`() {
+        listOf(
+            NowPlayingControlPlacement.BOTTOM,
+            NowPlayingControlPlacement.BOTTOM_WITH_PROGRESS
+        ).forEach { placement ->
+            assertTrue(placement.placesControlsAtBottom)
+            assertFalse(
+                shouldUseNowPlayingToolbarDock(
+                    toolbarDockEnabled = true,
+                    useCompactPortraitLayout = false,
+                    controlsAtBottom = placement.placesControlsAtBottom
+                )
+            )
+        }
+        assertTrue(NowPlayingControlPlacement.BOTTOM_WITH_PROGRESS.placesProgressAtBottom)
+        assertTrue(
+            shouldUseNowPlayingToolbarDock(
+                toolbarDockEnabled = true,
+                useCompactPortraitLayout = false,
+                controlsAtBottom = false
+            )
+        )
+    }
+
+    @Test
+    fun `lyrics transition keeps position-sensitive playback elements shared`() {
+        assertEquals(
+            setOf(
+                "btn_back",
+                "cover_image",
+                "song_title",
+                "song_artist",
+                "progress_bar",
+                "player_previous",
+                "play_button",
+                "player_next"
+            ),
+            NowPlayingLyricsSharedTransitionElement.values().map { it.key }.toSet()
+        )
+    }
+
+    @Test
+    fun `large main controls reduce spacing before overflowing narrow screens`() {
+        val layout = resolveNowPlayingMainControlsLayout(
+            availableWidth = 280.dp,
+            secondaryButtonSize = 50.dp,
+            primaryButtonSize = 60.dp,
+            preferredSpacing = 24.dp
+        )
+
+        assertEquals(5.dp, layout.spacing)
+        assertEquals(280.dp, layout.secondaryButtonSize * 4 + layout.primaryButtonSize + layout.spacing * 4)
+    }
+
+    @Test
+    fun `main controls scale as a group when minimum spacing cannot fit`() {
+        val layout = resolveNowPlayingMainControlsLayout(
+            availableWidth = 250.dp,
+            secondaryButtonSize = 50.dp,
+            primaryButtonSize = 60.dp,
+            preferredSpacing = 24.dp
+        )
+
+        assertEquals(45f, layout.secondaryButtonSize.value, 0.001f)
+        assertEquals(54f, layout.primaryButtonSize.value, 0.001f)
+        assertEquals(4.dp, layout.spacing)
+        assertEquals(250.dp, layout.secondaryButtonSize * 4 + layout.primaryButtonSize + layout.spacing * 4)
     }
 
     @Test

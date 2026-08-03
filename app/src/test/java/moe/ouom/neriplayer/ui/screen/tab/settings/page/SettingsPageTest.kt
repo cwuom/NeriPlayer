@@ -251,6 +251,13 @@ class SettingsPageTest {
             ).itemIndex
         )
         assertEquals(
+            4,
+            settingsSearchScrollAnchor(
+                page = SettingsPage.Personalization,
+                targetId = "setting:lyrics_control_size"
+            ).itemIndex
+        )
+        assertEquals(
             5,
             settingsSearchScrollAnchor(
                 page = SettingsPage.Personalization,

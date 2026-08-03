@@ -245,6 +245,7 @@ import moe.ouom.neriplayer.data.settings.MAX_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.MIN_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
+import moe.ouom.neriplayer.data.settings.PlaybackControlLayoutPreferences
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.normalizeLyricFontScale
 import moe.ouom.neriplayer.data.settings.resolveLyricDefaultOffsetMs
@@ -265,6 +266,8 @@ import moe.ouom.neriplayer.ui.component.playback.PlaybackSoundSheet
 import moe.ouom.neriplayer.ui.component.playback.SongMetadataSearchContent
 import moe.ouom.neriplayer.ui.component.playback.NowPlayingCoverPreviewDialog
 import moe.ouom.neriplayer.ui.component.playback.PlaybackControlIndicator
+import moe.ouom.neriplayer.ui.component.playback.scaleButtonSize
+import moe.ouom.neriplayer.ui.component.playback.scaleIconSize
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceBadge
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
 import moe.ouom.neriplayer.ui.component.playback.rememberDelayedPlaybackWaiting
@@ -329,12 +332,26 @@ private const val CompactNowPlayingPortraitMaxHeightDp = 600f
 private const val PlaybackActionToolbarItemCount = 5
 private val PlaybackActionToolbarMinimumTouchTarget = 48.dp
 private val PlaybackActionToolbarSmallSlotThreshold = 40.dp
+private val NowPlayingMainControlsMinimumSpacing = 4.dp
 private val LyricOffsetStepMsFloat = LYRIC_DEFAULT_OFFSET_STEP_MS.toFloat()
 
 internal enum class NowPlayingWideLyricsMode {
     NO_LYRICS,
     ADVANCED,
     SYNCED
+}
+
+internal enum class NowPlayingLyricsSharedTransitionElement(
+    val key: String
+) {
+    BACK("btn_back"),
+    COVER("cover_image"),
+    TITLE("song_title"),
+    ARTIST("song_artist"),
+    PROGRESS("progress_bar"),
+    PREVIOUS("player_previous"),
+    PLAY("play_button"),
+    NEXT("player_next")
 }
 
 internal fun resolveNowPlayingWideLyricsMode(
@@ -365,8 +382,9 @@ internal fun shouldShowNowPlayingCoverLyrics(
 
 internal fun shouldUseNowPlayingToolbarDock(
     toolbarDockEnabled: Boolean,
-    useCompactPortraitLayout: Boolean
-): Boolean = toolbarDockEnabled && !useCompactPortraitLayout
+    useCompactPortraitLayout: Boolean,
+    controlsAtBottom: Boolean = false
+): Boolean = toolbarDockEnabled && !useCompactPortraitLayout && !controlsAtBottom
 
 internal data class PlaybackActionToolbarLayout(
     val horizontalPadding: Dp,
@@ -378,15 +396,17 @@ internal data class PlaybackActionToolbarLayout(
 internal fun resolvePlaybackActionToolbarLayout(
     availableWidth: Dp,
     preferredHorizontalPadding: Dp,
-    defaultIconSize: Dp
+    defaultIconSize: Dp,
+    preferredMinimumTouchTarget: Dp = PlaybackActionToolbarMinimumTouchTarget
 ): PlaybackActionToolbarLayout {
+    val minimumTouchTarget = preferredMinimumTouchTarget.coerceAtLeast(0.dp)
     val preferredSlotWidth = (
         (availableWidth - preferredHorizontalPadding * 2) / PlaybackActionToolbarItemCount
         ).coerceAtLeast(0.dp)
-    if (preferredSlotWidth >= PlaybackActionToolbarMinimumTouchTarget) {
+    if (preferredSlotWidth >= minimumTouchTarget) {
         return PlaybackActionToolbarLayout(
             horizontalPadding = preferredHorizontalPadding,
-            minimumInteractiveComponentSize = PlaybackActionToolbarMinimumTouchTarget,
+            minimumInteractiveComponentSize = minimumTouchTarget,
             iconSize = defaultIconSize,
             useEqualWidthSlots = false
         )
@@ -396,7 +416,7 @@ internal fun resolvePlaybackActionToolbarLayout(
     return PlaybackActionToolbarLayout(
         horizontalPadding = 0.dp,
         minimumInteractiveComponentSize = minOf(
-            PlaybackActionToolbarMinimumTouchTarget,
+            minimumTouchTarget,
             compactSlotWidth
         ),
         iconSize = if (compactSlotWidth < PlaybackActionToolbarSmallSlotThreshold) {
@@ -405,6 +425,46 @@ internal fun resolvePlaybackActionToolbarLayout(
             defaultIconSize
         },
         useEqualWidthSlots = true
+    )
+}
+
+internal data class NowPlayingMainControlsLayout(
+    val secondaryButtonSize: Dp,
+    val primaryButtonSize: Dp,
+    val spacing: Dp
+)
+
+internal fun resolveNowPlayingMainControlsLayout(
+    availableWidth: Dp,
+    secondaryButtonSize: Dp,
+    primaryButtonSize: Dp,
+    preferredSpacing: Dp
+): NowPlayingMainControlsLayout {
+    val gapCount = PlaybackActionToolbarItemCount - 1
+    val requestedButtonWidth = secondaryButtonSize * 4 + primaryButtonSize
+    val minimumSpacing = minOf(
+        NowPlayingMainControlsMinimumSpacing,
+        availableWidth / gapCount
+    )
+    val availableButtonWidth = (availableWidth - minimumSpacing * gapCount)
+        .coerceAtLeast(0.dp)
+    val buttonScale = if (
+        requestedButtonWidth.value > 0f && requestedButtonWidth > availableButtonWidth
+    ) {
+        (availableButtonWidth.value / requestedButtonWidth.value).coerceIn(0f, 1f)
+    } else {
+        1f
+    }
+    val resolvedSecondaryButtonSize = secondaryButtonSize * buttonScale
+    val resolvedPrimaryButtonSize = primaryButtonSize * buttonScale
+    val maximumSpacing = (
+        (availableWidth - resolvedSecondaryButtonSize * 4 - resolvedPrimaryButtonSize) /
+            gapCount
+        ).coerceAtLeast(0.dp)
+    return NowPlayingMainControlsLayout(
+        secondaryButtonSize = resolvedSecondaryButtonSize,
+        primaryButtonSize = resolvedPrimaryButtonSize,
+        spacing = minOf(preferredSpacing, maximumSpacing)
     )
 }
 
@@ -1626,6 +1686,9 @@ fun NowPlayingScreen(
     val nowPlayingToolbarDockEnabled by settingsRepo
         .nowPlayingToolbarDockEnabledFlow
         .collectAsStateWithLifecycle(initialValue = true)
+    val playbackControlLayoutPreferences by settingsRepo
+        .playbackControlLayoutPreferencesFlow
+        .collectAsStateWithLifecycle(initialValue = PlaybackControlLayoutPreferences())
     val nowPlayingCoverLyricsEnabled by settingsRepo
         .nowPlayingCoverLyricsEnabledFlow
         .collectAsStateWithLifecycle(initialValue = true)
@@ -2047,27 +2110,50 @@ fun NowPlayingScreen(
         coverLyricsEnabled = nowPlayingCoverLyricsEnabled,
         useCompactPortraitLayout = useCompactPortraitLayout
     )
+    val nowPlayingControlsAtBottom =
+        playbackControlLayoutPreferences.nowPlayingPlacement.placesControlsAtBottom
+    val nowPlayingProgressAtBottom =
+        playbackControlLayoutPreferences.nowPlayingPlacement.placesProgressAtBottom
+    val nowPlayingControlSize = playbackControlLayoutPreferences.nowPlayingSize
     val useNowPlayingToolbarDock = shouldUseNowPlayingToolbarDock(
         toolbarDockEnabled = nowPlayingToolbarDockEnabled,
-        useCompactPortraitLayout = useCompactPortraitLayout
+        useCompactPortraitLayout = useCompactPortraitLayout,
+        controlsAtBottom = nowPlayingControlsAtBottom
     )
     val isCompactTabletLandscape = useWideLandscapeLayout && windowWidthDp < 720.dp
-    val secondaryControlButtonSize = when {
+    val baseSecondaryControlButtonSize = when {
         useWideLandscapeLayout && isCompactTabletLandscape -> 42.dp
         useWideLandscapeLayout -> 46.dp
         else -> 42.dp
     }
-    val primaryControlButtonSize = when {
+    val basePrimaryControlButtonSize = when {
         useWideLandscapeLayout && isCompactTabletLandscape -> 46.dp
         useWideLandscapeLayout -> 50.dp
         else -> 42.dp
     }
-    val controlButtonSpacing = when {
+    val baseControlButtonSpacing = when {
         useWideLandscapeLayout && isCompactTabletLandscape -> 18.dp
         useWideLandscapeLayout -> 22.dp
         useCompactPortraitLayout -> 12.dp
         else -> 20.dp
     }
+    val nowPlayingTopActionButtonSize = nowPlayingControlSize.scaleButtonSize(48.dp)
+    val nowPlayingTopActionIconSize = nowPlayingControlSize.scaleIconSize(24.dp)
+    val nowPlayingTopBarHeight = maxOf(56.dp, nowPlayingTopActionButtonSize)
+    val secondaryControlButtonSize = nowPlayingControlSize.scaleButtonSize(
+        baseSecondaryControlButtonSize
+    )
+    val primaryControlButtonSize = nowPlayingControlSize.scaleButtonSize(
+        basePrimaryControlButtonSize
+    )
+    val controlButtonSpacing = baseControlButtonSpacing * nowPlayingControlSize.scale
+    val nowPlayingToolbarIconSize = nowPlayingControlSize.scaleIconSize(
+        if (useWideLandscapeLayout) 22.dp else 20.dp
+    )
+    val nowPlayingMainControlIconSize = nowPlayingControlSize.scaleIconSize(24.dp)
+    val nowPlayingToolbarMinimumTouchTarget = nowPlayingControlSize.scaleButtonSize(
+        PlaybackActionToolbarMinimumTouchTarget
+    )
 
     // 歌词偏移 (平台 + 用户自定义)
     val platformOffset = resolveLyricDefaultOffsetMs(
@@ -2197,27 +2283,182 @@ fun NowPlayingScreen(
                     }
                 }
 
+                val mainPlaybackControls: @Composable () -> Unit = {
+                    BoxWithConstraints(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val controlsLayout = resolveNowPlayingMainControlsLayout(
+                            availableWidth = maxWidth,
+                            secondaryButtonSize = secondaryControlButtonSize,
+                            primaryButtonSize = primaryControlButtonSize,
+                            preferredSpacing = controlButtonSpacing
+                        )
+                        val secondaryIconSize = (
+                            nowPlayingMainControlIconSize *
+                                (controlsLayout.secondaryButtonSize.value /
+                                    secondaryControlButtonSize.value)
+                            ).coerceAtLeast(18.dp)
+                        val primaryIconSize = (
+                            nowPlayingMainControlIconSize *
+                                (controlsLayout.primaryButtonSize.value /
+                                    primaryControlButtonSize.value)
+                            ).coerceAtLeast(18.dp)
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(controlsLayout.spacing),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            HapticIconButton(
+                                onClick = { PlayerManager.setShuffle(!shuffleEnabled) },
+                                modifier = Modifier.size(controlsLayout.secondaryButtonSize)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Shuffle,
+                                    contentDescription = stringResource(R.string.player_shuffle),
+                                    modifier = Modifier.size(secondaryIconSize),
+                                    tint = if (shuffleEnabled) {
+                                        nowPlayingActiveIconColor
+                                    } else {
+                                        LocalContentColor.current
+                                    }
+                                )
+                            }
+
+                            HapticIconButton(
+                                onClick = { PlayerManager.previous() },
+                                modifier = Modifier
+                                    .sharedElement(
+                                        rememberSharedContentState(
+                                            key = NowPlayingLyricsSharedTransitionElement.PREVIOUS.key
+                                        ),
+                                        animatedVisibilityScope = this@AnimatedContent
+                                    )
+                                    .size(controlsLayout.secondaryButtonSize)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.SkipPrevious,
+                                    contentDescription = stringResource(R.string.player_previous),
+                                    modifier = Modifier.size(secondaryIconSize)
+                                )
+                            }
+
+                            HapticFilledIconButton(
+                                onClick = { PlayerManager.togglePlayPause() },
+                                enabled = !usbPlaybackPreparing,
+                                modifier = Modifier
+                                    .sharedElement(
+                                        rememberSharedContentState(
+                                            key = NowPlayingLyricsSharedTransitionElement.PLAY.key
+                                        ),
+                                        animatedVisibilityScope = this@AnimatedContent
+                                    )
+                                    .size(controlsLayout.primaryButtonSize)
+                            ) {
+                                PlaybackControlIndicator(
+                                    isPlaying = isPlaybackControlPlaying,
+                                    isPlaybackWaiting = isPlaybackWaiting,
+                                    playContentDescription = stringResource(R.string.player_play),
+                                    pauseContentDescription = stringResource(R.string.player_pause),
+                                    waitingContentDescription = stringResource(R.string.player_waiting),
+                                    modifier = Modifier.size(primaryIconSize),
+                                    progressIndicatorSize = primaryIconSize
+                                )
+                            }
+
+                            HapticIconButton(
+                                onClick = { PlayerManager.next() },
+                                modifier = Modifier
+                                    .sharedElement(
+                                        rememberSharedContentState(
+                                            key = NowPlayingLyricsSharedTransitionElement.NEXT.key
+                                        ),
+                                        animatedVisibilityScope = this@AnimatedContent
+                                    )
+                                    .size(controlsLayout.secondaryButtonSize)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.SkipNext,
+                                    contentDescription = stringResource(R.string.player_next),
+                                    modifier = Modifier.size(secondaryIconSize)
+                                )
+                            }
+
+                            HapticIconButton(
+                                onClick = { PlayerManager.cycleRepeatMode() },
+                                modifier = Modifier.size(controlsLayout.secondaryButtonSize)
+                            ) {
+                                Icon(
+                                    imageVector = if (repeatMode == Player.REPEAT_MODE_ONE) {
+                                        Icons.Filled.RepeatOne
+                                    } else {
+                                        Icons.Outlined.Repeat
+                                    },
+                                    contentDescription = stringResource(R.string.player_repeat),
+                                    modifier = Modifier.size(secondaryIconSize),
+                                    tint = if (repeatMode != Player.REPEAT_MODE_OFF) {
+                                        nowPlayingActiveIconColor
+                                    } else {
+                                        LocalContentColor.current
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                val nowPlayingProgressSection: @Composable () -> Unit = {
+                    NowPlayingProgressSection(
+                        songKey = currentSong?.stableKey(),
+                        durationMs = durationMs,
+                        lyrics = plainLyrics,
+                        lyricOffsetMs = totalOffset,
+                        isPlaying = isPlaying,
+                        isPlaybackWaiting = isPlaybackWaiting,
+                        progressInfoSegments = progressInfoSegments,
+                        seekEnabled = playbackProgressSeekEnabled,
+                        activeContentColor = nowPlayingActiveIconColor,
+                        useWideLandscapeLayout = useWideLandscapeLayout,
+                        onPreviewPositionChange = { previewPositionOverrideMs = it },
+                        progressRowModifier = Modifier
+                            .sharedBounds(
+                                rememberSharedContentState(
+                                    key = NowPlayingLyricsSharedTransitionElement.PROGRESS.key
+                                ),
+                                animatedVisibilityScope = this@AnimatedContent
+                            )
+                            .zIndex(1f),
+                        modifier = Modifier
+                            .fillMaxWidth(if (useWideLandscapeLayout) 0.88f else 1f)
+                    )
+                }
+
                 // 主列内容
                 val mainColumnContent: @Composable ColumnScope.() -> Unit = {
                     // 顶部栏
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(56.dp)
+                            .height(nowPlayingTopBarHeight)
                     ) {
                         // 返回按钮 - 左侧
                         HapticIconButton(
                             onClick = onNavigateUp,
                             modifier = Modifier.align(Alignment.CenterStart)
-                                .size(48.dp)
+                                .size(nowPlayingTopActionButtonSize)
                                 .sharedBounds(
-                                    rememberSharedContentState(key = "btn_back"),
+                                    rememberSharedContentState(
+                                        key = NowPlayingLyricsSharedTransitionElement.BACK.key
+                                    ),
                                     animatedVisibilityScope = this@AnimatedContent,
                                     enter = EnterTransition.None,
                                     exit = ExitTransition.None,
                                 ).zIndex(1f)
                         ) {
-                            Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = stringResource(R.string.action_back))
+                            Icon(
+                                Icons.Outlined.KeyboardArrowDown,
+                                contentDescription = stringResource(R.string.action_back),
+                                modifier = Modifier.size(nowPlayingTopActionIconSize)
+                            )
                         }
 
                         // 标题 - 居中
@@ -2225,6 +2466,8 @@ fun NowPlayingScreen(
                             Text(
                                 text = stringResource(R.string.player_now_playing),
                                 style = MaterialTheme.typography.titleLarge,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.align(Alignment.Center)
                             )
                         }
@@ -2247,7 +2490,7 @@ fun NowPlayingScreen(
                                     }
                                 },
                                 enabled = localPlaylistsReady,
-                                modifier = Modifier.size(48.dp)
+                                modifier = Modifier.size(nowPlayingTopActionButtonSize)
                                     .sharedBounds(
                                         rememberSharedContentState(key = "btn_favorite"),
                                         animatedVisibilityScope = this@AnimatedContent,
@@ -2258,6 +2501,7 @@ fun NowPlayingScreen(
                                 Icon(
                                     imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                                     contentDescription = if (isFavorite) stringResource(R.string.nowplaying_favorited) else stringResource(R.string.nowplaying_favorite),
+                                    modifier = Modifier.size(nowPlayingTopActionIconSize),
                                     tint = if (isFavorite) {
                                         Color.Red.copy(alpha = 0.6f)
                                     } else {
@@ -2266,15 +2510,9 @@ fun NowPlayingScreen(
                                 )
                             }
 
-                            Spacer(
-                                modifier = Modifier.width(
-                                    if (useCompactPortraitLayout) 2.dp else 6.dp
-                                )
-                            )
-
                             HapticIconButton(
                                 onClick = { showMoreOptions = true },
-                                modifier = Modifier.size(48.dp)
+                                modifier = Modifier.size(nowPlayingTopActionButtonSize)
                                     .sharedBounds(
                                         rememberSharedContentState(key = "btn_more"),
                                         animatedVisibilityScope = this@AnimatedContent,
@@ -2282,7 +2520,11 @@ fun NowPlayingScreen(
                                         exit = ExitTransition.None,
                                     ).zIndex(1f)
                             ) {
-                                Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.nowplaying_more_options))
+                                Icon(
+                                    Icons.Filled.MoreVert,
+                                    contentDescription = stringResource(R.string.nowplaying_more_options),
+                                    modifier = Modifier.size(nowPlayingTopActionIconSize)
+                                )
                             }
                             if (showMoreOptions && currentSong != null) {
                                 MoreOptionsSheet(
@@ -2339,7 +2581,9 @@ fun NowPlayingScreen(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .sharedElement(
-                                        rememberSharedContentState(key = "cover_image"),
+                                        rememberSharedContentState(
+                                            key = NowPlayingLyricsSharedTransitionElement.COVER.key
+                                        ),
                                         animatedVisibilityScope = this@AnimatedContent
                                     )
                                     .clip(RoundedCornerShape(24.dp))
@@ -2439,6 +2683,12 @@ fun NowPlayingScreen(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier
+                                        .sharedElement(
+                                            rememberSharedContentState(
+                                                key = NowPlayingLyricsSharedTransitionElement.TITLE.key
+                                            ),
+                                            animatedVisibilityScope = this@AnimatedContent
+                                        )
                                         .clip(RoundedCornerShape(8.dp))
                                         .combinedClickable(
                                             onClick = {},
@@ -2472,7 +2722,9 @@ fun NowPlayingScreen(
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier
                                         .sharedElement(
-                                            rememberSharedContentState(key = "song_artist"),
+                                            rememberSharedContentState(
+                                                key = NowPlayingLyricsSharedTransitionElement.ARTIST.key
+                                            ),
                                             animatedVisibilityScope = this@AnimatedContent
                                         )
                                         .clip(RoundedCornerShape(8.dp))
@@ -2502,100 +2754,14 @@ fun NowPlayingScreen(
                         }
                     }
 
-                    Spacer(Modifier.height(12.dp))
+                    if (!nowPlayingProgressAtBottom) {
+                        Spacer(Modifier.height(12.dp))
+                        nowPlayingProgressSection()
+                        Spacer(Modifier.height(if (useWideLandscapeLayout) 14.dp else 10.dp))
+                    }
 
-                    NowPlayingProgressSection(
-                        songKey = currentSong?.stableKey(),
-                        durationMs = durationMs,
-                        lyrics = plainLyrics,
-                        lyricOffsetMs = totalOffset,
-                        isPlaying = isPlaying,
-                        isPlaybackWaiting = isPlaybackWaiting,
-                        progressInfoSegments = progressInfoSegments,
-                        seekEnabled = playbackProgressSeekEnabled,
-                        activeContentColor = nowPlayingActiveIconColor,
-                        useWideLandscapeLayout = useWideLandscapeLayout,
-                        onPreviewPositionChange = { previewPositionOverrideMs = it },
-                        modifier = Modifier
-                            .fillMaxWidth(if (useWideLandscapeLayout) 0.88f else 1f)
-                            .sharedBounds(
-                                rememberSharedContentState(key = "progress_bar"),
-                                animatedVisibilityScope = this@AnimatedContent
-                            )
-                    )
-
-                    Spacer(Modifier.height(if (useWideLandscapeLayout) 14.dp else 10.dp))
-
-                    // 控制按钮
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(controlButtonSpacing),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                    ) {
-                        HapticIconButton(onClick = { PlayerManager.setShuffle(!shuffleEnabled) },
-                            modifier = Modifier
-                                .size(secondaryControlButtonSize)
-                        ) {
-                            Icon(
-                                Icons.Outlined.Shuffle,
-                                contentDescription = stringResource(R.string.player_shuffle),
-                                tint = if (shuffleEnabled) nowPlayingActiveIconColor else LocalContentColor.current
-                            )
-                        }
-
-                        HapticIconButton(onClick = { PlayerManager.previous() },
-                            modifier = Modifier
-                            .sharedElement(
-                                rememberSharedContentState(key = "player_previous"),
-                                animatedVisibilityScope = this@AnimatedContent
-                            )
-                            .size(secondaryControlButtonSize)
-                        ) {
-                            Icon(Icons.Outlined.SkipPrevious, contentDescription = stringResource(R.string.player_previous))
-                        }
-
-                        HapticFilledIconButton(
-                            onClick = { PlayerManager.togglePlayPause() },
-                            enabled = !usbPlaybackPreparing,
-                            modifier = Modifier
-                                .sharedElement(
-                                    rememberSharedContentState(key = "play_button"),
-                                    animatedVisibilityScope = this@AnimatedContent
-                                )
-                                .size(primaryControlButtonSize)
-                        ) {
-                            PlaybackControlIndicator(
-                                isPlaying = isPlaybackControlPlaying,
-                                isPlaybackWaiting = isPlaybackWaiting,
-                                playContentDescription = stringResource(R.string.player_play),
-                                pauseContentDescription = stringResource(R.string.player_pause),
-                                waitingContentDescription = stringResource(R.string.player_waiting)
-                            )
-                        }
-                        HapticIconButton(onClick = { PlayerManager.next() },
-                            modifier = Modifier
-                            .sharedElement(
-                                rememberSharedContentState(key = "player_next"),
-                                animatedVisibilityScope = this@AnimatedContent
-                            )
-                            .size(secondaryControlButtonSize)
-                        ) {
-                            Icon(Icons.Outlined.SkipNext, contentDescription = stringResource(R.string.player_next))
-                        }
-                        HapticIconButton(onClick = { PlayerManager.cycleRepeatMode() },
-                            modifier = Modifier
-                                .size(secondaryControlButtonSize)
-                        ) {
-                            Icon(
-                                imageVector = if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Filled.RepeatOne else Icons.Outlined.Repeat,
-                                contentDescription = stringResource(R.string.player_repeat),
-                                tint = if (repeatMode != Player.REPEAT_MODE_OFF) {
-                                    nowPlayingActiveIconColor
-                                } else {
-                                    LocalContentColor.current
-                                }
-                            )
-                        }
+                    if (!nowPlayingControlsAtBottom) {
+                        mainPlaybackControls()
                     }
 
                     // 手机/竖屏, 内嵌迷你歌词
@@ -2635,6 +2801,15 @@ fun NowPlayingScreen(
                     // 将下面的内容推到底部, 平板横屏也保持贴近底部的手感
                     Spacer(modifier = Modifier.weight(1f))
 
+                    if (nowPlayingControlsAtBottom) {
+                        if (nowPlayingProgressAtBottom) {
+                            nowPlayingProgressSection()
+                            Spacer(Modifier.height(if (useWideLandscapeLayout) 14.dp else 10.dp))
+                        }
+                        mainPlaybackControls()
+                        Spacer(Modifier.height(4.dp))
+                    }
+
                     // 底部操作栏 (固定在底部)
                     Column(
                         modifier = if (useWideLandscapeLayout) {
@@ -2664,7 +2839,9 @@ fun NowPlayingScreen(
                                 val toolbarLayout = resolvePlaybackActionToolbarLayout(
                                     availableWidth = maxWidth,
                                     preferredHorizontalPadding = preferredToolbarPadding,
-                                    defaultIconSize = if (useWideLandscapeLayout) 22.dp else 20.dp
+                                    defaultIconSize = nowPlayingToolbarIconSize,
+                                    preferredMinimumTouchTarget =
+                                        nowPlayingToolbarMinimumTouchTarget
                                 )
                                 CompositionLocalProvider(
                                     LocalMinimumInteractiveComponentSize provides
@@ -4548,6 +4725,7 @@ private fun NowPlayingProgressSection(
     activeContentColor: Color,
     useWideLandscapeLayout: Boolean,
     onPreviewPositionChange: (Long?) -> Unit,
+    progressRowModifier: Modifier = Modifier,
     modifier: Modifier = Modifier
 ) {
     val delayedPlaybackWaiting = rememberDelayedPlaybackWaiting(isPlaybackWaiting)
@@ -4609,7 +4787,9 @@ private fun NowPlayingProgressSection(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(progressRowModifier),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {

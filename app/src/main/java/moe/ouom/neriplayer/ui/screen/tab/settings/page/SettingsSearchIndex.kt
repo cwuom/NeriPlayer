@@ -327,7 +327,10 @@ private val PersonalizationPlaybackInfoTargets = setOf(
 private val PersonalizationPlaybackControlTargets = setOf(
     "setting:always_use_new_tab_style",
     "setting:nowplaying_keep_screen_on",
-    "setting:nowplaying_toolbar_dock_enabled"
+    "setting:nowplaying_toolbar_dock_enabled",
+    "setting:nowplaying_control_placement",
+    "setting:nowplaying_control_size",
+    "setting:lyrics_control_size"
 )
 
 private val PersonalizationLyricsAndDisplayTargets = setOf(
@@ -517,6 +520,54 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
             descriptionRes = R.string.settings_theme_color_desc,
             id = "theme_seed_color",
             aliases = listOf("accent", "seed", "custom color", "zhutise", "yanse")
+        ),
+        entry(
+            page = SettingsPage.Personalization,
+            titleRes = R.string.settings_nowplaying_control_placement,
+            descriptionRes = R.string.settings_nowplaying_control_placement_desc,
+            id = "nowplaying_control_placement",
+            aliases = listOf(
+                "播放按钮位置",
+                "循环随机位置",
+                "底部播放控件",
+                "进度条移到底部",
+                "playback controls position",
+                "shuffle repeat position",
+                "progress at bottom",
+                "bofangweizhi"
+            ),
+            targetId = "setting:nowplaying_control_placement",
+            order = SettingsPage.Personalization.ordinal * 100 + 32
+        ),
+        entry(
+            page = SettingsPage.Personalization,
+            titleRes = R.string.settings_nowplaying_control_size,
+            descriptionRes = R.string.settings_nowplaying_control_size_desc,
+            id = "nowplaying_control_size",
+            aliases = listOf(
+                "播放按钮大小",
+                "播放页控件大小",
+                "playback controls size",
+                "now playing button size",
+                "bofanganniu"
+            ),
+            targetId = "setting:nowplaying_control_size",
+            order = SettingsPage.Personalization.ordinal * 100 + 34
+        ),
+        entry(
+            page = SettingsPage.Personalization,
+            titleRes = R.string.settings_lyrics_control_size,
+            descriptionRes = R.string.settings_lyrics_control_size_desc,
+            id = "lyrics_control_size",
+            aliases = listOf(
+                "歌词页控件大小",
+                "歌词按钮大小",
+                "lyrics controls size",
+                "lyrics button size",
+                "gecikongjian"
+            ),
+            targetId = "setting:lyrics_control_size",
+            order = SettingsPage.Personalization.ordinal * 100 + 36
         ),
         entry(
             page = SettingsPage.Backup,

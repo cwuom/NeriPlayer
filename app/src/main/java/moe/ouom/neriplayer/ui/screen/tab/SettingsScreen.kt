@@ -56,10 +56,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.AltRoute
+import androidx.compose.material.icons.outlined.AspectRatio
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.BrightnessAuto
 import androidx.compose.material.icons.outlined.Brightness4
 import androidx.compose.material.icons.outlined.Colorize
+import androidx.compose.material.icons.outlined.DashboardCustomize
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.History
@@ -70,6 +72,7 @@ import androidx.compose.material.icons.outlined.Radar
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material.icons.outlined.ZoomInMap
 import androidx.compose.foundation.text.KeyboardActions
@@ -102,6 +105,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
@@ -129,6 +133,9 @@ import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.settings.LyricFontScales
+import moe.ouom.neriplayer.data.settings.NowPlayingControlPlacement
+import moe.ouom.neriplayer.data.settings.PlaybackControlLayoutPreferences
+import moe.ouom.neriplayer.data.settings.PlaybackControlSize
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingInfo
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.ThemeMode
@@ -2945,6 +2952,9 @@ private fun SettingsPersonalizationPageContent(
         val nowPlayingToolbarDockEnabled by autoSettingsRepository.nowPlayingToolbarDockEnabledFlow.collectAsState(
             initial = true
         )
+        val playbackControlLayoutPreferences by AppContainer.settingsRepo
+            .playbackControlLayoutPreferencesFlow
+            .collectAsState(initial = PlaybackControlLayoutPreferences())
         val nowPlayingCoverLyricsEnabled by autoSettingsRepository.nowPlayingCoverLyricsEnabledFlow.collectAsState(
             initial = true
         )
@@ -3186,11 +3196,36 @@ private fun SettingsPersonalizationPageContent(
                 highlightPulse = highlightPulse,
                 onHighlightFinished = onHighlightFinished
             )
+            val nowPlayingControlsAtBottom =
+                playbackControlLayoutPreferences.nowPlayingPlacement.placesControlsAtBottom
             PersonalizationSwitchItem(
                 setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOWPLAYING_TOOLBAR_DOCK_ENABLED),
-                checked = nowPlayingToolbarDockEnabled,
+                checked = nowPlayingToolbarDockEnabled && !nowPlayingControlsAtBottom,
                 onCheckedChange = { enabled ->
                     scope.launch { autoSettingsRepository.setNowPlayingToolbarDockEnabled(enabled) }
+                },
+                enabled = !nowPlayingControlsAtBottom,
+                supportingContent = if (nowPlayingControlsAtBottom) {
+                    {
+                        Text(
+                            stringResource(
+                                R.string.settings_nowplaying_toolbar_dock_disabled_by_control_position
+                            )
+                        )
+                    }
+                } else {
+                    null
+                },
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            )
+            PlaybackControlLayoutSettings(
+                preferences = playbackControlLayoutPreferences,
+                onPreferencesChange = { preferences ->
+                    scope.launch {
+                        AppContainer.settingsRepo.setPlaybackControlLayoutPreferences(preferences)
+                    }
                 },
                 highlightTargetId = highlightTargetId,
                 highlightPulse = highlightPulse,
@@ -3384,27 +3419,231 @@ private fun PersonalizationDetailCard(
     )
 }
 
+private enum class PlaybackControlLayoutSetting {
+    NOW_PLAYING_PLACEMENT,
+    NOW_PLAYING_SIZE,
+    LYRICS_SIZE
+}
+
+@Composable
+private fun PlaybackControlLayoutSettings(
+    preferences: PlaybackControlLayoutPreferences,
+    onPreferencesChange: (PlaybackControlLayoutPreferences) -> Unit,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
+) {
+    var selectedSetting by remember { mutableStateOf<PlaybackControlLayoutSetting?>(null) }
+
+    PlaybackControlLayoutListItem(
+        targetId = "setting:nowplaying_control_placement",
+        icon = Icons.Outlined.DashboardCustomize,
+        title = stringResource(R.string.settings_nowplaying_control_placement),
+        description = stringResource(R.string.settings_nowplaying_control_placement_desc),
+        value = nowPlayingControlPlacementLabel(preferences.nowPlayingPlacement),
+        onClick = { selectedSetting = PlaybackControlLayoutSetting.NOW_PLAYING_PLACEMENT },
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished
+    )
+    PlaybackControlLayoutListItem(
+        targetId = "setting:nowplaying_control_size",
+        icon = Icons.Outlined.AspectRatio,
+        title = stringResource(R.string.settings_nowplaying_control_size),
+        description = stringResource(R.string.settings_nowplaying_control_size_desc),
+        value = playbackControlSizeLabel(preferences.nowPlayingSize),
+        onClick = { selectedSetting = PlaybackControlLayoutSetting.NOW_PLAYING_SIZE },
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished
+    )
+    PlaybackControlLayoutListItem(
+        targetId = "setting:lyrics_control_size",
+        icon = Icons.Outlined.TextFields,
+        title = stringResource(R.string.settings_lyrics_control_size),
+        description = stringResource(R.string.settings_lyrics_control_size_desc),
+        value = playbackControlSizeLabel(preferences.lyricsSize),
+        onClick = { selectedSetting = PlaybackControlLayoutSetting.LYRICS_SIZE },
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished
+    )
+
+    val setting = selectedSetting ?: return
+    val title = when (setting) {
+        PlaybackControlLayoutSetting.NOW_PLAYING_PLACEMENT ->
+            stringResource(R.string.settings_nowplaying_control_placement)
+        PlaybackControlLayoutSetting.NOW_PLAYING_SIZE ->
+            stringResource(R.string.settings_nowplaying_control_size)
+        PlaybackControlLayoutSetting.LYRICS_SIZE ->
+            stringResource(R.string.settings_lyrics_control_size)
+    }
+    MiuixSettingsDialog(
+        onDismissRequest = { selectedSetting = null },
+        title = { Text(title) },
+        text = {
+            Column {
+                when (setting) {
+                    PlaybackControlLayoutSetting.NOW_PLAYING_PLACEMENT -> {
+                        NowPlayingControlPlacement.values().forEach { placement ->
+                            MiuixSettingsChoiceRow(
+                                title = nowPlayingControlPlacementLabel(placement),
+                                subtitle = if (placement.placesControlsAtBottom) {
+                                    stringResource(
+                                        R.string.settings_nowplaying_toolbar_dock_disabled_by_control_position
+                                    )
+                                } else {
+                                    null
+                                },
+                                selected = placement == preferences.nowPlayingPlacement,
+                                onClick = {
+                                    onPreferencesChange(
+                                        preferences.copy(nowPlayingPlacement = placement)
+                                    )
+                                    selectedSetting = null
+                                }
+                            )
+                        }
+                    }
+
+                    PlaybackControlLayoutSetting.NOW_PLAYING_SIZE,
+                    PlaybackControlLayoutSetting.LYRICS_SIZE -> {
+                        PlaybackControlSize.values().forEach { size ->
+                            val selected = when (setting) {
+                                PlaybackControlLayoutSetting.NOW_PLAYING_SIZE ->
+                                    size == preferences.nowPlayingSize
+                                PlaybackControlLayoutSetting.LYRICS_SIZE ->
+                                    size == preferences.lyricsSize
+                                PlaybackControlLayoutSetting.NOW_PLAYING_PLACEMENT -> false
+                            }
+                            MiuixSettingsChoiceRow(
+                                title = playbackControlSizeLabel(size),
+                                selected = selected,
+                                onClick = {
+                                    onPreferencesChange(
+                                        when (setting) {
+                                            PlaybackControlLayoutSetting.NOW_PLAYING_SIZE ->
+                                                preferences.copy(nowPlayingSize = size)
+                                            PlaybackControlLayoutSetting.LYRICS_SIZE ->
+                                                preferences.copy(lyricsSize = size)
+                                            PlaybackControlLayoutSetting.NOW_PLAYING_PLACEMENT ->
+                                                preferences
+                                        }
+                                    )
+                                    selectedSetting = null
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            MiuixSettingsTextButton(
+                onClick = { selectedSetting = null },
+                text = { Text(stringResource(R.string.action_close)) }
+            )
+        }
+    )
+}
+
+@Composable
+private fun PlaybackControlLayoutListItem(
+    targetId: String,
+    icon: ImageVector,
+    title: String,
+    description: String,
+    value: String,
+    onClick: () -> Unit,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
+) {
+    ListItem(
+        modifier = Modifier
+            .settingsHighlightTarget(
+                targetId = targetId,
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            )
+            .settingsItemClickable(onClick = onClick),
+        leadingContent = {
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        headlineContent = { Text(title) },
+        supportingContent = {
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
+        trailingContent = {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
+
+@Composable
+private fun nowPlayingControlPlacementLabel(
+    placement: NowPlayingControlPlacement
+): String = when (placement) {
+    NowPlayingControlPlacement.LOWER ->
+        stringResource(R.string.settings_nowplaying_control_placement_lower)
+    NowPlayingControlPlacement.BOTTOM ->
+        stringResource(R.string.settings_nowplaying_control_placement_bottom)
+    NowPlayingControlPlacement.BOTTOM_WITH_PROGRESS ->
+        stringResource(R.string.settings_nowplaying_control_placement_bottom_with_progress)
+}
+
+@Composable
+private fun playbackControlSizeLabel(size: PlaybackControlSize): String = when (size) {
+    PlaybackControlSize.SMALL -> stringResource(R.string.settings_playback_control_size_small)
+    PlaybackControlSize.MEDIUM -> stringResource(R.string.settings_playback_control_size_medium)
+    PlaybackControlSize.LARGE -> stringResource(R.string.settings_playback_control_size_large)
+}
+
 @Composable
 private fun PersonalizationSwitchItem(
     setting: AutoSettingInfo,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
+    supportingContent: (@Composable () -> Unit)? = null,
     highlightTargetId: String?,
     highlightPulse: Int,
     onHighlightFinished: (() -> Unit)?
 ) {
     AutoSettingsListItem(
         setting = setting,
+        enabled = enabled,
+        supportingContent = supportingContent,
         trailingContent = {
             MiuixSettingsSwitch(
                 checked = checked,
+                enabled = enabled,
                 onCheckedChange = onCheckedChange
             )
         },
         highlightTargetId = highlightTargetId,
         highlightPulse = highlightPulse,
         onHighlightFinished = onHighlightFinished,
-        onClick = { onCheckedChange(!checked) }
+        onClick = if (enabled) {
+            { onCheckedChange(!checked) }
+        } else {
+            null
+        }
     )
 }
 
