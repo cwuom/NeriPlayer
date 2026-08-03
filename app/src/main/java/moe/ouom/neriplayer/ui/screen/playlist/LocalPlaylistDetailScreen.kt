@@ -1118,6 +1118,10 @@ fun LocalPlaylistDetailScreen(
                     onHideExistingLocalPlaylistSongsChange =
                         vm::updateScanPreviewHideExistingLocalPlaylistSongs,
                     existingLocalPlaylistKeys = scanPreviewState.existingLocalPlaylistKeys,
+                    hideDuplicateMetadataSongs = scanPreviewState.hideDuplicateMetadataSongs,
+                    onHideDuplicateMetadataSongsChange =
+                        vm::updateScanPreviewHideDuplicateMetadataSongs,
+                    duplicateMetadataKeys = scanPreviewState.duplicateMetadataKeys,
                     selectedKeys = scanPreviewState.selectedKeys,
                     onSelectedKeysChange = vm::updateScanPreviewSelection,
                     snackbarHostState = snackbarHostState,
@@ -2436,6 +2440,9 @@ private fun LocalScanPreviewScreen(
     hideExistingLocalPlaylistSongs: Boolean = false,
     onHideExistingLocalPlaylistSongsChange: ((Boolean) -> Unit)? = null,
     existingLocalPlaylistKeys: Set<String> = emptySet(),
+    hideDuplicateMetadataSongs: Boolean = false,
+    onHideDuplicateMetadataSongsChange: ((Boolean) -> Unit)? = null,
+    duplicateMetadataKeys: Set<String> = emptySet(),
     selectedKeys: Set<String>,
     onSelectedKeysChange: (Set<String>) -> Unit,
     snackbarHostState: SnackbarHostState,
@@ -2467,7 +2474,9 @@ private fun LocalScanPreviewScreen(
         query,
         metadataOnly,
         hideExistingLocalPlaylistSongs,
-        existingLocalPlaylistKeys
+        existingLocalPlaylistKeys,
+        hideDuplicateMetadataSongs,
+        duplicateMetadataKeys
     ) {
         value = withContext(Dispatchers.Default) {
             val candidates = previewItems
@@ -2476,6 +2485,10 @@ private fun LocalScanPreviewScreen(
                 .filter {
                     item -> !hideExistingLocalPlaylistSongs ||
                         item.stableKey !in existingLocalPlaylistKeys
+                }
+                .filter {
+                    item -> !hideDuplicateMetadataSongs ||
+                        item.stableKey !in duplicateMetadataKeys
                 }
                 .toList()
             SearchTextMatcher.filterAndRank(query, candidates) { item ->
@@ -2487,6 +2500,8 @@ private fun LocalScanPreviewScreen(
         metadataOnly,
         hideExistingLocalPlaylistSongs,
         existingLocalPlaylistKeys,
+        hideDuplicateMetadataSongs,
+        duplicateMetadataKeys,
         previewItems
     ) {
         val hiddenKeys = buildSet {
@@ -2499,6 +2514,9 @@ private fun LocalScanPreviewScreen(
             if (hideExistingLocalPlaylistSongs) {
                 addAll(existingLocalPlaylistKeys)
             }
+            if (hideDuplicateMetadataSongs) {
+                addAll(duplicateMetadataKeys)
+            }
         }
         val nextSelectedKeys = selectedKeys - hiddenKeys
         if (nextSelectedKeys != selectedKeys) {
@@ -2509,6 +2527,8 @@ private fun LocalScanPreviewScreen(
     val metadataFilterAvailable = onMetadataOnlyChange != null
     val existingLocalPlaylistSongsFilterAvailable =
         onHideExistingLocalPlaylistSongsChange != null
+    val duplicateMetadataSongsFilterAvailable =
+        onHideDuplicateMetadataSongsChange != null
     val displayedKeys by remember(displayedItems) {
         derivedStateOf {
             displayedItems.mapTo(LinkedHashSet(displayedItems.size)) { it.stableKey }
@@ -2519,7 +2539,7 @@ private fun LocalScanPreviewScreen(
     val resolvedSearchPlaceholder =
         searchPlaceholder ?: stringResource(R.string.local_playlist_scan_preview_search)
     val resolvedEmptyText = emptyText ?: when {
-        metadataOnly && hideExistingLocalPlaylistSongs -> {
+        hideDuplicateMetadataSongs || (metadataOnly && hideExistingLocalPlaylistSongs) -> {
             stringResource(R.string.local_playlist_scan_filtered_empty)
         }
         metadataOnly -> stringResource(R.string.local_playlist_scan_metadata_empty)
@@ -2560,7 +2580,11 @@ private fun LocalScanPreviewScreen(
                             strokeWidth = 2.dp
                         )
                     }
-                    if (metadataFilterAvailable || existingLocalPlaylistSongsFilterAvailable) {
+                    if (
+                        metadataFilterAvailable ||
+                        existingLocalPlaylistSongsFilterAvailable ||
+                        duplicateMetadataSongsFilterAvailable
+                    ) {
                         Box {
                             HapticIconButton(onClick = { showMoreMenu = true }) {
                                 Icon(
@@ -2603,6 +2627,29 @@ private fun LocalScanPreviewScreen(
                                         onClick = {
                                             onHideExistingLocalPlaylistSongsChange(
                                                 !hideExistingLocalPlaylistSongs
+                                            )
+                                            showMoreMenu = false
+                                        }
+                                    )
+                                }
+                                if (duplicateMetadataSongsFilterAvailable) {
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                stringResource(
+                                                    R.string.local_playlist_scan_filter_duplicates
+                                                )
+                                            )
+                                        },
+                                        trailingIcon = {
+                                            Checkbox(
+                                                checked = hideDuplicateMetadataSongs,
+                                                onCheckedChange = null
+                                            )
+                                        },
+                                        onClick = {
+                                            onHideDuplicateMetadataSongsChange(
+                                                !hideDuplicateMetadataSongs
                                             )
                                             showMoreMenu = false
                                         }

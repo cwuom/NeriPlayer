@@ -37,11 +37,14 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.system.Os
 import androidx.core.content.FileProvider
+import com.kyant.taglib.PropertyMap
 import com.kyant.taglib.TagLib
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.displayArtist
+import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.network.isFileInsideDirectory
 import org.json.JSONObject
@@ -101,6 +104,13 @@ data class LocalMediaDetails(
     val embeddedCover: Boolean,
     val sourceStableKey: String? = null
 )
+
+internal enum class LocalMediaMetadataWriteOutcome {
+    SUCCESS,
+    NOT_WRITABLE,
+    UNSUPPORTED_OR_UNREADABLE,
+    FAILED
+}
 
 fun SongItem.isLocalSong(): Boolean = LocalSongSupport.isLocalSong(this)
 
@@ -438,6 +448,63 @@ object LocalMediaSupport {
                 }
         }
         return null
+    }
+
+    internal suspend fun writeEditableTextMetadata(
+        context: Context,
+        song: SongItem
+    ): LocalMediaMetadataWriteOutcome = withContext(Dispatchers.IO) {
+        val sourceUri = song.localMediaUri() ?: return@withContext LocalMediaMetadataWriteOutcome.NOT_WRITABLE
+        val resolved = runCatching {
+            resolveInspectableLocalMedia(
+                context = context,
+                uri = sourceUri,
+                allowDescriptorFallback = true
+            )
+        }.getOrElse { error ->
+            NPLogger.w(TAG, "resolve writable local metadata failed for $sourceUri: ${error.message}")
+            return@withContext LocalMediaMetadataWriteOutcome.FAILED
+        }
+        val descriptor = openWritableTagLibDescriptor(
+            context = context,
+            uri = sourceUri,
+            file = resolved.file
+        ) ?: return@withContext LocalMediaMetadataWriteOutcome.NOT_WRITABLE
+
+        descriptor.use { target ->
+            val existing = loadTagLibPropertyMap(target)
+                ?: return@use LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE
+            val updated = applyEditableTextMetadata(
+                propertyMap = existing,
+                title = song.displayName(),
+                artist = song.displayArtist()
+            )
+            if (propertyMapsEquivalent(existing, updated)) {
+                return@use LocalMediaMetadataWriteOutcome.SUCCESS
+            }
+            val saved = runCatching {
+                TagLib.savePropertyMap(target.dup().detachFd(), updated)
+            }.getOrElse { error ->
+                NPLogger.w(TAG, "write local metadata failed for $sourceUri: ${error.message}")
+                false
+            }
+            if (!saved) {
+                return@use LocalMediaMetadataWriteOutcome.FAILED
+            }
+
+            val verified = loadTagLibPropertyMap(target)?.let { propertyMap ->
+                hasExpectedEditableTextMetadata(
+                    propertyMap = propertyMap,
+                    title = song.displayName(),
+                    artist = song.displayArtist()
+                )
+            } == true
+            if (verified) {
+                LocalMediaMetadataWriteOutcome.SUCCESS
+            } else {
+                LocalMediaMetadataWriteOutcome.FAILED
+            }
+        }
     }
 
     fun resolveLocalFile(context: Context, uri: Uri): File? {
@@ -1493,6 +1560,103 @@ object LocalMediaSupport {
         }.getOrElse {
             NPLogger.w(TAG, "openTagLibDescriptor failed for $uri: ${it.message}")
             null
+        }
+    }
+
+    private fun openWritableTagLibDescriptor(
+        context: Context,
+        uri: Uri,
+        file: File?
+    ): ParcelFileDescriptor? {
+        val contentDescriptor = if (uri.scheme.equals("content", ignoreCase = true)) {
+            runCatching {
+                context.contentResolver.openFileDescriptor(uri, "rw")
+            }.getOrNull()
+        } else {
+            null
+        }
+        if (contentDescriptor != null) {
+            return contentDescriptor
+        }
+
+        val fileDescriptor = file?.let { localFile ->
+            runCatching {
+                ParcelFileDescriptor.open(localFile, ParcelFileDescriptor.MODE_READ_WRITE)
+            }.getOrNull()
+        }
+        if (fileDescriptor != null) {
+            return fileDescriptor
+        }
+
+        val fallbackDescriptor = if (!uri.scheme.equals("content", ignoreCase = true)) {
+            runCatching {
+                context.contentResolver.openFileDescriptor(uri, "rw")
+            }.getOrNull()
+        } else {
+            null
+        }
+        if (fallbackDescriptor == null) {
+            NPLogger.w(TAG, "open writable metadata descriptor failed for $uri")
+        }
+        return fallbackDescriptor
+    }
+
+    private fun loadTagLibPropertyMap(descriptor: ParcelFileDescriptor): PropertyMap? {
+        return runCatching {
+            TagLib.getMetadata(descriptor.dup().detachFd(), false)?.propertyMap
+        }.getOrNull()
+    }
+
+    internal fun applyEditableTextMetadata(
+        propertyMap: PropertyMap,
+        title: String,
+        artist: String
+    ): PropertyMap {
+        val updated: PropertyMap = hashMapOf()
+        propertyMap.forEach { (key, values) ->
+            updated[key] = values.copyOf()
+        }
+        putTagValue(updated, "TITLE", title)
+        putTagValue(updated, "ARTIST", artist)
+        return updated
+    }
+
+    internal fun hasExpectedEditableTextMetadata(
+        propertyMap: PropertyMap,
+        title: String,
+        artist: String
+    ): Boolean {
+        return hasExpectedTagValue(propertyMap, "TITLE", title) &&
+            hasExpectedTagValue(propertyMap, "ARTIST", artist)
+    }
+
+    private fun putTagValue(propertyMap: PropertyMap, key: String, value: String) {
+        val normalized = value.trim()
+        if (normalized.isBlank()) {
+            propertyMap.remove(key)
+        } else {
+            propertyMap[key] = arrayOf(normalized)
+        }
+    }
+
+    private fun hasExpectedTagValue(
+        propertyMap: PropertyMap,
+        key: String,
+        expectedValue: String
+    ): Boolean {
+        val normalized = expectedValue.trim()
+        if (normalized.isBlank()) {
+            return key !in propertyMap || propertyMap[key].isNullOrEmpty()
+        }
+        return propertyMap[key]?.any { value -> value.trim() == normalized } == true
+    }
+
+    private fun propertyMapsEquivalent(left: PropertyMap, right: PropertyMap): Boolean {
+        if (left.size != right.size) {
+            return false
+        }
+        return left.all { (key, leftValues) ->
+            right[key]?.contentEquals(leftValues) == true
         }
     }
 

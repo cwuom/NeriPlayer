@@ -52,6 +52,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.core.logging.NPLogger
+import java.util.Locale
 
 data class LocalPlaylistDetailUiState(
     val playlist: LocalPlaylist? = null,
@@ -75,6 +76,8 @@ data class LocalScanPreviewState(
     val metadataOnly: Boolean = false,
     val hideExistingLocalPlaylistSongs: Boolean = false,
     val existingLocalPlaylistKeys: Set<String> = emptySet(),
+    val hideDuplicateMetadataSongs: Boolean = false,
+    val duplicateMetadataKeys: Set<String> = emptySet(),
     val selectedKeys: Set<String> = emptySet()
 )
 
@@ -96,6 +99,57 @@ internal fun scannedSongKeysAlreadyInLocalPlaylists(
         }
         .mapTo(LinkedHashSet()) { it.stableKey() }
 }
+
+internal fun duplicateScannedSongKeysByMetadata(scannedSongs: List<SongItem>): Set<String> {
+    if (scannedSongs.size < 2) return emptySet()
+
+    val seenMetadata = HashSet<LocalScanMetadataFingerprint>(scannedSongs.size)
+    return buildSet {
+        scannedSongs.forEach { song ->
+            val fingerprint = song.localScanMetadataFingerprint() ?: return@forEach
+            if (!seenMetadata.add(fingerprint)) {
+                add(song.stableKey())
+            }
+        }
+    }
+}
+
+private data class LocalScanMetadataFingerprint(
+    val title: String,
+    val artist: String,
+    val album: String,
+    val durationMs: Long
+)
+
+private fun SongItem.localScanMetadataFingerprint(): LocalScanMetadataFingerprint? {
+    val title = normalizeLocalScanMetadataText(name)
+    val artist = normalizeLocalScanMetadataText(artist)
+    val album = normalizeLocalScanMetadataText(album)
+    if (
+        title.isBlank() ||
+        artist.isBlank() ||
+        album.isBlank() ||
+        album == LocalSongSupport.LOCAL_ALBUM_IDENTITY ||
+        durationMs <= 0L
+    ) {
+        return null
+    }
+    return LocalScanMetadataFingerprint(
+        title = title,
+        artist = artist,
+        album = album,
+        durationMs = durationMs
+    )
+}
+
+private fun normalizeLocalScanMetadataText(value: String): String {
+    return value
+        .trim()
+        .lowercase(Locale.ROOT)
+        .replace(LOCAL_SCAN_METADATA_WHITESPACE, " ")
+}
+
+private val LOCAL_SCAN_METADATA_WHITESPACE = Regex("\\s+")
 
 private class LocalScanDuplicateIndex(songs: List<SongItem>) {
     private val identities = HashSet<SongIdentity>(songs.size)
@@ -232,6 +286,9 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                                 scannedSongs = preparedSongs,
                                 localPlaylists = localPlaylists
                             ),
+                            duplicateMetadataKeys = duplicateScannedSongKeysByMetadata(
+                                preparedSongs
+                            ),
                             selectedKeys = preparedSongs.mapTo(LinkedHashSet(preparedSongs.size)) {
                                 it.stableKey()
                             }
@@ -310,6 +367,19 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
             hideExistingLocalPlaylistSongs = hideExistingLocalPlaylistSongs,
             selectedKeys = if (hideExistingLocalPlaylistSongs) {
                 current.selectedKeys - current.existingLocalPlaylistKeys
+            } else {
+                current.selectedKeys
+            }
+        )
+    }
+
+    fun updateScanPreviewHideDuplicateMetadataSongs(hideDuplicateMetadataSongs: Boolean) {
+        val current = _scanPreviewState.value
+        if (current.hideDuplicateMetadataSongs == hideDuplicateMetadataSongs) return
+        _scanPreviewState.value = current.copy(
+            hideDuplicateMetadataSongs = hideDuplicateMetadataSongs,
+            selectedKeys = if (hideDuplicateMetadataSongs) {
+                current.selectedKeys - current.duplicateMetadataKeys
             } else {
                 current.selectedKeys
             }

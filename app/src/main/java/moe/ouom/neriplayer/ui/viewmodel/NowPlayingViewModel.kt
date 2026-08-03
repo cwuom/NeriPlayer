@@ -387,7 +387,8 @@ class NowPlayingViewModel : ViewModel() {
         restoreBaseCover: Boolean = false,
         restoreBaseName: Boolean = false,
         restoreBaseArtist: Boolean = false,
-        clearMatchedMetadata: Boolean = false
+        clearMatchedMetadata: Boolean = false,
+        writeLocalMetadata: Boolean = false
     ) {
         PlayerManager.updateSongCustomInfo(
             originalSong = originalSong,
@@ -397,7 +398,8 @@ class NowPlayingViewModel : ViewModel() {
             restoreBaseCover = restoreBaseCover,
             restoreBaseName = restoreBaseName,
             restoreBaseArtist = restoreBaseArtist,
-            clearMatchedMetadata = clearMatchedMetadata
+            clearMatchedMetadata = clearMatchedMetadata,
+            writeLocalMetadata = writeLocalMetadata
         )
     }
 

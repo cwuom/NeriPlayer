@@ -2538,7 +2538,8 @@ object PlayerManager {
         restoreBaseCover: Boolean = false,
         restoreBaseName: Boolean = false,
         restoreBaseArtist: Boolean = false,
-        clearMatchedMetadata: Boolean = false
+        clearMatchedMetadata: Boolean = false,
+        writeLocalMetadata: Boolean = false
     ) = updateSongCustomInfoImpl(
         originalSong,
         customCoverUrl,
@@ -2547,7 +2548,8 @@ object PlayerManager {
         restoreBaseCover,
         restoreBaseName,
         restoreBaseArtist,
-        clearMatchedMetadata
+        clearMatchedMetadata,
+        writeLocalMetadata
     )
 
     fun hydrateSongMetadata(originalSong: SongItem, updatedSong: SongItem) =

@@ -543,6 +543,7 @@
     <string name="local_playlist_scan_preview_apply">导入所选歌曲</string>
     <string name="local_playlist_scan_filter_metadata">隐藏无元数据歌曲</string>
     <string name="local_playlist_scan_filter_existing">忽略已添加歌曲</string>
+    <string name="local_playlist_scan_filter_duplicates">按元信息去重</string>
     <string name="local_playlist_scan_metadata_empty">没有带元数据的本地音频</string>
     <string name="local_playlist_scan_existing_empty">没有未添加的本地音频</string>
     <string name="local_playlist_scan_filtered_empty">没有符合筛选条件的本地音频</string>

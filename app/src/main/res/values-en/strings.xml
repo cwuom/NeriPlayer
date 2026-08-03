@@ -543,6 +543,7 @@
     <string name="local_playlist_scan_preview_apply">Import Selected Songs</string>
     <string name="local_playlist_scan_filter_metadata">Hide tracks without metadata</string>
     <string name="local_playlist_scan_filter_existing">Ignore added tracks</string>
+    <string name="local_playlist_scan_filter_duplicates">Deduplicate by metadata</string>
     <string name="local_playlist_scan_metadata_empty">No local audio with metadata</string>
     <string name="local_playlist_scan_existing_empty">No unadded local audio</string>
     <string name="local_playlist_scan_filtered_empty">No local audio matches the filters</string>

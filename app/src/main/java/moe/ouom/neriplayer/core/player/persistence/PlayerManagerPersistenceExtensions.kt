@@ -40,6 +40,8 @@ import moe.ouom.neriplayer.core.player.url.isCurrentListenTogetherFallbackMediaU
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.source.toSongItem
+import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.settings.rebaseLyricUserOffsetMs
@@ -1215,7 +1217,8 @@ internal fun PlayerManager.updateSongCustomInfoImpl(
     restoreBaseCover: Boolean = false,
     restoreBaseName: Boolean = false,
     restoreBaseArtist: Boolean = false,
-    clearMatchedMetadata: Boolean = false
+    clearMatchedMetadata: Boolean = false,
+    writeLocalMetadata: Boolean = false
 ) {
     ioScope.launch {
         runSongMetadataMutation {
@@ -1291,6 +1294,33 @@ internal fun PlayerManager.updateSongCustomInfoImpl(
                 updatedSong = updatedSong,
                 triggerSync = true
             )
+
+            if (writeLocalMetadata && LocalSongSupport.isLocalSong(updatedSong, application)) {
+                val outcome = LocalMediaSupport.writeEditableTextMetadata(application, updatedSong)
+                val messageResId = when (outcome) {
+                    LocalMediaMetadataWriteOutcome.SUCCESS -> {
+                        R.string.local_song_metadata_write_success
+                    }
+
+                    LocalMediaMetadataWriteOutcome.NOT_WRITABLE -> {
+                        R.string.local_song_metadata_write_not_writable
+                    }
+
+                    LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE -> {
+                        R.string.local_song_metadata_write_unsupported
+                    }
+
+                    LocalMediaMetadataWriteOutcome.FAILED -> {
+                        R.string.local_song_metadata_write_failed
+                    }
+                }
+                mainScope.launch {
+                    AppFeedback.show(
+                        context = application,
+                        message = getLocalizedString(messageResId)
+                    )
+                }
+            }
         }
     }
 }

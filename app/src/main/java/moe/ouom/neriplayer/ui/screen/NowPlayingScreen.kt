@@ -4046,6 +4046,7 @@ fun EditSongInfoSheet(
     var shouldRestoreTitleBase by remember { mutableStateOf(false) }
     var shouldRestoreArtistBase by remember { mutableStateOf(false) }
     var shouldClearMatchedMetadata by remember { mutableStateOf(false) }
+    var showLocalMetadataWriteBackConfirm by remember { mutableStateOf(false) }
 
     // 标记用户是否手动编辑过, 避免自动重置
     var userHasEdited by remember { mutableStateOf(false) }
@@ -4111,6 +4112,74 @@ fun EditSongInfoSheet(
             }
             coroutineScope.launch {
                 snackbarHostState.showNeriSnackbar(message)
+            }
+        }
+    }
+
+    fun saveEditedSongInfo(writeLocalMetadata: Boolean) {
+        coroutineScope.launch {
+            try {
+                // 处理歌词: 清除(B站)或恢复(网易云)
+                if (shouldClearLyrics) {
+                    // B站音源: 清除歌词
+                    NPLogger.d("NowPlayingScreen", "=== 开始清除歌词流程 ===")
+                    NPLogger.d("NowPlayingScreen", "actualSong详情: id=${actualSong.id}, album='${actualSong.album}', name='${actualSong.name}', artist='${actualSong.artist}'")
+                    NPLogger.d("NowPlayingScreen", "当前歌词状态: matchedLyric=${actualSong.matchedLyric?.take(50)}, matchedTranslatedLyric=${actualSong.matchedTranslatedLyric?.take(50)}")
+
+                    NPLogger.d("NowPlayingScreen", "准备调用PlayerManager.updateSongLyricsAndTranslation清除歌词")
+                    PlayerManager.updateSongLyricsAndTranslation(
+                        actualSong,
+                        "",  // 清空歌词
+                        ""  // 清空翻译歌词
+                    )
+                    NPLogger.d("NowPlayingScreen", "PlayerManager.updateSongLyricsAndTranslation调用完成")
+                    shouldClearLyrics = false  // 重置标志
+                    NPLogger.d("NowPlayingScreen", "=== 清除歌词流程完成 ===")
+                } else if (shouldRestoreLyrics) {
+                    // 网易云音源: 恢复歌词
+                    NPLogger.d("NowPlayingScreen", "=== 开始恢复歌词流程 ===")
+                    NPLogger.d("NowPlayingScreen", "actualSong详情: id=${actualSong.id}, album='${actualSong.album}'")
+                    NPLogger.d("NowPlayingScreen", "原始歌词: lyric=${originalLyric?.take(50)}, translatedLyric=${originalTranslatedLyric?.take(50)}")
+
+                    NPLogger.d("NowPlayingScreen", "准备调用PlayerManager.updateSongLyricsAndTranslation恢复歌词")
+                    PlayerManager.updateSongLyricsAndTranslation(
+                        actualSong,
+                        originalLyric,  // 恢复原始歌词
+                        originalTranslatedLyric  // 恢复原始翻译歌词
+                    )
+                    NPLogger.d("NowPlayingScreen", "PlayerManager.updateSongLyricsAndTranslation调用完成")
+                    shouldRestoreLyrics = false  // 重置标志
+                    originalLyric = null
+                    originalTranslatedLyric = null
+                    NPLogger.d("NowPlayingScreen", "=== 恢复歌词流程完成 ===")
+                }
+
+                // 然后更新歌曲信息
+                viewModel.updateSongInfo(
+                    originalSong = actualSong,
+                    newCoverUrl = coverUrl.ifBlank { null },
+                    newName = songName,
+                    newArtist = artistName,
+                    restoreBaseCover = shouldRestoreCoverBase,
+                    restoreBaseName = shouldRestoreTitleBase,
+                    restoreBaseArtist = shouldRestoreArtistBase,
+                    clearMatchedMetadata = shouldClearMatchedMetadata,
+                    writeLocalMetadata = writeLocalMetadata
+                )
+
+                // 重置编辑标志, 允许自动更新
+                userHasEdited = false
+                shouldRestoreCoverBase = false
+                shouldRestoreTitleBase = false
+                shouldRestoreArtistBase = false
+                shouldClearMatchedMetadata = false
+                clearEditSongInfoFocus()
+                onDismiss()
+            } catch (e: Exception) {
+                NPLogger.e("NowPlayingScreen", "保存歌曲信息失败", e)
+                snackbarHostState.showNeriSnackbar(
+                    composeResources.getString(R.string.toast_save_failed, e.message.orEmpty()),
+                )
             }
         }
     }
@@ -4410,69 +4479,17 @@ fun EditSongInfoSheet(
 
             HapticTextButton(
                 onClick = {
-                    coroutineScope.launch {
-                        try {
-                            // 处理歌词: 清除(B站)或恢复(网易云)
-                            if (shouldClearLyrics) {
-                                // B站音源: 清除歌词
-                                NPLogger.d("NowPlayingScreen", "=== 开始清除歌词流程 ===")
-                                NPLogger.d("NowPlayingScreen", "actualSong详情: id=${actualSong.id}, album='${actualSong.album}', name='${actualSong.name}', artist='${actualSong.artist}'")
-                                NPLogger.d("NowPlayingScreen", "当前歌词状态: matchedLyric=${actualSong.matchedLyric?.take(50)}, matchedTranslatedLyric=${actualSong.matchedTranslatedLyric?.take(50)}")
-
-                                NPLogger.d("NowPlayingScreen", "准备调用PlayerManager.updateSongLyricsAndTranslation清除歌词")
-                                PlayerManager.updateSongLyricsAndTranslation(
-                                    actualSong,
-                                    "",  // 清空歌词
-                                    ""  // 清空翻译歌词
-                                )
-                                NPLogger.d("NowPlayingScreen", "PlayerManager.updateSongLyricsAndTranslation调用完成")
-                                shouldClearLyrics = false  // 重置标志
-                                NPLogger.d("NowPlayingScreen", "=== 清除歌词流程完成 ===")
-                            } else if (shouldRestoreLyrics) {
-                                // 网易云音源: 恢复歌词
-                                NPLogger.d("NowPlayingScreen", "=== 开始恢复歌词流程 ===")
-                                NPLogger.d("NowPlayingScreen", "actualSong详情: id=${actualSong.id}, album='${actualSong.album}'")
-                                NPLogger.d("NowPlayingScreen", "原始歌词: lyric=${originalLyric?.take(50)}, translatedLyric=${originalTranslatedLyric?.take(50)}")
-
-                                NPLogger.d("NowPlayingScreen", "准备调用PlayerManager.updateSongLyricsAndTranslation恢复歌词")
-                                PlayerManager.updateSongLyricsAndTranslation(
-                                    actualSong,
-                                    originalLyric,  // 恢复原始歌词
-                                    originalTranslatedLyric  // 恢复原始翻译歌词
-                                )
-                                NPLogger.d("NowPlayingScreen", "PlayerManager.updateSongLyricsAndTranslation调用完成")
-                                shouldRestoreLyrics = false  // 重置标志
-                                originalLyric = null
-                                originalTranslatedLyric = null
-                                NPLogger.d("NowPlayingScreen", "=== 恢复歌词流程完成 ===")
-                            }
-
-                            // 然后更新歌曲信息
-                            viewModel.updateSongInfo(
-                                originalSong = actualSong,
-                                newCoverUrl = coverUrl.ifBlank { null },
-                                newName = songName,
-                                newArtist = artistName,
-                                restoreBaseCover = shouldRestoreCoverBase,
-                                restoreBaseName = shouldRestoreTitleBase,
-                                restoreBaseArtist = shouldRestoreArtistBase,
-                                clearMatchedMetadata = shouldClearMatchedMetadata
-                            )
-
-                            // 重置编辑标志, 允许自动更新
-                            userHasEdited = false
-                            shouldRestoreCoverBase = false
-                            shouldRestoreTitleBase = false
-                            shouldRestoreArtistBase = false
-                            shouldClearMatchedMetadata = false
-                            clearEditSongInfoFocus()
-                            onDismiss()
-                        } catch (e: Exception) {
-                            NPLogger.e("NowPlayingScreen", "保存歌曲信息失败", e)
-                            snackbarHostState.showNeriSnackbar(
-                                composeResources.getString(R.string.toast_save_failed, e.message.orEmpty()),
-                            )
-                        }
+                    if (
+                        shouldConfirmLocalMetadataWriteBack(
+                            song = actualSong,
+                            title = songName,
+                            artist = artistName
+                        )
+                    ) {
+                        clearEditSongInfoFocus()
+                        showLocalMetadataWriteBackConfirm = true
+                    } else {
+                        saveEditedSongInfo(writeLocalMetadata = false)
                     }
                 },
                 modifier = Modifier.weight(1f)
@@ -4490,6 +4507,34 @@ fun EditSongInfoSheet(
         }
     }
     } // 关闭 AnimatedVisibility
+
+    if (showLocalMetadataWriteBackConfirm) {
+        AlertDialog(
+            onDismissRequest = { showLocalMetadataWriteBackConfirm = false },
+            title = { Text(stringResource(R.string.local_song_metadata_write_confirm_title)) },
+            text = { Text(stringResource(R.string.local_song_metadata_write_confirm_message)) },
+            confirmButton = {
+                HapticTextButton(
+                    onClick = {
+                        showLocalMetadataWriteBackConfirm = false
+                        saveEditedSongInfo(writeLocalMetadata = true)
+                    }
+                ) {
+                    Text(stringResource(R.string.local_song_metadata_write_confirm_write))
+                }
+            },
+            dismissButton = {
+                HapticTextButton(
+                    onClick = {
+                        showLocalMetadataWriteBackConfirm = false
+                        saveEditedSongInfo(writeLocalMetadata = false)
+                    }
+                ) {
+                    Text(stringResource(R.string.local_song_metadata_write_confirm_app_only))
+                }
+            }
+        )
+    }
 
     // 填充选项对话框
     if (selectedSongForFill != null) {
@@ -4710,6 +4755,20 @@ fun EditSongInfoSheet(
             }
         }
     }
+}
+
+internal fun shouldConfirmLocalMetadataWriteBack(
+    song: SongItem,
+    title: String,
+    artist: String
+): Boolean {
+    if (!song.isLocalSong()) {
+        return false
+    }
+    val resolvedTitle = title.trim().ifBlank { song.name }
+    val resolvedArtist = artist.trim().ifBlank { song.artist }
+    return !song.displayName().trim().equals(resolvedTitle, ignoreCase = false) ||
+        !song.displayArtist().trim().equals(resolvedArtist, ignoreCase = false)
 }
 
 @Composable
