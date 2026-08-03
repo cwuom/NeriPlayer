@@ -27,7 +27,9 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
@@ -37,10 +39,10 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
@@ -51,6 +53,13 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
 import org.json.JSONObject
 import kotlin.math.roundToInt
+
+internal fun shouldPollNeteaseQrLogin(
+    lifecycleState: Lifecycle.State,
+    hasReturned: Boolean
+): Boolean {
+    return !hasReturned && lifecycleState.isAtLeast(Lifecycle.State.STARTED)
+}
 
 class NeteaseQrLoginActivity : ComponentActivity() {
 
@@ -297,9 +306,11 @@ class NeteaseQrLoginActivity : ComponentActivity() {
             hintText.text = getString(R.string.netease_qr_login_hint)
             qrImage.setImageDrawable(null)
 
-            val session = runCatching {
+            val session = try {
                 withContext(Dispatchers.IO) { qrClient.createSession() }
-            }.getOrElse { error ->
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
                 setLoadingState(false)
                 setErrorStatus(getString(R.string.netease_qr_login_failed, error.readableMessage()))
                 NPLogger.w(LOG_TAG, "Create QR login session failed", error)
@@ -318,17 +329,21 @@ class NeteaseQrLoginActivity : ComponentActivity() {
             qrImage.setImageBitmap(bitmap)
             setLoadingState(false)
             setStatus(getString(R.string.netease_qr_login_waiting))
-            pollQrLogin(session)
+            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                pollQrLogin(session)
+            }
         }
     }
 
     private suspend fun pollQrLogin(session: moe.ouom.neriplayer.core.api.netease.NeteaseQrLoginSession) {
-        while (lifecycleScope.isActive && !hasReturned) {
+        while (shouldPollNeteaseQrLogin(lifecycle.currentState, hasReturned)) {
             pollRound += 1
             NPLogger.d(LOG_TAG, "Poll round=$pollRound")
-            val check = runCatching {
+            val check = try {
                 withContext(Dispatchers.IO) { qrClient.checkLogin(session) }
-            }.getOrElse { error ->
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
                 setErrorStatus(getString(R.string.netease_qr_login_failed, error.readableMessage()))
                 NPLogger.w(LOG_TAG, "Check QR login failed", error)
                 return
