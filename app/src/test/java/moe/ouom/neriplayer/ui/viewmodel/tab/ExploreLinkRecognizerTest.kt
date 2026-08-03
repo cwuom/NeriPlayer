@@ -66,10 +66,11 @@ class ExploreLinkRecognizerTest {
         assertEquals(
             ExploreLinkTarget.BiliVideo(
                 bvid = "BV1V4m2BMEWN",
+                seasonId = 4002195L,
                 isCollectionShare = true
             ),
             recognizeExploreLink(
-                "https://www.bilibili.com/video/BV1V4m2BMEWN?share_from=season"
+                "https://www.bilibili.com/video/BV1V4m2BMEWN?season_id=4002195"
             )
         )
     }

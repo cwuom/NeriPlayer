@@ -43,6 +43,22 @@ class ExploreBiliLinkResolutionTest {
     }
 
     @Test
+    fun `collection share uses its explicit season when video details omit it`() {
+        val target = videoInfo().toExploreLinkCollectionTarget(
+            ExploreLinkTarget.BiliVideo(
+                bvid = "BV1V4m2BMEWN",
+                seasonId = 4002195L,
+                isCollectionShare = true
+            )
+        )
+
+        assertEquals(
+            ExploreLinkTarget.BiliCollection(ownerMid = 100L, seasonId = 4002195L),
+            target
+        )
+    }
+
+    @Test
     fun `ordinary video link does not open its UGC season`() {
         val target = videoInfo(
             ugcSeason = BiliClient.UgcSeason(

@@ -1374,13 +1374,14 @@ internal fun BiliClient.VideoBasicInfo.toExploreLinkCollectionTarget(
     target: ExploreLinkTarget.BiliVideo
 ): ExploreLinkTarget.BiliCollection? {
     if (!target.isCollectionShare) return null
-    val season = ugcSeason ?: return null
-    val collectionOwnerMid = season.mid.takeIf { it > 0L }
+    val season = ugcSeason
+    val seasonId = target.seasonId ?: season?.id ?: return null
+    val collectionOwnerMid = season?.mid?.takeIf { it > 0L }
         ?: ownerMid.takeIf { it > 0L }
         ?: return null
     return ExploreLinkTarget.BiliCollection(
         ownerMid = collectionOwnerMid,
-        seasonId = season.id
+        seasonId = seasonId
     )
 }
 
