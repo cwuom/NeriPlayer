@@ -126,13 +126,14 @@ internal fun MainTabLayerHost(
     content: @Composable (route: String) -> Unit
 ) {
     val controller = rememberMainTabLayerTransitionController(selectedRoute)
-    var visitedRoutes by remember {
-        mutableStateOf(setOf(selectedRoute))
-    }
+    val visitedRoutes = remember { mutableSetOf(selectedRoute) }
     LaunchedEffect(controller, selectedRoute) {
         val restored = selectedRoute in visitedRoutes
-        controller.request(selectedRoute, restored)
-        visitedRoutes = visitedRoutes + selectedRoute
+        visitedRoutes += selectedRoute
+        controller.request(
+            targetRoute = selectedRoute,
+            restored = restored
+        )
     }
     val visibleScenes = controller.visibleScenes
     var widthPx by remember { mutableIntStateOf(0) }
@@ -353,7 +354,17 @@ internal class MainTabLayerTransitionController(
         fromRouteState = null
         runningState = false
         transitionJob = null
-        targetSceneRestoredState = false
+        if (!targetSceneRestoredState) return
+
+        val settledGeneration = generation
+        scope.launch {
+            repeat(RESTORED_SCENE_FLAG_HOLD_FRAMES) {
+                withFrameNanos { }
+            }
+            if (settledGeneration == generation && !runningState) {
+                targetSceneRestoredState = false
+            }
+        }
     }
 
     private data class TransitionStart(
@@ -377,5 +388,6 @@ internal class MainTabLayerTransitionController(
 
     private companion object {
         const val MIN_INTERRUPTED_MAIN_TAB_TRANSITION_MS = 120
+        const val RESTORED_SCENE_FLAG_HOLD_FRAMES = 2
     }
 }

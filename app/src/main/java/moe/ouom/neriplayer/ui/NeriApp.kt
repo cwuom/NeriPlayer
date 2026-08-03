@@ -228,6 +228,7 @@ import moe.ouom.neriplayer.ui.screen.host.ExploreHostScreen
 import moe.ouom.neriplayer.ui.screen.host.HomeHostScreen
 import moe.ouom.neriplayer.ui.screen.host.LibraryHostScreen
 import moe.ouom.neriplayer.ui.screen.host.SettingsHostScreen
+import moe.ouom.neriplayer.ui.screen.host.rememberHomeHostRuntimeState
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
@@ -2360,6 +2361,7 @@ private fun NeriAppContent(
             }
 
             val snackbarHostState = remember { SnackbarHostState() }
+            val homeHostRuntimeState = rememberHomeHostRuntimeState()
 
             @Composable
             fun RenderNavigationScene(
@@ -2467,6 +2469,7 @@ private fun NeriAppContent(
                         showRadarCard = showHomeRadarCard,
                         showRecommendedCard = showHomeRecommendedCard,
                         offlineMode = offlineMode,
+                        runtimeState = homeHostRuntimeState,
                         onSongClick = ::playSongsAndOpenNowPlaying,
                         onSongClickWithSourceRoute = ::playSongsAndOpenNowPlaying,
                         onPlayBiliAudioWithSourceRoute = ::playBiliAudioAndOpenNowPlayingWithSource,

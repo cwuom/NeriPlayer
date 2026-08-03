@@ -157,6 +157,34 @@ class AudioPlayerServicePolicyTest {
     }
 
     @Test
+    fun `widget action only starts in foreground when the playback service is unavailable`() {
+        assertFalse(
+            shouldStartPlaybackWidgetActionInForeground(
+                serviceInstanceActive = true,
+                serviceForegroundActive = true,
+            ),
+        )
+        assertTrue(
+            shouldStartPlaybackWidgetActionInForeground(
+                serviceInstanceActive = false,
+                serviceForegroundActive = false,
+            ),
+        )
+        assertTrue(
+            shouldStartPlaybackWidgetActionInForeground(
+                serviceInstanceActive = true,
+                serviceForegroundActive = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `widget accepts a state independent play pause command`() {
+        assertTrue(isSupportedPlaybackWidgetAction(AudioPlayerService.ACTION_TOGGLE_PLAY_PAUSE))
+        assertFalse(isSupportedPlaybackWidgetAction("moe.ouom.neriplayer.action.UNKNOWN"))
+    }
+
+    @Test
     fun `USB exclusive background keepalive runs before the vendor freeze window`() {
         assertEquals(1_000L, usbExclusiveKeepAliveIntervalMs(appInForeground = false))
         assertEquals(5_000L, usbExclusiveKeepAliveIntervalMs(appInForeground = true))

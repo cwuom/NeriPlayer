@@ -33,13 +33,12 @@ import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.grid.LazyGridState
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TopAppBarState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -100,7 +99,29 @@ private sealed class HomeSelectedItem {
 private val HomeSelectedItem?.navigationDepth: Int
     get() = if (this == null) 0 else 1
 
-@OptIn(ExperimentalMaterial3Api::class)
+@Stable
+class HomeHostRuntimeState {
+    val gridState: LazyGridState = LazyGridState(
+        firstVisibleItemIndex = 0,
+        firstVisibleItemScrollOffset = 0
+    )
+    val topAppBarState: TopAppBarState = TopAppBarState(
+        initialHeightOffsetLimit = -Float.MAX_VALUE,
+        initialHeightOffset = 0f,
+        initialContentOffset = 0f
+    )
+    var pendingGridRestoreIndex by mutableStateOf<Int?>(null)
+    var pendingGridRestoreOffset by mutableIntStateOf(0)
+    var pendingGridRestoreKey by mutableStateOf<String?>(null)
+    var pendingGridRestoreArmed by mutableStateOf(false)
+    var homeScrollAnchorIndexes by mutableStateOf<Map<String, Int>>(emptyMap())
+}
+
+@Composable
+fun rememberHomeHostRuntimeState(): HomeHostRuntimeState {
+    return remember { HomeHostRuntimeState() }
+}
+
 @Composable
 fun HomeHostScreen(
     showContinueCard: Boolean = true,
@@ -108,6 +129,7 @@ fun HomeHostScreen(
     showRadarCard: Boolean = true,
     showRecommendedCard: Boolean = true,
     offlineMode: Boolean = false,
+    runtimeState: HomeHostRuntimeState = rememberHomeHostRuntimeState(),
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
     onSongClickWithSourceRoute: (List<SongItem>, Int, String?) -> Unit = { songs, index, _ ->
         onSongClick(songs, index)
@@ -146,39 +168,25 @@ fun HomeHostScreen(
     val scope = rememberCoroutineScope()
     var pendingNeteaseCoverWarmupJob by remember { mutableStateOf<Job?>(null) }
     var pendingNeteaseCoverWarmupToken by remember { mutableIntStateOf(0) }
-    val gridState = rememberSaveable(saver = LazyGridState.Saver) {
-        LazyGridState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
-    }
-    val topAppBarState = rememberTopAppBarState()
-    var pendingGridRestoreIndex by rememberSaveable { mutableStateOf<Int?>(null) }
-    var pendingGridRestoreOffset by rememberSaveable { mutableIntStateOf(0) }
-    var pendingGridRestoreKey by rememberSaveable { mutableStateOf<String?>(null) }
-    var pendingGridRestoreArmed by rememberSaveable { mutableStateOf(false) }
-    var pendingTopAppBarHeightOffset by rememberSaveable { mutableFloatStateOf(Float.NaN) }
-    var pendingTopAppBarContentOffset by rememberSaveable { mutableFloatStateOf(Float.NaN) }
-    var homeScrollAnchorIndexes by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    val gridState = runtimeState.gridState
 
     fun clearPendingHomeScrollRestore() {
-        pendingGridRestoreIndex = null
-        pendingGridRestoreOffset = 0
-        pendingGridRestoreKey = null
-        pendingGridRestoreArmed = false
-        pendingTopAppBarHeightOffset = Float.NaN
-        pendingTopAppBarContentOffset = Float.NaN
+        runtimeState.pendingGridRestoreIndex = null
+        runtimeState.pendingGridRestoreOffset = 0
+        runtimeState.pendingGridRestoreKey = null
+        runtimeState.pendingGridRestoreArmed = false
     }
 
     fun captureHomeScrollPosition() {
         val position = gridState.captureHostScrollPosition()
-        pendingGridRestoreIndex = position.index
-        pendingGridRestoreOffset = position.offset
-        pendingGridRestoreKey = position.key
-        pendingGridRestoreArmed = false
-        pendingTopAppBarHeightOffset = topAppBarState.heightOffset
-        pendingTopAppBarContentOffset = topAppBarState.contentOffset
+        runtimeState.pendingGridRestoreIndex = position.index
+        runtimeState.pendingGridRestoreOffset = position.offset
+        runtimeState.pendingGridRestoreKey = position.key
+        runtimeState.pendingGridRestoreArmed = false
     }
 
     fun ensureHomeScrollPositionCaptured() {
-        if (pendingGridRestoreIndex == null) {
+        if (runtimeState.pendingGridRestoreIndex == null) {
             captureHomeScrollPosition()
         }
     }
@@ -237,9 +245,9 @@ fun HomeHostScreen(
     LaunchedEffect(selected) {
         if (selected != null) {
             skipDetailCloseAnimation = false
-            if (pendingGridRestoreIndex != null) {
-                pendingGridRestoreArmed = true
-                homeScrollAnchorIndexes = emptyMap()
+            if (runtimeState.pendingGridRestoreIndex != null) {
+                runtimeState.pendingGridRestoreArmed = true
+                runtimeState.homeScrollAnchorIndexes = emptyMap()
             }
         }
     }
@@ -257,6 +265,11 @@ fun HomeHostScreen(
         label = "home_host_switch"
     )
 
+    val pendingGridRestoreIndex = runtimeState.pendingGridRestoreIndex
+    val pendingGridRestoreOffset = runtimeState.pendingGridRestoreOffset
+    val pendingGridRestoreKey = runtimeState.pendingGridRestoreKey
+    val pendingGridRestoreArmed = runtimeState.pendingGridRestoreArmed
+    val homeScrollAnchorIndexes = runtimeState.homeScrollAnchorIndexes
     LaunchedEffect(
         selected,
         pendingGridRestoreIndex,
@@ -280,12 +293,6 @@ fun HomeHostScreen(
             ),
             resolvedIndex = resolvedIndex
         )
-        if (!pendingTopAppBarHeightOffset.isNaN()) {
-            topAppBarState.heightOffset = pendingTopAppBarHeightOffset
-        }
-        if (!pendingTopAppBarContentOffset.isNaN()) {
-            topAppBarState.contentOffset = pendingTopAppBarContentOffset
-        }
         clearPendingHomeScrollRestore()
     }
     val suppressRestoredSceneEntry = rememberMainTabSceneRestoredEntry()
@@ -348,52 +355,52 @@ fun HomeHostScreen(
                                 )
                         ) {
                             HomeScreen(
-                            showContinueCard = showContinueCard,
-                            showTrendingCard = showTrendingCard,
-                            showRadarCard = showRadarCard,
-                            showRecommendedCard = showRecommendedCard,
-                            offlineMode = offlineMode,
-                            gridState = gridState,
-                            topAppBarState = topAppBarState,
-                            onScrollAnchorIndexesChanged = { indexes ->
-                                if (homeScrollAnchorIndexes != indexes) {
-                                    homeScrollAnchorIndexes = indexes
-                                }
-                            },
-                            onItemClick = { pl ->
-                                skipDetailCloseAnimation = false
-                                captureHomeScrollPosition()
-                                AppContainer.playlistUsageRepo.recordOpen(
-                                    id = pl.id,
-                                    name = pl.name,
-                                    picUrl = pl.picUrl,
-                                    trackCount = pl.trackCount,
-                                    source = "netease"
-                                )
-                                openHomeSelectedItem(HomeSelectedItem.Netease(pl))
-                            },
-                            onYouTubeMusicPlaylistClick = { pl ->
-                                skipDetailCloseAnimation = false
-                                captureHomeScrollPosition()
-                                AppContainer.playlistUsageRepo.recordOpen(
-                                    id = stableYouTubeMusicId(
-                                        pl.playlistId.ifBlank { pl.browseId }
-                                    ),
-                                    name = pl.title,
-                                    picUrl = pl.coverUrl,
-                                    trackCount = pl.trackCount,
-                                    source = "youtubeMusic",
-                                    browseId = pl.browseId,
-                                    playlistId = pl.playlistId
-                                )
-                                openHomeSelectedItem(HomeSelectedItem.YouTubeMusic(pl))
-                            },
-                            onOpenRecent = { entry ->
-                                skipDetailCloseAnimation = false
-                                captureHomeScrollPosition()
-                                openRecent(entry, ::openHomeSelectedItem)
-                            },
-                            onSongClick = onSongClick
+                                showContinueCard = showContinueCard,
+                                showTrendingCard = showTrendingCard,
+                                showRadarCard = showRadarCard,
+                                showRecommendedCard = showRecommendedCard,
+                                offlineMode = offlineMode,
+                                gridState = gridState,
+                                topAppBarState = runtimeState.topAppBarState,
+                                onScrollAnchorIndexesChanged = { indexes ->
+                                    if (runtimeState.homeScrollAnchorIndexes != indexes) {
+                                        runtimeState.homeScrollAnchorIndexes = indexes
+                                    }
+                                },
+                                onItemClick = { pl ->
+                                    skipDetailCloseAnimation = false
+                                    captureHomeScrollPosition()
+                                    AppContainer.playlistUsageRepo.recordOpen(
+                                        id = pl.id,
+                                        name = pl.name,
+                                        picUrl = pl.picUrl,
+                                        trackCount = pl.trackCount,
+                                        source = "netease"
+                                    )
+                                    openHomeSelectedItem(HomeSelectedItem.Netease(pl))
+                                },
+                                onYouTubeMusicPlaylistClick = { pl ->
+                                    skipDetailCloseAnimation = false
+                                    captureHomeScrollPosition()
+                                    AppContainer.playlistUsageRepo.recordOpen(
+                                        id = stableYouTubeMusicId(
+                                            pl.playlistId.ifBlank { pl.browseId }
+                                        ),
+                                        name = pl.title,
+                                        picUrl = pl.coverUrl,
+                                        trackCount = pl.trackCount,
+                                        source = "youtubeMusic",
+                                        browseId = pl.browseId,
+                                        playlistId = pl.playlistId
+                                    )
+                                    openHomeSelectedItem(HomeSelectedItem.YouTubeMusic(pl))
+                                },
+                                onOpenRecent = { entry ->
+                                    skipDetailCloseAnimation = false
+                                    captureHomeScrollPosition()
+                                    openRecent(entry, ::openHomeSelectedItem)
+                                },
+                                onSongClick = onSongClick
                             )
                         }
                     } else {

@@ -39,6 +39,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -89,7 +90,10 @@ import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
+import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
+import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
 import moe.ouom.neriplayer.ui.component.download.SongDownloadSubtitle
+import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
 import moe.ouom.neriplayer.ui.util.rememberLocalArtistDisplayCoverUrl
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.data.model.SongItem
@@ -140,6 +144,7 @@ fun LocalArtistDetailScreen(
     val title = artist?.name ?: artistName
     val artistId = remember(artistName) { localArtistStableId(artistName) }
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
     var showSearch by remember(artistKey) { mutableStateOf(false) }
     var searchQuery by remember(artistKey) { mutableStateOf("") }
     val searchFocusRequester = remember { FocusRequester() }
@@ -231,6 +236,12 @@ fun LocalArtistDetailScreen(
     Surface(Modifier.fillMaxSize(), color = androidx.compose.ui.graphics.Color.Transparent) {
         Scaffold(
             containerColor = androidx.compose.ui.graphics.Color.Transparent,
+            snackbarHost = {
+                NeriSnackbarHost(
+                    hostState = snackbarHostState,
+                    bottomPadding = LocalMiniPlayerHeight.current
+                )
+            },
             topBar = {
                 if (!selectionMode) {
                     TopAppBar(
@@ -494,15 +505,37 @@ fun LocalArtistDetailScreen(
                 onDismissRequest = { showExportSheet = false },
                 onCreateAndExport = { name ->
                     val selectedSongs = songs.filter { it.stableKey() in selectedKeys }
-                    scope.launchLocalPlaylistMutation("createPlaylistFromLocalArtist") {
+                    scope.launchLocalPlaylistMutation(
+                        operation = "createPlaylistFromLocalArtist",
+                        onResult = { result ->
+                            scope.showPlaylistBatchExportCreatedResult(
+                                context = context,
+                                snackbarHostState = snackbarHostState,
+                                repository = repo,
+                                result = result
+                            )
+                        }
+                    ) {
                         repo.createPlaylistWithPreparedSongs(name, selectedSongs)
                     }
                     exitSelectionMode()
                 },
                 onExportToPlaylist = { target ->
                     val selectedSongs = songs.filter { it.stableKey() in selectedKeys }
-                    scope.launchLocalPlaylistMutation("exportSongsFromLocalArtist") {
-                        repo.addPreparedSongsToPlaylist(target.id, selectedSongs)
+                    scope.launchLocalPlaylistMutation(
+                        operation = "exportSongsFromLocalArtist",
+                        onResult = { result ->
+                            scope.showPlaylistBatchExportAddedResult(
+                                context = context,
+                                snackbarHostState = snackbarHostState,
+                                repository = repo,
+                                targetPlaylistId = target.id,
+                                targetPlaylistName = target.name,
+                                result = result
+                            )
+                        }
+                    ) {
+                        repo.addPreparedSongsToPlaylistWithResult(target.id, selectedSongs)
                     }
                     exitSelectionMode()
                 }

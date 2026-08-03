@@ -27,19 +27,31 @@ class HomeScreenMappingTest {
     }
 
     @Test
-    fun continueCardsFitPhonePageWithoutPeekingNextCard() {
+    fun continueCardsFitRegularPhonePageWithoutPeekingNextCard() {
         val containerWidthDp = 360f
         val cardsPerPage = resolveHomeContinueCardsPerPage(containerWidthDp)
         val cardWidthDp = resolveHomeContinueCardWidthDp(containerWidthDp, cardsPerPage)
         val occupiedWidthDp = cardWidthDp * cardsPerPage + 12f * (cardsPerPage - 1) + 16f
 
-        assertEquals(2, cardsPerPage)
-        assertEquals(140f, cardWidthDp, 0.01f)
+        assertEquals(3, cardsPerPage)
+        assertEquals(106.67f, cardWidthDp, 0.01f)
         assertTrue(occupiedWidthDp <= containerWidthDp)
     }
 
     @Test
-    fun continueCardsShrinkInsteadOfOverflowingNarrowPages() {
+    fun continueCardsFillThreeSlotsWhenPhoneContentCanFitThem() {
+        val containerWidthDp = 320f
+        val cardsPerPage = resolveHomeContinueCardsPerPage(containerWidthDp)
+        val cardWidthDp = resolveHomeContinueCardWidthDp(containerWidthDp, cardsPerPage)
+        val occupiedWidthDp = cardWidthDp * cardsPerPage + 12f * (cardsPerPage - 1) + 16f
+
+        assertEquals(3, cardsPerPage)
+        assertEquals(93.33f, cardWidthDp, 0.01f)
+        assertTrue(occupiedWidthDp <= containerWidthDp)
+    }
+
+    @Test
+    fun continueCardsShrinkInsteadOfOverflowingTinyPages() {
         val containerWidthDp = 240f
         val cardsPerPage = resolveHomeContinueCardsPerPage(containerWidthDp)
         val cardWidthDp = resolveHomeContinueCardWidthDp(containerWidthDp, cardsPerPage)
@@ -53,7 +65,7 @@ class HomeScreenMappingTest {
     @Test
     fun continueCardsUseMoreSlotsOnWidePages() {
         assertEquals(4, resolveHomeContinueCardsPerPage(600f))
-        assertEquals(5, resolveHomeContinueCardsPerPage(840f))
+        assertEquals(6, resolveHomeContinueCardsPerPage(840f))
     }
 
     @Test

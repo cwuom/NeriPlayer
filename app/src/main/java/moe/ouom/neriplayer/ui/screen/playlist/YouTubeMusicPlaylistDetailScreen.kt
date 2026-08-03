@@ -58,6 +58,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.CircularProgressIndicator
@@ -118,6 +119,8 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
+import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
+import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
@@ -138,6 +141,7 @@ import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
@@ -211,8 +215,32 @@ fun YouTubeMusicPlaylistDetailScreen(
     var showExportAllSheet by remember { mutableStateOf(false) }
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allPlaylists by repo.playlists.collectAsState()
+    val favoriteSongs = remember(allPlaylists, context) {
+        FavoritesPlaylist.firstOrNull(allPlaylists, context)?.songs.orEmpty()
+    }
     val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
     val favorites by favoriteRepo.favorites.collectAsState()
+    val favoriteAddedText = stringResource(R.string.favorite_added)
+    val favoriteRemovedText = stringResource(R.string.favorite_removed)
+    fun toggleSongFavorite(song: SongItem, isFavoriteSong: Boolean) {
+        val message = if (isFavoriteSong) favoriteRemovedText else favoriteAddedText
+        scope.launchLocalPlaylistMutation(
+            operation = "toggleYouTubeMusicDetailSongFavorite",
+            onResult = { result ->
+                if (result.isSuccess) {
+                    scope.launch {
+                        snackbarHostState.showNeriSnackbar(message)
+                    }
+                }
+            }
+        ) {
+            if (isFavoriteSong) {
+                repo.removeFromFavorites(song)
+            } else {
+                repo.addToFavorites(song)
+            }
+        }
+    }
 
     LaunchedEffect(playlist.browseId) {
         viewModel.start(playlist)
@@ -752,6 +780,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                                 key = { _, song -> song.stableKey() }
                             ) { index, song ->
                                 val isCurrent = currentSong?.sameIdentityAs(song) == true
+                                val isFavoriteSong = favoriteSongs.any { it.sameIdentityAs(song) }
                                 PlaylistModernListItemSurface(
                                     coverUrl = resolvedPlaylist.coverUrl,
                                     offlineMode = offlineMode
@@ -761,6 +790,8 @@ fun YouTubeMusicPlaylistDetailScreen(
                                         song = song,
                                         isCurrentSong = isCurrent,
                                         animatePlayingIndicator = isCurrent && isPlaying,
+                                        isFavorite = isFavoriteSong,
+                                        onFavoriteToggle = ::toggleSongFavorite,
                                         snackbarHostState = snackbarHostState,
                                         selectionMode = selectionMode,
                                         selected = song.stableKey() in selectedKeys,
@@ -845,15 +876,37 @@ fun YouTubeMusicPlaylistDetailScreen(
                 onCreateAndExport = { name ->
                     val songs = ui.tracks
                         .filter { selectedKeys.contains(it.stableKey()) }
-                    scope.launchLocalPlaylistMutation("createPlaylistFromYouTubeMusic") {
+                    scope.launchLocalPlaylistMutation(
+                        operation = "createPlaylistFromYouTubeMusic",
+                        onResult = { result ->
+                            scope.showPlaylistBatchExportCreatedResult(
+                                context = context,
+                                snackbarHostState = snackbarHostState,
+                                repository = repo,
+                                result = result
+                            )
+                        }
+                    ) {
                         repo.createPlaylistWithSongs(name, songs)
                     }
                 },
                 onExportToPlaylist = { playlist ->
                     val songs = ui.tracks
                         .filter { selectedKeys.contains(it.stableKey()) }
-                    scope.launchLocalPlaylistMutation("exportSongsFromYouTubeMusic") {
-                        repo.addSongsToPlaylist(playlist.id, songs)
+                    scope.launchLocalPlaylistMutation(
+                        operation = "exportSongsFromYouTubeMusic",
+                        onResult = { result ->
+                            scope.showPlaylistBatchExportAddedResult(
+                                context = context,
+                                snackbarHostState = snackbarHostState,
+                                repository = repo,
+                                targetPlaylistId = playlist.id,
+                                targetPlaylistName = playlist.name,
+                                result = result
+                            )
+                        }
+                    ) {
+                        repo.addSongsToPlaylistWithResult(playlist.id, songs)
                     }
                 }
             )
@@ -869,15 +922,37 @@ fun YouTubeMusicPlaylistDetailScreen(
                 onDismissRequest = { showExportAllSheet = false },
                 onCreateAndExport = { name ->
                     val songs = ui.tracks
-                    scope.launchLocalPlaylistMutation("createPlaylistFromYouTubeMusicAll") {
+                    scope.launchLocalPlaylistMutation(
+                        operation = "createPlaylistFromYouTubeMusicAll",
+                        onResult = { result ->
+                            scope.showPlaylistBatchExportCreatedResult(
+                                context = context,
+                                snackbarHostState = snackbarHostState,
+                                repository = repo,
+                                result = result
+                            )
+                        }
+                    ) {
                         repo.createPlaylistWithSongs(name, songs)
                     }
                     showExportAllSheet = false
                 },
                 onExportToPlaylist = { playlist ->
                     val songs = ui.tracks
-                    scope.launchLocalPlaylistMutation("exportAllSongsFromYouTubeMusic") {
-                        repo.addSongsToPlaylist(playlist.id, songs)
+                    scope.launchLocalPlaylistMutation(
+                        operation = "exportAllSongsFromYouTubeMusic",
+                        onResult = { result ->
+                            scope.showPlaylistBatchExportAddedResult(
+                                context = context,
+                                snackbarHostState = snackbarHostState,
+                                repository = repo,
+                                targetPlaylistId = playlist.id,
+                                targetPlaylistName = playlist.name,
+                                result = result
+                            )
+                        }
+                    ) {
+                        repo.addSongsToPlaylistWithResult(playlist.id, songs)
                     }
                     showExportAllSheet = false
                 }
@@ -997,6 +1072,8 @@ private fun YouTubeMusicSongRow(
     song: SongItem,
     isCurrentSong: Boolean,
     animatePlayingIndicator: Boolean,
+    isFavorite: Boolean,
+    onFavoriteToggle: (SongItem, Boolean) -> Unit,
     snackbarHostState: SnackbarHostState,
     selectionMode: Boolean,
     selected: Boolean,
@@ -1126,6 +1203,12 @@ private fun YouTubeMusicSongRow(
             ) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.local_playlist_play_next)) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
+                            contentDescription = null
+                        )
+                    },
                     onClick = {
                         onPlayNext()
                         showMenu = false
@@ -1133,13 +1216,52 @@ private fun YouTubeMusicSongRow(
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.playlist_add_to_end)) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                            contentDescription = null
+                        )
+                    },
                     onClick = {
                         onAddToQueueEnd()
                         showMenu = false
                     }
                 )
                 DropdownMenuItem(
+                    text = {
+                        Text(
+                            stringResource(
+                                if (isFavorite) {
+                                    R.string.favorite_remove
+                                } else {
+                                    R.string.favorite_add
+                                }
+                            )
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (isFavorite) {
+                                Icons.Filled.Favorite
+                            } else {
+                                Icons.Outlined.FavoriteBorder
+                            },
+                            contentDescription = null
+                        )
+                    },
+                    onClick = {
+                        onFavoriteToggle(song, isFavorite)
+                        showMenu = false
+                    }
+                )
+                DropdownMenuItem(
                     text = { Text(stringResource(R.string.download_to_local)) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Download,
+                            contentDescription = null
+                        )
+                    },
                     onClick = {
                         onDownload()
                         showMenu = false
@@ -1147,6 +1269,12 @@ private fun YouTubeMusicSongRow(
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.action_copy_song_info)) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.ContentCopy,
+                            contentDescription = null
+                        )
+                    },
                     onClick = {
                         scope.launch {
                             clipboard.setClipEntry(

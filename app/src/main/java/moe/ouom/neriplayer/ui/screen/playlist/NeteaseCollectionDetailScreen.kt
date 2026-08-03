@@ -73,6 +73,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.Card
@@ -135,6 +136,7 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
@@ -145,6 +147,8 @@ import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.rememberMainTabDetailVisibilityState
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
+import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
+import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
 import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionDetailUiState
 import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionHeader
@@ -328,6 +332,9 @@ fun DetailScreen(
     // 多选与导出到本地歌单
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allPlaylists by repo.playlists.collectAsState()
+    val favoriteSongs = remember(allPlaylists, context) {
+        FavoritesPlaylist.firstOrNull(allPlaylists, context)?.songs.orEmpty()
+    }
     var selectionMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     fun toggleSelect(id: Long) {
@@ -361,6 +368,27 @@ fun DetailScreen(
     var showExportAllSheet by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
+    val favoriteAddedText = stringResource(R.string.favorite_added)
+    val favoriteRemovedText = stringResource(R.string.favorite_removed)
+    fun toggleSongFavorite(song: SongItem, isFavoriteSong: Boolean) {
+        val message = if (isFavoriteSong) favoriteRemovedText else favoriteAddedText
+        scope.launchLocalPlaylistMutation(
+            operation = "toggleNeteaseDetailSongFavorite",
+            onResult = { result ->
+                if (result.isSuccess) {
+                    scope.launch {
+                        snackbarHostState.showNeriSnackbar(message)
+                    }
+                }
+            }
+        ) {
+            if (isFavoriteSong) {
+                repo.removeFromFavorites(song)
+            } else {
+                repo.addToFavorites(song)
+            }
+        }
+    }
     val routeHeader = ui.header?.takeIf { header ->
         isNeteaseCollectionHeaderForRoute(
             header = header,
@@ -830,9 +858,14 @@ fun DetailScreen(
                                             coverUrl = displayCoverUrl,
                                             offlineMode = offlineMode
                                         ) {
+                                            val isFavoriteSong = favoriteSongs.any {
+                                                it.sameIdentityAs(item)
+                                            }
                                             SongRow(
                                                 index = index + 1,
                                                 song = item,
+                                                isFavorite = isFavoriteSong,
+                                                onFavoriteToggle = ::toggleSongFavorite,
                                                 showCover = ui.header?.isAlbum == false,
                                                 selectionMode = selectionMode,
                                                 selected = selectedIds.contains(item.id),
@@ -902,15 +935,37 @@ fun DetailScreen(
                         onCreateAndExport = { name ->
                             val songs = ui.tracks
                                 .filter { selectedIds.contains(it.id) }
-                            scope.launchLocalPlaylistMutation("createPlaylistFromNetease") {
+                            scope.launchLocalPlaylistMutation(
+                                operation = "createPlaylistFromNetease",
+                                onResult = { result ->
+                                    scope.showPlaylistBatchExportCreatedResult(
+                                        context = context,
+                                        snackbarHostState = snackbarHostState,
+                                        repository = repo,
+                                        result = result
+                                    )
+                                }
+                            ) {
                                 repo.createPlaylistWithSongs(name, songs)
                             }
                         },
                         onExportToPlaylist = { playlist ->
                             val songs = ui.tracks
                                 .filter { selectedIds.contains(it.id) }
-                            scope.launchLocalPlaylistMutation("exportSongsFromNetease") {
-                                repo.addSongsToPlaylist(playlist.id, songs)
+                            scope.launchLocalPlaylistMutation(
+                                operation = "exportSongsFromNetease",
+                                onResult = { result ->
+                                    scope.showPlaylistBatchExportAddedResult(
+                                        context = context,
+                                        snackbarHostState = snackbarHostState,
+                                        repository = repo,
+                                        targetPlaylistId = playlist.id,
+                                        targetPlaylistName = playlist.name,
+                                        result = result
+                                    )
+                                }
+                            ) {
+                                repo.addSongsToPlaylistWithResult(playlist.id, songs)
                             }
                         }
                     )
@@ -925,15 +980,37 @@ fun DetailScreen(
                         onDismissRequest = { showExportAllSheet = false },
                         onCreateAndExport = { name ->
                             val songs = ui.tracks
-                            scope.launchLocalPlaylistMutation("createPlaylistFromNeteaseAll") {
+                            scope.launchLocalPlaylistMutation(
+                                operation = "createPlaylistFromNeteaseAll",
+                                onResult = { result ->
+                                    scope.showPlaylistBatchExportCreatedResult(
+                                        context = context,
+                                        snackbarHostState = snackbarHostState,
+                                        repository = repo,
+                                        result = result
+                                    )
+                                }
+                            ) {
                                 repo.createPlaylistWithSongs(name, songs)
                             }
                             showExportAllSheet = false
                         },
                         onExportToPlaylist = { playlist ->
                             val songs = ui.tracks
-                            scope.launchLocalPlaylistMutation("exportAllSongsFromNetease") {
-                                repo.addSongsToPlaylist(playlist.id, songs)
+                            scope.launchLocalPlaylistMutation(
+                                operation = "exportAllSongsFromNetease",
+                                onResult = { result ->
+                                    scope.showPlaylistBatchExportAddedResult(
+                                        context = context,
+                                        snackbarHostState = snackbarHostState,
+                                        repository = repo,
+                                        targetPlaylistId = playlist.id,
+                                        targetPlaylistName = playlist.name,
+                                        result = result
+                                    )
+                                }
+                            ) {
+                                repo.addSongsToPlaylistWithResult(playlist.id, songs)
                             }
                             showExportAllSheet = false
                         }
@@ -999,6 +1076,8 @@ private fun RetryChip(onClick: () -> Unit) {
 private fun SongRow(
     index: Int,
     song: SongItem,
+    isFavorite: Boolean,
+    onFavoriteToggle: (SongItem, Boolean) -> Unit,
     showCover: Boolean,
     selectionMode: Boolean,
     selected: Boolean,
@@ -1131,6 +1210,12 @@ private fun SongRow(
                 ) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.local_playlist_play_next)) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
+                                contentDescription = null
+                            )
+                        },
                         onClick = {
                             PlayerManager.addToQueueNext(song)
                             showMoreMenu = false
@@ -1138,13 +1223,52 @@ private fun SongRow(
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.playlist_add_to_end)) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                                contentDescription = null
+                            )
+                        },
                         onClick = {
                             PlayerManager.addToQueueEnd(song)
                             showMoreMenu = false
                         }
                     )
                     DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(
+                                    if (isFavorite) {
+                                        R.string.favorite_remove
+                                    } else {
+                                        R.string.favorite_add
+                                    }
+                                )
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (isFavorite) {
+                                    Icons.Filled.Favorite
+                                } else {
+                                    Icons.Outlined.FavoriteBorder
+                                },
+                                contentDescription = null
+                            )
+                        },
+                        onClick = {
+                            onFavoriteToggle(song, isFavorite)
+                            showMoreMenu = false
+                        }
+                    )
+                    DropdownMenuItem(
                         text = { Text(stringResource(R.string.action_copy_song_info)) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.ContentCopy,
+                                contentDescription = null
+                            )
+                        },
                         onClick = {
                             val songInfo = "${song.displayName()}-${song.displayArtist()}"
                             scope.launch {

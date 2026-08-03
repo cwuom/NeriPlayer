@@ -22,6 +22,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -44,6 +45,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
+import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
@@ -63,10 +65,14 @@ internal fun PlaylistExportSheet(
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var newName by remember { mutableStateOf("") }
+    var pendingExportTargetName by remember { mutableStateOf<String?>(null) }
+    var pendingExportAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     val resolvedCreateActionLabel =
         createActionLabel ?: stringResource(R.string.playlist_create_and_export)
 
     fun dismissAnimated() {
+        pendingExportTargetName = null
+        pendingExportAction = null
         scope.launch {
             runCatching { sheetState.hide() }
             onDismissRequest()
@@ -76,6 +82,11 @@ internal fun PlaylistExportSheet(
     fun runThenDismiss(action: () -> Unit) {
         action()
         dismissAnimated()
+    }
+
+    fun requestExportConfirmation(targetName: String, action: () -> Unit) {
+        pendingExportTargetName = targetName
+        pendingExportAction = { runThenDismiss(action) }
     }
 
     ModalBottomSheet(
@@ -128,7 +139,7 @@ internal fun PlaylistExportSheet(
                         onClick = {
                             val name = newName.trim()
                             if (name.isBlank()) return@MiuixSettingsButton
-                            runThenDismiss { onCreateAndExport(name) }
+                            requestExportConfirmation(name) { onCreateAndExport(name) }
                         }
                     ) {
                         Icon(Icons.Outlined.Add, contentDescription = null)
@@ -151,12 +162,56 @@ internal fun PlaylistExportSheet(
                         playlist = playlist,
                         onClick = {
                             context.performHapticFeedback()
-                            runThenDismiss { onExportToPlaylist(playlist) }
+                            requestExportConfirmation(playlist.name) {
+                                onExportToPlaylist(playlist)
+                            }
                         }
                     )
                 }
             }
         }
+    }
+
+    pendingExportTargetName?.let { targetName ->
+        AlertDialog(
+            onDismissRequest = {
+                pendingExportTargetName = null
+                pendingExportAction = null
+            },
+            title = { Text(stringResource(R.string.playlist_batch_export_confirm_title)) },
+            text = {
+                Text(
+                    pluralStringResource(
+                        R.plurals.playlist_batch_export_confirm_message,
+                        selectedCount,
+                        selectedCount,
+                        targetName
+                    )
+                )
+            },
+            confirmButton = {
+                HapticTextButton(
+                    onClick = {
+                        val action = pendingExportAction
+                        pendingExportTargetName = null
+                        pendingExportAction = null
+                        action?.invoke()
+                    }
+                ) {
+                    Text(stringResource(R.string.playlist_batch_export_confirm_button))
+                }
+            },
+            dismissButton = {
+                HapticTextButton(
+                    onClick = {
+                        pendingExportTargetName = null
+                        pendingExportAction = null
+                    }
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
     }
 }
 

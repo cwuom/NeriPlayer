@@ -52,10 +52,14 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
+import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Radar
@@ -152,8 +156,8 @@ import java.util.Locale
 private const val HomeContinueHorizontalPaddingDp = 8f
 private const val HomeContinueCardSpacingDp = 12f
 private const val HomeContinueCardMaxWidthDp = 140f
+private const val HomeContinueThreeSlotWidthDp = 300f
 private const val HomeContinueTabletWidthDp = 600f
-private const val HomeContinueWideWidthDp = 840f
 private const val HomeScrollKeyContinueHeader = "home:continue:header"
 private const val HomeScrollKeyContinueContent = "home:continue:content"
 private const val HomeScrollKeyYtGuess = "home:ytmusic:guess"
@@ -197,7 +201,7 @@ private fun homeYtMusicHomeItemScrollKey(
     return "$shelfKey:item:$itemIndex:${stableId.hashCode()}"
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     showContinueCard: Boolean = true,
@@ -224,9 +228,8 @@ fun HomeScreen(
         }
     )
     val ui by vm.uiState.collectAsStateWithLifecycle()
-    val usage by AppContainer.playlistUsageRepo.frequentPlaylistsFlow.collectAsStateWithLifecycle(
-        initialValue = emptyList()
-    )
+    val usageFlow = AppContainer.playlistUsageRepo.frequentPlaylistsFlow
+    val usage by usageFlow.collectAsStateWithLifecycle()
     val localPlaylistRepo = remember(appContext) { LocalPlaylistRepository.getInstance(appContext) }
     var localPlaylists by remember { mutableStateOf<List<LocalPlaylist>>(emptyList()) }
     var localPlaylistsReady by remember { mutableStateOf(false) }
@@ -390,7 +393,7 @@ fun HomeScreen(
                 ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier
-                    .padding(horizontal = pageHorizontalPadding, vertical = 12.dp)
+                    .padding(horizontal = pageHorizontalPadding, vertical = 4.dp)
                     .widthIn(max = 1240.dp)
                     .fillMaxWidth()
                     .weight(1f)
@@ -974,6 +977,12 @@ private fun SongRowMini(
             ) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.local_playlist_play_next)) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
+                            contentDescription = null
+                        )
+                    },
                     onClick = {
                         PlayerManager.addToQueueNext(song)
                         showMenu = false
@@ -981,6 +990,12 @@ private fun SongRowMini(
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.playlist_add_to_end)) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                            contentDescription = null
+                        )
+                    },
                     onClick = {
                         PlayerManager.addToQueueEnd(song)
                         showMenu = false
@@ -1015,6 +1030,12 @@ private fun SongRowMini(
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.action_copy_song_info)) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.ContentCopy,
+                            contentDescription = null
+                        )
+                    },
                     onClick = {
                         scope.launch {
                             clipboard.setClipEntry(
@@ -1103,6 +1124,16 @@ fun PlaylistCard(
                         } else {
                             stringResource(R.string.home_favorite_playlist)
                         }
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (isFavorite) {
+                            Icons.Filled.Favorite
+                        } else {
+                            Icons.Outlined.FavoriteBorder
+                        },
+                        contentDescription = null
                     )
                 },
                 onClick = {
@@ -1199,6 +1230,16 @@ private fun YtMusicPlaylistCard(
                         } else {
                             stringResource(R.string.home_favorite_playlist)
                         }
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (isFavorite) {
+                            Icons.Filled.Favorite
+                        } else {
+                            Icons.Outlined.FavoriteBorder
+                        },
+                        contentDescription = null
                     )
                 },
                 onClick = {
@@ -1305,6 +1346,16 @@ private fun YtMusicHomeItemCard(
                             } else {
                                 stringResource(R.string.home_favorite_playlist)
                             }
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (isFavorite) {
+                                Icons.Filled.Favorite
+                            } else {
+                                Icons.Outlined.FavoriteBorder
+                            },
+                            contentDescription = null
                         )
                     },
                     onClick = {
@@ -1521,9 +1572,10 @@ private fun LazyGridScope.addYouTubeMusicSongShelfSection(
 private fun ContinueSection(
     items: List<UsageEntry>,
     onClick: (UsageEntry) -> Unit,
-    offlineMode: Boolean
+    offlineMode: Boolean,
+    modifier: Modifier = Modifier
 ) {
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
+    BoxWithConstraints(modifier.fillMaxWidth()) {
         val cardsPerPage = remember(maxWidth) {
             resolveHomeContinueCardsPerPage(maxWidth.value)
         }
@@ -1644,6 +1696,12 @@ private fun ContinueCard(
         ) {
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.continue_playing_remove)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.DeleteForever,
+                        contentDescription = null
+                    )
+                },
                 onClick = {
                     showMenu = false
                     onRemove()
@@ -1716,11 +1774,15 @@ private fun ResponsiveSongPagerList(
 }
 
 internal fun resolveHomeContinueCardsPerPage(containerWidthDp: Float): Int {
-    return when {
-        containerWidthDp >= HomeContinueWideWidthDp -> 5
-        containerWidthDp >= HomeContinueTabletWidthDp -> 4
-        else -> 2
-    }
+    val preferredMinimumSlots = if (containerWidthDp >= HomeContinueThreeSlotWidthDp) 3 else 2
+    val availableWidth = (containerWidthDp - HomeContinueHorizontalPaddingDp * 2f)
+        .coerceAtLeast(0f)
+    val slotsNeededToAvoidSlack = ceil(
+        (availableWidth + HomeContinueCardSpacingDp) /
+            (HomeContinueCardMaxWidthDp + HomeContinueCardSpacingDp)
+    ).toInt()
+    val tabletMinimumSlots = if (containerWidthDp >= HomeContinueTabletWidthDp) 4 else 0
+    return maxOf(preferredMinimumSlots, tabletMinimumSlots, slotsNeededToAvoidSlack, 1)
 }
 
 internal fun resolveHomeContinueCardWidthDp(
@@ -1732,7 +1794,6 @@ internal fun resolveHomeContinueCardWidthDp(
         HomeContinueHorizontalPaddingDp * 2f -
         HomeContinueCardSpacingDp * (slots - 1)
     return (availableWidth / slots)
-        .coerceAtMost(HomeContinueCardMaxWidthDp)
         .coerceAtLeast(0f)
 }
 

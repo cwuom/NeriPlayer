@@ -872,6 +872,162 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
+    fun `add result only contains songs inserted by this batch`() = runTest {
+        val targetId = 155L
+        val existingSong = remoteNeteaseSong(id = 156L, name = "existing")
+        val newSong = remoteNeteaseSong(id = 157L, name = "new")
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "batch_add_result.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false
+        )
+        repository.updatePlaylists(
+            listOf(
+                LocalPlaylist(
+                    id = targetId,
+                    name = "target",
+                    songs = mutableListOf(existingSong),
+                    songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
+                )
+            )
+        )
+
+        val addResult = repository.addSongsToPlaylistWithResult(
+            targetId,
+            listOf(existingSong, newSong)
+        )
+
+        assertEquals(listOf(newSong.id), addResult.addedSongs.map { it.id })
+
+        repository.removeSongsFromPlaylistByIdentity(targetId, addResult.addedSongs)
+
+        val targetSongs = repository.playlists.value.single { it.id == targetId }.songs
+        assertEquals(listOf(existingSong.id), targetSongs.map { it.id })
+    }
+
+    @Test
+    fun `deleted playlists can be restored at original positions`() = runTest {
+        val first = LocalPlaylist(id = 201L, name = "first")
+        val second = LocalPlaylist(id = 202L, name = "second")
+        val third = LocalPlaylist(id = 203L, name = "third")
+        val fourth = LocalPlaylist(id = 204L, name = "fourth")
+        val syncStore = RecordingSyncMutationStore()
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "delete_restore_playlist.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false,
+            syncMutationStore = syncStore
+        )
+        repository.updatePlaylists(listOf(first, second, third, fourth))
+
+        val deleteResults = repository.deletePlaylistsWithResult(listOf(second.id, fourth.id))
+
+        assertEquals(listOf(second.id, fourth.id), deleteResults.map { it.playlist.id })
+        assertEquals(listOf(1, 3), deleteResults.map { it.index })
+        assertEquals(listOf(first.id, third.id), repository.playlists.value.map { it.id })
+        assertEquals(listOf(second.id, fourth.id), syncStore.applied.single().deletedPlaylistIds)
+
+        assertTrue(repository.restoreDeletedPlaylists(deleteResults))
+
+        assertEquals(
+            listOf(first.id, second.id, third.id, fourth.id),
+            repository.playlists.value.map { it.id }
+        )
+        assertEquals(
+            listOf(second.id, fourth.id),
+            syncStore.applied.last().restoredPlaylistIds
+        )
+    }
+
+    @Test
+    fun `removed songs can be restored at original positions`() = runTest {
+        val playlistId = 305L
+        val first = remoteNeteaseSong(id = 306L, name = "first", addedAt = 4L)
+        val second = remoteNeteaseSong(id = 307L, name = "second", addedAt = 3L)
+        val third = remoteNeteaseSong(id = 308L, name = "third", addedAt = 2L)
+        val fourth = remoteNeteaseSong(id = 309L, name = "fourth", addedAt = 1L)
+        val syncStore = RecordingSyncMutationStore()
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "song_delete_restore_playlist.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false,
+            syncMutationStore = syncStore
+        )
+        repository.updatePlaylists(
+            listOf(
+                LocalPlaylist(
+                    id = playlistId,
+                    name = "target",
+                    songs = mutableListOf(first, second, third, fourth),
+                    songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
+                )
+            )
+        )
+
+        val deleteResults = repository.removeSongsFromPlaylistByIdentityWithResult(
+            playlistId,
+            listOf(second, fourth)
+        )
+
+        assertEquals(listOf(second.id, fourth.id), deleteResults.map { it.song.id })
+        assertEquals(listOf(1, 3), deleteResults.map { it.index })
+        assertEquals(listOf(first.id, third.id), repository.playlists.value.single().songs.map { it.id })
+        assertTrue(syncStore.applied.first().addedSongDeletions.isNotEmpty())
+
+        assertTrue(repository.restoreDeletedSongs(deleteResults))
+
+        assertEquals(
+            listOf(first.id, second.id, third.id, fourth.id),
+            repository.playlists.value.single().songs.map { it.id }
+        )
+        assertTrue(syncStore.applied.last().removedSongDeletions.isNotEmpty())
+    }
+
+    @Test
+    fun `cleared songs can be restored in their original order`() = runTest {
+        val playlistId = 315L
+        val first = remoteNeteaseSong(id = 316L, name = "first", addedAt = 4L)
+        val second = remoteNeteaseSong(id = 317L, name = "second", addedAt = 3L)
+        val third = remoteNeteaseSong(id = 318L, name = "third", addedAt = 2L)
+        val syncStore = RecordingSyncMutationStore()
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "song_clear_restore_playlist.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false,
+            syncMutationStore = syncStore
+        )
+        repository.updatePlaylists(
+            listOf(
+                LocalPlaylist(
+                    id = playlistId,
+                    name = "target",
+                    songs = mutableListOf(first, second, third),
+                    songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
+                )
+            )
+        )
+
+        val deleteResults = repository.clearPlaylistSongsWithResult(playlistId)
+
+        assertEquals(listOf(first.id, second.id, third.id), deleteResults.map { it.song.id })
+        assertEquals(listOf(0, 1, 2), deleteResults.map { it.index })
+        assertTrue(repository.playlists.value.single().songs.isEmpty())
+        assertTrue(syncStore.applied.first().addedSongDeletions.isNotEmpty())
+
+        assertTrue(repository.restoreDeletedSongs(deleteResults))
+
+        assertEquals(
+            listOf(first.id, second.id, third.id),
+            repository.playlists.value.single().songs.map { it.id }
+        )
+        assertTrue(syncStore.applied.last().removedSongDeletions.isNotEmpty())
+    }
+
+    @Test
     fun `restored playlist id is committed before external sync is scheduled`() = runTest {
         val syncStore = RecordingSyncMutationStore()
         var autoSyncTriggerCount = 0

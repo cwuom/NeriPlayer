@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
@@ -83,6 +84,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
@@ -91,6 +93,8 @@ import moe.ouom.neriplayer.ui.rememberMainTabDetailVisibilityState
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
+import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
+import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
@@ -98,6 +102,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticFloatingActionButton
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -172,6 +177,9 @@ fun BiliPlaylistDetailScreen(
 
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allLocalPlaylists by repo.playlists.collectAsState(initial = emptyList())
+    val favoriteSongs = remember(allLocalPlaylists, context) {
+        FavoritesPlaylist.firstOrNull(allLocalPlaylists, context)?.songs.orEmpty()
+    }
     val playlistSource = "bili"
     val playlistId = ui.header?.mediaId ?: playlist.mediaId
     val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
@@ -196,6 +204,27 @@ fun BiliPlaylistDetailScreen(
     var showExportSheet by remember { mutableStateOf(false) }
     var showExportAllSheet by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val favoriteAddedText = stringResource(R.string.favorite_added)
+    val favoriteRemovedText = stringResource(R.string.favorite_removed)
+    fun toggleSongFavorite(song: SongItem, isFavoriteSong: Boolean) {
+        val message = if (isFavoriteSong) favoriteRemovedText else favoriteAddedText
+        scope.launchLocalPlaylistMutation(
+            operation = "toggleBiliDetailSongFavorite",
+            onResult = { result ->
+                if (result.isSuccess) {
+                    scope.launch {
+                        snackbarHostState.showNeriSnackbar(message)
+                    }
+                }
+            }
+        ) {
+            if (isFavoriteSong) {
+                repo.removeFromFavorites(song)
+            } else {
+                repo.addToFavorites(song)
+            }
+        }
+    }
     val listState = rememberSaveable(
         playlist.kind.name,
         playlist.mediaId,
@@ -680,6 +709,10 @@ fun BiliPlaylistDetailScreen(
                                     displayedVideos,
                                     key = { _, it -> it.bvid.ifBlank { it.id.toString() } }
                                 ) { index, item ->
+                                    val songItem = remember(item) { item.toSongItem() }
+                                    val isFavoriteSong = favoriteSongs.any {
+                                        it.sameIdentityAs(songItem)
+                                    }
                                     PlaylistModernListItemSurface(
                                         coverUrl = displayHeader.coverUrl,
                                         offlineMode = offlineMode
@@ -687,6 +720,9 @@ fun BiliPlaylistDetailScreen(
                                         VideoRow(
                                             index = index + 1,
                                             video = item,
+                                            songItem = songItem,
+                                            isFavorite = isFavoriteSong,
+                                            onFavoriteToggle = ::toggleSongFavorite,
                                             isCurrentSong = activeSong?.album?.startsWith(PlayerManager.BILI_SOURCE_TAG) == true &&
                                                 activeSong.id == item.id,
                                             animatePlayingIndicator = activeSong?.album?.startsWith(PlayerManager.BILI_SOURCE_TAG) == true &&
@@ -779,7 +815,17 @@ fun BiliPlaylistDetailScreen(
                                 .filter { selectedIds.contains(it.bvid) }
                                 .map { it.toSongItem() }
                         }
-                        scope.launchLocalPlaylistMutation("createPlaylistFromBili") {
+                        scope.launchLocalPlaylistMutation(
+                            operation = "createPlaylistFromBili",
+                            onResult = { result ->
+                                scope.showPlaylistBatchExportCreatedResult(
+                                    context = context,
+                                    snackbarHostState = snackbarHostState,
+                                    repository = repo,
+                                    result = result
+                                )
+                            }
+                        ) {
                             repo.createPlaylistWithSongs(name, songs)
                         }
                         exitSelection()
@@ -798,8 +844,20 @@ fun BiliPlaylistDetailScreen(
                                 .filter { selectedIds.contains(it.bvid) }
                                 .map { it.toSongItem() }
                         }
-                        scope.launchLocalPlaylistMutation("exportSongsFromBili") {
-                            repo.addSongsToPlaylist(playlist.id, songs)
+                        scope.launchLocalPlaylistMutation(
+                            operation = "exportSongsFromBili",
+                            onResult = { result ->
+                                scope.showPlaylistBatchExportAddedResult(
+                                    context = context,
+                                    snackbarHostState = snackbarHostState,
+                                    repository = repo,
+                                    targetPlaylistId = playlist.id,
+                                    targetPlaylistName = playlist.name,
+                                    result = result
+                                )
+                            }
+                        ) {
+                            repo.addSongsToPlaylistWithResult(playlist.id, songs)
                         }
                         exitSelection()
                         exitPartsSelection()
@@ -814,21 +872,43 @@ fun BiliPlaylistDetailScreen(
                         LocalFilesPlaylist.isSystemPlaylist(it, context)
                     },
                     selectedCount = ui.videos.size,
-                    onDismissRequest = { showExportAllSheet = false },
-                    onCreateAndExport = { name ->
-                        val songs = ui.videos.map { it.toSongItem() }
-                        scope.launchLocalPlaylistMutation("createPlaylistFromBiliAll") {
-                            repo.createPlaylistWithSongs(name, songs)
+                        onDismissRequest = { showExportAllSheet = false },
+                        onCreateAndExport = { name ->
+                            val songs = ui.videos.map { it.toSongItem() }
+                            scope.launchLocalPlaylistMutation(
+                                operation = "createPlaylistFromBiliAll",
+                                onResult = { result ->
+                                    scope.showPlaylistBatchExportCreatedResult(
+                                        context = context,
+                                        snackbarHostState = snackbarHostState,
+                                        repository = repo,
+                                        result = result
+                                    )
+                                }
+                            ) {
+                                repo.createPlaylistWithSongs(name, songs)
+                            }
+                            showExportAllSheet = false
+                        },
+                        onExportToPlaylist = { playlist ->
+                            val songs = ui.videos.map { it.toSongItem() }
+                            scope.launchLocalPlaylistMutation(
+                                operation = "exportAllSongsFromBili",
+                                onResult = { result ->
+                                    scope.showPlaylistBatchExportAddedResult(
+                                        context = context,
+                                        snackbarHostState = snackbarHostState,
+                                        repository = repo,
+                                        targetPlaylistId = playlist.id,
+                                        targetPlaylistName = playlist.name,
+                                        result = result
+                                    )
+                                }
+                            ) {
+                                repo.addSongsToPlaylistWithResult(playlist.id, songs)
+                            }
+                            showExportAllSheet = false
                         }
-                        showExportAllSheet = false
-                    },
-                    onExportToPlaylist = { playlist ->
-                        val songs = ui.videos.map { it.toSongItem() }
-                        scope.launchLocalPlaylistMutation("exportAllSongsFromBili") {
-                            repo.addSongsToPlaylist(playlist.id, songs)
-                        }
-                        showExportAllSheet = false
-                    }
                 )
             }
 
@@ -1020,6 +1100,9 @@ private fun BiliVideoItem.toSongItem(): SongItem {
 private fun VideoRow(
     index: Int,
     video: BiliVideoItem,
+    songItem: SongItem,
+    isFavorite: Boolean,
+    onFavoriteToggle: (SongItem, Boolean) -> Unit,
     isCurrentSong: Boolean,
     animatePlayingIndicator: Boolean,
     selectionMode: Boolean,
@@ -1132,22 +1215,65 @@ private fun VideoRow(
                 ) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.local_playlist_play_next)) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
+                                contentDescription = null
+                            )
+                        },
                         onClick = {
-                            val songItem = video.toSongItem()
                             PlayerManager.addToQueueNext(songItem)
                             showMoreMenu = false
                         }
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.playlist_add_to_end)) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                                contentDescription = null
+                            )
+                        },
                         onClick = {
-                            val songItem = video.toSongItem()
                             PlayerManager.addToQueueEnd(songItem)
                             showMoreMenu = false
                         }
                     )
                     DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(
+                                    if (isFavorite) {
+                                        R.string.favorite_remove
+                                    } else {
+                                        R.string.favorite_add
+                                    }
+                                )
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (isFavorite) {
+                                    Icons.Filled.Favorite
+                                } else {
+                                    Icons.Outlined.FavoriteBorder
+                                },
+                                contentDescription = null
+                            )
+                        },
+                        onClick = {
+                            onFavoriteToggle(songItem, isFavorite)
+                            showMoreMenu = false
+                        }
+                    )
+                    DropdownMenuItem(
                         text = { Text(stringResource(R.string.action_copy_song_info)) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.ContentCopy,
+                                contentDescription = null
+                            )
+                        },
                         onClick = {
                             val songInfo = "${video.title}-${video.uploader}"
                             scope.launch {

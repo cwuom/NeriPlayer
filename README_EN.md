@@ -71,7 +71,7 @@ NeriPlayer
 ├── Multi-source playback: NetEase / Bilibili / YouTube Music
 ├── Local-first data: cache, downloads, playlists, history, stats, settings
 ├── User-owned sync: GitHub / WebDAV metadata sync
-├── Rich playback: Media3, lyrics, effects, fluid background, floating/status-bar lyrics
+├── Rich playback: Media3, lyrics, effects, fluid background, home widgets, floating/status-bar lyrics
 └── Recovery built in: safe mode, crash logs, ANR traces, debug probes
 ```
 
@@ -174,7 +174,12 @@ Current positioning:
 - **Large screens and daily controls are getting real polish**:
   tablet/landscape Now Playing, Lyrics, Settings, and artist pages use steadier
   width constraints and bottom control layouts. The `Mini Player` supports
-  horizontal swipe for previous/next without expanding the full player. Main
+  horizontal swipe for previous/next without expanding the full player. Home
+  widgets add a 4x2 playback card and a 2x2 mini player. Card backgrounds and
+  the primary play button derive their colors from the current artwork. The
+  4x2 card shows the song, artwork, progress, four playback controls, and a
+  floating-lyrics entry; the 2x2 layout makes artwork the main visual while
+  keeping the three core playback controls. Main
   bottom tabs use interruptible directional page transitions that retain both
   outgoing and incoming scenes, avoiding glass, scroll-state, and page-state
   discontinuities during rapid switching. Long-pressing the Now Playing artwork
@@ -467,7 +472,7 @@ For release build and signing details, see
   remote.
 - 📊 **Playback stats**:
   records play count, accumulated listen time, first/last played time, and daily
-  stat buckets by stable track identity. Day/week/month/year/all-time views are
+  stat buckets by stable track identity. Day/week/month/year/all-time views use trailing 1/7/30/365-day windows and are
   available, and stats can be synced through GitHub/WebDAV when configured. Writes are
   debounced and flushed at important lifecycle points, with a retention bound on daily buckets.
 - 📶 **Traffic stats and download risk prompts**:
@@ -511,6 +516,12 @@ For release build and signing details, see
 - 👆 **Mini Player gestures**:
   the bottom Mini Player supports horizontal swipe for previous/next while
   keeping tap-to-expand and play/pause controls.
+- 🧩 **Home screen widgets**:
+  includes a 4x2 playback card and a 2x2 mini player. Card backgrounds and the primary
+  play button derive their colors from the current artwork; the 4x2 card adds progress,
+  four direct controls, and floating-lyrics access, while 2x2 keeps artwork as the main
+  visual and retains the three core playback controls. Progress is updated locally once
+  per second during playback and immediately on pause or track changes.
 - 🪟 **Floating and status-bar lyrics**:
   system overlay lyrics with customizable color, outline, font size, position,
   alignment, and translation display, plus Meizu status-bar lyrics for select

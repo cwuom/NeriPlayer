@@ -129,6 +129,7 @@ import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
+import moe.ouom.neriplayer.ui.component.playlist.showPlaylistDeleteResultGlobally
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
@@ -269,7 +270,11 @@ fun LibraryScreen(
     val vm: LibraryViewModel = viewModel()
     val ui by vm.uiState.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
+    val context = LocalContext.current
     val defaultPlaylistName = stringResource(R.string.library_create_playlist_default)
+    val localPlaylistRepo = remember(context) {
+        LocalPlaylistRepository.getInstance(context)
+    }
     val isInternational by AppContainer.settingsRepo.internationalizationEnabledFlow
         .collectAsStateWithLifecycle(initialValue = false)
     val youtubeEnabled by AppContainer.settingsRepo.youtubeEnabledFlow
@@ -387,8 +392,14 @@ fun LibraryScreen(
                             onRename = { playlistId, newName ->
                                 vm.renameLocalPlaylist(playlistId, newName)
                             },
-                            onDelete = { playlistId ->
-                                vm.deleteLocalPlaylist(playlistId)
+                            onDelete = { playlistIds ->
+                                vm.deleteLocalPlaylists(playlistIds) { result ->
+                                    showPlaylistDeleteResultGlobally(
+                                        context = context,
+                                        repository = localPlaylistRepo,
+                                        result = result
+                                    )
+                                }
                             },
                             onReorder = { order ->
                                 vm.reorderLocalPlaylists(order)
@@ -931,7 +942,7 @@ private fun LocalPlaylistList(
     onClick: (LocalPlaylist) -> Unit,
     onArtistClick: (LocalArtistSummary) -> Unit,
     onRename: (Long, String) -> Unit = { _, _ -> },
-    onDelete: (Long) -> Unit = {},
+    onDelete: (List<Long>) -> Unit = {},
     onReorder: (List<Long>) -> Unit = {},
     offlineMode: Boolean
 ) {
@@ -1316,7 +1327,7 @@ private fun LocalPlaylistList(
                             onClick = {
                                 val idsToDelete = selectedIds.toList()
                                 exitSelection()
-                                idsToDelete.forEach { onDelete(it) }
+                                onDelete(idsToDelete)
                             }
                         ) { Text(stringResource(R.string.action_delete)) }
                     },
@@ -1612,7 +1623,7 @@ private fun LocalPlaylistList(
                                 onClick = {
                                     val playlistId = pl.id
                                     showDeleteDialog = false
-                                    onDelete(playlistId)
+                                    onDelete(listOf(playlistId))
                                 }
                             ) { Text(stringResource(R.string.action_delete)) }
                         },

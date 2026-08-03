@@ -137,6 +137,32 @@
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </receiver>
+
+        <receiver
+            android:name=".widget.NeriPlayerPlaybackWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_playback_4x2_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_playback_4x2_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.NeriPlayerCompactWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_playback_2x2_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_playback_2x2_info" />
+        </receiver>
         
         <!-- FileProvider for sharing downloaded music files -->
         <provider

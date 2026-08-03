@@ -123,6 +123,10 @@ import moe.ouom.neriplayer.util.media.IsLandHelp
 import moe.ouom.neriplayer.util.media.buildRemoteSongShareUrl
 import moe.ouom.neriplayer.util.media.isShareablePublicHttpUrl
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.widget.PLAYBACK_WIDGET_POSITION_BUCKET_MS
+import moe.ouom.neriplayer.widget.PlaybackWidgetState
+import moe.ouom.neriplayer.widget.PlaybackWidgetUpdater
+import moe.ouom.neriplayer.widget.buildPlaybackWidgetState
 
 private suspend inline fun <T> kotlinx.coroutines.flow.Flow<T>.collectSafely(
     source: String,
@@ -243,6 +247,26 @@ internal fun shouldUseForegroundServiceStart(
     return sdkInt >= Build.VERSION_CODES.O ||
         forceForeground ||
         shouldRunPlaybackServiceInForeground
+}
+
+internal fun shouldStartPlaybackWidgetActionInForeground(
+    serviceInstanceActive: Boolean,
+    serviceForegroundActive: Boolean,
+): Boolean {
+    return !serviceInstanceActive || !serviceForegroundActive
+}
+
+internal fun isSupportedPlaybackWidgetAction(action: String): Boolean {
+    return when (action) {
+        AudioPlayerService.ACTION_PLAY,
+        AudioPlayerService.ACTION_PAUSE,
+        AudioPlayerService.ACTION_TOGGLE_PLAY_PAUSE,
+        AudioPlayerService.ACTION_NEXT,
+        AudioPlayerService.ACTION_PREV,
+        AudioPlayerService.ACTION_TOGGLE_FAV,
+        AudioPlayerService.ACTION_TOGGLE_FLOATING_LYRICS -> true
+        else -> false
+    }
 }
 
 internal fun usbExclusiveKeepAliveIntervalMs(appInForeground: Boolean): Long {
@@ -420,6 +444,8 @@ class AudioPlayerService : Service() {
     companion object {
         const val ACTION_PLAY = "moe.ouom.neriplayer.action.PLAY"
         const val ACTION_PAUSE = "moe.ouom.neriplayer.action.PAUSE"
+        const val ACTION_TOGGLE_PLAY_PAUSE =
+            "moe.ouom.neriplayer.action.TOGGLE_PLAY_PAUSE"
         const val ACTION_STOP = "moe.ouom.neriplayer.action.STOP"
         const val ACTION_NEXT = "moe.ouom.neriplayer.action.NEXT"
         const val ACTION_PREV = "moe.ouom.neriplayer.action.PREV"
@@ -452,6 +478,13 @@ class AudioPlayerService : Service() {
         fun isInstanceActiveForDiagnostics(): Boolean = isServiceInstanceActive
 
         fun isForegroundActiveForDiagnostics(): Boolean = isServiceForegroundActive
+
+        internal fun refreshPlaybackWidgetsFromActiveService(reason: String): Boolean {
+            val service = activeServiceInstance ?: return false
+            NPLogger.d("NERI-APS", "Refreshing playback widgets from active service: reason=$reason")
+            service.updatePlaybackWidget(force = true)
+            return true
+        }
 
         internal fun reassertForegroundForActiveUsbExclusivePlayback(reason: String) {
             activeServiceInstance?.requestUsbExclusiveBackgroundForegroundReassert(reason)
@@ -522,6 +555,46 @@ class AudioPlayerService : Service() {
                 false
             }
         }
+
+        internal fun dispatchPlaybackWidgetAction(
+            context: Context,
+            action: String,
+        ): Boolean {
+            if (!isSupportedPlaybackWidgetAction(action)) {
+                NPLogger.w("NERI-APS", "Ignoring unsupported playback widget action: $action")
+                return false
+            }
+            if (SafeModeManager.shouldEnterSafeMode(context)) {
+                NPLogger.w("NERI-APS", "Skipping playback widget action in safe mode: $action")
+                return false
+            }
+            val intent = Intent(context, AudioPlayerService::class.java).apply {
+                this.action = action
+                putExtra(EXTRA_START_SOURCE, "app_widget")
+            }
+            val startInForeground = shouldStartPlaybackWidgetActionInForeground(
+                serviceInstanceActive = isServiceInstanceActive,
+                serviceForegroundActive = isServiceForegroundActive,
+            )
+            return try {
+                if (startInForeground) {
+                    ContextCompat.startForegroundService(context, intent)
+                } else {
+                    context.startService(intent)
+                }
+                true
+            } catch (error: IllegalStateException) {
+                if (!isServiceStartNotAllowedFailure(error)) {
+                    throw error
+                }
+                NPLogger.w(
+                    "NERI-APS",
+                    "Playback widget action could not start service: action=$action foreground=$startInForeground",
+                    error,
+                )
+                false
+            }
+        }
     }
 
     private lateinit var becomingNoisyReceiver: BroadcastReceiver
@@ -552,6 +625,7 @@ class AudioPlayerService : Service() {
     private var isForegroundStarted = false
     private var lastNotificationSnapshot: PlaybackNotificationSnapshot? = null
     private var lastMetadataSnapshot: PlaybackMetadataSnapshot? = null
+    private var lastPlaybackWidgetState: PlaybackWidgetState? = null
     private var statusBarLyricState = resolveStatusBarLyricNotificationState(
         enabled = false,
         line = null,
@@ -954,6 +1028,7 @@ class AudioPlayerService : Service() {
                 PlayerManager.seekTo(pos)
                 updatePlaybackState(force = true)
                 updateNotification()
+                updatePlaybackWidget(force = true)
             }
         }
         override fun onCustomAction(action: String?, extras: Bundle?) {
@@ -1080,6 +1155,7 @@ class AudioPlayerService : Service() {
             )
             updatePlaybackState(force = true)
             updateNotification()
+            updatePlaybackWidget(force = true)
             return
         }
         PlayerManager.pause()
@@ -1346,6 +1422,16 @@ class AudioPlayerService : Service() {
                 }
         }
         serviceScope.launch {
+            PlayerManager.playbackPositionFlow
+                .map { positionMs ->
+                    positionMs.coerceAtLeast(0L) / PLAYBACK_WIDGET_POSITION_BUCKET_MS
+                }
+                .distinctUntilChanged()
+                .collectSafely("playbackWidgetPositionFlow") {
+                    updatePlaybackWidget()
+                }
+        }
+        serviceScope.launch {
             PlayerManager.playbackSoundStateFlow.collectSafely("playbackSoundStateFlow") {
                 updatePlaybackState()
             }
@@ -1378,6 +1464,7 @@ class AudioPlayerService : Service() {
                         floatingLyricsEnabledForNotification = enabled
                         updatePlaybackState(force = true)
                         updateNotification()
+                        updatePlaybackWidget(force = true)
                     }
                 }
         }
@@ -1562,6 +1649,13 @@ class AudioPlayerService : Service() {
             ACTION_PAUSE -> {
                 handleExternalPauseCommand("intent_pause")
             }
+            ACTION_TOGGLE_PLAY_PAUSE -> {
+                if (PlayerManager.hasItems()) {
+                    PlayerManager.togglePlayPause()
+                }
+                updateAll()
+                refreshIdleShutdown("widget_toggle_play_pause")
+            }
             ACTION_NEXT -> {
                 PlayerManager.next()
                 updateAll()
@@ -1611,18 +1705,21 @@ class AudioPlayerService : Service() {
                     PlayerManager.toggleCurrentFavorite()
                 }
                 updateNotification()
+                updatePlaybackWidget(force = true)
             }
 
             ACTION_TOGGLE_FLOATING_LYRICS -> {
                 applyFloatingLyricsExternalAction(legacyHideAction = false)
                 updatePlaybackState(force = true)
                 updateNotification(force = true)
+                updatePlaybackWidget(force = true)
             }
 
             LEGACY_ACTION_HIDE_FLOATING_LYRICS -> {
                 applyFloatingLyricsExternalAction(legacyHideAction = true)
                 updatePlaybackState(force = true)
                 updateNotification(force = true)
+                updatePlaybackWidget(force = true)
             }
         }
 
@@ -1899,6 +1996,7 @@ class AudioPlayerService : Service() {
         updateMetadata()
         updatePlaybackState(force = true)
         updateNotification()
+        updatePlaybackWidget()
     }
 
     /** 构建指向本 Service 的 PendingIntent */
@@ -1922,6 +2020,7 @@ class AudioPlayerService : Service() {
         lastNotificationSnapshot = snapshot
         val nm: NotificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         nm.notify(NOTIFICATION_ID, buildNotification())
+        updatePlaybackWidget()
     }
 
     private fun buildNotificationSnapshot(): PlaybackNotificationSnapshot {
@@ -1962,6 +2061,62 @@ class AudioPlayerService : Service() {
             coverSource = currentCoverSource,
             statusBarLyricState = currentStatusBarLyricState,
             floatingLyricsEnabled = isFloatingLyricsCurrentlyEnabled(),
+        )
+    }
+
+    private fun updatePlaybackWidget(force: Boolean = false) {
+        if (!PlaybackWidgetUpdater.hasInstalledWidgets(this)) {
+            return
+        }
+        val state = buildCurrentPlaybackWidgetState()
+        if (!force && state == lastPlaybackWidgetState) {
+            return
+        }
+        lastPlaybackWidgetState = state
+        PlaybackWidgetUpdater.updateFromPlaybackService(
+            context = this,
+            state = state,
+            artwork = currentNotificationLargeIcon,
+        )
+    }
+
+    private fun buildCurrentPlaybackWidgetState(): PlaybackWidgetState {
+        val song = playbackSurfaceSong()
+        val fallbackSongActive = PlayerManager.currentSongFlow.value == null && song != null
+        val positionMs = if (fallbackSongActive) {
+            listenTogetherExpectedPositionMs()
+        } else {
+            PlayerManager.playbackPositionFlow.value
+        }
+        val isBuffering = PlayerManager.isTransportBuffering()
+        val isPlaying = PlayerManager.isTransportActive() ||
+            (fallbackSongActive && isListenTogetherRemotePlaying())
+        val status = when {
+            isBuffering -> getString(R.string.widget_playback_buffering)
+            isPlaying -> getString(R.string.widget_playback_playing)
+            song != null -> getString(R.string.widget_playback_paused)
+            else -> getString(R.string.widget_playback_ready)
+        }
+        return buildPlaybackWidgetState(
+            title = song?.displayName() ?: getString(R.string.app_name),
+            subtitle = song?.displayArtist()
+                ?.takeIf { it.isNotBlank() }
+                ?: getString(R.string.widget_playback_idle_subtitle),
+            status = status,
+            positionMs = positionMs,
+            durationMs = song?.durationMs ?: 0L,
+            hasSong = song != null,
+            isPlaying = isPlaying,
+            isFavorite = isFavoriteSong(song),
+            canToggleFavorite = canToggleFavoriteFromExternalSurface(song),
+            isFloatingLyricsEnabled = isFloatingLyricsCurrentlyEnabled(),
+            artworkReady = currentNotificationLargeIcon != null,
+            contentId = song?.stableKey().orEmpty(),
+            coverId = currentCoverSource.orEmpty(),
+            artworkPending = song != null && (
+                !currentCoverSource.isNullOrBlank() ||
+                    coverResolutionInFlightSongKey == song.stableKey()
+                ),
         )
     }
 
@@ -2092,6 +2247,12 @@ class AudioPlayerService : Service() {
                 }
                 val currentSurfaceSong = playbackSurfaceSong()
                 if (currentSurfaceSong?.stableKey() != songKey || resolvedCoverSource.isNullOrBlank()) {
+                    if (
+                        currentSurfaceSong?.stableKey() == songKey &&
+                        resolvedCoverSource.isNullOrBlank()
+                    ) {
+                        updatePlaybackWidget(force = true)
+                    }
                     return@withContext
                 }
                 if (currentCoverSongKey == songKey && currentCoverSource == resolvedCoverSource) {

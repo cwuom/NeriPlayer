@@ -221,14 +221,7 @@ class NeriAppNavigationTransitionTest {
         composeRule.runOnIdle {
             selectedRoute.value = Destinations.Home.route
         }
-        composeRule.mainClock.advanceTimeBy(FRAME_MS.toLong())
-        composeRule.waitForIdle()
-
-        assertTrue(
-            composeRule.onAllNodesWithTag(RestoredHomeSceneTag)
-                .fetchSemanticsNodes()
-                .size == 1
-        )
+        waitForNodeCount(RestoredHomeSceneTag, expected = 1)
 
         composeRule.mainClock.advanceTimeBy(
             (ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS + FRAME_MS * 4).toLong()
@@ -277,14 +270,7 @@ class NeriAppNavigationTransitionTest {
         composeRule.runOnIdle {
             selectedRoute.value = Destinations.Home.route
         }
-        composeRule.mainClock.advanceTimeBy(FRAME_MS.toLong())
-        composeRule.waitForIdle()
-        assertTrue(
-            "restored detail did not start in its already-visible state",
-            composeRule.onAllNodesWithTag(RestoredEntryTag)
-                .fetchSemanticsNodes()
-                .size == 1
-        )
+        waitForNodeCount(RestoredEntryTag, expected = 1)
 
         composeRule.mainClock.advanceTimeBy(
             (ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS + FRAME_MS * 4).toLong()
@@ -398,11 +384,7 @@ class NeriAppNavigationTransitionTest {
         composeRule.runOnIdle {
             selectedRoute.value = Destinations.Home.route
         }
-        composeRule.waitForIdle()
-        assertTrue(
-            "restored host detail was not visible after returning to its Tab",
-            nodeCount(RestoredHostDetailTag) == 1
-        )
+        waitForNodeCount(RestoredHostDetailTag, expected = 1)
 
         composeRule.runOnIdle {
             detailVisible.value = false
@@ -1073,6 +1055,22 @@ class NeriAppNavigationTransitionTest {
 
     private fun nodeCount(tag: String): Int =
         composeRule.onAllNodesWithTag(tag).fetchSemanticsNodes().size
+
+    private fun waitForNodeCount(
+        tag: String,
+        expected: Int,
+        maxFrames: Int = 4
+    ) {
+        repeat(maxFrames + 1) {
+            composeRule.waitForIdle()
+            if (nodeCount(tag) == expected) return
+            composeRule.mainClock.advanceTimeBy(FRAME_MS.toLong())
+        }
+        assertTrue(
+            "Expected $expected node(s) with tag $tag, found ${nodeCount(tag)}",
+            nodeCount(tag) == expected
+        )
+    }
 
     private fun navigateMainTab(navController: NavHostController, route: String): String? {
         navController.navigate(route) {

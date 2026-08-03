@@ -42,6 +42,8 @@ import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportResult
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistDeleteResult
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistSongDeleteResult
 import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseLikeSyncResult
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -60,7 +62,9 @@ data class LocalPlaylistDetailUiState(
 
 data class LocalAudioImportUiResult(
     val importedCount: Int,
-    val failedCount: Int
+    val failedCount: Int,
+    val addedSongs: List<SongItem> = emptyList(),
+    val createdPlaylist: LocalPlaylist? = null
 )
 
 data class LocalScanPreviewState(
@@ -353,7 +357,9 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                 onResult(
                     LocalAudioImportUiResult(
                         importedCount = playlist.songs.size,
-                        failedCount = 0
+                        failedCount = 0,
+                        addedSongs = playlist.songs.toList(),
+                        createdPlaylist = playlist
                     )
                 )
             }.onFailure {
@@ -369,13 +375,14 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     ) {
         viewModelScope.launch {
             runLocalPlaylistMutationSafely("addScannedSongsToPlaylist") {
-                repo.addScannedSongsToPlaylistAndCount(targetPlaylistId, songs)
-            }.onSuccess { importedCount ->
+                repo.addScannedSongsToPlaylistWithResult(targetPlaylistId, songs)
+            }.onSuccess { addResult ->
                 scheduleScannedMetadataRefresh(targetPlaylistId, songs)
                 onResult(
                     LocalAudioImportUiResult(
-                        importedCount = importedCount,
-                        failedCount = 0
+                        importedCount = addResult.addedCount,
+                        failedCount = 0,
+                        addedSongs = addResult.addedSongs
                     )
                 )
             }.onFailure {
@@ -384,24 +391,42 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         }
     }
 
-    fun removeSongs(songs: List<SongItem>) {
-        if (songs.isEmpty()) return
-        launchPlaylistMutation("removeSongs") {
-            repo.removeSongsFromPlaylistByIdentity(playlistId, songs)
+    fun removeSongs(
+        songs: List<SongItem>,
+        onResult: (Result<List<LocalPlaylistSongDeleteResult>>) -> Unit = {}
+    ) {
+        if (songs.isEmpty()) {
+            onResult(Result.success(emptyList()))
+            return
         }
-    }
-
-    fun clearSongs() {
-        launchPlaylistMutation("clearSongs") {
-            repo.clearPlaylistSongs(playlistId)
-        }
-    }
-
-    fun delete(onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
-            runLocalPlaylistMutationSafely("deletePlaylist") {
-                repo.deletePlaylist(playlistId)
-            }.onSuccess(onResult).onFailure { onResult(false) }
+            onResult(
+                runLocalPlaylistMutationSafely("removeSongs") {
+                    repo.removeSongsFromPlaylistByIdentityWithResult(playlistId, songs)
+                }
+            )
+        }
+    }
+
+    fun clearSongs(
+        onResult: (Result<List<LocalPlaylistSongDeleteResult>>) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            onResult(
+                runLocalPlaylistMutationSafely("clearSongs") {
+                    repo.clearPlaylistSongsWithResult(playlistId)
+                }
+            )
+        }
+    }
+
+    fun delete(onResult: (Result<List<LocalPlaylistDeleteResult>>) -> Unit) {
+        viewModelScope.launch {
+            onResult(
+                runLocalPlaylistMutationSafely("deletePlaylist") {
+                    repo.deletePlaylistsWithResult(listOf(playlistId))
+                }
+            )
         }
     }
 

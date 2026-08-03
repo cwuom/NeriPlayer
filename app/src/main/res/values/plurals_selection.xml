@@ -10,9 +10,21 @@
         <item quantity="other">确定要删除选中的 %d 首歌曲吗？此操作不可撤销。</item>
     </plurals>
     <plurals name="local_playlist_delete_songs_confirm">
-        <item quantity="other">确定要从歌单移除所选的 %d 首歌曲吗？</item>
+        <item quantity="other">确定要从歌单移除所选的 %d 首歌曲吗？删除后可通过提示撤销。</item>
+    </plurals>
+    <plurals name="local_playlist_delete_songs_snackbar">
+        <item quantity="other">已删除 %d 首歌曲</item>
+    </plurals>
+    <plurals name="local_playlist_delete_songs_undone">
+        <item quantity="other">已恢复 %d 首歌曲</item>
     </plurals>
     <plurals name="library_delete_selected_confirm">
-        <item quantity="other">确定要删除选中的 %d 个歌单吗？此操作不可撤销。</item>
+        <item quantity="other">确定要删除选中的 %d 个歌单吗？删除后可通过提示撤销。</item>
+    </plurals>
+    <plurals name="local_playlist_delete_snackbar">
+        <item quantity="other">已删除 %1$d 个歌单</item>
+    </plurals>
+    <plurals name="local_playlist_delete_undone">
+        <item quantity="other">已恢复 %1$d 个歌单</item>
     </plurals>
 </resources>

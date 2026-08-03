@@ -58,7 +58,10 @@ private val snackbarDedupStates = WeakHashMap<SnackbarHostState, FeedbackDedupSt
 
 internal data class AppFeedbackMessage(
     val text: String,
-    val duration: SnackbarDuration
+    val duration: SnackbarDuration,
+    val actionLabel: String? = null,
+    val withDismissAction: Boolean = false,
+    val onActionPerformed: (suspend () -> Unit)? = null
 )
 
 internal enum class FeedbackDelivery {
@@ -153,7 +156,30 @@ object AppFeedback {
             message = message,
             duration = duration,
             preferSnackbar = preferSnackbar,
-            forceToast = false
+            forceToast = false,
+            actionLabel = null,
+            withDismissAction = false,
+            onActionPerformed = null
+        )
+    }
+
+    fun showWithAction(
+        context: Context? = null,
+        message: String,
+        actionLabel: String,
+        duration: SnackbarDuration = SnackbarDuration.Long,
+        withDismissAction: Boolean = true,
+        onActionPerformed: suspend () -> Unit
+    ) {
+        showInternal(
+            context = context,
+            message = message,
+            duration = duration,
+            preferSnackbar = true,
+            forceToast = false,
+            actionLabel = actionLabel,
+            withDismissAction = withDismissAction,
+            onActionPerformed = onActionPerformed
         )
     }
 
@@ -167,7 +193,10 @@ object AppFeedback {
             message = message,
             duration = duration,
             preferSnackbar = false,
-            forceToast = true
+            forceToast = true,
+            actionLabel = null,
+            withDismissAction = false,
+            onActionPerformed = null
         )
     }
 
@@ -192,7 +221,10 @@ object AppFeedback {
         message: String,
         duration: SnackbarDuration,
         preferSnackbar: Boolean,
-        forceToast: Boolean
+        forceToast: Boolean,
+        actionLabel: String?,
+        withDismissAction: Boolean,
+        onActionPerformed: (suspend () -> Unit)?
     ) {
         val text = message.trim().takeIf { it.isNotEmpty() } ?: return
         val toastContext = context ?: applicationContext ?: return
@@ -209,7 +241,14 @@ object AppFeedback {
             )
         ) {
             FeedbackDelivery.Snackbar -> {
-                if (!events.trySend(AppFeedbackMessage(text, duration)).isSuccess) {
+                val event = AppFeedbackMessage(
+                    text = text,
+                    duration = duration,
+                    actionLabel = actionLabel,
+                    withDismissAction = withDismissAction,
+                    onActionPerformed = onActionPerformed
+                )
+                if (!events.trySend(event).isSuccess) {
                     showToastOnMain(toastContext, text, duration, isForeground)
                 }
             }
@@ -387,10 +426,15 @@ fun AppFeedbackHostEffect(snackbarHostState: SnackbarHostState) {
     }
     LaunchedEffect(snackbarHostState) {
         AppFeedback.collectMessages { message ->
-            snackbarHostState.showNeriSnackbar(
+            val result = snackbarHostState.showNeriSnackbar(
                 message = message.text,
+                actionLabel = message.actionLabel,
+                withDismissAction = message.withDismissAction,
                 duration = message.duration
             )
+            if (result == SnackbarResult.ActionPerformed) {
+                message.onActionPerformed?.invoke()
+            }
         }
     }
 }

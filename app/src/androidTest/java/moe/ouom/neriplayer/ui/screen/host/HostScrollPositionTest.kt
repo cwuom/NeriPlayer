@@ -222,7 +222,10 @@ class HostScrollPositionTest {
         composeRule.runOnIdle { navigationDepth.intValue = 0 }
         finishCurrentTransition()
         composeRule.runOnIdle {
-            assertEquals(27, gridState.firstVisibleItemIndex)
+            val restoredAnchorItem = gridState.layoutInfo.visibleItemsInfo
+                .firstOrNull { it.key == captured.key }
+            assertEquals(captured.key, restoredAnchorItem?.key)
+            assertEquals(27, restoredAnchorItem?.index)
             assertEquals(captured.offset, gridState.firstVisibleItemScrollOffset)
         }
     }

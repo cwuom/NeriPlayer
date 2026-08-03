@@ -45,6 +45,7 @@ import moe.ouom.neriplayer.data.auth.youtube.buildRefreshObserverFingerprint
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistDeleteResult
 import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -377,8 +378,24 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun deleteLocalPlaylist(playlistId: Long) {
-        launchPlaylistMutation("deleteLocalPlaylist") { localRepo.deletePlaylist(playlistId) }
+    fun deleteLocalPlaylist(
+        playlistId: Long,
+        onResult: (Result<List<LocalPlaylistDeleteResult>>) -> Unit = {}
+    ) {
+        deleteLocalPlaylists(listOf(playlistId), onResult)
+    }
+
+    fun deleteLocalPlaylists(
+        playlistIds: List<Long>,
+        onResult: (Result<List<LocalPlaylistDeleteResult>>) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            onResult(
+                runLocalPlaylistMutationSafely("deleteLocalPlaylists") {
+                    localRepo.deletePlaylistsWithResult(playlistIds)
+                }
+            )
+        }
     }
 
     fun reorderLocalPlaylists(order: List<Long>) {

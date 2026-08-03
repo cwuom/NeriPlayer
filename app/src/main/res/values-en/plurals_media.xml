@@ -64,6 +64,14 @@
         <item quantity="one">Added %d track to the target playlist</item>
         <item quantity="other">Added %d tracks to the target playlist</item>
     </plurals>
+    <plurals name="playlist_batch_export_confirm_message">
+        <item quantity="one">Export %1$d song to "%2$s"?</item>
+        <item quantity="other">Export %1$d songs to "%2$s"?</item>
+    </plurals>
+    <plurals name="playlist_batch_export_success">
+        <item quantity="one">Exported %1$d song to "%2$s"</item>
+        <item quantity="other">Exported %1$d songs to "%2$s"</item>
+    </plurals>
     <plurals name="local_playlist_import_audio_partial">
         <item quantity="one">Imported %1$d local track, %2$s</item>
         <item quantity="other">Imported %1$d local tracks, %2$s</item>

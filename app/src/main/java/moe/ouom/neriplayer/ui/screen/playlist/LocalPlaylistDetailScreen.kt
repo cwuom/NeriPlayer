@@ -77,10 +77,15 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Sync
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.material3.Checkbox
@@ -163,6 +168,7 @@ import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistSongDeleteResult
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.local.media.displayAlbum
@@ -178,6 +184,13 @@ import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.rememberMainTabDetailVisibilityState
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
+import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
+import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedSongs
+import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedPlaylist
+import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
+import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportFailure
+import moe.ouom.neriplayer.ui.component.playlist.showPlaylistDeleteResultGlobally
+import moe.ouom.neriplayer.ui.component.playlist.showPlaylistSongDeleteResult
 import moe.ouom.neriplayer.ui.component.local.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.component.download.SongDownloadSubtitle
@@ -446,6 +459,9 @@ fun LocalPlaylistDetailScreen(
 
             val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
             val allPlaylists by repo.playlists.collectAsState()
+            val favoriteSongs = remember(allPlaylists, context) {
+                FavoritesPlaylist.firstOrNull(allPlaylists, context)?.songs.orEmpty()
+            }
             val scope = rememberCoroutineScope()
             var syncInProgress by remember { mutableStateOf(false) }
             var showNeteaseSyncConfirm by remember { mutableStateOf(false) }
@@ -486,6 +502,27 @@ fun LocalPlaylistDetailScreen(
 
             // Snackbar状态
             val snackbarHostState = remember { SnackbarHostState() }
+            val favoriteAddedText = stringResource(R.string.favorite_added)
+            val favoriteRemovedText = stringResource(R.string.favorite_removed)
+            fun toggleSongFavorite(song: SongItem, isFavoriteSong: Boolean) {
+                val message = if (isFavoriteSong) favoriteRemovedText else favoriteAddedText
+                scope.launchLocalPlaylistMutation(
+                    operation = "toggleLocalDetailSongFavorite",
+                    onResult = { result ->
+                        if (result.isSuccess) {
+                            scope.launch {
+                                snackbarHostState.showNeriSnackbar(message)
+                            }
+                        }
+                    }
+                ) {
+                    if (isFavoriteSong) {
+                        repo.removeFromFavorites(song)
+                    } else {
+                        repo.addToFavorites(song)
+                    }
+                }
+            }
             val requiredAudioPermission = remember {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     Manifest.permission.READ_MEDIA_AUDIO
@@ -533,7 +570,35 @@ fun LocalPlaylistDetailScreen(
                 }
             }
 
-            fun showScannedPlaylistAddResult(result: moe.ouom.neriplayer.ui.viewmodel.playlist.LocalAudioImportUiResult) {
+            fun showScannedPlaylistAddResult(
+                result: moe.ouom.neriplayer.ui.viewmodel.playlist.LocalAudioImportUiResult,
+                targetPlaylistId: Long? = null,
+                targetPlaylistName: String? = null
+            ) {
+                if (result.failedCount > 0) {
+                    scope.showPlaylistBatchExportFailure(context, snackbarHostState)
+                    return
+                }
+                result.createdPlaylist?.let { createdPlaylist ->
+                    scope.showPlaylistBatchExportCreatedPlaylist(
+                        context = context,
+                        snackbarHostState = snackbarHostState,
+                        repository = repo,
+                        playlist = createdPlaylist
+                    )
+                    return
+                }
+                if (targetPlaylistId != null && targetPlaylistName != null) {
+                    scope.showPlaylistBatchExportAddedSongs(
+                        context = context,
+                        snackbarHostState = snackbarHostState,
+                        repository = repo,
+                        targetPlaylistId = targetPlaylistId,
+                        targetPlaylistName = targetPlaylistName,
+                        addedSongs = result.addedSongs
+                    )
+                    return
+                }
                 scope.launch {
                     val message = if (result.importedCount > 0) {
                         context.resources.getQuantityString(
@@ -670,6 +735,25 @@ fun LocalPlaylistDetailScreen(
                     pendingOrderIdentities = null
                     blockSync = false
                 }
+            }
+
+            fun handleLocalSongDeleteResult(
+                previousSongs: List<SongItem>,
+                result: Result<List<LocalPlaylistSongDeleteResult>>
+            ) {
+                val deleteResults = result.getOrNull().orEmpty()
+                if (result.isFailure || deleteResults.isEmpty()) {
+                    localSongs.clear()
+                    localSongs.addAll(previousSongs)
+                    pendingOrderIdentities = null
+                    blockSync = false
+                }
+                scope.showPlaylistSongDeleteResult(
+                    context = context,
+                    snackbarHostState = snackbarHostState,
+                    repository = repo,
+                    result = result
+                )
             }
 
             // 多选
@@ -1086,7 +1170,13 @@ fun LocalPlaylistDetailScreen(
                                 vm.addScannedSongsToPlaylist(
                                     targetPlaylistId = target.id,
                                     songs = selectedSongs,
-                                    onResult = ::showScannedPlaylistAddResult
+                                    onResult = { result ->
+                                        showScannedPlaylistAddResult(
+                                            result = result,
+                                            targetPlaylistId = target.id,
+                                            targetPlaylistName = target.name
+                                        )
+                                    }
                                 )
                             }
                         },
@@ -1612,6 +1702,9 @@ fun LocalPlaylistDetailScreen(
                                     )
                                     val isSelectedSong =
                                         selectionMode && selectedKeysState.value.contains(song.stableKey())
+                                    val isFavoriteSong = favoriteSongs.any {
+                                        it.sameIdentityAs(song)
+                                    }
                                     val rowContainerColor = if (isSelectedSong) {
                                         MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f)
                                     } else {
@@ -1762,19 +1855,31 @@ fun LocalPlaylistDetailScreen(
                                                             expanded = showMoreMenu,
                                                             onDismissRequest = { showMoreMenu = false }
                                                         ) {
-                                                            if (song.isLocalSong()) {
-                                                                DropdownMenuItem(
-                                                                    text = { Text(stringResource(R.string.local_song_open_details)) },
-                                                                    onClick = {
-                                                                        detailSong = song
-                                                                        showMoreMenu = false
+                                                                if (song.isLocalSong()) {
+                                                                    DropdownMenuItem(
+                                                                        text = { Text(stringResource(R.string.local_song_open_details)) },
+                                                                        leadingIcon = {
+                                                                            Icon(
+                                                                                imageVector = Icons.Outlined.Info,
+                                                                                contentDescription = null
+                                                                            )
+                                                                        },
+                                                                        onClick = {
+                                                                            detailSong = song
+                                                                            showMoreMenu = false
                                                                     }
                                                                 )
-                                                                DropdownMenuItem(
-                                                                    text = { Text(stringResource(R.string.action_share)) },
-                                                                    onClick = {
-                                                                        showMoreMenu = false
-                                                                        scope.launch {
+                                                                    DropdownMenuItem(
+                                                                        text = { Text(stringResource(R.string.action_share)) },
+                                                                        leadingIcon = {
+                                                                            Icon(
+                                                                                imageVector = Icons.Outlined.Share,
+                                                                                contentDescription = null
+                                                                            )
+                                                                        },
+                                                                        onClick = {
+                                                                            showMoreMenu = false
+                                                                            scope.launch {
                                                                             val shared = runCatching {
                                                                                 LocalMediaSupport.shareSongFile(context, song)
                                                                             }.getOrElse { false }
@@ -1789,6 +1894,12 @@ fun LocalPlaylistDetailScreen(
                                                             }
                                                             DropdownMenuItem(
                                                                 text = { Text(stringResource(R.string.local_playlist_play_next)) },
+                                                                leadingIcon = {
+                                                                    Icon(
+                                                                        imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
+                                                                        contentDescription = null
+                                                                    )
+                                                                },
                                                                 onClick = {
                                                                     PlayerManager.addToQueueNext(song)
                                                                     showMoreMenu = false
@@ -1796,13 +1907,52 @@ fun LocalPlaylistDetailScreen(
                                                             )
                                                             DropdownMenuItem(
                                                                 text = { Text(stringResource(R.string.playlist_add_to_end)) },
+                                                                leadingIcon = {
+                                                                    Icon(
+                                                                        imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                                                                        contentDescription = null
+                                                                    )
+                                                                },
                                                                 onClick = {
                                                                     PlayerManager.addToQueueEnd(song)
                                                                     showMoreMenu = false
                                                                 }
                                                             )
                                                             DropdownMenuItem(
+                                                                text = {
+                                                                    Text(
+                                                                        stringResource(
+                                                                            if (isFavoriteSong) {
+                                                                                R.string.favorite_remove
+                                                                            } else {
+                                                                                R.string.favorite_add
+                                                                            }
+                                                                        )
+                                                                    )
+                                                                },
+                                                                leadingIcon = {
+                                                                    Icon(
+                                                                        imageVector = if (isFavoriteSong) {
+                                                                            Icons.Filled.Favorite
+                                                                        } else {
+                                                                            Icons.Outlined.FavoriteBorder
+                                                                        },
+                                                                        contentDescription = null
+                                                                    )
+                                                                },
+                                                                onClick = {
+                                                                    toggleSongFavorite(song, isFavoriteSong)
+                                                                    showMoreMenu = false
+                                                                }
+                                                            )
+                                                            DropdownMenuItem(
                                                                 text = { Text(stringResource(R.string.action_copy_song_info)) },
+                                                                leadingIcon = {
+                                                                    Icon(
+                                                                        imageVector = Icons.Outlined.ContentCopy,
+                                                                        contentDescription = null
+                                                                    )
+                                                                },
                                                                 onClick = {
                                                                     val songInfo =
                                                                         "${song.displayName()}-${song.displayArtist()}"
@@ -1884,8 +2034,15 @@ fun LocalPlaylistDetailScreen(
                         confirmButton = {
                             HapticTextButton(onClick = {
                                 showDeletePlaylistConfirm = false
-                                vm.delete { ok ->
-                                    if (ok) navigateAfterPlaylistDeleted()
+                                vm.delete { result ->
+                                    showPlaylistDeleteResultGlobally(
+                                        context = context,
+                                        repository = repo,
+                                        result = result
+                                    )
+                                    if (result.getOrNull().orEmpty().isNotEmpty()) {
+                                        navigateAfterPlaylistDeleted()
+                                    }
                                 }
                             }) { Text(stringResource(R.string.action_delete)) }
                         },
@@ -1914,6 +2071,7 @@ fun LocalPlaylistDetailScreen(
                         },
                         confirmButton = {
                             HapticTextButton(onClick = {
+                                val previousSongs = localSongs.toList()
                                 val selectedKeys = selectedKeysState.value
                                 val removeAll = localSongs.isNotEmpty() &&
                                     selectedKeys.size == localSongs.size &&
@@ -1937,9 +2095,13 @@ fun LocalPlaylistDetailScreen(
                                 exitSelectionMode()
 
                                 if (removeAll) {
-                                    vm.clearSongs()
+                                    vm.clearSongs { result ->
+                                        handleLocalSongDeleteResult(previousSongs, result)
+                                    }
                                 } else {
-                                    vm.removeSongs(songsToRemove)
+                                    vm.removeSongs(songsToRemove) { result ->
+                                        handleLocalSongDeleteResult(previousSongs, result)
+                                    }
                                 }
                             }) { Text(stringResource(R.string.local_playlist_delete_count, count)) }
                         },
@@ -1969,7 +2131,17 @@ fun LocalPlaylistDetailScreen(
                                 songs = songs,
                                 actionLabel = composeResources.getString(R.string.playlist_add_to)
                             ) {
-                                scope.launchLocalPlaylistMutation("createPlaylistFromLocalPlaylist") {
+                                scope.launchLocalPlaylistMutation(
+                                    operation = "createPlaylistFromLocalPlaylist",
+                                    onResult = { result ->
+                                        scope.showPlaylistBatchExportCreatedResult(
+                                            context = context,
+                                            snackbarHostState = snackbarHostState,
+                                            repository = repo,
+                                            result = result
+                                        )
+                                    }
+                                ) {
                                     repo.createPlaylistWithPreparedSongs(name, songs)
                                 }
                                 exitSelectionMode()
@@ -1984,8 +2156,20 @@ fun LocalPlaylistDetailScreen(
                                 songs = songs,
                                 actionLabel = composeResources.getString(R.string.playlist_add_to)
                             ) {
-                                scope.launchLocalPlaylistMutation("exportSongsFromLocalPlaylist") {
-                                    repo.addPreparedSongsToPlaylist(target.id, songs)
+                                scope.launchLocalPlaylistMutation(
+                                    operation = "exportSongsFromLocalPlaylist",
+                                    onResult = { result ->
+                                        scope.showPlaylistBatchExportAddedResult(
+                                            context = context,
+                                            snackbarHostState = snackbarHostState,
+                                            repository = repo,
+                                            targetPlaylistId = target.id,
+                                            targetPlaylistName = target.name,
+                                            result = result
+                                        )
+                                    }
+                                ) {
+                                    repo.addPreparedSongsToPlaylistWithResult(target.id, songs)
                                 }
                                 exitSelectionMode()
                             }
@@ -2007,7 +2191,17 @@ fun LocalPlaylistDetailScreen(
                                 songs = songs,
                                 actionLabel = composeResources.getString(R.string.playlist_add_to)
                             ) {
-                                scope.launchLocalPlaylistMutation("createPlaylistFromLocalPlaylistAll") {
+                                scope.launchLocalPlaylistMutation(
+                                    operation = "createPlaylistFromLocalPlaylistAll",
+                                    onResult = { result ->
+                                        scope.showPlaylistBatchExportCreatedResult(
+                                            context = context,
+                                            snackbarHostState = snackbarHostState,
+                                            repository = repo,
+                                            result = result
+                                        )
+                                    }
+                                ) {
                                     repo.createPlaylistWithPreparedSongs(name, songs)
                                 }
                                 showExportAllSheet = false
@@ -2019,8 +2213,20 @@ fun LocalPlaylistDetailScreen(
                                 songs = songs,
                                 actionLabel = composeResources.getString(R.string.playlist_add_to)
                             ) {
-                                scope.launchLocalPlaylistMutation("exportAllSongsFromLocalPlaylist") {
-                                    repo.addPreparedSongsToPlaylist(target.id, songs)
+                                scope.launchLocalPlaylistMutation(
+                                    operation = "exportAllSongsFromLocalPlaylist",
+                                    onResult = { result ->
+                                        scope.showPlaylistBatchExportAddedResult(
+                                            context = context,
+                                            snackbarHostState = snackbarHostState,
+                                            repository = repo,
+                                            targetPlaylistId = target.id,
+                                            targetPlaylistName = target.name,
+                                            result = result
+                                        )
+                                    }
+                                ) {
+                                    repo.addPreparedSongsToPlaylistWithResult(target.id, songs)
                                 }
                                 showExportAllSheet = false
                             }

@@ -56,13 +56,16 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.filled.ClearAll
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.DeleteForever
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -73,6 +76,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -80,6 +84,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -94,6 +99,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -101,6 +107,9 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.history.toSongItem
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.local.media.isLocalSong
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
@@ -108,6 +117,8 @@ import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.download.SongDownloadSubtitle
+import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
+import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
@@ -135,6 +146,38 @@ fun RecentScreen(
 
     val context = LocalContext.current
     val mini = LocalMiniPlayerHeight.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val localPlaylistRepo = remember(context) {
+        LocalPlaylistRepository.getInstance(context)
+    }
+    val allLocalPlaylists by localPlaylistRepo.playlists.collectAsStateWithLifecycle(
+        initialValue = emptyList()
+    )
+    val favoriteSongs = remember(allLocalPlaylists, context) {
+        FavoritesPlaylist.firstOrNull(allLocalPlaylists, context)?.songs.orEmpty()
+    }
+    val favoriteAddedText = stringResource(R.string.favorite_added)
+    val favoriteRemovedText = stringResource(R.string.favorite_removed)
+    fun toggleSongFavorite(song: SongItem, isFavoriteSong: Boolean) {
+        val message = if (isFavoriteSong) favoriteRemovedText else favoriteAddedText
+        scope.launchLocalPlaylistMutation(
+            operation = "toggleRecentSongFavorite",
+            onResult = { result ->
+                if (result.isSuccess) {
+                    scope.launch {
+                        snackbarHostState.showNeriSnackbar(message)
+                    }
+                }
+            }
+        ) {
+            if (isFavoriteSong) {
+                localPlaylistRepo.removeFromFavorites(song)
+            } else {
+                localPlaylistRepo.addToFavorites(song)
+            }
+        }
+    }
 
     // 搜索
     var showSearch by remember { mutableStateOf(false) }
@@ -189,6 +232,12 @@ fun RecentScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             containerColor = Color.Transparent,
+            snackbarHost = {
+                NeriSnackbarHost(
+                    hostState = snackbarHostState,
+                    bottomPadding = mini
+                )
+            },
             topBar = {
                 if (!selectionMode) {
                     TopAppBar(
@@ -375,6 +424,7 @@ fun RecentScreen(
                         items = displayedSongs,
                         key = { index, s -> s.id to index }
                     ) { index, song ->
+                        val isFavoriteSong = favoriteSongs.any { it.sameIdentityAs(song) }
                         RecentRowRich(
                             index = index + 1,
                             song = song,
@@ -419,6 +469,12 @@ fun RecentScreen(
                                             text = {
                                                 Text(stringResource(R.string.local_playlist_play_next))
                                             },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
+                                                    contentDescription = null
+                                                )
+                                            },
                                             onClick = {
                                                 PlayerManager.addToQueueNext(song)
                                                 showMenu = false
@@ -428,8 +484,41 @@ fun RecentScreen(
                                             text = {
                                                 Text(stringResource(R.string.playlist_add_to_end))
                                             },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                                                    contentDescription = null
+                                                )
+                                            },
                                             onClick = {
                                                 PlayerManager.addToQueueEnd(song)
+                                                showMenu = false
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    stringResource(
+                                                        if (isFavoriteSong) {
+                                                            R.string.favorite_remove
+                                                        } else {
+                                                            R.string.favorite_add
+                                                        }
+                                                    )
+                                                )
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = if (isFavoriteSong) {
+                                                        Icons.Filled.Favorite
+                                                    } else {
+                                                        Icons.Outlined.FavoriteBorder
+                                                    },
+                                                    contentDescription = null
+                                                )
+                                            },
+                                            onClick = {
+                                                toggleSongFavorite(song, isFavoriteSong)
                                                 showMenu = false
                                             }
                                         )

@@ -276,6 +276,8 @@ import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
+import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
+import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
 import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.ui.component.lyrics.rememberLyricSeekHapticFeedback
 import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricEdgeFadeHeight
@@ -954,6 +956,7 @@ internal fun NowPlayingQueueSheet(
     val context = LocalContext.current
     val screenScope = rememberCoroutineScope()
     val localPlaylistRepo = remember(context) { LocalPlaylistRepository.getInstance(context) }
+    val snackbarHostState = remember { SnackbarHostState() }
     val playerPlaylists by PlayerManager.playlistsFlow.collectAsStateWithLifecycle()
     val allLocalPlaylists by localPlaylistRepo.playlists.collectAsStateWithLifecycle(
         initialValue = playerPlaylists
@@ -1364,6 +1367,11 @@ internal fun NowPlayingQueueSheet(
                 )
             }
 
+            NeriSnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.align(Alignment.BottomCenter),
+                applyNavigationBarsPadding = false
+            )
         }
     }
 
@@ -1377,7 +1385,17 @@ internal fun NowPlayingQueueSheet(
             onDismissRequest = { showExportSheet = false },
             onCreateAndExport = { name ->
                 val songs = selectedSongs
-                screenScope.launchLocalPlaylistMutation("createPlaylistFromNowPlayingQueue") {
+                screenScope.launchLocalPlaylistMutation(
+                    operation = "createPlaylistFromNowPlayingQueue",
+                    onResult = { result ->
+                        screenScope.showPlaylistBatchExportCreatedResult(
+                            context = context,
+                            snackbarHostState = snackbarHostState,
+                            repository = localPlaylistRepo,
+                            result = result
+                        )
+                    }
+                ) {
                     localPlaylistRepo.createPlaylistWithSongs(name, songs)
                 }
                 showExportSheet = false
@@ -1385,8 +1403,20 @@ internal fun NowPlayingQueueSheet(
             },
             onExportToPlaylist = { playlist ->
                 val songs = selectedSongs
-                screenScope.launchLocalPlaylistMutation("exportSongsFromNowPlayingQueue") {
-                    localPlaylistRepo.addSongsToPlaylist(playlist.id, songs)
+                screenScope.launchLocalPlaylistMutation(
+                    operation = "exportSongsFromNowPlayingQueue",
+                    onResult = { result ->
+                        screenScope.showPlaylistBatchExportAddedResult(
+                            context = context,
+                            snackbarHostState = snackbarHostState,
+                            repository = localPlaylistRepo,
+                            targetPlaylistId = playlist.id,
+                            targetPlaylistName = playlist.name,
+                            result = result
+                        )
+                    }
+                ) {
+                    localPlaylistRepo.addSongsToPlaylistWithResult(playlist.id, songs)
                 }
                 showExportSheet = false
                 dismissQueue()

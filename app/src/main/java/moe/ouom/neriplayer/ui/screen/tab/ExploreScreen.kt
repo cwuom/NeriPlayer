@@ -86,6 +86,7 @@ import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -149,7 +150,10 @@ import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
+import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
+import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
+import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreSearchResult
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreUiState
@@ -365,6 +369,7 @@ fun ExploreScreen(
         pageCount = { orderedSearchSources.size }
     )
     val miniPlayerHeight = LocalMiniPlayerHeight.current
+    val snackbarHostState = remember { SnackbarHostState() }
     val windowWidthDp = currentWindowWidthDp()
     val isTabletLayout = windowWidthDp >= 720.dp
     val searchPanelHorizontalPadding = if (isTabletLayout) 28.dp else 16.dp
@@ -396,6 +401,10 @@ fun ExploreScreen(
     }
     val shouldShowSearchHistory = shouldShowExploreSearchHistory(
         history = visibleSearchHistory,
+        contentScrolled = isExploreContentScrolled
+    )
+    val shouldShowNeteaseSearchTypeBar = shouldShowExploreNeteaseSearchTypeBar(
+        selectedSearchSource = ui.selectedSearchSource,
         contentScrolled = isExploreContentScrolled
     )
 
@@ -601,6 +610,12 @@ fun ExploreScreen(
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = Color.Transparent,
+        snackbarHost = {
+            NeriSnackbarHost(
+                hostState = snackbarHostState,
+                bottomPadding = miniPlayerHeight
+            )
+        },
         topBar = {
             LargeTopAppBar(
                 title = { Text(stringResource(R.string.nav_explore)) },
@@ -722,7 +737,7 @@ fun ExploreScreen(
                             }
                         }
                     }
-                    AnimatedVisibility(visible = ui.selectedSearchSource == SearchSource.NETEASE) {
+                    AnimatedVisibility(visible = shouldShowNeteaseSearchTypeBar) {
                         FlowRow(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1092,7 +1107,17 @@ fun ExploreScreen(
                 val songs = partsInfo!!.pages
                     .filter { selectedParts.contains(it.page) }
                     .map { page -> vm.toSongItem(page, partsInfo!!, clickedSongCoverUrl) }
-                scope.launchLocalPlaylistMutation("createPlaylistFromExplore") {
+                scope.launchLocalPlaylistMutation(
+                    operation = "createPlaylistFromExplore",
+                    onResult = { result ->
+                        scope.showPlaylistBatchExportCreatedResult(
+                            context = context,
+                            snackbarHostState = snackbarHostState,
+                            repository = repo,
+                            result = result
+                        )
+                    }
+                ) {
                     repo.createPlaylistWithSongs(name, songs)
                 }
                 exitPartsSelection()
@@ -1101,8 +1126,20 @@ fun ExploreScreen(
                 val songs = partsInfo!!.pages
                     .filter { selectedParts.contains(it.page) }
                     .map { page -> vm.toSongItem(page, partsInfo!!, clickedSongCoverUrl) }
-                scope.launchLocalPlaylistMutation("exportSongsFromExplore") {
-                    repo.addSongsToPlaylist(playlist.id, songs)
+                scope.launchLocalPlaylistMutation(
+                    operation = "exportSongsFromExplore",
+                    onResult = { result ->
+                        scope.showPlaylistBatchExportAddedResult(
+                            context = context,
+                            snackbarHostState = snackbarHostState,
+                            repository = repo,
+                            targetPlaylistId = playlist.id,
+                            targetPlaylistName = playlist.name,
+                            result = result
+                        )
+                    }
+                ) {
+                    repo.addSongsToPlaylistWithResult(playlist.id, songs)
                 }
                 exitPartsSelection()
             }
@@ -1247,6 +1284,13 @@ internal fun shouldShowExploreSearchHistory(
     contentScrolled: Boolean
 ): Boolean {
     return history.isNotEmpty() && !contentScrolled
+}
+
+internal fun shouldShowExploreNeteaseSearchTypeBar(
+    selectedSearchSource: SearchSource,
+    contentScrolled: Boolean
+): Boolean {
+    return selectedSearchSource == SearchSource.NETEASE && !contentScrolled
 }
 
 private const val EXPLORE_HISTORY_DISPLAY_LIMIT = 15
