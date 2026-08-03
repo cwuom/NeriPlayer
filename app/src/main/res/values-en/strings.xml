@@ -927,6 +927,8 @@
     <string name="settings_usb_device_attach_handling_desc">Turn off to stop NeriPlayer from opening to handle USB DACs or FreeDSP cables when attached</string>
     <string name="settings_playback_idle_shutdown">Exit playback service when paused</string>
     <string name="settings_playback_idle_shutdown_desc">Remove notification after timeout; keep queue and progress</string>
+    <string name="settings_prefer_high_refresh_rate">High Refresh Rate</string>
+    <string name="settings_prefer_high_refresh_rate_desc">Request the highest refresh rate supported by this device. Power, thermal, and system settings can still limit it.</string>
     <string name="settings_playback_idle_shutdown_dialog_title">Exit after being paused for</string>
     <string name="settings_playback_idle_shutdown_off">Never</string>
     <string name="settings_clear_config">Clear Configuration</string>
@@ -1316,7 +1318,6 @@
     <string name="settings_nowplaying_progress_quality_switch_desc">Shown above the progress bar; quality switching is available in More Options</string>
     <string name="settings_nowplaying_toolbar_dock">Use dock-style bottom toolbar</string>
     <string name="settings_nowplaying_toolbar_dock_desc">Show a rounded dock container for the bottom toolbar on Now Playing</string>
-    <string name="settings_nowplaying_progress_audio_codec">Show codec above progress bar</string>
     <string name="settings_nowplaying_toolbar_dock_disabled_by_control_position">Dock is temporarily disabled because bottom playback controls would overlap it</string>
     <string name="settings_nowplaying_control_placement">Now Playing controls position</string>
     <string name="settings_nowplaying_control_placement_desc">Position shuffle, previous, play, next, and repeat controls</string>
@@ -1330,6 +1331,7 @@
     <string name="settings_playback_control_size_small">Small</string>
     <string name="settings_playback_control_size_medium">Medium</string>
     <string name="settings_playback_control_size_large">Large</string>
+    <string name="settings_nowplaying_progress_audio_codec">Show codec above progress bar</string>
     <string name="settings_nowplaying_progress_audio_codec_desc">Shown above the progress bar, such as FLAC, AAC, or E-AC-3</string>
     <string name="settings_nowplaying_progress_audio_spec">Show audio spec above progress bar</string>
     <string name="settings_nowplaying_progress_audio_spec_desc">Shown above the progress bar, including sample rate, bit depth, and bitrate</string>

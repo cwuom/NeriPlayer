@@ -62,6 +62,7 @@ internal data class MainTabLayerScene(
     val route: String,
     val phase: MainTabLayerScenePhase,
     val direction: Int = 0,
+    val transitionToken: Long = 0L,
     val glassOwner: MainTabGlassOwner = MainTabGlassOwner(route),
     val restored: Boolean = false,
     val restorationToken: Long = 0L
@@ -180,6 +181,18 @@ internal class MainTabLayerTransitionState internal constructor(
     fun offsetFractionFor(scene: MainTabLayerScene): Float =
         controller.offsetFractionFor(scene)
 
+    fun onContainerWidthChanged(widthPx: Int) {
+        controller.onContainerWidthChanged(widthPx)
+    }
+
+    fun onInitialSceneFrameRendered() {
+        controller.onInitialSceneFrameRendered()
+    }
+
+    fun onIncomingScenePrepared(transitionToken: Long) {
+        controller.onIncomingScenePrepared(transitionToken)
+    }
+
     fun consumeRestoredScene(restorationToken: Long) {
         controller.consumeRestoredScene(restorationToken)
     }
@@ -217,6 +230,11 @@ internal fun MainTabLayerHost(
     LaunchedEffect(transitionState, selectedRoute) {
         transitionState.request(selectedRoute)
     }
+    LaunchedEffect(transitionState) {
+        withFrameNanos { }
+        withFrameNanos { }
+        transitionState.onInitialSceneFrameRendered()
+    }
     val visibleScenes = transitionState.visibleScenes
     var widthPx by remember { mutableIntStateOf(0) }
     SideEffect {
@@ -228,7 +246,10 @@ internal fun MainTabLayerHost(
     Box(
         modifier = modifier
             .clipToBounds()
-            .onSizeChanged { size -> widthPx = size.width }
+            .onSizeChanged { size ->
+                widthPx = size.width
+                transitionState.onContainerWidthChanged(size.width)
+            }
     ) {
         visibleScenes.forEach { scene ->
             key(scene.route) {
@@ -258,6 +279,18 @@ internal fun MainTabLayerHost(
                                 transitionState.consumeRestoredScene(scene.restorationToken)
                             }
                         }
+                        if (
+                            scene.phase == MainTabLayerScenePhase.Entering &&
+                            scene.transitionToken != 0L
+                        ) {
+                            LaunchedEffect(scene.transitionToken) {
+                                withFrameNanos { }
+                                withFrameNanos { }
+                                transitionState.onIncomingScenePrepared(
+                                    scene.transitionToken
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -279,6 +312,13 @@ internal class MainTabLayerTransitionController(
     private var targetSceneRestorationToken = 0L
     private var transitionJob: Job? = null
     private var generation = 0L
+    private var containerReady = false
+    private var containerHasWidth = false
+    private var initialSceneFrameRendered = false
+    private var pendingTransitionStart: TransitionStart? = null
+    private var awaitingIncomingScenePreparation = false
+    private var hasStartedTabAnimation = false
+    private var queuedTransitionRequest: TransitionRequest? = null
 
     val visibleScenes: List<MainTabLayerScene>
         get() {
@@ -304,6 +344,11 @@ internal class MainTabLayerTransitionController(
                     route = toRouteState,
                     phase = MainTabLayerScenePhase.Entering,
                     direction = directionState,
+                    transitionToken = if (awaitingIncomingScenePreparation) {
+                        generation
+                    } else {
+                        0L
+                    },
                     restored = targetSceneRestoredState,
                     restorationToken = targetSceneRestorationToken
                 )
@@ -318,17 +363,66 @@ internal class MainTabLayerTransitionController(
         )
 
     fun request(targetRoute: String, restored: Boolean = false) {
+        if (!containerReady) {
+            if (pendingTransitionStart?.toRoute == targetRoute) return
+            if (targetRoute == toRouteState) {
+                pendingTransitionStart = null
+                return
+            }
+            pendingTransitionStart = resolveNextTransition(targetRoute, restored)
+            return
+        }
+        if (runningState) {
+            if (
+                awaitingIncomingScenePreparation &&
+                progressState == 0f &&
+                targetRoute == fromRouteState
+            ) {
+                cancelIncomingScenePreparation()
+                return
+            }
+            if (targetRoute == toRouteState) {
+                queuedTransitionRequest = null
+                return
+            }
+            if (awaitingIncomingScenePreparation && progressState == 0f) {
+                val next = resolveNextTransition(targetRoute, restored) ?: return
+                startTransition(next)
+            } else {
+                queuedTransitionRequest = TransitionRequest(targetRoute, restored)
+            }
+            return
+        }
         if (targetRoute == toRouteState && (!runningState || fromRouteState == null)) return
         val next = resolveNextTransition(targetRoute, restored) ?: return
-        val requestGeneration = ++generation
-        transitionJob?.cancel()
-        fromRouteState = next.fromRoute
-        toRouteState = next.toRoute
-        directionState = next.direction
-        progressState = next.progress.coerceIn(0f, 1f)
-        targetSceneRestoredState = next.restored
-        targetSceneRestorationToken = requestGeneration
-        runningState = true
+        startTransition(next)
+    }
+
+    fun onContainerWidthChanged(widthPx: Int) {
+        if (widthPx <= 0) return
+        containerHasWidth = true
+        startPendingTransitionIfReady()
+    }
+
+    fun onInitialSceneFrameRendered() {
+        initialSceneFrameRendered = true
+        startPendingTransitionIfReady()
+    }
+
+    fun onIncomingScenePrepared(transitionToken: Long) {
+        if (
+            !runningState ||
+            !awaitingIncomingScenePreparation ||
+            transitionToken != generation
+        ) {
+            return
+        }
+        awaitingIncomingScenePreparation = false
+        launchTransition(transitionToken)
+    }
+
+    private fun launchTransition(requestGeneration: Long) {
+        hasStartedTabAnimation = true
         transitionJob = scope.launch {
             try {
                 animateProgressToEnd(requestGeneration)
@@ -340,12 +434,59 @@ internal class MainTabLayerTransitionController(
         }
     }
 
+    private fun startPendingTransitionIfReady() {
+        if (containerReady || !containerHasWidth || !initialSceneFrameRendered) return
+        containerReady = true
+        val pendingTransition = pendingTransitionStart ?: return
+        pendingTransitionStart = null
+        startTransition(pendingTransition)
+    }
+
+    private fun startTransition(next: TransitionStart) {
+        val requestGeneration = ++generation
+        transitionJob?.cancel()
+        fromRouteState = next.fromRoute
+        toRouteState = next.toRoute
+        directionState = next.direction
+        progressState = next.progress.coerceIn(0f, 1f)
+        targetSceneRestoredState = next.restored
+        targetSceneRestorationToken = requestGeneration
+        awaitingIncomingScenePreparation = !hasStartedTabAnimation
+        runningState = true
+        transitionJob = null
+        if (!awaitingIncomingScenePreparation) {
+            launchTransition(requestGeneration)
+        }
+    }
+
+    private fun cancelIncomingScenePreparation() {
+        val currentFromRoute = fromRouteState ?: return
+        generation++
+        transitionJob?.cancel()
+        transitionJob = null
+        fromRouteState = null
+        toRouteState = currentFromRoute
+        progressState = 1f
+        runningState = false
+        awaitingIncomingScenePreparation = false
+        queuedTransitionRequest = null
+        targetSceneRestoredState = false
+        targetSceneRestorationToken = 0L
+    }
+
     fun dispose() {
         generation++
         transitionJob?.cancel()
         transitionJob = null
         runningState = false
         fromRouteState = null
+        pendingTransitionStart = null
+        containerReady = false
+        containerHasWidth = false
+        initialSceneFrameRendered = false
+        awaitingIncomingScenePreparation = false
+        hasStartedTabAnimation = false
+        queuedTransitionRequest = null
         targetSceneRestoredState = false
         targetSceneRestorationToken = 0L
     }
@@ -428,7 +569,7 @@ internal class MainTabLayerTransitionController(
         animate(
             initialValue = progressState,
             targetValue = 1f,
-            animationSpec = remainingAnimationSpec()
+            animationSpec = mainTabAnimationSpec()
         ) { value, _ ->
             if (requestGeneration == generation) {
                 progressState = value
@@ -436,23 +577,26 @@ internal class MainTabLayerTransitionController(
         }
     }
 
-    private fun remainingAnimationSpec(): FiniteAnimationSpec<Float> {
-        val remainingFraction = (1f - progressState).coerceIn(0f, 1f)
-        val duration = (
-            ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS * remainingFraction
-        ).roundToInt().coerceIn(
-            minimumValue = MIN_INTERRUPTED_MAIN_TAB_TRANSITION_MS,
-            maximumValue = ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS
+    private fun mainTabAnimationSpec(): FiniteAnimationSpec<Float> =
+        advancedGlassMainTabTransitionSpec(
+            ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS
         )
-        return advancedGlassMainTabTransitionSpec(duration)
-    }
 
     private fun settleAtTarget() {
         progressState = 1f
         fromRouteState = null
         runningState = false
         transitionJob = null
+        awaitingIncomingScenePreparation = false
         targetSceneRestoredState = false
+        val queuedRequest = queuedTransitionRequest ?: return
+        queuedTransitionRequest = null
+        if (queuedRequest.targetRoute == toRouteState) return
+        val next = resolveNextTransition(
+            targetRoute = queuedRequest.targetRoute,
+            restored = queuedRequest.restored
+        ) ?: return
+        startTransition(next)
     }
 
     private data class TransitionStart(
@@ -460,6 +604,11 @@ internal class MainTabLayerTransitionController(
         val toRoute: String,
         val direction: Int,
         val progress: Float,
+        val restored: Boolean
+    )
+
+    private data class TransitionRequest(
+        val targetRoute: String,
         val restored: Boolean
     )
 
@@ -473,8 +622,4 @@ internal class MainTabLayerTransitionController(
         val snapDistance: Float,
         val centerDistance: Float
     )
-
-    private companion object {
-        const val MIN_INTERRUPTED_MAIN_TAB_TRANSITION_MS = 120
-    }
 }

@@ -342,6 +342,19 @@ class AutoSettingsGeneratedTest {
     }
 
     @Test
+    fun highRefreshRateDefaultsToDisabledInGeneralSettings() {
+        val setting = AutoSettingsSchema.general.preferHighRefreshRate
+        val metadata = AutoSettingsMetadata.setting(setting.key)
+
+        assertEquals("prefer_high_refresh_rate", setting.preferencesKey.name)
+        assertEquals(false, setting.defaultValue)
+        assertEquals(SettingValueType.Boolean, metadata?.valueType)
+        assertEquals(SettingUiType.Switch, metadata?.ui)
+        assertEquals(AutoSettingsSections.general, metadata?.section)
+        assertEquals(AutoSettingIcon.AutoAwesome, metadata?.icon)
+    }
+
+    @Test
     fun alwaysUseNewTabStyleDefaultsOnAndUsesDisplaySwitch() {
         val setting = AutoSettingsSchema.display.alwaysUseNewTabStyle
         val metadata = AutoSettingsMetadata.setting("always_use_new_tab_style")

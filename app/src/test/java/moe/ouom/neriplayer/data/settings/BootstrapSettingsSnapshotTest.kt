@@ -28,4 +28,11 @@ class BootstrapSettingsSnapshotTest {
 
         assertEquals(false, snapshot.youtubeEnabled)
     }
+
+    @Test
+    fun `bootstrap snapshot preserves high refresh preference`() {
+        val snapshot = BootstrapSettingsSnapshot(preferHighRefreshRate = true).sanitized()
+
+        assertEquals(true, snapshot.preferHighRefreshRate)
+    }
 }

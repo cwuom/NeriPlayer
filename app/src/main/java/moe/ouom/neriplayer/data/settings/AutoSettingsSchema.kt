@@ -129,6 +129,15 @@ object AutoSettingsSchema {
             icon = AutoSettingIcon.Bolt
         )
 
+        @AutoSetting(order = 46)
+        val preferHighRefreshRate = autoSwitchSetting(
+            key = "prefer_high_refresh_rate",
+            defaultValue = false,
+            titleRes = R.string.settings_prefer_high_refresh_rate,
+            descriptionRes = R.string.settings_prefer_high_refresh_rate_desc,
+            icon = AutoSettingIcon.AutoAwesome
+        )
+
         @AutoSetting(
             key = "dev_mode_enabled",
             type = SettingValueType.Boolean,

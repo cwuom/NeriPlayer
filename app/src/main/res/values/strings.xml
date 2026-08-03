@@ -927,6 +927,8 @@
     <string name="settings_usb_device_attach_handling_desc">关闭后，插入 USB DAC 或 FreeDSP 线束时不会唤起音理音理处理此设备</string>
     <string name="settings_playback_idle_shutdown">暂停后退出播放服务</string>
     <string name="settings_playback_idle_shutdown_desc">暂停超时后移除通知，保留队列和进度</string>
+    <string name="settings_prefer_high_refresh_rate">高刷新率</string>
+    <string name="settings_prefer_high_refresh_rate_desc">请求设备支持的最高刷新率；省电、温控和系统设置仍可能限制刷新率</string>
     <string name="settings_playback_idle_shutdown_dialog_title">暂停多久后退出</string>
     <string name="settings_playback_idle_shutdown_off">不自动退出</string>
     <string name="settings_clear_config">清除配置</string>
@@ -1316,7 +1318,6 @@
     <string name="settings_nowplaying_progress_quality_switch_desc">显示在进度条上方；音质切换入口位于更多选项</string>
     <string name="settings_nowplaying_toolbar_dock">底部工具栏使用 Dock 样式</string>
     <string name="settings_nowplaying_toolbar_dock_desc">为播放页底部工具栏显示圆角 Dock 容器</string>
-    <string name="settings_nowplaying_progress_audio_codec">进度条上方显示解码格式</string>
     <string name="settings_nowplaying_toolbar_dock_disabled_by_control_position">主播放控件已贴底，为避免与 Dock 重叠，Dock 效果暂时关闭</string>
     <string name="settings_nowplaying_control_placement">正在播放主控位置</string>
     <string name="settings_nowplaying_control_placement_desc">调整随机、上一首、播放、下一首和循环按钮的位置</string>
@@ -1330,6 +1331,7 @@
     <string name="settings_playback_control_size_small">小</string>
     <string name="settings_playback_control_size_medium">中</string>
     <string name="settings_playback_control_size_large">大</string>
+    <string name="settings_nowplaying_progress_audio_codec">进度条上方显示解码格式</string>
     <string name="settings_nowplaying_progress_audio_codec_desc">显示在进度条上方，如 FLAC、AAC、E-AC-3</string>
     <string name="settings_nowplaying_progress_audio_spec">进度条上方显示音源规格</string>
     <string name="settings_nowplaying_progress_audio_spec_desc">显示在进度条上方，包括采样率、位深、码率</string>

@@ -132,6 +132,7 @@ import moe.ouom.neriplayer.core.startup.safemode.SafeModeRecoveryCoordinator
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.data.settings.readBootstrapSettingsSnapshotSync
 import moe.ouom.neriplayer.core.startup.sync.StartupSyncScheduler
 import moe.ouom.neriplayer.core.startup.sync.StartupSyncWarningCoordinator
 import moe.ouom.neriplayer.core.startup.sync.StartupSyncWarningRepository
@@ -162,6 +163,7 @@ import moe.ouom.neriplayer.util.platform.NightModeHelper
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
 import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
 import moe.ouom.neriplayer.util.platform.applyOnePlusHighDensityDisplayCorrection
+import moe.ouom.neriplayer.util.platform.applyPreferredHighRefreshRate
 import moe.ouom.neriplayer.util.platform.resolveOnePlusHighDensityUiScale
 
 private data class PendingAudioServiceStart(
@@ -285,6 +287,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         safeModeActive = SafeModeManager.shouldEnterSafeMode(this)
+        val startupSettingsSnapshot = readBootstrapSettingsSnapshotSync(this)
         val startupThemeSnapshot = StartupThemeSnapshotProvider.read(
             context = this,
             safeModeActive = safeModeActive
@@ -295,6 +298,8 @@ class MainActivity : ComponentActivity() {
         )
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        applyPreferredHighRefreshRate(startupSettingsSnapshot.preferHighRefreshRate)
+        observePreferredHighRefreshRate()
         lockPortraitIfPhone()
         enableEdgeToEdge()
         applyWindowBackground(
@@ -1278,6 +1283,16 @@ class MainActivity : ComponentActivity() {
         externalAudioMetadataHydrationJob?.cancel()
         super.onDestroy()
         ExceptionHandler.cleanup()
+    }
+
+    private fun observePreferredHighRefreshRate() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                settingsRepository.preferHighRefreshRateFlow.collect { enabled ->
+                    applyPreferredHighRefreshRate(enabled)
+                }
+            }
+        }
     }
 
     @Suppress("DEPRECATION")

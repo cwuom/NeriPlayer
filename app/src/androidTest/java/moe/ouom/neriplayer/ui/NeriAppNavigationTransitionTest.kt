@@ -175,7 +175,7 @@ class NeriAppNavigationTransitionTest {
         composeRule.runOnIdle { selectedRoute.value = Destinations.Explore.route }
         repeat(2) { advanceAndTrackFrame() }
         composeRule.runOnIdle { selectedRoute.value = Destinations.Home.route }
-        repeat((ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS / FRAME_MS) + 8) {
+        repeat((ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS * 2 / FRAME_MS) + 12) {
             advanceAndTrackFrame()
         }
 
@@ -210,12 +210,14 @@ class NeriAppNavigationTransitionTest {
         composeRule.waitForIdle()
 
         assertTrue(
-            "Retargeted Tab animation completed before its full duration elapsed",
-            nodeCount(RapidHomeTag) == 1 && nodeCount(RapidLibraryTag) == 1
+            "Queued Tab request interrupted the current animation",
+            nodeCount(RapidHomeTag) == 1 &&
+                nodeCount(RapidExploreTag) == 1 &&
+                nodeCount(RapidLibraryTag) == 0
         )
 
         composeRule.mainClock.advanceTimeBy(
-            (ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS + FRAME_MS * 2).toLong()
+            (ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS * 2 + FRAME_MS * 4).toLong()
         )
         composeRule.waitForIdle()
         assertTrue(
@@ -255,6 +257,130 @@ class NeriAppNavigationTransitionTest {
     }
 
     @Test
+    fun firstMainTabTransitionPreparesTheIncomingSceneBeforeSliding() {
+        lateinit var transitionState: MainTabLayerTransitionState
+        lateinit var incomingSceneWasComposed: MutableState<Boolean>
+        composeRule.mainClock.autoAdvance = false
+        composeRule.setContent {
+            transitionState = rememberMainTabLayerTransitionState(Destinations.Home.route)
+            incomingSceneWasComposed = remember { mutableStateOf(false) }
+            Box(
+                modifier = Modifier
+                    .size(240.dp, 320.dp)
+                    .background(Color.Black)
+                    .testTag(RapidSwitchRootTag)
+            ) {
+                MainTabLayerHost(
+                    selectedRoute = Destinations.Home.route,
+                    transitionState = transitionState,
+                    modifier = Modifier.fillMaxSize()
+                ) { route ->
+                    if (route == Destinations.Explore.route) {
+                        SideEffect { incomingSceneWasComposed.value = true }
+                    }
+                    RapidMainTabTestScene(route)
+                }
+            }
+        }
+
+        repeat(4) { advanceRapidSwitchFrame() }
+        composeRule.runOnIdle {
+            transitionState.request(Destinations.Explore.route)
+        }
+        repeat(2) { advanceRapidSwitchFrame() }
+
+        val rootBounds = singleNodeBoundsOrNull(RapidSwitchRootTag)
+        val homeBounds = singleNodeBoundsOrNull(RapidHomeTag)
+        assertTrue(
+            "Incoming Tab started moving before its offscreen preparation completed: " +
+                "home=$homeBounds",
+            rootBounds != null &&
+                homeBounds != null &&
+                incomingSceneWasComposed.value &&
+                homeBounds.left >= rootBounds.left - POSITION_TOLERANCE_PX &&
+                homeBounds.right <= rootBounds.right + POSITION_TOLERANCE_PX
+        )
+
+        repeat(4) { advanceRapidSwitchFrame() }
+        val movingHomeBounds = singleNodeBoundsOrNull(RapidHomeTag)
+        assertTrue(
+            "Incoming Tab did not start after its offscreen preparation: " +
+                "home=$movingHomeBounds",
+            rootBounds != null &&
+                movingHomeBounds != null &&
+                movingHomeBounds.right < rootBounds.right - POSITION_TOLERANCE_PX
+        )
+    }
+
+    @Test
+    fun queuedMainTabRequestKeepsTheCurrentMotionRunning() {
+        lateinit var transitionState: MainTabLayerTransitionState
+        composeRule.mainClock.autoAdvance = false
+        composeRule.setContent {
+            transitionState = rememberMainTabLayerTransitionState(Destinations.Home.route)
+            Box(
+                modifier = Modifier
+                    .size(240.dp, 320.dp)
+                    .background(Color.Black)
+                    .testTag(RapidSwitchRootTag)
+            ) {
+                MainTabLayerHost(
+                    selectedRoute = Destinations.Home.route,
+                    transitionState = transitionState,
+                    modifier = Modifier.fillMaxSize()
+                ) { route ->
+                    RapidMainTabTestScene(route)
+                }
+            }
+        }
+
+        composeRule.runOnIdle { transitionState.request(Destinations.Explore.route) }
+        var homeRightWhenMotionStarted: Float? = null
+        repeat(16) {
+            if (homeRightWhenMotionStarted == null) {
+                advanceRapidSwitchFrame()
+                val rootBounds = singleNodeBoundsOrNull(RapidSwitchRootTag)
+                val homeBounds = singleNodeBoundsOrNull(RapidHomeTag)
+                if (
+                    rootBounds != null &&
+                    homeBounds != null &&
+                    homeBounds.right < rootBounds.right - POSITION_TOLERANCE_PX
+                ) {
+                    homeRightWhenMotionStarted = homeBounds.right
+                }
+            }
+        }
+        assertTrue(
+            "Initial Tab motion did not start",
+            homeRightWhenMotionStarted != null
+        )
+
+        composeRule.runOnIdle { transitionState.request(Destinations.Library.route) }
+        repeat(4) { advanceRapidSwitchFrame() }
+        val continuedHomeBounds = singleNodeBoundsOrNull(RapidHomeTag)
+        assertTrue(
+            "Queued Tab request paused the current motion: home=$continuedHomeBounds",
+            continuedHomeBounds != null &&
+                continuedHomeBounds.right <
+                checkNotNull(homeRightWhenMotionStarted) - POSITION_TOLERANCE_PX
+        )
+        assertTrue(
+            "Queued Tab request replaced the current transition before it settled",
+            nodeCount(RapidLibraryTag) == 0
+        )
+
+        repeat((ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS * 2 / FRAME_MS) + 12) {
+            advanceRapidSwitchFrame()
+        }
+        assertTrue(
+            "Queued Tab request did not settle on the latest target",
+            nodeCount(RapidLibraryTag) == 1 &&
+                nodeCount(RapidHomeTag) == 0 &&
+                nodeCount(RapidExploreTag) == 0
+        )
+    }
+
+    @Test
     fun immediateMainTabRequestsDoNotWaitForRouteRecomposition() {
         lateinit var transitionState: MainTabLayerTransitionState
         composeRule.mainClock.autoAdvance = false
@@ -278,11 +404,22 @@ class NeriAppNavigationTransitionTest {
 
         composeRule.waitForIdle()
         composeRule.runOnIdle { transitionState.request(Destinations.Explore.route) }
-        repeat(3) { advanceRapidSwitchFrame() }
+        var initialMotionObserved = false
+        repeat(12) {
+            if (!initialMotionObserved) {
+                advanceRapidSwitchFrame()
+                val rootBounds = singleNodeBoundsOrNull(RapidSwitchRootTag)
+                val homeBounds = singleNodeBoundsOrNull(RapidHomeTag)
+                initialMotionObserved = rootBounds != null &&
+                    homeBounds != null &&
+                    homeBounds.right < rootBounds.right - POSITION_TOLERANCE_PX
+            }
+        }
+        assertTrue("Immediate Tab request did not begin its initial motion", initialMotionObserved)
         composeRule.runOnIdle { transitionState.request(Destinations.Home.route) }
 
         var observedPairedScenes = false
-        repeat((ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS / FRAME_MS) + 8) { frame ->
+        repeat((ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS * 2 / FRAME_MS) + 12) { frame ->
             advanceRapidSwitchFrame()
             assertMainTabFrameCovered(frame, RapidSwitchRootTag)
             val bounds = listOf(RapidHomeTag, RapidExploreTag)

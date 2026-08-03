@@ -39,6 +39,7 @@ private const val BOOTSTRAP_SNAPSHOT_PREFS = "bootstrap_settings_snapshot"
 private const val BOOTSTRAP_SNAPSHOT_READY_KEY = "ready"
 private const val BOOTSTRAP_BYPASS_PROXY_KEY = "bypass_proxy"
 private const val BOOTSTRAP_YOUTUBE_ENABLED_KEY = "youtube_enabled"
+private const val BOOTSTRAP_PREFER_HIGH_REFRESH_RATE_KEY = "prefer_high_refresh_rate"
 private const val BOOTSTRAP_DOWNLOAD_DIRECTORY_URI_KEY = "download_directory_uri"
 private const val BOOTSTRAP_DOWNLOAD_DIRECTORY_LABEL_KEY = "download_directory_label"
 private const val BOOTSTRAP_DOWNLOAD_FILE_NAME_TEMPLATE_KEY = "download_file_name_template"
@@ -47,6 +48,7 @@ private val bootstrapSnapshotWarmupScope = CoroutineScope(SupervisorJob() + Disp
 data class BootstrapSettingsSnapshot(
     val bypassProxy: Boolean = true,
     val youtubeEnabled: Boolean = true,
+    val preferHighRefreshRate: Boolean = false,
     val downloadDirectoryUri: String? = null,
     val downloadDirectoryLabel: String? = null,
     val downloadFileNameTemplate: String? = null
@@ -109,6 +111,10 @@ internal fun persistBootstrapSettingsSnapshot(
             putBoolean(BOOTSTRAP_SNAPSHOT_READY_KEY, true)
                 .putBoolean(BOOTSTRAP_BYPASS_PROXY_KEY, normalizedSnapshot.bypassProxy)
                 .putBoolean(BOOTSTRAP_YOUTUBE_ENABLED_KEY, normalizedSnapshot.youtubeEnabled)
+                .putBoolean(
+                    BOOTSTRAP_PREFER_HIGH_REFRESH_RATE_KEY,
+                    normalizedSnapshot.preferHighRefreshRate
+                )
                 .putString(
                     BOOTSTRAP_DOWNLOAD_DIRECTORY_URI_KEY,
                     normalizedSnapshot.downloadDirectoryUri
@@ -128,6 +134,7 @@ internal fun Preferences.toBootstrapSettingsSnapshot(): BootstrapSettingsSnapsho
     return BootstrapSettingsSnapshot(
         bypassProxy = this[SettingsKeys.BYPASS_PROXY] ?: true,
         youtubeEnabled = this[SettingsKeys.YOUTUBE_ENABLED] ?: true,
+        preferHighRefreshRate = this[SettingsKeys.PREFER_HIGH_REFRESH_RATE] ?: false,
         downloadDirectoryUri = this[SettingsKeys.DOWNLOAD_DIRECTORY_URI],
         downloadDirectoryLabel = this[SettingsKeys.DOWNLOAD_DIRECTORY_LABEL],
         downloadFileNameTemplate = this[SettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE]
@@ -142,6 +149,10 @@ private fun readCachedBootstrapSettingsSnapshot(context: Context): BootstrapSett
     return BootstrapSettingsSnapshot(
         bypassProxy = prefs.getBoolean(BOOTSTRAP_BYPASS_PROXY_KEY, true),
         youtubeEnabled = prefs.getBoolean(BOOTSTRAP_YOUTUBE_ENABLED_KEY, true),
+        preferHighRefreshRate = prefs.getBoolean(
+            BOOTSTRAP_PREFER_HIGH_REFRESH_RATE_KEY,
+            false
+        ),
         downloadDirectoryUri = prefs.getString(BOOTSTRAP_DOWNLOAD_DIRECTORY_URI_KEY, null),
         downloadDirectoryLabel = prefs.getString(BOOTSTRAP_DOWNLOAD_DIRECTORY_LABEL_KEY, null),
         downloadFileNameTemplate = prefs.getString(BOOTSTRAP_DOWNLOAD_FILE_NAME_TEMPLATE_KEY, null)

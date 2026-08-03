@@ -3833,10 +3833,8 @@ private fun ListenTogetherSettingsSection(
                 Text(
                     if (isInRoom) {
                         stringResource(R.string.settings_listen_together_default_nickname_disabled)
-                    } else if (nickname.isBlank()) {
+                    } else nickname.ifBlank {
                         stringResource(R.string.settings_listen_together_default_nickname_unset)
-                    } else {
-                        nickname
                     }
                 )
             },
