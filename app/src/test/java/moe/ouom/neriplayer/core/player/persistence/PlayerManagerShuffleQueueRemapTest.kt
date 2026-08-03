@@ -3,7 +3,9 @@ package moe.ouom.neriplayer.core.player.persistence
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import moe.ouom.neriplayer.core.player.model.resolvePlayerQueueDisplayIndices
+import moe.ouom.neriplayer.core.player.model.resolvePlayerQueueRestoreOrder
 import moe.ouom.neriplayer.core.player.model.resolvePlayerSequentialShuffleOrder
+import moe.ouom.neriplayer.data.model.SongItem
 
 class PlayerManagerQueueOrderTest {
 
@@ -58,6 +60,46 @@ class PlayerManagerQueueOrderTest {
 
         assertEquals(emptyList<Int>(), order.queueIndices)
         assertEquals(-1, order.currentIndex)
+    }
+
+    @Test
+    fun `shuffle restore returns the original queue order and current song position`() {
+        val first = testSong(id = 1L, name = "First")
+        val second = testSong(id = 2L, name = "Second")
+        val third = testSong(id = 3L, name = "Third")
+        val restoreOrder = resolvePlayerQueueRestoreOrder(
+            restorePlaylist = listOf(first, second, third),
+            currentSong = third,
+            fallbackIndex = 0
+        )
+
+        assertEquals(listOf(first, second, third), restoreOrder?.playlist)
+        assertEquals(2, restoreOrder?.currentIndex)
+    }
+
+    @Test
+    fun `shuffle restore falls back to the captured index when current song is missing`() {
+        val first = testSong(id = 1L, name = "First")
+        val second = testSong(id = 2L, name = "Second")
+        val restoreOrder = resolvePlayerQueueRestoreOrder(
+            restorePlaylist = listOf(first, second),
+            currentSong = testSong(id = 99L, name = "Missing"),
+            fallbackIndex = 1
+        )
+
+        assertEquals(listOf(first, second), restoreOrder?.playlist)
+        assertEquals(1, restoreOrder?.currentIndex)
+    }
+
+    @Test
+    fun `shuffle restore returns null for an empty restore queue`() {
+        val restoreOrder = resolvePlayerQueueRestoreOrder(
+            restorePlaylist = emptyList(),
+            currentSong = testSong(id = 1L, name = "Song"),
+            fallbackIndex = 0
+        )
+
+        assertEquals(null, restoreOrder)
     }
 
     @Test
@@ -173,6 +215,18 @@ class PlayerManagerQueueOrderTest {
         )
 
         assertEquals(-1, index)
+    }
+
+    private fun testSong(id: Long, name: String): SongItem {
+        return SongItem(
+            id = id,
+            name = name,
+            artist = "Artist",
+            album = "Album",
+            albumId = id,
+            durationMs = 180_000L,
+            coverUrl = null
+        )
     }
 
 }

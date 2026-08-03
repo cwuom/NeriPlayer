@@ -29,6 +29,7 @@ import moe.ouom.neriplayer.core.player.metadata.shouldAutoMatchExternalLyrics
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.model.resolvePlayerSequentialShuffleOrder
+import moe.ouom.neriplayer.core.player.model.resolvePlayerQueueRestoreOrder
 import moe.ouom.neriplayer.core.player.policy.failure.PlaybackFailureAdvanceAction
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackStartPlan
@@ -524,7 +525,10 @@ internal fun PlayerManager.playPlaylistImpl(
     currentIndex = startIndex.coerceIn(0, songs.lastIndex)
 
     if (player.shuffleModeEnabled && commandSource != PlaybackCommandSource.REMOTE_SYNC) {
+        rememberShuffleRestoreQueueSnapshot()
         shuffleCurrentQueueForSequentialPlayback()
+    } else {
+        clearShuffleRestoreQueueSnapshot()
     }
 
     playAtIndex(currentIndex, commandSource = commandSource)
@@ -536,6 +540,44 @@ internal fun PlayerManager.playPlaylistImpl(
         positionMs = _playbackPositionMs.value
     )
     scheduleStatePersist()
+}
+
+private fun PlayerManager.rememberShuffleRestoreQueueSnapshot() {
+    if (currentPlaylist.isEmpty()) {
+        clearShuffleRestoreQueueSnapshot()
+        return
+    }
+    shuffleRestorePlaylistReference = currentPlaylist.toList()
+    shuffleRestoreCurrentIndex = currentIndex.coerceIn(currentPlaylist.indices)
+}
+
+private fun PlayerManager.clearShuffleRestoreQueueSnapshot() {
+    shuffleRestorePlaylistReference = null
+    shuffleRestoreCurrentIndex = -1
+}
+
+private fun PlayerManager.restoreShuffleRestoreQueueSnapshot(): Boolean {
+    val currentSong = _currentSongFlow.value
+    val restoreOrder = resolvePlayerQueueRestoreOrder(
+        restorePlaylist = shuffleRestorePlaylistReference,
+        currentSong = currentSong,
+        fallbackIndex = shuffleRestoreCurrentIndex
+    ) ?: run {
+        clearShuffleRestoreQueueSnapshot()
+        return false
+    }
+
+    val restoredPlaylist = restoreOrder.playlist.toMutableList()
+    if (currentSong != null && restoreOrder.currentIndex in restoredPlaylist.indices) {
+        restoredPlaylist[restoreOrder.currentIndex] = currentSong
+    }
+    currentPlaylist = restoredPlaylist
+    currentIndex = restoreOrder.currentIndex
+    _currentQueueFlow.value = currentPlaylist
+    setCurrentSongForPlayback(currentPlaylist.getOrNull(currentIndex))
+    bumpCurrentQueueDisplayRevision()
+    clearShuffleRestoreQueueSnapshot()
+    return true
 }
 
 internal fun PlayerManager.shuffleCurrentQueueForSequentialPlayback(): Boolean {
@@ -1591,14 +1633,37 @@ internal fun PlayerManager.setShuffleImpl(
     ensureInitialized()
     if (!initialized) return
     if (shouldBlockLocalRoomControl(commandSource)) return
-    if (player.shuffleModeEnabled == enabled) return
+    if (player.shuffleModeEnabled == enabled) {
+        if (!enabled) {
+            val hadRestoreSnapshot = shuffleRestorePlaylistReference != null
+            clearShuffleRestoreQueueSnapshot()
+            if (hadRestoreSnapshot) {
+                lastPersistedPlaylistReference = null
+                scheduleStatePersist()
+            }
+        }
+        return
+    }
     NPLogger.d(
         "NERI-PlayerManager",
         "setShuffle: enabled=$enabled, currentIndex=$currentIndex, queueSize=${currentPlaylist.size}"
     )
-    player.shuffleModeEnabled = enabled
     if (enabled) {
-        shuffleCurrentQueueForSequentialPlayback()
+        if (commandSource != PlaybackCommandSource.REMOTE_SYNC) {
+            rememberShuffleRestoreQueueSnapshot()
+            player.shuffleModeEnabled = true
+            shuffleCurrentQueueForSequentialPlayback()
+        } else {
+            clearShuffleRestoreQueueSnapshot()
+            player.shuffleModeEnabled = true
+        }
+    } else {
+        if (commandSource != PlaybackCommandSource.REMOTE_SYNC) {
+            restoreShuffleRestoreQueueSnapshot()
+        } else {
+            clearShuffleRestoreQueueSnapshot()
+        }
+        player.shuffleModeEnabled = false
     }
     scheduleStatePersist()
     _shuffleModeFlow.value = enabled

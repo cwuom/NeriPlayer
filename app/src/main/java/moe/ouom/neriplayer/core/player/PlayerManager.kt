@@ -442,6 +442,10 @@ object PlayerManager {
     internal var currentPlaylist: List<SongItem> = emptyList()
     @Volatile
     internal var currentIndex = -1
+    @Volatile
+    internal var shuffleRestorePlaylistReference: List<SongItem>? = null
+    @Volatile
+    internal var shuffleRestoreCurrentIndex = -1
 
     @Volatile
     internal var consecutivePlayFailures = 0
@@ -1123,6 +1127,8 @@ object PlayerManager {
         currentMediaUrlResolvedAtMs = 0L
         setCurrentSongForPlayback(null)
         _currentQueueFlow.value = emptyList()
+        shuffleRestorePlaylistReference = null
+        shuffleRestoreCurrentIndex = -1
         currentPlaylist = emptyList()
         currentIndex = -1
         consecutivePlayFailures = 0

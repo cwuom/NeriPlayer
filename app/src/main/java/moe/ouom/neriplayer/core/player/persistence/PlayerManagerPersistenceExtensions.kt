@@ -66,6 +66,8 @@ internal data class RestoredPlayerStateSnapshot(
     val currentMediaUrl: String?,
     val repeatMode: Int,
     val shuffleEnabled: Boolean,
+    val shuffleRestorePlaylist: List<SongItem>?,
+    val shuffleRestoreIndex: Int,
     val resumePositionMs: Long,
     val shouldResumePlayback: Boolean,
     val persistedPlaybackState: PersistedPlaybackState,
@@ -113,6 +115,8 @@ private fun PlayerManager.buildPersistedPlaylistState(
     playlistReference: List<SongItem>,
     playbackStateSnapshot: PersistedPlaybackState
 ): PersistedState {
+    val currentSong = _currentSongFlow.value
+    val restorePlaylistReference = shuffleRestorePlaylistReference
     return PersistedState(
         playlist = playlistReference.mapIndexed { index, song ->
             // 只给当前歌曲保留内嵌歌词, 避免大队列切歌时反复序列化整批长文本
@@ -125,7 +129,25 @@ private fun PlayerManager.buildPersistedPlaylistState(
         positionMs = playbackStateSnapshot.positionMs,
         shouldResumePlayback = playbackStateSnapshot.shouldResumePlayback,
         repeatMode = playbackStateSnapshot.repeatMode,
-        shuffleEnabled = playbackStateSnapshot.shuffleEnabled
+        shuffleEnabled = playbackStateSnapshot.shuffleEnabled,
+        shuffleRestorePlaylist = if (playbackStateSnapshot.shuffleEnabled == true) {
+            restorePlaylistReference?.map { song ->
+                song.toPersistedSongItem(
+                    includeLyrics = shouldPersistEmbeddedLyrics(song) &&
+                        currentSong?.sameIdentityAs(song) == true
+                )
+            }
+        } else {
+            null
+        },
+        shuffleRestoreIndex = if (playbackStateSnapshot.shuffleEnabled == true) {
+            restorePlaylistReference
+                ?.indexOfFirst { currentSong?.sameIdentityAs(it) == true }
+                ?.takeIf { it >= 0 }
+                ?: shuffleRestoreCurrentIndex.takeIf { it >= 0 }
+        } else {
+            null
+        }
     )
 }
 
@@ -235,6 +257,16 @@ private fun loadRestoredStateSnapshot(
             currentMediaUrl = currentMediaUrl,
             repeatMode = repeatMode,
             shuffleEnabled = keepPlaybackModeStateEnabled && (data.shuffleEnabled == true),
+            shuffleRestorePlaylist = if (keepPlaybackModeStateEnabled && data.shuffleEnabled == true) {
+                data.shuffleRestorePlaylist?.map { persistedSong -> persistedSong.toSongItem() }
+            } else {
+                null
+            },
+            shuffleRestoreIndex = if (keepPlaybackModeStateEnabled && data.shuffleEnabled == true) {
+                data.shuffleRestoreIndex ?: -1
+            } else {
+                -1
+            },
             resumePositionMs = if (keepLastPlaybackProgressEnabled) {
                 data.positionMs.coerceAtLeast(0L)
             } else {
@@ -282,6 +314,8 @@ internal fun PlayerManager.applyRestoredStateSnapshot(snapshot: RestoredPlayerSt
         _currentPlaybackAudioInfo.value = null
         _playbackPositionMs.value = 0L
         currentMediaUrlResolvedAtMs = 0L
+        shuffleRestorePlaylistReference = null
+        shuffleRestoreCurrentIndex = -1
         restoredResumePositionMs = 0L
         restoredShouldResumePlayback = false
         updateResumePlaybackRequested(false)
@@ -298,6 +332,13 @@ internal fun PlayerManager.applyRestoredStateSnapshot(snapshot: RestoredPlayerSt
 
     player.shuffleModeEnabled = snapshot.shuffleEnabled
     _shuffleModeFlow.value = snapshot.shuffleEnabled
+    if (snapshot.shuffleEnabled) {
+        shuffleRestorePlaylistReference = snapshot.shuffleRestorePlaylist
+        shuffleRestoreCurrentIndex = snapshot.shuffleRestoreIndex
+    } else {
+        shuffleRestorePlaylistReference = null
+        shuffleRestoreCurrentIndex = -1
+    }
 
     restoredResumePositionMs = snapshot.resumePositionMs
     restoredShouldResumePlayback = snapshot.shouldResumePlayback
@@ -461,6 +502,8 @@ internal suspend fun PlayerManager.persistStateImpl(
                     restoredShouldResumePlayback = false
                     stateFile.delete()
                     playbackStateFile.delete()
+                    shuffleRestorePlaylistReference = null
+                    shuffleRestoreCurrentIndex = -1
                     lastPersistedPlaylistReference = null
                     lastPersistedPlaybackState = null
                     lastStatePersistAtMs = SystemClock.elapsedRealtime()
@@ -814,6 +857,8 @@ internal fun PlayerManager.removeQueueItemImpl(index: Int) {
     )
 
     if (currentPlaylist.isEmpty()) {
+        shuffleRestorePlaylistReference = null
+        shuffleRestoreCurrentIndex = -1
         stopPlaybackPreservingQueue(clearMediaUrl = true)
         return
     }

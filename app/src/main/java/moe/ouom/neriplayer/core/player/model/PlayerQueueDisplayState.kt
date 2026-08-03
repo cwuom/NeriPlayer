@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.player.model
 
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.sameIdentityAs
 
 data class PlayerQueueDisplayItem(
     val queueIndex: Int,
@@ -21,6 +22,11 @@ data class PlayerQueueDisplayState(
 
 internal data class PlayerQueueShuffleOrder(
     val queueIndices: List<Int>,
+    val currentIndex: Int
+)
+
+internal data class PlayerQueueRestoreOrder(
+    val playlist: List<SongItem>,
     val currentIndex: Int
 )
 
@@ -68,5 +74,22 @@ internal fun resolvePlayerSequentialShuffleOrder(
     return PlayerQueueShuffleOrder(
         queueIndices = listOf(resolvedCurrentIndex) + remainingIndices,
         currentIndex = 0
+    )
+}
+
+internal fun resolvePlayerQueueRestoreOrder(
+    restorePlaylist: List<SongItem>?,
+    currentSong: SongItem?,
+    fallbackIndex: Int
+): PlayerQueueRestoreOrder? {
+    if (restorePlaylist.isNullOrEmpty()) return null
+    val resolvedCurrentIndex = currentSong?.let { song ->
+        restorePlaylist.indexOfFirst { it.sameIdentityAs(song) }
+            .takeIf { it >= 0 }
+    } ?: fallbackIndex.takeIf { it in restorePlaylist.indices }
+        ?: 0
+    return PlayerQueueRestoreOrder(
+        playlist = restorePlaylist.toList(),
+        currentIndex = resolvedCurrentIndex
     )
 }

@@ -140,7 +140,9 @@ internal data class PersistedState(
     val positionMs: Long = 0L,
     val shouldResumePlayback: Boolean = false,
     val repeatMode: Int? = null,
-    val shuffleEnabled: Boolean? = null
+    val shuffleEnabled: Boolean? = null,
+    val shuffleRestorePlaylist: List<PersistedSongItem>? = null,
+    val shuffleRestoreIndex: Int? = null
 )
 
 internal data class PersistedPlaybackState(

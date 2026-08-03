@@ -170,6 +170,8 @@ internal fun PlayerManager.initializeImpl(
         playbackStateFile = File(app.filesDir, "last_playback_state.json")
         lastPersistedPlaylistReference = null
         lastPersistedPlaybackState = null
+        shuffleRestorePlaylistReference = null
+        shuffleRestoreCurrentIndex = -1
         lastStatePersistAtMs = 0L
         lastLongFormPlaybackProgressPersistAtMs = 0L
         playbackStatsTracker = PlaybackStatsTracker()
@@ -3592,6 +3594,8 @@ internal fun PlayerManager.releaseImpl() {
         currentMediaUrlResolvedAtMs = 0L
         setCurrentSongForPlayback(null)
         _currentQueueFlow.value = emptyList()
+        shuffleRestorePlaylistReference = null
+        shuffleRestoreCurrentIndex = -1
         clearPendingSeekPosition()
         _playbackPositionMs.value = 0L
 
