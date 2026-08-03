@@ -2491,11 +2491,9 @@ fun NowPlayingScreen(
                                 },
                                 enabled = localPlaylistsReady,
                                 modifier = Modifier.size(nowPlayingTopActionButtonSize)
-                                    .sharedBounds(
+                                    .sharedElement(
                                         rememberSharedContentState(key = "btn_favorite"),
-                                        animatedVisibilityScope = this@AnimatedContent,
-                                        enter = EnterTransition.None,
-                                        exit = ExitTransition.None,
+                                        animatedVisibilityScope = this@AnimatedContent
                                     ).zIndex(1f)
                             ) {
                                 Icon(

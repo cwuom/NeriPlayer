@@ -558,11 +558,9 @@ fun LyricsScreen(
                     .then(
                         if (sharedTransitionScope != null && animatedContentScope != null) {
                             with(sharedTransitionScope) {
-                                Modifier.sharedBounds(
+                                Modifier.sharedElement(
                                     rememberSharedContentState(key = "btn_favorite"),
-                                    animatedVisibilityScope = animatedContentScope,
-                                    enter = EnterTransition.None,
-                                    exit = ExitTransition.None,
+                                    animatedVisibilityScope = animatedContentScope
                                 ).zIndex(1f)
                             }
                         } else Modifier
