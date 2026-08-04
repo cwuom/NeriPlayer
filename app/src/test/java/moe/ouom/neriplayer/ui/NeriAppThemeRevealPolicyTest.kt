@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui
 
+import moe.ouom.neriplayer.data.settings.ThemeMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -27,5 +28,55 @@ class NeriAppThemeRevealPolicyTest {
 
         assertEquals(900, dimensions.width)
         assertEquals(600, dimensions.height)
+    }
+
+    @Test
+    fun `active reveal blocks another theme request`() {
+        assertTrue(
+            shouldBlockThemeModeChange(
+                captureInFlight = false,
+                writeInFlight = false,
+                revealActive = true,
+                hasPendingThemePreference = true
+            )
+        )
+    }
+
+    @Test
+    fun `capture and persistence each block another theme request`() {
+        assertTrue(
+            shouldBlockThemeModeChange(
+                captureInFlight = true,
+                writeInFlight = false,
+                revealActive = false,
+                hasPendingThemePreference = false
+            )
+        )
+        assertTrue(
+            shouldBlockThemeModeChange(
+                captureInFlight = false,
+                writeInFlight = true,
+                revealActive = false,
+                hasPendingThemePreference = false
+            )
+        )
+    }
+
+    @Test
+    fun `idle state accepts the next theme request`() {
+        assertTrue(
+            !shouldBlockThemeModeChange(
+                captureInFlight = false,
+                writeInFlight = false,
+                revealActive = false,
+                hasPendingThemePreference = false
+            )
+        )
+    }
+
+    @Test
+    fun `second toggle uses the updated theme state`() {
+        assertEquals(ThemeMode.DARK, resolveThemeToggleTarget(isDark = false))
+        assertEquals(ThemeMode.LIGHT, resolveThemeToggleTarget(isDark = true))
     }
 }

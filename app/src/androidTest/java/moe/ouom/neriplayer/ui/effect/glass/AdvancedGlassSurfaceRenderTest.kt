@@ -17,8 +17,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarState
+import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -37,9 +42,13 @@ import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -52,7 +61,12 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.flow.collect
+import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.ui.screen.tab.ExploreGlassPillSurface
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeModeActionButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsHomeScaffold
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -99,6 +113,24 @@ class AdvancedGlassSurfaceRenderTest {
         )
         assertTrue(source.contains("child.eval(position)"))
         assertNotNull(RuntimeShader(source))
+    }
+
+    @Test
+    fun reducedQualityShaderAssetsCompile() {
+        val assetManager = InstrumentationRegistry.getInstrumentation()
+            .targetContext
+            .assets
+        val shaderSource = AdvancedGlassShaderSource(assetManager)
+        val sources = listOf(
+            shaderSource.loadReducedQuality(),
+            shaderSource.loadUltraLowQuality()
+        )
+
+        sources.forEach { source ->
+            assertTrue(source.contains("uniform float2 sampleAxis;"))
+            assertTrue(source.contains("uniform float sampleSpacing;"))
+            assertNotNull(RuntimeShader(source))
+        }
     }
 
     @Test
@@ -340,6 +372,7 @@ class AdvancedGlassSurfaceRenderTest {
                     shaderSource = shaderSource,
                     sdkInt = Build.VERSION.SDK_INT,
                     radiusPx = radiusPx,
+                    renderProfile = AdvancedGlassRenderProfile.Low,
                     regions = listOf(
                         AdvancedGlassRenderRegion(
                             left = 0f,
@@ -454,6 +487,351 @@ class AdvancedGlassSurfaceRenderTest {
             "square bottom corner was incorrectly rounded or left unblurred: $bottomCorner",
             bottomCorner.red in 0.15f..0.85f
         )
+    }
+
+    @Test
+    fun pillSurfaceKeepsItsFlatTopEdgeInsideTheBlurMask() {
+        composeRule.setContent {
+            val backgroundBackdrop = rememberAdvancedGlassBackdrop()
+            val contentBackdrop = rememberAdvancedGlassBackdrop()
+            MaterialTheme {
+                AdvancedGlassHost(
+                    controller = enabledController().copy(
+                        advancedBlurQuality = AdvancedBlurQuality.High
+                    ),
+                    backgroundBackdrop = backgroundBackdrop,
+                    contentBackdrop = contentBackdrop
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(160.dp, 64.dp)
+                            .testTag(PillMaskRootTag)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .captureAdvancedGlassBackdrop(backgroundBackdrop)
+                        ) {
+                            repeat(16) { stripeIndex ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .background(
+                                            if (stripeIndex % 2 == 0) Color.Black else Color.White
+                                        )
+                                )
+                            }
+                        }
+                        AdvancedGlassSurface(
+                            role = AdvancedGlassRole.ExploreTag,
+                            modifier = Modifier.fillMaxSize(),
+                            shape = RoundedCornerShape(50),
+                            tintColor = Color.Transparent
+                        ) {}
+                    }
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+        val image = composeRule.onNodeWithTag(PillMaskRootTag).captureToImage()
+        val pixels = image.toPixelMap()
+        val sampleY = image.height / 16
+        val pillShoulder = pixels[image.width * 15 / 80, sampleY]
+        val outsidePill = pixels[image.width / 16, sampleY]
+
+        assertTrue(
+            "pill shoulder was not blurred: $pillShoulder",
+            pillShoulder.red in 0.15f..0.85f
+        )
+        assertTrue(
+            "pill mask extended outside its rounded end: $outsidePill",
+            outsidePill.red > 0.95f
+        )
+    }
+
+    @Test
+    fun explorePillMaskExcludesMinimumTouchTargetPadding() {
+        lateinit var regionRegistry: AdvancedGlassRegionRegistry
+        composeRule.setContent {
+            val backgroundBackdrop = rememberAdvancedGlassBackdrop()
+            val contentBackdrop = rememberAdvancedGlassBackdrop()
+            MaterialTheme {
+                AdvancedGlassHost(
+                    controller = enabledController().copy(
+                        advancedBlurQuality = AdvancedBlurQuality.High
+                    ),
+                    backgroundBackdrop = backgroundBackdrop,
+                    contentBackdrop = contentBackdrop
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(160.dp, 80.dp)
+                            .testTag(ExplorePillTouchTargetRootTag)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .captureAdvancedGlassBackdrop(backgroundBackdrop)
+                        ) {
+                            repeat(16) { stripeIndex ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .background(
+                                            if (stripeIndex % 2 == 0) {
+                                                Color.Black
+                                            } else {
+                                                Color.White
+                                            }
+                                        )
+                                )
+                            }
+                        }
+                        regionRegistry = requireNotNull(LocalAdvancedGlassBackdrops.current)
+                            .regionRegistry
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            ExploreGlassPillSurface(
+                                fallbackColor = Color.Transparent,
+                                tintColor = Color.Transparent,
+                                contentColor = Color.Transparent,
+                                onClick = {}
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(96.dp)
+                                        .height(32.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.runOnIdle {
+            val visualPillRegion = regionRegistry.regions.single { region ->
+                region.role == AdvancedGlassRole.ExploreTag
+            }
+            val expectedVisualHeight = with(composeRule.density) { 32.dp.toPx() }
+            assertEquals(
+                "explore blur mask registered the 48dp touch target instead of the visible pill",
+                expectedVisualHeight,
+                visualPillRegion.boundsInWindow.height,
+                1f
+            )
+            val expectedCornerRadius = expectedVisualHeight / 2f
+            listOf(
+                visualPillRegion.cornerRadiiPx.topLeft,
+                visualPillRegion.cornerRadiiPx.topRight,
+                visualPillRegion.cornerRadiiPx.bottomRight,
+                visualPillRegion.cornerRadiiPx.bottomLeft
+            ).forEach { cornerRadius ->
+                assertEquals(
+                    "explore blur mask did not keep the visual pill corner radius",
+                    expectedCornerRadius,
+                    cornerRadius,
+                    1f
+                )
+            }
+        }
+
+        val image = composeRule.onNodeWithTag(ExplorePillTouchTargetRootTag).captureToImage()
+        val pixels = image.toPixelMap()
+        val centerX = image.width / 2 - 2
+        val centerY = image.height / 2
+        val touchPaddingY = centerY - with(composeRule.density) { 20.dp.roundToPx() }
+        val blurredPillPixel = pixels[centerX, centerY]
+        val sharpTouchPaddingPixel = pixels[centerX, touchPaddingY]
+
+        assertTrue(
+            "explore pill center was not blurred: $blurredPillPixel",
+            blurredPillPixel.red in 0.15f..0.85f
+        )
+        assertTrue(
+            "explore touch-target padding was incorrectly blurred: $sharpTouchPaddingPixel",
+            sharpTouchPaddingPixel.red < 0.05f || sharpTouchPaddingPixel.red > 0.95f
+        )
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Test
+    fun settingsTopAppBarRegistersOnlyOneThemeToggleMask() {
+        lateinit var regionRegistry: AdvancedGlassRegionRegistry
+        lateinit var topAppBarState: TopAppBarState
+        composeRule.setContent {
+            val backgroundBackdrop = rememberAdvancedGlassBackdrop()
+            val contentBackdrop = rememberAdvancedGlassBackdrop()
+            MaterialTheme {
+                AdvancedGlassHost(
+                    controller = enabledController().copy(
+                        advancedBlurQuality = AdvancedBlurQuality.High
+                    ),
+                    backgroundBackdrop = backgroundBackdrop,
+                    contentBackdrop = contentBackdrop
+                ) {
+                    Box(modifier = Modifier.size(360.dp, 280.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .captureAdvancedGlassBackdrop(backgroundBackdrop)
+                                .background(Color.White)
+                        )
+                        regionRegistry = requireNotNull(LocalAdvancedGlassBackdrops.current)
+                            .regionRegistry
+                        topAppBarState = rememberTopAppBarState()
+                        MiuixSettingsHomeScaffold(
+                            listState = rememberLazyListState(),
+                            topAppBarState = topAppBarState,
+                            title = {
+                                ThemeModeActionButton(
+                                    isDarkTheme = false,
+                                    onToggleRequest = { _, _ -> }
+                                )
+                            }
+                        ) {}
+                    }
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.runOnIdle {
+            assertTrue(
+                "settings top app bar did not expose a collapsed state",
+                topAppBarState.heightOffsetLimit < 0f
+            )
+        }
+        listOf(0f, 0.25f, 0.5f, 0.75f, 1f).forEach { collapsedFraction ->
+            composeRule.runOnIdle {
+                topAppBarState.heightOffset =
+                    topAppBarState.heightOffsetLimit * collapsedFraction
+            }
+            composeRule.waitForIdle()
+            composeRule.runOnIdle {
+                assertEquals(
+                    "settings top app bar registered duplicate theme toggle masks at " +
+                        "collapsed fraction $collapsedFraction",
+                    1,
+                    regionRegistry.regions.count { region ->
+                        region.role == AdvancedGlassRole.ThemeModeToggle
+                    }
+                )
+            }
+        }
+    }
+
+    @Test
+    fun themeToggleClickabilityIsIndependentFromBackdropRegistration() {
+        val darkThemeDescription = InstrumentationRegistry.getInstrumentation()
+            .targetContext
+            .getString(R.string.settings_theme_toggle_dark)
+        var toggleRequests = 0
+        lateinit var titleSlotVisible: MutableState<Boolean>
+
+        composeRule.setContent {
+            titleSlotVisible = remember { mutableStateOf(false) }
+            CompositionLocalProvider(
+                LocalAdvancedGlassBackdropRegistrationEnabled provides titleSlotVisible.value
+            ) {
+                MaterialTheme {
+                    ThemeModeActionButton(
+                        isDarkTheme = false,
+                        onToggleRequest = { _, _ -> toggleRequests += 1 }
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithContentDescription(darkThemeDescription)
+            .assertIsEnabled()
+            .performClick()
+
+        composeRule.runOnIdle {
+            titleSlotVisible.value = true
+        }
+
+        composeRule.onNodeWithContentDescription(darkThemeDescription)
+            .assertIsEnabled()
+            .performClick()
+        composeRule.runOnIdle {
+            assertEquals(
+                "backdrop registration incorrectly affected theme toggle clickability",
+                2,
+                toggleRequests
+            )
+        }
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Test
+    fun settingsTopAppBarThemeToggleHandlesConsecutiveClicks() {
+        val darkThemeDescription = InstrumentationRegistry.getInstrumentation()
+            .targetContext
+            .getString(R.string.settings_theme_toggle_dark)
+        val lightThemeDescription = InstrumentationRegistry.getInstrumentation()
+            .targetContext
+            .getString(R.string.settings_theme_toggle_light)
+        var toggleRequests = 0
+        lateinit var isDarkTheme: MutableState<Boolean>
+
+        composeRule.setContent {
+            isDarkTheme = remember { mutableStateOf(false) }
+            val backgroundBackdrop = rememberAdvancedGlassBackdrop()
+            val contentBackdrop = rememberAdvancedGlassBackdrop()
+            MaterialTheme {
+                AdvancedGlassHost(
+                    controller = enabledController().copy(
+                        advancedBlurQuality = AdvancedBlurQuality.High
+                    ),
+                    backgroundBackdrop = backgroundBackdrop,
+                    contentBackdrop = contentBackdrop
+                ) {
+                    Box(modifier = Modifier.size(360.dp, 280.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .captureAdvancedGlassBackdrop(backgroundBackdrop)
+                                .background(Color.White)
+                        )
+                        MiuixSettingsHomeScaffold(
+                            listState = rememberLazyListState(),
+                            topAppBarState = rememberTopAppBarState(),
+                            title = {
+                                ThemeModeActionButton(
+                                    isDarkTheme = isDarkTheme.value,
+                                    onToggleRequest = { _, _ ->
+                                        toggleRequests += 1
+                                        isDarkTheme.value = !isDarkTheme.value
+                                    }
+                                )
+                            }
+                        ) {}
+                    }
+                }
+            }
+        }
+
+        composeRule.onNodeWithContentDescription(darkThemeDescription)
+            .assertIsEnabled()
+            .performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription(lightThemeDescription)
+            .assertIsEnabled()
+            .performClick()
+        composeRule.runOnIdle {
+            assertEquals(
+                "settings title theme toggle did not accept a second click",
+                2,
+                toggleRequests
+            )
+        }
     }
 
     @Test
@@ -1219,7 +1597,9 @@ class AdvancedGlassSurfaceRenderTest {
             capturedBackdrop = backgroundBackdrop
             MaterialTheme {
                 AdvancedGlassHost(
-                    controller = enabledController(),
+                    controller = enabledController().copy(
+                        advancedBlurQuality = AdvancedBlurQuality.High
+                    ),
                     backgroundBackdrop = backgroundBackdrop,
                     contentBackdrop = contentBackdrop
                 ) {
@@ -1247,7 +1627,7 @@ class AdvancedGlassSurfaceRenderTest {
                             )
                         }
                         AdvancedGlassSurface(
-                            role = AdvancedGlassRole.SettingsSection,
+                            role = AdvancedGlassRole.ThemeModeToggle,
                             modifier = Modifier
                                 .offset {
                                     IntOffset(horizontalOffset.value.dp.roundToPx(), 0)
@@ -1290,6 +1670,78 @@ class AdvancedGlassSurfaceRenderTest {
         assertTrue(
             "moved runtime mask left stale blur at its old position: $movedPixel",
             movedPixel.red < 0.1f
+        )
+    }
+
+    @Test
+    fun backdropOffsetKeepsTheMaskAtTheSurfaceWindowPosition() {
+        lateinit var capturedBackdrop: AdvancedGlassBackdrop
+        composeRule.setContent {
+            val backgroundBackdrop = rememberAdvancedGlassBackdrop()
+            val contentBackdrop = rememberAdvancedGlassBackdrop()
+            capturedBackdrop = backgroundBackdrop
+            MaterialTheme {
+                AdvancedGlassHost(
+                    controller = enabledController(),
+                    backgroundBackdrop = backgroundBackdrop,
+                    contentBackdrop = contentBackdrop
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(200.dp, 180.dp)
+                            .testTag(OffsetBackdropRootTag)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .offset(y = 40.dp)
+                                .size(200.dp, 120.dp)
+                                .captureAdvancedGlassBackdrop(backgroundBackdrop)
+                        ) {
+                            Box(
+                                Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .background(Color.Black)
+                            )
+                            Box(
+                                Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .background(Color.White)
+                            )
+                        }
+                        AdvancedGlassSurface(
+                            role = AdvancedGlassRole.SettingsSection,
+                            modifier = Modifier
+                                .offset(y = 60.dp)
+                                .size(160.dp, 60.dp)
+                                .align(Alignment.TopCenter),
+                            tintColor = Color.Transparent
+                        ) {}
+                    }
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.runOnIdle {
+            assertNotNull("offset backdrop never received a blur effect", capturedBackdrop.renderEffect)
+        }
+        val image = composeRule.onNodeWithTag(OffsetBackdropRootTag).captureToImage()
+        val boundaryX = image.width / 2 - 6
+        val targetY = image.height / 2
+        val staleY = image.height / 2 - with(composeRule.density) { 40.dp.roundToPx() }
+        val pixels = image.toPixelMap()
+        val targetPixel = pixels[boundaryX, targetY]
+        val stalePixel = pixels[boundaryX, staleY]
+
+        assertTrue(
+            "offset backdrop did not blur the visible surface: $targetPixel",
+            targetPixel.red in 0.15f..0.85f
+        )
+        assertTrue(
+            "offset backdrop left blur above the visible surface: $stalePixel",
+            stalePixel.red < 0.1f
         )
     }
 
@@ -1471,11 +1923,14 @@ class AdvancedGlassSurfaceRenderTest {
         const val BlurRootTag = "blur_root"
         const val DirectSelectiveBlurTag = "direct_selective_blur"
         const val TopOnlyCornersTag = "top_only_corners"
+        const val PillMaskRootTag = "pill_mask_root"
+        const val ExplorePillTouchTargetRootTag = "explore_pill_touch_target_root"
         const val AdjustableBlurRootTag = "adjustable_blur_root"
         const val SceneHandoffRootTag = "scene_handoff_root"
         const val NestedSceneHandoffRootTag = "nested_scene_handoff_root"
         const val InterruptedSceneHandoffRootTag = "interrupted_scene_handoff_root"
         const val MovingMaskRootTag = "moving_mask_root"
+        const val OffsetBackdropRootTag = "offset_backdrop_root"
         const val OwnedSceneMaskRootTag = "owned_scene_mask_root"
         const val NavHostSceneHandoffRootTag = "nav_host_scene_handoff_root"
         const val FirstTabRoute = "first_tab"

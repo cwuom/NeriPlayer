@@ -475,7 +475,8 @@ class SettingsPageTest {
         assertEquals("setting:playback_fade_in", targetId("playback_fade_out_duration_ms"))
         assertEquals("setting:playback_crossfade_next", targetId("playback_crossfade_in_duration_ms"))
         assertEquals("setting:playback_crossfade_next", targetId("playback_crossfade_out_duration_ms"))
-        assertEquals("setting:enhanced_advanced_blur_enabled", targetId("enhanced_advanced_blur_radius_dp"))
+        assertEquals("setting:advanced_blur_enabled", targetId("enhanced_advanced_blur_radius_dp"))
+        assertEquals("setting:advanced_blur_enabled", targetId("advanced_blur_quality"))
         assertEquals("setting:nowplaying_cover_blur_background_enabled", targetId("nowplaying_cover_blur_amount"))
         assertEquals("setting:lyric_blur_enabled", targetId("lyric_blur_amount"))
         assertEquals(

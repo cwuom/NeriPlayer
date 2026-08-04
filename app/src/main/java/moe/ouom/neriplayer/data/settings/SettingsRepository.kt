@@ -64,6 +64,7 @@ class SettingsRepository(private val context: Context) {
     private val autoSettingsRepository = AutoSettingsRepository(context)
     private val autoSettingSpecRepository = AutoSettingSpecRepository(context)
     private val usbExclusiveSettingsStore = UsbExclusiveSettingsStore(context)
+    private val isDimensityBuild = isCurrentBuildDimensity()
 
     private fun <T> dataStoreSettingFlow(transform: (Preferences) -> T): Flow<T> {
         return context.dataStore.data
@@ -298,6 +299,14 @@ class SettingsRepository(private val context: Context) {
 
     val enhancedAdvancedBlurRadiusDpFlow: Flow<Float> =
         autoSettingsRepository.enhancedAdvancedBlurRadiusDpFlow
+
+    val advancedBlurQualityFlow: Flow<AdvancedBlurQuality> =
+        dataStoreSettingFlow { preferences ->
+            AdvancedBlurQualityPreference.resolve(
+                value = preferences[SettingsKeys.ADVANCED_BLUR_QUALITY],
+                isDimensityDevice = isDimensityBuild
+            )
+        }
 
     val nowPlayingAudioReactiveEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.nowPlayingAudioReactiveEnabledFlow
@@ -846,6 +855,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setEnhancedAdvancedBlurRadiusDp(radiusDp: Float) {
         autoSettingsRepository.setEnhancedAdvancedBlurRadiusDp(radiusDp)
+    }
+
+    suspend fun setAdvancedBlurQuality(quality: AdvancedBlurQuality) {
+        autoSettingsRepository.setAdvancedBlurQuality(quality.storageValue)
     }
 
     suspend fun setNowPlayingAudioReactiveEnabled(enabled: Boolean) {

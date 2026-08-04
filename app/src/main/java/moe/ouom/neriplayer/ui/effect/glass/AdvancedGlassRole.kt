@@ -9,5 +9,7 @@ internal enum class AdvancedGlassRole {
     SettingsSection,
     PlaylistSheet,
     SemanticCard,
+    ExploreTag,
+    ThemeModeToggle,
     InlineControl
 }

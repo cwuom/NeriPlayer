@@ -18,6 +18,7 @@ import moe.ouom.neriplayer.ksp.annotations.autoFloatSetting
 import moe.ouom.neriplayer.ksp.annotations.autoIntSetting
 import moe.ouom.neriplayer.ksp.annotations.autoSetting
 import moe.ouom.neriplayer.ksp.annotations.autoSettingsSection
+import moe.ouom.neriplayer.ksp.annotations.autoStringSetting
 import moe.ouom.neriplayer.ksp.annotations.autoSwitchSetting
 
 /*
@@ -823,6 +824,22 @@ object AutoSettingsSchema {
             key = "enhanced_advanced_blur_radius_dp",
             defaultValue = DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP,
             titleRes = R.string.settings_enhanced_advanced_blur_radius
+        )
+
+        @AutoSetting(
+            key = "advanced_blur_quality",
+            type = SettingValueType.String,
+            defaultString = DEFAULT_ADVANCED_BLUR_QUALITY,
+            order = 28,
+            ui = SettingUiType.Custom,
+            normalizer = AdvancedBlurQualityPreference::class
+        )
+        val advancedBlurQuality = autoStringSetting(
+            key = "advanced_blur_quality",
+            defaultValue = DEFAULT_ADVANCED_BLUR_QUALITY,
+            titleRes = R.string.settings_advanced_blur_quality,
+            descriptionRes = R.string.settings_advanced_blur_quality_desc,
+            icon = AutoSettingIcon.Tune
         )
 
         @AutoSetting(

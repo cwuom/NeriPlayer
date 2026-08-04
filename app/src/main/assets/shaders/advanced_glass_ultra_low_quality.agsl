@@ -1,0 +1,12 @@
+uniform shader child;
+uniform float2 sampleAxis;
+uniform float sampleSpacing;
+
+half4 main(float2 position) {
+    float2 offset = sampleAxis * sampleSpacing;
+    half4 result = child.eval(position) * half(0.5);
+    result += (
+        child.eval(position + offset) + child.eval(position - offset)
+    ) * half(0.25);
+    return result;
+}

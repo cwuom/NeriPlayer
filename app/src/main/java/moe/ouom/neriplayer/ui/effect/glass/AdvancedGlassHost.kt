@@ -48,6 +48,7 @@ internal val LocalAdvancedGlassActiveNavigationOwners =
 internal val LocalAdvancedGlassNavigationOwner =
     staticCompositionLocalOf<Any?> { null }
 internal val LocalAdvancedGlassSceneActive = staticCompositionLocalOf { true }
+internal val LocalAdvancedGlassBackdropRegistrationEnabled = staticCompositionLocalOf { true }
 
 @Composable
 internal fun AdvancedGlassScene(
@@ -131,14 +132,8 @@ internal fun AdvancedGlassHost(
     }
     var sessionHealthy by remember { mutableStateOf(true) }
     val sessionController = if (sessionHealthy) controller else controller.afterBackendFailure()
-    val blurRadiusDp = if (sessionController.isEnabled) {
-        sessionController.normalizedEnhancedBlurRadiusDp
-    } else {
-        advancedGlassTokens(
-            role = AdvancedGlassRole.BottomNavigation,
-            isDarkTheme = false
-        ).blurRadiusDp
-    }
+    val renderProfile = sessionController.advancedBlurQuality.renderProfile()
+    val blurRadiusDp = sessionController.normalizedBlurAmountDp
     val blurRadiusPx = with(density) { blurRadiusDp.dp.toPx() }
     val backgroundRenderEffectSession = remember(
         sessionController.sdkInt,
@@ -164,12 +159,14 @@ internal fun AdvancedGlassHost(
     val backgroundEffectResult = remember(
         sessionController.isBaseBlurEnabled,
         blurRadiusPx,
+        renderProfile,
         renderRegionState.background,
         backgroundRenderEffectSession
     ) {
         buildBackdropEffect(
             controller = sessionController,
             radiusPx = blurRadiusPx,
+            renderProfile = renderProfile,
             renderRegions = renderRegionState.background,
             renderEffectSession = backgroundRenderEffectSession
         )
@@ -177,12 +174,14 @@ internal fun AdvancedGlassHost(
     val contentEffectResult = remember(
         sessionController.isBaseBlurEnabled,
         blurRadiusPx,
+        renderProfile,
         renderRegionState.content,
         contentRenderEffectSession
     ) {
         buildBackdropEffect(
             controller = sessionController,
             radiusPx = blurRadiusPx,
+            renderProfile = renderProfile,
             renderRegions = renderRegionState.content,
             renderEffectSession = contentRenderEffectSession
         )
@@ -271,6 +270,7 @@ private fun ApplyBackdropEffect(
 private fun buildBackdropEffect(
     controller: AdvancedGlassController,
     radiusPx: Float,
+    renderProfile: AdvancedGlassRenderProfile,
     renderRegions: List<AdvancedGlassRenderRegion>,
     renderEffectSession: AdvancedGlassRenderEffectSession
 ): Result<androidx.compose.ui.graphics.RenderEffect?> {
@@ -282,6 +282,7 @@ private fun buildBackdropEffect(
     return runCatching {
         renderEffectSession.update(
             radiusPx = radiusPx,
+            renderProfile = renderProfile,
             regions = renderRegions
         )
     }

@@ -30,10 +30,12 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -62,18 +64,33 @@ fun ThemeRevealOverlay(
     onFinished: () -> Unit
 ) {
     var containerOffsetInWindow by remember { mutableStateOf(Offset.Zero) }
-    val progress = remember(snapshot, fallbackColor, originInWindow) {
+    var hasFinished by remember { mutableStateOf(false) }
+    val currentOnFinished by rememberUpdatedState(onFinished)
+    val progress = remember {
         Animatable(0f)
     }
+    val finishReveal = {
+        if (!hasFinished) {
+            hasFinished = true
+            currentOnFinished()
+        }
+    }
 
-    LaunchedEffect(snapshot, fallbackColor, originInWindow) {
-        progress.stop()
-        progress.snapTo(0f)
-        progress.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(durationMillis = durationMillis, easing = FastOutSlowInEasing)
-        )
-        onFinished()
+    DisposableEffect(Unit) {
+        onDispose(finishReveal)
+    }
+
+    LaunchedEffect(Unit) {
+        try {
+            progress.stop()
+            progress.snapTo(0f)
+            progress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = durationMillis, easing = FastOutSlowInEasing)
+            )
+        } finally {
+            finishReveal()
+        }
     }
 
     Box(

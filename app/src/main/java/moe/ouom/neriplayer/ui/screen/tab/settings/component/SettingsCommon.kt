@@ -79,6 +79,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.toColorInt
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.settingsHighlightTarget
 
@@ -246,14 +248,24 @@ internal fun ThemeModeActionButton(
         label = "theme_toggle_container_color"
     )
 
-    Box(
-        modifier = Modifier
-            .size(36.dp)
-            .clip(CircleShape)
-            .background(containerColor)
+    AdvancedGlassSurface(
+        role = AdvancedGlassRole.ThemeModeToggle,
+        modifier = Modifier.size(36.dp),
+        shape = CircleShape,
+        fallbackColor = containerColor,
+        tintColor = if (isDarkTheme) {
+            MaterialTheme.colorScheme.secondaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        }
     ) {
         HapticIconButton(
-            onClick = { centerInWindow?.let { onToggleRequest(it, revealStartRadiusPx) } },
+            onClick = {
+                onToggleRequest(
+                    centerInWindow ?: Offset.Zero,
+                    revealStartRadiusPx
+                )
+            },
             modifier = Modifier
                 .fillMaxSize()
                 .onGloballyPositioned { coordinates ->

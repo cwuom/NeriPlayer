@@ -46,11 +46,12 @@ internal fun AdvancedGlassSurface(
     val navigationOwner = LocalAdvancedGlassNavigationOwner.current ?: lifecycleOwner
     val activeNavigationOwners = LocalAdvancedGlassActiveNavigationOwners.current
     val sceneActive = LocalAdvancedGlassSceneActive.current
+    val backdropRegistrationEnabled = LocalAdvancedGlassBackdropRegistrationEnabled.current
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
     val isDarkTheme = isSystemInDarkTheme()
-    val enhancedBlurRadiusDp = if (controller.isEnabled) {
-        controller.normalizedEnhancedBlurRadiusDp
+    val enhancedBlurRadiusDp = if (controller.isBaseBlurEnabled) {
+        controller.normalizedBlurAmountDp
     } else {
         null
     }
@@ -69,7 +70,7 @@ internal fun AdvancedGlassSurface(
     val canRenderGlass = enabled && sceneActive && backdropsReady &&
         canSampleAdvancedGlassBackdrop(controller, glassDepth, role)
     val glassEnabled = canRenderGlass && belongsToActiveNavigationScreen
-    val registersBackdrop = canRenderGlass
+    val registersBackdrop = canRenderGlass && backdropRegistrationEnabled
     val regionKey = remember { Any() }
 
     DisposableEffect(availableBackdrops, regionKey, registersBackdrop) {
@@ -218,5 +219,7 @@ private fun advancedGlassRoleColor(role: AdvancedGlassRole): Color = when (role)
     AdvancedGlassRole.SettingsHeader -> MaterialTheme.colorScheme.primaryContainer
     AdvancedGlassRole.PlaylistSheet,
     AdvancedGlassRole.SemanticCard -> MaterialTheme.colorScheme.surfaceContainerHigh
+    AdvancedGlassRole.ExploreTag -> MaterialTheme.colorScheme.surface
+    AdvancedGlassRole.ThemeModeToggle -> MaterialTheme.colorScheme.surfaceVariant
     AdvancedGlassRole.InlineControl -> Color.Transparent
 }

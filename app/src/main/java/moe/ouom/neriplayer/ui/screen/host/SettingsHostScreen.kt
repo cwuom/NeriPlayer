@@ -45,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.CancellationException
+import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.settings.LyricFontScales
@@ -147,6 +148,8 @@ fun SettingsHostScreen(
     onEnhancedAdvancedBlurEnabledChange: (Boolean) -> Unit,
     enhancedAdvancedBlurRadiusDp: Float,
     onEnhancedAdvancedBlurRadiusDpChange: (Float) -> Unit,
+    advancedBlurQuality: AdvancedBlurQuality,
+    onAdvancedBlurQualityChange: (AdvancedBlurQuality) -> Unit,
     nowPlayingAudioReactiveEnabled: Boolean,
     onNowPlayingAudioReactiveEnabledChange: (Boolean) -> Unit,
     nowPlayingDynamicBackgroundEnabled: Boolean,
@@ -422,6 +425,8 @@ fun SettingsHostScreen(
                             enhancedAdvancedBlurRadiusDp = enhancedAdvancedBlurRadiusDp,
                             onEnhancedAdvancedBlurRadiusDpChange =
                                 onEnhancedAdvancedBlurRadiusDpChange,
+                            advancedBlurQuality = advancedBlurQuality,
+                            onAdvancedBlurQualityChange = onAdvancedBlurQualityChange,
                             nowPlayingAudioReactiveEnabled = nowPlayingAudioReactiveEnabled,
                             onNowPlayingAudioReactiveEnabledChange = onNowPlayingAudioReactiveEnabledChange,
                             nowPlayingDynamicBackgroundEnabled = nowPlayingDynamicBackgroundEnabled,

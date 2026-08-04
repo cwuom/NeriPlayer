@@ -143,7 +143,8 @@ internal fun AutoSettingInfo.searchTargetId(): String {
         "playback_fade_out_duration_ms" -> "playback_fade_in"
         "playback_crossfade_in_duration_ms",
         "playback_crossfade_out_duration_ms" -> "playback_crossfade_next"
-        "enhanced_advanced_blur_radius_dp" -> "enhanced_advanced_blur_enabled"
+        "enhanced_advanced_blur_radius_dp" -> "advanced_blur_enabled"
+        "advanced_blur_quality" -> "advanced_blur_enabled"
         "nowplaying_cover_blur_amount",
         "nowplaying_cover_blur_darken" -> "nowplaying_cover_blur_background_enabled"
         "lyric_blur_amount" -> "lyric_blur_enabled"
@@ -264,7 +265,8 @@ private fun motionCardIndex(targetId: String): Int {
     return when (targetId) {
         "setting:advanced_blur_enabled",
         "setting:enhanced_advanced_blur_enabled",
-        "setting:enhanced_advanced_blur_radius_dp" -> 1
+        "setting:enhanced_advanced_blur_radius_dp",
+        "setting:advanced_blur_quality" -> 1
         "setting:nowplaying_cover_blur_background_enabled",
         "setting:nowplaying_cover_blur_amount",
         "setting:nowplaying_cover_blur_darken",
@@ -827,6 +829,7 @@ private val SettingSearchAliases = mapOf(
     "advanced_blur_enabled" to listOf("glass", "haze", "blur", "gaoji mohu"),
     "enhanced_advanced_blur_enabled" to listOf("glass", "background sampling", "jinjie mohu"),
     "enhanced_advanced_blur_radius_dp" to listOf("radius", "mohuqiangdu"),
+    "advanced_blur_quality" to listOf("blur quality", "sampling", "mohu zhiliang"),
     "nowplaying_audio_reactive_enabled" to listOf("audio reactive", "visualizer", "yinpin fanying"),
     "nowplaying_dynamic_background_enabled" to listOf("dynamic background", "album color", "dongtai beijing"),
     "nowplaying_cover_blur_background_enabled" to listOf("cover blur", "fengmian mohu"),

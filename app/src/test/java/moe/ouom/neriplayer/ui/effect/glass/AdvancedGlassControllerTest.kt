@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.effect.glass
 
 import androidx.compose.ui.graphics.CompositingStrategy
+import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -136,6 +137,97 @@ class AdvancedGlassControllerTest {
     }
 
     @Test
+    fun blurQualityKeepsDefaultCoverageUntilHighAddsExtraComponents() {
+        val controller = enabledController()
+
+        val defaultRoles = listOf(
+            AdvancedGlassRole.ScreenTopTab,
+            AdvancedGlassRole.SettingsHeader,
+            AdvancedGlassRole.SemanticCard
+        )
+        listOf(
+            AdvancedBlurQuality.UltraLow,
+            AdvancedBlurQuality.Low,
+            AdvancedBlurQuality.Default
+        ).forEach { quality ->
+            defaultRoles.forEach { role ->
+                assertTrue(
+                    "quality=$quality role=$role",
+                    canSampleAdvancedGlassBackdrop(
+                        controller.copy(advancedBlurQuality = quality),
+                        glassDepth = 0,
+                        role = role
+                    )
+                )
+            }
+            assertFalse(
+                "quality=$quality",
+                canSampleAdvancedGlassBackdrop(
+                    controller.copy(advancedBlurQuality = quality),
+                    glassDepth = 0,
+                    role = AdvancedGlassRole.ExploreTag
+                )
+            )
+            assertFalse(
+                "quality=$quality",
+                canSampleAdvancedGlassBackdrop(
+                    controller.copy(advancedBlurQuality = quality),
+                    glassDepth = 0,
+                    role = AdvancedGlassRole.ThemeModeToggle
+                )
+            )
+        }
+        assertTrue(
+            canSampleAdvancedGlassBackdrop(
+                controller.copy(advancedBlurQuality = AdvancedBlurQuality.High),
+                glassDepth = 0,
+                role = AdvancedGlassRole.ExploreTag
+            )
+        )
+        assertTrue(
+            canSampleAdvancedGlassBackdrop(
+                controller.copy(advancedBlurQuality = AdvancedBlurQuality.High),
+                glassDepth = 0,
+                role = AdvancedGlassRole.ThemeModeToggle
+            )
+        )
+    }
+
+    @Test
+    fun blurQualityProfileAppliesToBaseBlurWithoutEnhancedBlur() {
+        val controller = enabledController().copy(
+            enhancedAdvancedBlurEnabled = false,
+            advancedBlurQuality = AdvancedBlurQuality.Low
+        )
+
+        assertEquals(
+            AdvancedGlassBlurAlgorithm.SeparableGaussian,
+            controller.advancedBlurQuality.renderProfile().algorithm
+        )
+        assertTrue(
+            canSampleAdvancedGlassBackdrop(
+                controller,
+                glassDepth = 0,
+                role = AdvancedGlassRole.MiniPlayer
+            )
+        )
+        assertTrue(
+            canSampleAdvancedGlassBackdrop(
+                controller,
+                glassDepth = 0,
+                role = AdvancedGlassRole.BottomNavigation
+            )
+        )
+        assertFalse(
+            canSampleAdvancedGlassBackdrop(
+                controller,
+                glassDepth = 0,
+                role = AdvancedGlassRole.SettingsSection
+            )
+        )
+    }
+
+    @Test
     fun rolesResolveStableOpticalTokens() {
         val bottom = advancedGlassTokens(AdvancedGlassRole.BottomNavigation, isDarkTheme = false)
         val darkBottom = advancedGlassTokens(
@@ -170,19 +262,19 @@ class AdvancedGlassControllerTest {
     @Test
     fun settingVisibilityRequiresSupportedApiAndEnabledParent() {
         assertFalse(
-            shouldShowEnhancedAdvancedBlurSetting(
+            shouldShowAdvancedBlurSettings(
                 sdkInt = ADVANCED_GLASS_MIN_SDK - 1,
                 advancedBlurEnabled = true
             )
         )
         assertFalse(
-            shouldShowEnhancedAdvancedBlurSetting(
+            shouldShowAdvancedBlurSettings(
                 sdkInt = ADVANCED_GLASS_MIN_SDK,
                 advancedBlurEnabled = false
             )
         )
         assertTrue(
-            shouldShowEnhancedAdvancedBlurSetting(
+            shouldShowAdvancedBlurSettings(
                 sdkInt = ADVANCED_GLASS_MIN_SDK,
                 advancedBlurEnabled = true
             )

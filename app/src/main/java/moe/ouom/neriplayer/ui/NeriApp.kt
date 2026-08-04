@@ -169,6 +169,8 @@ import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.settings.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
+import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
+import moe.ouom.neriplayer.data.settings.AdvancedBlurQualityPreference
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.settings.LyricFontScales
@@ -176,6 +178,7 @@ import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.ThemeMode
 import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.isCurrentBuildDimensity
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotCached
 import moe.ouom.neriplayer.data.storage.clearExtraStorageCaches
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
@@ -984,6 +987,8 @@ private fun UsbExclusiveBackgroundPermissionDialog(
 
 private const val THEME_REVEAL_SNAPSHOT_MAX_DIMENSION_PX = 1080
 private const val THEME_REVEAL_STABLE_DRAW_PASSES = 1
+private const val THEME_REVEAL_DURATION_MILLIS = 720
+private const val THEME_REVEAL_WATCHDOG_DELAY_MILLIS = 900L
 private val THEME_REVEAL_SNAPSHOT_CONFIG = Bitmap.Config.RGB_565
 
 internal data class ThemeRevealSnapshotDimensions(
@@ -1006,6 +1011,16 @@ internal fun resolveThemeRevealSnapshotDimensions(
         height = (safeHeight / downsampleRatio).roundToInt().coerceAtLeast(1)
     )
 }
+
+internal fun shouldBlockThemeModeChange(
+    captureInFlight: Boolean,
+    writeInFlight: Boolean,
+    revealActive: Boolean,
+    hasPendingThemePreference: Boolean
+): Boolean = captureInFlight || writeInFlight || revealActive || hasPendingThemePreference
+
+internal fun resolveThemeToggleTarget(isDark: Boolean): ThemeMode =
+    if (isDark) ThemeMode.LIGHT else ThemeMode.DARK
 
 private fun View.drawScaledThemeRevealBitmap(): Bitmap? {
     if (width <= 0 || height <= 0) {
@@ -1378,6 +1393,12 @@ private fun NeriAppContent(
         .collectAsStateWithLifecycle(
             initialValue = DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
         )
+    val initialAdvancedBlurQuality = remember {
+        AdvancedBlurQualityPreference.defaultForDevice(isCurrentBuildDimensity())
+    }
+    val advancedBlurQuality by repo.advancedBlurQualityFlow.collectAsStateWithLifecycle(
+        initialValue = initialAdvancedBlurQuality
+    )
     val advancedBlurAvailable = isAdvancedGlassBackendSupported(Build.VERSION.SDK_INT)
     val effectiveAdvancedBlurEnabled = advancedBlurAvailable && advancedBlurEnabled
     val nowPlayingAudioReactiveEnabled by repo.nowPlayingAudioReactiveEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
@@ -1479,6 +1500,7 @@ private fun NeriAppContent(
     var themeRevealCaptureInFlight by remember { mutableStateOf(false) }
     var themeRevealCaptureJob by remember { mutableStateOf<Job?>(null) }
     var themeRevealCaptureToken by remember { mutableIntStateOf(0) }
+    var themeModeWriteInFlight by remember { mutableStateOf(false) }
     var pendingBackgroundImageAlpha by remember { mutableStateOf<Float?>(null) }
     var coverArtRefreshToken by remember { mutableIntStateOf(0) }
     var showUsbExclusiveBackgroundPermissionDialog by rememberSaveable { mutableStateOf(false) }
@@ -1552,19 +1574,28 @@ private fun NeriAppContent(
     val effectiveBackgroundImageAlpha = pendingBackgroundImageAlpha ?: backgroundImageAlpha
 
     val clearThemeRevealVisualState = {
-        pendingFollowSystemDark = null
-        pendingForceDark = null
         themeRevealSnapshot = null
         themeRevealOriginWindow = null
         themeRevealStartRadiusPx = 0f
         themeRevealFallbackColorArgb = null
+    }
+    val clearPendingThemeModeChange = {
+        pendingFollowSystemDark = null
+        pendingForceDark = null
     }
     val clearThemeRevealState = {
         themeRevealCaptureToken += 1
         themeRevealCaptureJob?.cancel()
         themeRevealCaptureJob = null
         themeRevealCaptureInFlight = false
+        themeModeWriteInFlight = false
+        clearPendingThemeModeChange()
         clearThemeRevealVisualState()
+    }
+    val finishThemeReveal = { captureToken: Int ->
+        if (themeRevealCaptureToken == captureToken) {
+            clearThemeRevealVisualState()
+        }
     }
 
     // 缓存当前封面的取色结果, 避免开关动态取色时先闪到默认种子色
@@ -1757,14 +1788,16 @@ private fun NeriAppContent(
     val advancedGlassController = remember(
         advancedBlurEnabled,
         enhancedAdvancedBlurEnabled,
-        enhancedAdvancedBlurRadiusDp
+        enhancedAdvancedBlurRadiusDp,
+        advancedBlurQuality
     ) {
         AdvancedGlassController(
             sdkInt = Build.VERSION.SDK_INT,
             advancedBlurEnabled = advancedBlurEnabled,
             enhancedAdvancedBlurEnabled = enhancedAdvancedBlurEnabled,
             backendReady = isAdvancedGlassBackendSupported(Build.VERSION.SDK_INT),
-            enhancedAdvancedBlurRadiusDp = enhancedAdvancedBlurRadiusDp
+            enhancedAdvancedBlurRadiusDp = enhancedAdvancedBlurRadiusDp,
+            advancedBlurQuality = advancedBlurQuality
         )
     }
     var startupGlassGateReleased by rememberSaveable {
@@ -1803,14 +1836,29 @@ private fun NeriAppContent(
         initialValue = startupPlaybackPreferences.mobileDataBiliAudioQuality
     )
     val currentThemeBackgroundArgb = MaterialTheme.colorScheme.background.toArgb()
+    // retained main-tab scenes can keep an earlier callback, so read the current theme state at click time
+    val latestThemeMode by rememberUpdatedState(themeMode)
+    val latestIsDark by rememberUpdatedState(isDark)
+    val latestSystemDark by rememberUpdatedState(systemDark)
+    val latestThemeBackgroundArgb by rememberUpdatedState(currentThemeBackgroundArgb)
     val themeRevealActive =
         themeRevealOriginWindow != null &&
             themeRevealFallbackColorArgb != null
+    val latestThemeRevealActive by rememberUpdatedState(themeRevealActive)
 
     LaunchedEffect(isDark, themeRevealActive, themeRevealCaptureInFlight) {
         if (!themeRevealActive && !themeRevealCaptureInFlight) {
             onIsDarkChanged(isDark)
         }
+    }
+
+    val activeThemeRevealToken = themeRevealCaptureToken
+    LaunchedEffect(themeRevealActive, activeThemeRevealToken) {
+        if (!themeRevealActive) {
+            return@LaunchedEffect
+        }
+        delay(THEME_REVEAL_WATCHDOG_DELAY_MILLIS)
+        finishThemeReveal(activeThemeRevealToken)
     }
 
     fun requestThemeModeChange(
@@ -1819,29 +1867,35 @@ private fun NeriAppContent(
         startRadiusPx: Float
     ) {
         if (
-            themeRevealCaptureInFlight ||
-            pendingFollowSystemDark != null ||
-            pendingForceDark != null ||
-            themeRevealOriginWindow != null
+            shouldBlockThemeModeChange(
+                captureInFlight = themeRevealCaptureInFlight,
+                writeInFlight = themeModeWriteInFlight,
+                revealActive = latestThemeRevealActive,
+                hasPendingThemePreference = pendingFollowSystemDark != null ||
+                    pendingForceDark != null
+            )
         ) {
             return
         }
 
-        if (targetMode == themeMode) {
+        if (targetMode == latestThemeMode) {
             return
         }
 
         val nextFollowSystemDark = targetMode.followSystemDark
         val nextForceDark = targetMode.forceDark
-        val nextDark = targetMode.resolveUseDark(systemDark)
-        if (nextDark == isDark) {
-            pendingFollowSystemDark = nextFollowSystemDark
-            pendingForceDark = nextForceDark
+        val nextDark = targetMode.resolveUseDark(latestSystemDark)
+        if (nextDark == latestIsDark) {
+            themeModeWriteInFlight = true
             scope.launch {
-                repo.setThemeMode(
-                    followSystemDark = nextFollowSystemDark,
-                    forceDark = nextForceDark
-                )
+                try {
+                    repo.setThemeMode(
+                        followSystemDark = nextFollowSystemDark,
+                        forceDark = nextForceDark
+                    )
+                } finally {
+                    themeModeWriteInFlight = false
+                }
             }
             return
         }
@@ -1853,39 +1907,45 @@ private fun NeriAppContent(
         themeRevealCaptureInFlight = true
 
         val captureJob = scope.launch {
-            awaitStableDraw(captureView)
-            val snapshot = runCatching {
-                captureThemeRevealSnapshot(
-                    activity = activity,
-                    fallbackView = captureView
-                )
-            }.getOrNull()
-            val lifecycleActive = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
-            val activityValid = activity == null || (!activity.isFinishing && !activity.isDestroyed)
-            if (themeRevealCaptureToken != captureToken || !lifecycleActive || !activityValid) {
-                if (themeRevealCaptureToken == captureToken) {
-                    themeRevealCaptureJob = null
-                    themeRevealCaptureInFlight = false
-                }
-                return@launch
-            }
-
-            clearThemeRevealVisualState()
-            themeRevealSnapshot = snapshot
-            themeRevealFallbackColorArgb = currentThemeBackgroundArgb
-            themeRevealOriginWindow = originInWindow
-            themeRevealStartRadiusPx = startRadiusPx.coerceAtLeast(1f)
+            var themeWriteStarted = false
+            var themeWriteCompleted = false
             try {
+                awaitStableDraw(captureView)
+                val snapshot = runCatching {
+                    captureThemeRevealSnapshot(
+                        activity = activity,
+                        fallbackView = captureView
+                    )
+                }.getOrNull()
+                val lifecycleActive = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                val activityValid = activity == null || (!activity.isFinishing && !activity.isDestroyed)
+                if (themeRevealCaptureToken != captureToken || !lifecycleActive || !activityValid) {
+                    return@launch
+                }
+
+                clearThemeRevealVisualState()
+                themeRevealSnapshot = snapshot
+                themeRevealFallbackColorArgb = latestThemeBackgroundArgb
+                themeRevealOriginWindow = originInWindow
+                themeRevealStartRadiusPx = startRadiusPx.coerceAtLeast(1f)
                 pendingFollowSystemDark = nextFollowSystemDark
                 pendingForceDark = nextForceDark
+                themeModeWriteInFlight = true
+                themeWriteStarted = true
                 repo.setThemeMode(
                     followSystemDark = nextFollowSystemDark,
                     forceDark = nextForceDark
                 )
+                themeWriteCompleted = true
             } finally {
                 if (themeRevealCaptureToken == captureToken) {
+                    if (themeWriteStarted && !themeWriteCompleted) {
+                        clearPendingThemeModeChange()
+                        clearThemeRevealVisualState()
+                    }
                     themeRevealCaptureJob = null
                     themeRevealCaptureInFlight = false
+                    themeModeWriteInFlight = false
                 }
             }
         }
@@ -1893,7 +1953,7 @@ private fun NeriAppContent(
     }
 
     fun requestThemeToggle(originInWindow: Offset, startRadiusPx: Float) {
-        val targetMode = if (isDark) ThemeMode.LIGHT else ThemeMode.DARK
+        val targetMode = resolveThemeToggleTarget(latestIsDark)
         requestThemeModeChange(
             targetMode = targetMode,
             originInWindow = originInWindow,
@@ -2713,6 +2773,10 @@ private fun NeriAppContent(
                             scope.launch {
                                 repo.setEnhancedAdvancedBlurRadiusDp(radiusDp)
                             }
+                        },
+                        advancedBlurQuality = advancedBlurQuality,
+                        onAdvancedBlurQualityChange = { quality ->
+                            scope.launch { repo.setAdvancedBlurQuality(quality) }
                         },
                         nowPlayingAudioReactiveEnabled = nowPlayingAudioReactiveEnabled,
                         onNowPlayingAudioReactiveEnabledChange = { enabled ->
@@ -4156,6 +4220,7 @@ private fun NeriAppContent(
                 val revealOrigin = themeRevealOriginWindow
                 val revealFallbackColor = themeRevealFallbackColorArgb?.let(::Color)
                 if (revealOrigin != null && revealFallbackColor != null) {
+                    val revealCaptureToken = themeRevealCaptureToken
                     ThemeRevealOverlay(
                         snapshot = themeRevealSnapshot,
                         fallbackColor = revealFallbackColor,
@@ -4163,8 +4228,8 @@ private fun NeriAppContent(
                         modifier = Modifier.fillMaxSize(),
                         startRadiusPx = themeRevealStartRadiusPx,
                         legacySnapshotDim = true,
-                        durationMillis = 720,
-                        onFinished = clearThemeRevealState
+                        durationMillis = THEME_REVEAL_DURATION_MILLIS,
+                        onFinished = { finishThemeReveal(revealCaptureToken) }
                     )
                 }
 

@@ -27,8 +27,11 @@ import android.app.Application
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -82,6 +85,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ripple
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryScrollableTabRow
@@ -93,6 +97,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarState
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -177,6 +182,7 @@ import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 
 private const val SEARCH_INPUT_DEBOUNCE_MS = 300L
 private val ExplorePrimaryTabShape = RoundedCornerShape(20.dp)
+private val ExplorePillShape = RoundedCornerShape(999.dp)
 private val ExploreSearchFieldShape = RoundedCornerShape(16.dp)
 
 internal fun exploreSearchSourceDisplayOrder(
@@ -1272,11 +1278,12 @@ private fun ExploreSearchHistoryChip(
     text: String,
     onClick: () -> Unit
 ) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(999.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.72f),
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.72f)
+    ExploreGlassPillSurface(
+        fallbackColor = containerColor,
+        tintColor = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        onClick = onClick
     ) {
         Text(
             text = text,
@@ -1432,12 +1439,16 @@ private fun ExploreTagChip(
         MaterialTheme.colorScheme.outline.copy(alpha = borderAlpha)
     }
 
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(999.dp),
-        color = containerColor,
+    ExploreGlassPillSurface(
+        fallbackColor = containerColor,
+        tintColor = if (selected) {
+            MaterialTheme.colorScheme.secondaryContainer
+        } else {
+            MaterialTheme.colorScheme.surface
+        },
         contentColor = contentColor,
-        border = androidx.compose.foundation.BorderStroke(1.dp, borderColor)
+        border = BorderStroke(1.dp, borderColor),
+        onClick = onClick
     ) {
         Row(
             modifier = Modifier
@@ -1459,6 +1470,46 @@ private fun ExploreTagChip(
                 style = MaterialTheme.typography.labelLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+internal fun ExploreGlassPillSurface(
+    fallbackColor: Color,
+    tintColor: Color,
+    contentColor: Color,
+    onClick: () -> Unit,
+    border: BorderStroke? = null,
+    content: @Composable () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    Box(
+        modifier = Modifier
+            .minimumInteractiveComponentSize()
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        AdvancedGlassSurface(
+            role = AdvancedGlassRole.ExploreTag,
+            shape = ExplorePillShape,
+            fallbackColor = fallbackColor,
+            tintColor = tintColor
+        ) {
+            Surface(
+                modifier = Modifier
+                    .clip(ExplorePillShape)
+                    .indication(interactionSource, ripple()),
+                shape = ExplorePillShape,
+                color = Color.Transparent,
+                contentColor = contentColor,
+                border = border,
+                content = content
             )
         }
     }

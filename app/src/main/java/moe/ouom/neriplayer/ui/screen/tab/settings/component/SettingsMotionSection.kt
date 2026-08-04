@@ -35,7 +35,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -53,7 +55,7 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.settings.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
+import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
 import moe.ouom.neriplayer.data.settings.ENHANCED_ADVANCED_BLUR_RADIUS_STEP_DP
 import moe.ouom.neriplayer.data.settings.EnhancedAdvancedBlurPreference
 import moe.ouom.neriplayer.data.settings.MAX_ENHANCED_ADVANCED_BLUR_RADIUS_DP
@@ -66,8 +68,9 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSwitchItems
 import moe.ouom.neriplayer.ui.effect.glass.ADVANCED_GLASS_MIN_SDK
-import moe.ouom.neriplayer.ui.effect.glass.shouldShowEnhancedAdvancedBlurSetting
+import moe.ouom.neriplayer.ui.effect.glass.shouldShowAdvancedBlurSettings
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
@@ -88,6 +91,8 @@ internal fun SettingsMotionSection(
     onEnhancedAdvancedBlurEnabledChange: (Boolean) -> Unit,
     enhancedAdvancedBlurRadiusDp: Float,
     onEnhancedAdvancedBlurRadiusDpChange: (Float) -> Unit,
+    advancedBlurQuality: AdvancedBlurQuality,
+    onAdvancedBlurQualityChange: (AdvancedBlurQuality) -> Unit,
     nowPlayingAudioReactiveEnabled: Boolean,
     onNowPlayingAudioReactiveEnabledChange: (Boolean) -> Unit,
     nowPlayingDynamicBackgroundEnabled: Boolean,
@@ -257,13 +262,32 @@ internal fun SettingsMotionSection(
                     onHighlightFinished = onHighlightFinished
                 )
 
+                LazyAnimatedVisibility(
+                    visible = shouldShowAdvancedBlurSettings(
+                        sdkInt = Build.VERSION.SDK_INT,
+                        advancedBlurEnabled = advancedBlurEnabled
+                    )
+                ) {
+                    Column(Modifier.fillMaxWidth()) {
+                        BlurAmountSettingItem(
+                            amountDp = enhancedAdvancedBlurRadiusDp,
+                            onAmountDpChange = onEnhancedAdvancedBlurRadiusDpChange
+                        )
+                        AdvancedBlurQualitySettingItem(
+                            quality = advancedBlurQuality,
+                            onQualityChange = onAdvancedBlurQualityChange,
+                            highlightTargetId = highlightTargetId,
+                            highlightPulse = highlightPulse,
+                            onHighlightFinished = onHighlightFinished
+                        )
+                    }
+                }
+
                 EnhancedAdvancedBlurSettingItem(
                     sdkInt = Build.VERSION.SDK_INT,
                     advancedBlurEnabled = advancedBlurEnabled,
                     enhancedAdvancedBlurEnabled = enhancedAdvancedBlurEnabled,
                     onEnhancedAdvancedBlurEnabledChange = onEnhancedAdvancedBlurEnabledChange,
-                    enhancedAdvancedBlurRadiusDp = enhancedAdvancedBlurRadiusDp,
-                    onEnhancedAdvancedBlurRadiusDpChange = onEnhancedAdvancedBlurRadiusDpChange,
                     highlightTargetId = highlightTargetId,
                     highlightPulse = highlightPulse,
                     onHighlightFinished = onHighlightFinished
@@ -453,8 +477,6 @@ internal fun EnhancedAdvancedBlurSettingItem(
     advancedBlurEnabled: Boolean,
     enhancedAdvancedBlurEnabled: Boolean,
     onEnhancedAdvancedBlurEnabledChange: (Boolean) -> Unit,
-    enhancedAdvancedBlurRadiusDp: Float = DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP,
-    onEnhancedAdvancedBlurRadiusDpChange: (Float) -> Unit = {},
     highlightTargetId: String? = null,
     highlightPulse: Int = 0,
     onHighlightFinished: (() -> Unit)? = null
@@ -468,7 +490,7 @@ internal fun EnhancedAdvancedBlurSettingItem(
     }
 
     LazyAnimatedVisibility(
-        visible = shouldShowEnhancedAdvancedBlurSetting(
+        visible = shouldShowAdvancedBlurSettings(
             sdkInt = sdkInt,
             advancedBlurEnabled = advancedBlurEnabled
         )
@@ -490,33 +512,6 @@ internal fun EnhancedAdvancedBlurSettingItem(
                 highlightPulse = highlightPulse,
                 onHighlightFinished = onHighlightFinished
             )
-
-            LazyAnimatedVisibility(visible = enhancedAdvancedBlurEnabled) {
-                SnappedFloatSliderListItem(
-                    setting = AutoSettingsMetadata.requireSetting(
-                        AutoSettingsKeys.ENHANCED_ADVANCED_BLUR_RADIUS_DP
-                    ),
-                    value = EnhancedAdvancedBlurPreference.normalize(
-                        enhancedAdvancedBlurRadiusDp
-                    ),
-                    valueText = { current ->
-                        stringResource(
-                            R.string.settings_enhanced_advanced_blur_radius_value,
-                            current.roundToInt()
-                        )
-                    },
-                    valueRange = MIN_ENHANCED_ADVANCED_BLUR_RADIUS_DP..
-                        MAX_ENHANCED_ADVANCED_BLUR_RADIUS_DP,
-                    steps = (
-                        (MAX_ENHANCED_ADVANCED_BLUR_RADIUS_DP -
-                            MIN_ENHANCED_ADVANCED_BLUR_RADIUS_DP) /
-                            ENHANCED_ADVANCED_BLUR_RADIUS_STEP_DP
-                        ).roundToInt() - 1,
-                    snapStep = ENHANCED_ADVANCED_BLUR_RADIUS_STEP_DP,
-                    onValueChanged = onEnhancedAdvancedBlurRadiusDpChange,
-                    onValueCommitted = onEnhancedAdvancedBlurRadiusDpChange
-                )
-            }
         }
     }
 
@@ -539,6 +534,112 @@ internal fun EnhancedAdvancedBlurSettingItem(
         )
     }
 }
+
+@Composable
+private fun BlurAmountSettingItem(
+    amountDp: Float,
+    onAmountDpChange: (Float) -> Unit
+) {
+    SnappedFloatSliderListItem(
+        setting = AutoSettingsMetadata.requireSetting(
+            AutoSettingsKeys.ENHANCED_ADVANCED_BLUR_RADIUS_DP
+        ),
+        value = EnhancedAdvancedBlurPreference.normalize(amountDp),
+        valueText = { current ->
+            stringResource(
+                R.string.settings_enhanced_advanced_blur_radius_value,
+                current.roundToInt()
+            )
+        },
+        valueRange = MIN_ENHANCED_ADVANCED_BLUR_RADIUS_DP..
+            MAX_ENHANCED_ADVANCED_BLUR_RADIUS_DP,
+        steps = (
+            (MAX_ENHANCED_ADVANCED_BLUR_RADIUS_DP -
+                MIN_ENHANCED_ADVANCED_BLUR_RADIUS_DP) /
+                ENHANCED_ADVANCED_BLUR_RADIUS_STEP_DP
+            ).roundToInt() - 1,
+        snapStep = ENHANCED_ADVANCED_BLUR_RADIUS_STEP_DP,
+        onValueChanged = onAmountDpChange,
+        onValueCommitted = onAmountDpChange
+    )
+}
+
+@Composable
+internal fun AdvancedBlurQualitySettingItem(
+    quality: AdvancedBlurQuality,
+    onQualityChange: (AdvancedBlurQuality) -> Unit,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
+) {
+    var showDialog by remember { mutableStateOf(false) }
+    val setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.ADVANCED_BLUR_QUALITY)
+
+    AutoSettingsListItem(
+        setting = setting,
+        supportingContent = {
+            Text(advancedBlurQualityLabel(quality))
+        },
+        trailingContent = {
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished,
+        onClick = { showDialog = true }
+    )
+
+    if (showDialog) {
+        MiuixSettingsDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text(stringResource(R.string.settings_advanced_blur_quality)) },
+            text = {
+                Column {
+                    AdvancedBlurQuality.entries.forEach { option ->
+                        MiuixSettingsChoiceRow(
+                            title = advancedBlurQualityLabel(option),
+                            subtitle = advancedBlurQualityDescription(option),
+                            selected = option == quality,
+                            onClick = {
+                                onQualityChange(option)
+                                showDialog = false
+                            }
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                MiuixSettingsTextButton(onClick = { showDialog = false }) {
+                    Text(stringResource(R.string.action_close))
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun advancedBlurQualityLabel(quality: AdvancedBlurQuality): String = stringResource(
+    when (quality) {
+        AdvancedBlurQuality.UltraLow -> R.string.settings_advanced_blur_quality_ultra_low
+        AdvancedBlurQuality.Low -> R.string.settings_advanced_blur_quality_low
+        AdvancedBlurQuality.Default -> R.string.settings_advanced_blur_quality_default
+        AdvancedBlurQuality.High -> R.string.settings_advanced_blur_quality_high
+    }
+)
+
+@Composable
+private fun advancedBlurQualityDescription(quality: AdvancedBlurQuality): String = stringResource(
+    when (quality) {
+        AdvancedBlurQuality.UltraLow -> R.string.settings_advanced_blur_quality_ultra_low_desc
+        AdvancedBlurQuality.Low -> R.string.settings_advanced_blur_quality_low_desc
+        AdvancedBlurQuality.Default -> R.string.settings_advanced_blur_quality_default_desc
+        AdvancedBlurQuality.High -> R.string.settings_advanced_blur_quality_high_desc
+    }
+)
 
 @Composable
 private fun MotionSwitchItem(

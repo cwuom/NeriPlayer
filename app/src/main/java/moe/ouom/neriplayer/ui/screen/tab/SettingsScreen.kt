@@ -130,6 +130,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
+import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.settings.LyricFontScales
@@ -458,6 +459,8 @@ fun SettingsScreen(
     onEnhancedAdvancedBlurEnabledChange: (Boolean) -> Unit,
     enhancedAdvancedBlurRadiusDp: Float,
     onEnhancedAdvancedBlurRadiusDpChange: (Float) -> Unit,
+    advancedBlurQuality: AdvancedBlurQuality,
+    onAdvancedBlurQualityChange: (AdvancedBlurQuality) -> Unit,
     nowPlayingAudioReactiveEnabled: Boolean,
     onNowPlayingAudioReactiveEnabledChange: (Boolean) -> Unit,
     nowPlayingDynamicBackgroundEnabled: Boolean,
@@ -1569,6 +1572,8 @@ fun SettingsScreen(
                                 enhancedAdvancedBlurRadiusDp = enhancedAdvancedBlurRadiusDp,
                                 onEnhancedAdvancedBlurRadiusDpChange =
                                     onEnhancedAdvancedBlurRadiusDpChange,
+                                advancedBlurQuality = advancedBlurQuality,
+                                onAdvancedBlurQualityChange = onAdvancedBlurQualityChange,
                                 nowPlayingAudioReactiveEnabled = nowPlayingAudioReactiveEnabled,
                                 onNowPlayingAudioReactiveEnabledChange =
                                     onNowPlayingAudioReactiveEnabledChange,

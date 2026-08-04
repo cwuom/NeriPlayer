@@ -67,6 +67,10 @@ class AutoSettingsGeneratedTest {
             "enhanced_advanced_blur_radius_dp" in floatKeyNames
         )
         assertTrue(
+            "advanced blur quality should be exportable",
+            "advanced_blur_quality" in stringKeyNames
+        )
+        assertTrue(
             "backup switch should be exportable",
             "silent_github_sync_failure" in booleanKeyNames
         )
@@ -437,6 +441,8 @@ class AutoSettingsGeneratedTest {
         val metadata = AutoSettingsMetadata.setting("enhanced_advanced_blur_enabled")
         val radiusSetting = AutoSettingsSchema.motion.enhancedAdvancedBlurRadiusDp
         val radiusMetadata = AutoSettingsMetadata.setting("enhanced_advanced_blur_radius_dp")
+        val qualitySetting = AutoSettingsSchema.motion.advancedBlurQuality
+        val qualityMetadata = AutoSettingsMetadata.setting("advanced_blur_quality")
 
         assertEquals(false, setting.defaultValue)
         assertEquals(SettingUiType.Custom, metadata?.ui)
@@ -453,6 +459,10 @@ class AutoSettingsGeneratedTest {
         assertEquals(DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP, radiusSetting.defaultValue)
         assertEquals(SettingValueType.Float, radiusMetadata?.valueType)
         assertEquals(SettingUiType.Custom, radiusMetadata?.ui)
+        assertEquals(DEFAULT_ADVANCED_BLUR_QUALITY, qualitySetting.defaultValue)
+        assertEquals(SettingValueType.String, qualityMetadata?.valueType)
+        assertEquals(SettingUiType.Custom, qualityMetadata?.ui)
+        assertEquals(AutoSettingsSections.motion, qualityMetadata?.section)
     }
 
     @Test
