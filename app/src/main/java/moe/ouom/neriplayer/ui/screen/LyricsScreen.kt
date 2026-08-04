@@ -1149,7 +1149,7 @@ private fun LyricsContentPane(
             offset = if (useTabletLayout) 72.dp else 48.dp,
             keepAliveZone = if (useTabletLayout) 128.dp else 108.dp,
             playedLyricViewportFraction = if (useTabletLayout) 0.36f else 0.30f,
-            topFadeLength = if (useTabletLayout) 132.dp else 112.dp,
+            topFadeLength = if (useTabletLayout) 132.dp else 80.dp,
             bottomFadeLength = if (useTabletLayout) 220.dp else 196.dp,
             bottomContentInset = if (useTabletLayout) 40.dp else 0.dp,
             onLyricLongClick = onLyricLongClick,
