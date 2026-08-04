@@ -45,6 +45,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
+import moe.ouom.neriplayer.data.model.BiliUploaderSummary
 import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistsFromSongDetail
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.R
@@ -301,6 +302,40 @@ class NowPlayingViewModel : ViewModel() {
                 parseNeteaseArtistsFromSongDetail(raw)
             }.onSuccess(onResult).onFailure { error ->
                 NPLogger.e("NowPlayingViewModel", "解析网易云歌手失败", error)
+                onError(error)
+            }
+        }
+    }
+
+    fun resolveBiliUploader(
+        song: SongItem,
+        onResult: (BiliUploaderSummary) -> Unit,
+        onUnavailable: () -> Unit = {},
+        onError: (Throwable) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            try {
+                val uploader = withContext(Dispatchers.IO) {
+                    resolveBiliSong(song, AppContainer.biliClient)
+                        ?.videoInfo
+                        ?.takeIf { it.ownerMid > 0L }
+                        ?.let { videoInfo ->
+                            BiliUploaderSummary(
+                                mid = videoInfo.ownerMid,
+                                name = videoInfo.ownerName.ifBlank { song.artist },
+                                avatarUrl = videoInfo.ownerFace
+                            )
+                        }
+                }
+                if (uploader != null) {
+                    onResult(uploader)
+                } else {
+                    onUnavailable()
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.e("NowPlayingViewModel", "解析 B 站 UP 主失败", error)
                 onError(error)
             }
         }

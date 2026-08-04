@@ -1254,6 +1254,27 @@ private fun PlayerManager.shouldApplySearchMetadataAsCustomOverride(song: SongIt
     return isLocalSong(song) || AudioDownloadManager.getLocalPlaybackUri(application, song) != null
 }
 
+private suspend fun PlayerManager.writeLocalEditableMetadata(song: SongItem) {
+    if (!LocalSongSupport.isLocalSong(song, application)) {
+        return
+    }
+    val outcome = LocalMediaSupport.writeEditableMetadata(application, song)
+    val messageResId = when (outcome) {
+        LocalMediaMetadataWriteOutcome.SUCCESS -> R.string.local_song_metadata_write_success
+        LocalMediaMetadataWriteOutcome.NOT_WRITABLE -> R.string.local_song_metadata_write_not_writable
+        LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE -> {
+            R.string.local_song_metadata_write_unsupported
+        }
+        LocalMediaMetadataWriteOutcome.FAILED -> R.string.local_song_metadata_write_failed
+    }
+    mainScope.launch {
+        AppFeedback.show(
+            context = application,
+            message = getLocalizedString(messageResId)
+        )
+    }
+}
+
 internal fun PlayerManager.updateSongCustomInfoImpl(
     originalSong: SongItem,
     customCoverUrl: String?,
@@ -1340,31 +1361,8 @@ internal fun PlayerManager.updateSongCustomInfoImpl(
                 triggerSync = true
             )
 
-            if (writeLocalMetadata && LocalSongSupport.isLocalSong(updatedSong, application)) {
-                val outcome = LocalMediaSupport.writeEditableTextMetadata(application, updatedSong)
-                val messageResId = when (outcome) {
-                    LocalMediaMetadataWriteOutcome.SUCCESS -> {
-                        R.string.local_song_metadata_write_success
-                    }
-
-                    LocalMediaMetadataWriteOutcome.NOT_WRITABLE -> {
-                        R.string.local_song_metadata_write_not_writable
-                    }
-
-                    LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE -> {
-                        R.string.local_song_metadata_write_unsupported
-                    }
-
-                    LocalMediaMetadataWriteOutcome.FAILED -> {
-                        R.string.local_song_metadata_write_failed
-                    }
-                }
-                mainScope.launch {
-                    AppFeedback.show(
-                        context = application,
-                        message = getLocalizedString(messageResId)
-                    )
-                }
+            if (writeLocalMetadata) {
+                writeLocalEditableMetadata(updatedSong)
             }
         }
     }
@@ -1600,7 +1598,8 @@ internal suspend fun PlayerManager.updateSongTranslatedLyricsImpl(
 internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
     songToUpdate: SongItem,
     newLyrics: String?,
-    newTranslatedLyrics: String?
+    newTranslatedLyrics: String?,
+    writeLocalMetadata: Boolean = false
 ) = runSongMetadataMutation {
     val queueIndex = queueIndexOf(songToUpdate)
 
@@ -1656,6 +1655,9 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
             "PlayerManager",
             "歌词更新已同步到本地仓库: id=${latestSong.id}, lyric=${latestSong.matchedLyric?.take(32)}, translated=${latestSong.matchedTranslatedLyric?.take(32)}"
         )
+        if (writeLocalMetadata) {
+            writeLocalEditableMetadata(latestSong)
+        }
     } else {
         NPLogger.e("PlayerManager", "歌词更新后未找到最新歌曲副本，跳过本地仓库同步")
     }

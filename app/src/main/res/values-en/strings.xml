@@ -370,6 +370,7 @@
     <string name="cover_download_unavailable">No cover is available to download</string>
     <string name="cover_download_success">Cover saved: %s</string>
     <string name="cover_download_failed">Failed to save cover: %s</string>
+    <string name="music_cover_import_failed">Unable to import the selected image</string>
     <string name="cover_download_permission_required">Grant storage permission before saving covers</string>
     <string name="cover_preview_unavailable">No cover is available to preview</string>
     <string name="cover_preview_title">Cover Artwork</string>
@@ -489,6 +490,7 @@
     <string name="library_bili_created_favorite">Created favorites</string>
     <string name="library_bili_collected_favorite">Subscribed favorites</string>
     <string name="library_bili_collection">Collection</string>
+    <string name="library_bili_series">Series</string>
     <string name="library_youtube_music_empty">No YouTube Music playlists yet</string>
     <string name="library_youtube_music_hint">Make sure YouTube is signed in, then the app will load playlists from your library</string>
     <string name="library_youtube_music_open_playlist">Open Playlist</string>
@@ -515,6 +517,22 @@
     <string name="artist_songs_empty">No songs</string>
     <string name="artist_albums_empty">No albums</string>
     <string name="artist_load_more">Load More</string>
+    <string name="bili_uploader_detail">Uploader profile</string>
+    <string name="bili_uploader_load_failed">Failed to load uploader profile: %1$s</string>
+    <string name="bili_uploader_open_failed">Failed to open uploader profile: %1$s</string>
+    <string name="bili_uploader_owner_unavailable">Uploader ID is unavailable</string>
+    <string name="bili_uploader_tab_videos">Videos</string>
+    <string name="bili_uploader_tab_collections">Collections</string>
+    <string name="bili_uploader_tab_series">Series</string>
+    <string name="bili_uploader_mid">UID %1$d</string>
+    <string name="bili_uploader_video_count">%1$d videos</string>
+    <string name="bili_uploader_collection_count">%1$d collections</string>
+    <string name="bili_uploader_series_count">%1$d series</string>
+    <string name="bili_uploader_content_count">%1$d videos</string>
+    <string name="bili_uploader_videos_empty">No videos</string>
+    <string name="bili_uploader_collections_empty">No collections</string>
+    <string name="bili_uploader_series_empty">No series</string>
+    <string name="bili_uploader_load_more">Load more</string>
 
     <!-- Recent & Favorites -->
     <string name="recent_title">Recent</string>

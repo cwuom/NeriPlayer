@@ -37,6 +37,7 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.system.Os
 import androidx.core.content.FileProvider
+import com.kyant.taglib.Picture
 import com.kyant.taglib.PropertyMap
 import com.kyant.taglib.TagLib
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +47,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.io.readBytesLimited
 import moe.ouom.neriplayer.util.network.isFileInsideDirectory
 import org.json.JSONObject
 import java.io.File
@@ -54,6 +56,7 @@ import java.io.InputStream
 import java.io.RandomAccessFile
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
+import java.net.URLConnection
 import java.security.MessageDigest
 import java.util.LinkedHashMap
 import kotlin.math.max
@@ -69,6 +72,8 @@ private const val SHARED_LOCAL_MEDIA_DIR = "shared_media_exports"
 private const val LOCAL_COVER_LOOKUP_CACHE_LIMIT = 768
 private const val NEARBY_COVER_LOOKUP_CACHE_LIMIT = 2048
 private const val DIRECTORY_COVER_LOOKUP_CACHE_LIMIT = 256
+private const val MAX_EDITABLE_COVER_BYTES = 8L * 1024L * 1024L
+private const val FRONT_COVER_PICTURE_TYPE = "Front Cover"
 
 data class LocalMediaDetails(
     val sourceUri: Uri,
@@ -102,7 +107,8 @@ data class LocalMediaDetails(
     val originalTitle: String?,
     val originalArtist: String?,
     val embeddedCover: Boolean,
-    val sourceStableKey: String? = null
+    val sourceStableKey: String? = null,
+    val translatedLyricContent: String? = null
 )
 
 internal enum class LocalMediaMetadataWriteOutcome {
@@ -343,6 +349,7 @@ object LocalMediaSupport {
         val sampleRateHz: Int? = null,
         val channelCount: Int? = null,
         val lyrics: String? = null,
+        val translatedLyrics: String? = null,
         val coverBytes: ByteArray? = null,
         val sourceStableKey: String? = null
     ) {
@@ -364,6 +371,7 @@ object LocalMediaSupport {
                 sampleRateHz == other.sampleRateHz &&
                 channelCount == other.channelCount &&
                 lyrics == other.lyrics &&
+                translatedLyrics == other.translatedLyrics &&
                 sourceStableKey == other.sourceStableKey &&
                 (coverBytes?.contentEquals(other.coverBytes) ?: (other.coverBytes == null))
         }
@@ -383,6 +391,7 @@ object LocalMediaSupport {
             result = 31 * result + (sampleRateHz ?: 0)
             result = 31 * result + (channelCount ?: 0)
             result = 31 * result + (lyrics?.hashCode() ?: 0)
+            result = 31 * result + (translatedLyrics?.hashCode() ?: 0)
             result = 31 * result + (sourceStableKey?.hashCode() ?: 0)
             result = 31 * result + (coverBytes?.contentHashCode() ?: 0)
             return result
@@ -450,7 +459,7 @@ object LocalMediaSupport {
         return null
     }
 
-    internal suspend fun writeEditableTextMetadata(
+    internal suspend fun writeEditableMetadata(
         context: Context,
         song: SongItem
     ): LocalMediaMetadataWriteOutcome = withContext(Dispatchers.IO) {
@@ -474,29 +483,59 @@ object LocalMediaSupport {
         descriptor.use { target ->
             val existing = loadTagLibPropertyMap(target)
                 ?: return@use LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE
-            val updated = applyEditableTextMetadata(
+            val updated = applyEditableMetadata(
                 propertyMap = existing,
                 title = song.displayName(),
-                artist = song.displayArtist()
+                artist = song.displayArtist(),
+                lyrics = song.matchedLyric ?: song.originalLyric,
+                translatedLyrics = song.matchedTranslatedLyric ?: song.originalTranslatedLyric,
+                audioExtension = resolved.fileExtension
             )
-            if (propertyMapsEquivalent(existing, updated)) {
-                return@use LocalMediaMetadataWriteOutcome.SUCCESS
+            val picturePlan = buildEditableCoverWritePlan(
+                context = context,
+                descriptor = target,
+                coverReference = song.customCoverUrl
+            )
+            if (picturePlan == EditableCoverWritePlan.Unreadable) {
+                return@use LocalMediaMetadataWriteOutcome.FAILED
             }
-            val saved = runCatching {
-                TagLib.savePropertyMap(target.dup().detachFd(), updated)
-            }.getOrElse { error ->
-                NPLogger.w(TAG, "write local metadata failed for $sourceUri: ${error.message}")
-                false
+
+            val propertySaved = if (propertyMapsEquivalent(existing, updated)) {
+                true
+            } else {
+                runCatching {
+                    TagLib.savePropertyMap(target.dup().detachFd(), updated)
+                }.getOrElse { error ->
+                    NPLogger.w(TAG, "write local metadata failed for $sourceUri: ${error.message}")
+                    false
+                }
             }
-            if (!saved) {
+            if (!propertySaved) {
+                return@use LocalMediaMetadataWriteOutcome.FAILED
+            }
+
+            val coverSaved = when (picturePlan) {
+                EditableCoverWritePlan.Unchanged -> true
+                EditableCoverWritePlan.Unreadable -> false
+                is EditableCoverWritePlan.Update -> runCatching {
+                    TagLib.savePictures(target.dup().detachFd(), picturePlan.pictures)
+                }.getOrElse { error ->
+                    NPLogger.w(TAG, "write local cover failed for $sourceUri: ${error.message}")
+                    false
+                }
+            }
+            if (!coverSaved) {
                 return@use LocalMediaMetadataWriteOutcome.FAILED
             }
 
             val verified = loadTagLibPropertyMap(target)?.let { propertyMap ->
-                hasExpectedEditableTextMetadata(
+                hasExpectedEditableMetadata(
                     propertyMap = propertyMap,
                     title = song.displayName(),
-                    artist = song.displayArtist()
+                    artist = song.displayArtist(),
+                    lyrics = song.matchedLyric ?: song.originalLyric,
+                    translatedLyrics = song.matchedTranslatedLyric ?: song.originalTranslatedLyric,
+                    audioExtension = resolved.fileExtension
                 )
             } == true
             if (verified) {
@@ -894,6 +933,7 @@ object LocalMediaSupport {
                     !effectiveLyricContent.isNullOrBlank() -> context.getString(R.string.local_song_lyric_embedded)
                     else -> null
                 },
+                translatedLyricContent = tagLibMetadata?.translatedLyrics,
                 originalTitle = title,
                 originalArtist = tagLibMetadata?.artist ?: containerMetadata?.artist ?: queried.artist ?: artist,
                 embeddedCover = embeddedCover || tagLibCoverUri != null,
@@ -959,6 +999,7 @@ object LocalMediaSupport {
                     !effectiveLyricContent.isNullOrBlank() -> context.getString(R.string.local_song_lyric_embedded)
                     else -> null
                 },
+                translatedLyricContent = tagLibMetadata?.translatedLyrics,
                 originalTitle = title,
                 originalArtist = tagLibMetadata?.artist
                     ?: containerMetadata?.artist?.takeIf { it.isNotBlank() }
@@ -1079,6 +1120,7 @@ object LocalMediaSupport {
             coverUrl = details.coverUri,
             mediaUri = playbackSource,
             matchedLyric = details.lyricContent,
+            matchedTranslatedLyric = details.translatedLyricContent,
             originalName = details.originalTitle ?: details.title,
             originalArtist = details.originalArtist ?: details.artist,
             originalCoverUrl = details.coverUri,
@@ -1539,6 +1581,14 @@ object LocalMediaSupport {
                 } else {
                     null
                 },
+                translatedLyrics = if (includeEmbeddedAssets) {
+                    propertyMap.readFirstValue(
+                        "LYRICS_TRANSLATED",
+                        "NERI_LYRICS_TRANSLATED"
+                    )
+                } else {
+                    null
+                },
                 coverBytes = coverBytes?.takeIf { it.isNotEmpty() },
                 sourceStableKey = propertyMap.readNeriSourceStableKey()
             )
@@ -1607,10 +1657,13 @@ object LocalMediaSupport {
         }.getOrNull()
     }
 
-    internal fun applyEditableTextMetadata(
+    internal fun applyEditableMetadata(
         propertyMap: PropertyMap,
         title: String,
-        artist: String
+        artist: String,
+        lyrics: String?,
+        translatedLyrics: String?,
+        audioExtension: String?
     ): PropertyMap {
         val updated: PropertyMap = hashMapOf()
         propertyMap.forEach { (key, values) ->
@@ -1618,16 +1671,39 @@ object LocalMediaSupport {
         }
         putTagValue(updated, "TITLE", title)
         putTagValue(updated, "ARTIST", artist)
+        if (lyrics != null) {
+            lyricMetadataKeys(audioExtension).forEach { key ->
+                putTagValue(updated, key, lyrics)
+            }
+        }
+        if (translatedLyrics != null) {
+            translatedLyricMetadataKeys.forEach { key ->
+                putTagValue(updated, key, translatedLyrics)
+            }
+        }
         return updated
     }
 
-    internal fun hasExpectedEditableTextMetadata(
+    internal fun hasExpectedEditableMetadata(
         propertyMap: PropertyMap,
         title: String,
-        artist: String
+        artist: String,
+        lyrics: String?,
+        translatedLyrics: String?,
+        audioExtension: String?
     ): Boolean {
         return hasExpectedTagValue(propertyMap, "TITLE", title) &&
-            hasExpectedTagValue(propertyMap, "ARTIST", artist)
+            hasExpectedTagValue(propertyMap, "ARTIST", artist) &&
+            hasExpectedOneOfTagValues(
+                propertyMap = propertyMap,
+                keys = lyricMetadataKeys(audioExtension),
+                expectedValue = lyrics
+            ) &&
+            hasExpectedOneOfTagValues(
+                propertyMap = propertyMap,
+                keys = translatedLyricMetadataKeys,
+                expectedValue = translatedLyrics
+            )
     }
 
     private fun putTagValue(propertyMap: PropertyMap, key: String, value: String) {
@@ -1649,6 +1725,164 @@ object LocalMediaSupport {
             return key !in propertyMap || propertyMap[key].isNullOrEmpty()
         }
         return propertyMap[key]?.any { value -> value.trim() == normalized } == true
+    }
+
+    private fun hasExpectedOneOfTagValues(
+        propertyMap: PropertyMap,
+        keys: List<String>,
+        expectedValue: String?
+    ): Boolean {
+        if (expectedValue == null) {
+            return true
+        }
+        val normalized = expectedValue.trim()
+        if (normalized.isBlank()) {
+            return keys.all { key ->
+                key !in propertyMap || propertyMap[key].isNullOrEmpty()
+            }
+        }
+        return keys.any { key -> hasExpectedTagValue(propertyMap, key, normalized) }
+    }
+
+    private fun lyricMetadataKeys(audioExtension: String?): List<String> {
+        return buildList {
+            add("LYRICS")
+            when (audioExtension?.lowercase()) {
+                "mp3" -> add("UNSYNCEDLYRICS")
+                "m4a", "mp4", "aac" -> add("DESCRIPTION")
+            }
+        }
+    }
+
+    private val translatedLyricMetadataKeys = listOf(
+        "LYRICS_TRANSLATED",
+        "NERI_LYRICS_TRANSLATED"
+    )
+
+    private sealed class EditableCoverWritePlan {
+        data object Unchanged : EditableCoverWritePlan()
+        data object Unreadable : EditableCoverWritePlan()
+        data class Update(val pictures: Array<Picture>) : EditableCoverWritePlan()
+    }
+
+    private fun buildEditableCoverWritePlan(
+        context: Context,
+        descriptor: ParcelFileDescriptor,
+        coverReference: String?
+    ): EditableCoverWritePlan {
+        val reference = coverReference?.trim()?.takeIf(String::isNotBlank)
+            ?: return EditableCoverWritePlan.Unchanged
+        if (!reference.isLocalCoverReference()) {
+            return EditableCoverWritePlan.Unchanged
+        }
+        val coverBytes = readEditableCoverBytes(context, reference)
+            ?: return EditableCoverWritePlan.Unreadable
+        val existingPictures = runCatching {
+            TagLib.getPictures(descriptor.dup().detachFd())
+        }.getOrElse { error ->
+            NPLogger.w(TAG, "read local cover failed for $reference: ${error.message}")
+            return EditableCoverWritePlan.Unreadable
+        }
+        val existingFrontCover = existingPictures.firstOrNull { picture ->
+            picture.pictureType.equals(FRONT_COVER_PICTURE_TYPE, ignoreCase = true)
+        }
+        if (existingFrontCover?.data?.contentEquals(coverBytes) == true) {
+            return EditableCoverWritePlan.Unchanged
+        }
+        val updatedPictures = existingPictures
+            .filterNot { picture ->
+                picture.pictureType.equals(FRONT_COVER_PICTURE_TYPE, ignoreCase = true)
+            }
+            .plus(
+                Picture(
+                    data = coverBytes,
+                    description = "",
+                    pictureType = FRONT_COVER_PICTURE_TYPE,
+                    mimeType = resolveEditableCoverMimeType(context, reference, coverBytes)
+                )
+            )
+            .toTypedArray()
+        return EditableCoverWritePlan.Update(updatedPictures)
+    }
+
+    private fun String.isLocalCoverReference(): Boolean {
+        return startsWith("/") ||
+            startsWith("file:", ignoreCase = true) ||
+            startsWith("content:", ignoreCase = true)
+    }
+
+    private fun readEditableCoverBytes(context: Context, reference: String): ByteArray? {
+        val uri = runCatching { reference.toUri() }.getOrNull()
+        val localFile = when {
+            reference.startsWith("/") -> File(reference)
+            else -> uri
+                ?.takeIf { coverUri -> coverUri.scheme.equals("file", ignoreCase = true) }
+                ?.path
+                ?.let(::File)
+        }
+        if (localFile?.isFile == true) {
+            return runCatching {
+                localFile.inputStream().use { input ->
+                    input.readBytesLimited(MAX_EDITABLE_COVER_BYTES)
+                }
+            }.getOrNull()
+        }
+        return uri?.let { coverUri ->
+            runCatching {
+                context.contentResolver.openInputStream(coverUri)?.use { input ->
+                    input.readBytesLimited(MAX_EDITABLE_COVER_BYTES)
+                }
+            }.getOrNull()
+        }
+    }
+
+    private fun resolveEditableCoverMimeType(
+        context: Context,
+        reference: String,
+        bytes: ByteArray
+    ): String {
+        val uri = runCatching { reference.toUri() }.getOrNull()
+        val declaredMimeType = uri?.let { coverUri ->
+            runCatching { context.contentResolver.getType(coverUri) }.getOrNull()
+        }?.substringBefore(';')?.trim()?.takeIf { it.startsWith("image/", ignoreCase = true) }
+        if (declaredMimeType != null) {
+            return declaredMimeType
+        }
+        val guessedMimeType = URLConnection.guessContentTypeFromName(
+            uri?.lastPathSegment ?: reference
+        )?.takeIf { it.startsWith("image/", ignoreCase = true) }
+        return guessedMimeType ?: detectEditableCoverMimeType(bytes)
+    }
+
+    private fun detectEditableCoverMimeType(bytes: ByteArray): String {
+        if (bytes.size >= 3 &&
+            bytes[0] == 0xFF.toByte() &&
+            bytes[1] == 0xD8.toByte() &&
+            bytes[2] == 0xFF.toByte()
+        ) {
+            return "image/jpeg"
+        }
+        if (bytes.size >= 8 &&
+            bytes[0] == 0x89.toByte() &&
+            bytes[1] == 0x50.toByte() &&
+            bytes[2] == 0x4E.toByte() &&
+            bytes[3] == 0x47.toByte()
+        ) {
+            return "image/png"
+        }
+        if (bytes.size >= 12 &&
+            bytes[0] == 0x52.toByte() &&
+            bytes[1] == 0x49.toByte() &&
+            bytes[2] == 0x46.toByte() &&
+            bytes[3] == 0x46.toByte() &&
+            bytes[8] == 0x57.toByte() &&
+            bytes[9] == 0x45.toByte() &&
+            bytes[10] == 0x42.toByte() &&
+            bytes[11] == 0x50.toByte()
+        ) {
+            return "image/webp"
+        }
+        return "image/jpeg"
     }
 
     private fun propertyMapsEquivalent(left: PropertyMap, right: PropertyMap): Boolean {

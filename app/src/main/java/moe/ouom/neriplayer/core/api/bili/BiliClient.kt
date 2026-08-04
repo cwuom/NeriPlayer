@@ -85,6 +85,11 @@ class BiliClient(
         private const val FAV_FOLDER_INFO = "https://api.bilibili.com/x/v3/fav/folder/info"
         private const val FAV_RESOURCE_LIST = "https://api.bilibili.com/x/v3/fav/resource/list"
         private const val COLLECTION_ARCHIVES_URL = "https://api.bilibili.com/x/polymer/web-space/seasons_archives_list"
+        private const val SPACE_ACC_INFO_URL = "https://api.bilibili.com/x/space/wbi/acc/info"
+        private const val SPACE_ARCHIVES_URL = "https://api.bilibili.com/x/space/wbi/arc/search"
+        private const val SPACE_SEASONS_SERIES_URL =
+            "https://api.bilibili.com/x/polymer/web-space/seasons_series_list"
+        private const val SERIES_ARCHIVES_URL = "https://api.bilibili.com/x/series/archives"
         private const val PAGELIST_URL = "https://api.bilibili.com/x/player/pagelist"
 
         /** 默认 UA (Web) */
@@ -134,6 +139,12 @@ class BiliClient(
 
         /** 合集内容接口默认分页尺寸 */
         private const val COLLECTION_ARCHIVE_PAGE_SIZE = 30
+
+        /** UP 主投稿接口默认分页尺寸 */
+        private const val UPLOADER_VIDEO_PAGE_SIZE = 30
+
+        /** UP 主合集和系列接口默认分页尺寸 */
+        private const val UPLOADER_CONTENT_PAGE_SIZE = 20
 
         /** 控制 B 站分页接口并发, 避免大量收藏夹时被限流 */
         private const val MAX_PARALLEL_PAGE_REQUESTS = 6
@@ -363,6 +374,63 @@ class BiliClient(
     data class CollectionArchivePage(
         val meta: CollectionMeta,
         val items: List<CollectionArchiveItem>,
+        val hasMore: Boolean
+    )
+
+    data class UploaderProfile(
+        val mid: Long,
+        val name: String,
+        val faceUrl: String,
+        val sign: String,
+        val topPhotoUrl: String
+    )
+
+    data class UploaderVideo(
+        val aid: Long,
+        val bvid: String,
+        val title: String,
+        val coverUrl: String,
+        val durationSec: Int,
+        val uploaderMid: Long,
+        val uploaderName: String,
+        val play: Long?,
+        val pubdate: Long?
+    )
+
+    data class UploaderVideoPage(
+        val page: Int,
+        val pageSize: Int,
+        val total: Int,
+        val items: List<UploaderVideo>,
+        val hasMore: Boolean
+    )
+
+    enum class UploaderContentKind {
+        COLLECTION,
+        SERIES
+    }
+
+    data class UploaderContent(
+        val id: Long,
+        val mid: Long,
+        val kind: UploaderContentKind,
+        val title: String,
+        val coverUrl: String,
+        val description: String,
+        val total: Int
+    )
+
+    data class UploaderContentPage(
+        val page: Int,
+        val pageSize: Int,
+        val collections: List<UploaderContent>,
+        val series: List<UploaderContent>,
+        val hasMore: Boolean
+    )
+
+    data class SeriesArchivePage(
+        val items: List<CollectionArchiveItem>,
+        val total: Int,
         val hasMore: Boolean
     )
 
@@ -603,6 +671,123 @@ class BiliClient(
             items = items
         )
     }
+
+    // UP 主空间 //
+
+    suspend fun getUploaderProfile(mid: Long): UploaderProfile = withContext(Dispatchers.IO) {
+        require(mid > 0L) { "Uploader mid must be positive" }
+        val data = getJsonWbi(
+            SPACE_ACC_INFO_URL,
+            mapOf(
+                "mid" to mid.toString(),
+                "platform" to "web",
+                "web_location" to "1550101"
+            )
+        ).requireSuccessfulData("uploader profile")
+        parseBiliUploaderProfile(data, fallbackMid = mid)
+    }
+
+    suspend fun getUploaderVideos(
+        mid: Long,
+        page: Int = 1,
+        pageSize: Int = UPLOADER_VIDEO_PAGE_SIZE,
+        order: String = "pubdate"
+    ): UploaderVideoPage = withContext(Dispatchers.IO) {
+        require(mid > 0L) { "Uploader mid must be positive" }
+        val resolvedPage = page.coerceAtLeast(1)
+        val resolvedPageSize = pageSize.coerceIn(1, UPLOADER_VIDEO_PAGE_SIZE)
+        val data = getJsonWbi(
+            SPACE_ARCHIVES_URL,
+            mapOf(
+                "mid" to mid.toString(),
+                "pn" to resolvedPage.toString(),
+                "ps" to resolvedPageSize.toString(),
+                "order" to order
+            )
+        ).requireSuccessfulData("uploader videos")
+        parseBiliUploaderVideoPage(
+            data = data,
+            requestedPage = resolvedPage,
+            requestedPageSize = resolvedPageSize,
+            fallbackMid = mid
+        )
+    }
+
+    suspend fun getUploaderContents(
+        mid: Long,
+        page: Int = 1,
+        pageSize: Int = UPLOADER_CONTENT_PAGE_SIZE
+    ): UploaderContentPage = withContext(Dispatchers.IO) {
+        require(mid > 0L) { "Uploader mid must be positive" }
+        val resolvedPage = page.coerceAtLeast(1)
+        val resolvedPageSize = pageSize.coerceIn(1, UPLOADER_CONTENT_PAGE_SIZE)
+        val data = getJsonWbi(
+            SPACE_SEASONS_SERIES_URL,
+            mapOf(
+                "mid" to mid.toString(),
+                "page_num" to resolvedPage.toString(),
+                "page_size" to resolvedPageSize.toString(),
+                "web_location" to "333.999"
+            )
+        ).requireSuccessfulData("uploader collections and series")
+        parseBiliUploaderContentPage(
+            data = data,
+            requestedPage = resolvedPage,
+            requestedPageSize = resolvedPageSize,
+            fallbackMid = mid
+        )
+    }
+
+    suspend fun getSeriesArchives(
+        mid: Long,
+        seriesId: Long,
+        page: Int = 1,
+        pageSize: Int = COLLECTION_ARCHIVE_PAGE_SIZE,
+        sort: String = "desc"
+    ): SeriesArchivePage = withContext(Dispatchers.IO) {
+        require(mid > 0L) { "Uploader mid must be positive" }
+        require(seriesId > 0L) { "Series id must be positive" }
+        val resolvedPage = page.coerceAtLeast(1)
+        val resolvedPageSize = pageSize.coerceIn(1, COLLECTION_ARCHIVE_PAGE_SIZE)
+        val data = getJson(
+            SERIES_ARCHIVES_URL,
+            mapOf(
+                "mid" to mid.toString(),
+                "series_id" to seriesId.toString(),
+                "only_normal" to "true",
+                "sort" to sort,
+                "pn" to resolvedPage.toString(),
+                "ps" to resolvedPageSize.toString()
+            )
+        ).requireSuccessfulData("series archives")
+        parseBiliSeriesArchivePage(
+            data = data,
+            requestedPage = resolvedPage,
+            requestedPageSize = resolvedPageSize
+        )
+    }
+
+    suspend fun getAllSeriesArchives(mid: Long, seriesId: Long): List<CollectionArchiveItem> =
+        withContext(Dispatchers.IO) {
+            val firstPage = getSeriesArchives(mid = mid, seriesId = seriesId, page = 1)
+            if (!firstPage.hasMore || firstPage.total <= firstPage.items.size) {
+                return@withContext firstPage.items
+            }
+
+            val totalPages = (
+                firstPage.total + COLLECTION_ARCHIVE_PAGE_SIZE - 1
+                ) / COLLECTION_ARCHIVE_PAGE_SIZE
+            val restPages = fetchPagesInChunks(2..totalPages) { page ->
+                getSeriesArchives(
+                    mid = mid,
+                    seriesId = seriesId,
+                    page = page,
+                    pageSize = COLLECTION_ARCHIVE_PAGE_SIZE
+                ).items
+            }
+            (firstPage.items + restPages.flatten())
+                .distinctBy { it.bvid.ifBlank { it.aid.toString() } }
+        }
 
     // 点赞近况 //
 
@@ -1136,6 +1321,15 @@ class BiliClient(
         return JSONObject(text)
     }
 
+    private fun JSONObject.requireSuccessfulData(endpoint: String): JSONObject {
+        val code = optInt("code", -1)
+        if (code != 0) {
+            val message = optString("message").ifBlank { optString("msg") }
+            throw IOException("Bili $endpoint failed: code=$code, message=$message")
+        }
+        return optJSONObject("data") ?: JSONObject()
+    }
+
     // Wbi 签名 //
 
     private val keyMutex = Mutex()
@@ -1566,6 +1760,184 @@ class BiliClient(
         return pages
     }
 
+}
+
+internal fun parseBiliUploaderProfile(
+    data: JSONObject,
+    fallbackMid: Long
+): BiliClient.UploaderProfile {
+    return BiliClient.UploaderProfile(
+        mid = data.optLong("mid", fallbackMid).takeIf { it > 0L } ?: fallbackMid,
+        name = data.optString("name"),
+        faceUrl = normalizeBiliImageUrl(data.optString("face")),
+        sign = data.optString("sign"),
+        topPhotoUrl = normalizeBiliImageUrl(data.optString("top_photo"))
+    )
+}
+
+internal fun parseBiliUploaderVideoPage(
+    data: JSONObject,
+    requestedPage: Int,
+    requestedPageSize: Int,
+    fallbackMid: Long
+): BiliClient.UploaderVideoPage {
+    val list = data.optJSONObject("list") ?: JSONObject()
+    val videos = list.optJSONArray("vlist") ?: JSONArray()
+    val items = ArrayList<BiliClient.UploaderVideo>(videos.length())
+    for (index in 0 until videos.length()) {
+        val video = videos.optJSONObject(index) ?: continue
+        val aid = video.optLong("aid")
+        val bvid = video.optString("bvid")
+        val title = stripBiliHtml(video.optString("title"))
+        if (aid <= 0L || bvid.isBlank() || title.isBlank()) continue
+        items += BiliClient.UploaderVideo(
+            aid = aid,
+            bvid = bvid,
+            title = title,
+            coverUrl = normalizeBiliImageUrl(video.optString("pic")),
+            durationSec = parseBiliSpaceDurationSeconds(video.optString("length")),
+            uploaderMid = video.optLong("mid", fallbackMid).takeIf { it > 0L } ?: fallbackMid,
+            uploaderName = video.optString("author"),
+            play = video.optLongIfPresent("play"),
+            pubdate = video.optLongIfPresent("created"),
+        )
+    }
+    val page = data.optJSONObject("page") ?: JSONObject()
+    val resolvedPage = page.optInt("pn", requestedPage).coerceAtLeast(1)
+    val resolvedPageSize = page.optInt("ps", requestedPageSize).coerceAtLeast(1)
+    val total = page.optInt("count", items.size).coerceAtLeast(items.size)
+    return BiliClient.UploaderVideoPage(
+        page = resolvedPage,
+        pageSize = resolvedPageSize,
+        total = total,
+        items = items,
+        hasMore = resolvedPage * resolvedPageSize < total
+    )
+}
+
+internal fun parseBiliUploaderContentPage(
+    data: JSONObject,
+    requestedPage: Int,
+    requestedPageSize: Int,
+    fallbackMid: Long
+): BiliClient.UploaderContentPage {
+    val itemLists = data.optJSONObject("items_lists") ?: JSONObject()
+    val page = itemLists.optJSONObject("page") ?: JSONObject()
+    val resolvedPage = page.optInt("page_num", requestedPage).coerceAtLeast(1)
+    val resolvedPageSize = page.optInt("page_size", requestedPageSize).coerceAtLeast(1)
+    val collections = parseBiliUploaderContents(
+        items = itemLists.optJSONArray("seasons_list"),
+        kind = BiliClient.UploaderContentKind.COLLECTION,
+        fallbackMid = fallbackMid
+    )
+    val series = parseBiliUploaderContents(
+        items = itemLists.optJSONArray("series_list"),
+        kind = BiliClient.UploaderContentKind.SERIES,
+        fallbackMid = fallbackMid
+    )
+    val total = page.optInt("total", collections.size + series.size)
+    return BiliClient.UploaderContentPage(
+        page = resolvedPage,
+        pageSize = resolvedPageSize,
+        collections = collections,
+        series = series,
+        hasMore = total > resolvedPage * resolvedPageSize
+    )
+}
+
+internal fun parseBiliSeriesArchivePage(
+    data: JSONObject,
+    requestedPage: Int,
+    requestedPageSize: Int
+): BiliClient.SeriesArchivePage {
+    val archives = data.optJSONArray("archives") ?: JSONArray()
+    val items = ArrayList<BiliClient.CollectionArchiveItem>(archives.length())
+    for (index in 0 until archives.length()) {
+        archives.optJSONObject(index)
+            ?.let(::parseBiliSpaceArchiveItem)
+            ?.let(items::add)
+    }
+    val page = data.optJSONObject("page") ?: JSONObject()
+    val resolvedPage = page.optInt("num", requestedPage).coerceAtLeast(1)
+    val resolvedPageSize = page.optInt("size", requestedPageSize).coerceAtLeast(1)
+    val total = page.optInt("total", items.size).coerceAtLeast(items.size)
+    return BiliClient.SeriesArchivePage(
+        items = items,
+        total = total,
+        hasMore = resolvedPage * resolvedPageSize < total
+    )
+}
+
+private fun parseBiliUploaderContents(
+    items: JSONArray?,
+    kind: BiliClient.UploaderContentKind,
+    fallbackMid: Long
+): List<BiliClient.UploaderContent> {
+    if (items == null) return emptyList()
+    val contents = ArrayList<BiliClient.UploaderContent>(items.length())
+    for (index in 0 until items.length()) {
+        val item = items.optJSONObject(index) ?: continue
+        val meta = item.optJSONObject("meta") ?: item
+        val id = when (kind) {
+            BiliClient.UploaderContentKind.COLLECTION -> meta.optLong("season_id")
+            BiliClient.UploaderContentKind.SERIES -> meta.optLong("series_id")
+        }
+        val title = meta.optString("name").ifBlank { meta.optString("title") }
+        if (id <= 0L || title.isBlank()) continue
+        contents += BiliClient.UploaderContent(
+            id = id,
+            mid = meta.optLong("mid", fallbackMid).takeIf { it > 0L } ?: fallbackMid,
+            kind = kind,
+            title = title,
+            coverUrl = normalizeBiliImageUrl(meta.optString("cover")),
+            description = meta.optString("description"),
+            total = meta.optInt("total")
+        )
+    }
+    return contents.distinctBy { it.id }
+}
+
+private fun parseBiliSpaceArchiveItem(item: JSONObject): BiliClient.CollectionArchiveItem? {
+    val aid = item.optLong("aid")
+    val bvid = item.optString("bvid")
+    val title = item.optString("title")
+    if (aid <= 0L || bvid.isBlank() || title.isBlank()) return null
+    return BiliClient.CollectionArchiveItem(
+        aid = aid,
+        bvid = bvid,
+        title = title,
+        coverUrl = normalizeBiliImageUrl(item.optString("pic")),
+        durationSec = item.optInt("duration"),
+        pubdate = item.optLongIfPresent("pubdate"),
+        play = item.optJSONObject("stat")?.optLongIfPresent("view")
+    )
+}
+
+private fun normalizeBiliImageUrl(url: String?): String {
+    val value = url?.trim().orEmpty()
+    return when {
+        value.startsWith("//") -> "https:$value"
+        value.startsWith("http://") -> value.replaceFirst("http://", "https://")
+        else -> value
+    }
+}
+
+private fun stripBiliHtml(value: String): String = value.replace(Regex("<.*?>"), "")
+
+private fun parseBiliSpaceDurationSeconds(value: String): Int {
+    if (value.isBlank()) return 0
+    var duration = 0
+    for (part in value.split(':')) {
+        val seconds = part.toIntOrNull() ?: return 0
+        duration = duration * 60 + seconds
+    }
+    return duration
+}
+
+private fun JSONObject.optLongIfPresent(name: String): Long? {
+    if (!has(name) || isNull(name)) return null
+    val value = opt(name)
+    return (value as? Number)?.toLong() ?: value?.toString()?.toLongOrNull()
 }
 
 /**

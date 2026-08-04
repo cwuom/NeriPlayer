@@ -224,6 +224,7 @@ import moe.ouom.neriplayer.ui.screen.debug.NeteaseApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.debug.SearchApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.debug.UsbExclusiveDebugScreen
 import moe.ouom.neriplayer.ui.screen.debug.YouTubeApiProbeScreen
+import moe.ouom.neriplayer.ui.screen.artist.BiliUploaderDetailScreen
 import moe.ouom.neriplayer.ui.screen.artist.NeteaseArtistDetailScreen
 import moe.ouom.neriplayer.ui.screen.host.ExploreHostScreen
 import moe.ouom.neriplayer.ui.screen.host.HomeHostScreen
@@ -241,6 +242,7 @@ import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.view.HyperBackground
 import moe.ouom.neriplayer.ui.viewmodel.debug.LogViewerScreen
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
+import moe.ouom.neriplayer.data.model.BiliUploaderSummary
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
@@ -282,6 +284,7 @@ private val TRANSPARENT_MAIN_TAB_DETAIL_ROUTES = setOf(
     Destinations.NeteaseAlbumDetail.route,
     Destinations.NeteaseArtistDetail.route,
     Destinations.BiliPlaylistDetail.route,
+    Destinations.BiliUploaderDetail.route,
     Destinations.LocalPlaylistDetail.route,
     Destinations.Recent.route,
     Destinations.PlaybackStats.route,
@@ -313,6 +316,16 @@ private fun transparentNavigationDepth(route: String?): Int {
         route in TRANSPARENT_MAIN_TAB_DETAIL_ROUTES -> 1
         else -> 0
     }
+}
+
+internal fun shouldUseInstantBiliUploaderPlaylistTransition(
+    initialRoute: String?,
+    targetRoute: String?
+): Boolean {
+    return (initialRoute == Destinations.BiliUploaderDetail.route &&
+        targetRoute == Destinations.BiliPlaylistDetail.route) ||
+        (initialRoute == Destinations.BiliPlaylistDetail.route &&
+            targetRoute == Destinations.BiliUploaderDetail.route)
 }
 
 internal const val MAIN_TAB_DETAIL_OPEN_DURATION_MS = 220
@@ -586,6 +599,14 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabExitTransi
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailEnterTransition(
     coherentFeedbackEnabled: Boolean = true
 ): EnterTransition {
+    if (
+        shouldUseInstantBiliUploaderPlaylistTransition(
+            initialRoute = initialState.destination.route,
+            targetRoute = targetState.destination.route
+        )
+    ) {
+        return EnterTransition.None
+    }
     val durationMillis = if (coherentFeedbackEnabled) {
         MAIN_TAB_DETAIL_OPEN_DURATION_MS
     } else {
@@ -612,6 +633,14 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetail
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailExitTransition(
     coherentFeedbackEnabled: Boolean = true
 ): ExitTransition {
+    if (
+        shouldUseInstantBiliUploaderPlaylistTransition(
+            initialRoute = initialState.destination.route,
+            targetRoute = targetState.destination.route
+        )
+    ) {
+        return ExitTransition.None
+    }
     val handoff = resolveMainTabDetailHandoff(
         initialRoute = initialState.destination.route,
         targetRoute = targetState.destination.route
@@ -643,6 +672,14 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetail
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailPopEnterTransition(
     coherentFeedbackEnabled: Boolean = true
 ): EnterTransition {
+    if (
+        shouldUseInstantBiliUploaderPlaylistTransition(
+            initialRoute = initialState.destination.route,
+            targetRoute = targetState.destination.route
+        )
+    ) {
+        return EnterTransition.None
+    }
     return if (coherentFeedbackEnabled) {
         slideInVertically(
             animationSpec = tween(
@@ -664,6 +701,14 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetail
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetailPopExitTransition(
     coherentFeedbackEnabled: Boolean = true
 ): ExitTransition {
+    if (
+        shouldUseInstantBiliUploaderPlaylistTransition(
+            initialRoute = initialState.destination.route,
+            targetRoute = targetState.destination.route
+        )
+    ) {
+        return ExitTransition.None
+    }
     return if (coherentFeedbackEnabled) {
         slideOutVertically(
             animationSpec = tween(
@@ -2123,6 +2168,10 @@ private fun NeriAppContent(
         return "bili_playlist_detail/${Uri.encode(navigationGson.toJson(playlist))}"
     }
 
+    fun biliUploaderSourceRoute(uploader: BiliUploaderSummary): String {
+        return "bili_uploader_detail/${Uri.encode(navigationGson.toJson(uploader))}"
+    }
+
     fun localPlaylistSourceRoute(id: Long): String {
         return "local_playlist_detail/$id"
     }
@@ -2428,6 +2477,29 @@ private fun NeriAppContent(
                     navController.popBackStack()
                 }
                 navController.navigate("netease_artist_detail/$json") {
+                    launchSingleTop = true
+                }
+            }
+            fun navigateToBiliUploader(uploader: BiliUploaderSummary) {
+                if (uploader.mid <= 0L) return
+                val currentEntry = navController.currentBackStackEntry
+                val currentIsUploader =
+                    currentEntry?.destination?.route == Destinations.BiliUploaderDetail.route
+                val currentUploader = currentEntry
+                    ?.arguments
+                    ?.getString("uploaderJson")
+                    ?.let {
+                        runCatching {
+                            navigationGson.fromJson(it, BiliUploaderSummary::class.java)
+                        }.getOrNull()
+                    }
+                if (currentUploader?.mid == uploader.mid) {
+                    return
+                }
+                if (currentIsUploader) {
+                    navController.popBackStack()
+                }
+                navController.navigate(biliUploaderSourceRoute(uploader)) {
                     launchSingleTop = true
                 }
             }
@@ -3450,11 +3522,20 @@ private fun NeriAppContent(
                                 ) { backStackEntry ->
                                     val playlistJson = backStackEntry.arguments?.getString("playlistJson")
                                     val playlist = navigationGson.fromJson(playlistJson, BiliPlaylist::class.java)
+                                    val suppressBiliPlaylistVisibilityTransition =
+                                        shouldUseInstantBiliUploaderPlaylistTransition(
+                                            initialRoute = navController.previousBackStackEntry
+                                                ?.destination
+                                                ?.route,
+                                            targetRoute = Destinations.BiliPlaylistDetail.route
+                                        )
                                     RenderNavHostScene(
                                         Destinations.BiliPlaylistDetail.route
                                     ) {
                                         BiliPlaylistDetailScreen(
                                             playlist = playlist,
+                                            suppressVisibilityTransition =
+                                                suppressBiliPlaylistVisibilityTransition,
                                             onBack = { navController.popBackStack() },
                                             onPlayAudio = { videos, index ->
                                                 playBiliAudioAndOpenNowPlayingWithSource(
@@ -3470,6 +3551,63 @@ private fun NeriAppContent(
                                                     coverUrl = coverUrl,
                                                     sourceRoute = biliPlaylistSourceRoute(playlist)
                                                 )
+                                            },
+                                            offlineMode = offlineMode
+                                        )
+                                    }
+                                }
+
+                                composable(
+                                    route = Destinations.BiliUploaderDetail.route,
+                                    arguments = listOf(navArgument("uploaderJson") {
+                                        type = NavType.StringType
+                                    }),
+                                    enterTransition = {
+                                        transparentDetailEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        transparentDetailExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        transparentDetailPopEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        transparentDetailPopExitTransition(coherentFeedbackEnabled)
+                                    }
+                                ) { backStackEntry ->
+                                    val uploaderJson = backStackEntry.arguments
+                                        ?.getString("uploaderJson")
+                                    val uploader = navigationGson.fromJson(
+                                        uploaderJson,
+                                        BiliUploaderSummary::class.java
+                                    )
+                                    RenderNavHostScene(
+                                        Destinations.BiliUploaderDetail.route
+                                    ) {
+                                        BiliUploaderDetailScreen(
+                                            uploader = uploader,
+                                            onBack = { navController.popBackStack() },
+                                            onPlayAudio = { videos, index ->
+                                                playBiliAudioAndOpenNowPlayingWithSource(
+                                                    videos = videos,
+                                                    index = index,
+                                                    sourceRoute = biliUploaderSourceRoute(uploader)
+                                                )
+                                            },
+                                            onPlayParts = { videoInfo, index, coverUrl ->
+                                                playBiliPartsAndOpenNowPlayingWithSource(
+                                                    videoInfo = videoInfo,
+                                                    index = index,
+                                                    coverUrl = coverUrl,
+                                                    sourceRoute = biliUploaderSourceRoute(uploader)
+                                                )
+                                            },
+                                            onContentClick = { playlist ->
+                                                navController.navigate(
+                                                    biliPlaylistSourceRoute(playlist)
+                                                ) {
+                                                    launchSingleTop = true
+                                                }
                                             },
                                             offlineMode = offlineMode
                                         )
@@ -4200,6 +4338,7 @@ private fun NeriAppContent(
                                         }
                                     },
                                     onEnterArtist = ::navigateToNeteaseArtist,
+                                    onEnterBiliUploader = ::navigateToBiliUploader,
                                     lyricBlurEnabled = lyricBlurEnabled,
                                     lyricBlurAmount = lyricBlurAmount,
                                     lyricFontScales = lyricFontScales,

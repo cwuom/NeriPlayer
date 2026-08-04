@@ -690,6 +690,22 @@ class NowPlayingScreenTest {
     }
 
     @Test
+    fun `bilibili uploader navigation only accepts playable bilibili videos`() {
+        val biliSong = testSong(id = 11L, name = "Bili song").copy(
+            album = "Bilibili|123",
+            channelId = "bilibili"
+        )
+        val missingVideoId = biliSong.copy(id = 0L)
+        val neteaseSong = testSong(id = 12L, name = "Netease song").copy(
+            album = "Netease"
+        )
+
+        assertTrue(isBiliUploaderNavigationSource(biliSong))
+        assertFalse(isBiliUploaderNavigationSource(missingVideoId))
+        assertFalse(isBiliUploaderNavigationSource(neteaseSong))
+    }
+
+    @Test
     fun `playback source badge uses resolved bili audio source over netease tag`() {
         val sourceType = resolveNowPlayingPlaybackSourceType(
             isLocalSong = false,

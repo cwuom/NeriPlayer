@@ -207,6 +207,28 @@ class NeriAppMainTabTransitionPolicyTest {
     }
 
     @Test
+    fun `Bili uploader and playlist navigation skips the overlapping detail transition`() {
+        assertTrue(
+            shouldUseInstantBiliUploaderPlaylistTransition(
+                initialRoute = Destinations.BiliUploaderDetail.route,
+                targetRoute = Destinations.BiliPlaylistDetail.route
+            )
+        )
+        assertTrue(
+            shouldUseInstantBiliUploaderPlaylistTransition(
+                initialRoute = Destinations.BiliPlaylistDetail.route,
+                targetRoute = Destinations.BiliUploaderDetail.route
+            )
+        )
+        assertFalse(
+            shouldUseInstantBiliUploaderPlaylistTransition(
+                initialRoute = Destinations.NeteaseArtistDetail.route,
+                targetRoute = Destinations.NeteaseAlbumDetail.route
+            )
+        )
+    }
+
+    @Test
     fun `coherent feedback keeps the existing full height handoff`() {
         val motion = resolveMainTabBackgroundMotion(
             route = Destinations.Recent.route,

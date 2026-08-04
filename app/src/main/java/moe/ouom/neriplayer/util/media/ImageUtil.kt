@@ -28,6 +28,7 @@ import android.content.Context
 import coil.size.Precision
 import coil.request.ImageRequest
 import coil.request.CachePolicy
+import coil.transform.Transformation
 import moe.ouom.neriplayer.data.traffic.isOfflineModeNow
 
 private const val DEFAULT_LOCAL_IMAGE_REQUEST_SIZE_PX = 512
@@ -41,7 +42,8 @@ fun offlineCachedImageRequest(
     sizePx: Int? = null,
     allowHardware: Boolean = true,
     crossfade: Boolean = false,
-    offlineMode: Boolean = context.isOfflineModeNow()
+    offlineMode: Boolean = context.isOfflineModeNow(),
+    transformations: List<Transformation> = emptyList()
 ): ImageRequest {
     val localSource = isLocalImageSource(data)
     val remoteSource = isRemoteImageSource(data)
@@ -61,6 +63,9 @@ fun offlineCachedImageRequest(
         builder
             .size(resolvedSizePx)
             .precision(Precision.INEXACT)
+    }
+    if (transformations.isNotEmpty()) {
+        builder.transformations(transformations)
     }
     return builder.build()
 }

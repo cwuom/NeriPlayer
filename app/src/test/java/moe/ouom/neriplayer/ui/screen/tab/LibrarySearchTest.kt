@@ -40,24 +40,38 @@ class LibrarySearchTest {
                 coverUrl = "",
                 kind = BiliPlaylistKind.COLLECTION,
                 subtitle = "合集"
+            ),
+            BiliPlaylist(
+                mediaId = 404L,
+                fid = 14L,
+                mid = 24L,
+                title = "Android 开发系列",
+                count = 4,
+                coverUrl = "",
+                kind = BiliPlaylistKind.SERIES,
+                subtitle = "系列"
             )
         )
 
         assertEquals(
             listOf(playlists[0]),
-            filterBiliPlaylists(playlists, "Java", "创建的收藏夹", "订阅收藏夹", "合集")
+            filterBiliPlaylists(playlists, "Java", "创建的收藏夹", "订阅收藏夹", "合集", "系列")
         )
         assertEquals(
             listOf(playlists[1]),
-            filterBiliPlaylists(playlists, "订阅", "创建的收藏夹", "订阅收藏夹", "合集")
+            filterBiliPlaylists(playlists, "订阅", "创建的收藏夹", "订阅收藏夹", "合集", "系列")
         )
         assertEquals(
             listOf(playlists[2]),
-            filterBiliPlaylists(playlists, "合集", "创建的收藏夹", "订阅收藏夹", "合集")
+            filterBiliPlaylists(playlists, "合集", "创建的收藏夹", "订阅收藏夹", "合集", "系列")
         )
         assertEquals(
             listOf(playlists[0]),
-            filterBiliPlaylists(playlists, "101", "创建的收藏夹", "订阅收藏夹", "合集")
+            filterBiliPlaylists(playlists, "101", "创建的收藏夹", "订阅收藏夹", "合集", "系列")
+        )
+        assertEquals(
+            listOf(playlists[3]),
+            filterBiliPlaylists(playlists, "系列", "创建的收藏夹", "订阅收藏夹", "合集", "系列")
         )
     }
 

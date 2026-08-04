@@ -8,7 +8,8 @@ internal fun filterBiliPlaylists(
     query: String,
     createdLabel: String,
     collectedLabel: String,
-    collectionLabel: String
+    collectionLabel: String,
+    seriesLabel: String
 ): List<BiliPlaylist> {
     val normalizedQuery = query.trim()
     if (normalizedQuery.isBlank()) {
@@ -20,7 +21,8 @@ internal fun filterBiliPlaylists(
             query = normalizedQuery,
             createdLabel = createdLabel,
             collectedLabel = collectedLabel,
-            collectionLabel = collectionLabel
+            collectionLabel = collectionLabel,
+            seriesLabel = seriesLabel
         )
     }
 }
@@ -29,12 +31,14 @@ internal fun BiliPlaylist.matchesBiliPlaylistQuery(
     query: String,
     createdLabel: String,
     collectedLabel: String,
-    collectionLabel: String
+    collectionLabel: String,
+    seriesLabel: String
 ): Boolean {
     val kindLabel = when (kind) {
         BiliPlaylistKind.CREATED_FAVORITE -> createdLabel
         BiliPlaylistKind.COLLECTED_FAVORITE -> collectedLabel
         BiliPlaylistKind.COLLECTION -> collectionLabel
+        BiliPlaylistKind.SERIES -> seriesLabel
     }
 
     return title.contains(query, ignoreCase = true) ||

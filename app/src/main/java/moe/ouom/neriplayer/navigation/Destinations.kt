@@ -67,6 +67,9 @@ sealed class Destinations(val route: String, val labelResId: Int) {
     // B 站收藏夹详情路由
     data object BiliPlaylistDetail : Destinations("bili_playlist_detail/{playlistJson}", moe.ouom.neriplayer.R.string.playlist_detail)
 
+    // B 站 UP 主详情路由
+    data object BiliUploaderDetail : Destinations("bili_uploader_detail/{uploaderJson}", moe.ouom.neriplayer.R.string.bili_uploader_detail)
+
     // 本地歌单详情路由
     data object LocalPlaylistDetail : Destinations("local_playlist_detail/{playlistId}", moe.ouom.neriplayer.R.string.playlist_local_detail)
 

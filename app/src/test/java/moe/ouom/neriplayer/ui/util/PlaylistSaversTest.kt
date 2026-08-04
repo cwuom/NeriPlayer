@@ -24,4 +24,20 @@ class PlaylistSaversTest {
         assertNotNull(restored)
         assertEquals(original, restored)
     }
+
+    @Test
+    fun biliPlaylistRoundTrip_keepsSeriesKind() {
+        val original = BiliPlaylist(
+            mediaId = 1234L,
+            fid = 1234L,
+            mid = 5678L,
+            title = "Android series",
+            count = 8,
+            coverUrl = "https://example.test/series.jpg",
+            kind = BiliPlaylistKind.SERIES,
+            subtitle = "Uploader"
+        )
+
+        assertEquals(original, restoreBiliPlaylist(original.toSaveMap()))
+    }
 }

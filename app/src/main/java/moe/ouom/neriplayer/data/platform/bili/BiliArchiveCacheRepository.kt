@@ -19,53 +19,59 @@ package moe.ouom.neriplayer.data.platform.bili
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.data.platform.bili/BiliFavoriteFolderCacheRepository
- * Created: 2026/7/2
+ * File: moe.ouom.neriplayer.data.platform.bili/BiliArchiveCacheRepository
+ * Created: 2026/8/4
  */
 
 import android.content.Context
 import com.google.gson.Gson
-import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
+import java.util.Locale
+import moe.ouom.neriplayer.core.logging.NPLogger
 
-data class CachedBiliFavoriteVideo(
+data class CachedBiliArchiveVideo(
     val id: Long,
     val bvid: String,
     val title: String,
     val uploader: String,
-    val uploaderMid: Long = 0L,
+    val uploaderMid: Long,
     val coverUrl: String,
     val durationSec: Int
 )
 
-data class BiliFavoriteFolderContentCache(
+data class BiliArchiveContentCache(
     val mediaId: Long,
-    val latestPageSignature: String,
+    val kind: String,
     val totalCount: Int,
-    val videos: List<CachedBiliFavoriteVideo>,
+    val hasMore: Boolean,
+    val videos: List<CachedBiliArchiveVideo>,
     val savedAtMs: Long = System.currentTimeMillis()
 )
 
-class BiliFavoriteFolderCacheRepository(context: Context) {
+internal fun biliArchiveCacheFileName(mediaId: Long, kind: String): String {
+    return "${kind.lowercase(Locale.ROOT)}_$mediaId.json"
+}
+
+class BiliArchiveCacheRepository(context: Context) {
     private val appContext = context.applicationContext
     private val gson = Gson()
     private val cacheDir = File(appContext.filesDir, CACHE_DIR_NAME)
 
-    fun read(mediaId: Long): BiliFavoriteFolderContentCache? {
-        val file = cacheFile(mediaId)
+    fun read(mediaId: Long, kind: String): BiliArchiveContentCache? {
+        val file = cacheFile(mediaId, kind)
         if (!file.exists()) return null
         return runCatching {
-            gson.fromJson(file.readText(Charsets.UTF_8), BiliFavoriteFolderContentCache::class.java)
-                ?.takeIf { it.mediaId == mediaId }
+            gson.fromJson(file.readText(Charsets.UTF_8), BiliArchiveContentCache::class.java)
+                ?.takeIf { it.mediaId == mediaId && it.kind == kind }
         }.onFailure { error ->
-            NPLogger.w(TAG, "Failed to read Bili favorite cache: mediaId=$mediaId", error)
+            NPLogger.w(TAG, "Failed to read Bili archive cache: mediaId=$mediaId, kind=$kind", error)
         }.getOrNull()
     }
 
-    fun save(cache: BiliFavoriteFolderContentCache) {
+    fun save(cache: BiliArchiveContentCache) {
         runCatching {
             cacheDir.mkdirs()
-            val file = cacheFile(cache.mediaId)
+            val file = cacheFile(cache.mediaId, cache.kind)
             val tmp = File(cacheDir, "${file.name}.tmp")
             tmp.writeText(gson.toJson(cache), Charsets.UTF_8)
             if (!tmp.renameTo(file)) {
@@ -73,24 +79,28 @@ class BiliFavoriteFolderCacheRepository(context: Context) {
                 tmp.delete()
             }
         }.onFailure { error ->
-            NPLogger.w(TAG, "Failed to save Bili favorite cache: mediaId=${cache.mediaId}", error)
+            NPLogger.w(
+                TAG,
+                "Failed to save Bili archive cache: mediaId=${cache.mediaId}, kind=${cache.kind}",
+                error
+            )
         }
     }
 
-    fun clear(mediaId: Long) {
+    fun clear(mediaId: Long, kind: String) {
         runCatching {
-            cacheFile(mediaId).delete()
+            cacheFile(mediaId, kind).delete()
         }.onFailure { error ->
-            NPLogger.w(TAG, "Failed to clear Bili favorite cache: mediaId=$mediaId", error)
+            NPLogger.w(TAG, "Failed to clear Bili archive cache: mediaId=$mediaId, kind=$kind", error)
         }
     }
 
-    private fun cacheFile(mediaId: Long): File {
-        return File(cacheDir, "media_$mediaId.json")
+    private fun cacheFile(mediaId: Long, kind: String): File {
+        return File(cacheDir, biliArchiveCacheFileName(mediaId, kind))
     }
 
     private companion object {
-        const val TAG = "BiliFavoriteCache"
-        const val CACHE_DIR_NAME = "bili_favorite_cache"
+        const val TAG = "BiliArchiveCache"
+        const val CACHE_DIR_NAME = "bili_archive_cache"
     }
 }

@@ -38,7 +38,7 @@
     <string name="local_song_lyric_external">同目录歌词文件</string>
     <string name="local_song_open_details">歌曲信息详情</string>
     <string name="local_song_metadata_write_confirm_title">回写本地元数据？</string>
-    <string name="local_song_metadata_write_confirm_message">将当前标题和艺术家写入本地音频标签，不会修改专辑、封面、歌词或其他标签。</string>
+    <string name="local_song_metadata_write_confirm_message">将当前标题、艺术家、封面、原文歌词和翻译歌词写入本地音频标签。音频格式或提供商不支持的字段可能无法回写。</string>
     <string name="local_song_metadata_write_confirm_write">回写</string>
     <string name="local_song_metadata_write_confirm_app_only">仅应用内保存</string>
     <string name="local_song_metadata_write_success">已回写本地音频标签</string>

@@ -2587,6 +2587,12 @@ object PlayerManager {
     suspend fun updateSongLyricsAndTranslation(
         songToUpdate: SongItem,
         newLyrics: String?,
-        newTranslatedLyrics: String?
-    ) = updateSongLyricsAndTranslationImpl(songToUpdate, newLyrics, newTranslatedLyrics)
+        newTranslatedLyrics: String?,
+        writeLocalMetadata: Boolean = false
+    ) = updateSongLyricsAndTranslationImpl(
+        songToUpdate = songToUpdate,
+        newLyrics = newLyrics,
+        newTranslatedLyrics = newTranslatedLyrics,
+        writeLocalMetadata = writeLocalMetadata
+    )
 }

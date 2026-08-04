@@ -757,20 +757,23 @@ private fun BiliPlaylistList(
     val createdLabel = stringResource(R.string.library_bili_created_favorite)
     val collectedLabel = stringResource(R.string.library_bili_collected_favorite)
     val collectionLabel = stringResource(R.string.library_bili_collection)
+    val seriesLabel = stringResource(R.string.library_bili_series)
     var searchQuery by rememberSaveable { mutableStateOf("") }
     val filteredPlaylists = remember(
         playlists,
         searchQuery,
         createdLabel,
         collectedLabel,
-        collectionLabel
+        collectionLabel,
+        seriesLabel
     ) {
         filterBiliPlaylists(
             playlists = playlists,
             query = searchQuery,
             createdLabel = createdLabel,
             collectedLabel = collectedLabel,
-            collectionLabel = collectionLabel
+            collectionLabel = collectionLabel,
+            seriesLabel = seriesLabel
         )
     }
 
@@ -876,6 +879,7 @@ private fun BiliPlaylistList(
                 BiliPlaylistKind.CREATED_FAVORITE -> stringResource(R.string.library_bili_created_favorite)
                 BiliPlaylistKind.COLLECTED_FAVORITE -> stringResource(R.string.library_bili_collected_favorite)
                 BiliPlaylistKind.COLLECTION -> stringResource(R.string.library_bili_collection)
+                BiliPlaylistKind.SERIES -> stringResource(R.string.library_bili_series)
             }
             Card(
                 shape = cardShape,

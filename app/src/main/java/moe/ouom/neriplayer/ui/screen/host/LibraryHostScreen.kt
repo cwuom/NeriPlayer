@@ -642,16 +642,16 @@ fun LibraryHostScreen(
                                         biliPlaylistSourceRoute(current.playlist)
                                     )
                                 },
-                                onPlayParts = { videoInfo, index, coverUrl ->
-                                    onPlayBiliPartsWithSourceRoute(
+                                    onPlayParts = { videoInfo, index, coverUrl ->
+                                        onPlayBiliPartsWithSourceRoute(
                                         videoInfo,
                                         index,
                                         coverUrl,
-                                        biliPlaylistSourceRoute(current.playlist)
-                                    )
-                                },
-                                offlineMode = offlineMode
-                            )
+                                            biliPlaylistSourceRoute(current.playlist)
+                                        )
+                                    },
+                                    offlineMode = offlineMode
+                                )
                         }
                         }
                     }

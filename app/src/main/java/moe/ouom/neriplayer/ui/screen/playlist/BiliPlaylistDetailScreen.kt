@@ -26,6 +26,8 @@ package moe.ouom.neriplayer.ui.screen.playlist
 import android.app.Application
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -82,6 +84,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.core.api.bili.buildBiliThumbnailUrl
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
@@ -99,6 +102,7 @@ import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
@@ -122,6 +126,7 @@ fun BiliPlaylistDetailScreen(
     onBack: () -> Unit = {},
     onPlayAudio: (List<BiliVideoItem>, Int) -> Unit = { _, _ -> },
     onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> },
+    suppressVisibilityTransition: Boolean = false,
     offlineMode: Boolean = false
 ) {
     val context = LocalContext.current
@@ -145,10 +150,10 @@ fun BiliPlaylistDetailScreen(
 
     // 保存最新的header和videos数据，用于在Screen销毁时更新使用记录
     var latestHeader by remember { mutableStateOf<BiliPlaylist?>(null) }
-    var latestVideosSize by remember { mutableIntStateOf(0) }
+    var latestTrackCount by remember { mutableIntStateOf(0) }
     LaunchedEffect(ui.header, ui.videos.size) {
         ui.header?.let { latestHeader = it }
-        latestVideosSize = ui.videos.size
+        latestTrackCount = ui.header?.count?.coerceAtLeast(ui.videos.size) ?: ui.videos.size
     }
 
     // 在Screen销毁时更新使用记录，确保返回主页时卡片显示最新信息
@@ -159,7 +164,7 @@ fun BiliPlaylistDetailScreen(
                     id = header.mediaId,
                     name = header.title,
                     picUrl = header.coverUrl,
-                    trackCount = latestVideosSize,
+                    trackCount = latestTrackCount,
                     fid = header.fid,
                     mid = header.mid,
                     source = "bili",
@@ -272,8 +277,15 @@ fun BiliPlaylistDetailScreen(
         }
     )
     val displayHeader = ui.header ?: playlist
+    val displayHeaderCoverUrl = remember(displayHeader.coverUrl) {
+        buildBiliThumbnailUrl(
+            imageUrl = displayHeader.coverUrl,
+            width = 640,
+            height = 640
+        )
+    }
     val playlistChromeColor = rememberPlaylistModernHeroBackgroundColor(
-        coverUrl = displayHeader.coverUrl,
+        coverUrl = displayHeaderCoverUrl,
         offlineMode = offlineMode
     )
     val density = LocalDensity.current
@@ -406,8 +418,16 @@ fun BiliPlaylistDetailScreen(
     val detailVisibilityState = rememberMainTabDetailVisibilityState(playlist.mediaId)
     AnimatedVisibility(
         visibleState = detailVisibilityState,
-        enter = fadeIn() + slideInVertically { it / 6 },
-        exit = fadeOut() + slideOutVertically { it / 6 }
+        enter = if (suppressVisibilityTransition) {
+            EnterTransition.None
+        } else {
+            fadeIn() + slideInVertically { it / 6 }
+        },
+        exit = if (suppressVisibilityTransition) {
+            ExitTransition.None
+        } else {
+            fadeOut() + slideOutVertically { it / 6 }
+        }
     ) {
         Surface(
             modifier = Modifier.fillMaxSize(),
@@ -554,7 +574,7 @@ fun BiliPlaylistDetailScreen(
 
                 PlaylistModernDockedSearchSlot(
                     revealProgress = dockedSearchProgress,
-                    coverUrl = displayHeader.coverUrl,
+                    coverUrl = displayHeaderCoverUrl,
                     offlineMode = offlineMode,
                     query = searchQuery,
                     onQueryChange = { searchQuery = it },
@@ -580,7 +600,7 @@ fun BiliPlaylistDetailScreen(
                     }
 
                     PlaylistModernVisualColorsProvider(
-                        coverUrl = displayHeader.coverUrl,
+                        coverUrl = displayHeaderCoverUrl,
                         offlineMode = offlineMode
                     ) {
                         LazyColumn(
@@ -591,7 +611,7 @@ fun BiliPlaylistDetailScreen(
                             item {
                                 PlaylistModernHeroHeader(
                                     displayName = displayHeader.title,
-                                    coverUrl = displayHeader.coverUrl,
+                                    coverUrl = displayHeaderCoverUrl,
                                     subtitle = pluralStringResource(
                                         R.plurals.bili_content_count,
                                         displayHeader.count,
@@ -632,7 +652,7 @@ fun BiliPlaylistDetailScreen(
                             contentType = "playlist_actions"
                         ) {
                             PlaylistModernActionSheet(
-                                coverUrl = displayHeader.coverUrl,
+                                coverUrl = displayHeaderCoverUrl,
                                 offlineMode = offlineMode,
                                 hasCustomBackground = hasCustomBackground
                             ) {
@@ -659,7 +679,7 @@ fun BiliPlaylistDetailScreen(
                             ui.loading && ui.videos.isEmpty() -> {
                                 item {
                                     PlaylistModernListItemSurface(
-                                        coverUrl = displayHeader.coverUrl,
+                                        coverUrl = displayHeaderCoverUrl,
                                         offlineMode = offlineMode
                                     ) {
                                         Row(
@@ -677,7 +697,7 @@ fun BiliPlaylistDetailScreen(
                             ui.error != null && ui.videos.isEmpty() -> {
                                 item {
                                     PlaylistModernListItemSurface(
-                                        coverUrl = displayHeader.coverUrl,
+                                        coverUrl = displayHeaderCoverUrl,
                                         offlineMode = offlineMode
                                     ) {
                                         Column(
@@ -714,7 +734,7 @@ fun BiliPlaylistDetailScreen(
                                         it.sameIdentityAs(songItem)
                                     }
                                     PlaylistModernListItemSurface(
-                                        coverUrl = displayHeader.coverUrl,
+                                        coverUrl = displayHeaderCoverUrl,
                                         offlineMode = offlineMode
                                     ) {
                                         VideoRow(
@@ -758,6 +778,36 @@ fun BiliPlaylistDetailScreen(
                                             snackbarHostState = snackbarHostState,
                                             offlineMode = offlineMode
                                         )
+                                    }
+                                }
+                                if (
+                                    (playlist.kind == BiliPlaylistKind.COLLECTION ||
+                                        playlist.kind == BiliPlaylistKind.SERIES) &&
+                                    ui.hasMore
+                                ) {
+                                    item(
+                                        key = "bili_archive_load_more",
+                                        contentType = "bili_archive_load_more"
+                                    ) {
+                                        PlaylistModernListItemSurface(
+                                            coverUrl = displayHeaderCoverUrl,
+                                            offlineMode = offlineMode
+                                        ) {
+                                            TextButton(
+                                                onClick = vm::loadMoreVideos,
+                                                enabled = !ui.loadingMore,
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                if (ui.loadingMore) {
+                                                    CircularProgressIndicator(
+                                                        modifier = Modifier.size(18.dp),
+                                                        strokeWidth = 2.dp
+                                                    )
+                                                    Spacer(Modifier.width(8.dp))
+                                                }
+                                                Text(stringResource(R.string.bili_uploader_load_more))
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1116,6 +1166,22 @@ private fun VideoRow(
     val composeResources = LocalResources.current
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
+    val thumbnailUrl = remember(video.coverUrl) {
+        buildBiliThumbnailUrl(
+            imageUrl = video.coverUrl,
+            width = 192,
+            height = 108
+        )
+    }
+    val coverRequest = remember(context, thumbnailUrl, offlineMode) {
+        offlineCachedImageRequest(
+            context = context,
+            data = thumbnailUrl,
+            sizePx = 192,
+            allowHardware = false,
+            offlineMode = offlineMode
+        )
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1149,13 +1215,7 @@ private fun VideoRow(
         }
 
         AsyncImage(
-            model = offlineCachedImageRequest(
-                context = context,
-                data = video.coverUrl,
-                sizePx = 192,
-                allowHardware = false,
-                offlineMode = offlineMode
-            ),
+            model = coverRequest,
             contentDescription = video.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier

@@ -38,7 +38,7 @@
     <string name="local_song_lyric_external">Nearby Lyrics File</string>
     <string name="local_song_open_details">Song Details</string>
     <string name="local_song_metadata_write_confirm_title">Write back local metadata?</string>
-    <string name="local_song_metadata_write_confirm_message">Writes the current title and artist to the audio tags. Album, cover art, lyrics, and other tags stay unchanged.</string>
+    <string name="local_song_metadata_write_confirm_message">Writes the current title, artist, cover art, lyrics, and translated lyrics to the audio tags. Unsupported audio formats or tag providers may not retain every field.</string>
     <string name="local_song_metadata_write_confirm_write">Write Back</string>
     <string name="local_song_metadata_write_confirm_app_only">Save in App Only</string>
     <string name="local_song_metadata_write_success">Local audio tags updated</string>

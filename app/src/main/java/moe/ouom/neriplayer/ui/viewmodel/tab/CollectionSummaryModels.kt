@@ -54,7 +54,8 @@ data class AlbumSummary(
 enum class BiliPlaylistKind {
     CREATED_FAVORITE,
     COLLECTED_FAVORITE,
-    COLLECTION
+    COLLECTION,
+    SERIES
 }
 
 /** Bilibili 收藏夹 / 合集摘要模型 */

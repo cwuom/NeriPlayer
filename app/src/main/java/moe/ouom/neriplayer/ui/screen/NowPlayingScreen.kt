@@ -225,6 +225,7 @@ import moe.ouom.neriplayer.core.player.model.forSource
 import moe.ouom.neriplayer.core.player.model.PlaybackQualityOption
 import moe.ouom.neriplayer.core.player.model.PlayerQueueDisplayItem
 import moe.ouom.neriplayer.data.local.media.isLocalSong
+import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
@@ -234,6 +235,7 @@ import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.model.BiliUploaderSummary
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.settings.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
@@ -1624,6 +1626,11 @@ private data class LoadedLyricsState(
     val embeddedPhoneticLyrics: List<LyricEntry>
 )
 
+private data class PendingLocalCoverWriteBack(
+    val song: SongItem,
+    val coverUrl: String
+)
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
 @Suppress("AssignedValueIsNeverRead")
@@ -1634,6 +1641,7 @@ fun NowPlayingScreen(
     onShowLyricsScreenChange: (Boolean) -> Unit,
     onEnterAlbum: (AlbumSummary) -> Unit,
     onEnterArtist: (NeteaseArtistSummary) -> Unit = {},
+    onEnterBiliUploader: (BiliUploaderSummary) -> Unit = {},
     lyricBlurEnabled: Boolean,
     lyricBlurAmount: Float,
     lyricFontScales: LyricFontScales,
@@ -1790,9 +1798,50 @@ fun NowPlayingScreen(
     var detailSong by remember { mutableStateOf<SongItem?>(null) }
     var pendingSyncConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var pendingSyncConfirmLabel by remember { mutableStateOf("") }
+    var localCoverPickerSong by remember { mutableStateOf<SongItem?>(null) }
+    var pendingLocalCoverWriteBack by remember { mutableStateOf<PendingLocalCoverWriteBack?>(null) }
 
     val clipboard = LocalClipboard.current
     val screenScope = rememberCoroutineScope()
+
+    val localCoverPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { sourceUri ->
+        val song = localCoverPickerSong
+        localCoverPickerSong = null
+        if (sourceUri != null && song != null) {
+            screenScope.launch {
+                val importedCover = CustomSongCoverStorage.importFromUri(
+                    context = context,
+                    song = song,
+                    sourceUri = sourceUri
+                )
+                if (importedCover == null) {
+                    snackbarHostState.showNeriSnackbar(
+                        composeResources.getString(R.string.music_cover_import_failed)
+                    )
+                } else {
+                    pendingLocalCoverWriteBack = PendingLocalCoverWriteBack(
+                        song = song,
+                        coverUrl = importedCover.toString()
+                    )
+                }
+            }
+        }
+    }
+
+    fun savePickedLocalCover(
+        pending: PendingLocalCoverWriteBack,
+        writeLocalMetadata: Boolean
+    ) {
+        PlayerManager.updateSongCustomInfo(
+            originalSong = pending.song,
+            customCoverUrl = pending.coverUrl,
+            customName = pending.song.customName ?: pending.song.name,
+            customArtist = pending.song.customArtist ?: pending.song.artist,
+            writeLocalMetadata = writeLocalMetadata
+        )
+    }
 
     val downloadCurrentCover: () -> Unit = {
         val song = currentSong
@@ -1876,9 +1925,15 @@ fun NowPlayingScreen(
     val nowPlayingViewModel: NowPlayingViewModel = viewModel()
     var artistPickerCandidates by remember { mutableStateOf<List<NeteaseArtistSummary>>(emptyList()) }
     var resolvingArtistNavigation by remember { mutableStateOf(false) }
+    var resolvingBiliUploader by remember { mutableStateOf(false) }
 
     fun openResolvedArtist(artist: NeteaseArtistSummary) {
         onEnterArtist(artist)
+        onNavigateUp()
+    }
+
+    fun openResolvedBiliUploader(uploader: BiliUploaderSummary) {
+        onEnterBiliUploader(uploader)
         onNavigateUp()
     }
 
@@ -1910,6 +1965,49 @@ fun NowPlayingScreen(
                     }
                 }
             )
+        }
+    }
+
+    val openCurrentBiliUploader: () -> Unit = {
+        val song = currentSong
+        if (song != null && isBiliUploaderNavigationSource(song) && !resolvingBiliUploader) {
+            resolvingBiliUploader = true
+            nowPlayingViewModel.resolveBiliUploader(
+                song = song,
+                onResult = { uploader ->
+                    resolvingBiliUploader = false
+                    if (currentSong?.sameIdentityAs(song) == true) {
+                        openResolvedBiliUploader(uploader)
+                    }
+                },
+                onUnavailable = {
+                    resolvingBiliUploader = false
+                    screenScope.launch {
+                        snackbarHostState.showNeriSnackbar(
+                            composeResources.getString(R.string.bili_uploader_owner_unavailable)
+                        )
+                    }
+                },
+                onError = { error ->
+                    resolvingBiliUploader = false
+                    screenScope.launch {
+                        snackbarHostState.showNeriSnackbar(
+                            composeResources.getString(
+                                R.string.bili_uploader_open_failed,
+                                error.message ?: error.javaClass.simpleName
+                            )
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    val openCurrentArtist: () -> Unit = {
+        if (currentSong?.let(::isBiliUploaderNavigationSource) == true) {
+            openCurrentBiliUploader()
+        } else {
+            openCurrentNeteaseArtist()
         }
     }
 
@@ -2212,6 +2310,34 @@ fun NowPlayingScreen(
             offlineMode = offlineMode,
             onDownload = requestCoverDownload,
             onDismiss = { showCoverPreview = false }
+        )
+    }
+
+    pendingLocalCoverWriteBack?.let { pending ->
+        AlertDialog(
+            onDismissRequest = { pendingLocalCoverWriteBack = null },
+            title = { Text(stringResource(R.string.local_song_metadata_write_confirm_title)) },
+            text = { Text(stringResource(R.string.local_song_metadata_write_confirm_message)) },
+            confirmButton = {
+                HapticTextButton(
+                    onClick = {
+                        pendingLocalCoverWriteBack = null
+                        savePickedLocalCover(pending, writeLocalMetadata = true)
+                    }
+                ) {
+                    Text(stringResource(R.string.local_song_metadata_write_confirm_write))
+                }
+            },
+            dismissButton = {
+                HapticTextButton(
+                    onClick = {
+                        pendingLocalCoverWriteBack = null
+                        savePickedLocalCover(pending, writeLocalMetadata = false)
+                    }
+                ) {
+                    Text(stringResource(R.string.local_song_metadata_write_confirm_app_only))
+                }
+            }
         )
     }
 
@@ -2600,7 +2726,14 @@ fun NowPlayingScreen(
                                         }
                                     )
                                     .combinedClickable(
-                                        onClick = {},
+                                        onClick = {
+                                            currentSong
+                                                ?.takeIf { song -> song.isLocalSong() }
+                                                ?.let { song ->
+                                                    localCoverPickerSong = song
+                                                    localCoverPickerLauncher.launch("image/*")
+                                                }
+                                        },
                                         onLongClick = {
                                             if (currentCoverUrl.isNullOrBlank()) {
                                                 screenScope.launch {
@@ -2734,7 +2867,7 @@ fun NowPlayingScreen(
                                         )
                                         .clip(RoundedCornerShape(8.dp))
                                         .combinedClickable(
-                                            onClick = openCurrentNeteaseArtist,
+                                            onClick = openCurrentArtist,
                                             onLongClick = { showArtistMenu = true }
                                         )
                                 )
@@ -3350,6 +3483,13 @@ internal fun isNeteaseArtistNavigationSource(song: SongItem): Boolean {
 
     if (song.isLocalSong()) return false
     return hasCachedArtists || hasNeteaseCover
+}
+
+internal fun isBiliUploaderNavigationSource(song: SongItem): Boolean {
+    return song.id > 0L && song.album.startsWith(
+        PlayerManager.BILI_SOURCE_TAG,
+        ignoreCase = true
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -4056,6 +4196,29 @@ fun EditSongInfoSheet(
     // 标记用户是否手动编辑过, 避免自动重置
     var userHasEdited by remember { mutableStateOf(false) }
 
+    val coverPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { sourceUri ->
+        if (sourceUri != null) {
+            coroutineScope.launch {
+                val importedCover = CustomSongCoverStorage.importFromUri(
+                    context = context,
+                    song = actualSong,
+                    sourceUri = sourceUri
+                )
+                if (importedCover == null) {
+                    snackbarHostState.showNeriSnackbar(
+                        composeResources.getString(R.string.music_cover_import_failed)
+                    )
+                } else {
+                    coverUrl = importedCover.toString()
+                    userHasEdited = true
+                    shouldRestoreCoverBase = false
+                }
+            }
+        }
+    }
+
     val searchState by viewModel.manualSearchState.collectAsStateWithLifecycle()
 
     val scrollState = rememberScrollState()
@@ -4083,7 +4246,7 @@ fun EditSongInfoSheet(
         restoreArtist: Boolean,
         restoreLyrics: Boolean
     ) {
-        viewModel.fetchOriginalInfo(context, actualSong) { success, info, message ->
+        viewModel.fetchOriginalInfo(context, actualSong) { success, info, _ ->
             if (success && info != null) {
                 if (restoreTitle) {
                     songName = info.name
@@ -4114,9 +4277,6 @@ fun EditSongInfoSheet(
                     shouldClearMatchedMetadata = true
                 }
                 userHasEdited = true
-            }
-            coroutineScope.launch {
-                snackbarHostState.showNeriSnackbar(message)
             }
         }
     }
@@ -4263,25 +4423,40 @@ fun EditSongInfoSheet(
             )
 
             // 封面预览
-            if (coverUrl.isNotBlank()) {
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
                 Box(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .size(120.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable {
+                            clearEditSongInfoFocus()
+                            coverPickerLauncher.launch("image/*")
+                        },
                     contentAlignment = Alignment.Center
                 ) {
-                    AsyncImage(
-                        model = offlineCachedImageRequest(
-                            context = context,
-                            data = coverUrl,
-                            sizePx = 384,
-                            allowHardware = false,
-                            offlineMode = offlineMode
-                        ),
-                        contentDescription = stringResource(R.string.music_edit_cover),
-                        modifier = Modifier
-                            .size(120.dp)
-                            .clip(RoundedCornerShape(12.dp)),
-                        contentScale = ContentScale.Crop
-                    )
+                    if (coverUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = offlineCachedImageRequest(
+                                context = context,
+                                data = coverUrl,
+                                sizePx = 384,
+                                allowHardware = false,
+                                offlineMode = offlineMode
+                            ),
+                            contentDescription = stringResource(R.string.music_edit_cover),
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            Icons.Outlined.Edit,
+                            contentDescription = stringResource(R.string.music_edit_cover)
+                        )
+                    }
                 }
             }
 
@@ -4488,7 +4663,8 @@ fun EditSongInfoSheet(
                         shouldConfirmLocalMetadataWriteBack(
                             song = actualSong,
                             title = songName,
-                            artist = artistName
+                            artist = artistName,
+                            coverUrl = coverUrl
                         )
                     ) {
                         clearEditSongInfoFocus()
@@ -4765,15 +4941,19 @@ fun EditSongInfoSheet(
 internal fun shouldConfirmLocalMetadataWriteBack(
     song: SongItem,
     title: String,
-    artist: String
+    artist: String,
+    coverUrl: String
 ): Boolean {
     if (!song.isLocalSong()) {
         return false
     }
     val resolvedTitle = title.trim().ifBlank { song.name }
     val resolvedArtist = artist.trim().ifBlank { song.artist }
+    val resolvedCoverUrl = coverUrl.trim().ifBlank { null }
+    val currentCoverUrl = song.customCoverUrl ?: song.coverUrl
     return !song.displayName().trim().equals(resolvedTitle, ignoreCase = false) ||
-        !song.displayArtist().trim().equals(resolvedArtist, ignoreCase = false)
+        !song.displayArtist().trim().equals(resolvedArtist, ignoreCase = false) ||
+        currentCoverUrl?.trim() != resolvedCoverUrl
 }
 
 @Composable
@@ -4994,6 +5174,7 @@ fun LyricsEditorSheet(
     var lyricsText by remember { mutableStateOf(initialLyrics) }
     var translatedLyricsText by remember { mutableStateOf(initialTranslatedLyrics) }
     var isSaving by remember { mutableStateOf(false) }
+    var showLocalMetadataWriteBackConfirm by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableIntStateOf(0) }
     var showLyricMatchSheet by remember { mutableStateOf(false) }
     var lyricMatchQuery by remember(originalSong.stableKey()) {
@@ -5019,6 +5200,25 @@ fun LyricsEditorSheet(
     }
     val hasSearchedSelectedLyricSources = selectedLyricMatchSources.any { source ->
         source in searchedLyricMatchSources
+    }
+
+    fun saveLyrics(writeLocalMetadata: Boolean) {
+        isSaving = true
+        coroutineScope.launch {
+            try {
+                PlayerManager.updateSongLyricsAndTranslation(
+                    songToUpdate = originalSong,
+                    newLyrics = lyricsText,
+                    newTranslatedLyrics = translatedLyricsText,
+                    writeLocalMetadata = writeLocalMetadata
+                )
+                dismissLyricsEditor()
+            } catch (error: Exception) {
+                NPLogger.e("NowPlayingScreen", "保存歌词失败", error)
+            } finally {
+                isSaving = false
+            }
+        }
     }
 
     fun runLyricMatch(
@@ -5243,20 +5443,10 @@ fun LyricsEditorSheet(
 
             HapticTextButton(
                 onClick = {
-                    isSaving = true
-                    coroutineScope.launch {
-                        try {
-                            PlayerManager.updateSongLyricsAndTranslation(
-                                originalSong,
-                                lyricsText,
-                                translatedLyricsText
-                            )
-                            dismissLyricsEditor()
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        } finally {
-                            isSaving = false
-                        }
+                    if (originalSong.isLocalSong()) {
+                        showLocalMetadataWriteBackConfirm = true
+                    } else {
+                        saveLyrics(writeLocalMetadata = false)
                     }
                 },
                 modifier = Modifier.weight(1f),
@@ -5310,6 +5500,34 @@ fun LyricsEditorSheet(
                 onDismiss = { showLyricMatchSheet = false }
             )
         }
+    }
+
+    if (showLocalMetadataWriteBackConfirm) {
+        AlertDialog(
+            onDismissRequest = { showLocalMetadataWriteBackConfirm = false },
+            title = { Text(stringResource(R.string.local_song_metadata_write_confirm_title)) },
+            text = { Text(stringResource(R.string.local_song_metadata_write_confirm_message)) },
+            confirmButton = {
+                HapticTextButton(
+                    onClick = {
+                        showLocalMetadataWriteBackConfirm = false
+                        saveLyrics(writeLocalMetadata = true)
+                    }
+                ) {
+                    Text(stringResource(R.string.local_song_metadata_write_confirm_write))
+                }
+            },
+            dismissButton = {
+                HapticTextButton(
+                    onClick = {
+                        showLocalMetadataWriteBackConfirm = false
+                        saveLyrics(writeLocalMetadata = false)
+                    }
+                ) {
+                    Text(stringResource(R.string.local_song_metadata_write_confirm_app_only))
+                }
+            }
+        )
     }
 }
 

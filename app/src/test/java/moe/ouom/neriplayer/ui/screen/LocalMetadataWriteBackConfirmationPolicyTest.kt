@@ -8,14 +8,29 @@ import org.junit.Test
 class LocalMetadataWriteBackConfirmationPolicyTest {
 
     @Test
-    fun `asks before writing changed local text metadata`() {
+    fun `asks before writing changed local metadata`() {
         val song = localSong()
 
         assertTrue(
             shouldConfirmLocalMetadataWriteBack(
                 song = song,
                 title = "Updated title",
-                artist = song.artist
+                artist = song.artist,
+                coverUrl = song.coverUrl.orEmpty()
+            )
+        )
+    }
+
+    @Test
+    fun `asks before writing changed local cover`() {
+        val song = localSong().copy(coverUrl = "file:///old-cover.jpg")
+
+        assertTrue(
+            shouldConfirmLocalMetadataWriteBack(
+                song = song,
+                title = song.name,
+                artist = song.artist,
+                coverUrl = "file:///new-cover.jpg"
             )
         )
     }
@@ -29,14 +44,16 @@ class LocalMetadataWriteBackConfirmationPolicyTest {
             shouldConfirmLocalMetadataWriteBack(
                 song = localSong,
                 title = localSong.name,
-                artist = localSong.artist
+                artist = localSong.artist,
+                coverUrl = localSong.coverUrl.orEmpty()
             )
         )
         assertFalse(
             shouldConfirmLocalMetadataWriteBack(
                 song = remoteSong,
                 title = "Updated title",
-                artist = remoteSong.artist
+                artist = remoteSong.artist,
+                coverUrl = remoteSong.coverUrl.orEmpty()
             )
         )
     }
