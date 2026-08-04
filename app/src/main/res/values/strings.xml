@@ -2293,6 +2293,8 @@
 
     <!-- Errors & Feedback -->
     <string name="toast_copied">已复制</string>
+    <string name="toast_copy_truncated">内容过长，仅复制了可安全写入剪贴板的部分</string>
+    <string name="toast_copy_failed">无法复制到剪贴板</string>
     <string name="error_network">网络错误</string>
     <string name="error_app_exception">应用异常</string>
     <string name="error_test_handler">测试异常处理器</string>

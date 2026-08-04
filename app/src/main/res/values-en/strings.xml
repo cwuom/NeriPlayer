@@ -2293,6 +2293,8 @@
 
     <!-- Errors & Feedback -->
     <string name="toast_copied">Copied</string>
+    <string name="toast_copy_truncated">Content was too long; only a safe portion was copied</string>
+    <string name="toast_copy_failed">Could not copy to the clipboard</string>
     <string name="error_network">Network Error</string>
     <string name="error_app_exception">App Exception</string>
     <string name="error_test_handler">Test Exception Handler</string>

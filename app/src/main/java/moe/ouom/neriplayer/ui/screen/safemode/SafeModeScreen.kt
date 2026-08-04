@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.ui.screen.safemode
 
-import android.content.ClipData
 import android.content.ClipboardManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -52,6 +51,8 @@ import moe.ouom.neriplayer.util.crash.CrashReportStore
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
 import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
+import moe.ouom.neriplayer.ui.util.ClipboardCopyResult
+import moe.ouom.neriplayer.ui.util.copyPlainTextSafely
 
 @Composable
 fun SafeModeScreen(
@@ -237,19 +238,20 @@ fun SafeModeScreen(
                             scope.launch {
                                 val fullContent = SafeModeManager.readFullCrashReport(currentReport.file)
                                     ?: currentReport.previewContent
-                                val copied = copyLogToClipboard(
+                                val copyResult = copyLogToClipboard(
                                     clipboardManager = context.getSystemService(ClipboardManager::class.java),
                                     content = fullContent
                                 )
-                                showMessage(
-                                    composeResources.getString(
-                                        if (copied) {
-                                            R.string.log_copied
-                                        } else {
-                                            R.string.log_cannot_read
-                                        }
-                                    )
-                                )
+                                val messageRes = when (copyResult) {
+                                    is ClipboardCopyResult.Copied -> if (copyResult.wasTruncated) {
+                                        R.string.toast_copy_truncated
+                                    } else {
+                                        R.string.log_copied
+                                    }
+                                    ClipboardCopyResult.TransactionTooLarge -> R.string.toast_copy_failed
+                                    null -> R.string.log_cannot_read
+                                }
+                                showMessage(composeResources.getString(messageRes))
                             }
                         },
                         onExport = {
@@ -443,13 +445,9 @@ private fun RecoveryActionCard(
 private fun copyLogToClipboard(
     clipboardManager: ClipboardManager?,
     content: String
-): Boolean {
+): ClipboardCopyResult? {
     if (content.isBlank()) {
-        return false
+        return null
     }
-    clipboardManager ?: return false
-    clipboardManager.setPrimaryClip(
-        ClipData.newPlainText("safe_mode_crash_log", content)
-    )
-    return true
+    return clipboardManager?.copyPlainTextSafely("safe_mode_crash_log", content)
 }

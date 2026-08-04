@@ -36,9 +36,7 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import android.content.ClipData
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
@@ -52,6 +50,8 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
+import moe.ouom.neriplayer.ui.util.ClipboardCopyResult
+import moe.ouom.neriplayer.ui.util.copyPlainTextSafely
 import java.io.File
 import java.io.FileNotFoundException
 import java.net.URLDecoder
@@ -130,8 +130,17 @@ fun LogViewerScreen(
                     IconButton(onClick = {
                         val fullText = logContent.joinToString("\n")
                         coroutineScope.launch {
-                            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", fullText)))
-                            snackbarHostState.showNeriSnackbar(composeResources.getString(R.string.log_copied))
+                            val messageRes = when (
+                                val result = clipboard.copyPlainTextSafely("text", fullText)
+                            ) {
+                                is ClipboardCopyResult.Copied -> if (result.wasTruncated) {
+                                    R.string.toast_copy_truncated
+                                } else {
+                                    R.string.log_copied
+                                }
+                                ClipboardCopyResult.TransactionTooLarge -> R.string.toast_copy_failed
+                            }
+                            snackbarHostState.showNeriSnackbar(composeResources.getString(messageRes))
                         }
                     }) {
                         Icon(Icons.Outlined.ContentCopy, contentDescription = stringResource(R.string.debug_copy_all))

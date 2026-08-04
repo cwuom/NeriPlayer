@@ -25,7 +25,6 @@ package moe.ouom.neriplayer.activity
 
 
 import android.annotation.SuppressLint
-import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -150,6 +149,8 @@ import moe.ouom.neriplayer.ui.MobileDataDownloadInterruptionDialog
 import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.ui.component.overlay.LocalOverlaySurfaceScale
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
+import moe.ouom.neriplayer.ui.util.ClipboardCopyResult
+import moe.ouom.neriplayer.ui.util.copyPlainTextSafely
 import moe.ouom.neriplayer.ui.onboarding.StartupOnboardingScreen
 import moe.ouom.neriplayer.ui.screen.safemode.SafeModeScreen
 import moe.ouom.neriplayer.ui.theme.rememberActualSystemDarkTheme
@@ -916,12 +917,23 @@ class MainActivity : ComponentActivity() {
                                     ?: report.previewContent
                                 withContext(Dispatchers.Main) {
                                     if (fullContent.isNotBlank()) {
-                                        clipboardManager?.setPrimaryClip(
-                                            ClipData.newPlainText("crash_report", fullContent)
-                                        )
+                                        val messageRes = when (
+                                            val result = clipboardManager?.copyPlainTextSafely(
+                                                label = "crash_report",
+                                                text = fullContent
+                                            )
+                                        ) {
+                                            is ClipboardCopyResult.Copied -> if (result.wasTruncated) {
+                                                R.string.toast_copy_truncated
+                                            } else {
+                                                R.string.log_copied
+                                            }
+                                            ClipboardCopyResult.TransactionTooLarge,
+                                            null -> R.string.toast_copy_failed
+                                        }
                                         AppFeedback.show(
                                             context = this@MainActivity,
-                                            message = getString(R.string.log_copied)
+                                            message = getString(messageRes)
                                         )
                                     } else {
                                         AppFeedback.show(

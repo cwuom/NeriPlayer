@@ -63,8 +63,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import android.content.ClipData
-import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -113,6 +111,8 @@ import moe.ouom.neriplayer.ui.haptic.HapticFloatingActionButton
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.format.formatDurationSec
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.ui.util.ClipboardCopyResult
+import moe.ouom.neriplayer.ui.util.copyPlainTextSafely
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
@@ -1341,8 +1341,17 @@ private fun VideoRow(
                         onClick = {
                             val songInfo = "${video.title}-${video.uploader}"
                             scope.launch {
-                                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", songInfo)))
-                                snackbarHostState.showNeriSnackbar(composeResources.getString(R.string.toast_copied))
+                                val messageRes = when (
+                                    val result = clipboard.copyPlainTextSafely("text", songInfo)
+                                ) {
+                                    is ClipboardCopyResult.Copied -> if (result.wasTruncated) {
+                                        R.string.toast_copy_truncated
+                                    } else {
+                                        R.string.toast_copied
+                                    }
+                                    ClipboardCopyResult.TransactionTooLarge -> R.string.toast_copy_failed
+                                }
+                                snackbarHostState.showNeriSnackbar(composeResources.getString(messageRes))
                             }
                             showMoreMenu = false
                         }
