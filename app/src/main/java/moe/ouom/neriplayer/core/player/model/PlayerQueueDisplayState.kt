@@ -77,6 +77,39 @@ internal fun resolvePlayerSequentialShuffleOrder(
     )
 }
 
+internal fun resolvePlayerRepeatAllShuffleOrder(
+    queueSize: Int,
+    completedIndex: Int,
+    shuffleQueue: (MutableList<Int>) -> Unit = { it.shuffle() }
+): PlayerQueueShuffleOrder {
+    if (queueSize <= 0) {
+        return PlayerQueueShuffleOrder(
+            queueIndices = emptyList(),
+            currentIndex = -1
+        )
+    }
+    val resolvedCompletedIndex = completedIndex.takeIf { it in 0 until queueSize }
+        ?: (queueSize - 1)
+    val nextCycleIndices = MutableList(queueSize) { it }
+    shuffleQueue(nextCycleIndices)
+    if (nextCycleIndices.firstOrNull() == resolvedCompletedIndex && nextCycleIndices.size > 1) {
+        nextCycleIndices[0] = nextCycleIndices[1]
+        nextCycleIndices[1] = resolvedCompletedIndex
+    }
+    if (
+        nextCycleIndices == List(queueSize) { it } &&
+        nextCycleIndices.size > 2
+    ) {
+        val second = nextCycleIndices[1]
+        nextCycleIndices[1] = nextCycleIndices[2]
+        nextCycleIndices[2] = second
+    }
+    return PlayerQueueShuffleOrder(
+        queueIndices = nextCycleIndices,
+        currentIndex = 0
+    )
+}
+
 internal fun resolvePlayerQueueRestoreOrder(
     restorePlaylist: List<SongItem>?,
     currentSong: SongItem?,

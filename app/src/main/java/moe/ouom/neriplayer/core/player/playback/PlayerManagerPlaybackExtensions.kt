@@ -10,13 +10,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
+import moe.ouom.neriplayer.core.api.search.SearchManager
+import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.lyricon.mediaLyriconPositionMs
-import moe.ouom.neriplayer.core.player.PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
@@ -28,43 +28,37 @@ import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
 import moe.ouom.neriplayer.core.player.metadata.shouldAutoMatchExternalLyrics
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
-import moe.ouom.neriplayer.core.player.model.resolvePlayerSequentialShuffleOrder
 import moe.ouom.neriplayer.core.player.model.resolvePlayerQueueRestoreOrder
-import moe.ouom.neriplayer.core.player.policy.failure.PlaybackFailureAdvanceAction
+import moe.ouom.neriplayer.core.player.model.resolvePlayerRepeatAllShuffleOrder
+import moe.ouom.neriplayer.core.player.model.resolvePlayerSequentialShuffleOrder
+import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.command.USB_TRACK_TRANSITION_PROTECTION_FADE_DURATION_MS
+import moe.ouom.neriplayer.core.player.policy.command.resolveEffectivePlaybackStartPlan
+import moe.ouom.neriplayer.core.player.policy.command.resolveManagedPlaybackStartPlan
+import moe.ouom.neriplayer.core.player.policy.command.resolveManualResumePlaybackDecision
+import moe.ouom.neriplayer.core.player.policy.command.resolvePauseVolumePlan
+import moe.ouom.neriplayer.core.player.policy.command.resolvePlaybackContinuationStartPlan
+import moe.ouom.neriplayer.core.player.policy.command.shouldPausePlaybackWhenToggling
+import moe.ouom.neriplayer.core.player.policy.failure.PlaybackFailureAdvanceAction
+import moe.ouom.neriplayer.core.player.policy.failure.resolvePlaybackFailureAdvanceAction
 import moe.ouom.neriplayer.core.player.policy.pending.resolvePendingMediaLoadEntryAction
 import moe.ouom.neriplayer.core.player.policy.pending.resolvePendingPauseAction
 import moe.ouom.neriplayer.core.player.policy.pending.resolvePendingPlayAction
-import moe.ouom.neriplayer.core.player.policy.command.resolvePauseVolumePlan
 import moe.ouom.neriplayer.core.player.policy.pending.resolvePendingSeekAction
-import moe.ouom.neriplayer.core.player.policy.command.resolvePlaybackContinuationStartPlan
-import moe.ouom.neriplayer.core.player.policy.command.resolveEffectivePlaybackStartPlan
-import moe.ouom.neriplayer.core.player.policy.failure.resolvePlaybackFailureAdvanceAction
-import moe.ouom.neriplayer.core.player.policy.command.resolveManagedPlaybackStartPlan
-import moe.ouom.neriplayer.core.player.policy.command.resolveManualResumePlaybackDecision
-import moe.ouom.neriplayer.core.player.policy.progress.LONG_FORM_PLAYBACK_MIN_DURATION_MS
-import moe.ouom.neriplayer.core.player.policy.progress.resolvePlaybackProgressUpdateIntervalMs
-import moe.ouom.neriplayer.core.player.policy.progress.PLAYBACK_PROGRESS_STATS_UPDATE_INTERVAL_MS
 import moe.ouom.neriplayer.core.player.policy.pending.shouldApplyResolvedMedia
 import moe.ouom.neriplayer.core.player.policy.pending.shouldApplyResolvedMediaSideEffects
-import moe.ouom.neriplayer.core.player.policy.command.shouldPausePlaybackWhenToggling
+import moe.ouom.neriplayer.core.player.policy.progress.LONG_FORM_PLAYBACK_MIN_DURATION_MS
+import moe.ouom.neriplayer.core.player.policy.progress.PLAYBACK_PROGRESS_STATS_UPDATE_INTERVAL_MS
+import moe.ouom.neriplayer.core.player.policy.progress.resolvePlaybackProgressUpdateIntervalMs
 import moe.ouom.neriplayer.core.player.policy.progress.shouldRunPlaybackProgressUpdates
 import moe.ouom.neriplayer.core.player.policy.wake.PlaybackTransitionWakeLock
-import moe.ouom.neriplayer.core.player.prefetch.cancelYouTubePrefetchForPlaybackDemand
 import moe.ouom.neriplayer.core.player.prefetch.cancelGenericUrlPrefetchUnlessReusableForSong
+import moe.ouom.neriplayer.core.player.prefetch.cancelYouTubePrefetchForPlaybackDemand
 import moe.ouom.neriplayer.core.player.prefetch.clearPlaybackDemandCacheKey
-import moe.ouom.neriplayer.core.player.prefetch.replacePlaybackDemandCacheKey
 import moe.ouom.neriplayer.core.player.prefetch.kickoffYouTubePlaybackIntentWarmup
-import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
-import moe.ouom.neriplayer.core.player.watchdog.cancelPlaybackStartupWatchdog
-import moe.ouom.neriplayer.core.player.watchdog.clearActivePlaybackCandidates
-import moe.ouom.neriplayer.core.player.watchdog.configureActivePlaybackCandidates
-import moe.ouom.neriplayer.core.player.watchdog.currentPlaybackCandidate
-import moe.ouom.neriplayer.core.player.watchdog.isPlaybackActuallyAdvancing
-import moe.ouom.neriplayer.core.player.watchdog.resetPlaybackProgressAdvanceBaseline
-import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackStartupWatchdog
+import moe.ouom.neriplayer.core.player.prefetch.replacePlaybackDemandCacheKey
 import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeSeekRefreshPolicy
 import moe.ouom.neriplayer.core.player.url.cancelUrlRefreshIfNotReusableForPendingLoad
 import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedResource
@@ -72,12 +66,18 @@ import moe.ouom.neriplayer.core.player.url.resolveSongUrl
 import moe.ouom.neriplayer.core.player.url.resolveSongUrlOrWaitForAuthoritativeStream
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
+import moe.ouom.neriplayer.core.player.watchdog.cancelPlaybackStartupWatchdog
+import moe.ouom.neriplayer.core.player.watchdog.clearActivePlaybackCandidates
+import moe.ouom.neriplayer.core.player.watchdog.configureActivePlaybackCandidates
+import moe.ouom.neriplayer.core.player.watchdog.currentPlaybackCandidate
+import moe.ouom.neriplayer.core.player.watchdog.isPlaybackActuallyAdvancing
+import moe.ouom.neriplayer.core.player.watchdog.resetPlaybackProgressAdvanceBaseline
+import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackStartupWatchdog
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
+import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.core.api.search.SearchManager
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 
 internal fun PlayerManager.cancelVolumeFadeImpl(resetToFull: Boolean = false) {
@@ -327,7 +327,16 @@ private fun PlayerManager.handleListenTogetherTrackFinishedIfNeeded(): Boolean {
     if (currentPlaylist.isEmpty() || currentIndex !in currentPlaylist.indices) return false
 
     val finishPositionMs = resolvedTrackFinishPositionMs()
-    val finishPlan = resolveListenTogetherTrackFinishPlan()
+    val resolvedFinishPlan = resolveListenTogetherTrackFinishPlan()
+    val finishPlan = if (
+        resolvedFinishPlan.shouldAdvance &&
+        isCurrentUserControllerInListenTogether() &&
+        reshuffleCurrentQueueForRepeatAllCycle()
+    ) {
+        resolvedFinishPlan.copy(nextIndex = currentIndex)
+    } else {
+        resolvedFinishPlan
+    }
     NPLogger.d(
         "NERI-PlayerManager",
         "listen together track finished: currentIndex=$currentIndex, nextIndex=${finishPlan.nextIndex}, shouldAdvance=${finishPlan.shouldAdvance}, finishPositionMs=$finishPositionMs"
@@ -605,6 +614,31 @@ internal fun PlayerManager.shuffleCurrentQueueForSequentialPlayback(): Boolean {
         "shuffleCurrentQueueForSequentialPlayback: queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, changed=$changed"
     )
     return changed
+}
+
+private fun PlayerManager.reshuffleCurrentQueueForRepeatAllCycle(): Boolean {
+    if (
+        !player.shuffleModeEnabled ||
+        repeatModeSetting != Player.REPEAT_MODE_ALL ||
+        currentPlaylist.size <= 1 ||
+        currentIndex != currentPlaylist.lastIndex ||
+        (isListenTogetherActive() && !isCurrentUserControllerInListenTogether())
+    ) {
+        return false
+    }
+    val order = resolvePlayerRepeatAllShuffleOrder(
+        queueSize = currentPlaylist.size,
+        completedIndex = currentIndex
+    )
+    currentPlaylist = order.queueIndices.map { index -> currentPlaylist[index] }
+    currentIndex = order.currentIndex
+    _currentQueueFlow.value = currentPlaylist
+    bumpCurrentQueueDisplayRevision()
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "reshuffleCurrentQueueForRepeatAllCycle: queueSize=${currentPlaylist.size}, currentIndex=$currentIndex"
+    )
+    return true
 }
 
 internal fun PlayerManager.playAtIndex(
@@ -1511,7 +1545,9 @@ internal fun PlayerManager.nextImpl(
         currentIndex++
     } else {
         if (force || repeatModeSetting == Player.REPEAT_MODE_ALL) {
-            currentIndex = 0
+            if (!reshuffleCurrentQueueForRepeatAllCycle()) {
+                currentIndex = 0
+            }
         } else {
             NPLogger.d("NERI-Player", "Already at the end of the playlist.")
             return

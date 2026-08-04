@@ -10,9 +10,12 @@ import moe.ouom.neriplayer.listentogether.compat.isUnsupportedTrackFinishedEvent
 import moe.ouom.neriplayer.listentogether.compat.resolveListenTogetherLinkReadyState
 import moe.ouom.neriplayer.listentogether.compat.resolveListenTogetherPlaybackCommandShouldPlay
 import moe.ouom.neriplayer.listentogether.compat.shouldSuppressListenerControlWhileAwaitingStream
+import moe.ouom.neriplayer.listentogether.control.ListenTogetherEventFactory
 import moe.ouom.neriplayer.listentogether.control.controlledPlaybackCommandTypes
 import moe.ouom.neriplayer.listentogether.control.requestControlEventTypes
 import moe.ouom.neriplayer.listentogether.control.resolveListenTogetherPlaybackCommandSnapshot
+import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommand
+import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
 import moe.ouom.neriplayer.listentogether.mapping.withStreamUrl
 import moe.ouom.neriplayer.listentogether.mapping.withStreamUrls
@@ -113,6 +116,44 @@ class ListenTogetherEventCompatibilityTest {
         assertEquals(false, fallback?.shouldPlay)
         assertEquals("paused", fallback?.state)
         assertNull(fallback?.finishedTrackStableKey)
+    }
+
+    @Test
+    fun `controller track finish publishes the refreshed shuffle queue`() {
+        val nextFirst = songItem(ListenTogetherChannels.NETEASE, "1")
+        val nextSecond = songItem(ListenTogetherChannels.NETEASE, "2")
+        val completed = songItem(ListenTogetherChannels.NETEASE, "3")
+        val refreshedQueue = listOf(nextFirst, nextSecond, completed)
+        val factory = ListenTogetherEventFactory(
+            roomStateProvider = { null },
+            isControllerProvider = { true },
+            eventIdFactory = { "evt-refreshed-shuffle" },
+            clientInstanceIdProvider = { "client" },
+            clientSequenceFactory = { 1L },
+            localPlaybackStateNameProvider = { "paused" },
+            localTransportActiveProvider = { false }
+        )
+
+        val event = factory.buildTrackFinishedEvent(
+            command = PlaybackCommand(
+                type = "TRACK_FINISHED",
+                source = PlaybackCommandSource.LOCAL,
+                currentIndex = 0,
+                shouldPlay = true
+            ),
+            queue = refreshedQueue,
+            currentSong = completed,
+            positionMs = 180_000L
+        )
+
+        assertEquals(0, event?.currentIndex)
+        assertEquals(0, event?.nextIndex)
+        assertEquals(nextFirst.id.toString(), event?.track?.audioId)
+        assertEquals(
+            listOf("1", "2", "3"),
+            event?.queue?.map { track -> track.audioId }
+        )
+        assertEquals("netease:3", event?.finishedTrackStableKey)
     }
 
     @Test

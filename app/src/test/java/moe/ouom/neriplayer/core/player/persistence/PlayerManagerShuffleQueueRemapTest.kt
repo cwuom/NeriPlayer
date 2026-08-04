@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import moe.ouom.neriplayer.core.player.model.resolvePlayerQueueDisplayIndices
 import moe.ouom.neriplayer.core.player.model.resolvePlayerQueueRestoreOrder
+import moe.ouom.neriplayer.core.player.model.resolvePlayerRepeatAllShuffleOrder
 import moe.ouom.neriplayer.core.player.model.resolvePlayerSequentialShuffleOrder
 import moe.ouom.neriplayer.data.model.SongItem
 
@@ -56,6 +57,41 @@ class PlayerManagerQueueOrderTest {
         val order = resolvePlayerSequentialShuffleOrder(
             queueSize = 0,
             currentIndex = 0
+        )
+
+        assertEquals(emptyList<Int>(), order.queueIndices)
+        assertEquals(-1, order.currentIndex)
+    }
+
+    @Test
+    fun `repeat all shuffle starts a fresh order without replaying the completed song`() {
+        val order = resolvePlayerRepeatAllShuffleOrder(
+            queueSize = 4,
+            completedIndex = 3,
+            shuffleQueue = { queue -> queue.reverse() }
+        )
+
+        assertEquals(listOf(2, 3, 1, 0), order.queueIndices)
+        assertEquals(0, order.currentIndex)
+    }
+
+    @Test
+    fun `repeat all shuffle changes an otherwise unchanged order when possible`() {
+        val order = resolvePlayerRepeatAllShuffleOrder(
+            queueSize = 3,
+            completedIndex = 2,
+            shuffleQueue = {}
+        )
+
+        assertEquals(listOf(0, 2, 1), order.queueIndices)
+        assertEquals(0, order.currentIndex)
+    }
+
+    @Test
+    fun `repeat all shuffle returns missing current index for an empty queue`() {
+        val order = resolvePlayerRepeatAllShuffleOrder(
+            queueSize = 0,
+            completedIndex = 0
         )
 
         assertEquals(emptyList<Int>(), order.queueIndices)
