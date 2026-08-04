@@ -132,7 +132,7 @@ class AdvancedGlassLocalBlurPlanTest {
     }
 
     @Test
-    fun navigationHandoffRetainsOnlyAnExistingPlanWithoutANewMask() {
+    fun navigationHandoffRetainsAnExistingPlanUntilTheNextSceneMaskArrives() {
         val currentPlan = requireNotNull(
             resolveAdvancedGlassLocalBlurPlan(
                 regions = listOf(region(left = 0f, top = 0f, right = 200f, bottom = 100f)),
@@ -151,21 +151,18 @@ class AdvancedGlassLocalBlurPlanTest {
         assertTrue(
             shouldRetainCurrentLocalBlurPlan(
                 currentPlan = currentPlan,
-                nextPlan = null,
+                handoffActive = true
+            )
+        )
+        assertFalse(
+            shouldRetainCurrentLocalBlurPlan(
+                currentPlan = null,
                 handoffActive = true
             )
         )
         assertFalse(
             shouldRetainCurrentLocalBlurPlan(
                 currentPlan = currentPlan,
-                nextPlan = nextPlan,
-                handoffActive = true
-            )
-        )
-        assertFalse(
-            shouldRetainCurrentLocalBlurPlan(
-                currentPlan = currentPlan,
-                nextPlan = null,
                 handoffActive = false
             )
         )

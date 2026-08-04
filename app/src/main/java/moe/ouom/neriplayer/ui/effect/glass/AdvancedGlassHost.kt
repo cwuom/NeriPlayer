@@ -379,7 +379,6 @@ private fun ApplyLocalBlurPlan(
     if (
         shouldRetainCurrentLocalBlurPlan(
             currentPlan = currentPlan,
-            nextPlan = nextPlan,
             handoffActive = retainCurrentPlan
         )
     ) {
@@ -425,9 +424,8 @@ private fun ApplyLocalBlurPlan(
 
 internal fun shouldRetainCurrentLocalBlurPlan(
     currentPlan: AdvancedGlassLocalBlurPlan?,
-    nextPlan: AdvancedGlassLocalBlurPlan?,
     handoffActive: Boolean
-): Boolean = handoffActive && currentPlan != null && nextPlan == null
+): Boolean = handoffActive && currentPlan != null
 
 internal fun shouldFreezeLocalBlurFrame(
     currentPlan: AdvancedGlassLocalBlurPlan?,
