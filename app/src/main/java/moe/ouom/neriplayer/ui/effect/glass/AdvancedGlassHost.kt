@@ -17,6 +17,9 @@ import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
 internal val LocalAdvancedGlassController = staticCompositionLocalOf {
     AdvancedGlassController(
@@ -91,6 +94,7 @@ internal fun AdvancedGlassHost(
 ) {
     val assetManager = LocalContext.current.applicationContext.assets
     val density = LocalDensity.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val parentOverscrollFactory = LocalOverscrollFactory.current
     val regionRegistry = remember { AdvancedGlassRegionRegistry() }
     val shaderSource = remember(assetManager) {
@@ -133,12 +137,14 @@ internal fun AdvancedGlassHost(
     var sessionHealthy by remember { mutableStateOf(true) }
     val sessionController = if (sessionHealthy) controller else controller.afterBackendFailure()
     val renderProfile = sessionController.advancedBlurQuality.renderProfile()
+    val localBlurRendererCacheKey = sessionController.advancedBlurQuality.ordinal
     val blurRadiusDp = sessionController.normalizedBlurAmountDp
     val blurRadiusPx = with(density) { blurRadiusDp.dp.toPx() }
     val backgroundLocalBlurPlan = remember(
         sessionController.isBaseBlurEnabled,
         blurRadiusPx,
         renderProfile,
+        localBlurRendererCacheKey,
         renderRegionState.background
     ) {
         if (sessionController.isBaseBlurEnabled && renderProfile.usesRegionLocalRendering) {
@@ -146,7 +152,8 @@ internal fun AdvancedGlassHost(
                 regions = renderRegionState.background,
                 radiusPx = blurRadiusPx,
                 maximumMergedInputAreaRatio = renderProfile.maximumMergedInputAreaRatio,
-                downscaleFactor = renderProfile.downscaleFactorFor(blurRadiusPx)
+                downscaleFactor = renderProfile.downscaleFactorFor(blurRadiusPx),
+                rendererCacheKey = localBlurRendererCacheKey
             )
         } else {
             null
@@ -156,6 +163,7 @@ internal fun AdvancedGlassHost(
         sessionController.isBaseBlurEnabled,
         blurRadiusPx,
         renderProfile,
+        localBlurRendererCacheKey,
         renderRegionState.content
     ) {
         if (sessionController.isBaseBlurEnabled && renderProfile.usesRegionLocalRendering) {
@@ -163,7 +171,8 @@ internal fun AdvancedGlassHost(
                 regions = renderRegionState.content,
                 radiusPx = blurRadiusPx,
                 maximumMergedInputAreaRatio = renderProfile.maximumMergedInputAreaRatio,
-                downscaleFactor = renderProfile.downscaleFactorFor(blurRadiusPx)
+                downscaleFactor = renderProfile.downscaleFactorFor(blurRadiusPx),
+                rendererCacheKey = localBlurRendererCacheKey
             )
         } else {
             null
@@ -274,12 +283,27 @@ internal fun AdvancedGlassHost(
                 renderRegionState.contentBackdropReady
         )
     }
-    DisposableEffect(backgroundBackdrop, contentBackdrop) {
+    DisposableEffect(lifecycleOwner, backgroundBackdrop, contentBackdrop) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE,
+                Lifecycle.Event.ON_STOP,
+                Lifecycle.Event.ON_DESTROY -> {
+                    backgroundBackdrop.invalidateLocalBlurRenderer()
+                    contentBackdrop.invalidateLocalBlurRenderer()
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
             backgroundBackdrop.renderEffect = null
             contentBackdrop.renderEffect = null
             backgroundBackdrop.localBlurPlan = null
             contentBackdrop.localBlurPlan = null
+            backgroundBackdrop.invalidateLocalBlurRenderer()
+            contentBackdrop.invalidateLocalBlurRenderer()
         }
     }
 
@@ -311,7 +335,10 @@ private fun ApplyBackdropEffect(
     allowOneFrameHandoff: Boolean
 ) {
     if (backdrop.localBlurPlan != null) {
-        SideEffect { backdrop.localBlurPlan = null }
+        SideEffect {
+            backdrop.localBlurPlan = null
+            backdrop.invalidateLocalBlurRenderer()
+        }
     }
     val nextEffect = effectResult.getOrNull()
     if (retainCurrentEffect && backdrop.renderEffect != null) {
@@ -345,7 +372,9 @@ private fun ApplyLocalBlurPlan(
     if (backdrop.renderEffect != null) {
         SideEffect { backdrop.renderEffect = null }
     }
-    if (retainCurrentPlan && backdrop.localBlurPlan != null) {
+    if (retainCurrentPlan &&
+        backdrop.localBlurPlan?.rendererCacheKey == nextPlan?.rendererCacheKey
+    ) {
         return
     }
     if (nextPlan == backdrop.localBlurPlan) {
@@ -358,10 +387,14 @@ private fun ApplyLocalBlurPlan(
         LaunchedEffect(backdrop, nextPlan) {
             withFrameNanos { }
             backdrop.localBlurPlan = null
+            backdrop.invalidateLocalBlurRenderer()
         }
     } else {
         SideEffect {
             backdrop.localBlurPlan = nextPlan
+            if (nextPlan == null) {
+                backdrop.invalidateLocalBlurRenderer()
+            }
         }
     }
 }

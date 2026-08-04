@@ -60,6 +60,62 @@ internal class ListenTogetherEventFactory(
         )
     }
 
+    fun buildSetQueueEvent(
+        queue: List<SongItem>,
+        currentIndex: Int,
+        positionMs: Long,
+        commandShouldPlay: Boolean? = null
+    ): ListenTogetherEvent? {
+        val eventType = if (isControllerProvider()) "SET_QUEUE" else "REQUEST_SET_QUEUE"
+        if (queue.isEmpty()) {
+            return ListenTogetherEvent(
+                type = eventType,
+                eventId = eventIdFactory(),
+                clientTimeMs = System.currentTimeMillis(),
+                clientInstanceId = clientInstanceIdProvider(),
+                clientSequence = clientSequenceFactory(),
+                positionMs = 0L,
+                currentIndex = -1,
+                queue = emptyList(),
+                shouldPlay = false,
+                state = "paused",
+                repeatMode = PlayerManager.repeatModeFlow.value,
+                shuffleEnabled = PlayerManager.shuffleModeFlow.value
+            )
+        }
+        val (shareableQueue, resolvedCurrentIndex) = queue.toShareableQueueSnapshot(
+            currentIndex = currentIndex,
+            roomSettings = roomStateProvider()?.settings,
+            includeResolvedStreamUrl = isControllerProvider()
+        )
+        val currentTrack = shareableQueue.getOrNull(resolvedCurrentIndex) ?: run {
+            NPLogger.w(
+                TAG,
+                "buildSetQueueEvent(): current track missing, resolvedCurrentIndex=$resolvedCurrentIndex, queueSize=${shareableQueue.size}"
+            )
+            return null
+        }
+        val shouldPlay = commandShouldPlay ?: (
+            localTransportActiveProvider() || PlayerManager.isPlayingFlow.value
+        )
+        return ListenTogetherEvent(
+            type = eventType,
+            eventId = eventIdFactory(),
+            clientTimeMs = System.currentTimeMillis(),
+            clientInstanceId = clientInstanceIdProvider(),
+            clientSequence = clientSequenceFactory(),
+            positionMs = positionMs.coerceAtLeast(0L),
+            currentIndex = resolvedCurrentIndex,
+            track = currentTrack,
+            queue = shareableQueue,
+            shouldPlay = shouldPlay,
+            state = if (shouldPlay) "playing" else "paused",
+            repeatMode = PlayerManager.repeatModeFlow.value,
+            shuffleEnabled = PlayerManager.shuffleModeFlow.value,
+            requestTrackStableKey = currentTrack.stableKey
+        )
+    }
+
     fun buildPlayEvent(positionMs: Long): ListenTogetherEvent {
         return playbackSnapshotEvent("PLAY", positionMs)
     }
@@ -313,7 +369,11 @@ internal class ListenTogetherEventFactory(
             currentQueue = PlayerManager.currentQueueFlow.value,
             currentPositionMs = PlayerManager.playbackPositionFlow.value
         )
-        val queue = commandSnapshot.queue
+        val queue = if (command.type == "SET_QUEUE" && command.queue != null) {
+            command.queue
+        } else {
+            commandSnapshot.queue
+        }
         val currentSong = PlayerManager.currentSongFlow.value
         val currentIndex = command.currentIndex
             ?: queue.indexOfFirst { song ->
@@ -364,6 +424,12 @@ internal class ListenTogetherEventFactory(
             "PLAYBACK_MODE" -> buildPlaybackModeEvent(
                 repeatMode = command.repeatMode ?: PlayerManager.repeatModeFlow.value,
                 shuffleEnabled = command.shuffleEnabled ?: PlayerManager.shuffleModeFlow.value
+            )
+            "SET_QUEUE" -> buildSetQueueEvent(
+                queue = queue,
+                currentIndex = currentIndex,
+                positionMs = positionMs,
+                commandShouldPlay = command.shouldPlay
             )
             "TRACK_FINISHED" -> buildTrackFinishedEvent(command, queue, currentSong, positionMs)
             "SEEK" -> {

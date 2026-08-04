@@ -54,6 +54,10 @@ internal class ListenTogetherPlayerStateApplier(
         }
         val queue = state.toSongQueue()
         if (queue.isEmpty()) {
+            if (isListenTogetherQueueUpdateCause(causeType)) {
+                PlayerManager.applyRemoteQueueUpdate(emptyList(), -1)
+                return true
+            }
             NPLogger.w(
                 config.tag,
                 "applyRoomStateToPlayer(): skip empty queue, roomId=${state.roomId}, version=${state.version}, causeType=$causeType"
@@ -69,7 +73,26 @@ internal class ListenTogetherPlayerStateApplier(
         val targetSong = queue[targetIndex]
         val currentQueue = PlayerManager.currentQueueFlow.value
         val currentSong = PlayerManager.currentSongFlow.value
-        val localCurrentIndex = currentQueue.indexOfTrack(currentSong)
+        val queueUpdatedWithoutReload = shouldApplyListenTogetherQueueUpdateWithoutReload(
+            causeType = causeType,
+            currentQueue = currentQueue,
+            currentSong = currentSong,
+            incomingQueue = queue,
+            incomingCurrentIndex = targetIndex
+        )
+        if (queueUpdatedWithoutReload) {
+            PlayerManager.applyRemoteQueueUpdate(queue, targetIndex)
+        }
+        val synchronizedQueue = if (queueUpdatedWithoutReload) {
+            PlayerManager.currentQueueFlow.value
+        } else {
+            currentQueue
+        }
+        val localCurrentIndex = if (queueUpdatedWithoutReload) {
+            targetIndex
+        } else {
+            synchronizedQueue.indexOfTrack(currentSong)
+        }
         val needsAuthoritativeStreamReload = shouldReloadForAuthoritativeStreamUrl(
             targetSong = targetSong,
             currentSong = currentSong
@@ -79,7 +102,7 @@ internal class ListenTogetherPlayerStateApplier(
                 state.playback.state == "playing" &&
                 currentSong?.sameTrackAs(targetSong) == true
         val playbackContextChanged =
-            !currentQueue.hasSameTrackSequenceAs(queue) ||
+            !synchronizedQueue.hasSameTrackSequenceAs(queue) ||
                 needsAuthoritativeStreamReload ||
                 forcePlaybackStallReload
         val targetIndexChanged = localCurrentIndex != targetIndex

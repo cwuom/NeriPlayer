@@ -10,6 +10,8 @@ import moe.ouom.neriplayer.listentogether.compat.isUnsupportedTrackFinishedEvent
 import moe.ouom.neriplayer.listentogether.compat.resolveListenTogetherLinkReadyState
 import moe.ouom.neriplayer.listentogether.compat.resolveListenTogetherPlaybackCommandShouldPlay
 import moe.ouom.neriplayer.listentogether.compat.shouldSuppressListenerControlWhileAwaitingStream
+import moe.ouom.neriplayer.listentogether.control.controlledPlaybackCommandTypes
+import moe.ouom.neriplayer.listentogether.control.requestControlEventTypes
 import moe.ouom.neriplayer.listentogether.control.resolveListenTogetherPlaybackCommandSnapshot
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
 import moe.ouom.neriplayer.listentogether.mapping.withStreamUrl
@@ -17,12 +19,14 @@ import moe.ouom.neriplayer.listentogether.mapping.withStreamUrls
 import moe.ouom.neriplayer.listentogether.playback.boundedAroundStableKey
 import moe.ouom.neriplayer.listentogether.playback.currentStableKey
 import moe.ouom.neriplayer.listentogether.playback.expectedPositionMs
+import moe.ouom.neriplayer.listentogether.playback.hasSameTrackMultisetAs
 import moe.ouom.neriplayer.listentogether.playback.hasSameTrackSequenceAs
 import moe.ouom.neriplayer.listentogether.playback.LISTEN_TOGETHER_MAX_SHAREABLE_QUEUE_SIZE
 import moe.ouom.neriplayer.listentogether.playback.indexOfTrack
 import moe.ouom.neriplayer.listentogether.playback.isListenTogetherSeekControlSatisfied
 import moe.ouom.neriplayer.listentogether.playback.requestedStableKey
 import moe.ouom.neriplayer.listentogether.playback.sameTrackAs
+import moe.ouom.neriplayer.listentogether.playback.shouldApplyListenTogetherQueueUpdateWithoutReload
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherChannels
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherPlaybackState
@@ -392,6 +396,116 @@ class ListenTogetherEventCompatibilityTest {
     }
 
     @Test
+    fun `queue update keeps current song and changes following order`() {
+        val first = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "1")
+        val current = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "2")
+        val last = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "3")
+        val originalQueue = listOf(first, current, last)
+        val reorderedQueue = listOf(current, first, last)
+
+        assertFalse(originalQueue.hasSameTrackSequenceAs(reorderedQueue))
+        assertTrue(originalQueue.hasSameTrackMultisetAs(reorderedQueue))
+        assertTrue(
+            shouldApplyListenTogetherQueueUpdateWithoutReload(
+                causeType = "SET_QUEUE",
+                currentQueue = originalQueue,
+                currentSong = current,
+                incomingQueue = reorderedQueue,
+                incomingCurrentIndex = 0
+            )
+        )
+        assertTrue(
+            shouldApplyListenTogetherQueueUpdateWithoutReload(
+                causeType = "REQUEST_SET_QUEUE",
+                currentQueue = originalQueue,
+                currentSong = current,
+                incomingQueue = reorderedQueue,
+                incomingCurrentIndex = 0
+            )
+        )
+        assertFalse(
+            shouldApplyListenTogetherQueueUpdateWithoutReload(
+                causeType = "SET_QUEUE",
+                currentQueue = originalQueue,
+                currentSong = current,
+                incomingQueue = reorderedQueue,
+                incomingCurrentIndex = 1
+            )
+        )
+    }
+
+    @Test
+    fun `queue update accepts duplicate tracks without changing membership`() {
+        val first = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "1")
+        val duplicateA = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "2")
+        val duplicateB = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "2")
+        val originalQueue = listOf(first, duplicateA, duplicateB)
+        val reorderedQueue = listOf(duplicateB, first, duplicateA)
+
+        assertTrue(originalQueue.hasSameTrackMultisetAs(reorderedQueue))
+        assertTrue(
+            shouldApplyListenTogetherQueueUpdateWithoutReload(
+                causeType = "SET_QUEUE",
+                currentQueue = originalQueue,
+                currentSong = duplicateA,
+                incomingQueue = reorderedQueue,
+                incomingCurrentIndex = 0
+            )
+        )
+    }
+
+    @Test
+    fun `queue update applies additions and removals without reloading the current song`() {
+        val first = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "1")
+        val current = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "2")
+        val last = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "3")
+        val added = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "4")
+        val originalQueue = listOf(first, current, last)
+
+        assertTrue(
+            shouldApplyListenTogetherQueueUpdateWithoutReload(
+                causeType = "SET_QUEUE",
+                currentQueue = originalQueue,
+                currentSong = current,
+                incomingQueue = listOf(first, current, added, last),
+                incomingCurrentIndex = 1
+            )
+        )
+        assertTrue(
+            shouldApplyListenTogetherQueueUpdateWithoutReload(
+                causeType = "REQUEST_SET_QUEUE",
+                currentQueue = originalQueue,
+                currentSong = current,
+                incomingQueue = listOf(current, last),
+                incomingCurrentIndex = 0
+            )
+        )
+    }
+
+    @Test
+    fun `empty queue update survives protocol serialization`() {
+        val event = ListenTogetherEvent(
+            type = "SET_QUEUE",
+            currentIndex = -1,
+            queue = emptyList(),
+            shouldPlay = false,
+            state = "paused"
+        )
+
+        val decoded = Json.decodeFromString<ListenTogetherEvent>(Json.encodeToString(event))
+
+        assertEquals(-1, decoded.currentIndex)
+        assertEquals(emptyList<ListenTogetherTrack>(), decoded.queue)
+        assertFalse(decoded.shouldPlay ?: true)
+    }
+
+    @Test
+    fun `queue update events participate in local and member control paths`() {
+        assertTrue("SET_QUEUE" in controlledPlaybackCommandTypes)
+        assertTrue("REQUEST_SET_QUEUE" in requestControlEventTypes)
+    }
+
+    @Test
     fun `member control must target current room track`() {
         assertTrue(
             isListenTogetherMemberControlTargetCurrent(
@@ -461,6 +575,17 @@ class ListenTogetherEventCompatibilityTest {
     }
 
     @Test
+    fun `queue update request may replace the current track`() {
+        assertTrue(
+            isListenTogetherMemberControlTargetCurrent(
+                eventType = "REQUEST_SET_QUEUE",
+                requestedStableKey = "netease:next",
+                currentStableKey = "netease:current"
+            )
+        )
+    }
+
+    @Test
     fun `playback mode is carried in room playback state`() {
         val state = ListenTogetherRoomState(
             roomId = "ABC234",
@@ -505,6 +630,93 @@ class ListenTogetherEventCompatibilityTest {
         )
 
         assertTrue(isListenTogetherPendingMemberControlSatisfied(event, state))
+    }
+
+    @Test
+    fun `member queue update is satisfied only by the committed order`() {
+        val first = track("netease:1", "1")
+        val current = track("netease:2", "2")
+        val reordered = listOf(current, first)
+        val event = ListenTogetherEvent(
+            type = "REQUEST_SET_QUEUE",
+            currentIndex = 0,
+            track = current,
+            queue = reordered,
+            requestTrackStableKey = current.stableKey
+        )
+        val committed = ListenTogetherRoomState(
+            roomId = "ABC234",
+            version = 2L,
+            currentIndex = 0,
+            track = current,
+            queue = reordered
+        )
+        val previousOrder = committed.copy(
+            queue = listOf(first, current),
+            currentIndex = 1,
+            track = current
+        )
+
+        assertTrue(isListenTogetherPendingMemberControlSatisfied(event, committed))
+        assertFalse(isListenTogetherPendingMemberControlSatisfied(event, previousOrder))
+    }
+
+    @Test
+    fun `member queue removal is satisfied by the committed queue`() {
+        val first = track("netease:1", "1")
+        val current = track("netease:2", "2")
+        val next = track("netease:3", "3")
+        val remaining = listOf(first, next)
+        val event = ListenTogetherEvent(
+            type = "REQUEST_SET_QUEUE",
+            currentIndex = 1,
+            track = next,
+            queue = remaining,
+            requestTrackStableKey = next.stableKey
+        )
+        val committed = ListenTogetherRoomState(
+            roomId = "ABC234",
+            version = 2L,
+            currentIndex = 1,
+            track = next,
+            queue = remaining
+        )
+        val unmodified = committed.copy(
+            currentIndex = 1,
+            track = current,
+            queue = listOf(first, current, next)
+        )
+
+        assertTrue(isListenTogetherPendingMemberControlSatisfied(event, committed))
+        assertFalse(isListenTogetherPendingMemberControlSatisfied(event, unmodified))
+    }
+
+    @Test
+    fun `member queue clear is satisfied by an empty committed queue`() {
+        val event = ListenTogetherEvent(
+            type = "REQUEST_SET_QUEUE",
+            currentIndex = -1,
+            queue = emptyList(),
+            shouldPlay = false
+        )
+        val committed = ListenTogetherRoomState(
+            roomId = "ABC234",
+            version = 2L,
+            currentIndex = -1,
+            queue = emptyList()
+        )
+
+        assertTrue(isListenTogetherPendingMemberControlSatisfied(event, committed))
+        assertFalse(
+            isListenTogetherPendingMemberControlSatisfied(
+                event,
+                committed.copy(
+                    currentIndex = 0,
+                    track = track("netease:1", "1"),
+                    queue = listOf(track("netease:1", "1"))
+                )
+            )
+        )
     }
 
     @Test

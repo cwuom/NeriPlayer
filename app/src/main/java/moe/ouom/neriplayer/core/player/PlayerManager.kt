@@ -164,6 +164,7 @@ import moe.ouom.neriplayer.core.player.persistence.addCurrentToFavoritesImpl
 import moe.ouom.neriplayer.core.player.persistence.addCurrentToPlaylistImpl
 import moe.ouom.neriplayer.core.player.persistence.addToQueueEndImpl
 import moe.ouom.neriplayer.core.player.persistence.addToQueueNextImpl
+import moe.ouom.neriplayer.core.player.persistence.applyRemoteQueueUpdateImpl
 import moe.ouom.neriplayer.core.player.persistence.getLyricsImpl
 import moe.ouom.neriplayer.core.player.persistence.getNeteaseLyricsImpl
 import moe.ouom.neriplayer.core.player.persistence.getNeteaseRomanizedLyricsImpl
@@ -2523,6 +2524,9 @@ object PlayerManager {
 
     fun reorderQueue(queue: List<SongItem>, currentIndexInQueue: Int) =
         reorderQueueImpl(queue, currentIndexInQueue)
+
+    internal fun applyRemoteQueueUpdate(queue: List<SongItem>, currentIndexInQueue: Int) =
+        applyRemoteQueueUpdateImpl(queue, currentIndexInQueue)
 
     fun resumeRestoredPlaybackIfNeeded(): Long? = resumeRestoredPlaybackIfNeededImpl()
 

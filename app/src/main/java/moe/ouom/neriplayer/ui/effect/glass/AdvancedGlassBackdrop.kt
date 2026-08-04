@@ -23,17 +23,24 @@ internal class AdvancedGlassBackdrop internal constructor() {
     internal var renderEffect: RenderEffect? by mutableStateOf(null)
     internal var localBlurPlan: AdvancedGlassLocalBlurPlan? by mutableStateOf(null)
     private var localBlurRenderer: Any? = null
+    private var localBlurRendererCacheKey = NoLocalBlurRendererCacheKey
 
     internal val hasActiveBlur: Boolean
         get() = renderEffect != null || localBlurPlan != null
 
     @androidx.annotation.RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    internal fun localBlurRenderer(): AdvancedGlassLocalBlurRenderer {
+    internal fun localBlurRenderer(cacheKey: Int): AdvancedGlassLocalBlurRenderer {
         val existing = localBlurRenderer as? AdvancedGlassLocalBlurRenderer
-        if (existing != null) return existing
+        if (existing != null && localBlurRendererCacheKey == cacheKey) return existing
         return AdvancedGlassLocalBlurRenderer().also { renderer ->
             localBlurRenderer = renderer
+            localBlurRendererCacheKey = cacheKey
         }
+    }
+
+    internal fun invalidateLocalBlurRenderer() {
+        localBlurRenderer = null
+        localBlurRendererCacheKey = NoLocalBlurRendererCacheKey
     }
 }
 
@@ -58,7 +65,7 @@ internal fun Modifier.captureAdvancedGlassBackdrop(
         if (plan == null || Build.VERSION.SDK_INT < ADVANCED_GLASS_BACKEND_MIN_SDK) {
             drawContent()
         } else {
-            backdrop.localBlurRenderer().render(this, plan)
+            backdrop.localBlurRenderer(plan.rendererCacheKey).render(this, plan)
         }
     }
 
@@ -75,3 +82,5 @@ private fun LayoutCoordinates.attachedPositionInWindow(): Offset = if (isAttache
 } else {
     Offset.Unspecified
 }
+
+private const val NoLocalBlurRendererCacheKey = Int.MIN_VALUE

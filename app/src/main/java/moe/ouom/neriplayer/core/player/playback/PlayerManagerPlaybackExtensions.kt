@@ -69,6 +69,7 @@ import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeSeekRefreshPolicy
 import moe.ouom.neriplayer.core.player.url.cancelUrlRefreshIfNotReusableForPendingLoad
 import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedResource
 import moe.ouom.neriplayer.core.player.url.resolveSongUrl
+import moe.ouom.neriplayer.core.player.url.resolveSongUrlOrWaitForAuthoritativeStream
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
@@ -699,7 +700,11 @@ internal fun PlayerManager.playAtIndex(
     enterPendingMediaLoad(resolvedResumePositionMs)
     playJob = ioScope.launch {
         try {
-        val result = resolveSongUrl(song)
+        val result = resolveSongUrlOrWaitForAuthoritativeStream(
+            shouldWaitForAuthoritativeStream = shouldAwaitAuthoritativeStream
+        ) {
+            resolveSongUrl(song)
+        }
         if (!shouldApplyResolvedMedia(requestToken, playbackRequestToken) || !isActive) {
             NPLogger.d(
                 "NERI-PlayerManager",

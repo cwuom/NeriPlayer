@@ -253,6 +253,50 @@ class ListenTogetherControlHardeningTest {
         assertEquals("paused", next.playback.state)
     }
 
+    @Test
+    fun `forwarded queue reorder keeps current track and playback state`() {
+        val first = listenTogetherTrack("k1")
+        val current = listenTogetherTrack("k2")
+        val last = listenTogetherTrack("k3")
+        val currentState = ListenTogetherRoomState(
+            roomId = "room-1",
+            version = 3L,
+            queue = listOf(first, current, last),
+            currentIndex = 1,
+            track = current,
+            playback = ListenTogetherPlaybackState(
+                state = "playing",
+                basePositionMs = 12_000L
+            )
+        )
+        val message = ListenTogetherSocketEnvelope(
+            type = "member_control_requested",
+            queue = listOf(current, first, last),
+            currentIndex = 0,
+            track = current,
+            positionMs = 12_000L,
+            shouldPlay = true,
+            stateName = "playing"
+        )
+        val committedEvent = ListenTogetherEvent(
+            type = "SET_QUEUE",
+            positionMs = 12_000L
+        )
+
+        val next = buildListenTogetherForwardedControlSyntheticState(
+            currentState = currentState,
+            message = message,
+            committedEvent = committedEvent,
+            nowMs = 1_700_000_000_000L
+        )
+
+        assertEquals(listOf(current, first, last), next.queue)
+        assertEquals(0, next.currentIndex)
+        assertEquals(current, next.track)
+        assertEquals("playing", next.playback.state)
+        assertEquals(12_000L, next.playback.basePositionMs)
+    }
+
     private fun listenTogetherTrack(stableKey: String) = ListenTogetherTrack(
         stableKey = stableKey,
         channelId = "channel",

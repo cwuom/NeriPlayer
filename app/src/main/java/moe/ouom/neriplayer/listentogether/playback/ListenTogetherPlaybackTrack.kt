@@ -35,6 +35,49 @@ internal fun List<SongItem>.hasSameTrackSequenceAs(other: List<SongItem>): Boole
     return indices.all { index -> this[index].sameTrackAs(other[index]) }
 }
 
+private data class ListenTogetherPlaybackIdentity(
+    val channelId: String?,
+    val audioId: String?,
+    val subAudioId: String?,
+    val playlistContextId: String?
+)
+
+private fun SongItem.listenTogetherPlaybackIdentity(): ListenTogetherPlaybackIdentity {
+    return ListenTogetherPlaybackIdentity(
+        channelId = resolvedChannelId(),
+        audioId = resolvedAudioId(),
+        subAudioId = resolvedSubAudioId(),
+        playlistContextId = resolvedPlaylistContextId()
+    )
+}
+
+internal fun List<SongItem>.hasSameTrackMultisetAs(other: List<SongItem>): Boolean {
+    if (size != other.size) return false
+    return groupingBy { it.listenTogetherPlaybackIdentity() }.eachCount() ==
+        other.groupingBy { it.listenTogetherPlaybackIdentity() }.eachCount()
+}
+
+internal fun shouldApplyListenTogetherQueueUpdateWithoutReload(
+    causeType: String?,
+    currentQueue: List<SongItem>,
+    currentSong: SongItem?,
+    incomingQueue: List<SongItem>,
+    incomingCurrentIndex: Int
+): Boolean {
+    if (!isListenTogetherQueueUpdateCause(causeType)) return false
+    val incomingCurrentSong = incomingQueue.getOrNull(incomingCurrentIndex) ?: return false
+    return currentQueue.isNotEmpty() && currentSong?.sameTrackAs(incomingCurrentSong) == true
+}
+
+internal fun isListenTogetherQueueUpdateCause(causeType: String?): Boolean {
+    return causeType in LISTEN_TOGETHER_QUEUE_UPDATE_CAUSES
+}
+
+private val LISTEN_TOGETHER_QUEUE_UPDATE_CAUSES = setOf(
+    "SET_QUEUE",
+    "REQUEST_SET_QUEUE"
+)
+
 internal fun List<SongItem>.indexOfTrack(track: SongItem?): Int {
     track ?: return -1
     return indexOfFirst { candidate -> candidate.sameTrackAs(track) }

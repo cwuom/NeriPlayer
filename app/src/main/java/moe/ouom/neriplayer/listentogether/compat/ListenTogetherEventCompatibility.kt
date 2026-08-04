@@ -100,6 +100,21 @@ internal fun isListenTogetherPendingMemberControlSatisfied(
                 ?: return false
             state.currentStableKeyForCompatibility() == requestedStableKey
         }
+        "SET_QUEUE" -> {
+            val requestedQueue = event.queue ?: return false
+            val requestedIndex = event.currentIndex ?: return false
+            if (requestedQueue.isEmpty()) {
+                requestedIndex == -1 &&
+                    state.queue.isEmpty() &&
+                    state.currentIndex == -1 &&
+                    state.track == null
+            } else {
+                requestedIndex in requestedQueue.indices &&
+                    state.currentIndex == requestedIndex &&
+                    state.queue.map { it.stableKey } == requestedQueue.map { it.stableKey } &&
+                    state.currentStableKeyForCompatibility() == requestedQueue[requestedIndex].stableKey
+            }
+        }
         else -> false
     }
 }

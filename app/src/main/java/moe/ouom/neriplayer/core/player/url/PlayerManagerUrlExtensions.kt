@@ -158,35 +158,50 @@ internal suspend fun PlayerManager.resolveSongUrl(
             return prefetchedResult
         }
     }
-    val listenTogetherFallback = listenTogetherFallbackResult(song)
-    val resolverSideEffects = if (listenTogetherFallback != null) {
+    val initialListenTogetherFallback = listenTogetherFallbackResult(song)
+    val resolverSideEffects = if (initialListenTogetherFallback != null) {
         RefreshResolverSideEffects(RefreshSideEffectGate { false })
     } else {
         sideEffects
     }
-    val result = when {
-        isYouTubeTrack -> getYouTubeMusicAudioUrl(
-            song = song,
-            suppressError = hasCachedData,
-            forceRefresh = forceRefresh,
-            youtubeRecoveryStrategy = youtubeRecoveryStrategy,
-            sideEffects = resolverSideEffects
-        )
-        isBiliTrack(song) -> getBiliAudioUrl(
-            song = song,
-            suppressError = hasCachedData,
-            sideEffects = resolverSideEffects
-        )
-        else -> getNeteaseSongUrl(
-            song = song,
-            suppressError = hasCachedData,
-            sideEffects = resolverSideEffects
-        )
+    val result = retrySongUrlResolution { retryAttempt ->
+        val isFinalAttempt = retryAttempt == SONG_URL_RESOLUTION_RETRY_COUNT
+        if (retryAttempt > 0) {
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "resolveSongUrl: retry=$retryAttempt/$SONG_URL_RESOLUTION_RETRY_COUNT, song=${song.name}, source=${song.album}"
+            )
+        }
+        val suppressError = hasCachedData || !isFinalAttempt || initialListenTogetherFallback != null
+        when {
+            isYouTubeTrack -> getYouTubeMusicAudioUrl(
+                song = song,
+                suppressError = suppressError,
+                forceRefresh = forceRefresh,
+                youtubeRecoveryStrategy = youtubeRecoveryStrategy,
+                sideEffects = resolverSideEffects
+            )
+            isBiliTrack(song) -> getBiliAudioUrl(
+                song = song,
+                suppressError = suppressError,
+                sideEffects = resolverSideEffects
+            )
+            else -> getNeteaseSongUrl(
+                song = song,
+                suppressError = suppressError,
+                sideEffects = resolverSideEffects
+            )
+        }
     }
 
-    if ((result is SongUrlResult.Failure || result is SongUrlResult.RequiresLogin) &&
-        listenTogetherFallback != null
+    val listenTogetherFallback = if (
+        result is SongUrlResult.Failure || result is SongUrlResult.RequiresLogin
     ) {
+        listenTogetherFallbackResult(song)
+    } else {
+        null
+    }
+    if (listenTogetherFallback != null) {
         NPLogger.w(
             "NERI-PlayerManager",
             "resolveSongUrl: local resolution failed, use isolated listen-together fallback: song=${song.name}, candidates=${listenTogetherFallback.playbackCandidates().size}"
@@ -243,24 +258,32 @@ internal suspend fun PlayerManager.resolveShareableListenTogetherStreamUrl(
     }
 
     val sideEffects = RefreshResolverSideEffects(RefreshSideEffectGate { false })
-    val result = when {
-        isYouTubeMusicTrack(song) -> getYouTubeMusicAudioUrl(
-            song = song,
-            suppressError = true,
-            forceRefresh = true,
-            sideEffects = sideEffects
-        )
-        isBiliTrack(song) -> getBiliAudioUrl(
-            song = song,
-            suppressError = true,
-            sideEffects = sideEffects
-        )
-        else -> getNeteaseSongUrl(
-            song = song,
-            suppressError = true,
-            sideEffects = sideEffects,
-            allowLocalFallback = false
-        )
+    val result = retrySongUrlResolution { retryAttempt ->
+        if (retryAttempt > 0) {
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "resolveShareableListenTogetherStreamUrl: retry=$retryAttempt/$SONG_URL_RESOLUTION_RETRY_COUNT, song=${song.name}, source=${song.album}"
+            )
+        }
+        when {
+            isYouTubeMusicTrack(song) -> getYouTubeMusicAudioUrl(
+                song = song,
+                suppressError = true,
+                forceRefresh = true,
+                sideEffects = sideEffects
+            )
+            isBiliTrack(song) -> getBiliAudioUrl(
+                song = song,
+                suppressError = true,
+                sideEffects = sideEffects
+            )
+            else -> getNeteaseSongUrl(
+                song = song,
+                suppressError = true,
+                sideEffects = sideEffects,
+                allowLocalFallback = false
+            )
+        }
     }
     if (result is SongUrlResult.Success && !isDirectStreamUrl(result.url)) {
         NPLogger.w(

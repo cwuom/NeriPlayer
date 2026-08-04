@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -408,6 +409,127 @@ class AdvancedGlassSurfaceRenderTest {
                 mixedPixel.green in 0.15f..0.85f &&
                 mixedPixel.blue in 0.15f..0.85f
         )
+    }
+
+    @Test
+    fun localBlurRebuildsItsRenderCacheAfterLifecycleAndSettingChanges() {
+        lateinit var capturedBackdrop: AdvancedGlassBackdrop
+        lateinit var quality: MutableState<AdvancedBlurQuality>
+        lateinit var blurEnabled: MutableState<Boolean>
+        val lifecycleOwner = TestLifecycleOwner()
+        composeRule.setContent {
+            CompositionLocalProvider(LocalLifecycleOwner provides lifecycleOwner) {
+                val backgroundBackdrop = rememberAdvancedGlassBackdrop()
+                val contentBackdrop = rememberAdvancedGlassBackdrop()
+                capturedBackdrop = backgroundBackdrop
+                quality = remember { mutableStateOf(AdvancedBlurQuality.Low) }
+                blurEnabled = remember { mutableStateOf(true) }
+                MaterialTheme {
+                    AdvancedGlassHost(
+                        controller = enabledController().copy(
+                            advancedBlurEnabled = blurEnabled.value,
+                            advancedBlurQuality = quality.value
+                        ),
+                        backgroundBackdrop = backgroundBackdrop,
+                        contentBackdrop = contentBackdrop
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(200.dp, 120.dp)
+                                .testTag(LocalBlurRootTag)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .captureAdvancedGlassBackdrop(backgroundBackdrop)
+                            ) {
+                                Box(
+                                    Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .background(Color.Black)
+                                )
+                                Box(
+                                    Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .background(Color.White)
+                                )
+                            }
+                            AdvancedGlassSurface(
+                                role = AdvancedGlassRole.SettingsSection,
+                                modifier = Modifier
+                                    .size(160.dp, 80.dp)
+                                    .align(Alignment.Center),
+                                tintColor = Color.Transparent
+                            ) {}
+                        }
+                    }
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.runOnIdle {
+            lifecycleOwner.dispatch(Lifecycle.Event.ON_CREATE)
+            lifecycleOwner.dispatch(Lifecycle.Event.ON_START)
+            lifecycleOwner.dispatch(Lifecycle.Event.ON_RESUME)
+        }
+        composeRule.waitForIdle()
+
+        assertLocalBlurredBackdropBoundary()
+        lateinit var lowRenderer: AdvancedGlassLocalBlurRenderer
+        composeRule.runOnIdle {
+            val plan = checkNotNull(capturedBackdrop.localBlurPlan)
+            lowRenderer = capturedBackdrop.localBlurRenderer(plan.rendererCacheKey)
+            quality.value = AdvancedBlurQuality.UltraLow
+        }
+        composeRule.waitForIdle()
+
+        assertLocalBlurredBackdropBoundary()
+        lateinit var ultraLowRenderer: AdvancedGlassLocalBlurRenderer
+        composeRule.runOnIdle {
+            val plan = checkNotNull(capturedBackdrop.localBlurPlan)
+            ultraLowRenderer = capturedBackdrop.localBlurRenderer(plan.rendererCacheKey)
+            assertNotSame(
+                "quality change reused a stale local blur renderer",
+                lowRenderer,
+                ultraLowRenderer
+            )
+            lifecycleOwner.dispatch(Lifecycle.Event.ON_PAUSE)
+            lifecycleOwner.dispatch(Lifecycle.Event.ON_RESUME)
+        }
+        composeRule.waitForIdle()
+
+        assertLocalBlurredBackdropBoundary()
+        lateinit var resumedRenderer: AdvancedGlassLocalBlurRenderer
+        composeRule.runOnIdle {
+            val plan = checkNotNull(capturedBackdrop.localBlurPlan)
+            resumedRenderer = capturedBackdrop.localBlurRenderer(plan.rendererCacheKey)
+            assertNotSame(
+                "foreground resume reused an invalid local blur renderer",
+                ultraLowRenderer,
+                resumedRenderer
+            )
+            blurEnabled.value = false
+        }
+        composeRule.waitForIdle()
+        composeRule.runOnIdle {
+            assertNull("disabled local blur kept a render plan", capturedBackdrop.localBlurPlan)
+            blurEnabled.value = true
+        }
+        composeRule.waitForIdle()
+
+        assertLocalBlurredBackdropBoundary()
+        composeRule.runOnIdle {
+            val plan = checkNotNull(capturedBackdrop.localBlurPlan)
+            val restoredRenderer = capturedBackdrop.localBlurRenderer(plan.rendererCacheKey)
+            assertNotSame(
+                "re-enabled local blur reused a stale renderer",
+                resumedRenderer,
+                restoredRenderer
+            )
+        }
     }
 
     @Test
@@ -1955,6 +2077,18 @@ class AdvancedGlassSurfaceRenderTest {
         )
     }
 
+    private fun assertLocalBlurredBackdropBoundary() {
+        val image = composeRule.onNodeWithTag(LocalBlurRootTag).captureToImage()
+        val mixedPixel = image.toPixelMap()[image.width / 2 - 6, image.height / 2]
+
+        assertTrue(
+            "local blur returned a blank or sharp backdrop: $mixedPixel",
+            mixedPixel.red in 0.15f..0.85f &&
+                mixedPixel.green in 0.15f..0.85f &&
+                mixedPixel.blue in 0.15f..0.85f
+        )
+    }
+
     private fun mixedPixelCount(
         image: androidx.compose.ui.graphics.ImageBitmap,
         y: Int
@@ -1967,6 +2101,10 @@ class AdvancedGlassSurfaceRenderTest {
 
     private class TestLifecycleOwner : LifecycleOwner {
         override val lifecycle = LifecycleRegistry(this)
+
+        fun dispatch(event: Lifecycle.Event) {
+            lifecycle.handleLifecycleEvent(event)
+        }
     }
 
     private companion object {

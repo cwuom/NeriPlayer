@@ -7,7 +7,8 @@ internal data class AdvancedGlassLocalBlurPlan(
     val radiusPx: Float,
     val downscaleFactor: Int,
     val inputPaddingPx: Float,
-    val groups: List<AdvancedGlassLocalBlurGroup>
+    val groups: List<AdvancedGlassLocalBlurGroup>,
+    val rendererCacheKey: Int = DefaultLocalBlurRendererCacheKey
 ) {
     val estimatedBlurredInputArea: Double
         get() = groups.sumOf { group ->
@@ -73,7 +74,8 @@ internal fun resolveAdvancedGlassLocalBlurPlan(
     regions: List<AdvancedGlassRenderRegion>,
     radiusPx: Float,
     maximumMergedInputAreaRatio: Float,
-    downscaleFactor: Int = 1
+    downscaleFactor: Int = 1,
+    rendererCacheKey: Int = DefaultLocalBlurRendererCacheKey
 ): AdvancedGlassLocalBlurPlan? {
     if (!radiusPx.isFinite() || radiusPx <= 0f ||
         !maximumMergedInputAreaRatio.isFinite() ||
@@ -124,7 +126,8 @@ internal fun resolveAdvancedGlassLocalBlurPlan(
         radiusPx = radiusPx,
         downscaleFactor = downscaleFactor,
         inputPaddingPx = inputPaddingPx,
-        groups = groups
+        groups = groups,
+        rendererCacheKey = rendererCacheKey
     )
 }
 
@@ -146,4 +149,5 @@ private fun AdvancedGlassRenderRegion.localBlurBounds() = AdvancedGlassLocalBlur
 )
 
 private const val LocalBlurInputPaddingRadiusMultiplier = 2f
+private const val DefaultLocalBlurRendererCacheKey = 0
 private val SupportedLocalBlurDownscaleFactors = setOf(1, 2, 4)

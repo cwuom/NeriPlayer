@@ -12,7 +12,8 @@ internal val controllerHeartbeatRecoveryTypes = setOf(
     "REQUEST_PAUSE",
     "REQUEST_SEEK",
     "REQUEST_PLAYBACK_MODE",
-    "REQUEST_SET_TRACK"
+    "REQUEST_SET_TRACK",
+    "REQUEST_SET_QUEUE"
 )
 
 internal val passivePositionUpdateTypes = setOf(
@@ -32,6 +33,7 @@ internal val controlledPlaybackCommandTypes = setOf(
     "PLAY",
     "PAUSE",
     "PLAYBACK_MODE",
+    "SET_QUEUE",
     "SEEK"
 )
 
@@ -40,7 +42,8 @@ internal val requestControlEventTypes = setOf(
     "REQUEST_PAUSE",
     "REQUEST_SEEK",
     "REQUEST_PLAYBACK_MODE",
-    "REQUEST_SET_TRACK"
+    "REQUEST_SET_TRACK",
+    "REQUEST_SET_QUEUE"
 )
 
 internal val trackBoundRequestControlEventTypes = setOf(
