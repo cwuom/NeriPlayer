@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.core.api.youtube
 
 import moe.ouom.neriplayer.data.settings.YouTubePlaybackSourcePreference
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class YouTubePlaybackSourcePolicyTest {
@@ -23,15 +25,27 @@ class YouTubePlaybackSourcePolicyTest {
     }
 
     @Test
-    fun automatic_prefersAuthenticatedWebRemixBeforeAnonymousFallbacks() {
+    fun automatic_authenticatedPlaybackStartsWithPoTokenCapableWebRemix() {
         assertEquals(
-            listOf(YouTubePlayerClientSource.WEB_REMIX) +
-                automaticOrder.filterNot { it == YouTubePlayerClientSource.WEB_REMIX },
+            listOf(
+                YouTubePlayerClientSource.WEB_REMIX,
+                YouTubePlayerClientSource.TV_HTML5,
+                YouTubePlayerClientSource.WEB_CREATOR,
+                YouTubePlayerClientSource.TV_HTML5_LEGACY,
+                YouTubePlayerClientSource.VISION_OS,
+                YouTubePlayerClientSource.ANDROID_VR
+            ),
             resolveYouTubePlayerClientOrder(
                 preference = YouTubePlaybackSourcePreference.Automatic,
-                preferAuthenticatedWebRemix = true
+                preferAuthenticatedWebPlayback = true
             )
         )
+    }
+
+    @Test
+    fun anonymousNewPipeFallbackIsDisabledForSignedInPlayback() {
+        assertFalse(shouldUseAnonymousYouTubeNewPipeFallback(hasLoginCookies = true))
+        assertTrue(shouldUseAnonymousYouTubeNewPipeFallback(hasLoginCookies = false))
     }
 
     @Test

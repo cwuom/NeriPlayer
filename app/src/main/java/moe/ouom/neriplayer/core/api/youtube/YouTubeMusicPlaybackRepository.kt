@@ -581,8 +581,9 @@ private data class InFlightPlayableAudioRequest(
     val requireDirect: Boolean,
     val preferM4a: Boolean,
     val forceRefresh: Boolean,
-    // 参与去重键, 否则 avoidDirect 会复用偏好直链的在途结果
-    val avoidDirect: Boolean
+    // 参与去重键, 否则不同的直链安全策略会复用不兼容的在途结果
+    val avoidDirect: Boolean,
+    val allowUnverifiedDirectFallback: Boolean
 )
 
 /**
@@ -725,6 +726,12 @@ private data class YouTubePlayerClientProfile(
     val includeUserAgentInContext: Boolean = false,
     val includeSignatureTimestamp: Boolean = true
 )
+
+private fun YouTubePlayerClientProfile.requiresGvsPoToken(): Boolean {
+    return clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME ||
+        clientName == YOUTUBE_PLAYER_WEB_CREATOR_CLIENT_NAME ||
+        clientName == YOUTUBE_PLAYER_TV_CLIENT_NAME
+}
 
 private enum class YouTubeMusicPlaybackQuality {
     LOW,
@@ -1505,6 +1512,26 @@ private fun isYouTubeGoogleVideoStream(url: String): Boolean {
         ?.equals("youtube", ignoreCase = true) == true
 }
 
+@VisibleForTesting
+internal fun isTrustedYouTubeDirectUrlForStrictRecovery(url: String): Boolean {
+    if (!isYouTubeGoogleVideoStream(url)) {
+        return true
+    }
+    val clientName = extractStreamQueryParameter(url, "c")
+        ?.trim()
+        ?.uppercase(Locale.US)
+        .orEmpty()
+    return when (clientName) {
+        YOUTUBE_PLAYER_VISIONOS_CLIENT_NAME,
+        YOUTUBE_PLAYER_ANDROID_VR_CLIENT_NAME -> true
+        YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME,
+        YOUTUBE_PLAYER_WEB_CREATOR_CLIENT_NAME,
+        YOUTUBE_PLAYER_TV_CLIENT_NAME ->
+            !extractStreamQueryParameter(url, "pot").isNullOrBlank()
+        else -> false
+    }
+}
+
 class YouTubeMusicPlaybackRepository(
     private val okHttpClient: OkHttpClient,
     private val settings: SettingsRepository? = null,
@@ -1583,6 +1610,7 @@ class YouTubeMusicPlaybackRepository(
         preferM4a: Boolean = false,
         shareInFlight: Boolean = true,
         avoidDirect: Boolean = false,
+        allowUnverifiedDirectFallback: Boolean = true,
         // 投机预取不认领在途解析, 否则闸门会被自己的预取一路提升到形同虚设
         isPrefetch: Boolean = false
     ): YouTubePlayableAudio? = withContext(Dispatchers.IO) {
@@ -1600,14 +1628,15 @@ class YouTubeMusicPlaybackRepository(
         )
         NPLogger.d(
             "YouTubeMusicPlayback",
-            "getBestPlayableAudio: videoId=$videoId, quality=$preferredQualityKey, source=${sourcePreference.storageValue}, forceRefresh=$forceRefresh, requireDirect=$requireDirect, preferM4a=$preferM4a, shareInFlight=$shareInFlight, avoidDirect=$avoidDirect"
+            "getBestPlayableAudio: videoId=$videoId, quality=$preferredQualityKey, source=${sourcePreference.storageValue}, forceRefresh=$forceRefresh, requireDirect=$requireDirect, preferM4a=$preferM4a, shareInFlight=$shareInFlight, avoidDirect=$avoidDirect, allowUnverifiedDirectFallback=$allowUnverifiedDirectFallback"
         )
         if (!forceRefresh) {
             getCachedPlayableAudio(
                 videoId = videoId,
                 preferredQualityKey = cacheKey,
                 requireDirect = requireDirect,
-                avoidDirect = avoidDirect
+                avoidDirect = avoidDirect,
+                allowUnverifiedDirectFallback = allowUnverifiedDirectFallback
             )?.let { cached ->
                 NPLogger.d(
                     "YouTubeMusicPlayback",
@@ -1627,6 +1656,7 @@ class YouTubeMusicPlaybackRepository(
                 cacheKey = cacheKey,
                 forceRefresh = forceRefresh,
                 avoidDirect = avoidDirect,
+                allowUnverifiedDirectFallback = allowUnverifiedDirectFallback,
                 isPrefetch = isPrefetch
             )
         } else {
@@ -1639,7 +1669,8 @@ class YouTubeMusicPlaybackRepository(
                 preferM4a = preferM4a,
                 cacheKey = cacheKey,
                 forceRefresh = forceRefresh,
-                avoidDirect = avoidDirect
+                avoidDirect = avoidDirect,
+                allowUnverifiedDirectFallback = allowUnverifiedDirectFallback
             )
         }
     }
@@ -1909,7 +1940,8 @@ class YouTubeMusicPlaybackRepository(
         preferM4a: Boolean,
         cacheKey: String,
         forceRefresh: Boolean,
-        avoidDirect: Boolean = false
+        avoidDirect: Boolean = false,
+        allowUnverifiedDirectFallback: Boolean = true
     ): YouTubePlayableAudio? {
         val authGeneration = authCacheGeneration
         val playerResolution = resolvePlayerAudioViaPlayerApi(
@@ -1920,7 +1952,8 @@ class YouTubeMusicPlaybackRepository(
             logFailure = logFailure,
             preferM4a = preferM4a,
             forceRefresh = forceRefresh,
-            avoidDirect = avoidDirect
+            avoidDirect = avoidDirect,
+            allowUnverifiedDirectFallback = allowUnverifiedDirectFallback
         )
         playerResolution?.playableAudio?.let { playableAudio ->
             if (authGeneration == authCacheGeneration) {
@@ -1929,6 +1962,13 @@ class YouTubeMusicPlaybackRepository(
             return playableAudio
         }
 
+        if (!shouldUseAnonymousYouTubeNewPipeFallback(authProvider().normalized().hasLoginCookies())) {
+            NPLogger.d(
+                "YouTubeMusicPlayback",
+                "skip anonymous NewPipe fallback for signed-in playback: videoId=$videoId"
+            )
+            return null
+        }
         ensureInitialized()
         return resolvePlayableAudioViaNewPipe(
             videoId = videoId,
@@ -1936,7 +1976,11 @@ class YouTubeMusicPlaybackRepository(
             logFailure = logFailure,
             preferM4a = preferM4a
         )   // 兜底路径也不能交出直链，否则原地循环 403
-            ?.takeUnless { avoidDirect && it.streamType == YouTubePlayableStreamType.DIRECT }
+            ?.takeUnless {
+                (avoidDirect && it.streamType == YouTubePlayableStreamType.DIRECT) ||
+                    (!allowUnverifiedDirectFallback &&
+                        !isTrustedYouTubeDirectForStrictRecovery(it))
+            }
             ?.mergeMetadataFrom(playerResolution?.metadata)
             ?.also { playableAudio ->
             if (authGeneration == authCacheGeneration) {
@@ -1955,6 +1999,7 @@ class YouTubeMusicPlaybackRepository(
         cacheKey: String,
         forceRefresh: Boolean,
         avoidDirect: Boolean = false,
+        allowUnverifiedDirectFallback: Boolean = true,
         isPrefetch: Boolean = false
     ): YouTubePlayableAudio? {
         return startPlayableAudioResolution(
@@ -1967,6 +2012,7 @@ class YouTubeMusicPlaybackRepository(
             cacheKey = cacheKey,
             forceRefresh = forceRefresh,
             avoidDirect = avoidDirect,
+            allowUnverifiedDirectFallback = allowUnverifiedDirectFallback,
             isPrefetch = isPrefetch
         ).await()
     }
@@ -1981,6 +2027,7 @@ class YouTubeMusicPlaybackRepository(
         cacheKey: String,
         forceRefresh: Boolean,
         avoidDirect: Boolean = false,
+        allowUnverifiedDirectFallback: Boolean = true,
         isPrefetch: Boolean = false
     ): Deferred<YouTubePlayableAudio?> {
         val request = InFlightPlayableAudioRequest(
@@ -1990,7 +2037,8 @@ class YouTubeMusicPlaybackRepository(
             requireDirect = requireDirect,
             preferM4a = preferM4a,
             forceRefresh = forceRefresh,
-            avoidDirect = avoidDirect
+            avoidDirect = avoidDirect,
+            allowUnverifiedDirectFallback = allowUnverifiedDirectFallback
         )
         val onDemandSignal = CompletableDeferred<Unit>()
         val entry = synchronized(inFlightPlayableAudio) {
@@ -2019,7 +2067,8 @@ class YouTubeMusicPlaybackRepository(
                                     preferM4a = preferM4a,
                                     cacheKey = cacheKey,
                                     forceRefresh = forceRefresh,
-                                    avoidDirect = avoidDirect
+                                    avoidDirect = avoidDirect,
+                                    allowUnverifiedDirectFallback = allowUnverifiedDirectFallback
                                 )
                             }
                         } else {
@@ -2032,7 +2081,8 @@ class YouTubeMusicPlaybackRepository(
                                 preferM4a = preferM4a,
                                 cacheKey = cacheKey,
                                 forceRefresh = forceRefresh,
-                                avoidDirect = avoidDirect
+                                avoidDirect = avoidDirect,
+                                allowUnverifiedDirectFallback = allowUnverifiedDirectFallback
                             )
                         }
                         NPLogger.d(
@@ -2106,7 +2156,8 @@ class YouTubeMusicPlaybackRepository(
         logFailure: Boolean,
         preferM4a: Boolean,
         forceRefresh: Boolean,
-        avoidDirect: Boolean = false
+        avoidDirect: Boolean = false,
+        allowUnverifiedDirectFallback: Boolean = true
     ): PlayerAudioResolution? {
         // 网页端未登录也能取流, 需要的是 visitorData + PoToken 而不是登录 cookie
         // 此前对无登录 cookie 直接返回 null 会把匿名用户整体推给已失效的 NewPipe 兜底
@@ -2121,7 +2172,8 @@ class YouTubeMusicPlaybackRepository(
                 requireDirect = requireDirect,
                 preferM4a = preferM4a,
                 forceRefresh = forceRefresh,
-                avoidDirect = avoidDirect
+                avoidDirect = avoidDirect,
+                allowUnverifiedDirectFallback = allowUnverifiedDirectFallback
             )
         } catch (error: Exception) {
             if (error is CancellationException) throw error
@@ -2144,7 +2196,8 @@ class YouTubeMusicPlaybackRepository(
         requireDirect: Boolean = false,
         preferM4a: Boolean = false,
         forceRefresh: Boolean = false,
-        avoidDirect: Boolean = false
+        avoidDirect: Boolean = false,
+        allowUnverifiedDirectFallback: Boolean = true
     ): PlayerAudioResolution {
         val resolveStartedAtMs = System.currentTimeMillis()
         val bootstrapStartedAtMs = System.currentTimeMillis()
@@ -2170,10 +2223,14 @@ class YouTubeMusicPlaybackRepository(
                 return@repeat
             }
             val poTokenForceRefresh = forceRefresh || attempt > 0
-            val allowBlockingWebRemixPoToken = requireDirect
+            // 出现 403 后不能再拿裸网页直链赌下一次 Range；优先等当前 WEB_REMIX
+            // 的 token，拿不到再继续 HLS 等非直链回退
+            val allowBlockingWebRemixPoToken =
+                requireDirect || !allowUnverifiedDirectFallback
             val requestLocaleCandidates = playerRequestLocaleCandidates()
             var bestPlayableAudio: YouTubePlayableAudio? = null
             var bestPlayableAudioClientName: String? = null
+            var webRemixPoTokenPrefetch: Deferred<String?>? = null
             var shouldRefreshBootstrapBeforeFallback = false
             // status=OK 却解不出候选流, 说明 bootstrap 本身没毛病, 问题在签名那一步
             var sawUndecipherableOkResponse = false
@@ -2181,12 +2238,10 @@ class YouTubeMusicPlaybackRepository(
             var sawBootstrapSuspectOutcome = false
             var sawTerminalFallbackOutcome = false
             var sawPlayerRequestFailure = false
-            // 缺 PoToken 被跳过验证的直链, sig 和 n 都已经解完了, 留着当最后兜底
-            var unverifiedDirectFallback: YouTubePlayableAudio? = null
             val candidateProfiles = selectUsablePlayerClients(
                 profiles = playerClientProfiles(
                     sourcePreference = sourcePreference,
-                    preferAuthenticatedWebRemix = auth.hasLoginCookies()
+                    isAuthenticated = auth.hasLoginCookies()
                 ),
                 clientName = { it.clientName },
                 isSuppressed = PlayerClientHealthTracker::isSuppressed
@@ -2210,11 +2265,12 @@ class YouTubeMusicPlaybackRepository(
                             sawOkResponse = true
                         }
                         val shouldStopRemainingFallbackRequests =
-                            shouldStopRemainingPlayerFallbackRequests(
-                                clientName = profile.clientName,
-                                playabilityStatus = playability.status,
-                                sawUndecipherableOkResponse = sawUndecipherableOkResponse
-                            )
+                            allowUnverifiedDirectFallback &&
+                                shouldStopRemainingPlayerFallbackRequests(
+                                    clientName = profile.clientName,
+                                    playabilityStatus = playability.status,
+                                    sawUndecipherableOkResponse = sawUndecipherableOkResponse
+                                )
                         if (shouldStopRemainingFallbackRequests) {
                             sawTerminalFallbackOutcome = true
                         }
@@ -2258,15 +2314,17 @@ class YouTubeMusicPlaybackRepository(
                             } else {
                                 null
                             }
-                            val webRemixPoTokenPrefetch = if (
-                                profile.clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME &&
+                            val responseWebRemixPoTokenPrefetch = if (
+                                profile.requiresGvsPoToken() &&
                                 shouldPrefetchWebRemixPoToken(root)
                             ) {
-                                prefetchWebRemixPoToken(
-                                    videoId = videoId,
-                                    bootstrap = bootstrap,
-                                    forceRefresh = poTokenForceRefresh
-                                )
+                                webRemixPoTokenPrefetch =
+                                    webRemixPoTokenPrefetch ?: prefetchWebRemixPoToken(
+                                        videoId = videoId,
+                                        bootstrap = bootstrap,
+                                        forceRefresh = poTokenForceRefresh
+                                    )
+                                webRemixPoTokenPrefetch
                             } else {
                                 null
                             }
@@ -2287,7 +2345,7 @@ class YouTubeMusicPlaybackRepository(
                                     }
                                 )
                             // 放弃直链候选, 顺带省掉一次必然被丢弃的 GVS PoToken 铸造
-                            val directPlayableAudio = if (avoidDirect) {
+                            val attachedDirectPlayableAudio = if (avoidDirect) {
                                 null
                             } else {
                                 maybeAttachGvsPoToken(
@@ -2297,21 +2355,21 @@ class YouTubeMusicPlaybackRepository(
                                     auth = auth,
                                     bootstrap = bootstrap,
                                     forceRefresh = poTokenForceRefresh,
-                                    prefetchedPoToken = webRemixPoTokenPrefetch,
-                                    allowBlockingAcquisition = allowBlockingWebRemixPoToken
+                                    prefetchedPoToken = responseWebRemixPoTokenPrefetch,
+                                    allowBlockingAcquisition = allowBlockingWebRemixPoToken,
+                                    allowUnverifiedDirectFallback = allowUnverifiedDirectFallback
                                 )
                             }
-                            // 缺 PoToken 就整份丢掉的话, 这条已经解完签名的直链会连同那几秒一起作废,
-                            // 后面的 client 还得从头再解一遍; 留下来只在所有 client 都空手时才用
-                            if (directPlayableAudio == null && parsedDirectPlayableAudio != null) {
-                                unverifiedDirectFallback = selectPreferredPlayableAudio(
-                                    current = unverifiedDirectFallback,
-                                    incoming = parsedDirectPlayableAudio,
-                                    currentClientName = null,
-                                    incomingClientName = profile.clientName,
-                                    preferM4a = preferM4a,
-                                    preferredQualityKey = preferredQualityKey
-                                ) ?: unverifiedDirectFallback
+                            val directPlayableAudio = attachedDirectPlayableAudio?.takeIf {
+                                allowUnverifiedDirectFallback ||
+                                    isTrustedYouTubeDirectForStrictRecovery(profile, it)
+                            }
+                            if (attachedDirectPlayableAudio != null && directPlayableAudio == null) {
+                                NPLogger.d(
+                                    "YouTubeMusicPlayback",
+                                    "reject unverified direct fallback: videoId=$videoId, " +
+                                        "client=${profile.clientName}, forceRefresh=$forceRefresh"
+                                )
                             }
                             val hlsPlayableAudio = try {
                                 if (
@@ -2334,7 +2392,7 @@ class YouTubeMusicPlaybackRepository(
                                         videoId = videoId,
                                         bootstrap = bootstrap,
                                         forceRefresh = forceRefresh || attempt > 0,
-                                        prefetchedPoToken = webRemixPoTokenPrefetch,
+                                        prefetchedPoToken = responseWebRemixPoTokenPrefetch,
                                         allowBlockingAcquisition = allowBlockingWebRemixPoToken
                                     )
                                 }
@@ -2519,20 +2577,6 @@ class YouTubeMusicPlaybackRepository(
                 )
             }
 
-            // 所有 client 都空手时才动这份: 它缺 PoToken 没做验证, 但签名已经解完,
-            // 丢掉它就是让下一轮把同一条流重新解一遍, 那几秒直接落在首播上;
-            // 真被 CDN 拒了还有播放器那边的回退兜着
-            unverifiedDirectFallback?.let { fallback ->
-                NPLogger.w(
-                    "YouTubeMusicPlayback",
-                    "player resolve falls back to the unverified direct stream: videoId=$videoId, bitrateKbps=${fallback.bitrateKbps}, elapsedMs=${playbackElapsedMs(resolveStartedAtMs)}"
-                )
-                return PlayerAudioResolution(
-                    playableAudio = fallback.mergeMetadataFrom(bestMetadata),
-                    metadata = bestMetadata
-                )
-            }
-
             if (
                 shouldAbortPlayerRetryAfterTerminalFallback(
                     sawUndecipherableOkResponse = sawUndecipherableOkResponse,
@@ -2626,11 +2670,12 @@ class YouTubeMusicPlaybackRepository(
         bootstrap: YouTubePlaybackBootstrap,
         forceRefresh: Boolean,
         prefetchedPoToken: Deferred<String?>? = null,
-        allowBlockingAcquisition: Boolean
+        allowBlockingAcquisition: Boolean,
+        allowUnverifiedDirectFallback: Boolean
     ): YouTubePlayableAudio? {
         if (playableAudio == null ||
             playableAudio.streamType != YouTubePlayableStreamType.DIRECT ||
-            profile.clientName != YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME
+            !profile.requiresGvsPoToken()
         ) {
             return playableAudio
         }
@@ -2658,51 +2703,55 @@ class YouTubeMusicPlaybackRepository(
             allowBlockingAcquisition = allowBlockingAcquisition
         )
             .orEmpty()
-            .ifBlank {
-                if (existingPoToken.isNullOrBlank()) {
-                    if (!allowBlockingAcquisition) {
-                        NPLogger.d(
-                            "YouTubeMusicPlayback",
-                            "$YOUTUBE_PLAYBACK_DIAG_PREFIX missing_pot_webremix_direct_fast_fallback " +
-                                "videoId=$videoId ${playableAudio.missingPoTokenDiagnosticMetadata(profile.clientName)} " +
-                                "fallbackReason=missing_pot_skip_blocking_verification " +
-                                "fallbackPath=return_unverified_direct " +
-                                "branchElapsedMs=${playbackElapsedMs(startedAtMs)} " +
-                                "forceRefresh=$forceRefresh"
-                        )
-                        // 直链可以先交给播放器，后台铸造完成后会进入 provider 缓存供后续首播和恢复复用
-                        return playableAudio
-                    }
-                    val verification = verifyDirectRangeReadable(
-                        streamUrl,
-                        buildBootstrapRequestAuth(auth, bootstrap)
-                    )
-                    if (verification.isReadable) {
-                        NPLogger.d(
-                            "YouTubeMusicPlayback",
-                            "$YOUTUBE_PLAYBACK_DIAG_PREFIX missing_pot_webremix_direct_verification " +
-                                "videoId=$videoId ${playableAudio.missingPoTokenDiagnosticMetadata(profile.clientName)} " +
-                                "status=${verification.status} httpCode=${verification.httpCode ?: "<none>"} " +
-                                "bytesRead=${verification.bytesRead} elapsedMs=${verification.elapsedMs} " +
-                                "candidateDecision=accepted"
-                        )
-                        return playableAudio
-                    }
-                    NPLogger.w(
-                        "YouTubeMusicPlayback",
-                        "$YOUTUBE_PLAYBACK_DIAG_PREFIX missing_pot_webremix_direct_verification " +
-                            "videoId=$videoId ${playableAudio.missingPoTokenDiagnosticMetadata(profile.clientName)} " +
-                            "status=${verification.status} httpCode=${verification.httpCode ?: "<none>"} " +
-                            "bytesRead=${verification.bytesRead} elapsedMs=${verification.elapsedMs} " +
-                            "candidateDecision=rejected " +
-                            "fallbackReason=missing_pot_range_verification_failed " +
-                            "fallbackPath=continue_player_clients " +
-                            "branchElapsedMs=${playbackElapsedMs(startedAtMs)}"
-                    )
-                    return null
-                }
+        if (poToken.isBlank()) {
+            if (allowUnverifiedDirectFallback &&
+                profile.clientName != YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME
+            ) {
                 return playableAudio
             }
+            if (!allowBlockingAcquisition) {
+                NPLogger.d(
+                    "YouTubeMusicPlayback",
+                    "$YOUTUBE_PLAYBACK_DIAG_PREFIX missing_pot_web_direct_fast_fallback " +
+                        "videoId=$videoId ${playableAudio.missingPoTokenDiagnosticMetadata(profile.clientName)} " +
+                        "fallbackReason=missing_pot_fast_path_timeout " +
+                        "fallbackPath=continue_player_clients " +
+                        "branchElapsedMs=${playbackElapsedMs(startedAtMs)} " +
+                        "forceRefresh=$forceRefresh"
+                )
+                return null
+            }
+            if (!allowUnverifiedDirectFallback) {
+                return null
+            }
+            val verification = verifyDirectRangeReadable(
+                streamUrl,
+                buildBootstrapRequestAuth(auth, bootstrap)
+            )
+            if (verification.isReadable) {
+                NPLogger.d(
+                    "YouTubeMusicPlayback",
+                    "$YOUTUBE_PLAYBACK_DIAG_PREFIX missing_pot_webremix_direct_verification " +
+                        "videoId=$videoId ${playableAudio.missingPoTokenDiagnosticMetadata(profile.clientName)} " +
+                        "status=${verification.status} httpCode=${verification.httpCode ?: "<none>"} " +
+                        "bytesRead=${verification.bytesRead} elapsedMs=${verification.elapsedMs} " +
+                        "candidateDecision=accepted"
+                )
+                return playableAudio
+            }
+            NPLogger.w(
+                "YouTubeMusicPlayback",
+                "$YOUTUBE_PLAYBACK_DIAG_PREFIX missing_pot_webremix_direct_verification " +
+                    "videoId=$videoId ${playableAudio.missingPoTokenDiagnosticMetadata(profile.clientName)} " +
+                    "status=${verification.status} httpCode=${verification.httpCode ?: "<none>"} " +
+                    "bytesRead=${verification.bytesRead} elapsedMs=${verification.elapsedMs} " +
+                    "candidateDecision=rejected " +
+                    "fallbackReason=missing_pot_range_verification_failed " +
+                    "fallbackPath=continue_player_clients " +
+                    "branchElapsedMs=${playbackElapsedMs(startedAtMs)}"
+            )
+            return null
+        }
 
         NPLogger.d(
             "YouTubeMusicPlayback",
@@ -2711,6 +2760,29 @@ class YouTubeMusicPlaybackRepository(
         return playableAudio.copy(
             url = replaceStreamQueryParameter(streamUrl, "pot", poToken)
         )
+    }
+
+    private fun isTrustedYouTubeDirectForStrictRecovery(
+        profile: YouTubePlayerClientProfile,
+        playableAudio: YouTubePlayableAudio
+    ): Boolean {
+        if (!isTrustedYouTubeDirectForStrictRecovery(playableAudio)) {
+            return false
+        }
+        if (!isYouTubeGoogleVideoStream(playableAudio.url)) {
+            return true
+        }
+        val streamClientName = extractStreamQueryParameter(playableAudio.url, "c")
+            ?.trim()
+            ?.uppercase(Locale.US)
+        return streamClientName == profile.clientName
+    }
+
+    private fun isTrustedYouTubeDirectForStrictRecovery(
+        playableAudio: YouTubePlayableAudio
+    ): Boolean {
+        return playableAudio.streamType == YouTubePlayableStreamType.DIRECT &&
+            isTrustedYouTubeDirectUrlForStrictRecovery(playableAudio.url)
     }
 
     private fun verifyDirectRangeReadable(
@@ -4407,7 +4479,7 @@ class YouTubeMusicPlaybackRepository(
 
     private fun playerClientProfiles(
         sourcePreference: YouTubePlaybackSourcePreference,
-        preferAuthenticatedWebRemix: Boolean
+        isAuthenticated: Boolean
     ): List<YouTubePlayerClientProfile> {
         val profiles = mapOf(
             YouTubePlayerClientSource.VISION_OS to YouTubePlayerClientProfile(
@@ -4481,7 +4553,7 @@ class YouTubeMusicPlaybackRepository(
         )
         return resolveYouTubePlayerClientOrder(
             preference = sourcePreference,
-            preferAuthenticatedWebRemix = preferAuthenticatedWebRemix
+            preferAuthenticatedWebPlayback = isAuthenticated
         ).map(profiles::getValue)
     }
 
@@ -4683,7 +4755,8 @@ class YouTubeMusicPlaybackRepository(
         videoId: String,
         preferredQualityKey: String,
         requireDirect: Boolean = false,
-        avoidDirect: Boolean = false
+        avoidDirect: Boolean = false,
+        allowUnverifiedDirectFallback: Boolean = true
     ): YouTubePlayableAudio? {
         val cacheKey = playableAudioCacheKey(videoId, preferredQualityKey)
         synchronized(playableAudioCache) {
@@ -4718,6 +4791,12 @@ class YouTubeMusicPlaybackRepository(
             }
             // 命中缓存里的直链会拿回同一条 403 地址
             if (avoidDirect && cached.audio.streamType == YouTubePlayableStreamType.DIRECT) {
+                return null
+            }
+            if (!allowUnverifiedDirectFallback &&
+                cached.audio.streamType == YouTubePlayableStreamType.DIRECT &&
+                !isTrustedYouTubeDirectForStrictRecovery(cached.audio)
+            ) {
                 return null
             }
             return cached.audio

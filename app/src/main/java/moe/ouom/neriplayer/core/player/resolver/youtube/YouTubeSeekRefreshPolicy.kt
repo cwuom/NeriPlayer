@@ -103,7 +103,10 @@ internal object YouTubeSeekRefreshPolicy {
             ?.trim()
             ?.uppercase()
             .orEmpty()
-        return clientName.isBlank() || clientName == "WEB_REMIX"
+        return clientName.isBlank() ||
+            clientName == "WEB_REMIX" ||
+            clientName == "WEB_CREATOR" ||
+            clientName == "TVHTML5"
     }
 
     private fun isNearExpiry(url: String): Boolean {

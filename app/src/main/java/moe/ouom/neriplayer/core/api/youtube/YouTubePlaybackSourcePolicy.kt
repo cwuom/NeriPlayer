@@ -13,7 +13,7 @@ internal enum class YouTubePlayerClientSource {
 
 internal fun resolveYouTubePlayerClientOrder(
     preference: YouTubePlaybackSourcePreference,
-    preferAuthenticatedWebRemix: Boolean = false
+    preferAuthenticatedWebPlayback: Boolean = false
 ): List<YouTubePlayerClientSource> {
     val anonymousAutomaticOrder = listOf(
         YouTubePlayerClientSource.VISION_OS,
@@ -23,10 +23,16 @@ internal fun resolveYouTubePlayerClientOrder(
         YouTubePlayerClientSource.WEB_CREATOR,
         YouTubePlayerClientSource.TV_HTML5_LEGACY
     )
-    // 登录态承载区域和资料库权限，自动模式先保留原有的网页音乐请求链
-    val automaticOrder = if (preferAuthenticatedWebRemix) {
-        listOf(YouTubePlayerClientSource.WEB_REMIX) +
-            anonymousAutomaticOrder.filterNot { it == YouTubePlayerClientSource.WEB_REMIX }
+    // 登录态先走可携带 cookie 和 GVS PoToken 的 WEB_REMIX，但保留匿名客户端作为最后回退
+    val automaticOrder = if (preferAuthenticatedWebPlayback) {
+        listOf(
+            YouTubePlayerClientSource.WEB_REMIX,
+            YouTubePlayerClientSource.TV_HTML5,
+            YouTubePlayerClientSource.WEB_CREATOR,
+            YouTubePlayerClientSource.TV_HTML5_LEGACY,
+            YouTubePlayerClientSource.VISION_OS,
+            YouTubePlayerClientSource.ANDROID_VR
+        )
     } else {
         anonymousAutomaticOrder
     }
@@ -43,4 +49,8 @@ internal fun resolveYouTubePlayerClientOrder(
     } else {
         listOf(preferred) + automaticOrder.filterNot { it == preferred }
     }
+}
+
+internal fun shouldUseAnonymousYouTubeNewPipeFallback(hasLoginCookies: Boolean): Boolean {
+    return !hasLoginCookies
 }

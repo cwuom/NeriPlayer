@@ -21,7 +21,8 @@ internal data class RefreshRequestSemantics(
 internal data class YouTubePlaybackRecoveryStrategy(
     val preferredQualityOverride: String,
     val requireDirect: Boolean,
-    val preferM4a: Boolean
+    val preferM4a: Boolean,
+    val allowUnverifiedDirectFallback: Boolean = true
 )
 
 internal data class RefreshInFlightOwner(

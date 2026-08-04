@@ -107,23 +107,25 @@ class YouTubeSeekRefreshPolicyTest {
     }
 
     @Test
-    fun shouldRefreshUrlBeforeSeek_returnsFalseForTvHtml5DirectWithoutPoToken() {
+    fun shouldRefreshUrlBeforeSeekAndResume_returnsTrueWhenWebCreatorPoTokenMissing() {
         val song = createSong(mediaUri = "https://music.youtube.com/watch?v=fbvvS8e1KgI")
         val url =
             "https://rr1---sn-aigl6ney.googlevideo.com/videoplayback" +
-                "?source=youtube&c=TVHTML5&mime=audio%2Fwebm&clen=3586688&n=resolved-n&sig=resolved-signature"
+                "?source=youtube&c=WEB_CREATOR&mime=audio%2Fwebm&clen=3586688&n=resolved-n&sig=resolved-signature"
 
-        assertFalse(YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeSeek(song, url))
+        assertTrue(YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeSeek(song, url))
+        assertTrue(YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeResume(song, url))
     }
 
     @Test
-    fun shouldRefreshUrlBeforeResume_returnsFalseForTvHtml5DirectWithoutPoToken() {
+    fun shouldRefreshUrlBeforeSeekAndResume_returnsTrueWhenTvHtml5PoTokenMissing() {
         val song = createSong(mediaUri = "https://music.youtube.com/watch?v=fbvvS8e1KgI")
         val url =
             "https://rr1---sn-aigl6ney.googlevideo.com/videoplayback" +
                 "?source=youtube&c=TVHTML5&mime=audio%2Fwebm&clen=3586688&n=resolved-n&sig=resolved-signature"
 
-        assertFalse(YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeResume(song, url))
+        assertTrue(YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeSeek(song, url))
+        assertTrue(YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeResume(song, url))
     }
 
     @Test

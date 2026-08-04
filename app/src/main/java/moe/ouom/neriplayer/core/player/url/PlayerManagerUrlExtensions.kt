@@ -421,7 +421,18 @@ internal fun resolveYouTubePlaybackRecoveryStrategy(
     return YouTubePlaybackRecoveryStrategy(
         preferredQualityOverride = YOUTUBE_STABLE_RECOVERY_QUALITY,
         requireDirect = shouldRequireDirectOnYouTubeRecovery(error, isOfflineCache),
-        preferM4a = true
+        preferM4a = true,
+        allowUnverifiedDirectFallback =
+            error.errorCode != PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
+    )
+}
+
+internal fun youtubePlaybackRecoveryStrategyForSeek(): YouTubePlaybackRecoveryStrategy {
+    return YouTubePlaybackRecoveryStrategy(
+        preferredQualityOverride = YOUTUBE_STABLE_RECOVERY_QUALITY,
+        requireDirect = false,
+        preferM4a = true,
+        allowUnverifiedDirectFallback = false
     )
 }
 
@@ -1261,7 +1272,9 @@ private suspend fun PlayerManager.getYouTubeMusicAudioUrl(
             forceRefresh = forceRefresh,
             requireDirect = requireDirect,
             preferM4a = preferM4a,
-            shareInFlight = youtubeRecoveryStrategy == null
+            shareInFlight = youtubeRecoveryStrategy == null,
+            allowUnverifiedDirectFallback =
+                youtubeRecoveryStrategy?.allowUnverifiedDirectFallback ?: true
         )?.takeIf { it.url.isNotBlank() }
         if (resolvedPlayableAudio != null) {
             sideEffects.updateDuration {

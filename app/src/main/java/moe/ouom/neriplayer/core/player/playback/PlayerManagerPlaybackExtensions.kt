@@ -62,6 +62,7 @@ import moe.ouom.neriplayer.core.player.url.cancelUrlRefreshIfNotReusableForPendi
 import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedResource
 import moe.ouom.neriplayer.core.player.url.resolveSongUrl
 import moe.ouom.neriplayer.core.player.url.resolveSongUrlOrWaitForAuthoritativeStream
+import moe.ouom.neriplayer.core.player.url.youtubePlaybackRecoveryStrategyForSeek
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.watchdog.cancelPlaybackStartupWatchdog
@@ -1445,10 +1446,13 @@ internal fun PlayerManager.seekToImpl(
             targetPositionMs = resolvedPositionMs,
             durationMs = knownDurationMs
         )
-    if (
+    val shouldRefreshYouTubeUrlBeforeSeek =
         YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeSeek(currentSong, currentUrl) ||
-        shouldExpediteYouTubeSeekRecovery
-    ) {
+            shouldExpediteYouTubeSeekRecovery
+    // 正在装载新媒体时交给现有 pending-load 流程，避免替旧媒体启动一条并行刷新
+    val shouldPreemptivelyRefreshYouTubeUrl =
+        shouldRefreshYouTubeUrlBeforeSeek && !isPendingMediaLoadActive()
+    if (shouldRefreshYouTubeUrlBeforeSeek) {
         rememberPendingSeekPosition(resolvedPositionMs)
         expeditedYouTubeSeekRecoveryPending = shouldExpediteYouTubeSeekRecovery
     } else {
@@ -1460,7 +1464,7 @@ internal fun PlayerManager.seekToImpl(
     )
     pendingSeekAction.pendingSeekPositionMs?.let(::rememberPendingSeekPosition)
     pendingMediaLoadPositionMs = pendingSeekAction.exposedPositionMs
-    if (pendingSeekAction.seekPlayerNow) {
+    if (pendingSeekAction.seekPlayerNow && !shouldPreemptivelyRefreshYouTubeUrl) {
         player.seekTo(resolvedPositionMs)
     }
     if (lyriconEnabled) {
@@ -1486,6 +1490,21 @@ internal fun PlayerManager.seekToImpl(
         positionMs = resolvedPositionMs,
         currentIndex = currentIndex
     )
+    if (shouldPreemptivelyRefreshYouTubeUrl) {
+        refreshCurrentSongUrl(
+            resumePositionMs = resolvedPositionMs,
+            allowFallback = false,
+            reason = if (shouldExpediteYouTubeSeekRecovery) {
+                "youtube_seek_expedited_url_refresh"
+            } else {
+                "youtube_seek_url_refresh"
+            },
+            bypassCooldown = true,
+            resumePlaybackAfterRefresh = shouldResumePlaybackSnapshot(),
+            resumedPlaybackCommandSource = commandSource,
+            youtubeRecoveryStrategy = youtubePlaybackRecoveryStrategyForSeek()
+        )
+    }
 }
 
 internal fun PlayerManager.nextImpl(

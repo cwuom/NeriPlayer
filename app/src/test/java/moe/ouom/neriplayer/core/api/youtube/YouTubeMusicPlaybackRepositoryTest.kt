@@ -44,6 +44,21 @@ class YouTubeMusicPlaybackRepositoryTest {
         NewPipeFallbackTracker.reset()
     }
 
+    @Test
+    fun strictRecovery_requiresPoTokenForWebClientsButKeepsAnonymousFallbacks() {
+        val streamPrefix =
+            "https://rr1---sn.googlevideo.com/videoplayback?source=youtube&c="
+
+        assertFalse(isTrustedYouTubeDirectUrlForStrictRecovery("${streamPrefix}WEB_REMIX"))
+        assertFalse(isTrustedYouTubeDirectUrlForStrictRecovery("${streamPrefix}WEB_CREATOR"))
+        assertFalse(isTrustedYouTubeDirectUrlForStrictRecovery("${streamPrefix}TVHTML5"))
+        assertTrue(
+            isTrustedYouTubeDirectUrlForStrictRecovery("${streamPrefix}TVHTML5&pot=po-token")
+        )
+        assertTrue(isTrustedYouTubeDirectUrlForStrictRecovery("${streamPrefix}VISIONOS"))
+        assertTrue(isTrustedYouTubeDirectUrlForStrictRecovery("${streamPrefix}ANDROID_VR"))
+    }
+
     private class FakePoTokenProvider(
         private val queuedTokens: MutableList<String?> = mutableListOf(),
         private val delayMs: Long = 0L,
@@ -1356,7 +1371,7 @@ class YouTubeMusicPlaybackRepositoryTest {
     }
 
     @Test
-    fun getBestPlayableAudio_usesWebRemixDirectForAuthenticatedAutomaticMode() = runBlocking {
+    fun getBestPlayableAudio_usesWebRemixPoTokenForAuthenticatedAutomaticMode() = runBlocking {
         val requests = mutableListOf<okhttp3.Request>()
         val bootstrapHtml = """
             <html>
@@ -1404,7 +1419,7 @@ class YouTubeMusicPlaybackRepositoryTest {
                 "adaptiveFormats":[
                   {
                     "mimeType":"audio/webm; codecs=\"opus\"",
-                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=audio-web-remix&source=youtube&c=WEB_REMIX&n=resolved-web&sig=web-signature&pot=po-token-123",
+                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=audio-web-remix&source=youtube&c=WEB_REMIX&n=resolved-web&sig=web-signature",
                     "bitrate":128646,
                     "audioSampleRate":"48000",
                     "contentLength":"3586688",
@@ -1450,7 +1465,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
         )
-        val poTokenProvider = FakePoTokenProvider(mutableListOf("po-token-should-not-be-used"))
+        val poTokenProvider = FakePoTokenProvider(mutableListOf("po-token-1"))
         val playbackRepository = YouTubeMusicPlaybackRepository(
             okHttpClient = client,
             authProvider = { authBundle },
@@ -1480,7 +1495,7 @@ class YouTubeMusicPlaybackRepositoryTest {
         assertNotNull(playableAudio)
         assertEquals(YouTubePlayableStreamType.DIRECT, playableAudio?.streamType)
         assertEquals(
-            "https://rr1---sn.googlevideo.com/videoplayback?id=audio-web-remix&source=youtube&c=WEB_REMIX&n=resolved-web&sig=web-signature&pot=po-token-123",
+            "https://rr1---sn.googlevideo.com/videoplayback?id=audio-web-remix&source=youtube&c=WEB_REMIX&n=resolved-web&sig=web-signature&pot=po-token-1",
             playableAudio?.url
         )
         val playerClientIds = requests
@@ -1491,13 +1506,13 @@ class YouTubeMusicPlaybackRepositoryTest {
             playerClientIds
         )
         assertFalse(
-            playerClientIds.contains("7")
+            playerClientIds.contains("62")
         )
-        assertTrue(poTokenProvider.forceRefreshCalls.isEmpty())
+        assertEquals(listOf(true), poTokenProvider.forceRefreshCalls)
     }
 
     @Test
-    fun getBestPlayableAudio_returnsMissingPotWebRemixDirectWithoutWaitingOnPlaybackPath() = runBlocking {
+    fun getBestPlayableAudio_skipsMissingPotWebRemixDirectAndFallsBackToTv() = runBlocking {
         val requests = mutableListOf<okhttp3.Request>()
         val bootstrapHtml = """
             <html>
@@ -1631,15 +1646,14 @@ class YouTubeMusicPlaybackRepositoryTest {
         assertNotNull(playableAudio)
         assertEquals(YouTubePlayableStreamType.DIRECT, playableAudio?.streamType)
         val selectedUrl = playableAudio?.url?.toHttpUrl()
-        assertEquals("audio-web-remix-missing-pot", selectedUrl?.queryParameter("id"))
-        assertEquals("WEB_REMIX", selectedUrl?.queryParameter("c"))
-        assertNull(selectedUrl?.queryParameter("pot"))
+        assertEquals("audio-tv-fallback", selectedUrl?.queryParameter("id"))
+        assertEquals("TVHTML5", selectedUrl?.queryParameter("c"))
         assertFalse(requests.any { it.url.host == "rr1---sn.googlevideo.com" })
         val playerClientIds = requests
             .filter { it.url.encodedPath.contains("/youtubei/v1/player") }
             .map { it.header("X-YouTube-Client-Name") }
         assertEquals(
-            listOf("67"),
+            listOf("67", "7"),
             playerClientIds
         )
         try {
@@ -1663,7 +1677,7 @@ class YouTubeMusicPlaybackRepositoryTest {
     }
 
     @Test
-    fun getBestPlayableAudio_strictDirectPathFallsBackAfterRangeProbeForbidden() = runBlocking {
+    fun getBestPlayableAudio_strictSeekRecoveryAddsPoTokenToWebCreatorFallback() = runBlocking {
         val requests = mutableListOf<okhttp3.Request>()
         val bootstrapHtml = """
             <html>
@@ -1698,14 +1712,14 @@ class YouTubeMusicPlaybackRepositoryTest {
               "videoDetails":{"lengthSeconds":"223"}
             }
         """.trimIndent()
-        val tvDirectResponse = """
+        val webCreatorDirectResponse = """
             {
               "playabilityStatus":{"status":"OK"},
               "streamingData":{
                 "adaptiveFormats":[
                   {
                     "mimeType":"audio/webm; codecs=\"opus\"",
-                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=audio-tv-fallback&source=youtube&c=TVHTML5",
+                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=audio-web-creator-fallback&source=youtube&c=WEB_CREATOR",
                     "bitrate":128646,
                     "audioSampleRate":"48000",
                     "contentLength":"3586688",
@@ -1740,7 +1754,7 @@ class YouTubeMusicPlaybackRepositoryTest {
                                 request.url.encodedPath.contains("/youtubei/v1/player") -> {
                                     when (request.header("X-YouTube-Client-Name")) {
                                         "67" -> webRemixDirectResponse to "application/json; charset=utf-8"
-                                        "7" -> tvDirectResponse to "application/json; charset=utf-8"
+                                        "62" -> webCreatorDirectResponse to "application/json; charset=utf-8"
                                         else -> """{"playabilityStatus":{"status":"LOGIN_REQUIRED"}}""" to "application/json; charset=utf-8"
                                     }
                                 }
@@ -1764,7 +1778,9 @@ class YouTubeMusicPlaybackRepositoryTest {
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
         )
-        val poTokenProvider = FakePoTokenProvider(mutableListOf())
+        val poTokenProvider = FakePoTokenProvider(
+            mutableListOf(null, null, "po-token-creator")
+        )
         val playbackRepository = YouTubeMusicPlaybackRepository(
             okHttpClient = client,
             authProvider = { authBundle },
@@ -1781,16 +1797,18 @@ class YouTubeMusicPlaybackRepositoryTest {
         val playableAudio = playbackRepository.getBestPlayableAudio(
             videoId = "demo-video",
             forceRefresh = true,
-            requireDirect = true
+            requireDirect = true,
+            allowUnverifiedDirectFallback = false
         )
 
         assertNotNull(playableAudio)
         assertEquals(YouTubePlayableStreamType.DIRECT, playableAudio?.streamType)
         val selectedUrl = playableAudio?.url?.toHttpUrl()
-        assertEquals("audio-tv-fallback", selectedUrl?.queryParameter("id"))
-        assertEquals("TVHTML5", selectedUrl?.queryParameter("c"))
+        assertEquals("audio-web-creator-fallback", selectedUrl?.queryParameter("id"))
+        assertEquals("WEB_CREATOR", selectedUrl?.queryParameter("c"))
+        assertEquals("po-token-creator", selectedUrl?.queryParameter("pot"))
         assertFalse(selectedUrl?.queryParameter("id") == "audio-web-remix-forbidden")
-        assertTrue(
+        assertFalse(
             requests.any {
                 it.url.host == "rr1---sn.googlevideo.com" &&
                     it.header("Range") == "bytes=0-0"
@@ -1804,7 +1822,12 @@ class YouTubeMusicPlaybackRepositoryTest {
             request.url.encodedPath.contains("/youtubei/v1/player") &&
                 request.header("X-YouTube-Client-Name") == "7"
         }
+        val webCreatorPlayerRequestIndex = requests.indexOfFirst { request ->
+            request.url.encodedPath.contains("/youtubei/v1/player") &&
+                request.header("X-YouTube-Client-Name") == "62"
+        }
         assertTrue(webRemixPlayerRequestIndex in 0 until tvPlayerRequestIndex)
+        assertTrue(tvPlayerRequestIndex in 0 until webCreatorPlayerRequestIndex)
     }
 
     @Test
@@ -2666,7 +2689,7 @@ class YouTubeMusicPlaybackRepositoryTest {
     }
 
     @Test
-    fun getBestPlayableAudio_usesWebRemixDirectAfterAutomaticFallbacksWithoutFetchingLaterHlsManifest() = runBlocking {
+    fun getBestPlayableAudio_fallsBackToWebRemixDirectWithoutFetchingLaterHlsManifest() = runBlocking {
         val requests = mutableListOf<okhttp3.Request>()
         val bootstrapHtml = """
             <html>
@@ -2791,7 +2814,7 @@ class YouTubeMusicPlaybackRepositoryTest {
     }
 
     @Test
-    fun getBestPlayableAudio_prefersLaterTvDirectOverWebRemixHlsAndCarriesPoTokenOnManifestRequest() = runBlocking {
+    fun getBestPlayableAudio_prefersLaterTvDirectAndCarriesPoTokenOnBothStreams() = runBlocking {
         val requests = mutableListOf<okhttp3.Request>()
         val bootstrapHtml = """
             <html>
@@ -2902,7 +2925,7 @@ class YouTubeMusicPlaybackRepositoryTest {
         assertNotNull(playableAudio)
         assertEquals(YouTubePlayableStreamType.DIRECT, playableAudio?.streamType)
         assertEquals(
-            "https://rr1---sn.googlevideo.com/videoplayback?id=tv-direct&source=youtube&c=TVHTML5",
+            "https://rr1---sn.googlevideo.com/videoplayback?id=tv-direct&source=youtube&c=TVHTML5&pot=po-token-123",
             playableAudio?.url
         )
         assertTrue(
