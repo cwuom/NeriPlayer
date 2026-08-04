@@ -433,6 +433,12 @@ data class LyricEntry(
 private val NeteaseYrcLineRegex = Regex("""\[\d{1,19},\s*\d{1,19}]\(\d{1,19},""")
 private val TtmlTagRegex = Regex("""<\s*tt(?:\s|>)""", RegexOption.IGNORE_CASE)
 private val TtmlLayoutWhitespaceRegex = Regex("""[\r\n]\s*""")
+private val EnhancedLrcLineTimestampRegex = Regex(
+    """\[(\d{1,3}):(\d{2})(?:\.(\d{1,3}))?]"""
+)
+private val EnhancedLrcWordTimestampRegex = Regex(
+    """<(\d{1,3}):(\d{2})(?:\.(\d{1,3}))?>"""
+)
 private val LrcCreditLineRegex = Regex(
     """^(?:作词|作曲|编曲|填词|演唱|歌手|混音|母带|制作|监制|录音|和声|配唱|吉他(?:solo)?|贝斯|鼓|键盘|弦乐|vo(?:/mix)?|mix|tune|inst|guitar|bass|drums?|vocal|lyrics|music|arrangement|produced)\s*[:：]""",
     RegexOption.IGNORE_CASE
@@ -443,6 +449,18 @@ private data class LrcTimelineEntry(
     val text: String
 )
 
+private data class EnhancedLrcWord(
+    val text: String,
+    val startTimeMs: Long,
+    val endTimeMs: Long?
+)
+
+private data class EnhancedLrcTimelineEntry(
+    val startTimeMs: Long,
+    val text: String,
+    val words: List<EnhancedLrcWord>
+)
+
 fun isNeteaseYrc(content: String): Boolean = content.contains(NeteaseYrcLineRegex)
 
 internal fun isTtmlLyrics(content: String): Boolean = TtmlTagRegex.containsMatchIn(content)
@@ -451,6 +469,7 @@ fun parseNeteaseLyricsAuto(content: String): List<LyricEntry> {
     return when {
         isTtmlLyrics(content) -> parseTtmlLyrics(content)
         isNeteaseYrc(content) -> runCatching { parseNeteaseYrc(content) }.getOrDefault(emptyList())
+        isEnhancedLrc(content) -> parseEnhancedLrc(content)
         else -> parseNeteaseLrc(content)
     }
 }
@@ -1189,6 +1208,108 @@ private fun Long.saturatingAdd(other: Long): Long {
     }
 }
 
+private fun isEnhancedLrc(content: String): Boolean {
+    return content.lineSequence().any { rawLine ->
+        val line = rawLine.trimStart()
+        val lineTimestamp = EnhancedLrcLineTimestampRegex.find(line)
+            ?.takeIf { it.range.first == 0 }
+            ?: return@any false
+        EnhancedLrcWordTimestampRegex.find(line.substring(lineTimestamp.range.last + 1)) != null
+    }
+}
+
+private fun parseEnhancedLrc(lrc: String): List<LyricEntry> {
+    val timeline = lrc.lineSequence()
+        .mapNotNull(::parseEnhancedLrcTimelineEntry)
+        .sortedBy(EnhancedLrcTimelineEntry::startTimeMs)
+        .toList()
+
+    return timeline.mapIndexed { index, line ->
+        val nextLineStartMs = timeline.getOrNull(index + 1)?.startTimeMs
+        val words = line.words.mapIndexed { wordIndex, word ->
+            val fallbackEndMs = line.words.getOrNull(wordIndex + 1)?.startTimeMs
+                ?: nextLineStartMs
+                ?: line.startTimeMs.saturatingAdd(5_000L)
+            WordTiming(
+                startTimeMs = word.startTimeMs,
+                endTimeMs = (word.endTimeMs ?: fallbackEndMs).coerceAtLeast(word.startTimeMs),
+                charCount = word.text.length
+            )
+        }
+        val endTimeMs = words.maxOfOrNull { it.endTimeMs }
+            ?: nextLineStartMs
+            ?: line.startTimeMs.saturatingAdd(5_000L)
+        LyricEntry(
+            text = line.text,
+            startTimeMs = line.startTimeMs,
+            endTimeMs = endTimeMs.coerceAtLeast(line.startTimeMs),
+            words = words
+        )
+    }
+}
+
+private fun parseEnhancedLrcTimelineEntry(rawLine: String): EnhancedLrcTimelineEntry? {
+    val line = rawLine.trim()
+    val lineTimestamp = EnhancedLrcLineTimestampRegex.find(line)
+        ?.takeIf { it.range.first == 0 }
+        ?: return null
+    val startTimeMs = parseLrcTimestampMs(lineTimestamp) ?: return null
+    val content = line.substring(lineTimestamp.range.last + 1)
+    val wordTimestamps = EnhancedLrcWordTimestampRegex.findAll(content).toList()
+    if (wordTimestamps.isEmpty()) {
+        return null
+    }
+
+    val words = buildList {
+        val prefix = content.substring(0, wordTimestamps.first().range.first)
+        if (prefix.any { !it.isWhitespace() }) {
+            add(
+                EnhancedLrcWord(
+                    text = prefix,
+                    startTimeMs = startTimeMs,
+                    endTimeMs = parseLrcTimestampMs(wordTimestamps.first())
+                )
+            )
+        }
+        wordTimestamps.forEachIndexed { index, timestamp ->
+            val textStart = timestamp.range.last + 1
+            val textEnd = wordTimestamps.getOrNull(index + 1)?.range?.first ?: content.length
+            val text = content.substring(textStart, textEnd)
+            if (text.isNotEmpty()) {
+                add(
+                    EnhancedLrcWord(
+                        text = text,
+                        startTimeMs = parseLrcTimestampMs(timestamp) ?: return@forEachIndexed,
+                        endTimeMs = wordTimestamps.getOrNull(index + 1)
+                            ?.let(::parseLrcTimestampMs)
+                    )
+                )
+            }
+        }
+    }
+    if (words.isEmpty()) {
+        return null
+    }
+    return EnhancedLrcTimelineEntry(
+        startTimeMs = startTimeMs,
+        text = words.joinToString(separator = "") { it.text },
+        words = words
+    )
+}
+
+private fun parseLrcTimestampMs(timestamp: MatchResult): Long? {
+    val minutes = timestamp.groupValues[1].toLongOrNull() ?: return null
+    val seconds = timestamp.groupValues[2].toLongOrNull() ?: return null
+    val fraction = timestamp.groupValues[3]
+    val milliseconds = when (fraction.length) {
+        0 -> 0L
+        1 -> fraction.toLongOrNull()?.times(100L)
+        2 -> fraction.toLongOrNull()?.times(10L)
+        else -> fraction.toLongOrNull()
+    } ?: return null
+    return minutes * 60_000L + seconds * 1_000L + milliseconds
+}
+
 /** 小数字符偏移的多行 reveal */
 @Composable
 internal fun Modifier.multilineGradientReveal(
@@ -1471,6 +1592,9 @@ internal fun resolveHeadGlowTarget(
 fun parseNeteaseLrc(lrc: String): List<LyricEntry> {
 //    NPLogger.d("parseLyc-N", lrc)
     val normalizedLrc = normalizeLegacyLrcTimestamps(lrc)
+    if (isEnhancedLrc(normalizedLrc)) {
+        return parseEnhancedLrc(normalizedLrc)
+    }
     val tag = Regex("""\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?]""")
     val timeline = mutableListOf<LrcTimelineEntry>()
 

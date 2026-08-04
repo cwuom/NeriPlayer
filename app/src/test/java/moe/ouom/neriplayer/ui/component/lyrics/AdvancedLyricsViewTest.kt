@@ -40,6 +40,25 @@ class AdvancedLyricsViewTest {
     }
 
     @Test
+    fun `buildAdvancedSyncedLyrics renders enhanced lrc on the full screen lyrics page`() {
+        val rawLyrics = """
+            [00:00.000] <00:00.000>夜<00:00.356>曲<00:00.712>
+            """.trimIndent()
+        val result = buildAdvancedSyncedLyrics(
+            rawLyrics = rawLyrics,
+            rawTranslatedLyrics = null,
+            lyrics = parseNeteaseLyricsAuto(rawLyrics),
+            translatedLyrics = emptyList()
+        )
+
+        val line = result.lines.single() as KaraokeLine.MainKaraokeLine
+        assertEquals("夜曲", line.syllables.joinToString(separator = "") { it.content })
+        assertEquals(0, line.syllables.first().start)
+        assertEquals(356, line.syllables.first().end)
+        assertEquals(712, line.syllables.last().end)
+    }
+
+    @Test
     fun `parseTtmlLyrics keeps inline translation on word timed lines`() {
         val ttml = """
             <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">

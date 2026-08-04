@@ -43,6 +43,41 @@ class SyncedLyricsViewTimingTest {
     }
 
     @Test
+    fun `parseNeteaseLyricsAuto preserves enhanced lrc word timing`() {
+        val lyrics = parseNeteaseLyricsAuto(
+            """
+            [00:00.000] <00:00.000>夜<00:00.356>曲<00:00.712> <00:01.068>-<00:01.424> <00:01.780>周<00:02.136>杰<00:02.492>伦<00:02.848> <00:03.204>(<00:03.560>Jay<00:03.916> <00:04.272>Chou<00:04.628>)<00:04.990>
+            [00:04.990] <00:04.990>词<00:05.988>：<00:06.986>方<00:07.984>文<00:08.982>山<00:09.980>
+            """.trimIndent()
+        )
+
+        assertEquals(2, lyrics.size)
+        assertEquals("夜曲 - 周杰伦 (Jay Chou)", lyrics[0].text)
+        assertEquals(0L, lyrics[0].startTimeMs)
+        assertEquals(4_990L, lyrics[0].endTimeMs)
+        assertEquals(14, lyrics[0].words?.size)
+        assertEquals(0L, lyrics[0].words?.first()?.startTimeMs)
+        assertEquals(356L, lyrics[0].words?.first()?.endTimeMs)
+        assertEquals(4, lyrics[0].words?.get(12)?.charCount)
+        assertEquals(4_990L, lyrics[0].words?.last()?.endTimeMs)
+        assertEquals(9_980L, lyrics[1].endTimeMs)
+    }
+
+    @Test
+    fun `enhanced lrc falls back to the next line for a final word end time`() {
+        val lyrics = parseNeteaseLrc(
+            """
+            [00:10.000]<00:10.000>Hello <00:10.500>world
+            [00:12.000]<00:12.000>Next line<00:13.000>
+            """.trimIndent()
+        )
+
+        assertEquals("Hello world", lyrics[0].text)
+        assertEquals(12_000L, lyrics[0].endTimeMs)
+        assertEquals(12_000L, lyrics[0].words?.last()?.endTimeMs)
+    }
+
+    @Test
     fun `parseNeteaseLrc trims credits after a terminal empty timestamp`() {
         val lyrics = parseNeteaseLrc(
             """
