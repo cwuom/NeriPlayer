@@ -1142,6 +1142,10 @@ We will keep improving the project over time.
   <td>Multi-platform precise lyrics downloader and manual matching UX reference</td>
 </tr>
 <tr>
+  <td><a href="https://github.com/MetrolistGroup/Metrolist">Metrolist</a></td>
+  <td>YouTube Music client for Android</td>
+</tr>
+<tr>
   <td><a href="https://github.com/ReChronoRain/HyperCeiler">HyperCeiler</a></td>
   <td>HyperOS enhancement module - Make HyperOS Great Again!</td>
 </tr>

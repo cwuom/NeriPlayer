@@ -931,6 +931,10 @@ NeriPlayer 支持将本地元数据同步到 **用户自己的 GitHub 仓库**�
   <td>多平台精准歌词下载匹配工具，手动歌词匹配体验参考</td>
 </tr>
 <tr>
+  <td><a href="https://github.com/MetrolistGroup/Metrolist">Metrolist</a></td>
+  <td>YouTube Music client for Android</td>
+</tr>
+<tr>
   <td><a href="https://github.com/ReChronoRain/HyperCeiler">HyperCeiler</a></td>
   <td>HyperOS enhancement module - Make HyperOS Great Again!</td>
 </tr>
