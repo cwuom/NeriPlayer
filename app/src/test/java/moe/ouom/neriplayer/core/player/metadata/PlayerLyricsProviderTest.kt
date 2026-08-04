@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.core.player.metadata
 
+import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchCandidate
+import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchSource
+import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.util.network.isTransientHttp2StreamReset
 import org.junit.Assert.assertEquals
@@ -166,5 +169,146 @@ class PlayerLyricsProviderTest {
         assertEquals("hard to forget", entry.translatedLyricEntries.single().text)
         assertEquals("[00:12.58]na n yi wang ji", entry.romanizedLyricText)
         assertEquals("na n yi wang ji", entry.romanizedLyricEntries.single().text)
+    }
+
+    @Test
+    fun buildNeteaseLyricsCacheEntryRejectsCollapsedTimedLyrics() {
+        val payload = """
+            {
+              "code": 200,
+              "lrc": {
+                "lyric": "[00:00.00]First line\n[00:00.00]Second line\n[00:00.00]Third line"
+              }
+            }
+        """.trimIndent()
+
+        val entry = PlayerLyricsProvider.buildNeteaseLyricsCacheEntry(payload)
+
+        assertTrue(entry.preferredLyricEntries.isEmpty())
+    }
+
+    @Test
+    fun hasCollapsedLyricEntryTimelineDetectsCachedZeroTimestampLyrics() {
+        val entries = listOf(
+            LyricEntry(text = "First", startTimeMs = 0L, endTimeMs = 0L),
+            LyricEntry(text = "Second", startTimeMs = 0L, endTimeMs = 0L),
+            LyricEntry(text = "Third", startTimeMs = 0L, endTimeMs = 0L)
+        )
+
+        assertTrue(hasCollapsedLyricEntryTimeline(entries))
+    }
+
+    @Test
+    fun sanitizeYouTubeLyricsCacheEntryDropsCollapsedPrimaryTimeline() {
+        val entry = YouTubeMusicLyricsCacheEntry(
+            lyrics = listOf(
+                LyricEntry(text = "First", startTimeMs = 0L, endTimeMs = 0L),
+                LyricEntry(text = "Second", startTimeMs = 0L, endTimeMs = 0L),
+                LyricEntry(text = "Third", startTimeMs = 0L, endTimeMs = 0L)
+            )
+        )
+
+        assertNull(sanitizeYouTubeMusicLyricsCacheEntry(entry))
+    }
+
+    @Test
+    fun sanitizeYouTubeLyricsCacheEntryDropsCollapsedTranslationAndAllowsRetry() {
+        val entry = YouTubeMusicLyricsCacheEntry(
+            lyrics = listOf(
+                LyricEntry(text = "First", startTimeMs = 1_000L, endTimeMs = 2_000L),
+                LyricEntry(text = "Second", startTimeMs = 3_000L, endTimeMs = 4_000L),
+                LyricEntry(text = "Third", startTimeMs = 5_000L, endTimeMs = 6_000L)
+            ),
+            translatedLyrics = listOf(
+                LyricEntry(text = "One", startTimeMs = 0L, endTimeMs = 0L),
+                LyricEntry(text = "Two", startTimeMs = 0L, endTimeMs = 0L),
+                LyricEntry(text = "Three", startTimeMs = 0L, endTimeMs = 0L)
+            ),
+            translationLookupComplete = true
+        )
+
+        val sanitized = sanitizeYouTubeMusicLyricsCacheEntry(entry)
+
+        assertEquals(entry.lyrics, sanitized?.lyrics)
+        assertTrue(sanitized?.translatedLyrics.isNullOrEmpty())
+        assertEquals(false, sanitized?.translationLookupComplete)
+    }
+
+    @Test
+    fun selectDurationMatchedExternalLyricsKeepsOriginalAndTranslationFromOneCandidate() {
+        val selected = PlayerLyricsProvider.selectDurationMatchedExternalLyrics(
+            expectedDurationMs = 240_000L,
+            candidates = listOf(
+                EditableLyricMatchCandidate(
+                    id = "correct",
+                    source = EditableLyricMatchSource.CLOUD_MUSIC,
+                    title = "Correct song",
+                    artist = "Correct artist",
+                    durationMs = 240_000L,
+                    lyrics = "[00:01.00]Correct original"
+                ),
+                EditableLyricMatchCandidate(
+                    id = "other",
+                    source = EditableLyricMatchSource.QQ_MUSIC,
+                    title = "Other song",
+                    artist = "Other artist",
+                    durationMs = 241_000L,
+                    lyrics = "[00:01.00]Other original",
+                    translatedLyrics = "[00:01.00]Wrong translation"
+                )
+            )
+        )
+
+        assertEquals("Correct original", selected?.lyrics?.single()?.text)
+        assertTrue(selected?.translatedLyrics.isNullOrEmpty())
+    }
+
+    @Test
+    fun resolveYouTubeMusicTranslationCacheEntryDoesNotAttachOtherSourceTranslation() {
+        val cached = YouTubeMusicLyricsCacheEntry(
+            lyrics = listOf(
+                LyricEntry(
+                    text = "Correct original",
+                    startTimeMs = 1_000L,
+                    endTimeMs = 2_000L
+                )
+            )
+        )
+        val external = DurationMatchedExternalLyrics(
+            lyrics = listOf(
+                LyricEntry(
+                    text = "Other original",
+                    startTimeMs = 1_000L,
+                    endTimeMs = 2_000L
+                )
+            ),
+            translatedLyrics = listOf(
+                LyricEntry(
+                    text = "Wrong translation",
+                    startTimeMs = 1_000L,
+                    endTimeMs = 2_000L
+                )
+            ),
+            source = EditableLyricMatchSource.CLOUD_MUSIC,
+            durationDeltaMs = 0L
+        )
+
+        val resolved = resolveYouTubeMusicTranslationCacheEntry(cached, external)
+
+        assertEquals(cached.lyrics, resolved?.lyrics)
+        assertTrue(resolved?.translatedLyrics.isNullOrEmpty())
+        assertTrue(resolved?.translationLookupComplete == true)
+    }
+
+    @Test
+    fun shouldBlockExternalYouTubeMusicTranslationForStoredLyricsOnly() {
+        assertFalse(shouldBlockExternalYouTubeMusicTranslation(null))
+        assertTrue(shouldBlockExternalYouTubeMusicTranslation(""))
+        assertTrue(shouldBlockExternalYouTubeMusicTranslation("[00:01.00]Stored original"))
+        assertFalse(
+            shouldBlockExternalYouTubeMusicTranslation(
+                "[00:00.00]First\n[00:00.00]Second\n[00:00.00]Third"
+            )
+        )
     }
 }

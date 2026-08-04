@@ -103,6 +103,7 @@ import moe.ouom.neriplayer.core.player.policy.progress.resolveLongFormPlaybackPo
 import moe.ouom.neriplayer.core.player.policy.progress.resolveLongFormPlaybackResumePosition
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
 import moe.ouom.neriplayer.core.player.metadata.NeteaseLyricsCacheEntry
+import moe.ouom.neriplayer.core.player.metadata.YouTubeMusicLyricsCacheEntry
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
@@ -655,7 +656,7 @@ object PlayerManager {
     val amllTtmlClient by lazy { AppContainer.amllTtmlClient }
 
     // YouTube Music 歌词缓存, 避免短时间内重复请求
-    internal val ytMusicLyricsCache = android.util.LruCache<String, List<LyricEntry>>(20)
+    internal val ytMusicLyricsCache = android.util.LruCache<String, YouTubeMusicLyricsCacheEntry>(20)
     // 网易云歌词缓存, 避免原文/翻译和编辑器回退重复打接口
     internal val neteaseLyricsCache = android.util.LruCache<Long, NeteaseLyricsCacheEntry>(20)
 

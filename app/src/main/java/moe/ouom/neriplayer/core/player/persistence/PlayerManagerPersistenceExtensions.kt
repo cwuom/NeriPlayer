@@ -622,6 +622,8 @@ internal suspend fun PlayerManager.getTranslatedLyricsImpl(song: SongItem): List
         application = application,
         neteaseClient = neteaseClient,
         neteaseLyricsCache = neteaseLyricsCache,
+        editableLyricsMatcher = AppContainer.editableLyricsMatcher,
+        ytMusicLyricsCache = ytMusicLyricsCache,
         biliSourceTag = BILI_SOURCE_TAG
     )
 }
@@ -643,6 +645,7 @@ internal suspend fun PlayerManager.getLyricsImpl(song: SongItem): List<LyricEntr
         neteaseLyricsCache = neteaseLyricsCache,
         youtubeMusicClient = youtubeMusicClient,
         lrcLibClient = lrcLibClient,
+        editableLyricsMatcher = AppContainer.editableLyricsMatcher,
         amllTtmlClient = amllTtmlClient,
         amllLyricsEnabled = amllLyricsEnabled,
         ytMusicLyricsCache = ytMusicLyricsCache,

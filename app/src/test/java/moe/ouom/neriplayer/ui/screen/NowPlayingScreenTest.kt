@@ -21,6 +21,23 @@ import kotlin.math.pow
 class NowPlayingScreenTest {
 
     @Test
+    fun `collapsed stored lyrics bypass direct renderer parsing`() {
+        val collapsedLyrics = """
+            [00:00.00]First line
+            [00:00.00]Second line
+            [00:00.00]Third line
+        """.trimIndent()
+
+        assertTrue(shouldBypassCollapsedStoredLyric(collapsedLyrics))
+        assertFalse(
+            shouldBypassCollapsedStoredLyric(
+                "[00:00.00]First line\n[00:12.00]Second line\n[00:24.00]Third line"
+            )
+        )
+        assertFalse(shouldBypassCollapsedStoredLyric(null))
+    }
+
+    @Test
     fun `wide lyrics use synced renderer when advanced lyrics are disabled`() {
         assertEquals(
             NowPlayingWideLyricsMode.SYNCED,

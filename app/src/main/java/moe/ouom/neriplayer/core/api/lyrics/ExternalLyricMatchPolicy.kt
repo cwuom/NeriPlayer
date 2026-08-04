@@ -3,9 +3,9 @@ package moe.ouom.neriplayer.core.api.lyrics
 import kotlin.math.abs
 import kotlin.math.max
 
-private const val MIN_EXTERNAL_LYRIC_DURATION_TOLERANCE_MS = 5_000L
-private const val MAX_EXTERNAL_LYRIC_DURATION_TOLERANCE_MS = 12_000L
-private const val EXTERNAL_LYRIC_DURATION_TOLERANCE_PERCENT = 5L
+private const val MIN_EXTERNAL_LYRIC_DURATION_TOLERANCE_MS = 7_000L
+private const val MAX_EXTERNAL_LYRIC_DURATION_TOLERANCE_MS = 15_000L
+private const val EXTERNAL_LYRIC_DURATION_TOLERANCE_PERCENT = 6L
 
 internal fun isExternalLyricDurationCompatible(
     expectedDurationMs: Long,

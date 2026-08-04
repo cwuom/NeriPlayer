@@ -60,7 +60,17 @@ private val lyricMatchArtistSeparatorRegex = Regex(
     RegexOption.IGNORE_CASE
 )
 
-fun defaultEditableLyricMatchSources(): Set<EditableLyricMatchSource> {
+fun defaultEditableLyricMatchSources(
+    isYouTubeMusicTrack: Boolean = false
+): Set<EditableLyricMatchSource> {
+    if (isYouTubeMusicTrack) {
+        return setOf(
+            EditableLyricMatchSource.LRCLIB,
+            EditableLyricMatchSource.KUGOU,
+            EditableLyricMatchSource.CLOUD_MUSIC,
+            EditableLyricMatchSource.QQ_MUSIC
+        )
+    }
     return setOf(
         EditableLyricMatchSource.AMLL_TTML,
         EditableLyricMatchSource.CLOUD_MUSIC,
@@ -74,6 +84,7 @@ fun rankEditableLyricMatches(
 ): List<RankedEditableLyricMatch> {
     return candidates.asSequence()
         .filter { it.lyrics.isNotBlank() }
+        .filterNot { hasCollapsedTimedLyricTimeline(it.lyrics) }
         .mapNotNull { candidate ->
             val titleScore = scoreLyricMatchTitle(request.trackName, candidate.title)
             val artistScore = scoreLyricMatchArtist(request.artistName, candidate.artist)

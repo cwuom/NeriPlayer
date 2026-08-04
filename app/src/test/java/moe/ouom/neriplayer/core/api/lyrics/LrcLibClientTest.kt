@@ -8,6 +8,7 @@ import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LrcLibClientTest {
@@ -62,6 +63,78 @@ class LrcLibClientTest {
         )
 
         assertNull(result)
+    }
+
+    @Test
+    fun `getLyrics keeps plain lyrics when synced lyrics has no timeline progress`() = runTest {
+        val client = clientResponding(
+            """
+            {
+              "trackName": "Hello",
+              "artistName": "Artist One",
+              "duration": 180,
+              "syncedLyrics": "[00:00.00]First line\n[00:00.00]Second line\n[00:00.00]Third line",
+              "plainLyrics": "First line\nSecond line\nThird line"
+            }
+            """.trimIndent()
+        )
+
+        val result = client.getLyrics(
+            trackName = "Hello",
+            artistName = "Artist One",
+            durationSeconds = 180L
+        )
+
+        assertNull(result?.syncedLyrics)
+        assertEquals("First line\nSecond line\nThird line", result?.plainLyrics)
+        assertEquals(false, result?.plainLyricsRecoveredFromCollapsedTimeline)
+    }
+
+    @Test
+    fun `getLyrics converts zero timestamp synced lyrics to a plain fallback`() = runTest {
+        val client = clientResponding(
+            """
+            {
+              "trackName": "Hello",
+              "artistName": "Artist One",
+              "duration": 180,
+              "syncedLyrics": "[00:00.00]First line\n[00:00.00]Second line\n[00:00.00]Third line"
+            }
+            """.trimIndent()
+        )
+
+        val result = client.getLyrics(
+            trackName = "Hello",
+            artistName = "Artist One",
+            durationSeconds = 180L
+        )
+
+        assertNull(result?.syncedLyrics)
+        assertEquals("First line\nSecond line\nThird line", result?.plainLyrics)
+        assertTrue(result?.plainLyricsRecoveredFromCollapsedTimeline == true)
+    }
+
+    @Test
+    fun `getLyrics keeps synced lyrics with timeline progress`() = runTest {
+        val syncedLyrics = "[00:00.00]First line\n[00:12.50]Second line\n[00:25.00]Third line"
+        val client = clientResponding(
+            """
+            {
+              "trackName": "Hello",
+              "artistName": "Artist One",
+              "duration": 180,
+              "syncedLyrics": "[00:00.00]First line\n[00:12.50]Second line\n[00:25.00]Third line"
+            }
+            """.trimIndent()
+        )
+
+        val result = client.getLyrics(
+            trackName = "Hello",
+            artistName = "Artist One",
+            durationSeconds = 180L
+        )
+
+        assertEquals(syncedLyrics, result?.syncedLyrics)
     }
 
     private fun clientResponding(body: String): LrcLibClient {

@@ -8,6 +8,31 @@ import org.junit.Test
 class EditableLyricMatchPolicyTest {
 
     @Test
+    fun `youtube music editable lyric matching defaults to external lyric sources`() {
+        assertEquals(
+            setOf(
+                EditableLyricMatchSource.LRCLIB,
+                EditableLyricMatchSource.KUGOU,
+                EditableLyricMatchSource.CLOUD_MUSIC,
+                EditableLyricMatchSource.QQ_MUSIC
+            ),
+            defaultEditableLyricMatchSources(isYouTubeMusicTrack = true)
+        )
+    }
+
+    @Test
+    fun `non youtube editable lyric matching keeps the existing defaults`() {
+        assertEquals(
+            setOf(
+                EditableLyricMatchSource.AMLL_TTML,
+                EditableLyricMatchSource.CLOUD_MUSIC,
+                EditableLyricMatchSource.KUGOU
+            ),
+            defaultEditableLyricMatchSources()
+        )
+    }
+
+    @Test
     fun `rankEditableLyricMatches prefers same song with compatible duration`() {
         val request = EditableLyricMatchRequest(
             keyword = "爱你 陈芳语",
@@ -127,6 +152,46 @@ class EditableLyricMatchPolicyTest {
         )
 
         assertEquals(listOf("plain-lrc"), ranked.map { it.candidate.id })
+    }
+
+    @Test
+    fun rankEditableLyricMatchesRejectsCollapsedTimedLyrics() {
+        val request = EditableLyricMatchRequest(
+            keyword = "Signal Artist One",
+            trackName = "Signal",
+            artistName = "Artist One",
+            durationMs = 180_000L
+        )
+
+        val ranked = rankEditableLyricMatches(
+            request = request,
+            candidates = listOf(
+                candidate(
+                    id = "collapsed",
+                    title = "Signal",
+                    artist = "Artist One",
+                    durationMs = 180_000L,
+                    lyrics = """
+                        [00:00.00]First line
+                        [00:00.00]Second line
+                        [00:00.00]Third line
+                    """.trimIndent()
+                ),
+                candidate(
+                    id = "timed",
+                    title = "Signal",
+                    artist = "Artist One",
+                    durationMs = 180_000L,
+                    lyrics = """
+                        [00:00.00]First line
+                        [00:10.00]Second line
+                        [00:20.00]Third line
+                    """.trimIndent()
+                )
+            )
+        )
+
+        assertEquals(listOf("timed"), ranked.map { it.candidate.id })
     }
 
     @Test

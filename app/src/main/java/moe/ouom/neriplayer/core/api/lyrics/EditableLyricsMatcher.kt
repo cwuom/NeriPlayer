@@ -376,21 +376,38 @@ fun editableLyricMatchSearchQueries(request: EditableLyricMatchRequest): List<St
 private fun List<SongSearchInfo>.rankSearchApiForDetailLookup(
     request: EditableLyricMatchRequest
 ): List<SongSearchInfo> {
-    return sortedWith(
-        compareByDescending<SongSearchInfo> { scoreLyricMatchTitle(request.trackName, it.songName) }
-            .thenByDescending { scoreLyricMatchArtist(request.artistName, it.singer) }
-            .thenByDescending { scoreLyricMatchDuration(request.durationMs, parseDurationMs(it.duration)) }
-    ).take(2)
+    return asSequence()
+        .filter { searchInfo ->
+            val candidateDurationMs = parseDurationMs(searchInfo.duration)
+            request.durationMs <= 0L ||
+                candidateDurationMs <= 0L ||
+                isExternalLyricDurationCompatible(request.durationMs, candidateDurationMs)
+        }
+        .sortedWith(
+            compareByDescending<SongSearchInfo> { scoreLyricMatchTitle(request.trackName, it.songName) }
+                .thenByDescending { scoreLyricMatchArtist(request.artistName, it.singer) }
+                .thenByDescending { scoreLyricMatchDuration(request.durationMs, parseDurationMs(it.duration)) }
+        )
+        .take(2)
+        .toList()
 }
 
 private fun List<KugouSongSearchResult>.rankKugouForDetailLookup(
     request: EditableLyricMatchRequest
 ): List<KugouSongSearchResult> {
-    return sortedWith(
-        compareByDescending<KugouSongSearchResult> { scoreLyricMatchTitle(request.trackName, it.title) }
-            .thenByDescending { scoreLyricMatchArtist(request.artistName, it.artist) }
-            .thenByDescending { scoreLyricMatchDuration(request.durationMs, it.durationMs) }
-    ).take(2)
+    return asSequence()
+        .filter { song ->
+            request.durationMs <= 0L ||
+                song.durationMs <= 0L ||
+                isExternalLyricDurationCompatible(request.durationMs, song.durationMs)
+        }
+        .sortedWith(
+            compareByDescending<KugouSongSearchResult> { scoreLyricMatchTitle(request.trackName, it.title) }
+                .thenByDescending { scoreLyricMatchArtist(request.artistName, it.artist) }
+                .thenByDescending { scoreLyricMatchDuration(request.durationMs, it.durationMs) }
+        )
+        .take(2)
+        .toList()
 }
 
 private fun List<YouTubeMusicSearchResult>.rankYouTubeForDetailLookup(

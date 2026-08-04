@@ -211,6 +211,7 @@ import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchRequest
 import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchSource
 import moe.ouom.neriplayer.core.api.lyrics.RankedEditableLyricMatch
 import moe.ouom.neriplayer.core.api.lyrics.defaultEditableLyricMatchSources
+import moe.ouom.neriplayer.core.api.lyrics.hasCollapsedTimedLyricTimeline
 import moe.ouom.neriplayer.core.api.lyrics.normalizeLyricMatchText
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
@@ -1625,6 +1626,10 @@ private data class LoadedLyricsState(
     val embeddedPhoneticLyrics: List<LyricEntry>
 )
 
+internal fun shouldBypassCollapsedStoredLyric(rawLyric: String?): Boolean {
+    return rawLyric?.let(::hasCollapsedTimedLyricTimeline) == true
+}
+
 private data class PendingLocalCoverWriteBack(
     val song: SongItem,
     val coverUrl: String
@@ -2051,11 +2056,21 @@ fun NowPlayingScreen(
                 preferredNeteaseLyric = preferredNeteaseLyric,
                 legacyLyric = song?.originalLyric
             )
+            val bypassStoredRawLyrics = shouldBypassCollapsedStoredLyric(effectiveRawLyrics)
+            val bypassStoredTranslatedLyrics = shouldBypassCollapsedStoredLyric(
+                storedRawTranslatedLyrics
+            )
             val shouldDelayOnlineLyrics =
                 song != null &&
                     extractYouTubeMusicVideoId(song.mediaUri) != null &&
                     currentMediaUrl.isNullOrBlank()
             val resolvedLyrics = when {
+                bypassStoredRawLyrics && song != null -> {
+                    PlayerManager.getLyrics(song)
+                }
+                bypassStoredRawLyrics -> {
+                    emptyList()
+                }
                 !effectiveRawLyrics.isNullOrBlank() -> {
                     val parsedRawLyrics = parseNeteaseLyricsAuto(effectiveRawLyrics)
                     if (parsedRawLyrics.hasWordTimedEntries() || song == null) {
@@ -2084,6 +2099,10 @@ fun NowPlayingScreen(
                     storedRawTranslatedLyrics != null -> {
                         if (storedRawTranslatedLyrics.isBlank()) {
                             emptyList()
+                        } else if (bypassStoredTranslatedLyrics && song != null) {
+                            PlayerManager.getTranslatedLyrics(song)
+                        } else if (bypassStoredTranslatedLyrics) {
+                            emptyList()
                         } else {
                             parseNeteaseLyricsAuto(storedRawTranslatedLyrics)
                         }
@@ -2110,8 +2129,10 @@ fun NowPlayingScreen(
                 emptyList()
             }
             LoadedLyricsState(
-                rawLyrics = effectiveRawLyrics,
-                rawTranslatedLyrics = storedRawTranslatedLyrics,
+                rawLyrics = effectiveRawLyrics.takeUnless { bypassStoredRawLyrics },
+                rawTranslatedLyrics = storedRawTranslatedLyrics.takeUnless {
+                    bypassStoredTranslatedLyrics
+                },
                 rawPhoneticLyrics = rawNeteasePhoneticLyric.takeIf { it.isNotBlank() },
                 lyrics = resolvedLyrics,
                 translatedLyrics = resolvedTranslatedLyrics,
@@ -5183,7 +5204,11 @@ fun LyricsEditorSheet(
     var isLyricMatching by remember { mutableStateOf(false) }
     var lyricMatchError by remember { mutableStateOf<String?>(null) }
     var selectedLyricMatchSources by remember(originalSong.stableKey()) {
-        mutableStateOf(defaultEditableLyricMatchSources())
+        mutableStateOf(
+            defaultEditableLyricMatchSources(
+                isYouTubeMusicTrack = isYouTubeMusicSong(originalSong)
+            )
+        )
     }
     val visibleLyricMatchResults = remember(lyricMatchResultsBySource, selectedLyricMatchSources) {
         filterCachedLyricMatchResults(

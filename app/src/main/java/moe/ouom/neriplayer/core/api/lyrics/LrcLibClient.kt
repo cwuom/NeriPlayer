@@ -44,7 +44,8 @@ data class LrcLibResult(
     val plainLyrics: String?,
     val trackName: String = "",
     val artistName: String = "",
-    val durationSeconds: Long? = null
+    val durationSeconds: Long? = null,
+    val plainLyricsRecoveredFromCollapsedTimeline: Boolean = false
 )
 
 class LrcLibClient(private val okHttpClient: OkHttpClient) {
@@ -210,14 +211,25 @@ class LrcLibClient(private val okHttpClient: OkHttpClient) {
             .takeIf { it > 0.0 && !it.isNaN() && !it.isInfinite() }
             ?.toLong()
             ?: return null
+        val rawSyncedLyrics = json.optString("syncedLyrics")
+            .takeIf { it.isNotBlank() }
+        val syncedLyrics = rawSyncedLyrics?.takeIf(::isUsableTimedLyricTimeline)
+        val explicitPlainLyrics = json.optString("plainLyrics").takeIf { it.isNotBlank() }
+        val recoveredPlainLyrics = rawSyncedLyrics
+            ?.let(::extractPlainLyricsFromCollapsedTimedLyrics)
+        val plainLyrics = explicitPlainLyrics ?: recoveredPlainLyrics
+        if (syncedLyrics == null && plainLyrics == null) return null
         return LrcLibResult(
-            syncedLyrics = json.optString("syncedLyrics").takeIf { it.isNotBlank() },
-            plainLyrics = json.optString("plainLyrics").takeIf { it.isNotBlank() },
+            syncedLyrics = syncedLyrics,
+            plainLyrics = plainLyrics,
             trackName = json.optString("trackName"),
             artistName = json.optString("artistName"),
-            durationSeconds = duration
+            durationSeconds = duration,
+            plainLyricsRecoveredFromCollapsedTimeline = explicitPlainLyrics == null &&
+                recoveredPlainLyrics != null
         )
     }
+
 }
 
 internal fun isLrcLibResultCompatible(
