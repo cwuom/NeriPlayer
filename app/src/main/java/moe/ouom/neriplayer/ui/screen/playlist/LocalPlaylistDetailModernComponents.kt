@@ -81,6 +81,7 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
+import moe.ouom.neriplayer.util.format.formatPlayCount
 import moe.ouom.neriplayer.util.media.CoverArtColorCache
 import moe.ouom.neriplayer.util.media.normalizeCoverArtColorCacheKey
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
@@ -303,12 +304,20 @@ internal fun rememberPlaylistSearchInputState(
     return inputState
 }
 
+internal fun shouldBuildPlaylistSearchIndex(
+    searchVisible: Boolean,
+    query: String
+): Boolean = searchVisible || query.isNotBlank()
+
 @Composable
 internal fun <T> rememberPlaylistSearchResults(
     query: String,
     items: List<T>,
-    tokens: (T) -> Iterable<Any?>
+    tokens: (T) -> Iterable<Any?>,
+    buildIndex: Boolean = true
 ): List<T> {
+    if (!buildIndex) return items
+
     val indexState = produceState<SearchTextMatcher.Index<T>?>(
         initialValue = null,
         key1 = items
@@ -1038,6 +1047,7 @@ internal fun LocalPlaylistHeroHeader(
     headerCover: String?,
     totalDurationText: String,
     songCount: Int,
+    playCount: Long,
     offlineMode: Boolean,
     height: Dp,
     actions: (@Composable () -> Unit)? = null
@@ -1048,7 +1058,8 @@ internal fun LocalPlaylistHeroHeader(
         subtitle = stringResource(
             R.string.local_playlist_total_duration,
             totalDurationText,
-            songCount
+            songCount,
+            formatPlayCount(LocalContext.current, playCount)
         ),
         offlineMode = offlineMode,
         height = height,

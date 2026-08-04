@@ -352,6 +352,17 @@ fun LocalPlaylistDetailScreen(
     val uiState = remember(rawUiState, playlistId) {
         resolveDisplayedLocalPlaylistDetailState(rawUiState, playlistId)
     }
+    val playlistPlayCount by produceState(initialValue = 0L, key1 = playlistId) {
+        val statsRepository = withContext(Dispatchers.IO) {
+            AppContainer.localPlaylistPlaybackStatsRepo
+        }
+        statsRepository.statsFlow.collect { stats ->
+            value = stats
+                .firstOrNull { stat -> stat.playlistId == playlistId }
+                ?.totalPlayCount
+                ?: 0L
+        }
+    }
     val scanPreviewState by vm.scanPreviewState.collectAsState()
     val metadataProcessingState by vm.metadataProcessingState.collectAsState()
     val visibleMetadataProcessingState = metadataProcessingState
@@ -371,13 +382,15 @@ fun LocalPlaylistDetailScreen(
         onDispose {
             if (playlistDeleted) return@onDispose
             latestPlaylist?.let { playlist ->
-                AppContainer.playlistUsageRepo.updateInfo(
-                    id = playlist.id,
-                    name = playlist.name,
-                    picUrl = playlist.displayCoverUrl(context),
-                    trackCount = playlist.songs.size,
-                    source = "local"
-                )
+                AppContainer.launchBackgroundIo {
+                    AppContainer.playlistUsageRepo.updateInfo(
+                        id = playlist.id,
+                        name = playlist.name,
+                        picUrl = playlist.displayCoverUrl(context),
+                        trackCount = playlist.songs.size,
+                        source = "local"
+                    )
+                }
             }
         }
     }
@@ -397,7 +410,9 @@ fun LocalPlaylistDetailScreen(
     LaunchedEffect(isResolved, initializationFailed, playlist, playlistId) {
         if (shouldHandleMissingLocalPlaylistAsDeleted(uiState)) {
             playlistDeleted = true
-            AppContainer.playlistUsageRepo.removeEntry(playlistId, "local")
+            withContext(Dispatchers.IO) {
+                AppContainer.playlistUsageRepo.removeEntry(playlistId, "local")
+            }
             navigateAfterPlaylistDeleted()
         }
     }
@@ -1085,7 +1100,11 @@ fun LocalPlaylistDetailScreen(
             val displayedSongs = rememberPlaylistSearchResults(
                 query = searchQuery,
                 items = tabSongs,
-                tokens = { song -> song.playlistSearchValues(context) }
+                tokens = { song -> song.playlistSearchValues(context) },
+                buildIndex = shouldBuildPlaylistSearchIndex(
+                    searchVisible = showSearch,
+                    query = searchQuery
+                )
             )
 
             LaunchedEffect(listState) {
@@ -1695,6 +1714,7 @@ fun LocalPlaylistDetailScreen(
                                         headerCover = headerCover,
                                         totalDurationText = totalDurationText,
                                         songCount = tabSongs.size,
+                                        playCount = playlistPlayCount,
                                         offlineMode = offlineMode,
                                         height = playlistHeroHeight,
                                         actions = if (headerSearchVisible) {

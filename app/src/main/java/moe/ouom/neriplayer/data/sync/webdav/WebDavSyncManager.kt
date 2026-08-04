@@ -41,11 +41,14 @@ import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStatsRepository
+import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.github.SyncDataChangeDetector
 import moe.ouom.neriplayer.data.sync.github.SyncDataSerializer
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatsMergePolicy
+import moe.ouom.neriplayer.data.sync.github.SyncPlaylistUsageStatsMergePolicy
 import moe.ouom.neriplayer.data.sync.github.SyncPlaylistDeletionPolicy
 import moe.ouom.neriplayer.data.sync.github.SyncPlaylistSongMergePolicy
 import moe.ouom.neriplayer.data.sync.github.LocalSyncMutationConflictException
@@ -81,6 +84,9 @@ class WebDavSyncManager private constructor(context: Context) {
     private val favoriteRepo = FavoritePlaylistRepository.getInstance(appContext)
     private val playHistoryRepo = PlayHistoryRepository.getInstance(appContext)
     private val playbackStatsRepo = PlaybackStatsRepository.getInstance(appContext)
+    private val playlistUsageRepo = PlaylistUsageRepository.getInstance(appContext)
+    private val localPlaylistPlaybackStatsRepo =
+        LocalPlaylistPlaybackStatsRepository.getInstance(appContext)
 
     companion object {
         private const val TAG = "WebDavSyncManager"
@@ -359,6 +365,8 @@ class WebDavSyncManager private constructor(context: Context) {
                     )
                 )
             }
+        val syncPlaylistUsageStats = playlistUsageRepo.syncStats()
+        val localPlaylistPlaybackSnapshot = localPlaylistPlaybackStatsRepo.syncSnapshot()
 
         return SyncData(
             deviceId = getDeviceId(),
@@ -372,7 +380,10 @@ class WebDavSyncManager private constructor(context: Context) {
             playbackStats = syncPlaybackStats,
             playbackStatsClearedAt = playbackStatsRepo.statsClearedAtFlow.value,
             playbackStatBuckets = syncPlaybackStatBuckets,
-            playlistSongDeletions = syncPlaylistSongDeletions
+            playlistSongDeletions = syncPlaylistSongDeletions,
+            playlistUsageStats = syncPlaylistUsageStats,
+            localPlaylistPlaybackStats = localPlaylistPlaybackSnapshot.stats,
+            localPlaylistPlaybackBuckets = localPlaylistPlaybackSnapshot.buckets
         )
     }
 
@@ -510,6 +521,22 @@ class WebDavSyncManager private constructor(context: Context) {
         )
         val mergedPlaybackStats = finalizedPlaybackStats.stats
         val mergedPlaybackStatBuckets = finalizedPlaybackStats.buckets
+        val mergedPlaylistUsageStats = SyncPlaylistUsageStatsMergePolicy
+            .mergePlaylistUsageStats(
+                local = local.playlistUsageStats,
+                remote = remote.playlistUsageStats
+            )
+        val finalizedLocalPlaylistPlaybackStats =
+            SyncPlaylistUsageStatsMergePolicy.finalizeLocalPlaylistPlaybackStats(
+                stats = SyncPlaylistUsageStatsMergePolicy.mergeLocalPlaylistPlaybackStats(
+                    local = local.localPlaylistPlaybackStats,
+                    remote = remote.localPlaylistPlaybackStats
+                ),
+                buckets = SyncPlaylistUsageStatsMergePolicy.mergeLocalPlaylistPlaybackBuckets(
+                    local = local.localPlaylistPlaybackBuckets,
+                    remote = remote.localPlaylistPlaybackBuckets
+                )
+            )
 
         val mergedData = SyncData(
             deviceId = local.deviceId,
@@ -526,7 +553,10 @@ class WebDavSyncManager private constructor(context: Context) {
             playbackStats = mergedPlaybackStats,
             playbackStatsClearedAt = playbackStatsClearedAt,
             playbackStatBuckets = mergedPlaybackStatBuckets,
-            playlistSongDeletions = prunedPlaylistSongDeletions
+            playlistSongDeletions = prunedPlaylistSongDeletions,
+            playlistUsageStats = mergedPlaylistUsageStats,
+            localPlaylistPlaybackStats = finalizedLocalPlaylistPlaybackStats.stats,
+            localPlaylistPlaybackBuckets = finalizedLocalPlaylistPlaybackStats.buckets
         )
 
         return MergeResult(
@@ -890,6 +920,11 @@ class WebDavSyncManager private constructor(context: Context) {
             playbackStatsClearedAt = sanitizedMergedData.playbackStatsClearedAt,
             syncDailyStats = sanitizedMergedData.playbackStatBuckets
         )
+        playlistUsageRepo.applyMergedStats(sanitizedMergedData.playlistUsageStats)
+        localPlaylistPlaybackStatsRepo.applyMergedStats(
+            stats = sanitizedMergedData.localPlaylistPlaybackStats,
+            buckets = sanitizedMergedData.localPlaylistPlaybackBuckets
+        )
         return true
     }
 
@@ -932,6 +967,15 @@ class WebDavSyncManager private constructor(context: Context) {
             playbackStatsClearedAt = data.playbackStatsClearedAt.coerceAtLeast(0L),
             playbackStatBuckets = data.playbackStatBuckets.mapNotNull {
                 SyncPlaybackStatMapper.sanitize(it, appContext)
+            },
+            playlistUsageStats = data.playlistUsageStats.mapNotNull { stat ->
+                SyncPlaylistUsageStatsMergePolicy.sanitize(stat)
+            },
+            localPlaylistPlaybackStats = data.localPlaylistPlaybackStats.mapNotNull { stat ->
+                SyncPlaylistUsageStatsMergePolicy.sanitize(stat)
+            },
+            localPlaylistPlaybackBuckets = data.localPlaylistPlaybackBuckets.mapNotNull { bucket ->
+                SyncPlaylistUsageStatsMergePolicy.sanitize(bucket)
             }
         )
     }
@@ -1079,11 +1123,18 @@ class WebDavSyncManager private constructor(context: Context) {
             mergedStats = localData.playbackStats,
             mergedBuckets = localData.playbackStatBuckets
         )
+        val finalizedInitialLocalPlaylistStats =
+            SyncPlaylistUsageStatsMergePolicy.finalizeLocalPlaylistPlaybackStats(
+                stats = localData.localPlaylistPlaybackStats,
+                buckets = localData.localPlaylistPlaybackBuckets
+            )
         return MergeResult(
             mergedData = localData.copy(
                 lastModified = System.currentTimeMillis(),
                 playbackStats = finalizedInitialStats.stats,
-                playbackStatBuckets = finalizedInitialStats.buckets
+                playbackStatBuckets = finalizedInitialStats.buckets,
+                localPlaylistPlaybackStats = finalizedInitialLocalPlaylistStats.stats,
+                localPlaylistPlaybackBuckets = finalizedInitialLocalPlaylistStats.buckets
             ),
             syncResult = SyncResult(
                 success = true,

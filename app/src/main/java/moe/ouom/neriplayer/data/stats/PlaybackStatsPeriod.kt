@@ -2,6 +2,10 @@ package moe.ouom.neriplayer.data.stats
 
 import java.util.Calendar
 
+private const val HOT_PLAYLIST_MINUTE_MS = 60_000L
+private const val WEEKLY_HOT_PLAYLIST_MIN_LISTEN_MS = 10 * HOT_PLAYLIST_MINUTE_MS
+private const val MONTHLY_HOT_PLAYLIST_MIN_LISTEN_MS = 30 * HOT_PLAYLIST_MINUTE_MS
+
 enum class PlaybackStatsPeriod {
     DAY,
     WEEK,
@@ -35,6 +39,14 @@ data class PlaybackStatBucket(
     val customArtist: String?,
     val customCoverUrl: String?,
     val identityKey: String
+)
+
+data class PlaybackStatsHotPlaylist(
+    val period: PlaybackStatsPeriod,
+    val tracks: List<TrackStat>,
+    val totalPlayCount: Long,
+    val totalListenMs: Long,
+    val usesLegacyBreakdown: Boolean
 )
 
 fun PlaybackStatsPeriod.resolvePlaybackStatsTimeRange(
@@ -117,6 +129,54 @@ fun aggregatePlaybackStatsCompatForPeriod(
         val firstPlayedAt = stat.firstPlayedAt.takeIf { it > 0L } ?: stat.lastPlayedAt
         firstPlayedAt >= startInclusive && stat.lastPlayedAt < range.endExclusive
     }
+}
+
+internal fun buildPlaybackStatsHotPlaylist(
+    stats: List<TrackStat>,
+    dailyStats: List<PlaybackStatBucket>,
+    period: PlaybackStatsPeriod,
+    nowMillis: Long = System.currentTimeMillis()
+): PlaybackStatsHotPlaylist {
+    val usesLegacyBreakdown = period != PlaybackStatsPeriod.ALL &&
+        dailyStats.isEmpty() && stats.isNotEmpty()
+    val periodStats = when {
+        period == PlaybackStatsPeriod.ALL -> stats
+        dailyStats.isEmpty() -> aggregatePlaybackStatsCompatForPeriod(
+            stats = stats,
+            period = period,
+            nowMillis = nowMillis
+        )
+        else -> aggregatePlaybackStatBucketsForPeriod(
+            buckets = dailyStats,
+            period = period,
+            nowMillis = nowMillis
+        )
+    }
+    val minimumListenMs = period.hotPlaylistMinimumListenMs()
+    val tracks = periodStats.asSequence()
+        .filter { stat ->
+            stat.playCount > 0 && stat.totalListenMs >= minimumListenMs
+        }
+        .sortedWith(
+            compareByDescending<TrackStat> { stat -> stat.playCount }
+                .thenByDescending { stat -> stat.totalListenMs }
+                .thenByDescending { stat -> stat.lastPlayedAt }
+                .thenBy { stat -> stat.identityKey }
+        )
+        .toList()
+
+    return PlaybackStatsHotPlaylist(
+        period = period,
+        tracks = tracks,
+        totalPlayCount = tracks.sumOf { stat -> stat.playCount.toLong() },
+        totalListenMs = tracks.sumOf { stat -> stat.totalListenMs },
+        usesLegacyBreakdown = usesLegacyBreakdown
+    )
+}
+
+private fun PlaybackStatsPeriod.hotPlaylistMinimumListenMs(): Long = when (this) {
+    PlaybackStatsPeriod.MONTH -> MONTHLY_HOT_PLAYLIST_MIN_LISTEN_MS
+    else -> WEEKLY_HOT_PLAYLIST_MIN_LISTEN_MS
 }
 
 private fun Calendar.moveToDayStart() {

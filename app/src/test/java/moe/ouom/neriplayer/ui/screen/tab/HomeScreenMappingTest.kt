@@ -3,11 +3,34 @@ package moe.ouom.neriplayer.ui.screen.tab
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeItem
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HomeScreenMappingTest {
+
+    @Test
+    fun continueSectionStaysMountedWhileUsageRepositoryLoads() {
+        assertTrue(
+            shouldShowHomeContinueSection(
+                showContinueCard = true,
+                usageLoaded = false,
+                hasUsage = false
+            )
+        )
+    }
+
+    @Test
+    fun continueSectionHidesOnlyAfterAnEmptyUsageResultIsLoaded() {
+        assertFalse(
+            shouldShowHomeContinueSection(
+                showContinueCard = true,
+                usageLoaded = true,
+                hasUsage = false
+            )
+        )
+    }
 
     @Test
     fun toPlayableSongItem_keepsHomeItemDuration() {

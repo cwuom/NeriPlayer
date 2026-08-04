@@ -17,6 +17,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.lyricon.mediaLyriconPositionMs
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.LocalPlaylistPlaybackSource
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.lifecycle.clearUsbExclusiveInterruptedPlaybackIntent
@@ -496,7 +497,8 @@ internal fun PlayerManager.playPlaylistImpl(
     songs: List<SongItem>,
     startIndex: Int,
     commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL,
-    bypassLoudVolumeWarning: Boolean = false
+    bypassLoudVolumeWarning: Boolean = false,
+    localPlaylistId: Long? = null
 ) {
     ensureInitialized()
     check(initialized) { "Call PlayerManager.initialize(application) first." }
@@ -518,7 +520,8 @@ internal fun PlayerManager.playPlaylistImpl(
                     songs = songs,
                     startIndex = startIndex,
                     commandSource = commandSource,
-                    bypassLoudVolumeWarning = true
+                    bypassLoudVolumeWarning = true,
+                    localPlaylistId = localPlaylistId
                 )
             }
         )
@@ -531,6 +534,12 @@ internal fun PlayerManager.playPlaylistImpl(
     )
     suppressAutoResumeForCurrentSession = false
     consecutivePlayFailures = 0
+    localPlaylistPlaybackSource = localPlaylistId?.let { playlistId ->
+        LocalPlaylistPlaybackSource(
+            playlistId = playlistId,
+            songKeys = songs.mapTo(LinkedHashSet(songs.size)) { song -> song.stableKey() }
+        )
+    }
     currentPlaylist = songs
     _currentQueueFlow.value = currentPlaylist
     currentIndex = startIndex.coerceIn(0, songs.lastIndex)

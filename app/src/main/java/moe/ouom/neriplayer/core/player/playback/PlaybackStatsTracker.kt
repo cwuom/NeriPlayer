@@ -13,7 +13,8 @@ internal data class PlaybackStatsSnapshot(
     val song: SongItem,
     val listenedMs: Long,
     val playCountIncrement: Int,
-    val scheduleSync: Boolean
+    val scheduleSync: Boolean,
+    val localPlaylistId: Long? = null
 )
 
 internal class PlaybackStatsTracker(
@@ -22,6 +23,7 @@ internal class PlaybackStatsTracker(
 ) {
     private var trackingSong: SongItem? = null
     private var trackingSongKey: String? = null
+    private var trackingLocalPlaylistId: Long? = null
     private var segmentStartElapsedMs = NO_ACTIVE_SEGMENT_START_MS
     private var accumulatedMs = 0L
     private var currentPlayListenedMs = 0L
@@ -30,9 +32,12 @@ internal class PlaybackStatsTracker(
     private var lastPlaybackPositionMs: Long? = null
     private var suppressNextPositionWrap = false
 
-    fun onSongChanged(song: SongItem?): PlaybackStatsSnapshot? {
+    fun onSongChanged(
+        song: SongItem?,
+        localPlaylistId: Long? = null
+    ): PlaybackStatsSnapshot? {
         val newKey = song?.stableKey()
-        if (newKey == trackingSongKey) {
+        if (newKey == trackingSongKey && localPlaylistId == trackingLocalPlaylistId) {
             if (song != null) {
                 trackingSong = song
             }
@@ -43,6 +48,7 @@ internal class PlaybackStatsTracker(
         val snapshot = flushLocked(countPlay = shouldCountCurrentPlay(), scheduleSync = true)
         trackingSong = song
         trackingSongKey = newKey
+        trackingLocalPlaylistId = localPlaylistId
         accumulatedMs = 0L
         currentPlayListenedMs = 0L
         hasCountedCurrentPlay = false
@@ -167,7 +173,8 @@ internal class PlaybackStatsTracker(
             song = song,
             listenedMs = listenedMs,
             playCountIncrement = playCountIncrement,
-            scheduleSync = scheduleSync
+            scheduleSync = scheduleSync,
+            localPlaylistId = trackingLocalPlaylistId
         )
     }
 

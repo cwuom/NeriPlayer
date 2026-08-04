@@ -62,6 +62,7 @@ import moe.ouom.neriplayer.data.platform.bili.BiliArchiveCacheRepository
 import moe.ouom.neriplayer.data.platform.bili.BiliFavoriteFolderCacheRepository
 import moe.ouom.neriplayer.data.platform.netease.NeteasePlaylistCacheRepository
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeMusicPlaylistCacheRepository
+import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStatsRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.data.traffic.TrafficStatsRepository
@@ -254,7 +255,10 @@ object AppContainer {
         TrafficStatsRepository.getInstance(application)
     }
     val playlistUsageRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        PlaylistUsageRepository(application)
+        PlaylistUsageRepository.getInstance(application)
+    }
+    val localPlaylistPlaybackStatsRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        LocalPlaylistPlaybackStatsRepository.getInstance(application)
     }
     val biliFavoriteFolderCacheRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         BiliFavoriteFolderCacheRepository(application)

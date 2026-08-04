@@ -41,6 +41,8 @@ import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStatsRepository
+import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.data.sync.SyncCoordinator
 import moe.ouom.neriplayer.data.sync.model.ConflictResolution
@@ -49,9 +51,12 @@ import moe.ouom.neriplayer.data.sync.model.CURRENT_SYNC_METADATA_VERSION
 import moe.ouom.neriplayer.data.sync.model.SyncConflict
 import moe.ouom.neriplayer.data.sync.model.SyncData
 import moe.ouom.neriplayer.data.sync.model.SyncFavoritePlaylist
+import moe.ouom.neriplayer.data.sync.model.SyncLocalPlaylistPlaybackBucket
+import moe.ouom.neriplayer.data.sync.model.SyncLocalPlaylistPlaybackStat
 import moe.ouom.neriplayer.data.sync.model.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
+import moe.ouom.neriplayer.data.sync.model.SyncPlaylistUsageStat
 import moe.ouom.neriplayer.data.sync.model.SyncRecentPlay
 import moe.ouom.neriplayer.data.sync.model.SyncRecentPlayDeletion
 import moe.ouom.neriplayer.data.sync.model.SyncResult
@@ -71,6 +76,9 @@ class GitHubSyncManager private constructor(context: Context) {
     private val favoriteRepo = FavoritePlaylistRepository.getInstance(appContext)
     private val playHistoryRepo = PlayHistoryRepository.getInstance(appContext)
     private val playbackStatsRepo = PlaybackStatsRepository.getInstance(appContext)
+    private val playlistUsageRepo = PlaylistUsageRepository.getInstance(appContext)
+    private val localPlaylistPlaybackStatsRepo =
+        LocalPlaylistPlaybackStatsRepository.getInstance(appContext)
 
     companion object {
         private const val TAG = "GitHubSyncManager"
@@ -381,6 +389,8 @@ class GitHubSyncManager private constructor(context: Context) {
                     )
                 )
             }
+        val syncPlaylistUsageStats = playlistUsageRepo.syncStats()
+        val localPlaylistPlaybackSnapshot = localPlaylistPlaybackStatsRepo.syncSnapshot()
 
         return SyncData(
             deviceId = getDeviceId(),
@@ -394,7 +404,10 @@ class GitHubSyncManager private constructor(context: Context) {
             playbackStats = syncPlaybackStats,
             playbackStatsClearedAt = playbackStatsRepo.statsClearedAtFlow.value,
             playbackStatBuckets = syncPlaybackStatBuckets,
-            playlistSongDeletions = syncPlaylistSongDeletions
+            playlistSongDeletions = syncPlaylistSongDeletions,
+            playlistUsageStats = syncPlaylistUsageStats,
+            localPlaylistPlaybackStats = localPlaylistPlaybackSnapshot.stats,
+            localPlaylistPlaybackBuckets = localPlaylistPlaybackSnapshot.buckets
         )
     }
 
@@ -532,6 +545,22 @@ class GitHubSyncManager private constructor(context: Context) {
         )
         val mergedPlaybackStats = finalizedPlaybackStats.stats
         val mergedPlaybackStatBuckets = finalizedPlaybackStats.buckets
+        val mergedPlaylistUsageStats = SyncPlaylistUsageStatsMergePolicy
+            .mergePlaylistUsageStats(
+                local = local.playlistUsageStats,
+                remote = remote.playlistUsageStats
+            )
+        val finalizedLocalPlaylistPlaybackStats =
+            SyncPlaylistUsageStatsMergePolicy.finalizeLocalPlaylistPlaybackStats(
+                stats = SyncPlaylistUsageStatsMergePolicy.mergeLocalPlaylistPlaybackStats(
+                    local = local.localPlaylistPlaybackStats,
+                    remote = remote.localPlaylistPlaybackStats
+                ),
+                buckets = SyncPlaylistUsageStatsMergePolicy.mergeLocalPlaylistPlaybackBuckets(
+                    local = local.localPlaylistPlaybackBuckets,
+                    remote = remote.localPlaylistPlaybackBuckets
+                )
+            )
 
         val mergedData = SyncData(
             deviceId = local.deviceId,
@@ -548,7 +577,10 @@ class GitHubSyncManager private constructor(context: Context) {
             playbackStats = mergedPlaybackStats,
             playbackStatsClearedAt = playbackStatsClearedAt,
             playbackStatBuckets = mergedPlaybackStatBuckets,
-            playlistSongDeletions = prunedPlaylistSongDeletions
+            playlistSongDeletions = prunedPlaylistSongDeletions,
+            playlistUsageStats = mergedPlaylistUsageStats,
+            localPlaylistPlaybackStats = finalizedLocalPlaylistPlaybackStats.stats,
+            localPlaylistPlaybackBuckets = finalizedLocalPlaylistPlaybackStats.buckets
         )
 
         return MergeResult(
@@ -912,6 +944,11 @@ class GitHubSyncManager private constructor(context: Context) {
             playbackStatsClearedAt = sanitizedMergedData.playbackStatsClearedAt,
             syncDailyStats = sanitizedMergedData.playbackStatBuckets
         )
+        playlistUsageRepo.applyMergedStats(sanitizedMergedData.playlistUsageStats)
+        localPlaylistPlaybackStatsRepo.applyMergedStats(
+            stats = sanitizedMergedData.localPlaylistPlaybackStats,
+            buckets = sanitizedMergedData.localPlaylistPlaybackBuckets
+        )
         return true
     }
 
@@ -954,6 +991,15 @@ class GitHubSyncManager private constructor(context: Context) {
             playbackStatsClearedAt = data.playbackStatsClearedAt.coerceAtLeast(0L),
             playbackStatBuckets = data.playbackStatBuckets.mapNotNull {
                 SyncPlaybackStatMapper.sanitize(it, appContext)
+            },
+            playlistUsageStats = data.playlistUsageStats.mapNotNull { stat ->
+                SyncPlaylistUsageStatsMergePolicy.sanitize(stat)
+            },
+            localPlaylistPlaybackStats = data.localPlaylistPlaybackStats.mapNotNull { stat ->
+                SyncPlaylistUsageStatsMergePolicy.sanitize(stat)
+            },
+            localPlaylistPlaybackBuckets = data.localPlaylistPlaybackBuckets.mapNotNull { bucket ->
+                SyncPlaylistUsageStatsMergePolicy.sanitize(bucket)
             }
         )
     }
@@ -1120,11 +1166,18 @@ class GitHubSyncManager private constructor(context: Context) {
             mergedStats = localData.playbackStats,
             mergedBuckets = localData.playbackStatBuckets
         )
+        val finalizedInitialLocalPlaylistStats =
+            SyncPlaylistUsageStatsMergePolicy.finalizeLocalPlaylistPlaybackStats(
+                stats = localData.localPlaylistPlaybackStats,
+                buckets = localData.localPlaylistPlaybackBuckets
+            )
         return MergeResult(
             mergedData = localData.copy(
                 lastModified = System.currentTimeMillis(),
                 playbackStats = finalizedInitialStats.stats,
-                playbackStatBuckets = finalizedInitialStats.buckets
+                playbackStatBuckets = finalizedInitialStats.buckets,
+                localPlaylistPlaybackStats = finalizedInitialLocalPlaylistStats.stats,
+                localPlaylistPlaybackBuckets = finalizedInitialLocalPlaylistStats.buckets
             ),
             syncResult = SyncResult(
                 success = true,

@@ -161,17 +161,19 @@ fun BiliPlaylistDetailScreen(
     DisposableEffect(Unit) {
         onDispose {
             latestHeader?.let { header ->
-                AppContainer.playlistUsageRepo.updateInfo(
-                    id = header.mediaId,
-                    name = header.title,
-                    picUrl = header.coverUrl,
-                    trackCount = latestTrackCount,
-                    fid = header.fid,
-                    mid = header.mid,
-                    source = "bili",
-                    subtype = header.kind.name,
-                    subtitle = header.subtitle
-                )
+                AppContainer.launchBackgroundIo {
+                    AppContainer.playlistUsageRepo.updateInfo(
+                        id = header.mediaId,
+                        name = header.title,
+                        picUrl = header.coverUrl,
+                        trackCount = latestTrackCount,
+                        fid = header.fid,
+                        mid = header.mid,
+                        source = "bili",
+                        subtype = header.kind.name,
+                        subtitle = header.subtitle
+                    )
+                }
             }
         }
     }

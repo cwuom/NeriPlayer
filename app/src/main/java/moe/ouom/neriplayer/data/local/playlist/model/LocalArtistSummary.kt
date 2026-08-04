@@ -42,10 +42,10 @@ fun buildLocalArtistSummaries(
     playlists: List<LocalPlaylist>,
     context: Context
 ): List<LocalArtistSummary> {
-    val sourceSongs = distinctLocalArtistSourceSongs(playlists.flatMap { it.songs })
-
-    return buildLocalArtistSummaries(
-        songs = sourceSongs,
+    return buildLocalArtistSummariesFromSourceSongs(
+        sourceSongs = distinctLocalArtistSourceSongs(
+            playlists.asSequence().flatMap { playlist -> playlist.songs.asSequence() }
+        ),
         unknownArtist = context.getString(R.string.music_unknown_artist)
     )
 }
@@ -54,7 +54,46 @@ internal fun buildLocalArtistSummaries(
     songs: List<SongItem>,
     unknownArtist: String
 ): List<LocalArtistSummary> {
-    val sourceSongs = distinctLocalArtistSourceSongs(songs)
+    return buildLocalArtistSummariesFromSourceSongs(
+        sourceSongs = distinctLocalArtistSourceSongs(songs.asSequence()),
+        unknownArtist = unknownArtist
+    )
+}
+
+internal fun findLocalArtistSummary(
+    playlists: List<LocalPlaylist>,
+    artistKey: String,
+    unknownArtist: String
+): LocalArtistSummary? {
+    if (artistKey.isBlank()) return null
+
+    val duplicateIndex = LocalArtistSongDuplicateIndex()
+    val matchingSongs = mutableListOf<SongItem>()
+    var matchedName: String? = null
+    playlists.forEach { playlist ->
+        playlist.songs.forEach songLoop@ { song ->
+            if (duplicateIndex.contains(song)) return@songLoop
+            duplicateIndex.add(song)
+
+            val resolvedName = localArtistNamesForSong(song, unknownArtist)
+                .firstOrNull { name -> localArtistStableKey(name) == artistKey }
+                ?: return@songLoop
+            if (matchedName == null) {
+                matchedName = resolvedName
+            }
+            matchingSongs += song
+        }
+    }
+
+    return matchedName?.let { name ->
+        LocalArtistSummary(name = name, songs = matchingSongs)
+    }
+}
+
+private fun buildLocalArtistSummariesFromSourceSongs(
+    sourceSongs: List<SongItem>,
+    unknownArtist: String
+): List<LocalArtistSummary> {
     if (sourceSongs.isEmpty()) return emptyList()
 
     val groups = linkedMapOf<String, MutableLocalArtistGroup>()
@@ -78,16 +117,13 @@ internal fun buildLocalArtistSummaries(
         )
 }
 
-private fun distinctLocalArtistSourceSongs(songs: List<SongItem>): List<SongItem> {
-    if (songs.size <= 1) return songs
-
+private fun distinctLocalArtistSourceSongs(songs: Sequence<SongItem>): List<SongItem> {
     val duplicateIndex = LocalArtistSongDuplicateIndex()
-    return songs.filter { song ->
-        if (duplicateIndex.contains(song)) {
-            false
-        } else {
+    return buildList {
+        songs.forEach { song ->
+            if (duplicateIndex.contains(song)) return@forEach
             duplicateIndex.add(song)
-            true
+            add(song)
         }
     }
 }

@@ -447,6 +447,12 @@
     <!-- Library -->
     <string name="library_favorite_tab_playlists">歌单</string>
     <string name="library_favorite_tab_artists">歌手</string>
+    <string name="library_favorite_tab_hot">热点</string>
+    <string name="library_hot_playlist_week">本周热点</string>
+    <string name="library_hot_playlist_month">本月热点</string>
+    <string name="library_hot_playlist_summary" formatted="false">%1$d 首 · 播放 %2$s 次</string>
+    <string name="library_hot_empty">暂无符合条件的热点歌曲</string>
+    <string name="library_hot_empty_hint">开始收听后，热点歌曲会显示在这里</string>
     <string name="library_no_favorite_artist">暂无关注的歌手</string>
     <string name="library_favorite_artist_hint">在歌手详情页点击关注，歌手会保存在这里</string>
     <string name="library_favorite_source_artist">歌手</string>
@@ -595,7 +601,8 @@
     <string name="local_playlist_sync_empty">没有可同步的歌曲</string>
     <string name="local_playlist_export_to">导出到歌单</string>
     <string name="local_playlist_import_audio">导入本地音频</string>
-    <string name="local_playlist_total_duration" formatted="false">%s · %d 首</string>
+    <string name="local_playlist_total_duration" formatted="false">%1$s · %2$d 首 · 播放 %3$s 次</string>
+    <string name="local_artist_total_duration" formatted="false">%1$s · %2$d 首</string>
     <string name="local_playlist_play_next">接下来播放…</string>
     <string name="local_artist_detail_empty">这个歌手暂无可播放的本地歌曲</string>
 

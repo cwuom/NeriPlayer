@@ -348,32 +348,49 @@ fun ExploreHostScreen(
                                 offlineMode = offlineMode,
                                 onPlay = { pl ->
                                     captureExploreScrollPosition()
-                                    AppContainer.playlistUsageRepo.recordOpen(
-                                        id = pl.id,
-                                        name = pl.name,
-                                        picUrl = pl.picUrl,
-                                        trackCount = pl.trackCount,
-                                        source = "netease"
-                                    )
+                                    AppContainer.launchBackgroundIo {
+                                        AppContainer.playlistUsageRepo.recordOpen(
+                                            id = pl.id,
+                                            name = pl.name,
+                                            picUrl = pl.picUrl,
+                                            trackCount = pl.trackCount,
+                                            source = "netease"
+                                        )
+                                    }
                                     openExploreSelectedItem(ExploreSelectedItem.Netease(pl))
                                 },
                                 onBiliPlaylistClick = { playlist ->
                                     captureExploreScrollPosition()
+                                    AppContainer.launchBackgroundIo {
+                                        AppContainer.playlistUsageRepo.recordOpen(
+                                            id = playlist.mediaId,
+                                            name = playlist.title,
+                                            picUrl = playlist.coverUrl,
+                                            trackCount = playlist.count,
+                                            source = "bili",
+                                            fid = playlist.fid,
+                                            mid = playlist.mid,
+                                            subtype = playlist.kind.name,
+                                            subtitle = playlist.subtitle
+                                        )
+                                    }
                                     openExploreSelectedItem(ExploreSelectedItem.Bilibili(playlist))
                                 },
                                 onYouTubeMusicPlaylistClick = { pl ->
                                     captureExploreScrollPosition()
-                                    AppContainer.playlistUsageRepo.recordOpen(
-                                        id = stableYouTubeMusicId(
-                                            pl.playlistId.ifBlank { pl.browseId }
-                                        ),
-                                        name = pl.title,
-                                        picUrl = pl.coverUrl,
-                                        trackCount = pl.trackCount,
-                                        source = "youtubeMusic",
-                                        browseId = pl.browseId,
-                                        playlistId = pl.playlistId
-                                    )
+                                    AppContainer.launchBackgroundIo {
+                                        AppContainer.playlistUsageRepo.recordOpen(
+                                            id = stableYouTubeMusicId(
+                                                pl.playlistId.ifBlank { pl.browseId }
+                                            ),
+                                            name = pl.title,
+                                            picUrl = pl.coverUrl,
+                                            trackCount = pl.trackCount,
+                                            source = "youtubeMusic",
+                                            browseId = pl.browseId,
+                                            playlistId = pl.playlistId
+                                        )
+                                    }
                                     openExploreSelectedItem(ExploreSelectedItem.YouTubeMusic(pl))
                                 },
                                 onYouTubeCreatorClick = { creator ->

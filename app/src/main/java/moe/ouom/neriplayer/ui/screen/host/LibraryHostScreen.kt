@@ -59,6 +59,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.ui.screen.artist.NeteaseArtistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalArtistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.HotPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
@@ -73,6 +74,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.displayCoverUrl
@@ -100,6 +102,8 @@ sealed class LibrarySelectedItem : Parcelable {
     @Parcelize
     data class LocalArtist(val artistName: String) : LibrarySelectedItem()
     @Parcelize
+    data class Hot(val monthly: Boolean) : LibrarySelectedItem()
+    @Parcelize
     data class Netease(val playlist: PlaylistSummary) : LibrarySelectedItem()
     @Parcelize
     data class NeteaseAlbum(val album: AlbumSummary) : LibrarySelectedItem()
@@ -122,6 +126,10 @@ private val LibrarySelectedItem?.navigationDepth: Int
         is LibrarySelectedItem.NeteaseArtistAlbum -> 2
         else -> 1
     }
+
+private fun LibrarySelectedItem.Hot.period(): PlaybackStatsPeriod {
+    return if (monthly) PlaybackStatsPeriod.MONTH else PlaybackStatsPeriod.WEEK
+}
 
 private enum class LibraryScrollSource {
     Local,
@@ -429,24 +437,37 @@ fun LibraryHostScreen(
                                 skipDetailCloseAnimation = false
                                 captureLibraryScrollPosition(LibraryScrollSource.Local)
                                 openLibrarySelectedItem(LibrarySelectedItem.Local(playlist.id))
-                                AppContainer.playlistUsageRepo.recordOpen(
-                                    id = playlist.id,
-                                    name = playlist.name,
-                                    picUrl = playlist.displayCoverUrl(context),
-                                    trackCount = playlist.songs.size,
-                                    source = "local"
-                                )
+                                AppContainer.launchBackgroundIo {
+                                    AppContainer.playlistUsageRepo.recordOpen(
+                                        id = playlist.id,
+                                        name = playlist.name,
+                                        picUrl = playlist.displayCoverUrl(context),
+                                        trackCount = playlist.songs.size,
+                                        source = "local"
+                                    )
+                                }
                             },
                             onLocalArtistClick = { artist ->
                                 skipDetailCloseAnimation = false
                                 captureLibraryScrollPosition(LibraryScrollSource.Local)
                                 openLibrarySelectedItem(LibrarySelectedItem.LocalArtist(artist.name))
-                                AppContainer.playlistUsageRepo.recordOpen(
-                                    id = artist.id,
-                                    name = artist.name,
-                                    picUrl = artist.displayCoverUrl(context),
-                                    trackCount = artist.songs.size,
-                                    source = PlaylistUsageRepository.SOURCE_LOCAL_ARTIST
+                                AppContainer.launchBackgroundIo {
+                                    AppContainer.playlistUsageRepo.recordOpen(
+                                        id = artist.id,
+                                        name = artist.name,
+                                        picUrl = artist.displayCoverUrl(context),
+                                        trackCount = artist.songs.size,
+                                        source = PlaylistUsageRepository.SOURCE_LOCAL_ARTIST
+                                    )
+                                }
+                            },
+                            onHotPlaylistClick = { period ->
+                                skipDetailCloseAnimation = false
+                                captureLibraryScrollPosition(LibraryScrollSource.Favorite)
+                                openLibrarySelectedItem(
+                                    LibrarySelectedItem.Hot(
+                                        monthly = period == PlaybackStatsPeriod.MONTH
+                                    )
                                 )
                             },
                             onNeteasePlaylistClick = { playlist ->
@@ -457,13 +478,15 @@ fun LibraryHostScreen(
                                     )
                                 )
                                 openLibrarySelectedItem(LibrarySelectedItem.Netease(playlist))
-                                AppContainer.playlistUsageRepo.recordOpen(
-                                    id = playlist.id,
-                                    name = playlist.name,
-                                    picUrl = playlist.picUrl,
-                                    trackCount = playlist.trackCount,
-                                    source = "netease"
-                                )
+                                AppContainer.launchBackgroundIo {
+                                    AppContainer.playlistUsageRepo.recordOpen(
+                                        id = playlist.id,
+                                        name = playlist.name,
+                                        picUrl = playlist.picUrl,
+                                        trackCount = playlist.trackCount,
+                                        source = "netease"
+                                    )
+                                }
                             },
                             onNeteaseAlbumClick = { album ->
                                 skipDetailCloseAnimation = false
@@ -473,13 +496,15 @@ fun LibraryHostScreen(
                                     )
                                 )
                                 openLibrarySelectedItem(LibrarySelectedItem.NeteaseAlbum(album))
-                                AppContainer.playlistUsageRepo.recordOpen(
-                                    id = album.id,
-                                    name = album.name,
-                                    picUrl = album.picUrl,
-                                    trackCount = album.size,
-                                    source = "neteaseAlbum"
-                                )
+                                AppContainer.launchBackgroundIo {
+                                    AppContainer.playlistUsageRepo.recordOpen(
+                                        id = album.id,
+                                        name = album.name,
+                                        picUrl = album.picUrl,
+                                        trackCount = album.size,
+                                        source = "neteaseAlbum"
+                                    )
+                                }
                             },
                             onNeteaseArtistClick = { artist ->
                                 captureLibraryScrollPosition(LibraryScrollSource.Favorite)
@@ -493,17 +518,19 @@ fun LibraryHostScreen(
                                     )
                                 )
                                 openLibrarySelectedItem(LibrarySelectedItem.YouTubeMusic(playlist))
-                                AppContainer.playlistUsageRepo.recordOpen(
-                                    id = stableYouTubeMusicId(
-                                        playlist.playlistId.ifBlank { playlist.browseId }
-                                    ),
-                                    name = playlist.title,
-                                    picUrl = playlist.coverUrl,
-                                    trackCount = playlist.trackCount,
-                                    source = "youtubeMusic",
-                                    browseId = playlist.browseId,
-                                    playlistId = playlist.playlistId
-                                )
+                                AppContainer.launchBackgroundIo {
+                                    AppContainer.playlistUsageRepo.recordOpen(
+                                        id = stableYouTubeMusicId(
+                                            playlist.playlistId.ifBlank { playlist.browseId }
+                                        ),
+                                        name = playlist.title,
+                                        picUrl = playlist.coverUrl,
+                                        trackCount = playlist.trackCount,
+                                        source = "youtubeMusic",
+                                        browseId = playlist.browseId,
+                                        playlistId = playlist.playlistId
+                                    )
+                                }
                             },
                             onBiliPlaylistClick = { playlist ->
                                 skipDetailCloseAnimation = false
@@ -511,17 +538,19 @@ fun LibraryHostScreen(
                                     sourceForFavoriteAwareDestination(LibraryScrollSource.Bili)
                                 )
                                 openLibrarySelectedItem(LibrarySelectedItem.Bili(playlist))
-                                AppContainer.playlistUsageRepo.recordOpen(
-                                    id = playlist.mediaId,
-                                    name = playlist.title,
-                                    picUrl = playlist.coverUrl,
-                                    trackCount = playlist.count,
-                                    source = "bili",
-                                    mid = playlist.mid,
-                                    fid = playlist.fid,
-                                    subtype = playlist.kind.name,
-                                    subtitle = playlist.subtitle
-                                )
+                                AppContainer.launchBackgroundIo {
+                                    AppContainer.playlistUsageRepo.recordOpen(
+                                        id = playlist.mediaId,
+                                        name = playlist.title,
+                                        picUrl = playlist.coverUrl,
+                                        trackCount = playlist.count,
+                                        source = "bili",
+                                        mid = playlist.mid,
+                                        fid = playlist.fid,
+                                        subtype = playlist.kind.name,
+                                        subtitle = playlist.subtitle
+                                    )
+                                }
                             },
                             onOpenRecent = onOpenRecent,
                             onOpenStats = onOpenStats
@@ -549,6 +578,15 @@ fun LibraryHostScreen(
                         is LibrarySelectedItem.LocalArtist -> {
                             LocalArtistDetailScreen(
                                 artistName = current.artistName,
+                                onBack = { closeSelectedDetail() },
+                                onSongClick = onSongClick,
+                                offlineMode = offlineMode
+                            )
+                        }
+
+                        is LibrarySelectedItem.Hot -> {
+                            HotPlaylistDetailScreen(
+                                period = current.period(),
                                 onBack = { closeSelectedDetail() },
                                 onSongClick = onSongClick,
                                 offlineMode = offlineMode
@@ -674,6 +712,10 @@ private val librarySelectedItemSaver = mapSaver<LibrarySelectedItem?>(
                 "type" to "localArtist",
                 "artistName" to item.artistName
             )
+            is LibrarySelectedItem.Hot -> hashMapOf(
+                "type" to "hot",
+                "monthly" to item.monthly
+            )
             is LibrarySelectedItem.NeteaseAlbum -> hashMapOf(
                 "type" to "neteaseAlbum",
                 "album" to item.album.toSaveMap()
@@ -710,6 +752,7 @@ private val librarySelectedItemSaver = mapSaver<LibrarySelectedItem?>(
             "localArtist" -> (saved["artistName"] as? String)
                 ?.takeIf { it.isNotBlank() }
                 ?.let { LibrarySelectedItem.LocalArtist(it) }
+            "hot" -> LibrarySelectedItem.Hot(saved["monthly"] as? Boolean ?: false)
             "neteaseAlbum" -> restoreAlbumSummary(saved["album"] as? Map<*, *>)?.let { LibrarySelectedItem.NeteaseAlbum(it) }
             "netease" -> restorePlaylistSummary(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.Netease(it) }
             "neteaseArtist" -> restoreNeteaseArtistSummary(

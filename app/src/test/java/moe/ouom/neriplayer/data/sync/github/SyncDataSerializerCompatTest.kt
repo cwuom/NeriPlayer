@@ -16,10 +16,13 @@ import moe.ouom.neriplayer.data.sync.model.LEGACY_SYNC_METADATA_VERSION
 import moe.ouom.neriplayer.data.sync.model.SyncAction
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import moe.ouom.neriplayer.data.sync.model.SyncData
+import moe.ouom.neriplayer.data.sync.model.SyncLocalPlaylistPlaybackBucket
+import moe.ouom.neriplayer.data.sync.model.SyncLocalPlaylistPlaybackStat
 import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
 import moe.ouom.neriplayer.data.sync.model.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
+import moe.ouom.neriplayer.data.sync.model.SyncPlaylistUsageStat
 import moe.ouom.neriplayer.data.sync.model.SyncSong
 import moe.ouom.neriplayer.data.sync.model.SyncTrackStat
 import moe.ouom.neriplayer.data.sync.model.copyWithNormalizedMembershipTokens
@@ -565,9 +568,98 @@ class SyncDataSerializerCompatTest {
         )
     }
 
+    @Test
+    fun `playlist usage statistics survive json and protobuf round trips`() {
+        val data = SyncData(
+            deviceId = "new-device",
+            deviceName = "New Device",
+            playlistUsageStats = listOf(
+                SyncPlaylistUsageStat(
+                    playlistKey = "local:42",
+                    source = "local",
+                    id = 42L,
+                    name = "Local",
+                    trackCount = 3,
+                    openCount = 4,
+                    firstOpenedAt = 100L,
+                    lastOpenedAt = 200L,
+                    counterShards = listOf(
+                        SyncPlaybackCounterShard(
+                            deviceId = "new-device",
+                            playCount = 4,
+                            firstPlayedAt = 100L,
+                            lastPlayedAt = 200L
+                        )
+                    )
+                )
+            ),
+            localPlaylistPlaybackStats = listOf(
+                SyncLocalPlaylistPlaybackStat(
+                    playlistId = 42L,
+                    totalPlayCount = 6L,
+                    firstPlayedAt = 120L,
+                    lastPlayedAt = 220L
+                )
+            ),
+            localPlaylistPlaybackBuckets = listOf(
+                SyncLocalPlaylistPlaybackBucket(
+                    dayStartAt = 86_400_000L,
+                    playlistId = 42L,
+                    playCount = 6L,
+                    firstPlayedAt = 120L,
+                    lastPlayedAt = 220L
+                )
+            )
+        )
+
+        val jsonDecoded = SyncDataSerializer.deserialize(
+            SyncDataSerializer.serialize(data, useDataSaver = false)
+        )
+        val protoDecoded = SyncDataSerializer.deserialize(
+            SyncDataSerializer.serialize(data, useDataSaver = true)
+        )
+
+        assertEquals(data.playlistUsageStats, jsonDecoded.playlistUsageStats)
+        assertEquals(data.localPlaylistPlaybackStats, jsonDecoded.localPlaylistPlaybackStats)
+        assertEquals(data.localPlaylistPlaybackBuckets, jsonDecoded.localPlaylistPlaybackBuckets)
+        assertEquals(data.playlistUsageStats, protoDecoded.playlistUsageStats)
+        assertEquals(data.localPlaylistPlaybackStats, protoDecoded.localPlaylistPlaybackStats)
+        assertEquals(data.localPlaylistPlaybackBuckets, protoDecoded.localPlaylistPlaybackBuckets)
+    }
+
+    @Test
+    fun `old protobuf schema ignores playlist statistics extension tags`() {
+        val bytes = ProtoBuf.encodeToByteArray(
+            SyncData(
+                version = "legacy-probe",
+                deviceId = "new-device",
+                deviceName = "New Device",
+                localPlaylistPlaybackStats = listOf(
+                    SyncLocalPlaylistPlaybackStat(
+                        playlistId = 42L,
+                        totalPlayCount = 6L
+                    )
+                )
+            )
+        )
+
+        val decoded = ProtoBuf.decodeFromByteArray<PrePlaylistStatisticsSyncData>(bytes)
+
+        assertEquals("legacy-probe", decoded.version)
+        assertEquals("new-device", decoded.deviceId)
+        assertEquals("New Device", decoded.deviceName)
+    }
+
     @Serializable
     private data class TokenProbeSyncData(
         @ProtoNumber(5) val playlists: List<TokenProbePlaylist> = emptyList()
+    )
+
+    @Serializable
+    private data class PrePlaylistStatisticsSyncData(
+        @ProtoNumber(1) val version: String = "",
+        @ProtoNumber(2) val deviceId: String = "",
+        @ProtoNumber(3) val deviceName: String = ""
     )
 
     @Serializable

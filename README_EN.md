@@ -92,7 +92,8 @@ Current positioning:
   playback, playlists, and favorites access.
 - **Local-first**: playback cache, downloads, playlists, history, settings, and
   auth data are stored locally on the device by default.
-- **Optional sync**: playlists, favorites, recent plays, and playback stats can
+- **Optional sync**: playlists, favorites, recent plays, track playback stats,
+  playlist open counts, and local-playlist playback stats can
   be synced to your own GitHub repository (repositories created in-app default
   to private) or a WebDAV remote file.
 - **Privacy and account safety first**: sync is intentionally decentralized.
@@ -477,7 +478,9 @@ For release build and signing details, see
   removes its managed download files. User playlists support create, rename,
   delete, reorder, and add-song actions. Playlist or song deletion shows undo
   feedback, and batch export into a local playlist confirms the target and can
-  undo newly added items. "My Favorite Music" can sync
+  undo newly added items. Each detail shows the total play count, and Favorites
+  offers playlist, artist, and Hot categories with playable weekly/monthly playlists
+  generated from personal song listening. "My Favorite Music" can sync
   recognizable songs to NetEase Liked Songs.
 - 🧑‍🎤 **NetEase artist pages**:
   NetEase songs can open artist pages with artist metadata, paged songs/albums,
@@ -488,13 +491,17 @@ For release build and signing details, see
   show local data first, and network or parse failures can fall back to the last
   successful load.
 - ☁️ **GitHub / WebDAV sync**:
-  optional sync for local playlists, favorite playlists, recent plays, playback
-  stats, and deletion records through `WorkManager`, stored in the user's own
+  optional sync for local playlists, favorite playlists, recent plays, track and
+  playlist playback stats, and deletion records through `WorkManager`, stored in the user's own
   remote.
 - 📊 **Playback stats**:
   records play count, accumulated listen time, first/last played time, and daily
   stat buckets by stable track identity. Day/week/month/year/all-time views use trailing 1/7/30/365-day windows and are
   available, and stats can be synced through GitHub/WebDAV when configured.
+  Playlist opens and local-playlist total/daily plays also use device shards during
+  sync merges; weekly/monthly Hot playlists are generated from synced song listening stats.
+  Weekly Hot requires at least 10 minutes of accumulated listening per track, and
+  Monthly Hot requires 30 minutes.
   Sync merging preserves aggregate totals and daily buckets, and can lift older
   bucket-only data into visible totals. Writes are
   debounced and flushed at important lifecycle points, with a retention bound on daily buckets.

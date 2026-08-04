@@ -53,6 +53,24 @@ class PlaybackStatsTrackerTest {
     }
 
     @Test
+    fun `counted local playlist playback keeps the playlist source id`() {
+        var now = 0L
+        val tracker = PlaybackStatsTracker(nowElapsedMs = { now })
+
+        tracker.onSongChanged(
+            song = testSong(id = 20L, name = "local"),
+            localPlaylistId = 88L
+        )
+        tracker.onPlayingChanged(true)
+
+        now = 30_000L
+        val snapshot = tracker.flushPeriodic()
+
+        assertEquals(1, snapshot?.playCountIncrement)
+        assertEquals(88L, snapshot?.localPlaylistId)
+    }
+
+    @Test
     fun `track end counts repeat one cycles independently`() {
         var now = 0L
         val tracker = PlaybackStatsTracker(nowElapsedMs = { now })

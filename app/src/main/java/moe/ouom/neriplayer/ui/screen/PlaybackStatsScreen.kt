@@ -42,6 +42,7 @@ import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.stats.TrackStat
 import moe.ouom.neriplayer.data.stats.aggregatePlaybackStatBucketsForPeriod
 import moe.ouom.neriplayer.data.stats.aggregatePlaybackStatsCompatForPeriod
+import moe.ouom.neriplayer.data.stats.toPlaybackStatsSongItem
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
@@ -254,7 +255,7 @@ fun PlaybackStatsScreen(
                                 stat = stat,
                                 offlineMode = offlineMode,
                                 onClick = {
-                                    val songItem = stat.toSongItem()
+                                    val songItem = stat.toPlaybackStatsSongItem()
                                     onSongClick(listOf(songItem), 0)
                                 }
                             )
@@ -265,19 +266,3 @@ fun PlaybackStatsScreen(
         }
     }
 }
-
-private fun TrackStat.toSongItem(): SongItem = SongItem(
-    id = id,
-    name = name,
-    artist = artist,
-    album = album,
-    albumId = albumId,
-    durationMs = durationMs,
-    coverUrl = coverUrl,
-    mediaUri = localFilePath ?: mediaUri,
-    localFilePath = localFilePath,
-    localFileName = localFileName,
-    customName = customName,
-    customArtist = customArtist,
-    customCoverUrl = customCoverUrl
-)

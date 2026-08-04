@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -50,6 +51,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -66,8 +68,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -78,7 +82,8 @@ import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
-import moe.ouom.neriplayer.data.local.playlist.model.buildLocalArtistSummaries
+import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
+import moe.ouom.neriplayer.data.local.playlist.model.findLocalArtistSummary
 import moe.ouom.neriplayer.data.local.playlist.model.localArtistStableId
 import moe.ouom.neriplayer.data.local.playlist.model.localArtistStableKey
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
@@ -119,6 +124,57 @@ internal fun shouldRemoveMissingLocalArtistUsage(
     artistFound: Boolean
 ): Boolean = localPlaylistsReady && !artistFound
 
+private data class LocalArtistDetailSnapshot(
+    val artist: LocalArtistSummary?,
+    val totalDurationMs: Long
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LocalArtistDetailLoadingScreen(
+    artistName: String,
+    onBack: () -> Unit
+) {
+    Surface(Modifier.fillMaxSize(), color = androidx.compose.ui.graphics.Color.Transparent) {
+        Scaffold(
+            containerColor = androidx.compose.ui.graphics.Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = artistName,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    navigationIcon = {
+                        HapticIconButton(onClick = onBack) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(R.string.action_back)
+                            )
+                        }
+                    },
+                    windowInsets = WindowInsets.statusBars,
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                        scrolledContainerColor = MaterialTheme.colorScheme.surface
+                    )
+                )
+            }
+        ) { padding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun LocalArtistDetailScreen(
@@ -132,12 +188,33 @@ fun LocalArtistDetailScreen(
     val playlists by repo.playlists.collectAsState()
     val localPlaylistsReady by repo.initializationReadyFlow.collectAsState()
     val artistKey = remember(artistName) { localArtistStableKey(artistName) }
-    val localArtists = remember(playlists, context) {
-        buildLocalArtistSummaries(playlists, context)
+    val unknownArtist = stringResource(R.string.music_unknown_artist)
+    val artistSnapshot by produceState<LocalArtistDetailSnapshot?>(
+        initialValue = null,
+        key1 = playlists,
+        key2 = artistKey,
+        key3 = unknownArtist
+    ) {
+        value = null
+        value = withContext(Dispatchers.Default) {
+            val artist = findLocalArtistSummary(
+                playlists = playlists,
+                artistKey = artistKey,
+                unknownArtist = unknownArtist
+            )
+            LocalArtistDetailSnapshot(
+                artist = artist,
+                totalDurationMs = artist?.songs?.sumOf { song -> song.durationMs } ?: 0L
+            )
+        }
     }
-    val artist = remember(localArtists, artistKey) {
-        localArtists.firstOrNull { it.stableKey == artistKey }
+    val resolvedArtistSnapshot = artistSnapshot
+    if (!localPlaylistsReady || resolvedArtistSnapshot == null) {
+        LocalArtistDetailLoadingScreen(artistName = artistName, onBack = onBack)
+        return
     }
+
+    val artist = resolvedArtistSnapshot.artist
     val songs = artist?.songs.orEmpty()
     val baseSongs = remember(songs) { songs.toList() }
     val headerCover = rememberLocalArtistDisplayCoverUrl(artist)
@@ -153,7 +230,11 @@ fun LocalArtistDetailScreen(
     val displayedSongs = rememberPlaylistSearchResults(
         query = searchQuery,
         items = baseSongs,
-        tokens = { song -> song.localArtistSongSearchTokens(context) }
+        tokens = { song -> song.localArtistSongSearchTokens(context) },
+        buildIndex = shouldBuildPlaylistSearchIndex(
+            searchVisible = showSearch,
+            query = searchQuery
+        )
     )
     var selectionMode by remember(artistKey) { mutableStateOf(false) }
     var selectedKeys by remember(artistKey) { mutableStateOf<Set<String>>(emptySet()) }
@@ -213,24 +294,27 @@ fun LocalArtistDetailScreen(
     LaunchedEffect(artist, headerCover, localPlaylistsReady) {
         if (!localPlaylistsReady) return@LaunchedEffect
         if (artist == null) {
-            val loadedArtistFound = buildLocalArtistSummaries(repo.playlists.value, context)
-                .any { it.stableKey == artistKey }
-            if (shouldRemoveMissingLocalArtistUsage(localPlaylistsReady, loadedArtistFound)) {
-                AppContainer.playlistUsageRepo.removeEntry(
-                    artistId,
-                    PlaylistUsageRepository.SOURCE_LOCAL_ARTIST
-                )
+            if (shouldRemoveMissingLocalArtistUsage(localPlaylistsReady, artistFound = false)) {
+                withContext(Dispatchers.IO) {
+                    AppContainer.playlistUsageRepo.removeEntry(
+                        artistId,
+                        PlaylistUsageRepository.SOURCE_LOCAL_ARTIST
+                    )
+                }
             }
             return@LaunchedEffect
         }
 
-        AppContainer.playlistUsageRepo.updateInfo(
-            id = artist.id,
-            name = artist.name,
-            picUrl = headerCover ?: artist.displayCoverUrl(context),
-            trackCount = artist.songs.size,
-            source = PlaylistUsageRepository.SOURCE_LOCAL_ARTIST
-        )
+        val cover = headerCover ?: artist.displayCoverUrl(context)
+        withContext(Dispatchers.IO) {
+            AppContainer.playlistUsageRepo.updateInfo(
+                id = artist.id,
+                name = artist.name,
+                picUrl = cover,
+                trackCount = artist.songs.size,
+                source = PlaylistUsageRepository.SOURCE_LOCAL_ARTIST
+            )
+        }
     }
 
     Surface(Modifier.fillMaxSize(), color = androidx.compose.ui.graphics.Color.Transparent) {
@@ -439,7 +523,7 @@ fun LocalArtistDetailScreen(
                             title = title,
                             coverUrl = headerCover,
                             songCount = songs.size,
-                            durationMs = songs.sumOf { it.durationMs },
+                            durationMs = resolvedArtistSnapshot.totalDurationMs,
                             offlineMode = offlineMode
                         )
                     }
@@ -638,7 +722,7 @@ private fun LocalArtistDetailHeader(
                 Spacer(Modifier.height(6.dp))
                 Text(
                     text = stringResource(
-                        R.string.local_playlist_total_duration,
+                        R.string.local_artist_total_duration,
                         formatTotalDuration(context, durationMs),
                         songCount
                     ),

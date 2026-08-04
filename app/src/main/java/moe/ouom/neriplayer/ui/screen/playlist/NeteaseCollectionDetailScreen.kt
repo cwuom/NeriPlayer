@@ -209,13 +209,15 @@ fun NeteasePlaylistDetailScreen(
     DisposableEffect(Unit) {
         onDispose {
             latestHeader?.let { header ->
-                AppContainer.playlistUsageRepo.updateInfo(
-                    id = header.id,
-                    name = header.name,
-                    picUrl = header.coverUrl,
-                    trackCount = header.trackCount,
-                    source = "netease"
-                )
+                AppContainer.launchBackgroundIo {
+                    AppContainer.playlistUsageRepo.updateInfo(
+                        id = header.id,
+                        name = header.name,
+                        picUrl = header.coverUrl,
+                        trackCount = header.trackCount,
+                        source = "netease"
+                    )
+                }
             }
         }
     }
@@ -264,13 +266,15 @@ fun NeteaseAlbumDetailScreen(
     DisposableEffect(Unit) {
         onDispose {
             latestHeader?.let { header ->
-                AppContainer.playlistUsageRepo.updateInfo(
-                    id = header.id,
-                    name = header.name,
-                    picUrl = header.coverUrl,
-                    trackCount = header.trackCount,
-                    source = "neteaseAlbum"
-                )
+                AppContainer.launchBackgroundIo {
+                    AppContainer.playlistUsageRepo.updateInfo(
+                        id = header.id,
+                        name = header.name,
+                        picUrl = header.coverUrl,
+                        trackCount = header.trackCount,
+                        source = "neteaseAlbum"
+                    )
+                }
             }
         }
     }

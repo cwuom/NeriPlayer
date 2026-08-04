@@ -60,11 +60,13 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.History
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -86,6 +88,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -109,10 +112,16 @@ import androidx.core.content.edit
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
+import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
+import moe.ouom.neriplayer.data.stats.PlaybackStatsHotPlaylist
+import moe.ouom.neriplayer.data.stats.buildPlaybackStatsHotPlaylist
 import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_NETEASE_ARTIST
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylist
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
@@ -171,12 +180,23 @@ private const val NETEASE_CATEGORY_PLAYLIST = 0
 private const val NETEASE_CATEGORY_ALBUM = 1
 private const val FAVORITE_CATEGORY_PLAYLIST = 0
 private const val FAVORITE_CATEGORY_ARTIST = 1
+private const val FAVORITE_CATEGORY_HOT = 2
 private const val LOCAL_CATEGORY_PLAYLIST = 0
 private const val LOCAL_CATEGORY_ARTIST = 1
 private const val LIBRARY_UI_PREFS = "library_ui_preferences"
 private const val KEY_LOCAL_ARTIST_SORT_MODE = "local_artist_sort_mode"
 private val LibraryPrimaryTabShape = RoundedCornerShape(20.dp)
 private val LibrarySearchFieldShape = RoundedCornerShape(16.dp)
+
+private val HotPlaylistPeriods = listOf(
+    PlaybackStatsPeriod.WEEK,
+    PlaybackStatsPeriod.MONTH
+)
+
+private fun hotPlaylistTitleResId(period: PlaybackStatsPeriod): Int = when (period) {
+    PlaybackStatsPeriod.MONTH -> R.string.library_hot_playlist_month
+    else -> R.string.library_hot_playlist_week
+}
 
 internal enum class LocalArtistSortMode {
     SONG_COUNT,
@@ -203,6 +223,32 @@ private fun persistLocalArtistSortMode(context: Context, sortMode: LocalArtistSo
         .edit {
             putString(KEY_LOCAL_ARTIST_SORT_MODE, localArtistSortModeStorageValue(sortMode))
         }
+}
+
+@Composable
+private fun rememberHotPlaylists(): List<PlaybackStatsHotPlaylist>? {
+    val hotPlaylists by produceState<List<PlaybackStatsHotPlaylist>?>(initialValue = null) {
+        val statsRepository = withContext(Dispatchers.IO) {
+            AppContainer.playbackStatsRepo
+        }
+        combine(
+            statsRepository.statsFlow,
+            statsRepository.dailyStatsFlow
+        ) { stats, dailyStats ->
+            stats to dailyStats
+        }.collect { (stats, dailyStats) ->
+            value = withContext(Dispatchers.Default) {
+                HotPlaylistPeriods.map { period ->
+                    buildPlaybackStatsHotPlaylist(
+                        stats = stats,
+                        dailyStats = dailyStats,
+                        period = period
+                    )
+                }
+            }
+        }
+    }
+    return hotPlaylists
 }
 
 internal fun libraryTabDisplayOrder(
@@ -259,6 +305,7 @@ fun LibraryScreen(
     topAppBarState: TopAppBarState,
     onLocalPlaylistClick: (LocalPlaylist) -> Unit = {},
     onLocalArtistClick: (LocalArtistSummary) -> Unit = {},
+    onHotPlaylistClick: (PlaybackStatsPeriod) -> Unit = {},
     onNeteasePlaylistClick: (PlaylistSummary) -> Unit = {},
     onNeteaseAlbumClick: (AlbumSummary) -> Unit = {},
     onNeteaseArtistClick: (NeteaseArtistSummary) -> Unit = {},
@@ -410,6 +457,7 @@ fun LibraryScreen(
 
                         LibraryTab.FAVORITE -> FavoritePlaylistList(
                             listState = favoriteListState,
+                            onHotPlaylistClick = onHotPlaylistClick,
                             onNeteasePlaylistClick = onNeteasePlaylistClick,
                             onNeteaseAlbumClick = onNeteaseAlbumClick,
                             onNeteaseArtistClick = onNeteaseArtistClick,
@@ -2748,6 +2796,7 @@ private fun NeteaseAlbumList(
 @Composable
 private fun FavoritePlaylistList(
     listState: LazyListState,
+    onHotPlaylistClick: (PlaybackStatsPeriod) -> Unit,
     onNeteasePlaylistClick: (PlaylistSummary) -> Unit,
     onNeteaseAlbumClick: (AlbumSummary) -> Unit,
     onNeteaseArtistClick: (NeteaseArtistSummary) -> Unit,
@@ -2774,13 +2823,15 @@ private fun FavoritePlaylistList(
     val artistFavorites = remember(favorites) {
         favorites.filter { it.source == FAVORITE_SOURCE_NETEASE_ARTIST }
     }
+    val isHotCategory = selectedFavoriteCategory == FAVORITE_CATEGORY_HOT
     val visibleFavorites = remember(playlistFavorites, artistFavorites, selectedFavoriteCategory) {
-        if (selectedFavoriteCategory == FAVORITE_CATEGORY_ARTIST) {
-            artistFavorites
-        } else {
-            playlistFavorites
+        when (selectedFavoriteCategory) {
+            FAVORITE_CATEGORY_ARTIST -> artistFavorites
+            FAVORITE_CATEGORY_PLAYLIST -> playlistFavorites
+            else -> emptyList()
         }
     }
+    val hotPlaylists = if (isHotCategory) rememberHotPlaylists() else null
 
     fun favoriteKey(favorite: FavoritePlaylist): String {
         return "${favorite.source}:${favorite.id}"
@@ -2907,11 +2958,27 @@ private fun FavoritePlaylistList(
                                 )
                             }
                         )
+                        Tab(
+                            selected = selectedFavoriteCategory == FAVORITE_CATEGORY_HOT,
+                            onClick = {
+                                if (selectedFavoriteCategory != FAVORITE_CATEGORY_HOT) {
+                                    selectedFavoriteCategory = FAVORITE_CATEGORY_HOT
+                                    exitEditMode()
+                                }
+                            },
+                            text = { Text(stringResource(R.string.library_favorite_tab_hot)) },
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Bolt,
+                                    contentDescription = null
+                                )
+                            }
+                        )
                     }
                 }
             }
         }
-        if (!sortMode) {
+        if (!sortMode && !isHotCategory) {
             item(key = "favorite_search") {
                 LibraryInlineSearchField(
                     query = favoriteSearchQuery,
@@ -2920,7 +2987,7 @@ private fun FavoritePlaylistList(
                 )
             }
         }
-        if (sortMode) {
+        if (sortMode && !isHotCategory) {
             item(key = "favorite_sort_mode_header") {
                 val allSelected =
                     selectedKeys.size == displayedFavorites.size && displayedFavorites.isNotEmpty()
@@ -2987,7 +3054,71 @@ private fun FavoritePlaylistList(
                 }
             }
         }
-        if (displayedFavorites.isEmpty()) {
+        if (isHotCategory) {
+            if (hotPlaylists == null) {
+                item(key = "favorite_hot_loading") {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 48.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+            } else {
+                items(
+                    items = hotPlaylists,
+                    key = { playlist -> "hot_playlist_${playlist.period.name}" }
+                ) { playlist ->
+                    val titleResId = hotPlaylistTitleResId(playlist.period)
+                    val subtitle = if (playlist.tracks.isEmpty()) {
+                        stringResource(R.string.library_hot_empty_hint)
+                    } else {
+                        stringResource(
+                            R.string.library_hot_playlist_summary,
+                            playlist.tracks.size,
+                            formatPlayCount(context, playlist.totalPlayCount)
+                        )
+                    }
+                    Card(
+                        shape = cardShape,
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color.Transparent
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        modifier = Modifier
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .animateItem()
+                            .clip(cardShape)
+                            .clickable { onHotPlaylistClick(playlist.period) }
+                    ) {
+                        ListItem(
+                            headlineContent = {
+                                Text(text = stringResource(titleResId))
+                            },
+                            supportingContent = {
+                                Text(
+                                    text = subtitle,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            colors = ListItemDefaults.colors(
+                                containerColor = Color.Transparent
+                            ),
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Bolt,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(56.dp)
+                                )
+                            }
+                        )
+                    }
+                }
+            }
+        } else if (displayedFavorites.isEmpty()) {
             item {
                 Card(
                     shape = cardShape,

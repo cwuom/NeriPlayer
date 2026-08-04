@@ -128,6 +128,8 @@ fun HomeHostScreen(
     showTrendingCard: Boolean = true,
     showRadarCard: Boolean = true,
     showRecommendedCard: Boolean = true,
+    homeUsageEntries: List<UsageEntry> = emptyList(),
+    homeUsageLoaded: Boolean = true,
     offlineMode: Boolean = false,
     runtimeState: HomeHostRuntimeState = rememberHomeHostRuntimeState(),
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
@@ -360,6 +362,8 @@ fun HomeHostScreen(
                                 showTrendingCard = showTrendingCard,
                                 showRadarCard = showRadarCard,
                                 showRecommendedCard = showRecommendedCard,
+                                usageEntries = homeUsageEntries,
+                                usageLoaded = homeUsageLoaded,
                                 offlineMode = offlineMode,
                                 gridState = gridState,
                                 topAppBarState = runtimeState.topAppBarState,
@@ -371,34 +375,53 @@ fun HomeHostScreen(
                                 onItemClick = { pl ->
                                     skipDetailCloseAnimation = false
                                     captureHomeScrollPosition()
-                                    AppContainer.playlistUsageRepo.recordOpen(
-                                        id = pl.id,
-                                        name = pl.name,
-                                        picUrl = pl.picUrl,
-                                        trackCount = pl.trackCount,
-                                        source = "netease"
-                                    )
+                                    AppContainer.launchBackgroundIo {
+                                        AppContainer.playlistUsageRepo.recordOpen(
+                                            id = pl.id,
+                                            name = pl.name,
+                                            picUrl = pl.picUrl,
+                                            trackCount = pl.trackCount,
+                                            source = "netease"
+                                        )
+                                    }
                                     openHomeSelectedItem(HomeSelectedItem.Netease(pl))
                                 },
                                 onYouTubeMusicPlaylistClick = { pl ->
                                     skipDetailCloseAnimation = false
                                     captureHomeScrollPosition()
-                                    AppContainer.playlistUsageRepo.recordOpen(
-                                        id = stableYouTubeMusicId(
-                                            pl.playlistId.ifBlank { pl.browseId }
-                                        ),
-                                        name = pl.title,
-                                        picUrl = pl.coverUrl,
-                                        trackCount = pl.trackCount,
-                                        source = "youtubeMusic",
-                                        browseId = pl.browseId,
-                                        playlistId = pl.playlistId
-                                    )
+                                    AppContainer.launchBackgroundIo {
+                                        AppContainer.playlistUsageRepo.recordOpen(
+                                            id = stableYouTubeMusicId(
+                                                pl.playlistId.ifBlank { pl.browseId }
+                                            ),
+                                            name = pl.title,
+                                            picUrl = pl.coverUrl,
+                                            trackCount = pl.trackCount,
+                                            source = "youtubeMusic",
+                                            browseId = pl.browseId,
+                                            playlistId = pl.playlistId
+                                        )
+                                    }
                                     openHomeSelectedItem(HomeSelectedItem.YouTubeMusic(pl))
                                 },
                                 onOpenRecent = { entry ->
                                     skipDetailCloseAnimation = false
                                     captureHomeScrollPosition()
+                                    AppContainer.launchBackgroundIo {
+                                        AppContainer.playlistUsageRepo.recordOpen(
+                                            id = entry.id,
+                                            name = entry.name,
+                                            picUrl = entry.picUrl,
+                                            trackCount = entry.trackCount,
+                                            source = entry.source,
+                                            fid = entry.fid ?: 0L,
+                                            mid = entry.mid ?: 0L,
+                                            browseId = entry.browseId,
+                                            playlistId = entry.playlistId,
+                                            subtype = entry.subtype,
+                                            subtitle = entry.subtitle
+                                        )
+                                    }
                                     openRecent(entry, ::openHomeSelectedItem)
                                 },
                                 onSongClick = onSongClick

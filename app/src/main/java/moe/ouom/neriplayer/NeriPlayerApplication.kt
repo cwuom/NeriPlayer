@@ -110,6 +110,12 @@ class NeriPlayerApplication : Application() {
             AppContainer.launchBackgroundIo {
                 AppContainer.playHistoryRepo
             }
+            // 这些统计仓库首次创建会读取完整快照，预热后详情页不会在主线程首次读盘
+            AppContainer.launchBackgroundIo {
+                AppContainer.playlistUsageRepo
+                AppContainer.localPlaylistPlaybackStatsRepo
+                AppContainer.playbackStatsRepo
+            }
             AppContainer.launchBackgroundIo {
                 AppContainer.settingsRepo.usbDeviceAttachHandlingEnabledFlow.collect { enabled ->
                     UsbDeviceAttachHandling.applyComponentState(

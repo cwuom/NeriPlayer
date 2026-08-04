@@ -180,6 +180,12 @@ private const val HomeScrollKeyNeteaseRecommendedHeader = "$HomeScrollKeyNetease
 private const val HomeScrollKeyNeteaseRecommendedLoading = "$HomeScrollKeyNeteaseRecommended:loading"
 private const val HomeScrollKeyNeteaseRecommendedError = "$HomeScrollKeyNeteaseRecommended:error"
 
+internal fun shouldShowHomeContinueSection(
+    showContinueCard: Boolean,
+    usageLoaded: Boolean,
+    hasUsage: Boolean
+): Boolean = showContinueCard && (!usageLoaded || hasUsage)
+
 internal fun homeNeteasePlaylistScrollKey(id: Long): String {
     return "$HomeScrollKeyNeteaseRecommended:playlist:$id"
 }
@@ -208,6 +214,8 @@ fun HomeScreen(
     showTrendingCard: Boolean = true,
     showRadarCard: Boolean = true,
     showRecommendedCard: Boolean = true,
+    usageEntries: List<UsageEntry> = emptyList(),
+    usageLoaded: Boolean = true,
     offlineMode: Boolean = false,
     onItemClick: (PlaylistSummary) -> Unit = {},
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
@@ -228,8 +236,6 @@ fun HomeScreen(
         }
     )
     val ui by vm.uiState.collectAsStateWithLifecycle()
-    val usageFlow = AppContainer.playlistUsageRepo.frequentPlaylistsFlow
-    val usage by usageFlow.collectAsStateWithLifecycle()
     val localPlaylistRepo = remember(appContext) { LocalPlaylistRepository.getInstance(appContext) }
     var localPlaylists by remember { mutableStateOf<List<LocalPlaylist>>(emptyList()) }
     var localPlaylistsReady by remember { mutableStateOf(false) }
@@ -256,8 +262,8 @@ fun HomeScreen(
             .orEmpty()
     }
 
-    val hasLocalUsage = remember(usage) {
-        usage.any {
+    val hasLocalUsage = remember(usageEntries) {
+        usageEntries.any {
             it.source == PlaylistUsageRepository.SOURCE_LOCAL ||
                 it.source == PlaylistUsageRepository.SOURCE_LOCAL_ARTIST
         }
@@ -298,7 +304,11 @@ fun HomeScreen(
             }
     }
     val scope = rememberCoroutineScope()
-    val showContinue = showContinueCard && usage.isNotEmpty()
+    val showContinue = shouldShowHomeContinueSection(
+        showContinueCard = showContinueCard,
+        usageLoaded = usageLoaded,
+        hasUsage = usageEntries.isNotEmpty()
+    )
     val isInternational = ui.internationalizationEnabled
     val showNeteaseTrending = showTrendingCard && (isInternational || ui.hasLogin)
     val showNeteaseRadar = showRadarCard && (isInternational || ui.hasLogin)
@@ -456,11 +466,15 @@ fun HomeScreen(
                             key = registerGridItemKey(HomeScrollKeyContinueContent),
                             span = { GridItemSpan(maxLineSpan) }
                         ) {
-                            ContinueSection(
-                                items = usage.take(12),
-                                onClick = { entry -> onOpenRecent(entry) },
-                                offlineMode = offlineMode
-                            )
+                            if (usageLoaded) {
+                                ContinueSection(
+                                    items = usageEntries.take(12),
+                                    onClick = { entry -> onOpenRecent(entry) },
+                                    offlineMode = offlineMode
+                                )
+                            } else {
+                                SectionLoadingState(homeLoadingText)
+                            }
                         }
                     }
 
@@ -1610,11 +1624,13 @@ private fun ContinueSection(
                                 entry = entry,
                                 onClick = { onClick(entry) },
                                 onRemove = {
-                                    AppContainer.playlistUsageRepo.removeEntry(
-                                        entry.id,
-                                        entry.source,
-                                        entry.subtype
-                                    )
+                                    AppContainer.launchBackgroundIo {
+                                        AppContainer.playlistUsageRepo.removeEntry(
+                                            entry.id,
+                                            entry.source,
+                                            entry.subtype
+                                        )
+                                    }
                                 },
                                 offlineMode = offlineMode,
                                 modifier = Modifier.width(cardWidth)

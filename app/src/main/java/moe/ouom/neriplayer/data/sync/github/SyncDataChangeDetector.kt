@@ -66,6 +66,32 @@ internal object SyncDataChangeDetector {
             val mergedBucket = mergedBuckets[key] ?: return true
             if (!SyncPlaybackStatMapper.sameMetadata(remoteBucket, mergedBucket)) return true
         }
+
+        val remotePlaylistUsage = remote.playlistUsageStats.associateBy { it.playlistKey }
+        val mergedPlaylistUsage = merged.playlistUsageStats.associateBy { it.playlistKey }
+        if (remotePlaylistUsage.keys != mergedPlaylistUsage.keys) return true
+        remotePlaylistUsage.forEach { (key, remoteStat) ->
+            val mergedStat = mergedPlaylistUsage[key] ?: return true
+            if (!SyncPlaylistUsageStatsMergePolicy.same(remoteStat, mergedStat)) return true
+        }
+
+        val remoteLocalPlaylistStats = remote.localPlaylistPlaybackStats.associateBy { it.playlistId }
+        val mergedLocalPlaylistStats = merged.localPlaylistPlaybackStats.associateBy { it.playlistId }
+        if (remoteLocalPlaylistStats.keys != mergedLocalPlaylistStats.keys) return true
+        remoteLocalPlaylistStats.forEach { (key, remoteStat) ->
+            val mergedStat = mergedLocalPlaylistStats[key] ?: return true
+            if (!SyncPlaylistUsageStatsMergePolicy.same(remoteStat, mergedStat)) return true
+        }
+
+        val remoteLocalPlaylistBuckets = remote.localPlaylistPlaybackBuckets
+            .associateBy { it.playlistId to it.dayStartAt }
+        val mergedLocalPlaylistBuckets = merged.localPlaylistPlaybackBuckets
+            .associateBy { it.playlistId to it.dayStartAt }
+        if (remoteLocalPlaylistBuckets.keys != mergedLocalPlaylistBuckets.keys) return true
+        remoteLocalPlaylistBuckets.forEach { (key, remoteBucket) ->
+            val mergedBucket = mergedLocalPlaylistBuckets[key] ?: return true
+            if (!SyncPlaylistUsageStatsMergePolicy.same(remoteBucket, mergedBucket)) return true
+        }
         return false
     }
 

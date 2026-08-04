@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.stats
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -144,6 +145,74 @@ class PlaybackStatsPeriodTest {
         }
     }
 
+    @Test
+    fun `weekly hot playlist excludes tracks below ten minutes`() {
+        withCalendarDefaults {
+            val now = utcMillis(2026, Calendar.JULY, 10, 10)
+            val day = utcMillis(2026, Calendar.JULY, 9)
+            val hotPlaylist = buildPlaybackStatsHotPlaylist(
+                stats = emptyList(),
+                dailyStats = listOf(
+                    bucket(
+                        key = "netease:1",
+                        name = "first",
+                        dayStartAt = day,
+                        totalListenMs = 600_000L,
+                        playCount = 2
+                    ),
+                    bucket(
+                        key = "netease:2",
+                        name = "second",
+                        dayStartAt = day,
+                        totalListenMs = 599_999L,
+                        playCount = 5
+                    ),
+                    bucket(
+                        key = "netease:3",
+                        name = "third",
+                        dayStartAt = day,
+                        totalListenMs = 900_000L,
+                        playCount = 1
+                    )
+                ),
+                period = PlaybackStatsPeriod.WEEK,
+                nowMillis = now
+            )
+
+            assertEquals(listOf("netease:1", "netease:3"), hotPlaylist.tracks.map { it.identityKey })
+            assertEquals(3L, hotPlaylist.totalPlayCount)
+            assertFalse(hotPlaylist.usesLegacyBreakdown)
+        }
+    }
+
+    @Test
+    fun `monthly hot playlist requires thirty minutes with legacy stats`() {
+        withCalendarDefaults {
+            val belowThreshold = stat(
+                key = "netease:1",
+                firstPlayedAt = utcMillis(2026, Calendar.JULY, 3, 9),
+                lastPlayedAt = utcMillis(2026, Calendar.JULY, 4, 9),
+                totalListenMs = 1_799_999L
+            )
+            val atThreshold = stat(
+                key = "netease:2",
+                firstPlayedAt = utcMillis(2026, Calendar.JULY, 5, 9),
+                lastPlayedAt = utcMillis(2026, Calendar.JULY, 6, 9),
+                totalListenMs = 1_800_000L
+            )
+
+            val hotPlaylist = buildPlaybackStatsHotPlaylist(
+                stats = listOf(belowThreshold, atThreshold),
+                dailyStats = emptyList(),
+                period = PlaybackStatsPeriod.MONTH,
+                nowMillis = utcMillis(2026, Calendar.JULY, 10, 10)
+            )
+
+            assertTrue(hotPlaylist.usesLegacyBreakdown)
+            assertEquals(listOf("netease:2"), hotPlaylist.tracks.map { it.identityKey })
+        }
+    }
+
     private fun withCalendarDefaults(block: () -> Unit) {
         val originalTimeZone = TimeZone.getDefault()
         val originalLocale = Locale.getDefault()
@@ -203,7 +272,8 @@ class PlaybackStatsPeriodTest {
     private fun stat(
         key: String,
         firstPlayedAt: Long,
-        lastPlayedAt: Long
+        lastPlayedAt: Long,
+        totalListenMs: Long = 10_000L
     ): TrackStat {
         return TrackStat(
             id = key.substringAfter(':').toLong(),
@@ -212,7 +282,7 @@ class PlaybackStatsPeriodTest {
             album = "album",
             coverUrl = null,
             durationMs = 180_000L,
-            totalListenMs = 10_000L,
+            totalListenMs = totalListenMs,
             playCount = 1,
             lastPlayedAt = lastPlayedAt,
             firstPlayedAt = firstPlayedAt,

@@ -85,6 +85,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -169,6 +170,7 @@ import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.data.playlist.usage.UsageEntry
 import moe.ouom.neriplayer.data.settings.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
 import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
 import moe.ouom.neriplayer.data.settings.AdvancedBlurQualityPreference
@@ -233,6 +235,7 @@ import moe.ouom.neriplayer.ui.screen.host.HomeHostScreen
 import moe.ouom.neriplayer.ui.screen.host.LibraryHostScreen
 import moe.ouom.neriplayer.ui.screen.host.SettingsHostScreen
 import moe.ouom.neriplayer.ui.screen.host.rememberHomeHostRuntimeState
+import moe.ouom.neriplayer.ui.screen.tab.shouldShowHomeContinueSection
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
@@ -1074,6 +1077,18 @@ internal fun shouldBlockThemeModeChange(
 internal fun resolveThemeToggleTarget(isDark: Boolean): ThemeMode =
     if (isDark) ThemeMode.LIGHT else ThemeMode.DARK
 
+internal fun localPlaylistIdFromSourceRoute(sourceRoute: String?): Long? {
+    return sourceRoute
+        ?.takeIf { it.startsWith("local_playlist_detail/") }
+        ?.removePrefix("local_playlist_detail/")
+        ?.toLongOrNull()
+}
+
+private data class HomeUsageSnapshot(
+    val entries: List<UsageEntry> = emptyList(),
+    val isLoaded: Boolean = false
+)
+
 private fun View.drawScaledThemeRevealBitmap(): Bitmap? {
     if (width <= 0 || height <= 0) {
         return null
@@ -1537,9 +1552,23 @@ private fun NeriAppContent(
     val maxCacheSizeBytes by repo.maxCacheSizeBytesFlow.collectAsStateWithLifecycle(
         initialValue = startupPlaybackPreferences.maxCacheSizeBytes
     )
-    val homeUsageEntries by AppContainer.playlistUsageRepo.frequentPlaylistsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val homeUsageSnapshot by produceState(
+        initialValue = HomeUsageSnapshot(),
+        key1 = context
+    ) {
+        val usageFlow = withContext(Dispatchers.IO) {
+            AppContainer.playlistUsageRepo.frequentPlaylistsFlow
+        }
+        usageFlow.collect { entries ->
+            value = HomeUsageSnapshot(entries = entries, isLoaded = true)
+        }
+    }
     val showHomeTab =
-        (showHomeContinueCard && homeUsageEntries.isNotEmpty()) ||
+        shouldShowHomeContinueSection(
+            showContinueCard = showHomeContinueCard,
+            usageLoaded = homeUsageSnapshot.isLoaded,
+            hasUsage = homeUsageSnapshot.entries.isNotEmpty()
+        ) ||
             showHomeTrendingCard ||
             showHomeRadarCard ||
             showHomeRecommendedCard
@@ -2075,7 +2104,16 @@ private fun NeriAppContent(
         )
         showNowPlaying = true
         // 播放队列可能包含歌词等大字段, 避免通过 Binder 传整份歌单导致崩溃
-        PlayerManager.playPlaylist(songs, index)
+        val localPlaylistId = localPlaylistIdFromSourceRoute(sourceRoute)
+        if (localPlaylistId == null) {
+            PlayerManager.playPlaylist(songs, index)
+        } else {
+            PlayerManager.playLocalPlaylist(
+                playlistId = localPlaylistId,
+                songs = songs,
+                startIndex = index
+            )
+        }
         scheduleAudioServiceStart(
             "play_songs_and_open_now_playing",
             true
@@ -2694,6 +2732,8 @@ private fun NeriAppContent(
                         showTrendingCard = showHomeTrendingCard,
                         showRadarCard = showHomeRadarCard,
                         showRecommendedCard = showHomeRecommendedCard,
+                        homeUsageEntries = homeUsageSnapshot.entries,
+                        homeUsageLoaded = homeUsageSnapshot.isLoaded,
                         offlineMode = offlineMode,
                         runtimeState = homeHostRuntimeState,
                         onSongClick = ::playSongsAndOpenNowPlaying,
@@ -2991,7 +3031,7 @@ private fun NeriAppContent(
                         onShowHomeRecommendedCardChange = { enabled ->
                             scope.launch { repo.setHomeCardRecommended(enabled) }
                         },
-                        homeHasRecentUsage = homeUsageEntries.isNotEmpty(),
+                        homeHasRecentUsage = homeUsageSnapshot.entries.isNotEmpty(),
                         playbackFadeIn = playbackFadeIn,
                         onPlaybackFadeInChange = { enabled ->
                             scope.launch { repo.setPlaybackFadeIn(enabled) }

@@ -137,6 +137,36 @@ class LocalArtistSummaryTest {
     }
 
     @Test
+    fun `targeted artist lookup preserves source order and removes duplicate songs`() {
+        val first = song(
+            id = 30L,
+            name = "晴天",
+            artist = "周杰伦",
+            durationMs = 269_000L
+        )
+        val duplicate = first.copy(localFileName = "周杰伦 - 晴天.mp3")
+        val second = song(
+            id = 31L,
+            name = "稻香",
+            artist = "周杰伦",
+            durationMs = 223_000L
+        )
+        val unrelated = song(id = 32L, name = "起风了", artist = "买辣椒也用券")
+
+        val summary = findLocalArtistSummary(
+            playlists = listOf(
+                LocalPlaylist(id = 1L, name = "first", songs = mutableListOf(first, unrelated)),
+                LocalPlaylist(id = 2L, name = "second", songs = mutableListOf(duplicate, second))
+            ),
+            artistKey = localArtistStableKey("周杰伦"),
+            unknownArtist = "Unknown Artist"
+        )
+
+        assertEquals("周杰伦", summary?.name)
+        assertEquals(listOf(first, second), summary?.songs)
+    }
+
+    @Test
     fun `blank artist falls back to unknown artist`() {
         assertEquals(
             listOf("Unknown Artist"),

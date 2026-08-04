@@ -83,6 +83,52 @@ class PlaylistUsageRepositoryTest {
     }
 
     @Test
+    fun `normalization retains every distinct playlist statistic for sync`() {
+        val entries = (1L..101L).map { id ->
+            UsageEntry(
+                id = id,
+                name = "Playlist $id",
+                picUrl = null,
+                trackCount = 1,
+                source = "netease",
+                lastOpened = id,
+                openCount = 1
+            )
+        }
+
+        val normalized = normalizeUsageEntries(entries)
+
+        assertEquals(101, normalized.size)
+        assertEquals(
+            entries.map(UsageEntry::usageKey).toSet(),
+            normalized.map(UsageEntry::usageKey).toSet()
+        )
+    }
+
+    @Test
+    fun `legacy usage JSON without counter shards loads without crashing`() {
+        tempFolder.newFile("playlist_usage.json").writeText(
+            """
+            [{
+              "id": 42,
+              "name": "旧歌单",
+              "picUrl": null,
+              "trackCount": 3,
+              "source": "netease",
+              "lastOpened": 100,
+              "openCount": 2
+            }]
+            """.trimIndent()
+        )
+
+        val repo = PlaylistUsageRepository(mockContext())
+
+        val entry = repo.frequentPlaylistsFlow.value.single()
+        assertEquals(2, entry.openCount)
+        assertTrue(entry.counterShards.isEmpty())
+    }
+
+    @Test
     fun `record open removes stale empty playlist instead of keeping it`() {
         val repo = PlaylistUsageRepository(mockContext())
 

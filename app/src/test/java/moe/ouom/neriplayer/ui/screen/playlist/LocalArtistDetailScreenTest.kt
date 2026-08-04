@@ -31,4 +31,26 @@ class LocalArtistDetailScreenTest {
             )
         )
     }
+
+    @Test
+    fun `search index stays deferred until local artist search is visible`() {
+        assertFalse(
+            shouldBuildPlaylistSearchIndex(
+                searchVisible = false,
+                query = ""
+            )
+        )
+        assertTrue(
+            shouldBuildPlaylistSearchIndex(
+                searchVisible = true,
+                query = ""
+            )
+        )
+        assertTrue(
+            shouldBuildPlaylistSearchIndex(
+                searchVisible = false,
+                query = "周杰伦"
+            )
+        )
+    }
 }

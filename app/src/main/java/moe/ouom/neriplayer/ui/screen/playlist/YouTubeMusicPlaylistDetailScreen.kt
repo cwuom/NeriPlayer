@@ -263,15 +263,17 @@ fun YouTubeMusicPlaylistDetailScreen(
     DisposableEffect(Unit) {
         onDispose {
             latestPlaylist?.let { updated ->
-                AppContainer.playlistUsageRepo.updateInfo(
-                    id = stableYouTubeMusicId(updated.playlistId.ifBlank { updated.browseId }),
-                    name = updated.title,
-                    picUrl = updated.coverUrl,
-                    trackCount = updated.trackCount,
-                    source = "youtubeMusic",
-                    browseId = updated.browseId,
-                    playlistId = updated.playlistId
-                )
+                AppContainer.launchBackgroundIo {
+                    AppContainer.playlistUsageRepo.updateInfo(
+                        id = stableYouTubeMusicId(updated.playlistId.ifBlank { updated.browseId }),
+                        name = updated.title,
+                        picUrl = updated.coverUrl,
+                        trackCount = updated.trackCount,
+                        source = "youtubeMusic",
+                        browseId = updated.browseId,
+                        playlistId = updated.playlistId
+                    )
+                }
             }
         }
     }

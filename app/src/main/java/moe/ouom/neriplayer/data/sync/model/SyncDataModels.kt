@@ -70,7 +70,10 @@ data class SyncData(
     @ProtoNumber(10) val playbackStats: List<SyncTrackStat> = emptyList(),
     @ProtoNumber(11) val playbackStatsClearedAt: Long = 0L,
     @ProtoNumber(12) val playbackStatBuckets: List<SyncPlaybackStatBucket> = emptyList(),
-    @ProtoNumber(13) val playlistSongDeletions: List<SyncPlaylistSongDeletion> = emptyList()
+    @ProtoNumber(13) val playlistSongDeletions: List<SyncPlaylistSongDeletion> = emptyList(),
+    @ProtoNumber(14) val playlistUsageStats: List<SyncPlaylistUsageStat> = emptyList(),
+    @ProtoNumber(15) val localPlaylistPlaybackStats: List<SyncLocalPlaylistPlaybackStat> = emptyList(),
+    @ProtoNumber(16) val localPlaylistPlaybackBuckets: List<SyncLocalPlaylistPlaybackBucket> = emptyList()
 )
 
 /**
@@ -583,4 +586,55 @@ data class SyncPlaybackStatBucket(
     @ProtoNumber(15) val counterBaseListenMs: Long = 0L,
     @ProtoNumber(16) val counterBasePlayCount: Int = 0,
     @ProtoNumber(17) val counterShards: List<SyncPlaybackCounterShard> = emptyList()
+)
+
+/**
+ * 歌单打开统计。计数按设备分片，避免两台离线设备各自打开后相互覆盖。
+ */
+@Serializable
+data class SyncPlaylistUsageStat(
+    @ProtoNumber(1) val playlistKey: String = "",
+    @ProtoNumber(2) val source: String = "",
+    @ProtoNumber(3) val id: Long = 0L,
+    @ProtoNumber(4) val subtype: String? = null,
+    @ProtoNumber(5) val name: String = "",
+    @ProtoNumber(6) val coverUrl: String? = null,
+    @ProtoNumber(7) val trackCount: Int = 0,
+    @ProtoNumber(8) val lastOpenedAt: Long = 0L,
+    @ProtoNumber(9) val firstOpenedAt: Long = 0L,
+    @ProtoNumber(10) val openCount: Int = 0,
+    @ProtoNumber(11) val counterBaseOpenCount: Long = 0L,
+    @ProtoNumber(12) val counterShards: List<SyncPlaybackCounterShard> = emptyList(),
+    @ProtoNumber(13) val fid: Long = 0L,
+    @ProtoNumber(14) val mid: Long = 0L,
+    @ProtoNumber(15) val browseId: String? = null,
+    @ProtoNumber(16) val playlistId: String? = null,
+    @ProtoNumber(17) val subtitle: String? = null
+)
+
+/**
+ * 本地歌单的累计播放统计。playlistId 与已同步的本地歌单 ID 对齐。
+ */
+@Serializable
+data class SyncLocalPlaylistPlaybackStat(
+    @ProtoNumber(1) val playlistId: Long = 0L,
+    @ProtoNumber(2) val totalPlayCount: Long = 0L,
+    @ProtoNumber(3) val lastPlayedAt: Long = 0L,
+    @ProtoNumber(4) val firstPlayedAt: Long = 0L,
+    @ProtoNumber(5) val counterBasePlayCount: Long = 0L,
+    @ProtoNumber(6) val counterShards: List<SyncPlaybackCounterShard> = emptyList()
+)
+
+/**
+ * 本地歌单按天播放分桶，供周/月热点计算使用。
+ */
+@Serializable
+data class SyncLocalPlaylistPlaybackBucket(
+    @ProtoNumber(1) val dayStartAt: Long = 0L,
+    @ProtoNumber(2) val playlistId: Long = 0L,
+    @ProtoNumber(3) val playCount: Long = 0L,
+    @ProtoNumber(4) val lastPlayedAt: Long = 0L,
+    @ProtoNumber(5) val firstPlayedAt: Long = 0L,
+    @ProtoNumber(6) val counterBasePlayCount: Long = 0L,
+    @ProtoNumber(7) val counterShards: List<SyncPlaybackCounterShard> = emptyList()
 )

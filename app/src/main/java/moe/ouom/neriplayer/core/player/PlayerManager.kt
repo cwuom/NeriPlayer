@@ -238,6 +238,15 @@ import java.util.concurrent.ConcurrentHashMap
 
 internal const val PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS = 80L
 
+internal data class LocalPlaylistPlaybackSource(
+    val playlistId: Long,
+    val songKeys: Set<String>
+) {
+    fun contains(song: SongItem?): Boolean {
+        return song?.stableKey() in songKeys
+    }
+}
+
 @Suppress("ObjectPropertyName", "ktlint:standard:property-naming")
 object PlayerManager {
     const val BILI_SOURCE_TAG = "Bilibili"
@@ -512,6 +521,8 @@ object PlayerManager {
 
     internal val _currentSongFlow = MutableStateFlow<SongItem?>(null)
     val currentSongFlow: StateFlow<SongItem?> = _currentSongFlow
+    @Volatile
+    internal var localPlaylistPlaybackSource: LocalPlaylistPlaybackSource? = null
     internal val playbackDemandArbiter = PlaybackDemandArbiter()
 
     internal val _currentQueueFlow = MutableStateFlow<List<SongItem>>(emptyList())
@@ -700,7 +711,12 @@ object PlayerManager {
         syncExternalBluetoothLyrics(song)
         persistPlaybackStatsSnapshotAsync(
             synchronized(playbackStatsTracker) {
-                playbackStatsTracker.onSongChanged(song)
+                playbackStatsTracker.onSongChanged(
+                    song = song,
+                    localPlaylistId = localPlaylistPlaybackSource
+                        ?.takeIf { source -> source.contains(song) }
+                        ?.playlistId
+                )
             }
         )
     }
@@ -2121,6 +2137,11 @@ object PlayerManager {
             playCountIncrement = snapshot.playCountIncrement,
             scheduleSync = snapshot.scheduleSync
         )
+        if (snapshot.playCountIncrement > 0) {
+            snapshot.localPlaylistId?.let { playlistId ->
+                AppContainer.localPlaylistPlaybackStatsRepo.recordPlayNow(playlistId)
+            }
+        }
     }
 
     internal fun drainPlaybackStatsPersistJobBlocking(reason: String) {
@@ -2413,6 +2434,18 @@ object PlayerManager {
         startIndex: Int,
         commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
     ): Unit = this.playPlaylistImpl(songs, startIndex, commandSource)
+
+    fun playLocalPlaylist(
+        playlistId: Long,
+        songs: List<SongItem>,
+        startIndex: Int,
+        commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
+    ): Unit = this.playPlaylistImpl(
+        songs = songs,
+        startIndex = startIndex,
+        commandSource = commandSource,
+        localPlaylistId = playlistId
+    )
 
     fun playBiliVideoParts(videoInfo: BiliClient.VideoBasicInfo, startIndex: Int, coverUrl: String) =
         this.playBiliVideoPartsImpl(videoInfo, startIndex, coverUrl)

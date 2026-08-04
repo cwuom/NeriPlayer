@@ -447,6 +447,12 @@
     <!-- Library -->
     <string name="library_favorite_tab_playlists">Playlists</string>
     <string name="library_favorite_tab_artists">Artists</string>
+    <string name="library_favorite_tab_hot">Hot</string>
+    <string name="library_hot_playlist_week">Weekly highlights</string>
+    <string name="library_hot_playlist_month">Monthly highlights</string>
+    <string name="library_hot_playlist_summary" formatted="false">%1$d songs · %2$s plays</string>
+    <string name="library_hot_empty">No matching hot songs yet</string>
+    <string name="library_hot_empty_hint">Start listening and hot songs will appear here</string>
     <string name="library_no_favorite_artist">No followed artists</string>
     <string name="library_favorite_artist_hint">Tap Follow on an artist page, and the artist will appear here</string>
     <string name="library_favorite_source_artist">Artist</string>
@@ -595,7 +601,8 @@
     <string name="local_playlist_sync_empty">No songs available to sync.</string>
     <string name="local_playlist_export_to">Export to Playlist</string>
     <string name="local_playlist_import_audio">Import Local Audio</string>
-    <string name="local_playlist_total_duration" formatted="false">%s · %d songs</string>
+    <string name="local_playlist_total_duration" formatted="false">%1$s · %2$d songs · %3$s plays</string>
+    <string name="local_artist_total_duration" formatted="false">%1$s · %2$d songs</string>
     <string name="local_playlist_play_next">Play Next…</string>
     <string name="local_artist_detail_empty">This artist has no playable local songs</string>
 

@@ -39,9 +39,17 @@ import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.displayCoverUrl
-import moe.ouom.neriplayer.util.platform.LanguageManager
+import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
+import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
+import moe.ouom.neriplayer.data.sync.github.SyncPlaylistUsageStatsMergePolicy
+import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.sync.model.SyncPlaylistUsageStat
+import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.util.io.writeTextAtomically
+import moe.ouom.neriplayer.util.platform.LanguageManager
 import java.io.File
+import java.util.UUID
 
 data class UsageEntry(
     val id: Long,
@@ -51,6 +59,9 @@ data class UsageEntry(
     val source: String, // "netease" | "neteaseAlbum" | "bili" | "local" | "localArtist" | "youtubeMusic"
     val lastOpened: Long,
     val openCount: Int,
+    val firstOpened: Long = lastOpened,
+    val counterBaseOpenCount: Long = 0L,
+    val counterShards: List<SyncPlaybackCounterShard> = emptyList(),
     val fid: Long? = null,
     val mid: Long? = null,
     val browseId: String? = null,
@@ -83,30 +94,60 @@ private val usageEntryComparator = Comparator<UsageEntry> { left, right ->
 
 internal fun normalizeUsageEntries(list: List<UsageEntry>): List<UsageEntry> {
     return list
+        .filterNotNull()
+        .map { entry ->
+            entry.copy(counterShards = entry.counterShards.orEmpty().filterNotNull())
+        }
         .filter(UsageEntry::hasPlayableTracks)
         .groupBy(UsageEntry::usageKey)
         .map { (_, duplicates) -> mergeDuplicateUsageEntries(duplicates) }
         .sortedWith(usageEntryComparator)
-        .take(100)
 }
 
 private fun mergeDuplicateUsageEntries(entries: List<UsageEntry>): UsageEntry {
     val latest = entries.sortedWith(usageEntryComparator).first()
+    val allLegacyCounters = entries.all { entry ->
+        entry.counterBaseOpenCount <= 0L && entry.counterShards.orEmpty().isEmpty()
+    }
+    if (!allLegacyCounters) {
+        return SyncPlaylistUsageStatsMergePolicy.mergePlaylistUsageStats(
+            local = entries.map(UsageEntry::toSyncPlaylistUsageStat),
+            remote = emptyList()
+        ).single().toUsageEntry()
+    }
     val mergedOpenCount = entries.sumOf(UsageEntry::openCount)
         .coerceAtLeast(latest.openCount)
-    return latest.takeIf { it.openCount == mergedOpenCount }
-        ?: latest.copy(openCount = mergedOpenCount)
+    return latest.copy(
+        openCount = mergedOpenCount,
+        firstOpened = entries.fold(0L) { earliest, entry ->
+            minPositiveTimestamp(earliest, entry.firstOpened)
+        }
+    )
 }
 
 class PlaylistUsageRepository(private val app: Context) {
     companion object {
         const val SOURCE_LOCAL = "local"
         const val SOURCE_LOCAL_ARTIST = "localArtist"
+
+        @Volatile
+        private var instance: PlaylistUsageRepository? = null
+
+        fun getInstance(context: Context): PlaylistUsageRepository {
+            return instance ?: synchronized(this) {
+                instance ?: PlaylistUsageRepository(context.applicationContext).also {
+                    instance = it
+                }
+            }
+        }
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val gson = Gson()
     private val file: File by lazy { File(app.filesDir, "playlist_usage.json") }
+    private val syncStorage by lazy { SecureTokenStorage(app) }
+    private val fallbackCounterDeviceId = "playlist-usage-${UUID.randomUUID()}"
+    private val mutationLock = Any()
     private val _flow = MutableStateFlow(load())
     val frequentPlaylistsFlow: StateFlow<List<UsageEntry>> = _flow
 
@@ -150,26 +191,24 @@ class PlaylistUsageRepository(private val app: Context) {
             return
         }
 
-        val data = _flow.value.toMutableList()
-        val targetKey = playlistUsageKey(source, id, subtype)
-        val idx = data.indexOfFirst { it.usageKey() == targetKey }
-        if (idx >= 0) {
-            val old = data[idx]
-            old.copy(
-                name = name,
-                picUrl = picUrl,
-                trackCount = trackCount,
-                fid = fid,
-                mid = mid,
-                browseId = browseId,
-                playlistId = playlistId,
-                subtype = subtype,
-                subtitle = subtitle ?: old.subtitle,
-                lastOpened = now,
-                openCount = old.openCount + 1
-            ).also { data[idx] = it }
-        } else {
-            data.add(
+        val deviceId = syncCounterDeviceId()
+        val out = synchronized(mutationLock) {
+            val data = _flow.value.toMutableList()
+            val targetKey = playlistUsageKey(source, id, subtype)
+            val idx = data.indexOfFirst { it.usageKey() == targetKey }
+            val updated = if (idx >= 0) {
+                data[idx].copy(
+                    name = name,
+                    picUrl = picUrl,
+                    trackCount = trackCount,
+                    fid = fid,
+                    mid = mid,
+                    browseId = browseId,
+                    playlistId = playlistId,
+                    subtype = subtype,
+                    subtitle = subtitle ?: data[idx].subtitle
+                )
+            } else {
                 UsageEntry(
                     id = id,
                     name = name,
@@ -177,7 +216,8 @@ class PlaylistUsageRepository(private val app: Context) {
                     trackCount = trackCount,
                     source = source,
                     lastOpened = now,
-                    openCount = 1,
+                    openCount = 0,
+                    firstOpened = now,
                     fid = fid,
                     mid = mid,
                     browseId = browseId,
@@ -185,10 +225,34 @@ class PlaylistUsageRepository(private val app: Context) {
                     subtype = subtype,
                     subtitle = subtitle
                 )
-            )
+            }
+            val counted = updated.recordOpen(deviceId = deviceId, openedAt = now)
+            if (idx >= 0) {
+                data[idx] = counted
+            } else {
+                data.add(counted)
+            }
+            normalizeUsageEntries(data).also { _flow.value = it }
         }
-        val out = normalizeUsageEntries(data)
-        _flow.value = out
+        saveAsync(out)
+        triggerSync()
+    }
+
+    fun syncStats(): List<SyncPlaylistUsageStat> {
+        return synchronized(mutationLock) {
+            _flow.value.map(UsageEntry::toSyncPlaylistUsageStat)
+        }
+    }
+
+    fun applyMergedStats(stats: List<SyncPlaylistUsageStat>) {
+        val out = synchronized(mutationLock) {
+            val merged = SyncPlaylistUsageStatsMergePolicy.mergePlaylistUsageStats(
+                local = _flow.value.map(UsageEntry::toSyncPlaylistUsageStat),
+                remote = stats
+            )
+            normalizeUsageEntries(merged.map(SyncPlaylistUsageStat::toUsageEntry))
+                .also { _flow.value = it }
+        }
         saveAsync(out)
     }
 
@@ -212,45 +276,47 @@ class PlaylistUsageRepository(private val app: Context) {
             return
         }
 
-        val data = _flow.value.toMutableList()
-        val targetKey = playlistUsageKey(source, id, subtype)
-        val idx = data.indexOfFirst { it.usageKey() == targetKey }
-        if (idx >= 0) {
-            val old = data[idx]
-            data[idx] = old.copy(
-                name = name,
-                picUrl = picUrl,
-                trackCount = trackCount,
-                fid = fid,
-                mid = mid,
-                browseId = browseId ?: old.browseId,
-                playlistId = playlistId ?: old.playlistId,
-                subtype = subtype ?: old.subtype,
-                subtitle = subtitle ?: old.subtitle
-            )
-        } else {
-            data.add(
-                UsageEntry(
+        val deviceId = syncCounterDeviceId()
+        val out = synchronized(mutationLock) {
+            val data = _flow.value.toMutableList()
+            val targetKey = playlistUsageKey(source, id, subtype)
+            val idx = data.indexOfFirst { it.usageKey() == targetKey }
+            if (idx >= 0) {
+                val old = data[idx]
+                data[idx] = old.copy(
+                    name = name,
+                    picUrl = picUrl,
+                    trackCount = trackCount,
+                    fid = fid,
+                    mid = mid,
+                    browseId = browseId ?: old.browseId,
+                    playlistId = playlistId ?: old.playlistId,
+                    subtype = subtype ?: old.subtype,
+                    subtitle = subtitle ?: old.subtitle
+                )
+            } else {
+                data += UsageEntry(
                     id = id,
                     name = name,
                     picUrl = picUrl,
                     trackCount = trackCount,
                     source = source,
                     lastOpened = now,
-                    openCount = 1,
+                    openCount = 0,
+                    firstOpened = now,
                     fid = fid,
                     mid = mid,
                     browseId = browseId,
                     playlistId = playlistId,
                     subtype = subtype,
                     subtitle = subtitle
-                )
-            )
-        }
+                ).recordOpen(deviceId = deviceId, openedAt = now)
+            }
 
-        val out = normalizeUsageEntries(data)
-        _flow.value = out
+            normalizeUsageEntries(data).also { _flow.value = it }
+        }
         saveAsync(out)
+        triggerSync()
     }
 
     /**
@@ -356,14 +422,162 @@ class PlaylistUsageRepository(private val app: Context) {
     }
 
     private fun removeEntryIfPresent(id: Long, source: String, subtype: String? = null) {
-        val data = _flow.value.toMutableList()
-        val targetKey = playlistUsageKey(source, id, subtype)
-        val removed = data.removeAll { it.usageKey() == targetKey }
-        if (!removed) return
-
-        val out = normalizeUsageEntries(data)
-        _flow.value = out
+        val out = synchronized(mutationLock) {
+            val data = _flow.value.toMutableList()
+            val targetKey = playlistUsageKey(source, id, subtype)
+            val removed = data.removeAll { it.usageKey() == targetKey }
+            if (!removed) return
+            normalizeUsageEntries(data).also { _flow.value = it }
+        }
         saveAsync(out)
+    }
+
+    private fun syncCounterDeviceId(): String {
+        return runCatching { syncStorage.getOrCreateDeviceId() }
+            .getOrDefault(fallbackCounterDeviceId)
+    }
+
+    private fun triggerSync() {
+        runCatching {
+            GitHubSyncWorker.scheduleDelayedSync(
+                app,
+                triggerByUserAction = false,
+                markMutation = true
+            )
+            WebDavSyncWorker.scheduleDelayedSync(
+                app,
+                triggerByUserAction = false,
+                markMutation = true
+            )
+        }
+    }
+}
+
+private fun UsageEntry.toSyncPlaylistUsageStat(): SyncPlaylistUsageStat {
+    val normalizedShards = SyncPlaybackStatMapper.normalizeCounterShards(counterShards)
+    val shardCount = normalizedShards.fold(0L) { total, shard ->
+        total.saturatingAdd(shard.playCount.toLong().coerceAtLeast(0L))
+    }
+    val baseOpenCount = if (normalizedShards.isEmpty()) {
+        0L
+    } else {
+        maxOf(
+            counterBaseOpenCount.coerceAtLeast(0L),
+            openCount.toLong().minus(shardCount).coerceAtLeast(0L)
+        )
+    }
+    return SyncPlaylistUsageStat(
+        playlistKey = usageKey(),
+        source = source,
+        id = id,
+        subtype = subtype,
+        name = name,
+        coverUrl = picUrl,
+        trackCount = trackCount,
+        lastOpenedAt = lastOpened.coerceAtLeast(0L),
+        firstOpenedAt = firstOpened.coerceAtLeast(0L),
+        openCount = maxOf(openCount.toLong(), baseOpenCount.saturatingAdd(shardCount))
+            .toBoundedInt(),
+        counterBaseOpenCount = baseOpenCount,
+        counterShards = normalizedShards,
+        fid = fid ?: 0L,
+        mid = mid ?: 0L,
+        browseId = browseId,
+        playlistId = playlistId,
+        subtitle = subtitle
+    )
+}
+
+private fun SyncPlaylistUsageStat.toUsageEntry(): UsageEntry {
+    return UsageEntry(
+        id = id,
+        name = name,
+        picUrl = coverUrl,
+        trackCount = trackCount,
+        source = source,
+        lastOpened = lastOpenedAt,
+        openCount = openCount,
+        firstOpened = firstOpenedAt,
+        counterBaseOpenCount = counterBaseOpenCount,
+        counterShards = counterShards,
+        fid = fid.takeIf { it != 0L },
+        mid = mid.takeIf { it != 0L },
+        browseId = browseId,
+        playlistId = playlistId,
+        subtype = subtype,
+        subtitle = subtitle
+    )
+}
+
+private fun UsageEntry.recordOpen(deviceId: String, openedAt: Long): UsageEntry {
+    val normalizedShards = SyncPlaybackStatMapper.normalizeCounterShards(counterShards)
+    val previousShardCount = normalizedShards.fold(0L) { total, shard ->
+        total.saturatingAdd(shard.playCount.toLong().coerceAtLeast(0L))
+    }
+    val baseOpenCount = if (normalizedShards.isEmpty()) {
+        openCount.toLong().coerceAtLeast(0L)
+    } else {
+        maxOf(
+            counterBaseOpenCount.coerceAtLeast(0L),
+            openCount.toLong().minus(previousShardCount).coerceAtLeast(0L)
+        )
+    }
+    val index = normalizedShards.indexOfFirst { shard ->
+        shard.deviceId == deviceId && shard.epochStartedAt == 0L
+    }
+    val currentShard = normalizedShards.getOrNull(index)
+    val nextShard = if (currentShard == null) {
+        SyncPlaybackCounterShard(
+            deviceId = deviceId,
+            epochStartedAt = 0L,
+            playCount = 1,
+            firstPlayedAt = openedAt,
+            lastPlayedAt = openedAt
+        )
+    } else {
+        currentShard.copy(
+            playCount = currentShard.playCount.saturatingIncrement(),
+            firstPlayedAt = minPositiveTimestamp(currentShard.firstPlayedAt, openedAt),
+            lastPlayedAt = maxOf(currentShard.lastPlayedAt, openedAt)
+        )
+    }
+    val nextShards = normalizedShards.toMutableList().apply {
+        if (index >= 0) {
+            this[index] = nextShard
+        } else {
+            add(nextShard)
+        }
+    }.let(SyncPlaybackStatMapper::normalizeCounterShards)
+    val nextShardCount = nextShards.fold(0L) { total, shard ->
+        total.saturatingAdd(shard.playCount.toLong().coerceAtLeast(0L))
+    }
+    return copy(
+        firstOpened = minPositiveTimestamp(firstOpened, openedAt),
+        lastOpened = maxOf(lastOpened, openedAt),
+        openCount = maxOf(
+            openCount.toLong().coerceAtLeast(0L),
+            baseOpenCount.saturatingAdd(nextShardCount)
+        ).toBoundedInt(),
+        counterBaseOpenCount = baseOpenCount,
+        counterShards = nextShards
+    )
+}
+
+private fun Long.saturatingAdd(other: Long): Long {
+    return if (other > 0L && this > Long.MAX_VALUE - other) Long.MAX_VALUE else this + other
+}
+
+private fun Int.saturatingIncrement(): Int {
+    return if (this == Int.MAX_VALUE) Int.MAX_VALUE else this + 1
+}
+
+private fun Long.toBoundedInt(): Int = coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+
+private fun minPositiveTimestamp(left: Long, right: Long): Long {
+    return when {
+        left <= 0L -> right.coerceAtLeast(0L)
+        right <= 0L -> left.coerceAtLeast(0L)
+        else -> minOf(left, right)
     }
 }
 
