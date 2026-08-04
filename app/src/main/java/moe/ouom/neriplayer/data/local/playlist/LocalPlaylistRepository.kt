@@ -1122,7 +1122,10 @@ class LocalPlaylistRepository private constructor(
 
                 val currentPlaylist = current.firstOrNull { it.id == playlistId }
                     ?: return@commitPlaylistMutation false
-                if (SystemLocalPlaylists.isSystemPlaylist(currentPlaylist, context)) {
+                if (
+                    !isLocalFilesPlaylist(currentPlaylist.id, currentPlaylist.name) &&
+                    SystemLocalPlaylists.isSystemPlaylist(currentPlaylist, context)
+                ) {
                     return@commitPlaylistMutation false
                 }
                 if (restoreResults.any { result ->
