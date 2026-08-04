@@ -57,6 +57,34 @@ internal object PlaybackWidgetUpdater {
         updateAllInstalledWidgets(context, state, visuals)
     }
 
+    fun updatePlaybackProgressFromPlaybackService(
+        context: Context,
+        state: PlaybackWidgetState,
+    ) {
+        if (!state.hasSong || !state.isPlaying) {
+            return
+        }
+        val appWidgetManager = AppWidgetManager.getInstance(context)
+        val appWidgetIds = appWidgetManager.getAppWidgetIds(
+            ComponentName(context, NeriPlayerPlaybackWidgetProvider::class.java),
+        )
+        if (appWidgetIds.isEmpty()) {
+            return
+        }
+        val views = RemoteViews(context.packageName, R.layout.widget_playback_4x2)
+        views.setProgressBar(
+            R.id.widget_progress,
+            PLAYBACK_WIDGET_PROGRESS_MAX,
+            state.progress,
+            false,
+        )
+        try {
+            appWidgetManager.partiallyUpdateAppWidget(appWidgetIds, views)
+        } catch (error: RuntimeException) {
+            NPLogger.w("NERI-Widget", "Widget progress update failed", error)
+        }
+    }
+
     fun updateStoredWidgets(
         context: Context,
         appWidgetManager: AppWidgetManager,

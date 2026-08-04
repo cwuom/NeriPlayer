@@ -1705,7 +1705,7 @@ fun NowPlayingScreen(
         .collectAsStateWithLifecycle(initialValue = true)
     val nowPlayingSongTitleMarqueeEnabled by settingsRepo
         .nowPlayingSongTitleMarqueeEnabledFlow
-        .collectAsStateWithLifecycle(initialValue = false)
+        .collectAsStateWithLifecycle(initialValue = true)
     val uiDensityScale by settingsRepo
         .uiDensityScaleFlow
         .collectAsStateWithLifecycle(initialValue = 1.0f)

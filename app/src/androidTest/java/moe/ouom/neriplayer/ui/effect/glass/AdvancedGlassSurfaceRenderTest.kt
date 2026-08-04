@@ -593,7 +593,7 @@ class AdvancedGlassSurfaceRenderTest {
         val pixels = image.toPixelMap()
         val sampleY = image.height / 16
         val pillShoulder = pixels[image.width * 15 / 80, sampleY]
-        val outsidePill = pixels[image.width / 16, sampleY]
+        val outsidePill = pixels[image.width * 7 / 80, sampleY]
 
         assertTrue(
             "pill shoulder was not blurred: $pillShoulder",

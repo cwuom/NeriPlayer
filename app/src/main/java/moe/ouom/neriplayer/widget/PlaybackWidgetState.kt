@@ -6,6 +6,7 @@ import java.util.Locale
 
 internal const val PLAYBACK_WIDGET_PROGRESS_MAX = 1000
 internal const val PLAYBACK_WIDGET_POSITION_BUCKET_MS = 1_000L
+internal const val PLAYBACK_WIDGET_PROGRESS_UPDATE_INTERVAL_MS = 15_000L
 
 internal data class PlaybackWidgetState(
     val title: String,
@@ -101,6 +102,39 @@ internal fun shouldRetainPlaybackWidgetVisuals(state: PlaybackWidgetState): Bool
 internal fun shouldShowPlaybackWidgetFallbackBackground(
     hasThemeBackground: Boolean,
 ): Boolean = !hasThemeBackground
+
+internal fun playbackWidgetPresentationChanged(
+    previous: PlaybackWidgetState?,
+    current: PlaybackWidgetState,
+): Boolean {
+    return previous == null ||
+        previous.title != current.title ||
+        previous.subtitle != current.subtitle ||
+        previous.status != current.status ||
+        previous.durationText != current.durationText ||
+        previous.hasSong != current.hasSong ||
+        previous.isPlaying != current.isPlaying ||
+        previous.isFavorite != current.isFavorite ||
+        previous.canToggleFavorite != current.canToggleFavorite ||
+        previous.isFloatingLyricsEnabled != current.isFloatingLyricsEnabled ||
+        previous.artworkReady != current.artworkReady ||
+        previous.contentId != current.contentId ||
+        previous.coverId != current.coverId ||
+        previous.artworkPending != current.artworkPending
+}
+
+internal fun shouldPartiallyUpdatePlaybackWidgetProgress(
+    previous: PlaybackWidgetState?,
+    current: PlaybackWidgetState,
+): Boolean {
+    return !playbackWidgetPresentationChanged(previous, current) &&
+        current.hasSong &&
+        current.isPlaying
+}
+
+internal fun playbackWidgetProgressRefreshBucket(positionMs: Long): Long {
+    return positionMs.coerceAtLeast(0L) / PLAYBACK_WIDGET_PROGRESS_UPDATE_INTERVAL_MS
+}
 
 internal fun playbackWidgetBucketedPositionMs(
     positionMs: Long,

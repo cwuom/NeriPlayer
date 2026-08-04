@@ -2955,7 +2955,7 @@ private fun SettingsPersonalizationPageContent(
         val nowPlayingShowTitle by autoSettingsRepository.nowPlayingShowTitleFlow.collectAsState(initial = true)
         val nowPlayingSongTitleMarqueeEnabled by autoSettingsRepository
             .nowPlayingSongTitleMarqueeEnabledFlow
-            .collectAsState(initial = false)
+            .collectAsState(initial = true)
         val nowPlayingKeepScreenOn by autoSettingsRepository.nowPlayingKeepScreenOnFlow.collectAsState(initial = true)
         val nowPlayingToolbarDockEnabled by autoSettingsRepository.nowPlayingToolbarDockEnabledFlow.collectAsState(
             initial = true

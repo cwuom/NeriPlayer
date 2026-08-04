@@ -424,11 +424,11 @@ class AutoSettingsGeneratedTest {
     }
 
     @Test
-    fun longSongTitleMarqueeUsesAnOptInDisplaySwitch() {
+    fun longSongTitleMarqueeDefaultsToEnabled() {
         val setting = AutoSettingsSchema.display.nowPlayingSongTitleMarqueeEnabled
         val metadata = AutoSettingsMetadata.setting("nowplaying_song_title_marquee_enabled")
 
-        assertEquals(false, setting.defaultValue)
+        assertEquals(true, setting.defaultValue)
         assertEquals(SettingValueType.Boolean, metadata?.valueType)
         assertEquals(SettingUiType.Switch, metadata?.ui)
         assertEquals(AutoSettingsSections.display, metadata?.section)

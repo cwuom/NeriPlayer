@@ -125,10 +125,12 @@ import moe.ouom.neriplayer.util.media.IsLandHelp
 import moe.ouom.neriplayer.util.media.buildRemoteSongShareUrl
 import moe.ouom.neriplayer.util.media.isShareablePublicHttpUrl
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
-import moe.ouom.neriplayer.widget.PLAYBACK_WIDGET_POSITION_BUCKET_MS
+import moe.ouom.neriplayer.widget.playbackWidgetPresentationChanged
+import moe.ouom.neriplayer.widget.playbackWidgetProgressRefreshBucket
 import moe.ouom.neriplayer.widget.PlaybackWidgetState
 import moe.ouom.neriplayer.widget.PlaybackWidgetUpdater
 import moe.ouom.neriplayer.widget.buildPlaybackWidgetState
+import moe.ouom.neriplayer.widget.shouldPartiallyUpdatePlaybackWidgetProgress
 
 private suspend inline fun <T> kotlinx.coroutines.flow.Flow<T>.collectSafely(
     source: String,
@@ -1440,12 +1442,10 @@ class AudioPlayerService : Service() {
         }
         serviceScope.launch {
             PlayerManager.playbackPositionFlow
-                .map { positionMs ->
-                    positionMs.coerceAtLeast(0L) / PLAYBACK_WIDGET_POSITION_BUCKET_MS
-                }
+                .map(::playbackWidgetProgressRefreshBucket)
                 .distinctUntilChanged()
                 .collectSafely("playbackWidgetPositionFlow") {
-                    updatePlaybackWidget()
+                    updatePlaybackWidgetProgress()
                 }
         }
         serviceScope.launch {
@@ -2132,7 +2132,7 @@ class AudioPlayerService : Service() {
             return
         }
         val state = buildCurrentPlaybackWidgetState()
-        if (!force && state == lastPlaybackWidgetState) {
+        if (!force && !playbackWidgetPresentationChanged(lastPlaybackWidgetState, state)) {
             return
         }
         lastPlaybackWidgetState = state
@@ -2140,6 +2140,24 @@ class AudioPlayerService : Service() {
             context = this,
             state = state,
             artwork = currentNotificationLargeIcon,
+        )
+    }
+
+    private fun updatePlaybackWidgetProgress() {
+        if (!PlaybackWidgetUpdater.hasInstalledWidgets(this)) {
+            return
+        }
+        val state = buildCurrentPlaybackWidgetState()
+        if (playbackWidgetPresentationChanged(lastPlaybackWidgetState, state)) {
+            updatePlaybackWidget(force = true)
+            return
+        }
+        if (!shouldPartiallyUpdatePlaybackWidgetProgress(lastPlaybackWidgetState, state)) {
+            return
+        }
+        PlaybackWidgetUpdater.updatePlaybackProgressFromPlaybackService(
+            context = this,
+            state = state,
         )
     }
 

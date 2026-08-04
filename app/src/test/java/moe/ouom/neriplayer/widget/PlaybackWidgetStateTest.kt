@@ -42,6 +42,40 @@ class PlaybackWidgetStateTest {
     }
 
     @Test
+    fun `progress refreshes use fifteen second buckets`() {
+        assertEquals(0L, playbackWidgetProgressRefreshBucket(-1L))
+        assertEquals(0L, playbackWidgetProgressRefreshBucket(14_999L))
+        assertEquals(1L, playbackWidgetProgressRefreshBucket(15_000L))
+    }
+
+    @Test
+    fun `position-only changes use a partial progress update`() {
+        val rendered = playbackWidgetState(positionMs = 30_000L)
+        val progressed = rendered.copy(
+            positionMs = 45_000L,
+            elapsedText = "0:45",
+            progress = 250,
+        )
+
+        assertFalse(playbackWidgetPresentationChanged(rendered, progressed))
+        assertTrue(shouldPartiallyUpdatePlaybackWidgetProgress(rendered, progressed))
+    }
+
+    @Test
+    fun `visible widget state changes require a full update`() {
+        val rendered = playbackWidgetState(positionMs = 30_000L)
+
+        assertTrue(playbackWidgetPresentationChanged(null, rendered))
+        assertTrue(playbackWidgetPresentationChanged(rendered, rendered.copy(isFavorite = true)))
+        assertFalse(
+            shouldPartiallyUpdatePlaybackWidgetProgress(
+                rendered,
+                rendered.copy(isPlaying = false),
+            ),
+        )
+    }
+
+    @Test
     fun `time text uses compact music duration format`() {
         assertEquals("0:00", formatPlaybackWidgetTime(-1L))
         assertEquals("3:05", formatPlaybackWidgetTime(185_000L))
@@ -136,5 +170,23 @@ class PlaybackWidgetStateTest {
         return (color ushr 16 and 0xFF) +
             (color ushr 8 and 0xFF) +
             (color and 0xFF)
+    }
+
+    private fun playbackWidgetState(positionMs: Long): PlaybackWidgetState {
+        return buildPlaybackWidgetState(
+            title = "Wall",
+            subtitle = "Jing Guo",
+            status = "Playing",
+            positionMs = positionMs,
+            durationMs = 180_000L,
+            hasSong = true,
+            isPlaying = true,
+            isFavorite = false,
+            canToggleFavorite = true,
+            isFloatingLyricsEnabled = false,
+            artworkReady = true,
+            contentId = "song-a",
+            coverId = "cover-a",
+        )
     }
 }

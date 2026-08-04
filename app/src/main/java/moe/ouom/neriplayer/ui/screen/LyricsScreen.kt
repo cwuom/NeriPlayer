@@ -199,7 +199,7 @@ fun LyricsScreen(
     val settingsRepo = remember { AppContainer.settingsRepo }
     val nowPlayingSongTitleMarqueeEnabled by settingsRepo
         .nowPlayingSongTitleMarqueeEnabledFlow
-        .collectAsState(initial = false)
+        .collectAsState(initial = true)
     val playbackControlLayoutPreferences by settingsRepo
         .playbackControlLayoutPreferencesFlow
         .collectAsState(initial = PlaybackControlLayoutPreferences())
