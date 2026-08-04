@@ -70,14 +70,19 @@ internal fun AdvancedGlassNavigationHandoff(
     enabled: Boolean,
     content: @Composable () -> Unit
 ) {
-    val regionRegistry = LocalAdvancedGlassBackdrops.current?.regionRegistry
+    val backdrops = LocalAdvancedGlassBackdrops.current
+    val regionRegistry = backdrops?.regionRegistry
     val guardKey = remember { Any() }
     SideEffect {
         regionRegistry?.setHandoffGuard(guardKey, enabled)
+        backdrops?.background?.setLocalBlurHandoffGuard(guardKey, enabled)
+        backdrops?.content?.setLocalBlurHandoffGuard(guardKey, enabled)
     }
-    DisposableEffect(regionRegistry, guardKey) {
+    DisposableEffect(backdrops, regionRegistry, guardKey) {
         onDispose {
             regionRegistry?.removeHandoffGuard(guardKey)
+            backdrops?.background?.removeLocalBlurHandoffGuard(guardKey)
+            backdrops?.content?.removeLocalBlurHandoffGuard(guardKey)
         }
     }
     content()
@@ -137,6 +142,7 @@ internal fun AdvancedGlassHost(
     var sessionHealthy by remember { mutableStateOf(true) }
     val sessionController = if (sessionHealthy) controller else controller.afterBackendFailure()
     val renderProfile = sessionController.advancedBlurQuality.renderProfile()
+    val navigationHandoffActive = regionRegistry.retainsEffectDuringHandoff
     val localBlurRendererCacheKey = sessionController.advancedBlurQuality.ordinal
     val blurRadiusDp = sessionController.normalizedBlurAmountDp
     val blurRadiusPx = with(density) { blurRadiusDp.dp.toPx() }
@@ -244,13 +250,11 @@ internal fun AdvancedGlassHost(
         ApplyLocalBlurPlan(
             backdrop = backgroundBackdrop,
             nextPlan = backgroundLocalBlurPlan,
-            retainCurrentPlan = regionRegistry.retainsEffectDuringHandoff &&
+            retainCurrentPlan = navigationHandoffActive &&
                 !renderRegionState.hasNavigationSceneRegion &&
                 sessionController.isBaseBlurEnabled &&
-                backgroundLocalBlurPlan != null &&
                 renderRegionState.backgroundBackdropReady,
             allowOneFrameHandoff = sessionController.isBaseBlurEnabled &&
-                backgroundLocalBlurPlan != null &&
                 renderRegionState.backgroundBackdropReady
         )
         ApplyLocalBlurPlan(
@@ -258,7 +262,6 @@ internal fun AdvancedGlassHost(
             nextPlan = contentLocalBlurPlan,
             retainCurrentPlan = false,
             allowOneFrameHandoff = sessionController.isBaseBlurEnabled &&
-                contentLocalBlurPlan != null &&
                 renderRegionState.contentBackdropReady
         )
     } else {
@@ -372,32 +375,68 @@ private fun ApplyLocalBlurPlan(
     if (backdrop.renderEffect != null) {
         SideEffect { backdrop.renderEffect = null }
     }
-    if (retainCurrentPlan &&
-        backdrop.localBlurPlan?.rendererCacheKey == nextPlan?.rendererCacheKey
+    val currentPlan = backdrop.localBlurPlan
+    if (
+        shouldRetainCurrentLocalBlurPlan(
+            currentPlan = currentPlan,
+            nextPlan = nextPlan,
+            handoffActive = retainCurrentPlan
+        )
     ) {
+        if (!backdrop.freezeLocalBlurFrame) {
+            SideEffect { backdrop.freezeLocalBlurFrame = true }
+        }
         return
     }
-    if (nextPlan == backdrop.localBlurPlan) {
+    if (nextPlan == currentPlan) {
+        if (backdrop.freezeLocalBlurFrame) {
+            SideEffect { backdrop.freezeLocalBlurFrame = false }
+        }
         return
     }
-    val shouldHoldPrevious = allowOneFrameHandoff &&
-        nextPlan == null &&
-        backdrop.localBlurPlan != null
-    if (shouldHoldPrevious) {
-        LaunchedEffect(backdrop, nextPlan) {
+    if (
+        shouldFreezeLocalBlurFrame(
+            currentPlan = currentPlan,
+            nextPlan = nextPlan,
+            retainCurrentPlan = retainCurrentPlan,
+            allowOneFrameHandoff = allowOneFrameHandoff
+        )
+    ) {
+        if (!backdrop.freezeLocalBlurFrame) {
+            SideEffect { backdrop.freezeLocalBlurFrame = true }
+        }
+        LaunchedEffect(backdrop, currentPlan, nextPlan, retainCurrentPlan, allowOneFrameHandoff) {
             withFrameNanos { }
-            backdrop.localBlurPlan = null
-            backdrop.invalidateLocalBlurRenderer()
+            if (!backdrop.hasLocalBlurHandoffGuard && backdrop.localBlurPlan == currentPlan) {
+                backdrop.localBlurPlan = null
+                backdrop.invalidateLocalBlurRenderer()
+            }
         }
     } else {
         SideEffect {
             backdrop.localBlurPlan = nextPlan
+            backdrop.freezeLocalBlurFrame = false
             if (nextPlan == null) {
                 backdrop.invalidateLocalBlurRenderer()
             }
         }
     }
 }
+
+internal fun shouldRetainCurrentLocalBlurPlan(
+    currentPlan: AdvancedGlassLocalBlurPlan?,
+    nextPlan: AdvancedGlassLocalBlurPlan?,
+    handoffActive: Boolean
+): Boolean = handoffActive && currentPlan != null && nextPlan == null
+
+internal fun shouldFreezeLocalBlurFrame(
+    currentPlan: AdvancedGlassLocalBlurPlan?,
+    nextPlan: AdvancedGlassLocalBlurPlan?,
+    retainCurrentPlan: Boolean,
+    allowOneFrameHandoff: Boolean
+): Boolean = currentPlan != null &&
+    nextPlan == null &&
+    (retainCurrentPlan || allowOneFrameHandoff)
 
 private fun buildBackdropEffect(
     controller: AdvancedGlassController,

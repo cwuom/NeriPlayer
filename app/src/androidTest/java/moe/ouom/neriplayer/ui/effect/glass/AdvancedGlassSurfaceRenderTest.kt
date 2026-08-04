@@ -412,6 +412,237 @@ class AdvancedGlassSurfaceRenderTest {
     }
 
     @Test
+    fun localBlurKeepsItsPlanAcrossNavigationMaskGaps() {
+        lateinit var capturedBackdrop: AdvancedGlassBackdrop
+        lateinit var capturedContentBackdrop: AdvancedGlassBackdrop
+        lateinit var activeOwners: MutableState<Set<Any>>
+        lateinit var handoffActive: MutableState<Boolean>
+        lateinit var quality: MutableState<AdvancedBlurQuality>
+        val planAvailability = mutableListOf<Boolean>()
+        val firstOwner = Any()
+        val secondOwner = Any()
+        composeRule.setContent {
+            val backgroundBackdrop = rememberAdvancedGlassBackdrop()
+            val contentBackdrop = rememberAdvancedGlassBackdrop()
+            capturedBackdrop = backgroundBackdrop
+            capturedContentBackdrop = contentBackdrop
+            activeOwners = remember { mutableStateOf(setOf(firstOwner)) }
+            handoffActive = remember { mutableStateOf(false) }
+            quality = remember { mutableStateOf(AdvancedBlurQuality.Low) }
+            LaunchedEffect(backgroundBackdrop) {
+                snapshotFlow { backgroundBackdrop.localBlurPlan != null }
+                    .collect(planAvailability::add)
+            }
+            MaterialTheme {
+                AdvancedGlassHost(
+                    controller = enabledController().copy(
+                        advancedBlurQuality = quality.value
+                    ),
+                    backgroundBackdrop = backgroundBackdrop,
+                    contentBackdrop = contentBackdrop,
+                    activeNavigationOwners = activeOwners.value
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(200.dp, 100.dp)
+                            .testTag(LocalBlurHandoffRootTag)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .captureAdvancedGlassBackdrop(backgroundBackdrop)
+                        ) {
+                            repeat(20) { stripeIndex ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .background(
+                                            if (stripeIndex % 2 == 0) Color.Black else Color.White
+                                        )
+                                )
+                            }
+                        }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .captureAdvancedGlassBackdrop(contentBackdrop)
+                        )
+                        AdvancedGlassNavigationHandoff(enabled = handoffActive.value) {
+                            CompositionLocalProvider(
+                                LocalAdvancedGlassNavigationOwner provides firstOwner
+                            ) {
+                                AdvancedGlassSurface(
+                                    role = AdvancedGlassRole.SettingsSection,
+                                    modifier = Modifier
+                                        .size(80.dp)
+                                        .align(Alignment.CenterStart),
+                                    tintColor = Color.Transparent
+                                ) {}
+                            }
+                            CompositionLocalProvider(
+                                LocalAdvancedGlassNavigationOwner provides secondOwner
+                            ) {
+                                AdvancedGlassSurface(
+                                    role = AdvancedGlassRole.SettingsSection,
+                                    modifier = Modifier
+                                        .size(80.dp)
+                                        .align(Alignment.CenterEnd),
+                                    tintColor = Color.Transparent
+                                ) {}
+                            }
+                            AdvancedGlassSurface(
+                                role = AdvancedGlassRole.BottomNavigation,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(24.dp)
+                                    .align(Alignment.BottomCenter),
+                                tintColor = Color.Transparent
+                            ) {}
+                        }
+                    }
+                }
+            }
+        }
+
+        fun assertHandoff(blurQuality: AdvancedBlurQuality) {
+            composeRule.runOnIdle {
+                quality.value = blurQuality
+                activeOwners.value = setOf(firstOwner)
+                handoffActive.value = false
+            }
+            composeRule.waitForIdle()
+            composeRule.runOnIdle {
+                assertNotNull("$blurQuality did not install a local blur plan", capturedBackdrop.localBlurPlan)
+                assertNotNull(
+                    "$blurQuality did not install a content local blur plan",
+                    capturedContentBackdrop.localBlurPlan
+                )
+                planAvailability.clear()
+                handoffActive.value = true
+                activeOwners.value = emptySet()
+            }
+            composeRule.waitForIdle()
+            composeRule.runOnIdle {
+                assertNotNull(
+                    "$blurQuality removed its cached plan during the navigation handoff",
+                    capturedBackdrop.localBlurPlan
+                )
+                assertTrue(
+                    "$blurQuality exposed a blank local blur frame: $planAvailability",
+                    planAvailability.none { available -> !available }
+                )
+                assertTrue(
+                    "$blurQuality did not freeze its last local blur frame during the mask gap",
+                    capturedBackdrop.freezeLocalBlurFrame
+                )
+                assertTrue(
+                    "$blurQuality froze its stable content blur frame during the handoff",
+                    !capturedContentBackdrop.freezeLocalBlurFrame
+                )
+                activeOwners.value = setOf(secondOwner)
+            }
+            composeRule.waitForIdle()
+            composeRule.runOnIdle {
+                assertTrue(
+                    "$blurQuality kept replaying a stale local blur frame after the next mask arrived",
+                    !capturedBackdrop.freezeLocalBlurFrame
+                )
+                assertTrue(
+                    "$blurQuality did not keep its handoff guard while the next mask was active",
+                    capturedBackdrop.hasLocalBlurHandoffGuard
+                )
+                assertTrue(
+                    "$blurQuality froze its stable content blur frame after the next mask arrived",
+                    !capturedContentBackdrop.freezeLocalBlurFrame
+                )
+                handoffActive.value = false
+            }
+            composeRule.waitForIdle()
+            composeRule.runOnIdle {
+                assertTrue(
+                    "$blurQuality did not resume local blur after navigation handoff",
+                    !capturedBackdrop.hasLocalBlurHandoffGuard
+                )
+                assertTrue(
+                    "$blurQuality did not refresh its content blur after navigation handoff",
+                    !capturedContentBackdrop.freezeLocalBlurFrame
+                )
+            }
+            assertSceneMaskState(
+                composeRule.onNodeWithTag(LocalBlurHandoffRootTag).captureToImage(),
+                leftBlurred = false
+            )
+        }
+
+        assertHandoff(AdvancedBlurQuality.Low)
+        assertHandoff(AdvancedBlurQuality.UltraLow)
+    }
+
+    @Test
+    fun localBlurRefreshesStableMaskWhenBackdropChanges() {
+        lateinit var backdropColor: MutableState<Color>
+        composeRule.setContent {
+            backdropColor = remember { mutableStateOf(Color.Black) }
+            val backgroundBackdrop = rememberAdvancedGlassBackdrop()
+            val contentBackdrop = rememberAdvancedGlassBackdrop()
+            MaterialTheme {
+                AdvancedGlassHost(
+                    controller = enabledController().copy(
+                        advancedBlurQuality = AdvancedBlurQuality.Low
+                    ),
+                    backgroundBackdrop = backgroundBackdrop,
+                    contentBackdrop = contentBackdrop
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(200.dp, 120.dp)
+                            .testTag(LocalBlurRefreshRootTag)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .captureAdvancedGlassBackdrop(backgroundBackdrop)
+                                .background(backdropColor.value)
+                        )
+                        AdvancedGlassSurface(
+                            role = AdvancedGlassRole.SettingsSection,
+                            modifier = Modifier
+                                .size(160.dp, 80.dp)
+                                .align(Alignment.Center),
+                            tintColor = Color.Transparent
+                        ) {}
+                    }
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+        val initialImage = composeRule
+            .onNodeWithTag(LocalBlurRefreshRootTag)
+            .captureToImage()
+        val sampleX = initialImage.width / 2
+        val sampleY = initialImage.height / 2
+        val initialPixel = initialImage.toPixelMap()[sampleX, sampleY]
+
+        composeRule.runOnIdle { backdropColor.value = Color.White }
+        composeRule.waitForIdle()
+        val refreshedPixel = composeRule
+            .onNodeWithTag(LocalBlurRefreshRootTag)
+            .captureToImage()
+            .toPixelMap()[sampleX, sampleY]
+
+        assertTrue(
+            "local blur did not render the initial backdrop: $initialPixel",
+            initialPixel.red < 0.1f
+        )
+        assertTrue(
+            "local blur replayed a stale backdrop frame after content changed: $refreshedPixel",
+            refreshedPixel.red > 0.9f
+        )
+    }
+
+    @Test
     fun localBlurRebuildsItsRenderCacheAfterLifecycleAndSettingChanges() {
         lateinit var capturedBackdrop: AdvancedGlassBackdrop
         lateinit var quality: MutableState<AdvancedBlurQuality>
@@ -2114,6 +2345,8 @@ class AdvancedGlassSurfaceRenderTest {
         const val BlurMixTag = "blur_mix"
         const val BlurRootTag = "blur_root"
         const val LocalBlurRootTag = "local_blur_root"
+        const val LocalBlurHandoffRootTag = "local_blur_handoff_root"
+        const val LocalBlurRefreshRootTag = "local_blur_refresh_root"
         const val DirectSelectiveBlurTag = "direct_selective_blur"
         const val TopOnlyCornersTag = "top_only_corners"
         const val PillMaskRootTag = "pill_mask_root"

@@ -576,14 +576,14 @@ class AdvancedLyricsViewTest {
     }
 
     @Test
-    fun `resolvePlayedLyricViewportOffset keeps normal lyrics above the lower viewport area`() {
+    fun `resolvePlayedLyricViewportOffset supports roughly thirty percent played space`() {
         val offset = resolvePlayedLyricViewportOffset(
             viewportHeight = 1_000.dp,
             keepAliveZone = 108.dp,
             minimumOffset = 48.dp,
             playedLyricViewportFraction = 0.30f,
             focusedLineVisualCompensation = 18.dp,
-            topFadeLength = 80.dp
+            topFadeLength = 112.dp
         )
 
         assertEquals(210.dp, offset)
@@ -592,14 +592,14 @@ class AdvancedLyricsViewTest {
     @Test
     fun `resolvePlayedLyricViewportOffset keeps focused line below top fade on short viewports`() {
         val offset = resolvePlayedLyricViewportOffset(
-            viewportHeight = 400.dp,
+            viewportHeight = 500.dp,
             keepAliveZone = 108.dp,
             minimumOffset = 48.dp,
             playedLyricViewportFraction = 0.30f,
             focusedLineVisualCompensation = 18.dp,
-            topFadeLength = 80.dp
+            topFadeLength = 112.dp
         )
 
-        assertEquals(122.dp, offset)
+        assertEquals(60.dp, offset)
     }
 }

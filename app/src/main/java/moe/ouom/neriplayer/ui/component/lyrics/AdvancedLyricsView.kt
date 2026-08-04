@@ -212,9 +212,7 @@ internal fun resolvePlayedLyricViewportOffset(
 ): Dp {
     val effectivePlayedLyricViewportFraction = playedLyricViewportFraction.coerceIn(0.18f, 0.46f)
     val desiredPlayedLyricSpace = viewportHeight * effectivePlayedLyricViewportFraction
-    val minimumVisiblePlayedLyricSpace = topFadeLength +
-        FocusedLyricMaskSafePadding +
-        keepAliveZone
+    val minimumVisiblePlayedLyricSpace = topFadeLength + FocusedLyricMaskSafePadding
     val resolvedPlayedLyricSpace = if (desiredPlayedLyricSpace > minimumVisiblePlayedLyricSpace) {
         desiredPlayedLyricSpace
     } else {

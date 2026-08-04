@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.ui.effect.glass
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AdvancedGlassLocalBlurPlanTest {
@@ -125,6 +127,78 @@ class AdvancedGlassLocalBlurPlanTest {
                 radiusPx = 12f,
                 maximumMergedInputAreaRatio = 1f,
                 downscaleFactor = 3
+            )
+        )
+    }
+
+    @Test
+    fun navigationHandoffRetainsOnlyAnExistingPlanWithoutANewMask() {
+        val currentPlan = requireNotNull(
+            resolveAdvancedGlassLocalBlurPlan(
+                regions = listOf(region(left = 0f, top = 0f, right = 200f, bottom = 100f)),
+                radiusPx = 24f,
+                maximumMergedInputAreaRatio = 1f
+            )
+        )
+        val nextPlan = requireNotNull(
+            resolveAdvancedGlassLocalBlurPlan(
+                regions = listOf(region(left = 20f, top = 0f, right = 220f, bottom = 100f)),
+                radiusPx = 24f,
+                maximumMergedInputAreaRatio = 1f
+            )
+        )
+
+        assertTrue(
+            shouldRetainCurrentLocalBlurPlan(
+                currentPlan = currentPlan,
+                nextPlan = null,
+                handoffActive = true
+            )
+        )
+        assertFalse(
+            shouldRetainCurrentLocalBlurPlan(
+                currentPlan = currentPlan,
+                nextPlan = nextPlan,
+                handoffActive = true
+            )
+        )
+        assertFalse(
+            shouldRetainCurrentLocalBlurPlan(
+                currentPlan = currentPlan,
+                nextPlan = null,
+                handoffActive = false
+            )
+        )
+        assertTrue(
+            shouldFreezeLocalBlurFrame(
+                currentPlan = currentPlan,
+                nextPlan = null,
+                retainCurrentPlan = true,
+                allowOneFrameHandoff = true
+            )
+        )
+        assertTrue(
+            shouldFreezeLocalBlurFrame(
+                currentPlan = currentPlan,
+                nextPlan = null,
+                retainCurrentPlan = false,
+                allowOneFrameHandoff = true
+            )
+        )
+        assertFalse(
+            shouldFreezeLocalBlurFrame(
+                currentPlan = currentPlan,
+                nextPlan = nextPlan,
+                retainCurrentPlan = true,
+                allowOneFrameHandoff = true
+            )
+        )
+        assertFalse(
+            shouldFreezeLocalBlurFrame(
+                currentPlan = currentPlan,
+                nextPlan = null,
+                retainCurrentPlan = false,
+                allowOneFrameHandoff = false
             )
         )
     }

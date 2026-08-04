@@ -22,14 +22,22 @@ internal class AdvancedGlassLocalBlurRenderer {
     private val sourceNode = RenderNode("AdvancedGlassSource")
     private val downsampledSourceNode = RenderNode("AdvancedGlassDownsampledSource")
     private val effectNodes = mutableListOf<AdvancedGlassLocalBlurNode>()
+    private val targets = mutableListOf<AdvancedGlassLocalBlurTarget>()
     private val blurEffects = mutableMapOf<Int, AndroidRenderEffect>()
     private var sourceWidth = -1
     private var sourceHeight = -1
+    private var sourceGeneration = NoSourceGeneration
     private var downsampledSourceWidth = -1
     private var downsampledSourceHeight = -1
     private var downsampledSourceFactor = 1
+    private var downsampledSourceGeneration = NoSourceGeneration
+    private var activeLocalNodeCount = 0
 
-    fun render(scope: ContentDrawScope, plan: AdvancedGlassLocalBlurPlan) {
+    fun render(
+        scope: ContentDrawScope,
+        plan: AdvancedGlassLocalBlurPlan,
+        freezeFrame: Boolean = false
+    ) {
         if (plan.groups.isEmpty() || !scope.drawContext.canvas.nativeCanvas.isHardwareAccelerated) {
             scope.drawContent()
             return
@@ -41,23 +49,27 @@ internal class AdvancedGlassLocalBlurRenderer {
             return
         }
 
+        if (freezeFrame && hasCachedLocalBlurFrame(width, height)) {
+            drawCurrentContentWithCachedLocalBlur(scope)
+            return
+        }
         recordSource(scope, width, height)
         val blurSourceNode = resolveBlurSourceNode(
             width = width,
             height = height,
             downscaleFactor = plan.downscaleFactor
         )
-        val targets = plan.groups.mapNotNull { group ->
+        targets.clear()
+        plan.groups.forEach { group ->
             group.bounds.expand(plan.inputPaddingPx).intersect(
                 left = 0f,
                 top = 0f,
                 right = width.toFloat(),
                 bottom = height.toFloat()
-            )?.let { inputBounds ->
-                AdvancedGlassLocalBlurTarget(group, inputBounds)
-            }
+            )?.let { inputBounds -> targets += AdvancedGlassLocalBlurTarget(group, inputBounds) }
         }
         if (targets.isEmpty()) {
+            activeLocalNodeCount = 0
             scope.drawContext.canvas.nativeCanvas.drawRenderNode(sourceNode)
             return
         }
@@ -65,33 +77,18 @@ internal class AdvancedGlassLocalBlurRenderer {
         while (effectNodes.size < targets.size) {
             effectNodes += AdvancedGlassLocalBlurNode()
         }
-        val activeNodes = effectNodes.take(targets.size)
         val blurEffect = blurEffectFor(plan.radiusPx / plan.downscaleFactor)
-        activeNodes.forEachIndexed { index, effectNode ->
-            effectNode.update(
+        targets.indices.forEach { index ->
+            effectNodes[index].update(
                 target = targets[index],
                 downscaleFactor = plan.downscaleFactor,
                 blurEffect = blurEffect,
-                sourceNode = blurSourceNode
+                sourceNode = blurSourceNode,
+                sourceGeneration = sourceGeneration
             )
         }
-
-        with(scope.drawContext.canvas) {
-            withSave {
-                activeNodes.forEach { effectNode ->
-                    clipPath(effectNode.outputPath, ClipOp.Difference)
-                }
-                nativeCanvas.drawRenderNode(sourceNode)
-            }
-        }
-        activeNodes.forEach { effectNode ->
-            with(scope.drawContext.canvas) {
-                withSave {
-                    clipPath(effectNode.outputPath)
-                    nativeCanvas.drawRenderNode(effectNode.renderNode)
-                }
-            }
-        }
+        activeLocalNodeCount = targets.size
+        drawCachedLocalFrame(scope, activeLocalNodeCount)
     }
 
     private fun recordSource(scope: ContentDrawScope, width: Int, height: Int) {
@@ -111,6 +108,7 @@ internal class AdvancedGlassLocalBlurRenderer {
                 contentScope.drawContent()
             }
         }
+        sourceGeneration += 1L
     }
 
     private fun resolveBlurSourceNode(
@@ -124,17 +122,19 @@ internal class AdvancedGlassLocalBlurRenderer {
         val downsampledHeight = ceil(height.toDouble() / downscaleFactor).toInt()
         if (downsampledSourceWidth != downsampledWidth ||
             downsampledSourceHeight != downsampledHeight ||
-            downsampledSourceFactor != downscaleFactor
+            downsampledSourceFactor != downscaleFactor ||
+            downsampledSourceGeneration != sourceGeneration
         ) {
             downsampledSourceNode.setPosition(0, 0, downsampledWidth, downsampledHeight)
             downsampledSourceWidth = downsampledWidth
             downsampledSourceHeight = downsampledHeight
             downsampledSourceFactor = downscaleFactor
-        }
-        downsampledSourceNode.record { canvas ->
-            val scale = 1f / downscaleFactor
-            canvas.scale(scale, scale)
-            canvas.drawRenderNode(sourceNode)
+            downsampledSourceGeneration = sourceGeneration
+            downsampledSourceNode.record { canvas ->
+                val scale = 1f / downscaleFactor
+                canvas.scale(scale, scale)
+                canvas.drawRenderNode(sourceNode)
+            }
         }
         return downsampledSourceNode
     }
@@ -147,6 +147,50 @@ internal class AdvancedGlassLocalBlurRenderer {
                 radiusPx,
                 Shader.TileMode.CLAMP
             )
+        }
+    }
+
+    private fun drawCachedLocalFrame(scope: ContentDrawScope, activeNodeCount: Int) {
+        with(scope.drawContext.canvas) {
+            withSave {
+                repeat(activeNodeCount) { index ->
+                    clipPath(effectNodes[index].outputPath, ClipOp.Difference)
+                }
+                nativeCanvas.drawRenderNode(sourceNode)
+            }
+        }
+        repeat(activeNodeCount) { index ->
+            with(scope.drawContext.canvas) {
+                withSave {
+                    clipPath(effectNodes[index].outputPath)
+                    nativeCanvas.drawRenderNode(effectNodes[index].renderNode)
+                }
+            }
+        }
+    }
+
+    private fun hasCachedLocalBlurFrame(width: Int, height: Int): Boolean =
+        activeLocalNodeCount > 0 &&
+            sourceGeneration != NoSourceGeneration &&
+            sourceWidth == width &&
+            sourceHeight == height
+
+    private fun drawCurrentContentWithCachedLocalBlur(scope: ContentDrawScope) {
+        with(scope.drawContext.canvas) {
+            withSave {
+                repeat(activeLocalNodeCount) { index ->
+                    clipPath(effectNodes[index].outputPath, ClipOp.Difference)
+                }
+                scope.drawContent()
+            }
+        }
+        repeat(activeLocalNodeCount) { index ->
+            with(scope.drawContext.canvas) {
+                withSave {
+                    clipPath(effectNodes[index].outputPath)
+                    nativeCanvas.drawRenderNode(effectNodes[index].renderNode)
+                }
+            }
         }
     }
 }
@@ -166,12 +210,14 @@ private class AdvancedGlassLocalBlurNode {
     private var appliedBlurEffect: AndroidRenderEffect? = null
     private var downscaleFactor = 1
     private var recordedSourceNode: RenderNode? = null
+    private var recordedSourceGeneration = NoSourceGeneration
 
     fun update(
         target: AdvancedGlassLocalBlurTarget,
         downscaleFactor: Int,
         blurEffect: AndroidRenderEffect,
-        sourceNode: RenderNode
+        sourceNode: RenderNode,
+        sourceGeneration: Long
     ) {
         var requiresSourceRecord = false
         if (inputBounds != target.inputBounds || this.downscaleFactor != downscaleFactor) {
@@ -199,8 +245,12 @@ private class AdvancedGlassLocalBlurNode {
             appliedBlurEffect = blurEffect
             renderNode.setRenderEffect(blurEffect)
         }
-        if (recordedSourceNode !== sourceNode) {
+        if (
+            recordedSourceNode !== sourceNode ||
+            recordedSourceGeneration != sourceGeneration
+        ) {
             recordedSourceNode = sourceNode
+            recordedSourceGeneration = sourceGeneration
             requiresSourceRecord = true
         }
         if (requiresSourceRecord) {
@@ -215,24 +265,30 @@ private class AdvancedGlassLocalBlurNode {
     }
 
     private fun updateOutputPath() {
-        outputPath.rewind()
-        regions.forEach { region ->
-            val radii = region.cornerRadiiPx
-            outputPath.addRoundRect(
-                RoundRect(
-                    left = region.left,
-                    top = region.top,
-                    right = region.right,
-                    bottom = region.bottom,
-                    topLeftCornerRadius = CornerRadius(radii.topLeft, radii.topLeft),
-                    topRightCornerRadius = CornerRadius(radii.topRight, radii.topRight),
-                    bottomRightCornerRadius = CornerRadius(radii.bottomRight, radii.bottomRight),
-                    bottomLeftCornerRadius = CornerRadius(radii.bottomLeft, radii.bottomLeft)
-                )
-            )
-        }
+        outputPath.updateForRegions(regions)
     }
 }
+
+private fun Path.updateForRegions(regions: List<AdvancedGlassRenderRegion>) {
+    rewind()
+    regions.forEach { region ->
+        val radii = region.cornerRadiiPx
+        addRoundRect(
+            RoundRect(
+                left = region.left,
+                top = region.top,
+                right = region.right,
+                bottom = region.bottom,
+                topLeftCornerRadius = CornerRadius(radii.topLeft, radii.topLeft),
+                topRightCornerRadius = CornerRadius(radii.topRight, radii.topRight),
+                bottomRightCornerRadius = CornerRadius(radii.bottomRight, radii.bottomRight),
+                bottomLeftCornerRadius = CornerRadius(radii.bottomLeft, radii.bottomLeft)
+            )
+        )
+    }
+}
+
+private const val NoSourceGeneration = -1L
 
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
 private inline fun RenderNode.record(block: (RecordingCanvas) -> Unit) {

@@ -4,6 +4,7 @@ import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -22,8 +23,10 @@ internal class AdvancedGlassBackdrop internal constructor() {
     internal var positionInWindow: Offset by mutableStateOf(Offset.Unspecified)
     internal var renderEffect: RenderEffect? by mutableStateOf(null)
     internal var localBlurPlan: AdvancedGlassLocalBlurPlan? by mutableStateOf(null)
+    internal var freezeLocalBlurFrame: Boolean by mutableStateOf(false)
     private var localBlurRenderer: Any? = null
     private var localBlurRendererCacheKey = NoLocalBlurRendererCacheKey
+    private val localBlurHandoffGuards = mutableStateMapOf<Any, Unit>()
 
     internal val hasActiveBlur: Boolean
         get() = renderEffect != null || localBlurPlan != null
@@ -41,6 +44,22 @@ internal class AdvancedGlassBackdrop internal constructor() {
     internal fun invalidateLocalBlurRenderer() {
         localBlurRenderer = null
         localBlurRendererCacheKey = NoLocalBlurRendererCacheKey
+        freezeLocalBlurFrame = false
+    }
+
+    internal val hasLocalBlurHandoffGuard: Boolean
+        get() = localBlurHandoffGuards.isNotEmpty()
+
+    internal fun setLocalBlurHandoffGuard(key: Any, enabled: Boolean) {
+        if (enabled) {
+            localBlurHandoffGuards[key] = Unit
+        } else {
+            localBlurHandoffGuards.remove(key)
+        }
+    }
+
+    internal fun removeLocalBlurHandoffGuard(key: Any) {
+        localBlurHandoffGuards -= key
     }
 }
 
@@ -65,7 +84,11 @@ internal fun Modifier.captureAdvancedGlassBackdrop(
         if (plan == null || Build.VERSION.SDK_INT < ADVANCED_GLASS_BACKEND_MIN_SDK) {
             drawContent()
         } else {
-            backdrop.localBlurRenderer(plan.rendererCacheKey).render(this, plan)
+            backdrop.localBlurRenderer(plan.rendererCacheKey).render(
+                scope = this,
+                plan = plan,
+                freezeFrame = backdrop.freezeLocalBlurFrame
+            )
         }
     }
 

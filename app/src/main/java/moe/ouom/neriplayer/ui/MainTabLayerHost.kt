@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.IntOffset
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
 import moe.ouom.neriplayer.ui.effect.glass.ADVANCED_GLASS_MAIN_TAB_TRANSITION_DURATION_MS
 import moe.ouom.neriplayer.ui.effect.glass.DRAWER_NAVIGATION_CLOSE_DURATION_MS
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassNavigationOwner
@@ -252,52 +253,54 @@ internal fun MainTabLayerHost(
         })
     }
     val saveableStateHolder = rememberSaveableStateHolder()
-    Box(
-        modifier = modifier
-            .clipToBounds()
-            .onSizeChanged { size ->
-                widthPx = size.width
-                transitionState.onContainerWidthChanged(size.width)
-            }
-    ) {
-        visibleScenes.forEach { scene ->
-            key(scene.route) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .offset {
-                            IntOffset(
-                                x = (
-                                    transitionState.offsetFractionFor(scene) * widthPx
-                                ).roundToInt(),
-                                y = 0
-                            )
-                        }
-                        .graphicsLayer()
-                ) {
-                    CompositionLocalProvider(
-                        LocalAdvancedGlassNavigationOwner provides scene.glassOwner,
-                        LocalMainTabSceneRestored provides scene.restored
-                    ) {
-                        saveableStateHolder.SaveableStateProvider(scene.route) {
-                            content(scene.route)
-                        }
-                        if (scene.restored) {
-                            LaunchedEffect(scene.restorationToken) {
-                                withFrameNanos { }
-                                transitionState.consumeRestoredScene(scene.restorationToken)
-                            }
-                        }
-                        if (
-                            scene.phase == MainTabLayerScenePhase.Entering &&
-                            scene.transitionToken != 0L
-                        ) {
-                            LaunchedEffect(scene.transitionToken) {
-                                withFrameNanos { }
-                                withFrameNanos { }
-                                transitionState.onIncomingScenePrepared(
-                                    scene.transitionToken
+    AdvancedGlassNavigationHandoff(enabled = visibleScenes.size > 1) {
+        Box(
+            modifier = modifier
+                .clipToBounds()
+                .onSizeChanged { size ->
+                    widthPx = size.width
+                    transitionState.onContainerWidthChanged(size.width)
+                }
+        ) {
+            visibleScenes.forEach { scene ->
+                key(scene.route) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .offset {
+                                IntOffset(
+                                    x = (
+                                        transitionState.offsetFractionFor(scene) * widthPx
+                                    ).roundToInt(),
+                                    y = 0
                                 )
+                            }
+                            .graphicsLayer()
+                    ) {
+                        CompositionLocalProvider(
+                            LocalAdvancedGlassNavigationOwner provides scene.glassOwner,
+                            LocalMainTabSceneRestored provides scene.restored
+                        ) {
+                            saveableStateHolder.SaveableStateProvider(scene.route) {
+                                content(scene.route)
+                            }
+                            if (scene.restored) {
+                                LaunchedEffect(scene.restorationToken) {
+                                    withFrameNanos { }
+                                    transitionState.consumeRestoredScene(scene.restorationToken)
+                                }
+                            }
+                            if (
+                                scene.phase == MainTabLayerScenePhase.Entering &&
+                                scene.transitionToken != 0L
+                            ) {
+                                LaunchedEffect(scene.transitionToken) {
+                                    withFrameNanos { }
+                                    withFrameNanos { }
+                                    transitionState.onIncomingScenePrepared(
+                                        scene.transitionToken
+                                    )
+                                }
                             }
                         }
                     }
