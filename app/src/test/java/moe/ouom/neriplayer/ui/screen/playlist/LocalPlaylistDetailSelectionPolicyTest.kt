@@ -97,6 +97,32 @@ class LocalPlaylistDetailSelectionPolicyTest {
         assertEquals(listOf("newest", "middle"), snapshotDisplayOrderList(exportedSongs).map { it.name })
     }
 
+    @Test
+    fun `local files tabs keep manually added and downloaded sources independent`() {
+        val manuallyAddedOnly = song(id = 1, name = "manual")
+        val manuallyAddedDownloaded = song(id = 2, name = "manual-downloaded")
+        val downloadedOnly = song(id = 3, name = "downloaded")
+        val manuallyAddedSongs = listOf(manuallyAddedOnly, manuallyAddedDownloaded)
+        val downloadedSongs = listOf(manuallyAddedDownloaded, downloadedOnly)
+
+        assertEquals(
+            manuallyAddedSongs,
+            localFilesSongsForTab(
+                manuallyAddedSongs = manuallyAddedSongs,
+                downloadedSongs = downloadedSongs,
+                tab = LocalFilesSongTab.MANUALLY_ADDED
+            )
+        )
+        assertEquals(
+            downloadedSongs,
+            localFilesSongsForTab(
+                manuallyAddedSongs = manuallyAddedSongs,
+                downloadedSongs = downloadedSongs,
+                tab = LocalFilesSongTab.DOWNLOADED
+            )
+        )
+    }
+
     private fun song(id: Long, name: String): SongItem {
         return SongItem(
             id = id,

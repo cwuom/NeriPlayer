@@ -32,11 +32,14 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportResult
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
@@ -66,6 +69,11 @@ data class LocalAudioImportUiResult(
     val failedCount: Int,
     val addedSongs: List<SongItem> = emptyList(),
     val createdPlaylist: LocalPlaylist? = null
+)
+
+data class LocalFilesDownloadedSongDeleteUiResult(
+    val deletedCount: Int,
+    val notDeletedCount: Int
 )
 
 data class LocalScanPreviewState(
@@ -475,6 +483,30 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                     repo.removeSongsFromPlaylistByIdentityWithResult(playlistId, songs)
                 }
             )
+        }
+    }
+
+    fun deleteDownloadedSongs(
+        songs: List<DownloadedSong>,
+        onResult: (LocalFilesDownloadedSongDeleteUiResult) -> Unit
+    ) {
+        if (songs.isEmpty()) {
+            onResult(LocalFilesDownloadedSongDeleteUiResult(0, 0))
+            return
+        }
+        viewModelScope.launch {
+            withContext(NonCancellable) {
+                val deletion = GlobalDownloadManager.deleteDownloadedSongsWithResult(
+                    context = app,
+                    songs = songs
+                )
+                onResult(
+                    LocalFilesDownloadedSongDeleteUiResult(
+                        deletedCount = deletion.deletedSongs.size,
+                        notDeletedCount = deletion.failedSongs.size
+                    )
+                )
+            }
         }
     }
 

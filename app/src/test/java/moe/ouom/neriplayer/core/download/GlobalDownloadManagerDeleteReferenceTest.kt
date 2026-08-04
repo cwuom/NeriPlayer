@@ -76,4 +76,79 @@ class GlobalDownloadManagerDeleteReferenceTest {
 
         assertEquals(setOf(currentAudio.reference, currentMetadataReference), references)
     }
+
+    @Test
+    fun `download deletion result retains songs whose required audio was not deleted`() {
+        val deletedSong = downloadedSong(id = 1L, name = "deleted")
+        val retainedSong = downloadedSong(id = 2L, name = "retained")
+
+        val result = resolveDownloadedSongDeleteResult(
+            deletePlans = listOf(
+                ManagedDownloadSongDeletePlan(
+                    song = deletedSong,
+                    requestedReferences = setOf("audio-deleted", "cover-deleted"),
+                    requiredReferences = setOf("audio-deleted")
+                ),
+                ManagedDownloadSongDeletePlan(
+                    song = retainedSong,
+                    requestedReferences = setOf("audio-retained", "cover-retained"),
+                    requiredReferences = setOf("audio-retained")
+                )
+            ),
+            deletedReferences = setOf("audio-deleted", "cover-deleted")
+        )
+
+        assertEquals(listOf(deletedSong), result.deletedSongs)
+        assertEquals(listOf(retainedSong), result.failedSongs)
+    }
+
+    @Test
+    fun `deletion result merge keeps concurrent downloads and restores failed entries`() {
+        val deletedSong = downloadedSong(id = 1L, name = "deleted", downloadTime = 1L)
+        val failedSong = downloadedSong(id = 2L, name = "failed", downloadTime = 2L)
+        val concurrentSong = downloadedSong(id = 3L, name = "concurrent", downloadTime = 3L)
+
+        val merged = mergeDownloadedSongsAfterDelete(
+            currentSongs = listOf(concurrentSong),
+            previousSongs = listOf(deletedSong, failedSong),
+            deletedSongs = listOf(deletedSong),
+            restoredSongs = listOf(failedSong)
+        )
+
+        assertEquals(listOf(concurrentSong, failedSong), merged)
+    }
+
+    @Test
+    fun `downloaded song creates a playback item from its managed media reference`() {
+        val downloaded = downloadedSong(id = 42L, name = "managed").copy(
+            filePath = "content://downloads/audio/managed.mp3",
+            mediaUri = "content://downloads/audio/managed.mp3",
+            durationMs = 180_000L,
+            stableKey = "42|netease|"
+        )
+
+        val playbackItem = downloaded.toPlaybackSongItem()
+
+        assertEquals(downloaded.mediaUri, playbackItem.mediaUri)
+        assertEquals(downloaded.durationMs, playbackItem.durationMs)
+        assertEquals(downloaded.stableKey, playbackItem.sourceStableKey)
+        assertEquals("managed.mp3", playbackItem.localFileName)
+        assertNull(playbackItem.localFilePath)
+    }
+
+    private fun downloadedSong(
+        id: Long,
+        name: String,
+        downloadTime: Long = 1L
+    ): DownloadedSong {
+        return DownloadedSong(
+            id = id,
+            name = name,
+            artist = "artist",
+            album = "album",
+            filePath = "/downloads/$name.mp3",
+            fileSize = 1024L,
+            downloadTime = downloadTime
+        )
+    }
 }

@@ -440,6 +440,7 @@
     <string name="playlist_loading_content">正在加载歌单内容…</string>
     <string name="youtube_music_playlist_partial_loaded">歌单还有内容没加载完，已先显示当前已获取的歌曲</string>
     <string name="youtube_music_playlist_wait_full_load">歌单还没完整加载，稍后再试或点刷新重试</string>
+    <string name="youtube_music_playlist_tracks_unavailable">暂时未能获取歌单歌曲，请刷新重试</string>
     <string name="playlist_load_failed_format">加载失败：%s</string>
     <string name="local_playlist_initialization_failed">本地歌单初始化失败，请重启应用后重试</string>
 
@@ -551,6 +552,12 @@
     <!-- Local Playlists & Files -->
     <string name="local_title">本地</string>
     <string name="local_files">本地文件</string>
+    <string name="local_files_manual_added">手动添加</string>
+    <string name="local_files_downloaded">已下载</string>
+    <string name="local_files_delete_downloaded_title">删除已下载歌曲</string>
+    <string name="local_files_delete_downloaded_confirm">确定要删除 %d 首已下载歌曲及其本地文件吗？此操作无法撤销。</string>
+    <string name="local_files_delete_downloaded_partial">已删除 %1$d 首下载文件；%2$d 首未删除</string>
+    <string name="local_files_delete_downloaded_failed">未能删除下载文件，下载记录已保留</string>
     <string name="local_playlist_scan_mode_title">选择扫描方式</string>
     <string name="local_playlist_scan_mode_message">授权文件夹只扫描你选择的文件夹及其子文件夹；全局扫描会读取设备音乐库。</string>
     <string name="local_playlist_scan_folder">授权文件夹</string>
@@ -591,6 +598,11 @@
     <string name="local_playlist_total_duration" formatted="false">%s · %d 首</string>
     <string name="local_playlist_play_next">接下来播放…</string>
     <string name="local_artist_detail_empty">这个歌手暂无可播放的本地歌曲</string>
+
+    <plurals name="local_files_delete_downloaded_success">
+        <item quantity="one">已删除 %d 首已下载歌曲及其本地文件</item>
+        <item quantity="other">已删除 %d 首已下载歌曲及其本地文件</item>
+    </plurals>
 
     <!-- Download -->
     <string name="download_title">下载管理</string>
@@ -705,6 +717,8 @@
     <string name="explore_search_type_song">歌曲</string>
     <string name="explore_search_type_playlist">歌单</string>
     <string name="explore_search_type_artist">歌手</string>
+    <string name="explore_search_type_video">视频</string>
+    <string name="explore_search_type_creator">创作者</string>
     <string name="explore_tag_link_recognition">链接识别</string>
     <string name="explore_tab_youtube">YouTube</string>
     <string name="explore_tab_links">链接</string>
@@ -723,6 +737,15 @@
     <string name="explore_link_youtube_playlist_fallback">YouTube 播放列表 %1$s</string>
     <string name="youtube_search_type_song">YouTube 歌曲</string>
     <string name="youtube_search_type_video">YouTube 视频</string>
+    <string name="youtube_creator_load_failed">加载 YouTube 创作者主页失败：%s</string>
+    <string name="youtube_creator_sections_empty">这个创作者暂时没有可显示的内容</string>
+    <string name="youtube_creator_items_load_failed">加载 %1$s 失败：%2$s</string>
+    <string name="youtube_creator_items_empty">暂无可显示的歌曲</string>
+    <string name="youtube_creator_load_more">加载更多</string>
+    <string name="youtube_creator_view_all">查看全部 %s</string>
+    <string name="youtube_creator_choose_title">选择 YouTube 创作者</string>
+    <string name="youtube_creator_not_available">这首歌没有可打开的 YouTube 创作者信息</string>
+    <string name="youtube_creator_open_failed">无法打开 YouTube 创作者主页：%s</string>
 
     <!-- Home -->
     <string name="recommend_for_you">为你推荐</string>
@@ -888,6 +911,20 @@
     <string name="settings_netease_auto_source_switch_desc">网易云歌曲无权限或仅返回试听片段时，自动在哔哩哔哩查找音源</string>
     <string name="settings_netease_local_source_fallback">本地音频兜底</string>
     <string name="settings_netease_local_source_fallback_desc">网易云歌曲无权限或仅返回试听片段时，优先播放已匹配相同歌曲信息的本地音频</string>
+    <string name="settings_youtube_playback_source">YouTube 播放源</string>
+    <string name="settings_youtube_playback_source_desc">选择优先使用的 YouTube 播放客户端；不可用时会自动回退到其余来源</string>
+    <string name="settings_youtube_playback_source_web_remix">Web Remix 低延迟</string>
+    <string name="settings_youtube_playback_source_web_remix_desc">优先获取 Web Remix 直连并复用已预热的播放数据</string>
+    <string name="settings_youtube_playback_source_automatic">自动选择</string>
+    <string name="settings_youtube_playback_source_automatic_desc">按低延迟顺序尝试 visionOS、Android VR、Web Remix、TV HTML5 与 Web Creator</string>
+    <string name="settings_youtube_playback_source_visionos">visionOS 低延迟</string>
+    <string name="settings_youtube_playback_source_visionos_desc">优先使用匿名 visionOS 客户端，绕开登录态限制并减少首播处理</string>
+    <string name="settings_youtube_playback_source_android_vr">Android VR 低延迟</string>
+    <string name="settings_youtube_playback_source_android_vr_desc">优先使用匿名 Android VR 客户端，适合 Web 来源受限时</string>
+    <string name="settings_youtube_playback_source_tv_html5">TV HTML5 兼容</string>
+    <string name="settings_youtube_playback_source_tv_html5_desc">优先使用 TV 客户端，适合 Web Remix 受限时</string>
+    <string name="settings_youtube_playback_source_web_creator">Web Creator 兼容</string>
+    <string name="settings_youtube_playback_source_web_creator_desc">优先使用 Web Creator 客户端，并在不可用时自动降级</string>
     <string name="settings_bili_sponsor_block">BilibiliSponsorBlock 自动跳过</string>
     <string name="settings_bili_sponsor_block_desc">启用后会查询当前视频的公开片段，并自动跳过片头、片尾、赞助、填充和非音乐内容</string>
     <string name="toast_bili_sponsor_block_skipped">BilibiliSponsorBlock 已跳过片段</string>

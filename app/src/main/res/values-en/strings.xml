@@ -440,6 +440,7 @@
     <string name="playlist_loading_content">Loading playlist content…</string>
     <string name="youtube_music_playlist_partial_loaded">Some playlist items are still missing. Showing the tracks loaded so far.</string>
     <string name="youtube_music_playlist_wait_full_load">The playlist is not fully loaded yet. Try again later or tap refresh.</string>
+    <string name="youtube_music_playlist_tracks_unavailable">Unable to load the playlist tracks. Please refresh and try again.</string>
     <string name="playlist_load_failed_format">Load failed: %s</string>
     <string name="local_playlist_initialization_failed">Local playlists could not be initialized. Restart the app and try again.</string>
 
@@ -551,6 +552,12 @@
     <!-- Local Playlists & Files -->
     <string name="local_title">Local</string>
     <string name="local_files">Local Files</string>
+    <string name="local_files_manual_added">Manually Added</string>
+    <string name="local_files_downloaded">Downloaded</string>
+    <string name="local_files_delete_downloaded_title">Delete Downloaded Songs</string>
+    <string name="local_files_delete_downloaded_confirm">Delete %d downloaded songs and their local files? This cannot be undone.</string>
+    <string name="local_files_delete_downloaded_partial">Deleted %1$d downloaded songs and their local files; %2$d were not deleted</string>
+    <string name="local_files_delete_downloaded_failed">Could not delete the downloaded files. Their download records remain.</string>
     <string name="local_playlist_scan_mode_title">Choose Scan Mode</string>
     <string name="local_playlist_scan_mode_message">Authorized folder scans only the selected folder and its subfolders. Global scan reads the device music library.</string>
     <string name="local_playlist_scan_folder">Authorized Folder</string>
@@ -591,6 +598,11 @@
     <string name="local_playlist_total_duration" formatted="false">%s · %d songs</string>
     <string name="local_playlist_play_next">Play Next…</string>
     <string name="local_artist_detail_empty">This artist has no playable local songs</string>
+
+    <plurals name="local_files_delete_downloaded_success">
+        <item quantity="one">Deleted %d downloaded song and its local files</item>
+        <item quantity="other">Deleted %d downloaded songs and their local files</item>
+    </plurals>
 
     <!-- Download -->
     <string name="download_title">Downloads</string>
@@ -705,6 +717,8 @@
     <string name="explore_search_type_song">Songs</string>
     <string name="explore_search_type_playlist">Playlists</string>
     <string name="explore_search_type_artist">Artists</string>
+    <string name="explore_search_type_video">Videos</string>
+    <string name="explore_search_type_creator">Creators</string>
     <string name="explore_tag_link_recognition">Link Recognition</string>
     <string name="explore_tab_youtube">YouTube</string>
     <string name="explore_tab_links">Links</string>
@@ -723,6 +737,15 @@
     <string name="explore_link_youtube_playlist_fallback">YouTube playlist %1$s</string>
     <string name="youtube_search_type_song">YouTube Song</string>
     <string name="youtube_search_type_video">YouTube Video</string>
+    <string name="youtube_creator_load_failed">Failed to load YouTube creator page: %s</string>
+    <string name="youtube_creator_sections_empty">This creator has no content to display yet</string>
+    <string name="youtube_creator_items_load_failed">Failed to load %1$s: %2$s</string>
+    <string name="youtube_creator_items_empty">No songs are available to display</string>
+    <string name="youtube_creator_load_more">Load more</string>
+    <string name="youtube_creator_view_all">View all %s</string>
+    <string name="youtube_creator_choose_title">Choose YouTube creator</string>
+    <string name="youtube_creator_not_available">No YouTube creator information is available for this song</string>
+    <string name="youtube_creator_open_failed">Failed to open YouTube creator page: %s</string>
 
     <!-- Home -->
     <string name="recommend_for_you">For You</string>
@@ -888,6 +911,20 @@
     <string name="settings_netease_auto_source_switch_desc">Search Bilibili automatically when a NetEase song is unavailable or only returns a preview clip</string>
     <string name="settings_netease_local_source_fallback">Local Audio Fallback</string>
     <string name="settings_netease_local_source_fallback_desc">Prefer a local audio file matched to the same song when a NetEase song is unavailable or only returns a preview clip</string>
+    <string name="settings_youtube_playback_source">YouTube Playback Source</string>
+    <string name="settings_youtube_playback_source_desc">Choose the preferred YouTube playback client; unavailable clients fall back to the remaining sources</string>
+    <string name="settings_youtube_playback_source_web_remix">Web Remix Low Latency</string>
+    <string name="settings_youtube_playback_source_web_remix_desc">Prefer Web Remix direct streams and reuse warmed playback data</string>
+    <string name="settings_youtube_playback_source_automatic">Automatic</string>
+    <string name="settings_youtube_playback_source_automatic_desc">Try visionOS, Android VR, Web Remix, TV HTML5, and Web Creator in low-latency order</string>
+    <string name="settings_youtube_playback_source_visionos">visionOS Low Latency</string>
+    <string name="settings_youtube_playback_source_visionos_desc">Prefer the anonymous visionOS client to avoid signed-in restrictions and first-play work</string>
+    <string name="settings_youtube_playback_source_android_vr">Android VR Low Latency</string>
+    <string name="settings_youtube_playback_source_android_vr_desc">Prefer the anonymous Android VR client when Web sources are restricted</string>
+    <string name="settings_youtube_playback_source_tv_html5">TV HTML5 Compatibility</string>
+    <string name="settings_youtube_playback_source_tv_html5_desc">Prefer the TV client when Web Remix is restricted</string>
+    <string name="settings_youtube_playback_source_web_creator">Web Creator Compatibility</string>
+    <string name="settings_youtube_playback_source_web_creator_desc">Prefer the Web Creator client and automatically fall back when it is unavailable</string>
     <string name="settings_bili_sponsor_block">BilibiliSponsorBlock Auto Skip</string>
     <string name="settings_bili_sponsor_block_desc">Query public segments for the current video and automatically skip intros, outros, sponsorships, filler, and non-music content</string>
     <string name="toast_bili_sponsor_block_skipped">BilibiliSponsorBlock skipped a segment</string>

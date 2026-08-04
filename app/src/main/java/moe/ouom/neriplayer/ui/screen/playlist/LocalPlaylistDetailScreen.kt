@@ -101,9 +101,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -120,6 +122,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
@@ -159,7 +162,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.toPlaybackSongItem
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportResult
@@ -227,9 +230,20 @@ import org.burnoutcrew.reorderable.reorderable
 import java.io.File
 import kotlin.random.Random
 
-private fun hasCachedLocalDownload(song: SongItem): Boolean {
-    return GlobalDownloadManager.hasDownloadedSongCached(song) ||
-        ManagedDownloadStorage.peekDownloadedAudio(song) != null
+internal enum class LocalFilesSongTab {
+    MANUALLY_ADDED,
+    DOWNLOADED
+}
+
+internal fun localFilesSongsForTab(
+    manuallyAddedSongs: List<SongItem>,
+    downloadedSongs: List<SongItem>,
+    tab: LocalFilesSongTab
+): List<SongItem> {
+    return when (tab) {
+        LocalFilesSongTab.MANUALLY_ADDED -> manuallyAddedSongs
+        LocalFilesSongTab.DOWNLOADED -> downloadedSongs
+    }
 }
 
 private const val BLANK_COVER_MODEL = "about:blank"
@@ -498,7 +512,7 @@ fun LocalPlaylistDetailScreen(
             // 下载进度
             val downloadTaskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
             val hasDownloadManagerEntry = downloadTaskSummary.hasPendingTasks
-            val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
+            val downloadedSongs by GlobalDownloadManager.downloadedSongs.collectAsState()
 
             // Snackbar状态
             val snackbarHostState = remember { SnackbarHostState() }
@@ -965,12 +979,27 @@ fun LocalPlaylistDetailScreen(
                 )
             }
 
-            // 拖拽
             val headerKey = LOCAL_PLAYLIST_HEADER_KEY
             val metadataProcessingVisible = visibleMetadataProcessingState.isProcessing
+            var selectedLocalFilesTabIndex by rememberSaveable(playlistId) {
+                mutableIntStateOf(0)
+            }
+            val selectedLocalFilesTab = if (
+                selectedLocalFilesTabIndex == LocalFilesSongTab.DOWNLOADED.ordinal
+            ) {
+                LocalFilesSongTab.DOWNLOADED
+            } else {
+                LocalFilesSongTab.MANUALLY_ADDED
+            }
+            val canReorderCurrentSongs = !isLocalFilesPlaylist ||
+                selectedLocalFilesTab == LocalFilesSongTab.MANUALLY_ADDED
+            val canReorderCurrentSongsState = rememberUpdatedState(canReorderCurrentSongs)
 
             val reorderState = rememberReorderableLazyListState(
                 onMove = { from: ItemPosition, to: ItemPosition ->
+                    if (!canReorderCurrentSongsState.value) {
+                        return@rememberReorderableLazyListState
+                    }
                     if (!blockSync) blockSync = true
                     val fromKey = from.key as? String ?: return@rememberReorderableLazyListState
                     val toKey = to.key as? String ?: return@rememberReorderableLazyListState
@@ -981,9 +1010,13 @@ fun LocalPlaylistDetailScreen(
                     }
                 },
                 canDragOver = { _, over ->
-                    (over.key as? String) !in LOCAL_PLAYLIST_FIXED_ITEM_KEYS
+                    canReorderCurrentSongsState.value &&
+                        (over.key as? String) !in LOCAL_PLAYLIST_FIXED_ITEM_KEYS
                 },
                 onDragEnd = { _, _ ->
+                    if (!canReorderCurrentSongsState.value) {
+                        return@rememberReorderableLazyListState
+                    }
                     val newOrder = localSongs.map { it.identity() }
                     pendingOrderIdentities = newOrder
                     blockSync = true
@@ -1001,17 +1034,46 @@ fun LocalPlaylistDetailScreen(
             val baseQueue by remember(localSongs) {
                 derivedStateOf { snapshotDisplayOrderList(localSongs) }
             }
-            val queueIndexBySongKey by remember(baseQueue) {
+            val downloadedPlaybackSongs = remember(downloadedSongs) {
+                downloadedSongs.map { it.toPlaybackSongItem() }
+            }
+            val downloadedSongsBySongKey = remember(downloadedSongs, downloadedPlaybackSongs) {
+                buildMap {
+                    downloadedSongs.forEachIndexed { index, downloadedSong ->
+                        put(downloadedPlaybackSongs[index].stableKey(), downloadedSong)
+                    }
+                }
+            }
+            val downloadedSongKeys = remember(baseQueue, downloadedSongsBySongKey) {
+                buildSet {
+                    addAll(downloadedSongsBySongKey.keys)
+                    baseQueue.forEach { song ->
+                        if (GlobalDownloadManager.findDownloadedSongCached(song) != null) {
+                            add(song.stableKey())
+                        }
+                    }
+                }
+            }
+            val tabSongs = if (isLocalFilesPlaylist) {
+                localFilesSongsForTab(
+                    manuallyAddedSongs = baseQueue,
+                    downloadedSongs = downloadedPlaybackSongs,
+                    tab = selectedLocalFilesTab
+                )
+            } else {
+                baseQueue
+            }
+            val queueIndexBySongKey by remember(tabSongs) {
                 derivedStateOf {
-                    buildMap(baseQueue.size) {
-                        baseQueue.forEachIndexed { index, song ->
+                    buildMap(tabSongs.size) {
+                        tabSongs.forEachIndexed { index, song ->
                             put(song.stableKey(), index)
                         }
                     }
                 }
             }
-            val displayOrderPlaylistForCover = remember(playlist, baseQueue) {
-                playlist.copy(songs = baseQueue.toMutableList())
+            val displayOrderPlaylistForCover = remember(playlist, tabSongs) {
+                playlist.copy(songs = tabSongs.toMutableList())
             }
             val headerCover = rememberPlaylistDisplayCoverUrl(
                 playlist = displayOrderPlaylistForCover,
@@ -1022,7 +1084,7 @@ fun LocalPlaylistDetailScreen(
             }
             val displayedSongs = rememberPlaylistSearchResults(
                 query = searchQuery,
-                items = baseQueue,
+                items = tabSongs,
                 tokens = { song -> song.playlistSearchValues(context) }
             )
 
@@ -1070,9 +1132,8 @@ fun LocalPlaylistDetailScreen(
                 }
             }
 
-            // 统计
-            val totalDurationMs by remember(localSongs) {
-                derivedStateOf { localSongs.sumOf { it.durationMs } }
+            val totalDurationMs by remember(tabSongs) {
+                derivedStateOf { tabSongs.sumOf { it.durationMs } }
             }
             val totalDurationText = formatTotalDuration(context, totalDurationMs)
             val headerDisplayName = when {
@@ -1083,23 +1144,33 @@ fun LocalPlaylistDetailScreen(
 
             fun playPlaylist(shuffle: Boolean) {
                 val startIndex = resolvePlaylistPlaybackStartIndex(
-                    songCount = baseQueue.size,
+                    songCount = tabSongs.size,
                     shuffleEnabled = shuffle,
-                    randomIndex = if (baseQueue.isEmpty()) 0 else Random.nextInt(baseQueue.size)
+                    randomIndex = if (tabSongs.isEmpty()) 0 else Random.nextInt(tabSongs.size)
                 )
                 if (startIndex < 0) return
                 PlayerManager.setShuffle(shuffle)
-                onSongClick(baseQueue, startIndex)
+                onSongClick(tabSongs, startIndex)
             }
 
             // 当前播放 & FAB
             val currentSong by PlayerManager.currentSongFlow.collectAsState()
-            val currentIndexInSource = remember(localSongs, currentSong) {
-                localSongs.indexOfFirst { it.sameIdentityAs(currentSong) }
+            val currentIndexInSource = remember(tabSongs, currentSong) {
+                tabSongs.indexOfFirst { it.sameIdentityAs(currentSong) }
             }
-            val selectedSongsForAction by remember(localSongs, selectedKeysState.value) {
+            val selectedSongsForAction by remember(tabSongs, selectedKeysState.value) {
                 derivedStateOf {
-                    localSongs.filter { it.stableKey() in selectedKeysState.value }
+                    tabSongs.filter { it.stableKey() in selectedKeysState.value }
+                }
+            }
+            val selectedDownloadedSongsForAction by remember(
+                selectedSongsForAction,
+                downloadedSongsBySongKey
+            ) {
+                derivedStateOf {
+                    selectedSongsForAction
+                        .mapNotNull { song -> downloadedSongsBySongKey[song.stableKey()] }
+                        .distinct()
                 }
             }
             val hasSelectedOnlineSongs by remember(selectedSongsForAction) {
@@ -1415,7 +1486,10 @@ fun LocalPlaylistDetailScreen(
                                     }
                                 }
                                 
-                                if (isLocalFilesPlaylist) {
+                                if (
+                                    isLocalFilesPlaylist &&
+                                    selectedLocalFilesTab == LocalFilesSongTab.MANUALLY_ADDED
+                                ) {
                                     HapticIconButton(onClick = {
                                         showLocalScanModeDialog = true
                                     }, enabled = !scanPreviewState.isScanning) {
@@ -1620,7 +1694,7 @@ fun LocalPlaylistDetailScreen(
                                         displayName = headerDisplayName,
                                         headerCover = headerCover,
                                         totalDurationText = totalDurationText,
-                                        songCount = localSongs.size,
+                                        songCount = tabSongs.size,
                                         offlineMode = offlineMode,
                                         height = playlistHeroHeight,
                                         actions = if (headerSearchVisible) {
@@ -1659,8 +1733,51 @@ fun LocalPlaylistDetailScreen(
                                         offlineMode = offlineMode,
                                         hasCustomBackground = hasCustomBackground
                                     ) {
+                                        Column {
+                                            if (isLocalFilesPlaylist) {
+                                                PrimaryTabRow(
+                                                    selectedTabIndex = selectedLocalFilesTabIndex,
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(horizontal = 16.dp),
+                                                    containerColor = Color.Transparent,
+                                                    contentColor = MaterialTheme.colorScheme.primary
+                                                ) {
+                                                    Tab(
+                                                        selected = selectedLocalFilesTab == LocalFilesSongTab.MANUALLY_ADDED,
+                                                        onClick = {
+                                                            selectedLocalFilesTabIndex =
+                                                                LocalFilesSongTab.MANUALLY_ADDED.ordinal
+                                                            if (selectionMode) exitSelectionMode()
+                                                        },
+                                                        text = {
+                                                            Text(
+                                                                stringResource(R.string.local_files_manual_added)
+                                                            )
+                                                        }
+                                                    )
+                                                    Tab(
+                                                        selected = selectedLocalFilesTab == LocalFilesSongTab.DOWNLOADED,
+                                                        onClick = {
+                                                            selectedLocalFilesTabIndex =
+                                                                LocalFilesSongTab.DOWNLOADED.ordinal
+                                                            if (selectionMode) exitSelectionMode()
+                                                        },
+                                                        text = {
+                                                            Text(
+                                                                stringResource(R.string.local_files_downloaded)
+                                                            )
+                                                        }
+                                                    )
+                                                }
+                                                HorizontalDivider(
+                                                    color = MaterialTheme.colorScheme.outlineVariant.copy(
+                                                        alpha = 0.5f
+                                                    )
+                                                )
+                                            }
                                             LocalPlaylistPlaybackActions(
-                                                songCount = baseQueue.size,
+                                                songCount = tabSongs.size,
                                                 shuffleEnabled = shuffleEnabled,
                                                 repeatMode = repeatMode,
                                                 onPlayInOrder = { playPlaylist(shuffle = false) },
@@ -1675,6 +1792,7 @@ fun LocalPlaylistDetailScreen(
                                                     showExportAllSheet = true
                                                 }
                                             )
+                                        }
                                     }
                                 }
 
@@ -1732,7 +1850,7 @@ fun LocalPlaylistDetailScreen(
                                                             toggleSelect(song)
                                                         } else {
                                                             val pos = queueIndexBySongKey[song.stableKey()] ?: -1
-                                                            if (pos >= 0) onSongClick(baseQueue, pos)
+                                                            if (pos >= 0) onSongClick(tabSongs, pos)
                                                         }
                                                     },
                                                     onLongClick = {
@@ -1797,9 +1915,7 @@ fun LocalPlaylistDetailScreen(
 
                                             // 标题/歌手
                                             Column(Modifier.weight(1f)) {
-                                                val downloaded = remember(downloadPresenceVersion, song) {
-                                                    hasCachedLocalDownload(song)
-                                                }
+                                                val downloaded = song.stableKey() in downloadedSongKeys
                                                 Text(
                                                     text = song.displayName(),
                                                     maxLines = 1,
@@ -1973,7 +2089,7 @@ fun LocalPlaylistDetailScreen(
                                                     }
                                                 }
                                             }
-                                        } else {
+                                        } else if (canReorderCurrentSongs) {
                                             Box(
                                                 modifier = Modifier
                                                     .detectReorder(reorderState)
@@ -1986,6 +2102,8 @@ fun LocalPlaylistDetailScreen(
                                                     modifier = Modifier.size(24.dp)
                                                 )
                                             }
+                                        } else {
+                                            Spacer(Modifier.size(40.dp))
                                         }
                                     }
                                 }
@@ -2061,20 +2179,71 @@ fun LocalPlaylistDetailScreen(
                 // 多选删除确认
                 if (showDeleteMultiConfirm) {
                     val count = selectedKeysState.value.size
+                    val deletesDownloadedSongs = isLocalFilesPlaylist &&
+                        selectedLocalFilesTab == LocalFilesSongTab.DOWNLOADED
                     AlertDialog(
                         onDismissRequest = { showDeleteMultiConfirm = false },
-                        title = { Text(stringResource(R.string.local_playlist_delete_songs)) },
+                        title = {
+                            Text(
+                                stringResource(
+                                    if (deletesDownloadedSongs) {
+                                        R.string.local_files_delete_downloaded_title
+                                    } else {
+                                        R.string.local_playlist_delete_songs
+                                    }
+                                )
+                            )
+                        },
                         text = {
                             Text(
-                                pluralStringResource(
-                                    R.plurals.local_playlist_delete_songs_confirm,
-                                    count,
-                                    count
-                                )
+                                if (deletesDownloadedSongs) {
+                                    stringResource(
+                                        R.string.local_files_delete_downloaded_confirm,
+                                        count
+                                    )
+                                } else {
+                                    pluralStringResource(
+                                        R.plurals.local_playlist_delete_songs_confirm,
+                                        count,
+                                        count
+                                    )
+                                }
                             )
                         },
                         confirmButton = {
                             HapticTextButton(onClick = {
+                                if (deletesDownloadedSongs) {
+                                    val songsToDelete = selectedDownloadedSongsForAction
+                                    showDeleteMultiConfirm = false
+                                    exitSelectionMode()
+                                    vm.deleteDownloadedSongs(songsToDelete) { result ->
+                                        scope.launch {
+                                            val message = when {
+                                                result.deletedCount > 0 && result.notDeletedCount == 0 -> {
+                                                    context.resources.getQuantityString(
+                                                        R.plurals.local_files_delete_downloaded_success,
+                                                        result.deletedCount,
+                                                        result.deletedCount
+                                                    )
+                                                }
+                                                result.deletedCount > 0 -> {
+                                                    composeResources.getString(
+                                                        R.string.local_files_delete_downloaded_partial,
+                                                        result.deletedCount,
+                                                        result.notDeletedCount
+                                                    )
+                                                }
+                                                else -> {
+                                                    composeResources.getString(
+                                                        R.string.local_files_delete_downloaded_failed
+                                                    )
+                                                }
+                                            }
+                                            snackbarHostState.showNeriSnackbar(message)
+                                        }
+                                    }
+                                    return@HapticTextButton
+                                }
                                 val previousSongs = localSongs.toList()
                                 val selectedKeys = selectedKeysState.value
                                 val removeAll = localSongs.isNotEmpty() &&
@@ -2128,7 +2297,7 @@ fun LocalPlaylistDetailScreen(
                         onDismissRequest = { showExportSheet = false },
                         onCreateAndExport = { name ->
                             val songs = selectedStoredLocalSongsForExport(
-                                storedSongs = localSongs,
+                                storedSongs = tabSongs,
                                 selectedKeys = selectedKeysState.value
                             )
                             launchWithLocalSyncWarning(
@@ -2153,7 +2322,7 @@ fun LocalPlaylistDetailScreen(
                         },
                         onExportToPlaylist = { target ->
                             val songs = selectedStoredLocalSongsForExport(
-                                storedSongs = localSongs,
+                                storedSongs = tabSongs,
                                 selectedKeys = selectedKeysState.value
                             )
                             launchWithLocalSyncWarning(
@@ -2187,10 +2356,10 @@ fun LocalPlaylistDetailScreen(
                         playlists = allPlaylists.filter {
                             it.id != playlist.id && !LocalFilesPlaylist.isSystemPlaylist(it, context)
                         },
-                        selectedCount = baseQueue.size,
+                        selectedCount = tabSongs.size,
                         onDismissRequest = { showExportAllSheet = false },
                         onCreateAndExport = { name ->
-                            val songs = baseQueue
+                            val songs = tabSongs
                             launchWithLocalSyncWarning(
                                 songs = songs,
                                 actionLabel = composeResources.getString(R.string.playlist_add_to)
@@ -2212,7 +2381,7 @@ fun LocalPlaylistDetailScreen(
                             }
                         },
                         onExportToPlaylist = { target ->
-                            val songs = baseQueue
+                            val songs = tabSongs
                             launchWithLocalSyncWarning(
                                 songs = songs,
                                 actionLabel = composeResources.getString(R.string.playlist_add_to)

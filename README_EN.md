@@ -471,9 +471,10 @@ For release build and signing details, see
   and batch downloads for online-source songs.
 - 🩷 **Local playlists and favorites**:
   built-in "My Favorite Music" and "Local Files" system playlists. "Local Files"
-  separates manually added and downloaded songs: removing a manually added song
-  only removes its playlist entry, while confirming deletion of a downloaded song
-  also removes its managed download files. User playlists support create, rename,
+  separates manually added and downloaded songs as independent sources, so a downloaded
+  song that was also manually added appears in both tabs. Removing a manually added song
+  only removes its playlist entry, while confirming deletion of a downloaded song also
+  removes its managed download files. User playlists support create, rename,
   delete, reorder, and add-song actions. Playlist or song deletion shows undo
   feedback, and batch export into a local playlist confirms the target and can
   undo newly added items. "My Favorite Music" can sync
