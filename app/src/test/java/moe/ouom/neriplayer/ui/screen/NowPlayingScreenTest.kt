@@ -158,12 +158,11 @@ class NowPlayingScreenTest {
     }
 
     @Test
-    fun `lyrics transition keeps position-sensitive playback elements shared`() {
+    fun `lyrics transition keeps only matching playback elements shared`() {
         assertEquals(
             setOf(
                 "btn_back",
                 "cover_image",
-                "song_title",
                 "song_artist",
                 "progress_bar",
                 "player_previous",

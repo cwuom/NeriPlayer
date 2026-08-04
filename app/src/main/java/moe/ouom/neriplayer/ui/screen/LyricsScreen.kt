@@ -444,18 +444,6 @@ fun LyricsScreen(
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier
                             .widthIn(max = maxWidth)
-                            .then(
-                                if (sharedTransitionScope != null && animatedContentScope != null) {
-                                    with(sharedTransitionScope) {
-                                        Modifier.sharedElement(
-                                            rememberSharedContentState(
-                                                key = NowPlayingLyricsSharedTransitionElement.TITLE.key
-                                            ),
-                                            animatedVisibilityScope = animatedContentScope
-                                        )
-                                    }
-                                } else Modifier
-                            )
                             .clip(RoundedCornerShape(6.dp))
                             .combinedClickable(
                                 onClick = {},

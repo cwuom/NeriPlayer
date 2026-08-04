@@ -350,7 +350,6 @@ internal enum class NowPlayingLyricsSharedTransitionElement(
 ) {
     BACK("btn_back"),
     COVER("cover_image"),
-    TITLE("song_title"),
     ARTIST("song_artist"),
     PROGRESS("progress_bar"),
     PREVIOUS("player_previous"),
@@ -2821,12 +2820,6 @@ fun NowPlayingScreen(
                                     style = MaterialTheme.typography.headlineSmall,
                                     modifier = Modifier
                                         .widthIn(max = maxWidth)
-                                        .sharedElement(
-                                            rememberSharedContentState(
-                                                key = NowPlayingLyricsSharedTransitionElement.TITLE.key
-                                            ),
-                                            animatedVisibilityScope = this@AnimatedContent
-                                        )
                                         .clip(RoundedCornerShape(8.dp))
                                         .combinedClickable(
                                             onClick = {},
