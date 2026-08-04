@@ -103,6 +103,7 @@ import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
+import moe.ouom.neriplayer.ui.viewmodel.tab.toFavoriteBrowseId
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
@@ -168,7 +169,8 @@ fun BiliPlaylistDetailScreen(
                     fid = header.fid,
                     mid = header.mid,
                     source = "bili",
-                    subtype = header.kind.name
+                    subtype = header.kind.name,
+                    subtitle = header.subtitle
                 )
             }
         }
@@ -201,6 +203,8 @@ fun BiliPlaylistDetailScreen(
             coverUrl = header.coverUrl,
             trackCount = header.count,
             source = playlistSource,
+            browseId = header.toFavoriteBrowseId(),
+            subtitle = header.subtitle,
             songs = ui.videos.map { it.toSongItem() }
         )
     }
@@ -278,11 +282,7 @@ fun BiliPlaylistDetailScreen(
     )
     val displayHeader = ui.header ?: playlist
     val displayHeaderCoverUrl = remember(displayHeader.coverUrl) {
-        buildBiliThumbnailUrl(
-            imageUrl = displayHeader.coverUrl,
-            width = 640,
-            height = 640
-        )
+        buildBiliPlaylistHeroCoverUrl(displayHeader.coverUrl)
     }
     val playlistChromeColor = rememberPlaylistModernHeroBackgroundColor(
         coverUrl = displayHeaderCoverUrl,
@@ -415,7 +415,10 @@ fun BiliPlaylistDetailScreen(
         onPlayAudio(ui.videos, startIndex)
     }
 
-    val detailVisibilityState = rememberMainTabDetailVisibilityState(playlist.mediaId)
+    val detailVisibilityState = rememberMainTabDetailVisibilityState(
+        detailKey = playlist.mediaId,
+        initiallyVisible = suppressVisibilityTransition
+    )
     AnimatedVisibility(
         visibleState = detailVisibilityState,
         enter = if (suppressVisibilityTransition) {
@@ -479,6 +482,8 @@ fun BiliPlaylistDetailScreen(
                                             coverUrl = header.coverUrl,
                                             trackCount = header.count,
                                             source = playlistSource,
+                                            browseId = header.toFavoriteBrowseId(),
+                                            subtitle = header.subtitle,
                                             songs = ui.videos.map { it.toSongItem() }
                                         )
                                     }

@@ -594,7 +594,8 @@ private fun openRecent(
                 count = entry.trackCount,
                 fid = entry.fid ?: 0L,
                 mid = entry.mid ?: 0L,
-                kind = kind
+                kind = kind,
+                subtitle = entry.subtitle.orEmpty()
             )
             onSelected(HomeSelectedItem.Bili(bili))
         }

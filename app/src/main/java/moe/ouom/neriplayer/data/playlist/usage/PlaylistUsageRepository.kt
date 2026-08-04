@@ -56,6 +56,7 @@ data class UsageEntry(
     val browseId: String? = null,
     val playlistId: String? = null,
     val subtype: String? = null,
+    val subtitle: String? = null,
 )
 
 internal fun playlistUsageKey(source: String, id: Long, subtype: String?): String = buildString {
@@ -141,6 +142,7 @@ class PlaylistUsageRepository(private val app: Context) {
         browseId: String? = null,
         playlistId: String? = null,
         subtype: String? = null,
+        subtitle: String? = null,
         now: Long = System.currentTimeMillis()
     ) {
         if (trackCount <= 0) {
@@ -162,6 +164,7 @@ class PlaylistUsageRepository(private val app: Context) {
                 browseId = browseId,
                 playlistId = playlistId,
                 subtype = subtype,
+                subtitle = subtitle ?: old.subtitle,
                 lastOpened = now,
                 openCount = old.openCount + 1
             ).also { data[idx] = it }
@@ -179,7 +182,8 @@ class PlaylistUsageRepository(private val app: Context) {
                     mid = mid,
                     browseId = browseId,
                     playlistId = playlistId,
-                    subtype = subtype
+                    subtype = subtype,
+                    subtitle = subtitle
                 )
             )
         }
@@ -200,6 +204,7 @@ class PlaylistUsageRepository(private val app: Context) {
         browseId: String? = null,
         playlistId: String? = null,
         subtype: String? = null,
+        subtitle: String? = null,
         now: Long = System.currentTimeMillis()
     ) {
         if (trackCount <= 0) {
@@ -220,7 +225,8 @@ class PlaylistUsageRepository(private val app: Context) {
                 mid = mid,
                 browseId = browseId ?: old.browseId,
                 playlistId = playlistId ?: old.playlistId,
-                subtype = subtype ?: old.subtype
+                subtype = subtype ?: old.subtype,
+                subtitle = subtitle ?: old.subtitle
             )
         } else {
             data.add(
@@ -236,7 +242,8 @@ class PlaylistUsageRepository(private val app: Context) {
                     mid = mid,
                     browseId = browseId,
                     playlistId = playlistId,
-                    subtype = subtype
+                    subtype = subtype,
+                    subtitle = subtitle
                 )
             )
         }

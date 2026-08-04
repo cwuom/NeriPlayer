@@ -89,23 +89,32 @@ internal fun shouldSuppressRestoredMainTabHostEntry(
     targetDepth: Int
 ): Boolean = restoredEntry && targetDepth > initialDepth
 
+internal fun resolveMainTabDetailInitialVisibility(
+    restoredDetailVisibility: Boolean,
+    initiallyVisible: Boolean
+): Boolean = restoredDetailVisibility || initiallyVisible
+
 @Composable
 internal fun rememberMainTabSceneRestoredEntry(): Boolean =
     LocalMainTabSceneRestored.current
 
 @Composable
 internal fun rememberMainTabDetailVisibilityState(
-    detailKey: Any?
+    detailKey: Any?,
+    initiallyVisible: Boolean = false
 ): MutableTransitionState<Boolean> {
     val restoredDetailVisibility = key(detailKey) {
         var wasVisibleBeforeTabSwitch by rememberSaveable { mutableStateOf(false) }
-        val startsVisible = wasVisibleBeforeTabSwitch
+        val startsVisible = resolveMainTabDetailInitialVisibility(
+            restoredDetailVisibility = wasVisibleBeforeTabSwitch,
+            initiallyVisible = initiallyVisible
+        )
         SideEffect {
             wasVisibleBeforeTabSwitch = true
         }
         startsVisible
     }
-    return remember(detailKey) {
+    return remember(detailKey, initiallyVisible) {
         MutableTransitionState(
             restoredDetailVisibility
         ).apply {

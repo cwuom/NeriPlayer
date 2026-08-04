@@ -12,6 +12,28 @@ import org.junit.Test
 
 class NeriAppMainTabTransitionPolicyTest {
     @Test
+    fun `instant detail handoff starts visible without changing restored detail behavior`() {
+        assertFalse(
+            resolveMainTabDetailInitialVisibility(
+                restoredDetailVisibility = false,
+                initiallyVisible = false
+            )
+        )
+        assertTrue(
+            resolveMainTabDetailInitialVisibility(
+                restoredDetailVisibility = false,
+                initiallyVisible = true
+            )
+        )
+        assertTrue(
+            resolveMainTabDetailInitialVisibility(
+                restoredDetailVisibility = true,
+                initiallyVisible = false
+            )
+        )
+    }
+
+    @Test
     fun `startup waits for the persisted default route before selecting a tab`() {
         assertNull(
             resolveMainStartDestination(

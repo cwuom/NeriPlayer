@@ -100,6 +100,7 @@ import moe.ouom.neriplayer.ui.viewmodel.artist.BiliUploaderDetailUiState
 import moe.ouom.neriplayer.ui.viewmodel.artist.BiliUploaderDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.artist.BiliUploaderHeader
 import moe.ouom.neriplayer.ui.viewmodel.artist.toBiliVideoItem
+import moe.ouom.neriplayer.ui.screen.playlist.preloadBiliPlaylistDetailVisuals
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
@@ -198,11 +199,15 @@ fun BiliUploaderDetailScreen(
                     }
                 },
                 onContentClick = { content ->
-                    onContentClick(
-                        content.toBiliPlaylist(
-                            uploaderName = ui.header?.name ?: uploader.name
-                        )
+                    val playlist = content.toBiliPlaylist(
+                        uploaderName = ui.header?.name ?: uploader.name
                     )
+                    preloadBiliPlaylistDetailVisuals(
+                        context = context,
+                        coverUrl = playlist.coverUrl,
+                        offlineMode = offlineMode
+                    )
+                    onContentClick(playlist)
                 },
                 offlineMode = offlineMode,
                 isTabletLayout = isTabletLayout

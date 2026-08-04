@@ -519,7 +519,8 @@ fun LibraryHostScreen(
                                     source = "bili",
                                     mid = playlist.mid,
                                     fid = playlist.fid,
-                                    subtype = playlist.kind.name
+                                    subtype = playlist.kind.name,
+                                    subtitle = playlist.subtitle
                                 )
                             },
                             onOpenRecent = onOpenRecent,

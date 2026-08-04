@@ -25,6 +25,9 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
 
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
+import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylist
+
+private const val BILI_FAVORITE_REFERENCE_PREFIX = "bili-playlist/v1/"
 
 /**
  * 通用歌单摘要模型
@@ -70,3 +73,47 @@ data class BiliPlaylist(
     val kind: BiliPlaylistKind = BiliPlaylistKind.CREATED_FAVORITE,
     val subtitle: String = ""
 ) : Parcelable
+
+internal fun BiliPlaylist.toFavoriteBrowseId(): String {
+    return buildString {
+        append(BILI_FAVORITE_REFERENCE_PREFIX)
+        append(kind.name)
+        append('/')
+        append(fid)
+        append('/')
+        append(mid)
+    }
+}
+
+internal fun FavoritePlaylist.toBiliPlaylist(): BiliPlaylist {
+    val reference = parseBiliFavoriteReference(browseId)
+    return BiliPlaylist(
+        mediaId = id,
+        fid = reference?.fid ?: 0L,
+        mid = reference?.mid ?: 0L,
+        title = name,
+        count = trackCount,
+        coverUrl = coverUrl.orEmpty(),
+        kind = reference?.kind ?: BiliPlaylistKind.CREATED_FAVORITE,
+        subtitle = subtitle.orEmpty()
+    )
+}
+
+private data class BiliFavoriteReference(
+    val kind: BiliPlaylistKind,
+    val fid: Long,
+    val mid: Long
+)
+
+private fun parseBiliFavoriteReference(value: String?): BiliFavoriteReference? {
+    val segments = value
+        ?.takeIf { it.startsWith(BILI_FAVORITE_REFERENCE_PREFIX) }
+        ?.removePrefix(BILI_FAVORITE_REFERENCE_PREFIX)
+        ?.split('/')
+        ?: return null
+    if (segments.size != 3) return null
+    val kind = runCatching { BiliPlaylistKind.valueOf(segments[0]) }.getOrNull() ?: return null
+    val fid = segments[1].toLongOrNull() ?: return null
+    val mid = segments[2].toLongOrNull() ?: return null
+    return BiliFavoriteReference(kind = kind, fid = fid, mid = mid)
+}

@@ -116,6 +116,7 @@ import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
 import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_NETEASE_ARTIST
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylist
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
+import moe.ouom.neriplayer.ui.viewmodel.tab.toBiliPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
@@ -3132,16 +3133,7 @@ private fun FavoritePlaylistList(
                                             }
                                         }
                                         "bili" -> {
-                                            onBiliPlaylistClick(
-                                                BiliPlaylist(
-                                                    mediaId = favorite.id,
-                                                    fid = 0L,
-                                                    mid = 0L,
-                                                    title = favorite.name,
-                                                    count = favorite.trackCount,
-                                                    coverUrl = favorite.coverUrl.orEmpty()
-                                                )
-                                            )
+                                            onBiliPlaylistClick(favorite.toBiliPlaylist())
                                         }
                                     }
                                 },

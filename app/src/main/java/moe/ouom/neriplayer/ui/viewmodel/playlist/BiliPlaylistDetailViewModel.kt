@@ -27,6 +27,7 @@ import android.app.Application
 import android.os.Parcelable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -94,6 +95,21 @@ internal fun mergeBiliPagedVideoPage(
         totalCount = totalCount.coerceAtLeast(videos.size),
         hasMore = hasMore && incomingVideos.isNotEmpty()
     )
+}
+
+internal fun applyBiliArchiveUploader(
+    videos: List<BiliVideoItem>,
+    uploader: String,
+    uploaderMid: Long
+): List<BiliVideoItem> {
+    val resolvedUploader = uploader.trim()
+    if (resolvedUploader.isEmpty()) return videos
+    return videos.map { video ->
+        video.copy(
+            uploader = resolvedUploader,
+            uploaderMid = uploaderMid.takeIf { it > 0L } ?: video.uploaderMid
+        )
+    }
 }
 
 private data class BiliPlaylistContentLoad(
@@ -281,6 +297,7 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                     withContext(Dispatchers.IO) {
                         archiveCacheRepo.save(content.toArchiveCache(header))
                     }
+                    resolveMissingArchiveUploader(header)
                 }
                 NPLogger.d(
                     TAG,
@@ -309,6 +326,58 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                     loading = false,
                     error = if (hasCachedVideos) null else "Load failed: ${e.message}"
                 )
+            }
+        }
+    }
+
+    private fun resolveMissingArchiveUploader(playlist: BiliPlaylist) {
+        if (
+            playlist.subtitle.isNotBlank() ||
+            playlist.mid <= 0L ||
+            !playlist.kind.hasPagedArchives()
+        ) {
+            return
+        }
+        viewModelScope.launch {
+            val uploader = try {
+                withContext(Dispatchers.IO) {
+                    client.getUploaderProfile(playlist.mid).name.trim()
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.w(
+                    TAG,
+                    "resolve archive uploader failed: mediaId=${playlist.mediaId}, mid=${playlist.mid}",
+                    error
+                )
+                return@launch
+            }
+            if (uploader.isBlank()) return@launch
+
+            var cache: BiliArchiveContentCache? = null
+            _uiState.update { current ->
+                val header = current.header
+                if (header?.sameIdentityAs(playlist) != true || header.subtitle.isNotBlank()) {
+                    return@update current
+                }
+                val resolvedHeader = header.copy(subtitle = uploader)
+                val resolvedVideos = applyBiliArchiveUploader(
+                    videos = current.videos,
+                    uploader = uploader,
+                    uploaderMid = resolvedHeader.mid
+                )
+                cache = BiliPlaylistContentLoad(
+                    videos = resolvedVideos,
+                    totalCount = resolvedHeader.count.coerceAtLeast(resolvedVideos.size),
+                    hasMore = current.hasMore
+                ).toArchiveCache(resolvedHeader)
+                current.copy(header = resolvedHeader, videos = resolvedVideos)
+            }
+            cache?.let { resolvedCache ->
+                withContext(Dispatchers.IO) {
+                    archiveCacheRepo.save(resolvedCache)
+                }
             }
         }
     }

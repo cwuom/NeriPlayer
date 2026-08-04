@@ -138,6 +138,44 @@ class PlaylistUsageRepositoryTest {
     }
 
     @Test
+    fun `bili usage keeps uploader subtitle when reopening and refreshing`() {
+        val repo = PlaylistUsageRepository(mockContext())
+
+        repo.recordOpen(
+            id = 8801L,
+            name = "合集",
+            picUrl = "cover",
+            trackCount = 3,
+            source = "bili",
+            subtype = "COLLECTION",
+            subtitle = "UP 主",
+            now = 100L
+        )
+        repo.recordOpen(
+            id = 8801L,
+            name = "合集",
+            picUrl = "cover",
+            trackCount = 3,
+            source = "bili",
+            subtype = "COLLECTION",
+            now = 200L
+        )
+        repo.updateInfo(
+            id = 8801L,
+            name = "合集",
+            picUrl = "cover",
+            trackCount = 4,
+            source = "bili",
+            subtype = "COLLECTION",
+            now = 300L
+        )
+
+        val entry = repo.frequentPlaylistsFlow.value.single()
+        assertEquals("UP 主", entry.subtitle)
+        assertEquals(4, entry.trackCount)
+    }
+
+    @Test
     fun `local playlist usage lookup keeps legacy local files cover`() {
         val coverUrl = "file:///covers/local.jpg"
         val legacyLocalFiles = LocalPlaylist(

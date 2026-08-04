@@ -48,6 +48,24 @@ class BiliPagedVideoPageTest {
         assertTrue(merged.hasMore)
     }
 
+    @Test
+    fun `resolved archive uploader replaces the legacy collection title fallback`() {
+        val videos = listOf(
+            video(id = 1L, bvid = "BV1").copy(uploader = "合集", uploaderMid = 0L),
+            video(id = 2L, bvid = "BV2").copy(uploader = "合集", uploaderMid = 0L)
+        )
+
+        val resolved = applyBiliArchiveUploader(
+            videos = videos,
+            uploader = "UP 主",
+            uploaderMid = 123456L
+        )
+
+        assertEquals(listOf("UP 主", "UP 主"), resolved.map(BiliVideoItem::uploader))
+        assertEquals(listOf(123456L, 123456L), resolved.map(BiliVideoItem::uploaderMid))
+        assertEquals(listOf("BV1", "BV2"), resolved.map(BiliVideoItem::bvid))
+    }
+
     private fun video(id: Long, bvid: String) = BiliVideoItem(
         id = id,
         bvid = bvid,
