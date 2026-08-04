@@ -194,19 +194,27 @@ class AdvancedGlassControllerTest {
     }
 
     @Test
-    fun blurQualityProfileAppliesToBaseBlurWithoutEnhancedBlur() {
+    fun lowQualityProfilesUseLocalNativeRenderingWithoutEnhancedBlur() {
         val controller = enabledController().copy(
-            enhancedAdvancedBlurEnabled = false,
-            advancedBlurQuality = AdvancedBlurQuality.Low
+            enhancedAdvancedBlurEnabled = false
         )
 
-        assertEquals(
-            AdvancedGlassBlurAlgorithm.SeparableGaussian,
-            controller.advancedBlurQuality.renderProfile().algorithm
-        )
+        AdvancedBlurQuality.entries.forEach { quality ->
+            val renderProfile = controller.copy(advancedBlurQuality = quality).advancedBlurQuality
+                .renderProfile()
+            assertEquals(AdvancedGlassBlurAlgorithm.Native, renderProfile.algorithm)
+            if (quality == AdvancedBlurQuality.UltraLow || quality == AdvancedBlurQuality.Low) {
+                assertTrue("quality=$quality", renderProfile.usesRegionLocalRendering)
+            } else {
+                assertFalse("quality=$quality", renderProfile.usesRegionLocalRendering)
+            }
+        }
+        assertEquals(2, AdvancedGlassRenderProfile.Low.downscaleFactorFor(radiusPx = 36f))
+        assertEquals(4, AdvancedGlassRenderProfile.UltraLow.downscaleFactorFor(radiusPx = 72f))
+        assertEquals(1, AdvancedGlassRenderProfile.UltraLow.downscaleFactorFor(radiusPx = 12f))
         assertTrue(
             canSampleAdvancedGlassBackdrop(
-                controller,
+                controller.copy(advancedBlurQuality = AdvancedBlurQuality.Low),
                 glassDepth = 0,
                 role = AdvancedGlassRole.MiniPlayer
             )

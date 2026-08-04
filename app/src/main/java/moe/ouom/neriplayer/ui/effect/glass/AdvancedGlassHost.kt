@@ -135,6 +135,40 @@ internal fun AdvancedGlassHost(
     val renderProfile = sessionController.advancedBlurQuality.renderProfile()
     val blurRadiusDp = sessionController.normalizedBlurAmountDp
     val blurRadiusPx = with(density) { blurRadiusDp.dp.toPx() }
+    val backgroundLocalBlurPlan = remember(
+        sessionController.isBaseBlurEnabled,
+        blurRadiusPx,
+        renderProfile,
+        renderRegionState.background
+    ) {
+        if (sessionController.isBaseBlurEnabled && renderProfile.usesRegionLocalRendering) {
+            resolveAdvancedGlassLocalBlurPlan(
+                regions = renderRegionState.background,
+                radiusPx = blurRadiusPx,
+                maximumMergedInputAreaRatio = renderProfile.maximumMergedInputAreaRatio,
+                downscaleFactor = renderProfile.downscaleFactorFor(blurRadiusPx)
+            )
+        } else {
+            null
+        }
+    }
+    val contentLocalBlurPlan = remember(
+        sessionController.isBaseBlurEnabled,
+        blurRadiusPx,
+        renderProfile,
+        renderRegionState.content
+    ) {
+        if (sessionController.isBaseBlurEnabled && renderProfile.usesRegionLocalRendering) {
+            resolveAdvancedGlassLocalBlurPlan(
+                regions = renderRegionState.content,
+                radiusPx = blurRadiusPx,
+                maximumMergedInputAreaRatio = renderProfile.maximumMergedInputAreaRatio,
+                downscaleFactor = renderProfile.downscaleFactorFor(blurRadiusPx)
+            )
+        } else {
+            null
+        }
+    }
     val backgroundRenderEffectSession = remember(
         sessionController.sdkInt,
         sessionController.backendReady,
@@ -163,13 +197,16 @@ internal fun AdvancedGlassHost(
         renderRegionState.background,
         backgroundRenderEffectSession
     ) {
-        buildBackdropEffect(
-            controller = sessionController,
-            radiusPx = blurRadiusPx,
-            renderProfile = renderProfile,
-            renderRegions = renderRegionState.background,
-            renderEffectSession = backgroundRenderEffectSession
-        )
+        if (renderProfile.usesRegionLocalRendering) {
+            Result.success(null)
+        } else {
+            buildBackdropEffect(
+                controller = sessionController,
+                radiusPx = blurRadiusPx,
+                renderRegions = renderRegionState.background,
+                renderEffectSession = backgroundRenderEffectSession
+            )
+        }
     }
     val contentEffectResult = remember(
         sessionController.isBaseBlurEnabled,
@@ -178,43 +215,71 @@ internal fun AdvancedGlassHost(
         renderRegionState.content,
         contentRenderEffectSession
     ) {
-        buildBackdropEffect(
-            controller = sessionController,
-            radiusPx = blurRadiusPx,
-            renderProfile = renderProfile,
-            renderRegions = renderRegionState.content,
-            renderEffectSession = contentRenderEffectSession
-        )
+        if (renderProfile.usesRegionLocalRendering) {
+            Result.success(null)
+        } else {
+            buildBackdropEffect(
+                controller = sessionController,
+                radiusPx = blurRadiusPx,
+                renderRegions = renderRegionState.content,
+                renderEffectSession = contentRenderEffectSession
+            )
+        }
     }
     val backendFailed = backgroundEffectResult.isFailure || contentEffectResult.isFailure
     if (backendFailed && sessionHealthy) {
         SideEffect { sessionHealthy = false }
     }
 
-    ApplyBackdropEffect(
-        backdrop = backgroundBackdrop,
-        effectResult = backgroundEffectResult,
-        retainCurrentEffect = regionRegistry.retainsEffectDuringHandoff &&
-            !renderRegionState.hasNavigationSceneRegion &&
-            sessionController.isBaseBlurEnabled &&
-            backgroundEffectResult.isSuccess &&
-            renderRegionState.backgroundBackdropReady,
-        allowOneFrameHandoff = sessionController.isBaseBlurEnabled &&
-            backgroundEffectResult.isSuccess &&
-            renderRegionState.backgroundBackdropReady
-    )
-    ApplyBackdropEffect(
-        backdrop = contentBackdrop,
-        effectResult = contentEffectResult,
-        retainCurrentEffect = false,
-        allowOneFrameHandoff = sessionController.isBaseBlurEnabled &&
-            contentEffectResult.isSuccess &&
-            renderRegionState.contentBackdropReady
-    )
+    if (renderProfile.usesRegionLocalRendering) {
+        ApplyLocalBlurPlan(
+            backdrop = backgroundBackdrop,
+            nextPlan = backgroundLocalBlurPlan,
+            retainCurrentPlan = regionRegistry.retainsEffectDuringHandoff &&
+                !renderRegionState.hasNavigationSceneRegion &&
+                sessionController.isBaseBlurEnabled &&
+                backgroundLocalBlurPlan != null &&
+                renderRegionState.backgroundBackdropReady,
+            allowOneFrameHandoff = sessionController.isBaseBlurEnabled &&
+                backgroundLocalBlurPlan != null &&
+                renderRegionState.backgroundBackdropReady
+        )
+        ApplyLocalBlurPlan(
+            backdrop = contentBackdrop,
+            nextPlan = contentLocalBlurPlan,
+            retainCurrentPlan = false,
+            allowOneFrameHandoff = sessionController.isBaseBlurEnabled &&
+                contentLocalBlurPlan != null &&
+                renderRegionState.contentBackdropReady
+        )
+    } else {
+        ApplyBackdropEffect(
+            backdrop = backgroundBackdrop,
+            effectResult = backgroundEffectResult,
+            retainCurrentEffect = regionRegistry.retainsEffectDuringHandoff &&
+                !renderRegionState.hasNavigationSceneRegion &&
+                sessionController.isBaseBlurEnabled &&
+                backgroundEffectResult.isSuccess &&
+                renderRegionState.backgroundBackdropReady,
+            allowOneFrameHandoff = sessionController.isBaseBlurEnabled &&
+                backgroundEffectResult.isSuccess &&
+                renderRegionState.backgroundBackdropReady
+        )
+        ApplyBackdropEffect(
+            backdrop = contentBackdrop,
+            effectResult = contentEffectResult,
+            retainCurrentEffect = false,
+            allowOneFrameHandoff = sessionController.isBaseBlurEnabled &&
+                contentEffectResult.isSuccess &&
+                renderRegionState.contentBackdropReady
+        )
+    }
     DisposableEffect(backgroundBackdrop, contentBackdrop) {
         onDispose {
             backgroundBackdrop.renderEffect = null
             contentBackdrop.renderEffect = null
+            backgroundBackdrop.localBlurPlan = null
+            contentBackdrop.localBlurPlan = null
         }
     }
 
@@ -245,6 +310,9 @@ private fun ApplyBackdropEffect(
     retainCurrentEffect: Boolean,
     allowOneFrameHandoff: Boolean
 ) {
+    if (backdrop.localBlurPlan != null) {
+        SideEffect { backdrop.localBlurPlan = null }
+    }
     val nextEffect = effectResult.getOrNull()
     if (retainCurrentEffect && backdrop.renderEffect != null) {
         return
@@ -267,10 +335,40 @@ private fun ApplyBackdropEffect(
     }
 }
 
+@Composable
+private fun ApplyLocalBlurPlan(
+    backdrop: AdvancedGlassBackdrop,
+    nextPlan: AdvancedGlassLocalBlurPlan?,
+    retainCurrentPlan: Boolean,
+    allowOneFrameHandoff: Boolean
+) {
+    if (backdrop.renderEffect != null) {
+        SideEffect { backdrop.renderEffect = null }
+    }
+    if (retainCurrentPlan && backdrop.localBlurPlan != null) {
+        return
+    }
+    if (nextPlan == backdrop.localBlurPlan) {
+        return
+    }
+    val shouldHoldPrevious = allowOneFrameHandoff &&
+        nextPlan == null &&
+        backdrop.localBlurPlan != null
+    if (shouldHoldPrevious) {
+        LaunchedEffect(backdrop, nextPlan) {
+            withFrameNanos { }
+            backdrop.localBlurPlan = null
+        }
+    } else {
+        SideEffect {
+            backdrop.localBlurPlan = nextPlan
+        }
+    }
+}
+
 private fun buildBackdropEffect(
     controller: AdvancedGlassController,
     radiusPx: Float,
-    renderProfile: AdvancedGlassRenderProfile,
     renderRegions: List<AdvancedGlassRenderRegion>,
     renderEffectSession: AdvancedGlassRenderEffectSession
 ): Result<androidx.compose.ui.graphics.RenderEffect?> {
@@ -282,7 +380,6 @@ private fun buildBackdropEffect(
     return runCatching {
         renderEffectSession.update(
             radiusPx = radiusPx,
-            renderProfile = renderProfile,
             regions = renderRegions
         )
     }

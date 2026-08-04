@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.effect.glass
 
+import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -10,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.RenderEffect
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -19,6 +21,20 @@ import androidx.compose.ui.layout.positionInWindow
 internal class AdvancedGlassBackdrop internal constructor() {
     internal var positionInWindow: Offset by mutableStateOf(Offset.Unspecified)
     internal var renderEffect: RenderEffect? by mutableStateOf(null)
+    internal var localBlurPlan: AdvancedGlassLocalBlurPlan? by mutableStateOf(null)
+    private var localBlurRenderer: Any? = null
+
+    internal val hasActiveBlur: Boolean
+        get() = renderEffect != null || localBlurPlan != null
+
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    internal fun localBlurRenderer(): AdvancedGlassLocalBlurRenderer {
+        val existing = localBlurRenderer as? AdvancedGlassLocalBlurRenderer
+        if (existing != null) return existing
+        return AdvancedGlassLocalBlurRenderer().also { renderer ->
+            localBlurRenderer = renderer
+        }
+    }
 }
 
 @Composable
@@ -36,6 +52,14 @@ internal fun Modifier.captureAdvancedGlassBackdrop(
         val effect = backdrop.renderEffect
         compositingStrategy = resolveAdvancedGlassCompositingStrategy(effect != null)
         renderEffect = effect
+    }
+    .drawWithContent {
+        val plan = backdrop.localBlurPlan
+        if (plan == null || Build.VERSION.SDK_INT < ADVANCED_GLASS_BACKEND_MIN_SDK) {
+            drawContent()
+        } else {
+            backdrop.localBlurRenderer().render(this, plan)
+        }
     }
 
 internal fun resolveAdvancedGlassCompositingStrategy(

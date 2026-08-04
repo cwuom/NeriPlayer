@@ -116,24 +116,6 @@ class AdvancedGlassSurfaceRenderTest {
     }
 
     @Test
-    fun reducedQualityShaderAssetsCompile() {
-        val assetManager = InstrumentationRegistry.getInstrumentation()
-            .targetContext
-            .assets
-        val shaderSource = AdvancedGlassShaderSource(assetManager)
-        val sources = listOf(
-            shaderSource.loadReducedQuality(),
-            shaderSource.loadUltraLowQuality()
-        )
-
-        sources.forEach { source ->
-            assertTrue(source.contains("uniform float2 sampleAxis;"))
-            assertTrue(source.contains("uniform float sampleSpacing;"))
-            assertNotNull(RuntimeShader(source))
-        }
-    }
-
-    @Test
     fun settingsGlassKeepsForegroundPixelsSharp() {
         composeRule.setContent {
             GlassTestHost {
@@ -357,6 +339,78 @@ class AdvancedGlassSurfaceRenderTest {
     }
 
     @Test
+    fun lowQualityUsesLocalNativeBlurWithoutLosingTheGlassEffect() {
+        lateinit var capturedBackdrop: AdvancedGlassBackdrop
+        composeRule.setContent {
+            val backgroundBackdrop = rememberAdvancedGlassBackdrop()
+            val contentBackdrop = rememberAdvancedGlassBackdrop()
+            capturedBackdrop = backgroundBackdrop
+            MaterialTheme {
+                AdvancedGlassHost(
+                    controller = enabledController().copy(
+                        advancedBlurQuality = AdvancedBlurQuality.Low
+                    ),
+                    backgroundBackdrop = backgroundBackdrop,
+                    contentBackdrop = contentBackdrop
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(200.dp, 120.dp)
+                            .testTag(LocalBlurRootTag)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .captureAdvancedGlassBackdrop(backgroundBackdrop)
+                        ) {
+                            Box(
+                                Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .background(Color.Black)
+                            )
+                            Box(
+                                Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .background(Color.White)
+                            )
+                        }
+                        AdvancedGlassSurface(
+                            role = AdvancedGlassRole.SettingsSection,
+                            modifier = Modifier
+                                .size(160.dp, 80.dp)
+                                .align(Alignment.Center),
+                            tintColor = Color.Transparent
+                        ) {}
+                    }
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.runOnIdle {
+            assertNotNull(
+                "low quality did not install a region-local blur plan",
+                capturedBackdrop.localBlurPlan
+            )
+            assertNull(
+                "low quality unexpectedly kept the full-screen render effect",
+                capturedBackdrop.renderEffect
+            )
+        }
+        val image = composeRule.onNodeWithTag(LocalBlurRootTag).captureToImage()
+        val mixedPixel = image.toPixelMap()[image.width / 2 - 6, image.height / 2]
+
+        assertTrue(
+            "low quality backdrop boundary stayed sharp instead of being blurred: $mixedPixel",
+            mixedPixel.red in 0.15f..0.85f &&
+                mixedPixel.green in 0.15f..0.85f &&
+                mixedPixel.blue in 0.15f..0.85f
+        )
+    }
+
+    @Test
     fun selectiveRenderEffectMixesDirectContent() {
         composeRule.setContent {
             val assetManager = LocalContext.current.applicationContext.assets
@@ -372,7 +426,7 @@ class AdvancedGlassSurfaceRenderTest {
                     shaderSource = shaderSource,
                     sdkInt = Build.VERSION.SDK_INT,
                     radiusPx = radiusPx,
-                    renderProfile = AdvancedGlassRenderProfile.Low,
+                    renderProfile = AdvancedGlassRenderProfile.Native,
                     regions = listOf(
                         AdvancedGlassRenderRegion(
                             left = 0f,
@@ -1921,6 +1975,7 @@ class AdvancedGlassSurfaceRenderTest {
         const val ContentBlurRootTag = "content_blur_root"
         const val BlurMixTag = "blur_mix"
         const val BlurRootTag = "blur_root"
+        const val LocalBlurRootTag = "local_blur_root"
         const val DirectSelectiveBlurTag = "direct_selective_blur"
         const val TopOnlyCornersTag = "top_only_corners"
         const val PillMaskRootTag = "pill_mask_root"

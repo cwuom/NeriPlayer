@@ -60,6 +60,7 @@ import moe.ouom.neriplayer.data.settings.ENHANCED_ADVANCED_BLUR_RADIUS_STEP_DP
 import moe.ouom.neriplayer.data.settings.EnhancedAdvancedBlurPreference
 import moe.ouom.neriplayer.data.settings.MAX_ENHANCED_ADVANCED_BLUR_RADIUS_DP
 import moe.ouom.neriplayer.data.settings.MIN_ENHANCED_ADVANCED_BLUR_RADIUS_DP
+import moe.ouom.neriplayer.data.settings.canBeSelectedWhen
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingInfo
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
@@ -275,6 +276,7 @@ internal fun SettingsMotionSection(
                         )
                         AdvancedBlurQualitySettingItem(
                             quality = advancedBlurQuality,
+                            enhancedAdvancedBlurEnabled = enhancedAdvancedBlurEnabled,
                             onQualityChange = onAdvancedBlurQualityChange,
                             highlightTargetId = highlightTargetId,
                             highlightPulse = highlightPulse,
@@ -567,6 +569,7 @@ private fun BlurAmountSettingItem(
 @Composable
 internal fun AdvancedBlurQualitySettingItem(
     quality: AdvancedBlurQuality,
+    enhancedAdvancedBlurEnabled: Boolean,
     onQualityChange: (AdvancedBlurQuality) -> Unit,
     highlightTargetId: String?,
     highlightPulse: Int,
@@ -600,10 +603,12 @@ internal fun AdvancedBlurQualitySettingItem(
             text = {
                 Column {
                     AdvancedBlurQuality.entries.forEach { option ->
+                        val enabled = option.canBeSelectedWhen(enhancedAdvancedBlurEnabled)
                         MiuixSettingsChoiceRow(
                             title = advancedBlurQualityLabel(option),
                             subtitle = advancedBlurQualityDescription(option),
                             selected = option == quality,
+                            enabled = enabled,
                             onClick = {
                                 onQualityChange(option)
                                 showDialog = false

@@ -8,7 +8,6 @@ import android.os.Build
 import androidx.annotation.RequiresApi
 import androidx.compose.ui.graphics.RenderEffect
 import androidx.compose.ui.graphics.asComposeRenderEffect
-import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal const val ADVANCED_GLASS_BACKEND_MIN_SDK = Build.VERSION_CODES.TIRAMISU
 internal const val ADVANCED_GLASS_MAX_REGIONS = 32
@@ -42,14 +41,16 @@ internal fun createAdvancedGlassRenderEffect(
     require(regions.size <= ADVANCED_GLASS_MAX_REGIONS) {
         "Advanced glass supports at most $ADVANCED_GLASS_MAX_REGIONS visible regions"
     }
+    require(!renderProfile.usesRegionLocalRendering) {
+        "Region-local profiles must render through AdvancedGlassLocalBlurRenderer"
+    }
     return createAdvancedGlassRenderEffectSession(shaderSource, sdkInt)
-        .update(radiusPx, renderProfile, regions)
+        .update(radiusPx, regions)
 }
 
 internal interface AdvancedGlassRenderEffectSession {
     fun update(
         radiusPx: Float,
-        renderProfile: AdvancedGlassRenderProfile,
         regions: List<AdvancedGlassRenderRegion>
     ): RenderEffect?
 }
@@ -69,7 +70,6 @@ internal fun createAdvancedGlassRenderEffectSession(
 private object UnsupportedAdvancedGlassRenderEffectSession : AdvancedGlassRenderEffectSession {
     override fun update(
         radiusPx: Float,
-        renderProfile: AdvancedGlassRenderProfile,
         regions: List<AdvancedGlassRenderRegion>
     ): RenderEffect? = null
 }
@@ -82,7 +82,6 @@ private class AdvancedGlassRuntimeShaderSession(
 
     override fun update(
         radiusPx: Float,
-        renderProfile: AdvancedGlassRenderProfile,
         regions: List<AdvancedGlassRenderRegion>
     ): RenderEffect? {
         if (!radiusPx.isFinite() || radiusPx <= 0f || regions.isEmpty()) {
@@ -92,49 +91,29 @@ private class AdvancedGlassRuntimeShaderSession(
             "Advanced glass supports at most $ADVANCED_GLASS_MAX_REGIONS visible regions"
         }
         val activeBackend = backend ?: AdvancedGlassRuntimeShaderBackend.Session(
-            maskShaderSource = shaderSource.load(),
-            reducedQualityShaderSource = shaderSource::loadReducedQuality,
-            ultraLowQualityShaderSource = shaderSource::loadUltraLowQuality
+            maskShaderSource = shaderSource.load()
         ).also { backend = it }
-        return activeBackend.update(radiusPx, renderProfile, regions)
+        return activeBackend.update(radiusPx, regions)
     }
 }
 
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
 private object AdvancedGlassRuntimeShaderBackend {
     class Session(
-        private val maskShaderSource: String,
-        private val reducedQualityShaderSource: () -> String,
-        private val ultraLowQualityShaderSource: () -> String
+        private val maskShaderSource: String
     ) {
-        private val unavailableReducedSampleCounts = mutableSetOf<Int>()
         private var cachedBlurRadiusPx = Float.NaN
         private var cachedBlurEffect: AndroidRenderEffect? = null
-        private var cachedReducedBlurKey: ReducedBlurCacheKey? = null
-        private var cachedReducedBlurEffect: AndroidRenderEffect? = null
 
         fun update(
             radiusPx: Float,
-            renderProfile: AdvancedGlassRenderProfile,
             regions: List<AdvancedGlassRenderRegion>
         ): RenderEffect {
             val regionUniforms = regionUniforms(regions)
-            return when (renderProfile.algorithm) {
-                AdvancedGlassBlurAlgorithm.Native -> resolveNativeEffect(
-                    regionUniforms = regionUniforms,
-                    radiusPx = radiusPx
-                )
-                AdvancedGlassBlurAlgorithm.SeparableGaussian -> {
-                    resolveReducedQualityEffect(
-                        regionUniforms = regionUniforms,
-                        renderProfile = renderProfile,
-                        radiusPx = radiusPx
-                    ) ?: resolveNativeEffect(
-                        regionUniforms = regionUniforms,
-                        radiusPx = radiusPx
-                    )
-                }
-            }
+            return resolveNativeEffect(
+                regionUniforms = regionUniforms,
+                radiusPx = radiusPx
+            )
         }
 
         private fun regionUniforms(
@@ -176,81 +155,6 @@ private object AdvancedGlassRuntimeShaderBackend {
             return applyRegionMask(blurEffect, regionUniforms)
         }
 
-        private fun resolveReducedQualityEffect(
-            regionUniforms: AdvancedGlassRegionUniforms,
-            renderProfile: AdvancedGlassRenderProfile,
-            radiusPx: Float
-        ): RenderEffect? {
-            val sampleCount = renderProfile.sampleCount
-            if (sampleCount in unavailableReducedSampleCounts) {
-                return null
-            }
-            return try {
-                val blurEffect = resolveCachedReducedBlurEffect(renderProfile, radiusPx)
-                applyRegionMask(blurEffect, regionUniforms)
-            } catch (error: RuntimeException) {
-                unavailableReducedSampleCounts += sampleCount
-                NPLogger.w(
-                    AdvancedGlassLogTag,
-                    "reduced quality shader unavailable; falling back to native blur",
-                    error
-                )
-                null
-            }
-        }
-
-        private fun resolveCachedReducedBlurEffect(
-            renderProfile: AdvancedGlassRenderProfile,
-            radiusPx: Float
-        ): AndroidRenderEffect {
-            val sampleSpacingPx = renderProfile.sampleSpacingPx(radiusPx)
-            val cacheKey = ReducedBlurCacheKey(
-                sampleCount = renderProfile.sampleCount,
-                sampleSpacingPx = sampleSpacingPx
-            )
-            return cachedReducedBlurEffect?.takeIf { cachedReducedBlurKey == cacheKey }
-                ?: createSeparableGaussianBlurEffect(
-                    shaderSource = resolveReducedQualityShaderSource(renderProfile.sampleCount),
-                    sampleSpacingPx = sampleSpacingPx
-                ).also { effect ->
-                    cachedReducedBlurKey = cacheKey
-                    cachedReducedBlurEffect = effect
-                }
-        }
-
-        private fun resolveReducedQualityShaderSource(sampleCount: Int): String = when (
-            sampleCount
-        ) {
-            UltraLowSampleCount -> ultraLowQualityShaderSource()
-            LowSampleCount -> reducedQualityShaderSource()
-            else -> error("Unsupported reduced-quality gaussian kernel: $sampleCount")
-        }
-
-        private fun createSeparableGaussianBlurEffect(
-            shaderSource: String,
-            sampleSpacingPx: Float
-        ): AndroidRenderEffect {
-            val horizontalEffect = AndroidRenderEffect.createRuntimeShaderEffect(
-                createReducedQualityShader(
-                    shaderSource = shaderSource,
-                    axisX = 1f,
-                    axisY = 0f,
-                    sampleSpacingPx = sampleSpacingPx
-                ),
-                ChildShaderUniform
-            )
-            val verticalEffect = AndroidRenderEffect.createRuntimeShaderEffect(
-                createReducedQualityShader(
-                    shaderSource = shaderSource,
-                    axisX = 0f,
-                    axisY = 1f,
-                    sampleSpacingPx = sampleSpacingPx
-                ),
-                ChildShaderUniform
-            )
-            return AndroidRenderEffect.createChainEffect(verticalEffect, horizontalEffect)
-        }
-
         private fun applyRegionMask(
             blurEffect: AndroidRenderEffect,
             regionUniforms: AdvancedGlassRegionUniforms
@@ -283,25 +187,10 @@ private object AdvancedGlassRuntimeShaderBackend {
             setFloatUniform(InvertMaskUniform, if (invertMask) 1f else 0f)
         }
 
-        private fun createReducedQualityShader(
-            shaderSource: String,
-            axisX: Float,
-            axisY: Float,
-            sampleSpacingPx: Float
-        ) = RuntimeShader(shaderSource).apply {
-            setFloatUniform(ReducedSampleAxisUniform, axisX, axisY)
-            setFloatUniform(ReducedSampleSpacingUniform, sampleSpacingPx)
-        }
-
         private data class AdvancedGlassRegionUniforms(
             val count: Int,
             val bounds: FloatArray,
             val cornerRadii: FloatArray
-        )
-
-        private data class ReducedBlurCacheKey(
-            val sampleCount: Int,
-            val sampleSpacingPx: Float
         )
     }
 
@@ -311,9 +200,4 @@ private object AdvancedGlassRuntimeShaderBackend {
     private const val RegionBoundsUniform = "regionBounds"
     private const val CornerRadiiUniform = "cornerRadii"
     private const val InvertMaskUniform = "invertMask"
-    private const val ReducedSampleAxisUniform = "sampleAxis"
-    private const val ReducedSampleSpacingUniform = "sampleSpacing"
-    private const val AdvancedGlassLogTag = "AdvancedGlass"
-    private const val UltraLowSampleCount = 3
-    private const val LowSampleCount = 5
 }

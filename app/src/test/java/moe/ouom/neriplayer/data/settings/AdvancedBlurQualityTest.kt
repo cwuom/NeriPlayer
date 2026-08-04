@@ -7,9 +7,9 @@ import org.junit.Test
 
 class AdvancedBlurQualityTest {
     @Test
-    fun missingPreferenceUsesLowOnlyForDimensityDevices() {
+    fun missingPreferenceUsesUltraLowOnlyForDimensityDevices() {
         assertEquals(
-            AdvancedBlurQuality.Low,
+            AdvancedBlurQuality.UltraLow,
             AdvancedBlurQualityPreference.resolve(value = null, isDimensityDevice = true)
         )
         assertEquals(
@@ -31,6 +31,14 @@ class AdvancedBlurQualityTest {
     }
 
     @Test
+    fun highQualitySelectionRequiresEnhancedAdvancedBlur() {
+        assertFalse(AdvancedBlurQuality.High.canBeSelectedWhen(false))
+        assertTrue(AdvancedBlurQuality.High.canBeSelectedWhen(true))
+        assertTrue(AdvancedBlurQuality.Low.canBeSelectedWhen(false))
+        assertTrue(AdvancedBlurQuality.Default.canBeSelectedWhen(false))
+    }
+
+    @Test
     fun detectsDimensityModelWithoutClassifyingAllMediaTekDevices() {
         assertTrue(
             isDimensityDevice(
@@ -48,10 +56,42 @@ class AdvancedBlurQualityTest {
                 board = null
             )
         )
+        assertTrue(
+            isDimensityDevice(
+                socManufacturer = "MediaTek",
+                socModel = "d9000",
+                hardware = null,
+                board = null
+            )
+        )
+        assertTrue(
+            isDimensityDevice(
+                socManufacturer = "MediaTek",
+                socModel = null,
+                hardware = "d8000",
+                board = null
+            )
+        )
         assertFalse(
             isDimensityDevice(
                 socManufacturer = "MediaTek",
                 socModel = "MT6765",
+                hardware = null,
+                board = null
+            )
+        )
+        assertFalse(
+            isDimensityDevice(
+                socManufacturer = "Qualcomm",
+                socModel = "d9000",
+                hardware = null,
+                board = null
+            )
+        )
+        assertFalse(
+            isDimensityDevice(
+                socManufacturer = "MediaTek",
+                socModel = "9000",
                 hardware = null,
                 board = null
             )

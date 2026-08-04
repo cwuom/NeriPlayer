@@ -3,38 +3,54 @@ package moe.ouom.neriplayer.ui.effect.glass
 import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
 
 internal enum class AdvancedGlassBlurAlgorithm {
-    Native,
-    SeparableGaussian
+    Native
+}
+
+internal enum class AdvancedGlassRenderPipeline {
+    FullscreenMask,
+    RegionLocal
 }
 
 internal data class AdvancedGlassRenderProfile(
     val algorithm: AdvancedGlassBlurAlgorithm,
-    val sampleCount: Int = 0,
-    val sampleSpacingMultiplier: Float = 0f
+    val pipeline: AdvancedGlassRenderPipeline = AdvancedGlassRenderPipeline.FullscreenMask,
+    val maximumMergedInputAreaRatio: Float = 1f,
+    val maximumDownscaleFactor: Int = 1
 ) {
     init {
-        if (algorithm == AdvancedGlassBlurAlgorithm.SeparableGaussian) {
-            require(sampleCount in 1..MaxReducedSampleCount)
-            require(sampleSpacingMultiplier > 0f)
+        require(maximumMergedInputAreaRatio >= 1f)
+        require(maximumDownscaleFactor in SupportedDownscaleFactors)
+    }
+
+    val usesRegionLocalRendering: Boolean
+        get() = pipeline == AdvancedGlassRenderPipeline.RegionLocal
+
+    fun downscaleFactorFor(radiusPx: Float): Int {
+        if (!usesRegionLocalRendering || !radiusPx.isFinite()) return 1
+        return when {
+            maximumDownscaleFactor >= 4 && radiusPx >= UltraLowFourXThresholdPx -> 4
+            maximumDownscaleFactor >= 2 && radiusPx >= LowTwoXThresholdPx -> 2
+            else -> 1
         }
     }
 
-    fun sampleSpacingPx(radiusPx: Float): Float =
-        (radiusPx * sampleSpacingMultiplier).coerceAtLeast(1f)
-
     companion object {
-        const val MaxReducedSampleCount = 5
+        private val SupportedDownscaleFactors = setOf(1, 2, 4)
+        private const val LowTwoXThresholdPx = 18f
+        private const val UltraLowFourXThresholdPx = 48f
 
         val Native = AdvancedGlassRenderProfile(AdvancedGlassBlurAlgorithm.Native)
         val UltraLow = AdvancedGlassRenderProfile(
-            algorithm = AdvancedGlassBlurAlgorithm.SeparableGaussian,
-            sampleCount = 3,
-            sampleSpacingMultiplier = 0.28f
+            algorithm = AdvancedGlassBlurAlgorithm.Native,
+            pipeline = AdvancedGlassRenderPipeline.RegionLocal,
+            maximumMergedInputAreaRatio = 1.20f,
+            maximumDownscaleFactor = 4
         )
         val Low = AdvancedGlassRenderProfile(
-            algorithm = AdvancedGlassBlurAlgorithm.SeparableGaussian,
-            sampleCount = 5,
-            sampleSpacingMultiplier = 0.30f
+            algorithm = AdvancedGlassBlurAlgorithm.Native,
+            pipeline = AdvancedGlassRenderPipeline.RegionLocal,
+            maximumMergedInputAreaRatio = 1.08f,
+            maximumDownscaleFactor = 2
         )
     }
 }

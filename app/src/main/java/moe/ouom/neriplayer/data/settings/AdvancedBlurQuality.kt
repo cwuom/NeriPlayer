@@ -20,7 +20,7 @@ object AdvancedBlurQualityPreference {
     fun defaultForDevice(isDimensityDevice: Boolean): AdvancedBlurQuality = if (
         isDimensityDevice
     ) {
-        AdvancedBlurQuality.Low
+        AdvancedBlurQuality.UltraLow
     } else {
         AdvancedBlurQuality.Default
     }
@@ -43,15 +43,30 @@ object AdvancedBlurQualityPreference {
     }
 }
 
+fun AdvancedBlurQuality.canBeSelectedWhen(
+    enhancedAdvancedBlurEnabled: Boolean
+): Boolean = this != AdvancedBlurQuality.High || enhancedAdvancedBlurEnabled
+
 fun isDimensityDevice(
     socManufacturer: String?,
     socModel: String?,
     hardware: String?,
     board: String?
 ): Boolean {
-    return listOfNotNull(socManufacturer, socModel, hardware, board).any { identifier ->
-        val normalized = identifier.lowercase(Locale.ROOT)
-        "dimensity" in normalized || DimensityModelPattern.containsMatchIn(normalized)
+    val identifiers = listOfNotNull(socManufacturer, socModel, hardware, board).map { identifier ->
+        identifier.lowercase(Locale.ROOT)
+    }
+    if (identifiers.any { identifier ->
+            "dimensity" in identifier || DimensityModelPattern.containsMatchIn(identifier)
+        }
+    ) {
+        return true
+    }
+    val hasMediaTekContext = identifiers.any { identifier ->
+        "mediatek" in identifier
+    }
+    return hasMediaTekContext && identifiers.any { identifier ->
+        DimensityShorthandPattern.containsMatchIn(identifier)
     }
 }
 
@@ -71,3 +86,4 @@ fun isCurrentBuildDimensity(): Boolean = isDimensityDevice(
 )
 
 private val DimensityModelPattern = Regex("(?:^|[^a-z0-9])mt(?:68|69)[0-9a-z]*")
+private val DimensityShorthandPattern = Regex("(?:^|[^a-z0-9])d[6-9][0-9]{3}(?:$|[^a-z0-9])")

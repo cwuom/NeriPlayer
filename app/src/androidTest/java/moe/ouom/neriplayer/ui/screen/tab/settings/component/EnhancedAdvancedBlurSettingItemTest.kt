@@ -3,6 +3,8 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.component
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -66,16 +68,19 @@ class EnhancedAdvancedBlurSettingItemTest {
     }
 
     @Test
-    fun blurQualityControlCanBeUsedWithoutEnhancedBlur() {
+    fun highBlurQualityRequiresEnhancedBlurButOtherQualitiesRemainAvailable() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val title = context.getString(R.string.settings_advanced_blur_quality)
         val high = context.getString(R.string.settings_advanced_blur_quality_high)
-        val selectedQuality = mutableStateOf(AdvancedBlurQuality.Low)
+        val default = context.getString(R.string.settings_advanced_blur_quality_default)
+        val selectedQuality = mutableStateOf(AdvancedBlurQuality.UltraLow)
+        val enhancedEnabled = mutableStateOf(false)
 
         composeRule.setContent {
             MaterialTheme {
                 AdvancedBlurQualitySettingItem(
                     quality = selectedQuality.value,
+                    enhancedAdvancedBlurEnabled = enhancedEnabled.value,
                     onQualityChange = { selectedQuality.value = it },
                     highlightTargetId = null,
                     highlightPulse = 0,
@@ -85,9 +90,17 @@ class EnhancedAdvancedBlurSettingItemTest {
         }
 
         composeRule.onNodeWithText(title).performClick()
-        composeRule.onNodeWithText(high).performClick()
+        composeRule.onNodeWithText(high).assertIsNotEnabled()
+        composeRule.onNodeWithText(default).assertIsEnabled().performClick()
         composeRule.runOnIdle {
-            assertTrue("模糊质量不应依赖进阶高级模糊开关", selectedQuality.value == AdvancedBlurQuality.High)
+            assertTrue("默认档不应依赖进阶高级模糊开关", selectedQuality.value == AdvancedBlurQuality.Default)
+        }
+
+        composeRule.runOnUiThread { enhancedEnabled.value = true }
+        composeRule.onNodeWithText(title).performClick()
+        composeRule.onNodeWithText(high).assertIsEnabled().performClick()
+        composeRule.runOnIdle {
+            assertTrue("高档应在进阶高级模糊开启后可选", selectedQuality.value == AdvancedBlurQuality.High)
         }
     }
 

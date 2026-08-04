@@ -1848,8 +1848,8 @@ private fun NeriAppContent(
     var startupGlassGateReleased by rememberSaveable {
         mutableStateOf(!advancedGlassController.isBaseBlurEnabled)
     }
-    val startupBackgroundGlassReady = backgroundGlassBackdrop.renderEffect != null
-    val startupContentGlassReady = contentGlassBackdrop.renderEffect != null
+    val startupBackgroundGlassReady = backgroundGlassBackdrop.hasActiveBlur
+    val startupContentGlassReady = contentGlassBackdrop.hasActiveBlur
     LaunchedEffect(
         advancedGlassController.isBaseBlurEnabled,
         startupBackgroundGlassReady,

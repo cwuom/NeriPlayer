@@ -407,14 +407,25 @@ internal fun MiuixSettingsChoiceRow(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    subtitle: String? = null
+    subtitle: String? = null,
+    enabled: Boolean = true
 ) {
     val context = LocalContext.current
+    val contentColor = if (enabled) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    }
+    val supportingColor = if (enabled) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+    }
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(MiuixControlShape)
-            .clickable {
+            .clickable(enabled = enabled) {
                 context.performHapticFeedback()
                 onClick()
             }
@@ -426,11 +437,11 @@ internal fun MiuixSettingsChoiceRow(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            Text(text = title, color = MaterialTheme.colorScheme.onSurface)
+            Text(text = title, color = contentColor)
             if (subtitle != null) {
                 Text(
                     text = subtitle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = supportingColor,
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -442,7 +453,11 @@ internal fun MiuixSettingsChoiceRow(
                 .clip(RoundedCornerShape(14.dp))
                 .background(
                     if (selected) {
-                        MaterialTheme.colorScheme.primary
+                        if (enabled) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        }
                     } else {
                         MaterialTheme.colorScheme.surfaceContainerHighest
                     }
