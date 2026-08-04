@@ -107,7 +107,8 @@ internal fun buildYouTubeEjsSandboxBootstrapScript(
     }
 }
 
-internal const val YOUTUBE_EJS_ISOLATE_MAX_HEAP_SIZE_BYTES = 32L * 1024L * 1024L
+// current player scripts can exceed 64 MiB while loading the solver and player code together
+internal const val YOUTUBE_EJS_ISOLATE_MAX_HEAP_SIZE_BYTES = 128L * 1024L * 1024L
 
 internal fun youtubeEjsIsolateMaxHeapSizeBytes(
     supportsExplicitHeapLimit: Boolean

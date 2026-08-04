@@ -14,7 +14,11 @@ import kotlinx.coroutines.CancellationException
 class YouTubeEjsChallengeSolverTest {
 
     @Test
-    fun ejsIsolateUsesExplicitHeapLimitOnlyWhenSupported() {
+    fun ejsIsolateUses128MiBHeapLimitOnlyWhenSupported() {
+        assertEquals(
+            128L * 1024L * 1024L,
+            YOUTUBE_EJS_ISOLATE_MAX_HEAP_SIZE_BYTES
+        )
         assertEquals(
             YOUTUBE_EJS_ISOLATE_MAX_HEAP_SIZE_BYTES,
             youtubeEjsIsolateMaxHeapSizeBytes(supportsExplicitHeapLimit = true)
