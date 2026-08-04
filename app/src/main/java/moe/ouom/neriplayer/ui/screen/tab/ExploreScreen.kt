@@ -72,6 +72,7 @@ import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.MusicNote
@@ -133,6 +134,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
 import moe.ouom.neriplayer.data.search.ExploreSearchHistoryRepository
@@ -168,6 +170,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseExploreSearchType
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseSearchArtistResult
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.SearchSource
+import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeExploreSearchType
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.shouldLoadExploreSearchMore
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
@@ -221,14 +224,15 @@ internal fun shouldClearExploreSearchQuery(
 internal fun exploreSearchScrollContextKey(
     keyword: String,
     source: SearchSource,
-    neteaseSearchType: NeteaseExploreSearchType
+    neteaseSearchType: NeteaseExploreSearchType,
+    youtubeSearchType: YouTubeExploreSearchType = YouTubeExploreSearchType.SONG
 ): String? {
     val normalizedKeyword = keyword.trim()
     if (normalizedKeyword.isBlank()) return null
-    val sourceType = if (source == SearchSource.NETEASE) {
-        neteaseSearchType.name
-    } else {
-        "-"
+    val sourceType = when (source) {
+        SearchSource.NETEASE -> neteaseSearchType.name
+        SearchSource.YOUTUBE_MUSIC -> youtubeSearchType.name
+        else -> "-"
     }
     return "${source.name}|$sourceType|$normalizedKeyword"
 }
@@ -272,6 +276,23 @@ private fun neteaseSearchTypeIcon(type: NeteaseExploreSearchType): ImageVector {
     }
 }
 
+@Composable
+private fun youtubeSearchTypeLabel(type: YouTubeExploreSearchType): String {
+    return when (type) {
+        YouTubeExploreSearchType.SONG -> stringResource(R.string.explore_search_type_song)
+        YouTubeExploreSearchType.VIDEO -> stringResource(R.string.explore_search_type_video)
+        YouTubeExploreSearchType.CREATOR -> stringResource(R.string.explore_search_type_creator)
+    }
+}
+
+private fun youtubeSearchTypeIcon(type: YouTubeExploreSearchType): ImageVector {
+    return when (type) {
+        YouTubeExploreSearchType.SONG -> Icons.Outlined.MusicNote
+        YouTubeExploreSearchType.VIDEO -> Icons.Filled.PlayCircle
+        YouTubeExploreSearchType.CREATOR -> Icons.Filled.AccountCircle
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 @Suppress("AssignedValueIsNeverRead")
@@ -287,6 +308,7 @@ fun ExploreScreen(
     onPlay: (PlaylistSummary) -> Unit,
     onBiliPlaylistClick: (BiliPlaylist) -> Unit = {},
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
+    onYouTubeCreatorClick: (YouTubeMusicCreatorSummary) -> Unit = {},
     onNeteaseArtistClick: (NeteaseArtistSummary) -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
     onSongPlayPreservingQueue: (SongItem) -> Unit = {},
@@ -418,6 +440,10 @@ fun ExploreScreen(
         selectedSearchSource = ui.selectedSearchSource,
         contentScrolled = isExploreContentScrolled
     )
+    val shouldShowYouTubeSearchTypeBar = shouldShowExploreYouTubeSearchTypeBar(
+        selectedSearchSource = ui.selectedSearchSource,
+        contentScrolled = isExploreContentScrolled
+    )
 
     val shouldLoadMoreSearch by remember(
         searchListState,
@@ -533,7 +559,8 @@ fun ExploreScreen(
         effectiveSearchKeyword,
         searchHistoryEnabled,
         ui.selectedSearchSource,
-        ui.selectedNeteaseSearchType
+        ui.selectedNeteaseSearchType,
+        ui.selectedYouTubeMusicSearchType
     ) {
         if (searchQuery.isBlank()) {
             lastRecordedSearchKeyword = null
@@ -563,12 +590,14 @@ fun ExploreScreen(
     val currentSearchScrollContextKey = remember(
         effectiveSearchKeyword,
         ui.selectedSearchSource,
-        ui.selectedNeteaseSearchType
+        ui.selectedNeteaseSearchType,
+        ui.selectedYouTubeMusicSearchType
     ) {
         exploreSearchScrollContextKey(
             keyword = effectiveSearchKeyword,
             source = ui.selectedSearchSource,
-            neteaseSearchType = ui.selectedNeteaseSearchType
+            neteaseSearchType = ui.selectedNeteaseSearchType,
+            youtubeSearchType = ui.selectedYouTubeMusicSearchType
         )
     }
 
@@ -593,7 +622,8 @@ fun ExploreScreen(
         shouldLoadMoreSearch,
         ui.searchItems.size,
         ui.selectedSearchSource,
-        ui.selectedNeteaseSearchType
+        ui.selectedNeteaseSearchType,
+        ui.selectedYouTubeMusicSearchType
     ) {
         if (shouldLoadMoreSearch) {
             vm.loadMoreSearchResults()
@@ -777,6 +807,27 @@ fun ExploreScreen(
                             }
                         }
                     }
+                    AnimatedVisibility(visible = shouldShowYouTubeSearchTypeBar) {
+                        FlowRow(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            YouTubeExploreSearchType.entries.forEach { type ->
+                                ExploreTagChip(
+                                    label = youtubeSearchTypeLabel(type),
+                                    icon = youtubeSearchTypeIcon(type),
+                                    selected = ui.selectedYouTubeMusicSearchType == type,
+                                    onClick = { vm.setYouTubeMusicSearchType(type) },
+                                    selectedAlpha = tagChipSelectedAlpha,
+                                    unselectedAlpha = tagChipUnselectedAlpha,
+                                    borderAlpha = tagChipBorderAlpha
+                                )
+                            }
+                        }
+                    }
                 }
 
             HorizontalPager(
@@ -908,6 +959,13 @@ fun ExploreScreen(
                                                 result = item.result,
                                                 offlineMode = offlineMode,
                                                 onClick = { onNeteaseArtistClick(item.result.artist) }
+                                            )
+                                        }
+                                        is ExploreSearchResult.YouTubeCreator -> {
+                                            YouTubeCreatorSearchRow(
+                                                creator = item.creator,
+                                                offlineMode = offlineMode,
+                                                onClick = { onYouTubeCreatorClick(item.creator) }
                                             )
                                         }
                                         is ExploreSearchResult.Notice -> {
@@ -1313,6 +1371,13 @@ internal fun shouldShowExploreNeteaseSearchTypeBar(
     return selectedSearchSource == SearchSource.NETEASE && !contentScrolled
 }
 
+internal fun shouldShowExploreYouTubeSearchTypeBar(
+    selectedSearchSource: SearchSource,
+    contentScrolled: Boolean
+): Boolean {
+    return selectedSearchSource == SearchSource.YOUTUBE_MUSIC && !contentScrolled
+}
+
 private const val EXPLORE_HISTORY_DISPLAY_LIMIT = 15
 private const val EXPLORE_HISTORY_RECORD_DEBOUNCE_MS = 1_200L
 
@@ -1624,6 +1689,31 @@ private fun NeteaseArtistSearchRow(
             )
         ).joinToString(" · "),
         coverUrl = result.picUrl,
+        offlineMode = offlineMode,
+        fallbackIcon = {
+            Icon(
+                imageVector = Icons.Filled.AccountCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(34.dp)
+            )
+        },
+        onClick = onClick
+    )
+}
+
+@Composable
+private fun YouTubeCreatorSearchRow(
+    creator: YouTubeMusicCreatorSummary,
+    offlineMode: Boolean,
+    onClick: () -> Unit
+) {
+    LinkedCollectionRow(
+        title = creator.title,
+        subtitle = creator.subtitle.ifBlank {
+            stringResource(R.string.explore_search_type_creator)
+        },
+        coverUrl = creator.coverUrl,
         offlineMode = offlineMode,
         fallbackIcon = {
             Icon(

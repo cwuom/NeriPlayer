@@ -13,7 +13,6 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
-import moe.ouom.neriplayer.core.api.search.SearchManager
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.lyricon.mediaLyriconPositionMs
@@ -25,7 +24,6 @@ import moe.ouom.neriplayer.core.player.lifecycle.prepareUsbExclusiveRouteForManu
 import moe.ouom.neriplayer.core.player.lifecycle.updateAudioOffloadPreferences
 import moe.ouom.neriplayer.core.player.lyrics.isExternalBluetoothLyricCadenceActive
 import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
-import moe.ouom.neriplayer.core.player.metadata.shouldAutoMatchExternalLyrics
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.model.resolvePlayerQueueRestoreOrder
@@ -78,6 +76,8 @@ import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.data.platform.youtube.youtubeMusicThumbnailUrl
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 
 internal fun PlayerManager.cancelVolumeFadeImpl(resetToFull: Boolean = false) {
@@ -723,7 +723,7 @@ internal fun PlayerManager.playAtIndex(
         requestToken = requestToken,
         reason = "play_at_index"
     )
-    maybeHydrateLocalSongForPlayback(index, song, requestToken)
+    maybeHydrateSongForPlayback(index, song, requestToken)
     cancelUrlRefreshIfNotReusableForPendingLoad(
         song = song,
         resumePositionMs = resolvedResumePositionMs,
@@ -856,7 +856,6 @@ internal fun PlayerManager.playAtIndex(
                     return@launch
                 }
                 maybeWarmNextYouTubeMusicAfterCurrentResolved()
-                maybeAutoMatchYouTubeMusicLyrics(song, requestToken)
             }
             SongUrlResult.WaitingForAuthoritativeStream -> {
                 NPLogger.d(
@@ -907,11 +906,25 @@ internal fun PlayerManager.playAtIndex(
     }
 }
 
-private fun PlayerManager.maybeHydrateLocalSongForPlayback(
+private fun PlayerManager.maybeHydrateSongForPlayback(
     index: Int,
     song: SongItem,
     requestToken: Long
 ) {
+    if (isYouTubeMusicTrack(song) && song.coverUrl.isNullOrBlank() && song.customCoverUrl.isNullOrBlank()) {
+        val videoId = extractYouTubeMusicVideoId(song.mediaUri).orEmpty()
+        if (videoId.isNotBlank()) {
+            val thumbnailUrl = youtubeMusicThumbnailUrl(videoId)
+            hydrateSongMetadata(
+                originalSong = song,
+                updatedSong = song.copy(
+                    coverUrl = thumbnailUrl,
+                    originalCoverUrl = song.originalCoverUrl ?: thumbnailUrl
+                )
+            )
+        }
+        return
+    }
     if (!isLocalSong(song)) {
         return
     }
@@ -968,32 +981,6 @@ internal fun PlayerManager.enterPendingMediaLoad(requestedPositionMs: Long) {
     _playWhenReadyFlow.value = action.playWhenReady
     _playerPlaybackStateFlow.value = action.playbackState
     _playbackPositionMs.value = action.positionMs
-}
-
-private fun PlayerManager.maybeAutoMatchYouTubeMusicLyrics(song: SongItem, requestToken: Long) {
-    if (!shouldAutoMatchExternalLyrics(song, isYouTubeMusicTrack(song))) return
-    ioScope.launch {
-        val currentSong = _currentSongFlow.value ?: return@launch
-        if (requestToken != playbackRequestToken || !currentSong.sameIdentityAs(song)) {
-            return@launch
-        }
-
-        val candidate =
-            SearchManager.findBestSearchCandidate(
-                songName = song.name,
-                songArtist = song.artist,
-                songDurationMs = song.durationMs
-            ) ?: return@launch
-        val latestSong = _currentSongFlow.value ?: return@launch
-        if (requestToken != playbackRequestToken || !latestSong.sameIdentityAs(song)) {
-            return@launch
-        }
-        if (!shouldAutoMatchExternalLyrics(latestSong, isYouTubeMusicTrack(latestSong))) {
-            return@launch
-        }
-
-        replaceMetadataFromSearch(latestSong, candidate, isAuto = true)
-    }
 }
 
 private fun PlayerManager.maybeWarmNextYouTubeMusicAfterCurrentResolved() {

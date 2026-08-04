@@ -186,6 +186,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsTrafficManag
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeModeActionButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeSeedListItem
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.UsbExclusiveSettingsSection
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.YouTubePlaybackSourceSetting
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsGitHubDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsPreferenceDialogs
@@ -1794,6 +1795,12 @@ fun SettingsScreen(
 
                 SettingsPage.PlaybackSource -> {
                     miuixSettingsSectionCardItem(key = "${selectedPage.name}:content") {
+                        YouTubePlaybackSourceSetting(
+                            repository = AppContainer.settingsRepo,
+                            highlightTargetId = settingsHighlightTargetId,
+                            highlightPulse = settingsHighlightPulse,
+                            onHighlightFinished = onSettingsHighlightFinished
+                        )
                         AutoSettingsListItem(
                             setting = AutoSettingsMetadata.requireSetting(
                                 AutoSettingsKeys.NETEASE_LOCAL_SOURCE_FALLBACK

@@ -61,4 +61,26 @@ class ExploreSearchHistoryDisplayTest {
             )
         )
     }
+
+    @Test
+    fun `youtube search type bar follows the selected source and scroll state`() {
+        assertTrue(
+            shouldShowExploreYouTubeSearchTypeBar(
+                selectedSearchSource = SearchSource.YOUTUBE_MUSIC,
+                contentScrolled = false
+            )
+        )
+        assertFalse(
+            shouldShowExploreYouTubeSearchTypeBar(
+                selectedSearchSource = SearchSource.YOUTUBE_MUSIC,
+                contentScrolled = true
+            )
+        )
+        assertFalse(
+            shouldShowExploreYouTubeSearchTypeBar(
+                selectedSearchSource = SearchSource.NETEASE,
+                contentScrolled = false
+            )
+        )
+    }
 }

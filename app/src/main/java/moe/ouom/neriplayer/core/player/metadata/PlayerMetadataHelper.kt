@@ -23,7 +23,11 @@ internal fun shouldAutoMatchExternalLyrics(
 ): Boolean {
     if (!isYouTubeMusicTrack) return false
     if (song.matchedSongId != null || !song.matchedLyric.isNullOrEmpty()) return false
-    return song.customName == null && song.customArtist == null && song.customCoverUrl == null
+    if (song.customName != null || song.customArtist != null || song.customCoverUrl != null) {
+        return false
+    }
+    // YouTube lyrics are resolved through LRCLIB instead of cross-platform metadata replacement
+    return false
 }
 
 internal fun normalizeCustomMetadataValue(

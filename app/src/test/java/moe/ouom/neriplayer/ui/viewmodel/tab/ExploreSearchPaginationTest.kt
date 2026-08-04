@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.viewmodel.tab
 
+import moe.ouom.neriplayer.data.platform.youtube.youtubeMusicThumbnailUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

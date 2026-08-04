@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.ui.screen.tab
 
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseExploreSearchType
 import moe.ouom.neriplayer.ui.viewmodel.tab.SearchSource
+import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeExploreSearchType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -96,5 +97,25 @@ class ExploreScreenYouTubeGateTest {
         assertTrue(shouldResetExploreSearchScroll(previousContextKey, changedTypeKey))
         assertTrue(shouldResetExploreSearchScroll(previousContextKey, changedSourceKey))
         assertFalse(shouldResetExploreSearchScroll(previousContextKey, null))
+    }
+
+    @Test
+    fun `youtube search type contributes to scroll context`() {
+        val songs = exploreSearchScrollContextKey(
+            keyword = "demo",
+            source = SearchSource.YOUTUBE_MUSIC,
+            neteaseSearchType = NeteaseExploreSearchType.SONG,
+            youtubeSearchType = YouTubeExploreSearchType.SONG
+        )
+        val creators = exploreSearchScrollContextKey(
+            keyword = "demo",
+            source = SearchSource.YOUTUBE_MUSIC,
+            neteaseSearchType = NeteaseExploreSearchType.SONG,
+            youtubeSearchType = YouTubeExploreSearchType.CREATOR
+        )
+
+        assertEquals("YOUTUBE_MUSIC|SONG|demo", songs)
+        assertEquals("YOUTUBE_MUSIC|CREATOR|demo", creators)
+        assertTrue(shouldResetExploreSearchScroll(songs, creators))
     }
 }

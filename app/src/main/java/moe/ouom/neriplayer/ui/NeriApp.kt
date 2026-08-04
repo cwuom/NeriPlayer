@@ -147,6 +147,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -226,6 +227,7 @@ import moe.ouom.neriplayer.ui.screen.debug.UsbExclusiveDebugScreen
 import moe.ouom.neriplayer.ui.screen.debug.YouTubeApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.artist.BiliUploaderDetailScreen
 import moe.ouom.neriplayer.ui.screen.artist.NeteaseArtistDetailScreen
+import moe.ouom.neriplayer.ui.screen.artist.YouTubeMusicCreatorNavigationScreen
 import moe.ouom.neriplayer.ui.screen.host.ExploreHostScreen
 import moe.ouom.neriplayer.ui.screen.host.HomeHostScreen
 import moe.ouom.neriplayer.ui.screen.host.LibraryHostScreen
@@ -235,6 +237,7 @@ import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.ui.theme.isActualSystemDarkTheme
 import moe.ouom.neriplayer.ui.theme.rememberActualSystemDarkTheme
@@ -248,6 +251,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
+import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.util.crash.AnrWatchdog
 import moe.ouom.neriplayer.util.media.CoverArtColorCache
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
@@ -285,6 +289,8 @@ private val TRANSPARENT_MAIN_TAB_DETAIL_ROUTES = setOf(
     Destinations.NeteaseArtistDetail.route,
     Destinations.BiliPlaylistDetail.route,
     Destinations.BiliUploaderDetail.route,
+    Destinations.YouTubeMusicCreatorDetail.route,
+    Destinations.YouTubeMusicPlaylistDetail.route,
     Destinations.LocalPlaylistDetail.route,
     Destinations.Recent.route,
     Destinations.PlaybackStats.route,
@@ -312,6 +318,7 @@ private fun transparentNavigationDepth(route: String?): Int {
     if (debugDepth != null) return debugDepth
     return when {
         route == Destinations.NeteaseAlbumDetail.route ||
+            route == Destinations.YouTubeMusicPlaylistDetail.route ||
             route == Destinations.DownloadProgress.route -> 2
         route in TRANSPARENT_MAIN_TAB_DETAIL_ROUTES -> 1
         else -> 0
@@ -2503,6 +2510,56 @@ private fun NeriAppContent(
                     launchSingleTop = true
                 }
             }
+            fun navigateToYouTubeMusicCreator(creator: YouTubeMusicCreatorSummary) {
+                if (creator.browseId.isBlank()) return
+                val currentEntry = navController.currentBackStackEntry
+                val currentCreator = currentEntry
+                    ?.takeIf {
+                        it.destination.route == Destinations.YouTubeMusicCreatorDetail.route
+                    }
+                    ?.arguments
+                    ?.getString("creatorJson")
+                    ?.let { creatorJson ->
+                        runCatching {
+                            navigationGson.fromJson(
+                                creatorJson,
+                                YouTubeMusicCreatorSummary::class.java
+                            )
+                        }.getOrNull()
+                    }
+                if (currentCreator?.browseId == creator.browseId) {
+                    return
+                }
+                val json = Uri.encode(navigationGson.toJson(creator))
+                navController.navigate("youtube_music_creator_detail/$json") {
+                    launchSingleTop = true
+                }
+            }
+            fun navigateToYouTubeMusicPlaylist(playlist: YouTubeMusicPlaylist) {
+                if (playlist.browseId.isBlank()) return
+                val currentEntry = navController.currentBackStackEntry
+                val currentPlaylist = currentEntry
+                    ?.takeIf {
+                        it.destination.route == Destinations.YouTubeMusicPlaylistDetail.route
+                    }
+                    ?.arguments
+                    ?.getString("playlistJson")
+                    ?.let { playlistJson ->
+                        runCatching {
+                            navigationGson.fromJson(
+                                playlistJson,
+                                YouTubeMusicPlaylist::class.java
+                            )
+                        }.getOrNull()
+                    }
+                if (currentPlaylist?.browseId == playlist.browseId) {
+                    return
+                }
+                val json = Uri.encode(navigationGson.toJson(playlist))
+                navController.navigate("youtube_music_playlist_detail/$json") {
+                    launchSingleTop = true
+                }
+            }
             LaunchedEffect(currentRoute, restoreLyricsAfterAlbumBack) {
                 if (!restoreLyricsAfterAlbumBack) {
                     lyricsAlbumRouteObserved = false
@@ -3501,7 +3558,81 @@ private fun NeriAppContent(
                                         )
                                     }
                                 }
-                                
+
+                                composable(
+                                    route = Destinations.YouTubeMusicCreatorDetail.route,
+                                    arguments = listOf(navArgument("creatorJson") {
+                                        type = NavType.StringType
+                                    }),
+                                    enterTransition = {
+                                        transparentDetailEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        transparentDetailExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        transparentDetailPopEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        transparentDetailPopExitTransition(coherentFeedbackEnabled)
+                                    }
+                                ) { backStackEntry ->
+                                    val creatorJson = backStackEntry.arguments
+                                        ?.getString("creatorJson")
+                                    val creator = navigationGson.fromJson(
+                                        creatorJson,
+                                        YouTubeMusicCreatorSummary::class.java
+                                    )
+                                    RenderNavHostScene(
+                                        Destinations.YouTubeMusicCreatorDetail.route
+                                    ) {
+                                        YouTubeMusicCreatorNavigationScreen(
+                                            creator = creator,
+                                            onBack = { navController.popBackStack() },
+                                            onSongClick = ::playSongsAndOpenNowPlaying,
+                                            onPlaylistClick = ::navigateToYouTubeMusicPlaylist,
+                                            onCreatorClick = ::navigateToYouTubeMusicCreator,
+                                            offlineMode = offlineMode
+                                        )
+                                    }
+                                }
+
+                                composable(
+                                    route = Destinations.YouTubeMusicPlaylistDetail.route,
+                                    arguments = listOf(navArgument("playlistJson") {
+                                        type = NavType.StringType
+                                    }),
+                                    enterTransition = {
+                                        transparentDetailEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    exitTransition = {
+                                        transparentDetailExitTransition(coherentFeedbackEnabled)
+                                    },
+                                    popEnterTransition = {
+                                        transparentDetailPopEnterTransition(coherentFeedbackEnabled)
+                                    },
+                                    popExitTransition = {
+                                        transparentDetailPopExitTransition(coherentFeedbackEnabled)
+                                    }
+                                ) { backStackEntry ->
+                                    val playlistJson = backStackEntry.arguments
+                                        ?.getString("playlistJson")
+                                    val playlist = navigationGson.fromJson(
+                                        playlistJson,
+                                        YouTubeMusicPlaylist::class.java
+                                    )
+                                    RenderNavHostScene(
+                                        Destinations.YouTubeMusicPlaylistDetail.route
+                                    ) {
+                                        YouTubeMusicPlaylistDetailScreen(
+                                            playlist = playlist,
+                                            onBack = { navController.popBackStack() },
+                                            onSongClick = ::playSongsAndOpenNowPlaying,
+                                            offlineMode = offlineMode
+                                        )
+                                    }
+                                }
+
                                 composable(
                                     route = Destinations.BiliPlaylistDetail.route,
                                     arguments = listOf(navArgument("playlistJson") {
@@ -4339,6 +4470,7 @@ private fun NeriAppContent(
                                     },
                                     onEnterArtist = ::navigateToNeteaseArtist,
                                     onEnterBiliUploader = ::navigateToBiliUploader,
+                                    onEnterYouTubeCreator = ::navigateToYouTubeMusicCreator,
                                     lyricBlurEnabled = lyricBlurEnabled,
                                     lyricBlurAmount = lyricBlurAmount,
                                     lyricFontScales = lyricFontScales,

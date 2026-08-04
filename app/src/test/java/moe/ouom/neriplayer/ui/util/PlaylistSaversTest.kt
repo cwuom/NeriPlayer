@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.ui.util
 
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
+import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test
@@ -39,5 +40,20 @@ class PlaylistSaversTest {
         )
 
         assertEquals(original, restoreBiliPlaylist(original.toSaveMap()))
+    }
+
+    @Test
+    fun youTubeMusicPlaylistRoundTrip_keepsCreatorName() {
+        val original = YouTubeMusicPlaylist(
+            browseId = "MPREdemoAlbum",
+            playlistId = "MPREdemoAlbum",
+            title = "Demo Album",
+            subtitle = "Album",
+            coverUrl = "https://example.test/album.jpg",
+            trackCount = 12,
+            creatorName = "Demo Creator"
+        )
+
+        assertEquals(original, restoreYouTubeMusicPlaylist(original.toSaveMap()))
     }
 }

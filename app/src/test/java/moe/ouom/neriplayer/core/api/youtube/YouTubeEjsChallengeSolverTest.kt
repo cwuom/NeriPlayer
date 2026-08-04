@@ -1,13 +1,68 @@
 package moe.ouom.neriplayer.core.api.youtube
 
+import androidx.javascriptengine.MemoryLimitExceededException
+import androidx.javascriptengine.SandboxDeadException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import java.util.concurrent.ExecutionException
 import kotlinx.coroutines.CancellationException
 
 class YouTubeEjsChallengeSolverTest {
+
+    @Test
+    fun ejsIsolateUsesExplicitHeapLimitOnlyWhenSupported() {
+        assertEquals(
+            YOUTUBE_EJS_ISOLATE_MAX_HEAP_SIZE_BYTES,
+            youtubeEjsIsolateMaxHeapSizeBytes(supportsExplicitHeapLimit = true)
+        )
+        assertEquals(
+            null,
+            youtubeEjsIsolateMaxHeapSizeBytes(supportsExplicitHeapLimit = false)
+        )
+    }
+
+    @Test
+    fun terminalEjsSandboxFailuresInvalidateTheSharedSandbox() {
+        assertTrue(
+            shouldInvalidateYouTubeEjsSandbox(
+                ExecutionException(MemoryLimitExceededException("memory limit exceeded"))
+            )
+        )
+        assertTrue(
+            shouldInvalidateYouTubeEjsSandbox(
+                ExecutionException(SandboxDeadException("sandbox was dead"))
+            )
+        )
+        assertFalse(shouldInvalidateYouTubeEjsSandbox(IllegalStateException("ordinary failure")))
+    }
+
+    @Test
+    fun sandboxBootstrapInstallsIcuFallbackBeforeLoadingThePlayerSolver() {
+        val libScript = "const lib = { marker: 'library' };"
+        val coreScript = "const coreMarker = 'core';"
+
+        val bootstrapScript = buildYouTubeEjsSandboxBootstrapScript(
+            libScript = libScript,
+            coreScript = coreScript
+        )
+
+        val fallbackIndex = bootstrapScript.indexOf("patchLocaleStringIfBroken")
+        assertTrue(fallbackIndex >= 0)
+        assertTrue(fallbackIndex < bootstrapScript.indexOf(libScript))
+        assertTrue(bootstrapScript.indexOf(libScript) < bootstrapScript.indexOf(coreScript))
+        assertTrue(bootstrapScript.contains("Number.prototype"))
+        assertTrue(bootstrapScript.contains("Date.prototype"))
+        assertTrue(bootstrapScript.contains("Boolean.prototype"))
+        assertTrue(bootstrapScript.contains("{ style: \"percent\" }"))
+        assertTrue(
+            bootstrapScript.contains("sample === null || typeof sample === \"undefined\"")
+        )
+        assertTrue(bootstrapScript.contains("return this.toString();"))
+    }
 
     @Test
     fun propagateYouTubeJsChallengeCancellationRestoresInterruptedStatus() {

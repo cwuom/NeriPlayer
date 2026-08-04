@@ -465,6 +465,10 @@ fun extractYouTubeMusicVideoId(mediaUri: String?): String? {
     }.getOrNull()
 }
 
+fun youtubeMusicThumbnailUrl(videoId: String): String {
+    return "https://i.ytimg.com/vi/${videoId.trim()}/hqdefault.jpg"
+}
+
 fun isYouTubeMusicSong(song: SongItem): Boolean = extractYouTubeMusicVideoId(song.mediaUri) != null
 
 fun stableYouTubeMusicId(value: String): Long {

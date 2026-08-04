@@ -368,7 +368,7 @@ class PlayerManagerSearchMetadataTest {
     }
 
     @Test
-    fun `auto lyric matching is allowed only for unmatched youtube music songs`() {
+    fun `youtube music skips cross platform automatic lyric matching`() {
         val song = SongItem(
             id = 4L,
             name = "标题",
@@ -379,7 +379,7 @@ class PlayerManagerSearchMetadataTest {
             coverUrl = null
         )
 
-        assertTrue(shouldAutoMatchExternalLyrics(song, isYouTubeMusicTrack = true))
+        assertFalse(shouldAutoMatchExternalLyrics(song, isYouTubeMusicTrack = true))
         assertFalse(shouldAutoMatchExternalLyrics(song, isYouTubeMusicTrack = false))
     }
 

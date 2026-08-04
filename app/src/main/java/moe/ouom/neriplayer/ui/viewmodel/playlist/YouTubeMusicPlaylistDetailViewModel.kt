@@ -42,20 +42,76 @@ import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
+import moe.ouom.neriplayer.data.platform.youtube.youtubeMusicThumbnailUrl
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicPlaylistDetail
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicTrack
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicUiDependencies
 
 private const val YOUTUBE_MUSIC_PLAYLIST_SIGNATURE_TRACK_LIMIT = 100
+internal const val YOUTUBE_MUSIC_PLAYLIST_CACHE_FRESHNESS_MS = 6L * 60L * 60L * 1000L
+
+internal fun isYouTubeMusicPlaylistCacheFresh(
+    cache: CachedYouTubeMusicPlaylistDetail,
+    nowMs: Long = System.currentTimeMillis()
+): Boolean {
+    return cache.tracks.isNotEmpty() &&
+        cache.savedAtMs > 0L &&
+        nowMs - cache.savedAtMs in 0 until YOUTUBE_MUSIC_PLAYLIST_CACHE_FRESHNESS_MS
+}
 
 data class YouTubeMusicPlaylistDetailUiState(
     val loading: Boolean = true,
     val error: String? = null,
+    val tracksUnavailable: Boolean = false,
     val playlist: YouTubeMusicPlaylist? = null,
     val tracks: List<SongItem> = emptyList(),
     val allTracksLoaded: Boolean = false
 )
+
+internal fun shouldMarkYouTubeMusicPlaylistTracksUnavailable(
+    declaredTrackCount: Int,
+    hasUsableTracks: Boolean
+): Boolean = declaredTrackCount > 0 && !hasUsableTracks
+
+internal fun retainYouTubeMusicPlaylistCreatorContext(
+    playlist: YouTubeMusicPlaylist,
+    previousPlaylist: YouTubeMusicPlaylist?
+): YouTubeMusicPlaylist {
+    return playlist.copy(
+        creatorName = playlist.creatorName.trim().ifBlank {
+            previousPlaylist?.creatorName?.trim().orEmpty()
+        }
+    )
+}
+
+internal fun resolveYouTubeMusicPlaylistTrackArtist(
+    trackArtist: String,
+    playlistCreatorName: String
+): String {
+    return trackArtist.trim().ifBlank { playlistCreatorName.trim() }
+}
+
+internal fun applyYouTubeMusicPlaylistCreatorContext(
+    tracks: List<SongItem>,
+    creatorName: String
+): List<SongItem> {
+    val resolvedCreatorName = creatorName.trim()
+    if (resolvedCreatorName.isBlank()) {
+        return tracks
+    }
+    return tracks.map { track ->
+        if (track.artist.isNotBlank() || !track.customArtist.isNullOrBlank()) {
+            track
+        } else {
+            track.copy(
+                artist = resolvedCreatorName,
+                originalArtist = track.originalArtist?.ifBlank { resolvedCreatorName }
+                    ?: resolvedCreatorName
+            )
+        }
+    }
+}
 
 class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(YouTubeMusicPlaylistDetailUiState())
@@ -66,14 +122,21 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
     private var currentPlaylist: YouTubeMusicPlaylist? = null
 
     fun start(playlist: YouTubeMusicPlaylist, forceRefresh: Boolean = false) {
-        currentPlaylist = playlist
         val previous = _uiState.value.takeIf {
-            forceRefresh && it.playlist?.browseId == playlist.browseId
+            it.playlist?.browseId == playlist.browseId
         }
+        val resolvedPlaylist = retainYouTubeMusicPlaylistCreatorContext(
+            playlist = playlist,
+            previousPlaylist = previous?.playlist
+        )
+        currentPlaylist = resolvedPlaylist
         _uiState.value = YouTubeMusicPlaylistDetailUiState(
             loading = true,
-            playlist = previous?.playlist ?: playlist,
-            tracks = previous?.tracks.orEmpty(),
+            playlist = resolvedPlaylist,
+            tracks = applyYouTubeMusicPlaylistCreatorContext(
+                tracks = previous?.tracks.orEmpty(),
+                creatorName = resolvedPlaylist.creatorName
+            ),
             allTracksLoaded = previous?.allTracksLoaded == true
         )
         loadPlaylist(forceRefresh = forceRefresh)
@@ -100,7 +163,10 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
                     if (forceRefresh) null else playlistCacheRepo.read(playlist.browseId)
                 }
                 if (cached != null) {
-                    publishCachedPlaylist(cached, playlist, loading = true)
+                    publishCachedPlaylist(cached, playlist)
+                    if (isYouTubeMusicPlaylistCacheFresh(cached)) {
+                        return@launch
+                    }
                     val preview = runCatching {
                         withContext(Dispatchers.IO) {
                             gateway.getPlaylistDetailPreview(playlist.browseId)
@@ -109,11 +175,13 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
                         publishCachedPlaylist(cached, playlist)
                         return@launch
                     }
-                    if (preview.firstPageSignature() == cached.firstPageSignature) {
+                    if (!preview.hasUsableTracks() ||
+                        preview.firstPageSignature() == cached.firstPageSignature
+                    ) {
                         publishCachedPlaylist(cached, playlist)
                         return@launch
                     }
-                    if (preview.fullyLoaded) {
+                    if (preview.fullyLoaded && preview.hasUsableTracks()) {
                         publishRemotePlaylist(
                             detail = preview,
                             fallback = playlist,
@@ -122,20 +190,22 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
                         )
                         return@launch
                     }
-                    publishRemotePlaylist(
-                        detail = preview,
-                        fallback = playlist,
-                        loading = true,
-                        prefetchSource = "yt_playlist_detail_preview"
-                    )
-                    previewPublished = true
+                    if (preview.hasUsableTracks()) {
+                        publishRemotePlaylist(
+                            detail = preview,
+                            fallback = playlist,
+                            loading = false,
+                            prefetchSource = "yt_playlist_detail_preview"
+                        )
+                        previewPublished = true
+                    }
                 } else {
                     runCatching {
                         withContext(Dispatchers.IO) {
                             gateway.getPlaylistDetailPreview(playlist.browseId)
                         }
                     }.getOrNull()?.let { preview ->
-                        if (preview.fullyLoaded) {
+                        if (preview.fullyLoaded && preview.hasUsableTracks()) {
                             publishRemotePlaylist(
                                 detail = preview,
                                 fallback = playlist,
@@ -144,25 +214,48 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
                             )
                             return@launch
                         }
-                        publishRemotePlaylist(
-                            detail = preview,
-                            fallback = playlist,
-                            loading = true,
-                            prefetchSource = "yt_playlist_detail_preview"
-                        )
-                        previewPublished = true
+                        if (preview.hasUsableTracks()) {
+                            publishRemotePlaylist(
+                                detail = preview,
+                                fallback = playlist,
+                                loading = true,
+                                prefetchSource = "yt_playlist_detail_preview"
+                            )
+                            previewPublished = true
+                        }
                     }
                 }
 
                 val detail = withContext(Dispatchers.IO) {
                     gateway.getPlaylistDetail(playlist.browseId)
                 }
-                publishRemotePlaylist(
-                    detail = detail,
-                    fallback = playlist,
-                    loading = false,
-                    prefetchSource = "yt_playlist_detail_load"
-                )
+                val hasUsableTracks = detail.hasUsableTracks()
+                if (hasUsableTracks || !shouldMarkYouTubeMusicPlaylistTracksUnavailable(
+                        declaredTrackCount = playlist.trackCount,
+                        hasUsableTracks = hasUsableTracks
+                    )
+                ) {
+                    publishRemotePlaylist(
+                        detail = detail,
+                        fallback = playlist,
+                        loading = false,
+                        prefetchSource = "yt_playlist_detail_load"
+                    )
+                } else if (cached != null) {
+                    publishCachedPlaylist(cached, playlist)
+                } else if (previewPublished) {
+                    _uiState.value = _uiState.value.copy(
+                        loading = false,
+                        allTracksLoaded = false
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        loading = false,
+                        error = null,
+                        tracksUnavailable = true,
+                        allTracksLoaded = false
+                    )
+                }
             } catch (error: Exception) {
                 val cached = withContext(Dispatchers.IO) {
                     playlistCacheRepo.read(playlist.browseId)
@@ -227,7 +320,7 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
                 .map { it.toSongItem(resolvedPlaylist) }
                 .map { overlayUserEdits(it, localPlaylists) }
         }
-        if (detail.fullyLoaded) {
+        if (detail.fullyLoaded && detail.hasUsableTracks()) {
             withContext(Dispatchers.IO) {
                 cacheFullPlaylist(
                     browseId = fallback.browseId,
@@ -271,6 +364,7 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
                 playlistId = playlist.playlistId,
                 title = playlist.title,
                 subtitle = playlist.subtitle,
+                creatorName = playlist.creatorName,
                 coverUrl = playlist.coverUrl,
                 trackCount = playlist.trackCount,
                 firstPageSignature = detail.firstPageSignature(),
@@ -300,6 +394,9 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
             playlistId = playlistId.ifBlank { fallback.playlistId },
             title = title.ifBlank { fallback.title },
             subtitle = subtitle.ifBlank { fallback.subtitle },
+            creatorName = creatorName.orEmpty().trim().ifBlank {
+                fallback.creatorName.trim()
+            },
             coverUrl = coverUrl.ifBlank { fallback.coverUrl },
             trackCount = trackCount.takeIf { it > 0 }
                 ?: tracks.size.takeIf { it > 0 }
@@ -309,21 +406,28 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
 
     private fun YouTubeMusicTrack.toSongItem(playlist: YouTubeMusicPlaylist): SongItem {
         val resolvedAlbum = albumName.ifBlank { playlist.title }
+        val resolvedArtist = resolveYouTubeMusicPlaylistTrackArtist(
+            trackArtist = artist,
+            playlistCreatorName = playlist.creatorName
+        )
+        val resolvedCoverUrl = coverUrl.ifBlank {
+            youtubeMusicThumbnailUrl(videoId)
+        }.ifBlank { playlist.coverUrl }
         return SongItem(
             id = stableYouTubeMusicId(videoId),
             name = name,
-            artist = artist,
+            artist = resolvedArtist,
             album = resolvedAlbum,
             albumId = stableYouTubeMusicId(playlist.playlistId.ifBlank { videoId }),
             durationMs = durationMs,
-            coverUrl = coverUrl.ifBlank { playlist.coverUrl },
+            coverUrl = resolvedCoverUrl,
             mediaUri = buildYouTubeMusicMediaUri(
                 videoId = videoId,
                 playlistId = playlist.playlistId.ifBlank { null }
             ),
             originalName = name,
-            originalArtist = artist,
-            originalCoverUrl = coverUrl.ifBlank { playlist.coverUrl },
+            originalArtist = resolvedArtist,
+            originalCoverUrl = resolvedCoverUrl,
             channelId = "youtubeMusic",
             audioId = videoId,
             playlistContextId = playlist.playlistId.ifBlank { null }
@@ -332,21 +436,28 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
 
     private fun CachedYouTubeMusicPlaylistTrack.toSongItem(playlist: YouTubeMusicPlaylist): SongItem {
         val resolvedAlbum = albumName.ifBlank { playlist.title }
+        val resolvedArtist = resolveYouTubeMusicPlaylistTrackArtist(
+            trackArtist = artist,
+            playlistCreatorName = playlist.creatorName
+        )
+        val resolvedCoverUrl = coverUrl.ifBlank {
+            youtubeMusicThumbnailUrl(videoId)
+        }.ifBlank { playlist.coverUrl }
         return SongItem(
             id = stableYouTubeMusicId(videoId),
             name = name,
-            artist = artist,
+            artist = resolvedArtist,
             album = resolvedAlbum,
             albumId = stableYouTubeMusicId(playlist.playlistId.ifBlank { videoId }),
             durationMs = durationMs,
-            coverUrl = coverUrl.ifBlank { playlist.coverUrl },
+            coverUrl = resolvedCoverUrl,
             mediaUri = buildYouTubeMusicMediaUri(
                 videoId = videoId,
                 playlistId = playlist.playlistId.ifBlank { null }
             ),
             originalName = name,
-            originalArtist = artist,
-            originalCoverUrl = coverUrl.ifBlank { playlist.coverUrl },
+            originalArtist = resolvedArtist,
+            originalCoverUrl = resolvedCoverUrl,
             channelId = "youtubeMusic",
             audioId = videoId,
             playlistContextId = playlist.playlistId.ifBlank { null }
@@ -368,27 +479,15 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
         return buildString {
             append(playlistId)
             append('#')
-            append(trackCount)
-            append('#')
-            append(title)
-            append('#')
-            append(subtitle)
-            append('#')
-            append(coverUrl)
-            append('#')
             tracks.take(YOUTUBE_MUSIC_PLAYLIST_SIGNATURE_TRACK_LIMIT).forEach { track ->
                 append(track.videoId)
-                append(':')
-                append(track.name)
-                append(':')
-                append(track.artist)
-                append(':')
-                append(track.albumName)
-                append(':')
-                append(track.durationMs)
                 append('|')
             }
         }
+    }
+
+    private fun YouTubeMusicPlaylistDetail.hasUsableTracks(): Boolean {
+        return tracks.any { it.videoId.isNotBlank() && it.name.isNotBlank() }
     }
 
     private suspend fun localPlaylistsSnapshot(): List<LocalPlaylist> {

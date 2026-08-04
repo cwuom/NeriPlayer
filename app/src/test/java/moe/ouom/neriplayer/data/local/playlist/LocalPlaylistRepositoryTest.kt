@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
@@ -1048,6 +1049,44 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
+    fun `removed local files songs can be restored when download deletion fails`() = runTest {
+        val first = localSong(index = 701, name = "first")
+        val second = localSong(index = 702, name = "second")
+        val context = mockContext()
+        val repository = LocalPlaylistRepository.createForTest(
+            context = context,
+            file = File(tempFolder.root, "local_files_song_restore.json"),
+            normalizePlaylists = { playlists ->
+                if (playlists.any { it.id == LocalFilesPlaylist.SYSTEM_ID }) {
+                    playlists
+                } else {
+                    playlists + LocalPlaylist(
+                        id = LocalFilesPlaylist.SYSTEM_ID,
+                        name = "Local Files"
+                    )
+                }
+            },
+            autoSyncEnabled = false
+        )
+        assertEquals(
+            2,
+            repository.addScannedSongsToLocalFilesPlaylistAndCount(listOf(first, second))
+        )
+
+        val deleteResults = repository.removeSongsFromPlaylistByIdentityWithResult(
+            LocalFilesPlaylist.SYSTEM_ID,
+            listOf(first)
+        )
+
+        assertEquals(1, deleteResults.size)
+        assertTrue(repository.restoreDeletedSongs(deleteResults))
+        assertEquals(
+            listOf(first.id, second.id),
+            repository.playlists.value.single().songs.map { it.id }
+        )
+    }
+
+    @Test
     fun `restored playlist id is committed before external sync is scheduled`() = runTest {
         val syncStore = RecordingSyncMutationStore()
         var autoSyncTriggerCount = 0
@@ -1207,6 +1246,8 @@ class LocalPlaylistRepositoryTest {
         val context = mock(Context::class.java)
         `when`(context.filesDir).thenReturn(tempFolder.root)
         `when`(context.getString(R.string.playlist_create)).thenReturn("Playlist")
+        `when`(context.getString(R.string.favorite_my_music)).thenReturn("Favorites")
+        `when`(context.getString(R.string.local_files)).thenReturn("Local Files")
         return context
     }
 

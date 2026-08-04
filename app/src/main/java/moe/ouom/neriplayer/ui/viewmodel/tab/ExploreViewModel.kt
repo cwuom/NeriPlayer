@@ -36,6 +36,8 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicSearchFilter
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicSearchResult
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicSearchResultType
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -47,6 +49,7 @@ import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
+import moe.ouom.neriplayer.data.platform.youtube.youtubeMusicThumbnailUrl
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
@@ -105,6 +108,14 @@ enum class NeteaseExploreSearchType(val apiType: Int) {
     ARTIST(apiType = 100)
 }
 
+enum class YouTubeExploreSearchType(
+    val filter: YouTubeMusicSearchFilter?
+) {
+    SONG(YouTubeMusicSearchFilter.Song),
+    VIDEO(YouTubeMusicSearchFilter.Video),
+    CREATOR(null)
+}
+
 data class NeteaseSearchArtistResult(
     val artist: NeteaseArtistSummary,
     val picUrl: String?,
@@ -143,6 +154,10 @@ sealed class ExploreSearchResult {
         override val stableKey: String = "netease|artist|${result.artist.id}"
     }
 
+    data class YouTubeCreator(val creator: YouTubeMusicCreatorSummary) : ExploreSearchResult() {
+        override val stableKey: String = "youtubeMusic|creator|${creator.browseId}"
+    }
+
     data class Notice(
         val title: String,
         val message: String
@@ -169,6 +184,7 @@ data class ExploreUiState(
     val searchDisplayQuery: String = "",
     val selectedSearchSource: SearchSource = SearchSource.NETEASE,
     val selectedNeteaseSearchType: NeteaseExploreSearchType = NeteaseExploreSearchType.SONG,
+    val selectedYouTubeMusicSearchType: YouTubeExploreSearchType = YouTubeExploreSearchType.SONG,
     val isNeteaseLoggedIn: Boolean = false,
     val ytMusicPlaylists: List<YouTubeMusicPlaylist> = emptyList(),
     val ytMusicPlaylistsLoading: Boolean = false,
@@ -358,6 +374,30 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         invalidateSearchRequest()
         _uiState.value = _uiState.value.copy(
             selectedNeteaseSearchType = type,
+            searching = false,
+            searchError = null,
+            searchResults = emptyList(),
+            searchItems = emptyList(),
+            searchHasMore = false,
+            searchLoadingMore = false,
+            searchLoadMoreError = null,
+            searchPage = 0,
+            searchKeyword = "",
+            searchDisplayQuery = ""
+        )
+    }
+
+    fun setYouTubeMusicSearchType(type: YouTubeExploreSearchType) {
+        if (type == _uiState.value.selectedYouTubeMusicSearchType) return
+        NPLogger.d(
+            TAG,
+            "setYouTubeMusicSearchType: ${_uiState.value.selectedYouTubeMusicSearchType} -> $type"
+        )
+        searchJob?.cancel()
+        searchMoreJob?.cancel()
+        invalidateSearchRequest()
+        _uiState.value = _uiState.value.copy(
+            selectedYouTubeMusicSearchType = type,
             searching = false,
             searchError = null,
             searchResults = emptyList(),
@@ -1193,29 +1233,44 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         return buildBiliPartSong(page, basicInfo, coverUrl)
     }
 
-    /** 搜索 YouTube Music：只返回歌曲结果 */
     private fun searchYouTubeMusic(keyword: String, matchQuery: String, requestVersion: Long) {
         if (!youtubeEnabled) return
+        val searchType = _uiState.value.selectedYouTubeMusicSearchType
         searchJob = viewModelScope.launch {
             try {
-                val songs = withContext(Dispatchers.IO) {
-                    AppContainer.youtubeMusicClient.search(
-                        query = keyword,
-                        limit = YOUTUBE_MUSIC_SEARCH_LIMIT
-                    ).map { it.toSongItem(app) }
-                }.let { rankExploreSongSearchResults(matchQuery, it) }
+                val items = when (searchType) {
+                    YouTubeExploreSearchType.SONG,
+                    YouTubeExploreSearchType.VIDEO -> {
+                        val songs = withContext(Dispatchers.IO) {
+                            AppContainer.youtubeMusicClient.search(
+                                query = keyword,
+                                limit = YOUTUBE_MUSIC_SEARCH_LIMIT,
+                                filter = requireNotNull(searchType.filter)
+                            ).map { it.toSongItem(app) }
+                        }.let { rankExploreSongSearchResults(matchQuery, it) }
+                        songs.map(ExploreSearchResult::Song)
+                    }
+                    YouTubeExploreSearchType.CREATOR -> {
+                        withContext(Dispatchers.IO) {
+                            AppContainer.youtubeMusicClient.searchCreators(
+                                query = keyword,
+                                limit = YOUTUBE_MUSIC_SEARCH_LIMIT
+                            )
+                        }.map(ExploreSearchResult::YouTubeCreator)
+                    }
+                }
                 if (!isSearchRequestCurrent(requestVersion, SearchSource.YOUTUBE_MUSIC)) return@launch
                 NPLogger.d(
                     TAG,
-                    "search YouTube Music success: request=$requestVersion, keyword=$keyword, count=${songs.size}"
+                    "search YouTube Music success: request=$requestVersion, type=$searchType, keyword=$keyword, count=${items.size}"
                 )
                 updateSearchStateIfCurrent(requestVersion, SearchSource.YOUTUBE_MUSIC) {
                     it.copy(
                         searching = false,
                         searchError = null,
                         searchLoadMoreError = null,
-                        searchResults = songs,
-                        searchItems = songs.map { song -> ExploreSearchResult.Song(song) },
+                        searchResults = searchSongItems(items),
+                        searchItems = items,
                         searchPage = 1,
                         searchHasMore = false
                     )
@@ -1225,7 +1280,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: Exception) {
                 NPLogger.e(
                     TAG,
-                    "search YouTube Music failed: request=$requestVersion, keyword=$keyword",
+                    "search YouTube Music failed: request=$requestVersion, type=$searchType, keyword=$keyword",
                     e
                 )
                 updateSearchStateIfCurrent(requestVersion, SearchSource.YOUTUBE_MUSIC) {
@@ -1400,16 +1455,12 @@ private fun YouTubeMusicSearchResult.toSongItem(app: Application): SongItem {
         album = displayAlbum,
         albumId = stableYouTubeMusicId("$videoId|$displayAlbum"),
         durationMs = durationMs,
-        coverUrl = coverUrl.ifBlank { null },
+        coverUrl = coverUrl.ifBlank { youtubeMusicThumbnailUrl(videoId) },
         mediaUri = buildYouTubeMusicMediaUri(videoId),
         originalName = title,
         originalArtist = displayArtist,
-        originalCoverUrl = coverUrl.ifBlank { null },
+        originalCoverUrl = coverUrl.ifBlank { youtubeMusicThumbnailUrl(videoId) },
         channelId = "youtubeMusic",
         audioId = videoId
     )
-}
-
-internal fun youtubeMusicThumbnailUrl(videoId: String): String {
-    return "https://i.ytimg.com/vi/${videoId.trim()}/hqdefault.jpg"
 }

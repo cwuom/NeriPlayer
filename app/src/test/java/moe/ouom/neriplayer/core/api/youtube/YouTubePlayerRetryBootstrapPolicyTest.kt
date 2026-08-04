@@ -184,4 +184,12 @@ class YouTubePlayerRetryBootstrapPolicyTest {
             )
         )
     }
+
+    @Test
+    fun skipsLocaleRetryForResponsesThatRequireAccountOrContentChecks() {
+        assertFalse(shouldRetryPlayerLocaleFallback("LOGIN_REQUIRED"))
+        assertFalse(shouldRetryPlayerLocaleFallback("CONTENT_CHECK_REQUIRED"))
+        assertFalse(shouldRetryPlayerLocaleFallback("AGE_CHECK_REQUIRED"))
+        assertTrue(shouldRetryPlayerLocaleFallback("UNPLAYABLE"))
+    }
 }

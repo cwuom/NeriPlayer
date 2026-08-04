@@ -43,6 +43,7 @@ data class CachedYouTubeMusicPlaylistDetail(
     val playlistId: String,
     val title: String,
     val subtitle: String,
+    val creatorName: String? = null,
     val coverUrl: String,
     val trackCount: Int,
     val firstPageSignature: String,

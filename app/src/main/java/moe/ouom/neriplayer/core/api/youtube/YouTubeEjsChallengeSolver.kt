@@ -26,8 +26,11 @@ package moe.ouom.neriplayer.core.api.youtube
 
 import android.annotation.SuppressLint
 import android.content.Context
+import androidx.javascriptengine.IsolateStartupParameters
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
+import androidx.javascriptengine.MemoryLimitExceededException
+import androidx.javascriptengine.SandboxDeadException
 import java.io.IOException
 import java.util.LinkedHashMap
 import java.util.UUID
@@ -89,6 +92,79 @@ internal data class YouTubeJsChallengeSolveResult(
         }
     }
 }
+
+internal fun buildYouTubeEjsSandboxBootstrapScript(
+    libScript: String,
+    coreScript: String
+): String {
+    return buildString {
+        append(YOUTUBE_EJS_LOCALE_COMPATIBILITY_PRELUDE)
+        append('\n')
+        append(libScript)
+        append('\n')
+        append("Object.assign(globalThis, lib);\n")
+        append(coreScript)
+    }
+}
+
+internal const val YOUTUBE_EJS_ISOLATE_MAX_HEAP_SIZE_BYTES = 32L * 1024L * 1024L
+
+internal fun youtubeEjsIsolateMaxHeapSizeBytes(
+    supportsExplicitHeapLimit: Boolean
+): Long? {
+    return YOUTUBE_EJS_ISOLATE_MAX_HEAP_SIZE_BYTES.takeIf { supportsExplicitHeapLimit }
+}
+
+internal fun shouldInvalidateYouTubeEjsSandbox(error: Throwable): Boolean {
+    return when (error) {
+        is MemoryLimitExceededException,
+        is SandboxDeadException -> true
+        else -> error.cause?.let(::shouldInvalidateYouTubeEjsSandbox) == true
+    }
+}
+
+private val YOUTUBE_EJS_LOCALE_COMPATIBILITY_PRELUDE = """
+    (() => {
+      const patchLocaleStringIfBroken = (prototype, sample, options = {}) => {
+        if (!prototype || sample === null || typeof sample === "undefined") {
+          return;
+        }
+        try {
+          sample.toLocaleString(undefined, options);
+          return;
+        } catch (_) {
+          // Android JavaScriptSandbox can expose Intl without a usable ICU backend
+        }
+        const fallback = function() {
+          return this.toString();
+        };
+        try {
+          Object.defineProperty(prototype, "toLocaleString", {
+            configurable: true,
+            value: fallback,
+            writable: true,
+          });
+        } catch (_) {
+          try {
+            prototype.toLocaleString = fallback;
+          } catch (_) {
+            // ignore runtimes that do not allow prototype replacement
+          }
+        }
+      };
+      patchLocaleStringIfBroken(Number.prototype, 0, { style: "percent" });
+      patchLocaleStringIfBroken(String.prototype, "0");
+      patchLocaleStringIfBroken(Date.prototype, new Date(0));
+      patchLocaleStringIfBroken(Array.prototype, [0]);
+      patchLocaleStringIfBroken(Boolean.prototype, false);
+      if (typeof BigInt === "function") {
+        patchLocaleStringIfBroken(BigInt.prototype, BigInt(0));
+      }
+      if (typeof Symbol === "function") {
+        patchLocaleStringIfBroken(Symbol.prototype, Symbol("locale"));
+      }
+    })();
+""".trimIndent()
 
 internal class YouTubeEjsChallengeSolver(
     context: Context,
@@ -253,7 +329,17 @@ internal class YouTubeEjsChallengeSolver(
                     )
                 }
 
-                val isolate = sandbox.createIsolate()
+                val isolate = youtubeEjsIsolateMaxHeapSizeBytes(
+                    supportsExplicitHeapLimit = sandbox.isFeatureSupported(
+                        JavaScriptSandbox.JS_FEATURE_ISOLATE_MAX_HEAP_SIZE
+                    )
+                )?.let { maxHeapSizeBytes ->
+                    sandbox.createIsolate(
+                        IsolateStartupParameters().apply {
+                            setMaxHeapSizeBytes(maxHeapSizeBytes)
+                        }
+                    )
+                } ?: sandbox.createIsolate()
                 try {
                     val playerScript = runCatching {
                         getPlayerScript(resolvedPlayerJsUrl)
@@ -267,12 +353,10 @@ internal class YouTubeEjsChallengeSolver(
                     }
                     val responseJson = runCatching {
                         isolate.evaluateJavaScriptAsync(
-                            buildString {
-                                append(libScript)
-                                append('\n')
-                                append("Object.assign(globalThis, lib);\n")
-                                append(coreScript)
-                            }
+                            buildYouTubeEjsSandboxBootstrapScript(
+                                libScript = libScript,
+                                coreScript = coreScript
+                            )
                         ).get(SCRIPT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
 
                         val playerDataName = "player_js_${UUID.randomUUID().toString().replace("-", "")}"
@@ -286,6 +370,9 @@ internal class YouTubeEjsChallengeSolver(
                         ).get(SCRIPT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                     }.getOrElse { error ->
                         propagateYouTubeJsChallengeCancellation(error)
+                        if (shouldInvalidateYouTubeEjsSandbox(error)) {
+                            invalidateSharedSandbox()
+                        }
                         return@withNewestFirst sandboxFailureResult(
                             status = if (error.isTimeoutFailure()) {
                                 YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_TIMEOUT
@@ -571,6 +658,9 @@ internal class YouTubeEjsChallengeSolver(
     }
 
     private fun Throwable.containsSandboxRuntimeFailure(): Boolean {
+        if (shouldInvalidateYouTubeEjsSandbox(this)) {
+            return true
+        }
         val message = buildString {
             append(javaClass.name)
             append(' ')

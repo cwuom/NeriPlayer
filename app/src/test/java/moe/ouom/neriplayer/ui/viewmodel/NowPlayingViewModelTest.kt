@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.viewmodel
 
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -77,5 +78,38 @@ class NowPlayingViewModelTest {
         assertFalse(info.shouldClearLyrics)
         assertEquals("[00:00.00]旧版本保存的歌词", info.lyric)
         assertEquals("[00:00.00]旧版本保存的翻译", info.translatedLyric)
+    }
+
+    @Test
+    fun `youtube artist resolver splits common collaboration separators`() {
+        assertEquals(
+            listOf("Artist One", "Artist Two", "Artist Three", "Artist Four"),
+            splitYouTubeMusicArtistNames(
+                "Artist One / Artist Two feat. Artist Three、Artist Four"
+            )
+        )
+    }
+
+    @Test
+    fun `youtube artist resolver only accepts exact creator names`() {
+        val matches = findExactYouTubeMusicCreatorMatches(
+            artistName = "Demo Artist",
+            candidates = listOf(
+                YouTubeMusicCreatorSummary(
+                    browseId = "UCdemoTopic",
+                    title = "Demo Artist - Topic",
+                    subtitle = "Artist",
+                    coverUrl = ""
+                ),
+                YouTubeMusicCreatorSummary(
+                    browseId = "UCsimilar",
+                    title = "Demo Artist Covers",
+                    subtitle = "Artist",
+                    coverUrl = ""
+                )
+            )
+        )
+
+        assertEquals(listOf("UCdemoTopic"), matches.map(YouTubeMusicCreatorSummary::browseId))
     }
 }

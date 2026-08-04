@@ -37,6 +37,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.api.search.SearchManager
@@ -49,6 +50,42 @@ import moe.ouom.neriplayer.data.model.BiliUploaderSummary
 import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistsFromSongDetail
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.R
+
+private const val YOUTUBE_MUSIC_CREATOR_SEARCH_LIMIT = 8
+
+private val YouTubeMusicArtistSeparator = Regex(
+    pattern = """\s+(?:/|&|x|feat\.?|featuring|ft\.?)\s+|[、,，;；]\s*""",
+    option = RegexOption.IGNORE_CASE
+)
+
+internal fun splitYouTubeMusicArtistNames(artist: String): List<String> {
+    return artist
+        .split(YouTubeMusicArtistSeparator)
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .distinct()
+}
+
+internal fun findExactYouTubeMusicCreatorMatches(
+    artistName: String,
+    candidates: List<YouTubeMusicCreatorSummary>
+): List<YouTubeMusicCreatorSummary> {
+    val normalizedArtistName = normalizeYouTubeMusicCreatorName(artistName)
+    if (normalizedArtistName.isBlank()) {
+        return emptyList()
+    }
+    return candidates.filter { candidate ->
+        normalizeYouTubeMusicCreatorName(candidate.title) == normalizedArtistName
+    }
+}
+
+private fun normalizeYouTubeMusicCreatorName(value: String): String {
+    return value
+        .replace(Regex("""\s*-\s*topic\s*$""", RegexOption.IGNORE_CASE), "")
+        .trim()
+        .replace(Regex("""\s+"""), " ")
+        .lowercase()
+}
 
 data class ManualSearchState(
     val keyword: String = "",
@@ -336,6 +373,38 @@ class NowPlayingViewModel : ViewModel() {
                 throw error
             } catch (error: Exception) {
                 NPLogger.e("NowPlayingViewModel", "解析 B 站 UP 主失败", error)
+                onError(error)
+            }
+        }
+    }
+
+    fun resolveYouTubeMusicCreators(
+        song: SongItem,
+        onResult: (List<YouTubeMusicCreatorSummary>) -> Unit,
+        onError: (Throwable) -> Unit = {}
+    ) {
+        val artistNames = splitYouTubeMusicArtistNames(song.artist)
+        if (artistNames.isEmpty()) {
+            onResult(emptyList())
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                val creators = withContext(Dispatchers.IO) {
+                    artistNames.flatMap { artistName ->
+                        val candidates = AppContainer.youtubeMusicClient.searchCreators(
+                            query = artistName,
+                            limit = YOUTUBE_MUSIC_CREATOR_SEARCH_LIMIT
+                        )
+                        findExactYouTubeMusicCreatorMatches(artistName, candidates)
+                    }.distinctBy(YouTubeMusicCreatorSummary::browseId)
+                }
+                onResult(creators)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.e("NowPlayingViewModel", "解析 YouTube 创作者失败", error)
                 onError(error)
             }
         }

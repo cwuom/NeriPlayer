@@ -34,7 +34,8 @@ data class YouTubeMusicPlaylist(
     val title: String,
     val subtitle: String,
     val coverUrl: String,
-    val trackCount: Int = 0
+    val trackCount: Int = 0,
+    val creatorName: String = ""
 ) : Parcelable
 
 fun YouTubeMusicPlaylist.favoriteId(): Long {

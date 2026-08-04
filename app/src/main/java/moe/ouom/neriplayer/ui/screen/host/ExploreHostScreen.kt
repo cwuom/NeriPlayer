@@ -55,11 +55,15 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSection
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.screen.artist.NeteaseArtistDetailScreen
+import moe.ouom.neriplayer.ui.screen.artist.YouTubeMusicCreatorDetailScreen
+import moe.ouom.neriplayer.ui.screen.artist.YouTubeMusicCreatorItemsScreen
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
@@ -81,7 +85,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.util.media.CoverArtColorCache
 
 // 探索页选中项
-private sealed class ExploreSelectedItem {
+internal sealed class ExploreSelectedItem {
     data class Netease(val playlist: PlaylistSummary) : ExploreSelectedItem()
     data class NeteaseArtist(val artist: NeteaseArtistSummary) : ExploreSelectedItem()
     data class NeteaseArtistAlbum(
@@ -89,15 +93,53 @@ private sealed class ExploreSelectedItem {
         val album: AlbumSummary
     ) : ExploreSelectedItem()
     data class Bilibili(val playlist: BiliPlaylist) : ExploreSelectedItem()
-    data class YouTubeMusic(val playlist: YouTubeMusicPlaylist) : ExploreSelectedItem()
+    data class YouTubeMusic(
+        val playlist: YouTubeMusicPlaylist,
+        val parentCreator: YouTubeMusicCreatorSummary? = null
+    ) : ExploreSelectedItem()
+    data class YouTubeMusicCreator(
+        val creator: YouTubeMusicCreatorSummary,
+        val parentCreator: YouTubeMusicCreatorSummary? = null
+    ) : ExploreSelectedItem()
+    data class YouTubeMusicCreatorItems(
+        val creator: YouTubeMusicCreatorSummary,
+        val section: YouTubeMusicCreatorSection
+    ) : ExploreSelectedItem()
 }
 
 private val ExploreSelectedItem?.navigationDepth: Int
     get() = when (this) {
         null -> 0
         is ExploreSelectedItem.NeteaseArtistAlbum -> 2
+        is ExploreSelectedItem.YouTubeMusicCreatorItems -> 2
+        is ExploreSelectedItem.YouTubeMusic -> if (parentCreator == null) 1 else 2
+        is ExploreSelectedItem.YouTubeMusicCreator -> if (parentCreator == null) 1 else 2
         else -> 1
     }
+
+internal fun resolveExploreSelectedDetailBackTarget(
+    selected: ExploreSelectedItem?
+): ExploreSelectedItem? {
+    return when (selected) {
+        is ExploreSelectedItem.NeteaseArtistAlbum -> {
+            ExploreSelectedItem.NeteaseArtist(selected.artist)
+        }
+        is ExploreSelectedItem.YouTubeMusicCreatorItems -> {
+            ExploreSelectedItem.YouTubeMusicCreator(selected.creator)
+        }
+        is ExploreSelectedItem.YouTubeMusic -> {
+            selected.parentCreator?.let { creator ->
+                ExploreSelectedItem.YouTubeMusicCreator(creator)
+            }
+        }
+        is ExploreSelectedItem.YouTubeMusicCreator -> {
+            selected.parentCreator?.let { creator ->
+                ExploreSelectedItem.YouTubeMusicCreator(creator)
+            }
+        }
+        else -> null
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -168,12 +210,7 @@ fun ExploreHostScreen(
 
     fun closeSelectedDetail() {
         cancelPendingNeteaseCoverWarmup()
-        selected = when (val current = selected) {
-            is ExploreSelectedItem.NeteaseArtistAlbum -> {
-                ExploreSelectedItem.NeteaseArtist(current.artist)
-            }
-            else -> null
-        }
+        selected = resolveExploreSelectedDetailBackTarget(selected)
     }
 
     LaunchedEffect(offlineMode) {
@@ -339,6 +376,12 @@ fun ExploreHostScreen(
                                     )
                                     openExploreSelectedItem(ExploreSelectedItem.YouTubeMusic(pl))
                                 },
+                                onYouTubeCreatorClick = { creator ->
+                                    captureExploreScrollPosition()
+                                    openExploreSelectedItem(
+                                        ExploreSelectedItem.YouTubeMusicCreator(creator)
+                                    )
+                                },
                                 onNeteaseArtistClick = { artist ->
                                     captureExploreScrollPosition()
                                     openExploreSelectedItem(ExploreSelectedItem.NeteaseArtist(artist))
@@ -408,6 +451,53 @@ fun ExploreHostScreen(
                             is ExploreSelectedItem.YouTubeMusic -> {
                                 YouTubeMusicPlaylistDetailScreen(
                                     playlist = current.playlist,
+                                    onBack = ::closeSelectedDetail,
+                                    onSongClick = onSongClick,
+                                    offlineMode = offlineMode
+                                )
+                            }
+
+                            is ExploreSelectedItem.YouTubeMusicCreator -> {
+                                YouTubeMusicCreatorDetailScreen(
+                                    creator = current.creator,
+                                    onBack = ::closeSelectedDetail,
+                                    onSongClick = onSongClick,
+                                    onPlaylistClick = { playlist ->
+                                        openExploreSelectedItem(
+                                            ExploreSelectedItem.YouTubeMusic(
+                                                playlist = playlist.copy(
+                                                    creatorName = playlist.creatorName.ifBlank {
+                                                        current.creator.title
+                                                    }
+                                                ),
+                                                parentCreator = current.creator
+                                            )
+                                        )
+                                    },
+                                    onCreatorClick = { creator ->
+                                        openExploreSelectedItem(
+                                            ExploreSelectedItem.YouTubeMusicCreator(
+                                                creator = creator,
+                                                parentCreator = current.creator
+                                            )
+                                        )
+                                    },
+                                    onSectionMoreClick = { section ->
+                                        openExploreSelectedItem(
+                                            ExploreSelectedItem.YouTubeMusicCreatorItems(
+                                                creator = current.creator,
+                                                section = section
+                                            )
+                                        )
+                                    },
+                                    offlineMode = offlineMode
+                                )
+                            }
+
+                            is ExploreSelectedItem.YouTubeMusicCreatorItems -> {
+                                YouTubeMusicCreatorItemsScreen(
+                                    section = current.section,
+                                    creatorName = current.creator.title,
                                     onBack = ::closeSelectedDetail,
                                     onSongClick = onSongClick,
                                     offlineMode = offlineMode

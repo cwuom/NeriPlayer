@@ -63,6 +63,7 @@ import moe.ouom.neriplayer.data.auth.youtube.isYouTubeAuthRecoverableFailure
 import moe.ouom.neriplayer.data.auth.youtube.shouldStartYouTubeWebAuthRecovery
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthAutoRefreshManager
 import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.data.settings.YouTubePlaybackSourcePreference
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_WEB_ORIGIN
@@ -96,6 +97,21 @@ import org.schabi.newpipe.extractor.stream.StreamInfo
 private const val YOUTUBE_PLAYER_WEB_REMIX_CLIENT_ID = "67"
 private const val YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME = "WEB_REMIX"
 private const val YOUTUBE_PLAYER_WEB_REMIX_CLIENT_VERSION = "1.20260403.09.00"
+private const val YOUTUBE_PLAYER_WEB_CREATOR_CLIENT_ID = "62"
+private const val YOUTUBE_PLAYER_WEB_CREATOR_CLIENT_NAME = "WEB_CREATOR"
+private const val YOUTUBE_PLAYER_WEB_CREATOR_CLIENT_VERSION = "1.20260114.05.00"
+private const val YOUTUBE_PLAYER_VISIONOS_CLIENT_ID = "101"
+private const val YOUTUBE_PLAYER_VISIONOS_CLIENT_NAME = "VISIONOS"
+private const val YOUTUBE_PLAYER_VISIONOS_CLIENT_VERSION = "0.1"
+private const val YOUTUBE_PLAYER_VISIONOS_USER_AGENT =
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 " +
+        "(KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+private const val YOUTUBE_PLAYER_ANDROID_VR_CLIENT_ID = "28"
+private const val YOUTUBE_PLAYER_ANDROID_VR_CLIENT_NAME = "ANDROID_VR"
+private const val YOUTUBE_PLAYER_ANDROID_VR_CLIENT_VERSION = "1.65.10"
+private const val YOUTUBE_PLAYER_ANDROID_VR_USER_AGENT =
+    "com.google.android.apps.youtube.vr.oculus/1.65.10 " +
+        "(Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
 // 预热请求本身已经由单例合并, 首播不应再额外等待调度窗口
 private const val YOUTUBE_PLAYBACK_WARM_BOOTSTRAP_START_DELAY_MS = 0L
 private const val YOUTUBE_PLAYER_TV_CLIENT_ID = "7"
@@ -499,6 +515,13 @@ internal fun shouldStopRemainingPlayerFallbackRequests(
         playabilityStatus.equals("UNPLAYABLE", ignoreCase = true)
 }
 
+@VisibleForTesting
+internal fun shouldRetryPlayerLocaleFallback(playabilityStatus: String): Boolean {
+    return !playabilityStatus.equals("LOGIN_REQUIRED", ignoreCase = true) &&
+        !playabilityStatus.equals("CONTENT_CHECK_REQUIRED", ignoreCase = true) &&
+        !playabilityStatus.equals("AGE_CHECK_REQUIRED", ignoreCase = true)
+}
+
 @Serializable
 internal data class YouTubePlaybackBootstrap(
     val apiKey: String,
@@ -554,6 +577,7 @@ private data class CachedPlayableAudio(
 private data class InFlightPlayableAudioRequest(
     val videoId: String,
     val preferredQualityKey: String,
+    val sourcePreference: YouTubePlaybackSourcePreference,
     val requireDirect: Boolean,
     val preferM4a: Boolean,
     val forceRefresh: Boolean,
@@ -696,7 +720,10 @@ private data class YouTubePlayerClientProfile(
     val osName: String? = null,
     val osVersion: String? = null,
     val androidSdkVersion: Int? = null,
-    val wrapPlayerRequest: Boolean = false
+    val wrapPlayerRequest: Boolean = false,
+    val supportsAuthenticatedContext: Boolean = true,
+    val includeUserAgentInContext: Boolean = false,
+    val includeSignatureTimestamp: Boolean = true
 )
 
 private enum class YouTubeMusicPlaybackQuality {
@@ -1565,10 +1592,15 @@ class YouTubeMusicPlaybackRepository(
         val resolveStartedAtMs = System.currentTimeMillis()
         syncAuthBoundCachesIfNeeded(authProvider().normalized())
         val preferredQualityKey = resolvePreferredQualityKey(preferredQualityOverride)
-        val cacheKey = if (preferM4a) "${preferredQualityKey}_m4a" else preferredQualityKey
+        val sourcePreference = resolveYouTubePlaybackSource()
+        val cacheKey = playableAudioCacheKey(
+            preferredQualityKey = preferredQualityKey,
+            preferM4a = preferM4a,
+            sourcePreference = sourcePreference
+        )
         NPLogger.d(
             "YouTubeMusicPlayback",
-            "getBestPlayableAudio: videoId=$videoId, quality=$preferredQualityKey, forceRefresh=$forceRefresh, requireDirect=$requireDirect, preferM4a=$preferM4a, shareInFlight=$shareInFlight, avoidDirect=$avoidDirect"
+            "getBestPlayableAudio: videoId=$videoId, quality=$preferredQualityKey, source=${sourcePreference.storageValue}, forceRefresh=$forceRefresh, requireDirect=$requireDirect, preferM4a=$preferM4a, shareInFlight=$shareInFlight, avoidDirect=$avoidDirect"
         )
         if (!forceRefresh) {
             getCachedPlayableAudio(
@@ -1588,6 +1620,7 @@ class YouTubeMusicPlaybackRepository(
             resolvePlayableAudioShared(
                 videoId = videoId,
                 preferredQualityKey = preferredQualityKey,
+                sourcePreference = sourcePreference,
                 requireDirect = requireDirect,
                 logFailure = true,
                 preferM4a = preferM4a,
@@ -1600,6 +1633,7 @@ class YouTubeMusicPlaybackRepository(
             resolvePlayableAudio(
                 videoId = videoId,
                 preferredQualityKey = preferredQualityKey,
+                sourcePreference = sourcePreference,
                 requireDirect = requireDirect,
                 logFailure = true,
                 preferM4a = preferM4a,
@@ -1621,7 +1655,12 @@ class YouTubeMusicPlaybackRepository(
         }
         syncAuthBoundCachesIfNeeded(authProvider().normalized())
         val preferredQualityKey = resolvePreferredQualityKey(preferredQualityOverride)
-        val cacheKey = if (preferM4a) "${preferredQualityKey}_m4a" else preferredQualityKey
+        val sourcePreference = resolveYouTubePlaybackSource()
+        val cacheKey = playableAudioCacheKey(
+            preferredQualityKey = preferredQualityKey,
+            preferM4a = preferM4a,
+            sourcePreference = sourcePreference
+        )
         if (
             getCachedPlayableAudio(
                 videoId = videoId,
@@ -1634,6 +1673,7 @@ class YouTubeMusicPlaybackRepository(
         startPlayableAudioResolution(
             videoId = videoId,
             preferredQualityKey = preferredQualityKey,
+            sourcePreference = sourcePreference,
             requireDirect = requireDirect,
             logFailure = false,
             preferM4a = preferM4a,
@@ -1650,28 +1690,36 @@ class YouTubeMusicPlaybackRepository(
         preferM4a: Boolean = false
     ) {
         if (!YouTubeFeatureGate.isEnabled()) return
-        syncAuthBoundCachesIfNeeded(authProvider().normalized())
-        val preferredQualityKey = preferredQualityOverride.ifBlank { "high" }
-        val cacheKey = if (preferM4a) "${preferredQualityKey}_m4a" else preferredQualityKey
-        if (
-            getCachedPlayableAudio(
+        inFlightPlayableAudioScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            syncAuthBoundCachesIfNeeded(authProvider().normalized())
+            val preferredQualityKey = preferredQualityOverride.ifBlank { "high" }
+            val sourcePreference = resolveYouTubePlaybackSource()
+            val cacheKey = playableAudioCacheKey(
+                preferredQualityKey = preferredQualityKey,
+                preferM4a = preferM4a,
+                sourcePreference = sourcePreference
+            )
+            if (
+                getCachedPlayableAudio(
+                    videoId = videoId,
+                    preferredQualityKey = cacheKey,
+                    requireDirect = requireDirect
+                ) != null
+            ) {
+                return@launch
+            }
+            startPlayableAudioResolution(
                 videoId = videoId,
-                preferredQualityKey = cacheKey,
-                requireDirect = requireDirect
-            ) != null
-        ) {
-            return
+                preferredQualityKey = preferredQualityKey,
+                sourcePreference = sourcePreference,
+                requireDirect = requireDirect,
+                logFailure = false,
+                preferM4a = preferM4a,
+                cacheKey = cacheKey,
+                forceRefresh = false,
+                isPrefetch = true
+            )
         }
-        startPlayableAudioResolution(
-            videoId = videoId,
-            preferredQualityKey = preferredQualityKey,
-            requireDirect = requireDirect,
-            logFailure = false,
-            preferM4a = preferM4a,
-            cacheKey = cacheKey,
-            forceRefresh = false,
-            isPrefetch = true
-        )
     }
 
     suspend fun warmBootstrap() = withContext(Dispatchers.IO) {
@@ -1855,6 +1903,7 @@ class YouTubeMusicPlaybackRepository(
     private suspend fun resolvePlayableAudio(
         videoId: String,
         preferredQualityKey: String,
+        sourcePreference: YouTubePlaybackSourcePreference,
         requireDirect: Boolean,
         logFailure: Boolean,
         preferM4a: Boolean,
@@ -1866,6 +1915,7 @@ class YouTubeMusicPlaybackRepository(
         val playerResolution = resolvePlayerAudioViaPlayerApi(
             videoId = videoId,
             preferredQualityKey = preferredQualityKey,
+            sourcePreference = sourcePreference,
             requireDirect = requireDirect,
             logFailure = logFailure,
             preferM4a = preferM4a,
@@ -1898,6 +1948,7 @@ class YouTubeMusicPlaybackRepository(
     private suspend fun resolvePlayableAudioShared(
         videoId: String,
         preferredQualityKey: String,
+        sourcePreference: YouTubePlaybackSourcePreference,
         requireDirect: Boolean,
         logFailure: Boolean,
         preferM4a: Boolean,
@@ -1909,6 +1960,7 @@ class YouTubeMusicPlaybackRepository(
         return startPlayableAudioResolution(
             videoId = videoId,
             preferredQualityKey = preferredQualityKey,
+            sourcePreference = sourcePreference,
             requireDirect = requireDirect,
             logFailure = logFailure,
             preferM4a = preferM4a,
@@ -1922,6 +1974,7 @@ class YouTubeMusicPlaybackRepository(
     private fun startPlayableAudioResolution(
         videoId: String,
         preferredQualityKey: String,
+        sourcePreference: YouTubePlaybackSourcePreference,
         requireDirect: Boolean,
         logFailure: Boolean,
         preferM4a: Boolean,
@@ -1933,6 +1986,7 @@ class YouTubeMusicPlaybackRepository(
         val request = InFlightPlayableAudioRequest(
             videoId = videoId,
             preferredQualityKey = preferredQualityKey,
+            sourcePreference = sourcePreference,
             requireDirect = requireDirect,
             preferM4a = preferM4a,
             forceRefresh = forceRefresh,
@@ -1959,6 +2013,7 @@ class YouTubeMusicPlaybackRepository(
                                 resolvePlayableAudio(
                                     videoId = videoId,
                                     preferredQualityKey = preferredQualityKey,
+                                    sourcePreference = sourcePreference,
                                     requireDirect = requireDirect,
                                     logFailure = logFailure,
                                     preferM4a = preferM4a,
@@ -1971,6 +2026,7 @@ class YouTubeMusicPlaybackRepository(
                             resolvePlayableAudio(
                                 videoId = videoId,
                                 preferredQualityKey = preferredQualityKey,
+                                sourcePreference = sourcePreference,
                                 requireDirect = requireDirect,
                                 logFailure = logFailure,
                                 preferM4a = preferM4a,
@@ -2045,6 +2101,7 @@ class YouTubeMusicPlaybackRepository(
     private suspend fun resolvePlayerAudioViaPlayerApi(
         videoId: String,
         preferredQualityKey: String,
+        sourcePreference: YouTubePlaybackSourcePreference,
         requireDirect: Boolean,
         logFailure: Boolean,
         preferM4a: Boolean,
@@ -2059,6 +2116,7 @@ class YouTubeMusicPlaybackRepository(
             fetchPlayerAudioViaPlayerApi(
                 videoId = videoId,
                 preferredQualityKey = preferredQualityKey,
+                sourcePreference = sourcePreference,
                 auth = auth,
                 requireDirect = requireDirect,
                 preferM4a = preferM4a,
@@ -2081,6 +2139,7 @@ class YouTubeMusicPlaybackRepository(
     private suspend fun fetchPlayerAudioViaPlayerApi(
         videoId: String,
         preferredQualityKey: String,
+        sourcePreference: YouTubePlaybackSourcePreference,
         auth: YouTubeAuthBundle,
         requireDirect: Boolean = false,
         preferM4a: Boolean = false,
@@ -2112,10 +2171,6 @@ class YouTubeMusicPlaybackRepository(
             }
             val poTokenForceRefresh = forceRefresh || attempt > 0
             val allowBlockingWebRemixPoToken = requireDirect
-            val cipherResolver = createStreamingCipherResolver(
-                videoId = videoId,
-                playerJsUrl = bootstrap.playerJsUrl
-            )
             val requestLocaleCandidates = playerRequestLocaleCandidates()
             var bestPlayableAudio: YouTubePlayableAudio? = null
             var bestPlayableAudioClientName: String? = null
@@ -2129,7 +2184,10 @@ class YouTubeMusicPlaybackRepository(
             // 缺 PoToken 被跳过验证的直链, sig 和 n 都已经解完了, 留着当最后兜底
             var unverifiedDirectFallback: YouTubePlayableAudio? = null
             val candidateProfiles = selectUsablePlayerClients(
-                profiles = playerClientProfiles(),
+                profiles = playerClientProfiles(
+                    sourcePreference = sourcePreference,
+                    preferAuthenticatedWebRemix = auth.hasLoginCookies()
+                ),
                 clientName = { it.clientName },
                 isSuppressed = PlayerClientHealthTracker::isSuppressed
             )
@@ -2173,7 +2231,8 @@ class YouTubeMusicPlaybackRepository(
                             break@profileLoop
                         }
                         if (!playability.status.equals("OK", ignoreCase = true) &&
-                            localeIndex < requestLocaleCandidates.lastIndex
+                            localeIndex < requestLocaleCandidates.lastIndex &&
+                            shouldRetryPlayerLocaleFallback(playability.status)
                         ) {
                             val fallbackLocale = requestLocaleCandidates[localeIndex + 1]
                             NPLogger.d(
@@ -2191,6 +2250,14 @@ class YouTubeMusicPlaybackRepository(
                         bestMetadata = bestMetadata.mergePreferred(metadata)
                         var shouldContinueWithNextPlayerClient = false
                         val playableAudio = if (playability.status == "OK") {
+                            val cipherResolver = if (profile.includeSignatureTimestamp) {
+                                createStreamingCipherResolver(
+                                    videoId = videoId,
+                                    playerJsUrl = bootstrap.playerJsUrl
+                                )
+                            } else {
+                                null
+                            }
                             val webRemixPoTokenPrefetch = if (
                                 profile.clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME &&
                                 shouldPrefetchWebRemixPoToken(root)
@@ -2389,6 +2456,16 @@ class YouTubeMusicPlaybackRepository(
                                 "refresh bootstrap before fallback: videoId=$videoId, client=${profile.clientName}, locale=${requestLocale.gl}/${requestLocale.hl}, status=${playability.status}, reason=${playability.reason.take(80)}"
                             )
                             break
+                        }
+                        if (!playability.status.equals("OK", ignoreCase = true) &&
+                            !shouldRetryPlayerLocaleFallback(playability.status)
+                        ) {
+                            NPLogger.d(
+                                "YouTubeMusicPlayback",
+                                "skip locale fallback after ${playability.status}: " +
+                                    "videoId=$videoId, client=${profile.clientName}"
+                            )
+                            continue@profileLoop
                         }
                     } catch (error: IOException) {
                         lastError = error
@@ -2593,8 +2670,7 @@ class YouTubeMusicPlaybackRepository(
                                 "branchElapsedMs=${playbackElapsedMs(startedAtMs)} " +
                                 "forceRefresh=$forceRefresh"
                         )
-                        // 普通播放已有播放器侧 403 重解析, 不应为一个可用直链再等待验证
-                        prefetchedPoToken?.cancel()
+                        // 直链可以先交给播放器，后台铸造完成后会进入 provider 缓存供后续首播和恢复复用
                         return playableAudio
                     }
                     val verification = verifyDirectRangeReadable(
@@ -3402,22 +3478,30 @@ class YouTubeMusicPlaybackRepository(
         val startedAtMs = System.currentTimeMillis()
         val requestUrl = resolvePlayerRequestUrl(profile, bootstrap, videoId)
         val origin = resolvePlayerRequestOrigin(profile)
-        val requestAuth = buildBootstrapRequestAuth(
-            auth = auth,
-            bootstrap = bootstrap,
-            origin = origin
-        )
         val clientVersion = resolvePlayerClientVersion(profile, bootstrap)
         val userAgent = resolvePlayerRequestUserAgent(profile, bootstrap)
+        val requestAuth = if (profile.supportsAuthenticatedContext) {
+            buildBootstrapRequestAuth(
+                auth = auth,
+                bootstrap = bootstrap,
+                origin = origin
+            )
+        } else {
+            YouTubeAuthBundle(origin = origin, userAgent = userAgent)
+        }
         val webRemixMetadata = if (profile.clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME) {
             buildWebRemixRequestMetadata(videoId)
         } else {
             null
         }
-        val signatureTimestamp = resolveYouTubeSignatureTimestamp(
-            bootstrapTimestamp = bootstrap.signatureTimestamp,
-            cachedTimestamp = signatureTimestampCache[bootstrap.playerJsUrl]
-        )
+        val signatureTimestamp = if (profile.includeSignatureTimestamp) {
+            resolveYouTubeSignatureTimestamp(
+                bootstrapTimestamp = bootstrap.signatureTimestamp,
+                cachedTimestamp = signatureTimestampCache[bootstrap.playerJsUrl]
+            )
+        } else {
+            null
+        }
         val body = buildPlayerRequestBody(
             videoId = videoId,
             profile = profile,
@@ -3429,17 +3513,19 @@ class YouTubeMusicPlaybackRepository(
             signatureTimestamp = signatureTimestamp
         )
         val requestHeaders = linkedMapOf(
-            "Cookie" to bootstrap.cookieHeader,
             "User-Agent" to userAgent,
             "Accept-Language" to requestLocale.acceptLanguage,
             "Content-Type" to "application/json",
-            "X-Goog-AuthUser" to requestAuth.resolveXGoogAuthUser(
-                fallback = bootstrap.sessionIndex
-            ),
             "X-Goog-Visitor-Id" to bootstrap.visitorData,
             "X-YouTube-Client-Name" to profile.clientId,
             "X-YouTube-Client-Version" to clientVersion
         )
+        if (profile.supportsAuthenticatedContext) {
+            requestHeaders["Cookie"] = bootstrap.cookieHeader
+            requestHeaders["X-Goog-AuthUser"] = requestAuth.resolveXGoogAuthUser(
+                fallback = bootstrap.sessionIndex
+            )
+        }
         if (profile.clientName != "WEB_REMIX") {
             requestHeaders["X-Goog-Api-Format-Version"] = YOUTUBE_PLAYER_API_FORMAT_VERSION
         }
@@ -3453,13 +3539,15 @@ class YouTubeMusicPlaybackRepository(
         }
         requestHeaders["Referer"] = webRemixMetadata?.watchUrl ?: "$origin/"
 
-        val userSessionId = bootstrap.userSessionId.takeIf { bootstrap.loggedIn }.orEmpty()
-        requestAuth.resolveAuthorizationHeader(origin = origin, userSessionId = userSessionId)
-            .takeIf { it.isNotBlank() }
-            ?.let {
-                requestHeaders["Authorization"] = it
-                requestHeaders["X-Origin"] = origin
-            }
+        if (profile.supportsAuthenticatedContext) {
+            val userSessionId = bootstrap.userSessionId.takeIf { bootstrap.loggedIn }.orEmpty()
+            requestAuth.resolveAuthorizationHeader(origin = origin, userSessionId = userSessionId)
+                .takeIf { it.isNotBlank() }
+                ?.let {
+                    requestHeaders["Authorization"] = it
+                    requestHeaders["X-Origin"] = origin
+                }
+        }
         if (profile.clientName == YOUTUBE_PLAYER_TV_CLIENT_NAME) {
             bootstrap.delegatedSessionId
                 .takeIf { it.isNotBlank() }
@@ -3511,6 +3599,9 @@ class YouTubeMusicPlaybackRepository(
         }
         if (bootstrap.visitorData.isNotBlank()) {
             clientContext.put("visitorData", bootstrap.visitorData)
+        }
+        if (profile.includeUserAgentInContext && userAgent.isNotBlank()) {
+            clientContext.put("userAgent", ensureGfeUserAgent(userAgent))
         }
         if (profile.clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME && userAgent.isNotBlank()) {
             // WEB_REMIX 需要更接近浏览器 watch 页的 client 上下文, 避免退回到风险更高的移动端直链
@@ -4314,9 +4405,42 @@ class YouTubeMusicPlaybackRepository(
         )
     }
 
-    private fun playerClientProfiles(): List<YouTubePlayerClientProfile> {
-        return listOf(
-            YouTubePlayerClientProfile(
+    private fun playerClientProfiles(
+        sourcePreference: YouTubePlaybackSourcePreference,
+        preferAuthenticatedWebRemix: Boolean
+    ): List<YouTubePlayerClientProfile> {
+        val profiles = mapOf(
+            YouTubePlayerClientSource.VISION_OS to YouTubePlayerClientProfile(
+                clientId = YOUTUBE_PLAYER_VISIONOS_CLIENT_ID,
+                clientName = YOUTUBE_PLAYER_VISIONOS_CLIENT_NAME,
+                clientVersion = YOUTUBE_PLAYER_VISIONOS_CLIENT_VERSION,
+                userAgent = YOUTUBE_PLAYER_VISIONOS_USER_AGENT,
+                endpointPath = "player",
+                platform = "MOBILE",
+                deviceMake = "Apple",
+                deviceModel = "RealityDevice14,1",
+                osName = "visionOS",
+                osVersion = "1.3.21O771",
+                supportsAuthenticatedContext = false,
+                includeSignatureTimestamp = false
+            ),
+            YouTubePlayerClientSource.ANDROID_VR to YouTubePlayerClientProfile(
+                clientId = YOUTUBE_PLAYER_ANDROID_VR_CLIENT_ID,
+                clientName = YOUTUBE_PLAYER_ANDROID_VR_CLIENT_NAME,
+                clientVersion = YOUTUBE_PLAYER_ANDROID_VR_CLIENT_VERSION,
+                userAgent = YOUTUBE_PLAYER_ANDROID_VR_USER_AGENT,
+                endpointPath = "player",
+                platform = "MOBILE",
+                deviceMake = "Oculus",
+                deviceModel = "Quest 3",
+                osName = "Android",
+                osVersion = "12L",
+                androidSdkVersion = 32,
+                supportsAuthenticatedContext = false,
+                includeUserAgentInContext = true,
+                includeSignatureTimestamp = false
+            ),
+            YouTubePlayerClientSource.WEB_REMIX to YouTubePlayerClientProfile(
                 clientId = YOUTUBE_PLAYER_WEB_REMIX_CLIENT_ID,
                 clientName = YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME,
                 clientVersion = YOUTUBE_PLAYER_WEB_REMIX_CLIENT_VERSION,
@@ -4327,25 +4451,38 @@ class YouTubeMusicPlaybackRepository(
                 osName = "Windows",
                 osVersion = "10.0"
             ),
-            YouTubePlayerClientProfile(
+            YouTubePlayerClientSource.TV_HTML5 to YouTubePlayerClientProfile(
                 clientId = YOUTUBE_PLAYER_TV_CLIENT_ID,
                 clientName = YOUTUBE_PLAYER_TV_CLIENT_NAME,
                 clientVersion = YOUTUBE_PLAYER_TV_CLIENT_VERSION,
                 userAgent = YOUTUBE_PLAYER_TV_USER_AGENT,
                 endpointPath = "player",
-                platform = "TV"
+                platform = "TV",
+                includeUserAgentInContext = true
             ),
-            YouTubePlayerClientProfile(
+            YouTubePlayerClientSource.WEB_CREATOR to YouTubePlayerClientProfile(
+                clientId = YOUTUBE_PLAYER_WEB_CREATOR_CLIENT_ID,
+                clientName = YOUTUBE_PLAYER_WEB_CREATOR_CLIENT_NAME,
+                clientVersion = YOUTUBE_PLAYER_WEB_CREATOR_CLIENT_VERSION,
+                userAgent = YOUTUBE_PLAYER_WEB_REMIX_USER_AGENT,
+                endpointPath = "player",
+                platform = "DESKTOP",
+                osName = "Windows",
+                osVersion = "10.0"
+            ),
+            YouTubePlayerClientSource.TV_HTML5_LEGACY to YouTubePlayerClientProfile(
                 clientId = YOUTUBE_PLAYER_TV_CLIENT_ID,
                 clientName = YOUTUBE_PLAYER_TV_CLIENT_NAME,
                 clientVersion = YOUTUBE_PLAYER_TV_DOWNGRADED_CLIENT_VERSION,
                 userAgent = YOUTUBE_PLAYER_TV_DOWNGRADED_USER_AGENT,
                 endpointPath = "player",
                 platform = "TV"
-            ),
-            // ANDROID_MUSIC 需要 Android OAuth, 拿网页 cookie 只会回 400 INVALID_ARGUMENT
-            // 或 LOGIN_REQUIRED, 还会把解析拖进强制刷新 bootstrap 并连累登录态
+            )
         )
+        return resolveYouTubePlayerClientOrder(
+            preference = sourcePreference,
+            preferAuthenticatedWebRemix = preferAuthenticatedWebRemix
+        ).map(profiles::getValue)
     }
 
     private suspend fun resolvePreferredQualityKey(preferredQualityOverride: String?): String {
@@ -4353,6 +4490,20 @@ class YouTubeMusicPlaybackRepository(
             ?.takeIf { it.isNotBlank() }
             ?: settings?.youtubeAudioQualityFlow?.first()?.takeIf { it.isNotBlank() }
             ?: "high"
+    }
+
+    private suspend fun resolveYouTubePlaybackSource(): YouTubePlaybackSourcePreference {
+        return settings?.youtubePlaybackSourceFlow?.first()
+            ?: YouTubePlaybackSourcePreference.Automatic
+    }
+
+    private fun playableAudioCacheKey(
+        preferredQualityKey: String,
+        preferM4a: Boolean,
+        sourcePreference: YouTubePlaybackSourcePreference
+    ): String {
+        val qualityKey = if (preferM4a) "${preferredQualityKey}_m4a" else preferredQualityKey
+        return "${sourcePreference.storageValue}|$qualityKey"
     }
 
     internal fun selectPreferredPlayableAudio(
@@ -4421,13 +4572,18 @@ class YouTubeMusicPlaybackRepository(
     ): Int {
         return when (streamType) {
             YouTubePlayableStreamType.DIRECT -> when {
+                clientName == YOUTUBE_PLAYER_VISIONOS_CLIENT_NAME -> 40
+                clientName == YOUTUBE_PLAYER_ANDROID_VR_CLIENT_NAME -> 35
                 clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME -> 30
                 clientName?.startsWith(YOUTUBE_PLAYER_TV_CLIENT_NAME, ignoreCase = true) == true -> 20
+                clientName == YOUTUBE_PLAYER_WEB_CREATOR_CLIENT_NAME -> 15
                 clientName == YOUTUBE_PLAYER_ANDROID_MUSIC_CLIENT_NAME -> 10
                 clientName.isNullOrBlank() -> 0
                 else -> 5
             }
             YouTubePlayableStreamType.HLS -> when {
+                clientName == YOUTUBE_PLAYER_VISIONOS_CLIENT_NAME -> 25
+                clientName == YOUTUBE_PLAYER_ANDROID_VR_CLIENT_NAME -> 22
                 clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME -> 20
                 clientName?.startsWith(YOUTUBE_PLAYER_TV_CLIENT_NAME, ignoreCase = true) == true -> 5
                 else -> 0
@@ -4456,6 +4612,9 @@ class YouTubeMusicPlaybackRepository(
         }
         return profile.clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME ||
             profile.clientName == YOUTUBE_PLAYER_TV_CLIENT_NAME ||
+            profile.clientName == YOUTUBE_PLAYER_VISIONOS_CLIENT_NAME ||
+            profile.clientName == YOUTUBE_PLAYER_ANDROID_VR_CLIENT_NAME ||
+            profile.clientName == YOUTUBE_PLAYER_WEB_CREATOR_CLIENT_NAME ||
             profile.clientName == YOUTUBE_PLAYER_ANDROID_MUSIC_CLIENT_NAME
     }
 
@@ -4538,11 +4697,12 @@ class YouTubeMusicPlaybackRepository(
                 )
                 return null
             }
-            val acceptsM4aDownloadCache = preferredQualityKey.endsWith("_m4a") &&
+            val qualityKey = preferredQualityKey.substringAfter('|', preferredQualityKey)
+            val acceptsM4aDownloadCache = qualityKey.endsWith("_m4a") &&
                 isPlayableM4aContainer(cached.audio.mimeType)
             if (!acceptsM4aDownloadCache && !satisfiesYouTubePlaybackQuality(
                     playableAudio = cached.audio,
-                    preferredQualityKey = preferredQualityKey.removeSuffix("_m4a")
+                    preferredQualityKey = qualityKey.removeSuffix("_m4a")
                 )
             ) {
                 playableAudioCache.remove(cacheKey)

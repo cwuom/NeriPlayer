@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.api.youtube
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
@@ -46,9 +47,13 @@ class YouTubeMusicPlaybackRepositoryTest {
     private class FakePoTokenProvider(
         private val queuedTokens: MutableList<String?> = mutableListOf(),
         private val delayMs: Long = 0L,
-        private val warmSessionDelayMs: Long = 0L
+        private val warmSessionDelayMs: Long = 0L,
+        private val gvsTokenResultGate: CompletableDeferred<String?>? = null
     ) : YouTubePoTokenProvider {
         val forceRefreshCalls = mutableListOf<Boolean>()
+        val gvsTokenCalls = AtomicInteger(0)
+        val gvsTokenCompletions = AtomicInteger(0)
+        val gvsTokenCancellations = AtomicInteger(0)
         var warmSessionCount = 0
 
         override suspend fun warmSession() {
@@ -64,14 +69,25 @@ class YouTubeMusicPlaybackRepositoryTest {
             remoteHost: String,
             forceRefresh: Boolean
         ): String? {
+            gvsTokenCalls.incrementAndGet()
             forceRefreshCalls += forceRefresh
-            if (delayMs > 0L) {
-                delay(delayMs)
-            }
-            return if (queuedTokens.isEmpty()) {
-                null
-            } else {
-                queuedTokens.removeAt(0)
+            return try {
+                val token = gvsTokenResultGate?.await() ?: run {
+                    if (delayMs > 0L) {
+                        delay(delayMs)
+                    }
+                    if (queuedTokens.isEmpty()) {
+                        null
+                    } else {
+                        queuedTokens.removeAt(0)
+                    }
+                }
+                token.also {
+                    gvsTokenCompletions.incrementAndGet()
+                }
+            } catch (error: CancellationException) {
+                gvsTokenCancellations.incrementAndGet()
+                throw error
             }
         }
     }
@@ -1340,7 +1356,7 @@ class YouTubeMusicPlaybackRepositoryTest {
     }
 
     @Test
-    fun getBestPlayableAudio_prefersWebRemixDirectAndStopsBeforeFallbackClients() = runBlocking {
+    fun getBestPlayableAudio_usesWebRemixDirectForAuthenticatedAutomaticMode() = runBlocking {
         val requests = mutableListOf<okhttp3.Request>()
         val bootstrapHtml = """
             <html>
@@ -1467,18 +1483,15 @@ class YouTubeMusicPlaybackRepositoryTest {
             "https://rr1---sn.googlevideo.com/videoplayback?id=audio-web-remix&source=youtube&c=WEB_REMIX&n=resolved-web&sig=web-signature&pot=po-token-123",
             playableAudio?.url
         )
-        assertEquals(1, requests.count { it.url.encodedPath.contains("/youtubei/v1/player") })
-        assertTrue(
-            requests.any { request ->
-                request.url.encodedPath.contains("/youtubei/v1/player") &&
-                    request.header("X-YouTube-Client-Name") == "67"
-            }
+        val playerClientIds = requests
+            .filter { it.url.encodedPath.contains("/youtubei/v1/player") }
+            .map { it.header("X-YouTube-Client-Name") }
+        assertEquals(
+            listOf("67"),
+            playerClientIds
         )
         assertFalse(
-            requests.any { request ->
-                request.url.encodedPath.contains("/youtubei/v1/player") &&
-                    request.header("X-YouTube-Client-Name") == "7"
-            }
+            playerClientIds.contains("7")
         )
         assertTrue(poTokenProvider.forceRefreshCalls.isEmpty())
     }
@@ -1585,7 +1598,10 @@ class YouTubeMusicPlaybackRepositoryTest {
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
         )
-        val poTokenProvider = FakePoTokenProvider(mutableListOf())
+        val gvsTokenResultGate = CompletableDeferred<String?>()
+        val poTokenProvider = FakePoTokenProvider(
+            gvsTokenResultGate = gvsTokenResultGate
+        )
         val playbackRepository = YouTubeMusicPlaybackRepository(
             okHttpClient = client,
             authProvider = { authBundle },
@@ -1602,10 +1618,12 @@ class YouTubeMusicPlaybackRepositoryTest {
         val previousLocale = Locale.getDefault()
         Locale.setDefault(Locale.US)
         val playableAudio = try {
-            playbackRepository.getBestPlayableAudio(
-                videoId = "demo-video",
-                forceRefresh = true
-            )
+            withTimeout(1_000L) {
+                playbackRepository.getBestPlayableAudio(
+                    videoId = "demo-video",
+                    forceRefresh = true
+                )
+            }
         } finally {
             Locale.setDefault(previousLocale)
         }
@@ -1617,13 +1635,31 @@ class YouTubeMusicPlaybackRepositoryTest {
         assertEquals("WEB_REMIX", selectedUrl?.queryParameter("c"))
         assertNull(selectedUrl?.queryParameter("pot"))
         assertFalse(requests.any { it.url.host == "rr1---sn.googlevideo.com" })
-        assertEquals(1, requests.count { it.url.encodedPath.contains("/youtubei/v1/player") })
-        assertTrue(
-            requests.any { request ->
-                request.url.encodedPath.contains("/youtubei/v1/player") &&
-                    request.header("X-YouTube-Client-Name") == "67"
-            }
+        val playerClientIds = requests
+            .filter { it.url.encodedPath.contains("/youtubei/v1/player") }
+            .map { it.header("X-YouTube-Client-Name") }
+        assertEquals(
+            listOf("67"),
+            playerClientIds
         )
+        try {
+            withTimeout(1_000L) {
+                while (poTokenProvider.gvsTokenCalls.get() == 0) {
+                    delay(10L)
+                }
+            }
+            assertEquals(1, poTokenProvider.gvsTokenCalls.get())
+            assertEquals(0, poTokenProvider.gvsTokenCancellations.get())
+        } finally {
+            gvsTokenResultGate.complete("late-po-token")
+        }
+        withTimeout(1_000L) {
+            while (poTokenProvider.gvsTokenCompletions.get() == 0) {
+                delay(10L)
+            }
+        }
+        assertEquals(1, poTokenProvider.gvsTokenCompletions.get())
+        assertEquals(0, poTokenProvider.gvsTokenCancellations.get())
     }
 
     @Test
@@ -2630,7 +2666,7 @@ class YouTubeMusicPlaybackRepositoryTest {
     }
 
     @Test
-    fun getBestPlayableAudio_prefersExistingDirectWithoutFetchingLaterHlsManifest() = runBlocking {
+    fun getBestPlayableAudio_usesWebRemixDirectAfterAutomaticFallbacksWithoutFetchingLaterHlsManifest() = runBlocking {
         val requests = mutableListOf<okhttp3.Request>()
         val bootstrapHtml = """
             <html>
@@ -2742,10 +2778,12 @@ class YouTubeMusicPlaybackRepositoryTest {
             "https://rr1---sn.googlevideo.com/videoplayback?id=web-remix-direct&n=resolved-n&sig=resolved-signature",
             playableAudio?.url
         )
+        val playerClientIds = requests
+            .filter { it.url.encodedPath.contains("/youtubei/v1/player") }
+            .map { it.header("X-YouTube-Client-Name") }
         assertEquals(
-            "67",
-            requests.firstOrNull { it.url.encodedPath.contains("/youtubei/v1/player") }
-                ?.header("X-YouTube-Client-Name")
+            listOf("67"),
+            playerClientIds
         )
         assertTrue(
             requests.none { request -> request.url.host == "manifest.googlevideo.com" }

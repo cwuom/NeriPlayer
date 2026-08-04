@@ -47,6 +47,7 @@ private const val KEY_KIND = "kind"
 private const val KEY_PLAYLIST_ID = "playlistId"
 private const val KEY_BROWSE_ID = "browseId"
 private const val KEY_SUBTITLE = "subtitle"
+private const val KEY_CREATOR_NAME = "creatorName"
 
 val playlistSummarySaver: Saver<PlaylistSummary?, Any> = mapSaver(
     save = { playlist ->
@@ -138,13 +139,15 @@ fun restoreYouTubeMusicPlaylist(map: Map<*, *>?): YouTubeMusicPlaylist? {
         ?: 0
     val coverUrl = map[KEY_COVER_URL] as? String ?: ""
     val subtitle = map[KEY_SUBTITLE] as? String ?: ""
+    val creatorName = map[KEY_CREATOR_NAME] as? String ?: ""
     return YouTubeMusicPlaylist(
         browseId = browseId,
         playlistId = playlistId,
         title = title,
         subtitle = subtitle,
         coverUrl = coverUrl,
-        trackCount = trackCount
+        trackCount = trackCount,
+        creatorName = creatorName
     )
 }
 
@@ -180,5 +183,6 @@ fun YouTubeMusicPlaylist.toSaveMap(): HashMap<String, Any?> = hashMapOf(
     KEY_TITLE to title,
     KEY_TRACK_COUNT to trackCount,
     KEY_COVER_URL to coverUrl,
-    KEY_SUBTITLE to subtitle
+    KEY_SUBTITLE to subtitle,
+    KEY_CREATOR_NAME to creatorName
 )

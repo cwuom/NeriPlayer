@@ -722,6 +722,20 @@ class NowPlayingScreenTest {
     }
 
     @Test
+    fun `youtube artist navigation accepts YouTube Music songs only`() {
+        val youtubeSong = testSong(id = 13L, name = "YouTube song").copy(
+            channelId = "youtubeMusic",
+            mediaUri = "ytmusic://video/demo"
+        )
+        val nonYoutubeSong = testSong(id = 14L, name = "Other song").copy(
+            channelId = "netease"
+        )
+
+        assertTrue(isYouTubeMusicArtistNavigationSource(youtubeSong))
+        assertFalse(isYouTubeMusicArtistNavigationSource(nonYoutubeSong))
+    }
+
+    @Test
     fun `playback source badge uses resolved bili audio source over netease tag`() {
         val sourceType = resolveNowPlayingPlaybackSourceType(
             isLocalSong = false,

@@ -132,6 +132,12 @@ enum class YouTubeMusicSearchResultType {
     Video
 }
 
+enum class YouTubeMusicSearchFilter {
+    Song,
+    Video,
+    Creator
+}
+
 data class YouTubeMusicSearchResult(
     val videoId: String,
     val title: String,
@@ -142,6 +148,67 @@ data class YouTubeMusicSearchResult(
     val durationText: String,
     val durationMs: Long,
     val type: YouTubeMusicSearchResultType
+)
+
+data class YouTubeMusicCreatorSummary(
+    val browseId: String,
+    val title: String,
+    val subtitle: String,
+    val coverUrl: String,
+    val channelId: String = ""
+)
+
+data class YouTubeMusicCreatorHeader(
+    val browseId: String,
+    val title: String,
+    val subtitle: String,
+    val coverUrl: String,
+    val description: String = "",
+    val subscriberCountText: String = "",
+    val monthlyListenerCountText: String = ""
+)
+
+enum class YouTubeMusicCreatorItemType {
+    Song,
+    Video,
+    Album,
+    Playlist,
+    Creator
+}
+
+data class YouTubeMusicCreatorItem(
+    val type: YouTubeMusicCreatorItemType,
+    val title: String,
+    val subtitle: String,
+    val coverUrl: String,
+    val videoId: String = "",
+    val browseId: String = "",
+    val playlistId: String = "",
+    val artist: String = "",
+    val album: String = "",
+    val durationMs: Long = 0L
+)
+
+data class YouTubeMusicCreatorBrowseEndpoint(
+    val browseId: String,
+    val params: String = ""
+)
+
+data class YouTubeMusicCreatorSection(
+    val title: String,
+    val items: List<YouTubeMusicCreatorItem>,
+    val moreEndpoint: YouTubeMusicCreatorBrowseEndpoint? = null
+)
+
+data class YouTubeMusicCreatorDetail(
+    val header: YouTubeMusicCreatorHeader,
+    val sections: List<YouTubeMusicCreatorSection>
+)
+
+data class YouTubeMusicCreatorItemsPage(
+    val title: String,
+    val items: List<YouTubeMusicCreatorItem>,
+    val continuation: String? = null
 )
 
 data class YouTubeMusicVideoMetadata(
@@ -281,27 +348,23 @@ internal object YouTubeMusicLocaleResolver {
 }
 
 internal object YouTubeMusicSearchParams {
-    private const val FILTERED_PREFIX = "EgWKAQ"
-    private const val FILTER_SUFFIX_DEFAULT = "AWoMEA4QChADEAQQCRAF"
-    private const val FILTER_SUFFIX_IGNORE_SPELLING = "AUICCAFqDBAOEAoQAxAEEAkQBQ%3D%3D"
+    private const val SONGS = "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D"
+    private const val VIDEOS = "EgWKAQIQAWoKEAkQChAFEAMQBA%3D%3D"
+    private const val CREATORS = "EgWKAQIgAWoKEAkQChAFEAMQBA%3D%3D"
 
-    /**
-     * YouTube Music Web search filter params.
-     * 当前 songs -> "II" 为固定协议片段, 但属于未公开内部参数, 未来可能变化
-     */
-    fun songs(ignoreSpelling: Boolean = false): String {
-        return buildString {
-            append(FILTERED_PREFIX)
-            append("II")
-            append(
-                if (ignoreSpelling) {
-                    FILTER_SUFFIX_IGNORE_SPELLING
-                } else {
-                    FILTER_SUFFIX_DEFAULT
-                }
-            )
+    fun forFilter(filter: YouTubeMusicSearchFilter): String {
+        return when (filter) {
+            YouTubeMusicSearchFilter.Song -> SONGS
+            YouTubeMusicSearchFilter.Video -> VIDEOS
+            YouTubeMusicSearchFilter.Creator -> CREATORS
         }
     }
+
+    fun songs(): String = forFilter(YouTubeMusicSearchFilter.Song)
+
+    fun videos(): String = forFilter(YouTubeMusicSearchFilter.Video)
+
+    fun creators(): String = forFilter(YouTubeMusicSearchFilter.Creator)
 }
 
 internal data class YouTubeMusicHomeSongMetadata(
@@ -883,15 +946,98 @@ internal object YouTubeMusicParser {
         return findSearchSongShelfRenderer(root) != null
     }
 
+    fun hasSearchShelf(root: JSONObject): Boolean {
+        return findSearchSongShelfRenderer(root) != null
+    }
+
     fun parseSongSearchResults(
         root: JSONObject,
         limit: Int = YOUTUBE_MUSIC_SEARCH_ITEM_LIMIT
     ): List<YouTubeMusicSearchResult> {
-        val items = parseSearchRendererItems(
-            contents = findSearchSongContents(root),
-            forcedType = YouTubeMusicSearchResultType.Song
+        return parseFilteredSearchResults(
+            root = root,
+            type = YouTubeMusicSearchResultType.Song,
+            limit = limit
         )
-        return items
+    }
+
+    fun parseVideoSearchResults(
+        root: JSONObject,
+        limit: Int = YOUTUBE_MUSIC_SEARCH_ITEM_LIMIT
+    ): List<YouTubeMusicSearchResult> {
+        return parseFilteredSearchResults(
+            root = root,
+            type = YouTubeMusicSearchResultType.Video,
+            limit = limit
+        )
+    }
+
+    fun parseCreatorSearchResults(
+        root: JSONObject,
+        limit: Int = YOUTUBE_MUSIC_SEARCH_ITEM_LIMIT
+    ): List<YouTubeMusicCreatorSummary> {
+        return findSearchResultContentArrays(root)
+            .flatMap(::parseCreatorSearchItems)
+            .distinctBy { it.browseId }
+            .take(limit.coerceAtLeast(1))
+    }
+
+    fun parseCreatorDetail(
+        root: JSONObject,
+        fallback: YouTubeMusicCreatorSummary
+    ): YouTubeMusicCreatorDetail {
+        val headerRenderer = findCreatorHeaderRenderer(root)
+        val title = extractText(headerRenderer?.optJSONObject("title"))
+            .ifBlank { fallback.title }
+        val subtitle = firstNonBlank(
+            extractText(headerRenderer?.optJSONObject("subtitle")),
+            extractText(headerRenderer?.optJSONObject("straplineTextOne")),
+            fallback.subtitle
+        )
+        val coverUrl = firstNonBlank(
+            extractMusicThumbnailUrl(headerRenderer?.optJSONObject("thumbnail")),
+            extractMusicThumbnailUrl(headerRenderer?.optJSONObject("thumbnailRenderer")),
+            fallback.coverUrl
+        )
+        val description = firstNonBlank(
+            extractText(headerRenderer?.optJSONObject("description")),
+            findCreatorDescription(root)
+        )
+        val subscriberCountText = extractText(
+            headerRenderer?.optJSONObject("shortSubscriberCountText")
+        )
+        val monthlyListenerCountText = extractText(
+            headerRenderer?.optJSONObject("monthlyListenerCount")
+        )
+        val header = YouTubeMusicCreatorHeader(
+            browseId = fallback.browseId,
+            title = title,
+            subtitle = subtitle,
+            coverUrl = coverUrl,
+            description = description,
+            subscriberCountText = subscriberCountText,
+            monthlyListenerCountText = monthlyListenerCountText
+        )
+        return YouTubeMusicCreatorDetail(
+            header = header,
+            sections = findCreatorSectionContents(root)
+                .flatMap(::parseCreatorSections)
+                .filter { it.items.isNotEmpty() }
+        )
+    }
+
+    private fun parseFilteredSearchResults(
+        root: JSONObject,
+        type: YouTubeMusicSearchResultType,
+        limit: Int
+    ): List<YouTubeMusicSearchResult> {
+        return findSearchResultContentArrays(root)
+            .flatMap { contents ->
+                parseSearchRendererItems(
+                    contents = contents,
+                    forcedType = type
+                )
+            }
             .distinctBy { it.videoId }
             .take(limit.coerceAtLeast(1))
     }
@@ -994,11 +1140,25 @@ internal object YouTubeMusicParser {
         return findSearchShelfRenderers(root).firstOrNull()
     }
 
-    private fun findSearchSongContents(root: JSONObject): JSONArray? {
-        return findSearchSongShelfRenderer(root)?.optJSONArray("contents")
-            ?: root.optJSONObject("continuationContents")
-                ?.optJSONObject("musicShelfContinuation")
-                ?.optJSONArray("contents")
+    private fun findSearchResultContentArrays(root: JSONObject): List<JSONArray> {
+        val result = mutableListOf<JSONArray>()
+        findSearchShelfRenderers(root).forEach { shelf ->
+            shelf.optJSONArray("contents")?.let(result::add)
+        }
+        val sections = findSearchSectionListRenderer(root)?.optJSONArray("contents")
+        if (sections != null) {
+            for (index in 0 until sections.length()) {
+                val section = sections.optJSONObject(index) ?: continue
+                section.optJSONObject("itemSectionRenderer")
+                    ?.optJSONArray("contents")
+                    ?.let(result::add)
+            }
+        }
+        root.optJSONObject("continuationContents")
+            ?.optJSONObject("musicShelfContinuation")
+            ?.optJSONArray("contents")
+            ?.let(result::add)
+        return result
     }
 
     private fun findSearchShelfRenderers(root: JSONObject): List<JSONObject> {
@@ -1035,6 +1195,585 @@ internal object YouTubeMusicParser {
                 parseSearchResult(renderer, forcedType)?.let(::add)
             }
         }
+    }
+
+    private fun parseCreatorSearchItems(contents: JSONArray): List<YouTubeMusicCreatorSummary> {
+        return buildList {
+            for (itemIndex in 0 until contents.length()) {
+                val item = contents.optJSONObject(itemIndex) ?: continue
+                parseCreatorSearchItem(item)?.let(::add)
+            }
+        }
+    }
+
+    private fun parseCreatorSearchItem(item: JSONObject): YouTubeMusicCreatorSummary? {
+        val renderer = item.optJSONObject("musicTwoRowItemRenderer")
+            ?: item.optJSONObject("musicResponsiveListItemRenderer")
+            ?: return null
+        val isTwoRow = item.has("musicTwoRowItemRenderer")
+        val title = if (isTwoRow) {
+            extractText(renderer.optJSONObject("title"))
+        } else {
+            extractColumnText(
+                columns = renderer.optJSONArray("flexColumns"),
+                index = 0,
+                rendererKey = "musicResponsiveListItemFlexColumnRenderer"
+            )
+        }
+        val subtitle = if (isTwoRow) {
+            extractText(renderer.optJSONObject("subtitle"))
+        } else {
+            extractColumnText(
+                columns = renderer.optJSONArray("flexColumns"),
+                index = 1,
+                rendererKey = "musicResponsiveListItemFlexColumnRenderer"
+            )
+        }
+        val browseEndpoint = extractBrowseEndpoint(renderer) ?: return null
+        val browseId = browseEndpoint.optString("browseId").trim()
+        if (browseId.isBlank() || title.isBlank()) {
+            return null
+        }
+        return YouTubeMusicCreatorSummary(
+            browseId = browseId,
+            title = title,
+            subtitle = subtitle,
+            coverUrl = firstNonBlank(
+                extractMusicThumbnailUrl(renderer.optJSONObject("thumbnailRenderer")),
+                extractMusicThumbnailUrl(renderer.optJSONObject("thumbnail"))
+            ),
+            channelId = extractCreatorChannelId(renderer, browseId)
+        )
+    }
+
+    private fun findCreatorHeaderRenderer(root: JSONObject): JSONObject? {
+        val header = root.optJSONObject("header")
+        return header?.optJSONObject("musicImmersiveHeaderRenderer")
+            ?: header?.optJSONObject("musicVisualHeaderRenderer")
+            ?: header?.optJSONObject("musicDetailHeaderRenderer")
+    }
+
+    private fun findCreatorDescription(root: JSONObject): String {
+        for (section in findCreatorSectionContents(root)) {
+            val description = extractText(
+                section.optJSONObject("musicDescriptionShelfRenderer")
+                    ?.optJSONObject("description")
+            )
+            if (description.isNotBlank()) {
+                return description
+            }
+        }
+        return ""
+    }
+
+    private fun findCreatorSectionContents(root: JSONObject): List<JSONObject> {
+        val candidateArrays = listOfNotNull(
+            root.optJSONObject("contents")
+                ?.optJSONObject("singleColumnBrowseResultsRenderer")
+                ?.optJSONArray("tabs")
+                ?.optJSONObject(0)
+                ?.optJSONObject("tabRenderer")
+                ?.optJSONObject("content")
+                ?.optJSONObject("sectionListRenderer")
+                ?.optJSONArray("contents"),
+            root.optJSONObject("contents")
+                ?.optJSONObject("sectionListRenderer")
+                ?.optJSONArray("contents"),
+            root.optJSONObject("contents")
+                ?.optJSONObject("twoColumnBrowseResultsRenderer")
+                ?.optJSONArray("tabs")
+                ?.optJSONObject(0)
+                ?.optJSONObject("tabRenderer")
+                ?.optJSONObject("content")
+                ?.optJSONObject("sectionListRenderer")
+                ?.optJSONArray("contents")
+        )
+        val contents = candidateArrays.firstOrNull { it.length() > 0 } ?: return emptyList()
+        return buildList {
+            for (index in 0 until contents.length()) {
+                contents.optJSONObject(index)?.let(::add)
+            }
+        }
+    }
+
+    private fun parseCreatorSections(section: JSONObject): List<YouTubeMusicCreatorSection> {
+        return buildList {
+            section.optJSONObject("musicShelfRenderer")
+                ?.let(::parseCreatorShelf)
+                ?.let(::add)
+            section.optJSONObject("musicCarouselShelfRenderer")
+                ?.let(::parseCreatorCarousel)
+                ?.let(::add)
+            val nestedContents = section.optJSONObject("itemSectionRenderer")
+                ?.optJSONArray("contents")
+                ?: return@buildList
+            for (index in 0 until nestedContents.length()) {
+                val nested = nestedContents.optJSONObject(index) ?: continue
+                nested.optJSONObject("musicShelfRenderer")
+                    ?.let(::parseCreatorShelf)
+                    ?.let(::add)
+                nested.optJSONObject("musicCarouselShelfRenderer")
+                    ?.let(::parseCreatorCarousel)
+                    ?.let(::add)
+            }
+        }
+    }
+
+    private fun parseCreatorShelf(renderer: JSONObject): YouTubeMusicCreatorSection? {
+        val title = extractText(renderer.optJSONObject("title"))
+        if (title.isBlank()) {
+            return null
+        }
+        return YouTubeMusicCreatorSection(
+            title = title,
+            items = parseCreatorSectionItems(renderer.optJSONArray("contents")),
+            moreEndpoint = extractCreatorMoreEndpoint(
+                renderer = renderer,
+                titleNode = renderer.optJSONObject("title")
+            )
+        )
+    }
+
+    private fun parseCreatorCarousel(renderer: JSONObject): YouTubeMusicCreatorSection? {
+        val header = renderer.optJSONObject("header")
+        val basicHeader = header?.optJSONObject("musicCarouselShelfBasicHeaderRenderer")
+        val title = firstNonBlank(
+            extractText(
+                basicHeader?.optJSONObject("title")
+            ),
+            extractText(header?.optJSONObject("title")),
+            extractText(renderer.optJSONObject("title"))
+        )
+        if (title.isBlank()) {
+            return null
+        }
+        return YouTubeMusicCreatorSection(
+            title = title,
+            items = parseCreatorSectionItems(renderer.optJSONArray("contents")),
+            moreEndpoint = extractCreatorMoreEndpoint(
+                renderer = renderer,
+                titleNode = basicHeader?.optJSONObject("title") ?: header?.optJSONObject("title"),
+                header = basicHeader
+            )
+        )
+    }
+
+    fun parseCreatorItemsPage(
+        root: JSONObject,
+        fallbackTitle: String
+    ): YouTubeMusicCreatorItemsPage {
+        return findCreatorItemsPageSource(root)
+            ?.toCreatorItemsPage(fallbackTitle)
+            ?: YouTubeMusicCreatorItemsPage(
+                title = fallbackTitle,
+                items = emptyList()
+            )
+    }
+
+    fun parseCreatorItemsContinuation(root: JSONObject): YouTubeMusicCreatorItemsPage {
+        return findCreatorItemsContinuationSource(root)
+            ?.toCreatorItemsPage(fallbackTitle = "")
+            ?: YouTubeMusicCreatorItemsPage(title = "", items = emptyList())
+    }
+
+    private data class CreatorItemsSource(
+        val title: String,
+        val contents: JSONArray?,
+        val continuation: String?
+    )
+
+    private fun CreatorItemsSource.toCreatorItemsPage(
+        fallbackTitle: String
+    ): YouTubeMusicCreatorItemsPage {
+        val items = parseCreatorSectionItems(contents)
+        return YouTubeMusicCreatorItemsPage(
+            title = title.ifBlank { fallbackTitle },
+            items = items,
+            continuation = continuation.takeIf { items.isNotEmpty() }
+        )
+    }
+
+    private fun findCreatorItemsPageSource(root: JSONObject): CreatorItemsSource? {
+        for (section in findCreatorSectionContents(root)) {
+            findCreatorItemsPageSourceInSection(section)?.let { return it }
+        }
+        return null
+    }
+
+    private fun findCreatorItemsPageSourceInSection(section: JSONObject): CreatorItemsSource? {
+        findCreatorItemsSource(section)?.let { return it }
+        val nestedContents = section.optJSONObject("itemSectionRenderer")
+            ?.optJSONArray("contents")
+            ?: return null
+        for (index in 0 until nestedContents.length()) {
+            val nested = nestedContents.optJSONObject(index) ?: continue
+            findCreatorItemsSource(nested)?.let { return it }
+        }
+        return null
+    }
+
+    private fun findCreatorItemsSource(section: JSONObject): CreatorItemsSource? {
+        section.optJSONObject("gridRenderer")?.let { renderer ->
+            return creatorItemsSource(
+                title = extractText(
+                    renderer.optJSONObject("header")
+                        ?.optJSONObject("gridHeaderRenderer")
+                        ?.optJSONObject("title")
+                ),
+                renderer = renderer,
+                contents = renderer.optJSONArray("items")
+            )
+        }
+        section.optJSONObject("musicCarouselShelfRenderer")?.let { renderer ->
+            val header = renderer.optJSONObject("header")
+            return creatorItemsSource(
+                title = firstNonBlank(
+                    extractText(
+                        header?.optJSONObject("musicCarouselShelfBasicHeaderRenderer")
+                            ?.optJSONObject("title")
+                    ),
+                    extractText(header?.optJSONObject("title")),
+                    extractText(renderer.optJSONObject("title"))
+                ),
+                renderer = renderer,
+                contents = renderer.optJSONArray("contents")
+            )
+        }
+        section.optJSONObject("musicPlaylistShelfRenderer")?.let { renderer ->
+            return creatorItemsSource(
+                title = extractText(renderer.optJSONObject("title")),
+                renderer = renderer,
+                contents = renderer.optJSONArray("contents")
+            )
+        }
+        section.optJSONObject("musicShelfRenderer")?.let { renderer ->
+            return creatorItemsSource(
+                title = extractText(renderer.optJSONObject("title")),
+                renderer = renderer,
+                contents = renderer.optJSONArray("contents")
+            )
+        }
+        return null
+    }
+
+    private fun findCreatorItemsContinuationSource(root: JSONObject): CreatorItemsSource? {
+        val continuationContents = root.optJSONObject("continuationContents")
+        continuationContents?.optJSONObject("gridContinuation")?.let { renderer ->
+            return creatorItemsSource(
+                title = "",
+                renderer = renderer,
+                contents = renderer.optJSONArray("items")
+            )
+        }
+        continuationContents?.optJSONObject("musicPlaylistShelfContinuation")?.let { renderer ->
+            return creatorItemsSource(
+                title = "",
+                renderer = renderer,
+                contents = renderer.optJSONArray("contents")
+            )
+        }
+        continuationContents?.optJSONObject("musicShelfContinuation")?.let { renderer ->
+            return creatorItemsSource(
+                title = "",
+                renderer = renderer,
+                contents = renderer.optJSONArray("contents")
+            )
+        }
+        continuationContents?.optJSONObject("musicCarouselShelfContinuation")?.let { renderer ->
+            return creatorItemsSource(
+                title = "",
+                renderer = renderer,
+                contents = renderer.optJSONArray("contents")
+            )
+        }
+        val actions = root.optJSONArray("onResponseReceivedActions") ?: return null
+        for (index in 0 until actions.length()) {
+            val continuationItems = actions.optJSONObject(index)
+                ?.optJSONObject("appendContinuationItemsAction")
+                ?.optJSONArray("continuationItems")
+                ?: continue
+            return CreatorItemsSource(
+                title = "",
+                contents = continuationItems,
+                continuation = extractContinuationTokenFromItems(continuationItems)
+            )
+        }
+        return null
+    }
+
+    private fun creatorItemsSource(
+        title: String,
+        renderer: JSONObject,
+        contents: JSONArray?
+    ): CreatorItemsSource {
+        return CreatorItemsSource(
+            title = title,
+            contents = contents,
+            continuation = extractContinuationToken(renderer)
+                ?: extractContinuationTokenFromItems(contents)
+        )
+    }
+
+    private fun extractCreatorMoreEndpoint(
+        renderer: JSONObject,
+        titleNode: JSONObject?,
+        header: JSONObject? = null
+    ): YouTubeMusicCreatorBrowseEndpoint? {
+        return extractCreatorBrowseEndpoint(
+            renderer.optJSONObject("moreContentButton")
+                ?.optJSONObject("buttonRenderer")
+                ?.optJSONObject("navigationEndpoint")
+                ?.optJSONObject("browseEndpoint")
+        ) ?: extractCreatorBrowseEndpoint(
+            header?.optJSONObject("moreContentButton")
+                ?.optJSONObject("buttonRenderer")
+                ?.optJSONObject("navigationEndpoint")
+                ?.optJSONObject("browseEndpoint")
+        ) ?: extractCreatorBrowseEndpoint(
+            renderer.optJSONObject("bottomEndpoint")
+                ?.optJSONObject("browseEndpoint")
+        ) ?: extractCreatorBrowseEndpoint(
+            extractCreatorTitleBrowseEndpoint(titleNode)
+        )
+    }
+
+    private fun extractCreatorTitleBrowseEndpoint(titleNode: JSONObject?): JSONObject? {
+        val runs = titleNode?.optJSONArray("runs") ?: return null
+        for (index in 0 until runs.length()) {
+            val browseEndpoint = runs.optJSONObject(index)
+                ?.optJSONObject("navigationEndpoint")
+                ?.optJSONObject("browseEndpoint")
+            if (browseEndpoint != null) {
+                return browseEndpoint
+            }
+        }
+        return null
+    }
+
+    private fun extractCreatorBrowseEndpoint(
+        browseEndpoint: JSONObject?
+    ): YouTubeMusicCreatorBrowseEndpoint? {
+        val browseId = browseEndpoint?.optString("browseId").orEmpty().trim()
+        if (browseId.isBlank()) {
+            return null
+        }
+        return YouTubeMusicCreatorBrowseEndpoint(
+            browseId = browseId,
+            params = browseEndpoint?.optString("params").orEmpty().trim()
+        )
+    }
+
+    private fun parseCreatorSectionItems(contents: JSONArray?): List<YouTubeMusicCreatorItem> {
+        if (contents == null) {
+            return emptyList()
+        }
+        return buildList {
+            for (index in 0 until contents.length()) {
+                val item = contents.optJSONObject(index) ?: continue
+                item.optJSONObject("musicResponsiveListItemRenderer")
+                    ?.let(::parseCreatorResponsiveItem)
+                    ?.let(::add)
+                item.optJSONObject("musicTwoRowItemRenderer")
+                    ?.let(::parseCreatorTwoRowItem)
+                    ?.let(::add)
+            }
+        }
+    }
+
+    private fun parseCreatorResponsiveItem(renderer: JSONObject): YouTubeMusicCreatorItem? {
+        val title = extractColumnText(
+            columns = renderer.optJSONArray("flexColumns"),
+            index = 0,
+            rendererKey = "musicResponsiveListItemFlexColumnRenderer"
+        )
+        if (title.isBlank()) {
+            return null
+        }
+        val videoId = extractTrackVideoId(renderer)
+        val browseEndpoint = extractBrowseEndpoint(renderer)
+        val browseId = browseEndpoint?.optString("browseId").orEmpty().trim()
+        if (videoId.isBlank() && browseId.isBlank()) {
+            return null
+        }
+        val type = if (videoId.isNotBlank()) {
+            when (resolveSearchResultType(renderer) ?: YouTubeMusicSearchResultType.Song) {
+                YouTubeMusicSearchResultType.Song -> YouTubeMusicCreatorItemType.Song
+                YouTubeMusicSearchResultType.Video -> YouTubeMusicCreatorItemType.Video
+            }
+        } else {
+            resolveCreatorBrowseItemType(browseEndpoint, browseId)
+        }
+        val metadata = parseSearchMetadata(
+            renderer = renderer,
+            type = if (type == YouTubeMusicCreatorItemType.Video) {
+                YouTubeMusicSearchResultType.Video
+            } else {
+                YouTubeMusicSearchResultType.Song
+            }
+        )
+        val durationText = metadata.durationText.ifBlank { extractSearchDurationText(renderer) }
+        return YouTubeMusicCreatorItem(
+            type = type,
+            title = title,
+            subtitle = extractColumnText(
+                columns = renderer.optJSONArray("flexColumns"),
+                index = 1,
+                rendererKey = "musicResponsiveListItemFlexColumnRenderer"
+            ),
+            coverUrl = extractMusicThumbnailUrl(renderer.optJSONObject("thumbnail")),
+            videoId = videoId,
+            browseId = browseId,
+            playlistId = extractPlaylistId(renderer, browseId),
+            artist = metadata.artists.joinToString(" / "),
+            album = metadata.album,
+            durationMs = parseDurationTextToMs(durationText)
+        )
+    }
+
+    private fun parseCreatorTwoRowItem(renderer: JSONObject): YouTubeMusicCreatorItem? {
+        val title = extractText(renderer.optJSONObject("title"))
+        if (title.isBlank()) {
+            return null
+        }
+        val navigationEndpoint = renderer.optJSONObject("navigationEndpoint")
+        val watchEndpoint = navigationEndpoint?.optJSONObject("watchEndpoint")
+        val videoId = firstNonBlank(
+            watchEndpoint?.optString("videoId"),
+            extractTrackVideoId(renderer)
+        )
+        val browseEndpoint = extractBrowseEndpoint(renderer)
+        val browseId = browseEndpoint?.optString("browseId").orEmpty().trim()
+        if (videoId.isBlank() && browseId.isBlank()) {
+            return null
+        }
+        val type = if (videoId.isNotBlank()) {
+            when (resolveSearchResultType(renderer) ?: YouTubeMusicSearchResultType.Video) {
+                YouTubeMusicSearchResultType.Song -> YouTubeMusicCreatorItemType.Song
+                YouTubeMusicSearchResultType.Video -> YouTubeMusicCreatorItemType.Video
+            }
+        } else {
+            resolveCreatorBrowseItemType(browseEndpoint, browseId)
+        }
+        val subtitleNode = renderer.optJSONObject("subtitle")
+        val subtitle = extractText(subtitleNode)
+        val durationText = extractDurationText(subtitleNode)
+        val metadataParts = extractTextParts(subtitleNode)
+            .filterNot(::looksLikeDurationText)
+            .filterNot(::looksLikeHomeSongTypeLabel)
+        return YouTubeMusicCreatorItem(
+            type = type,
+            title = title,
+            subtitle = subtitle,
+            coverUrl = firstNonBlank(
+                extractMusicThumbnailUrl(renderer.optJSONObject("thumbnailRenderer")),
+                extractMusicThumbnailUrl(renderer.optJSONObject("thumbnail"))
+            ),
+            videoId = videoId,
+            browseId = browseId,
+            playlistId = extractPlaylistId(renderer, browseId),
+            artist = metadataParts.firstOrNull().orEmpty(),
+            durationMs = parseDurationTextToMs(durationText)
+        )
+    }
+
+    private fun resolveCreatorBrowseItemType(
+        browseEndpoint: JSONObject?,
+        browseId: String
+    ): YouTubeMusicCreatorItemType {
+        val pageType = browseEndpoint
+            ?.optJSONObject("browseEndpointContextSupportedConfigs")
+            ?.optJSONObject("browseEndpointContextMusicConfig")
+            ?.optString("pageType")
+            .orEmpty()
+            .uppercase(Locale.US)
+        return when {
+            pageType.contains("ARTIST") || browseId.startsWith("UC") -> {
+                YouTubeMusicCreatorItemType.Creator
+            }
+            pageType.contains("ALBUM") || browseId.startsWith("MPRE") -> {
+                YouTubeMusicCreatorItemType.Album
+            }
+            pageType.contains("PLAYLIST") || browseId.startsWith("VL") -> {
+                YouTubeMusicCreatorItemType.Playlist
+            }
+            else -> YouTubeMusicCreatorItemType.Playlist
+        }
+    }
+
+    private fun extractBrowseEndpoint(renderer: JSONObject): JSONObject? {
+        renderer.optJSONObject("navigationEndpoint")
+            ?.optJSONObject("browseEndpoint")
+            ?.let { return it }
+        renderer.optJSONObject("title")
+            ?.optJSONArray("runs")
+            ?.let { runs ->
+                for (index in 0 until runs.length()) {
+                    val browseEndpoint = runs.optJSONObject(index)
+                        ?.optJSONObject("navigationEndpoint")
+                        ?.optJSONObject("browseEndpoint")
+                    if (browseEndpoint != null) {
+                        return browseEndpoint
+                    }
+                }
+            }
+        val flexColumns = renderer.optJSONArray("flexColumns")
+        if (flexColumns != null) {
+            for (index in 0 until flexColumns.length()) {
+                val runs = flexColumns.optJSONObject(index)
+                    ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                    ?.optJSONObject("text")
+                    ?.optJSONArray("runs")
+                    ?: continue
+                for (runIndex in 0 until runs.length()) {
+                    val browseEndpoint = runs.optJSONObject(runIndex)
+                        ?.optJSONObject("navigationEndpoint")
+                        ?.optJSONObject("browseEndpoint")
+                    if (browseEndpoint != null) {
+                        return browseEndpoint
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    private fun extractCreatorChannelId(renderer: JSONObject, browseId: String): String {
+        if (browseId.startsWith("UC")) {
+            return browseId
+        }
+        val menuItems = renderer.optJSONObject("menu")
+            ?.optJSONObject("menuRenderer")
+            ?.optJSONArray("items")
+            ?: return ""
+        for (index in 0 until menuItems.length()) {
+            val channelId = menuItems.optJSONObject(index)
+                ?.optJSONObject("toggleMenuServiceItemRenderer")
+                ?.optJSONObject("defaultServiceEndpoint")
+                ?.optJSONObject("subscribeEndpoint")
+                ?.optJSONArray("channelIds")
+                ?.optString(0)
+                .orEmpty()
+            if (channelId.isNotBlank()) {
+                return channelId
+            }
+        }
+        return ""
+    }
+
+    private fun extractPlaylistId(renderer: JSONObject, browseId: String): String {
+        return firstNonBlank(
+            renderer.optJSONObject("navigationEndpoint")
+                ?.optJSONObject("watchEndpoint")
+                ?.optString("playlistId"),
+            renderer.optJSONObject("overlay")
+                ?.optJSONObject("musicItemThumbnailOverlayRenderer")
+                ?.optJSONObject("content")
+                ?.optJSONObject("musicPlayButtonRenderer")
+                ?.optJSONObject("playNavigationEndpoint")
+                ?.optJSONObject("watchEndpoint")
+                ?.optString("playlistId"),
+            browseId.takeIf { it.startsWith("VL") }?.removePrefix("VL")
+        )
     }
 
     private fun parseSearchResult(
@@ -1980,24 +2719,71 @@ class YouTubeMusicClient(
 
     suspend fun search(
         query: String,
+        limit: Int = YOUTUBE_MUSIC_SEARCH_ITEM_LIMIT,
+        filter: YouTubeMusicSearchFilter = YouTubeMusicSearchFilter.Song
+    ): List<YouTubeMusicSearchResult> {
+        require(filter != YouTubeMusicSearchFilter.Creator) {
+            "Use searchCreators for YouTube Music creator results"
+        }
+        val resultType = when (filter) {
+            YouTubeMusicSearchFilter.Song -> YouTubeMusicSearchResultType.Song
+            YouTubeMusicSearchFilter.Video -> YouTubeMusicSearchResultType.Video
+            YouTubeMusicSearchFilter.Creator -> error("Creator results require searchCreators")
+        }
+        return collectSearchResults(
+            query = query,
+            limit = limit,
+            filter = filter,
+            keyOf = YouTubeMusicSearchResult::videoId,
+            parse = { root, resultLimit ->
+                when (resultType) {
+                    YouTubeMusicSearchResultType.Song -> {
+                        YouTubeMusicParser.parseSongSearchResults(root, resultLimit)
+                    }
+                    YouTubeMusicSearchResultType.Video -> {
+                        YouTubeMusicParser.parseVideoSearchResults(root, resultLimit)
+                    }
+                }
+            }
+        )
+    }
+
+    suspend fun searchCreators(
+        query: String,
         limit: Int = YOUTUBE_MUSIC_SEARCH_ITEM_LIMIT
-    ): List<YouTubeMusicSearchResult> = withContext(Dispatchers.IO) {
+    ): List<YouTubeMusicCreatorSummary> {
+        return collectSearchResults(
+            query = query,
+            limit = limit,
+            filter = YouTubeMusicSearchFilter.Creator,
+            keyOf = YouTubeMusicCreatorSummary::browseId,
+            parse = YouTubeMusicParser::parseCreatorSearchResults
+        )
+    }
+
+    private suspend fun <T> collectSearchResults(
+        query: String,
+        limit: Int,
+        filter: YouTubeMusicSearchFilter,
+        keyOf: (T) -> String,
+        parse: (JSONObject, Int) -> List<T>
+    ): List<T> = withContext(Dispatchers.IO) {
         if (query.isBlank()) {
             return@withContext emptyList()
         }
-        NPLogger.d(TAG, "search start: query=$query, limit=$limit")
+        NPLogger.d(TAG, "search start: query=$query, filter=$filter, limit=$limit")
         val requestedLimit = limit.coerceAtLeast(1)
         var bootstrap = bootstrap()
         var requestLocale = YouTubeMusicLocaleResolver.preferred()
-        val items = mutableListOf<YouTubeMusicSearchResult>()
-        val seenVideoIds = linkedSetOf<String>()
+        val items = mutableListOf<T>()
+        val seenKeys = linkedSetOf<String>()
         var continuation: String? = null
         var page = 0
 
         while (page < YOUTUBE_MUSIC_CONTINUATION_PAGE_LIMIT && items.size < requestedLimit) {
             val payload = JSONObject()
                 .put("query", query)
-                .put("params", YouTubeMusicSearchParams.songs())
+                .put("params", YouTubeMusicSearchParams.forFilter(filter))
             if (!continuation.isNullOrBlank()) {
                 payload.put("continuation", continuation)
             }
@@ -2006,7 +2792,7 @@ class YouTubeMusicClient(
                     bootstrap = bootstrap,
                     payload = payload,
                     preferredLocale = requestLocale,
-                    expectSongShelf = continuation.isNullOrBlank()
+                    expectSearchShelf = continuation.isNullOrBlank()
                 )
                 bootstrap = response.bootstrap
                 requestLocale = response.requestLocale
@@ -2022,11 +2808,8 @@ class YouTubeMusicClient(
                 )
                 break
             }
-            YouTubeMusicParser.parseSongSearchResults(
-                root = root,
-                limit = requestedLimit - items.size
-            ).forEach { result ->
-                if (seenVideoIds.add(result.videoId)) {
+            parse(root, requestedLimit - items.size).forEach { result ->
+                if (seenKeys.add(keyOf(result))) {
                     items += result
                 }
             }
@@ -2038,8 +2821,82 @@ class YouTubeMusicClient(
         }
 
         val results = items.take(requestedLimit)
-        NPLogger.d(TAG, "search success: query=$query, count=${results.size}, pages=${page + 1}")
+        NPLogger.d(
+            TAG,
+            "search success: query=$query, filter=$filter, count=${results.size}, pages=${page + 1}"
+        )
         results
+    }
+
+    suspend fun getCreatorDetail(
+        creator: YouTubeMusicCreatorSummary
+    ): YouTubeMusicCreatorDetail = withContext(Dispatchers.IO) {
+        require(creator.browseId.isNotBlank()) { "YouTube Music creator browseId is required" }
+        authAutoRefreshManager?.refreshIfNeeded(reason = "creator_detail", force = false)
+        val bootstrap = if (authRepo.getAuthOnce().hasLoginCookies()) {
+            authenticatedBootstrap(reason = "creator_detail")
+        } else {
+            bootstrap()
+        }
+        val requestLocale = YouTubeMusicLocaleResolver.preferred()
+        val payload = JSONObject().put("browseId", creator.browseId)
+        val response = postMusicBrowseWithRetry(
+            bootstrap = bootstrap,
+            payload = payload,
+            preferredLocale = requestLocale
+        )
+        YouTubeMusicParser.parseCreatorDetail(response.root, creator)
+    }
+
+    suspend fun getCreatorItems(
+        endpoint: YouTubeMusicCreatorBrowseEndpoint,
+        fallbackTitle: String
+    ): YouTubeMusicCreatorItemsPage = withContext(Dispatchers.IO) {
+        require(endpoint.browseId.isNotBlank()) {
+            "YouTube Music creator items browseId is required"
+        }
+        authAutoRefreshManager?.refreshIfNeeded(reason = "creator_items", force = false)
+        val bootstrap = if (authRepo.getAuthOnce().hasLoginCookies()) {
+            authenticatedBootstrap(reason = "creator_items")
+        } else {
+            bootstrap()
+        }
+        val payload = JSONObject().put("browseId", endpoint.browseId)
+        if (endpoint.params.isNotBlank()) {
+            payload.put("params", endpoint.params)
+        }
+        val response = postMusicBrowseWithRetry(
+            bootstrap = bootstrap,
+            payload = payload,
+            preferredLocale = YouTubeMusicLocaleResolver.preferred()
+        )
+        YouTubeMusicParser.parseCreatorItemsPage(
+            root = response.root,
+            fallbackTitle = fallbackTitle
+        )
+    }
+
+    suspend fun getCreatorItemsContinuation(
+        continuation: String
+    ): YouTubeMusicCreatorItemsPage = withContext(Dispatchers.IO) {
+        require(continuation.isNotBlank()) {
+            "YouTube Music creator items continuation is required"
+        }
+        authAutoRefreshManager?.refreshIfNeeded(
+            reason = "creator_items_continuation",
+            force = false
+        )
+        val bootstrap = if (authRepo.getAuthOnce().hasLoginCookies()) {
+            authenticatedBootstrap(reason = "creator_items_continuation")
+        } else {
+            bootstrap()
+        }
+        val response = postMusicBrowseWithRetry(
+            bootstrap = bootstrap,
+            payload = JSONObject().put("continuation", continuation),
+            preferredLocale = YouTubeMusicLocaleResolver.preferred()
+        )
+        YouTubeMusicParser.parseCreatorItemsContinuation(response.root)
     }
 
     suspend fun getLibraryPlaylists(
@@ -2918,7 +3775,7 @@ class YouTubeMusicClient(
         bootstrap: YouTubeMusicBootstrapConfig,
         payload: JSONObject,
         preferredLocale: YouTubeMusicRequestLocale,
-        expectSongShelf: Boolean
+        expectSearchShelf: Boolean
     ): YouTubeMusicBrowseResponse {
         var activeBootstrap = bootstrap
         var lastError: IOException? = null
@@ -2940,13 +3797,13 @@ class YouTubeMusicClient(
                         )
                         break
                     }
-                    if (expectSongShelf && !YouTubeMusicParser.hasSongSearchShelf(root)) {
+                    if (expectSearchShelf && !YouTubeMusicParser.hasSearchShelf(root)) {
                         NPLogger.w(
                             TAG,
-                            "search fallback locale because song shelf is missing: ${requestLocale.hl}/${requestLocale.gl}"
+                            "search fallback locale because filtered shelf is missing: ${requestLocale.hl}/${requestLocale.gl}"
                         )
                         lastError = IOException(
-                            "YouTube Music songs search missing song shelf for ${requestLocale.hl}/${requestLocale.gl}"
+                            "YouTube Music filtered search missing shelf for ${requestLocale.hl}/${requestLocale.gl}"
                         )
                         break
                     }

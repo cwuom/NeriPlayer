@@ -134,6 +134,10 @@ class SettingsRepository(private val context: Context) {
     val youtubeAudioQualityFlow: Flow<String> =
         dataStoreSettingFlow { it[SettingsKeys.YOUTUBE_AUDIO_QUALITY] ?: "high" }
 
+    val youtubePlaybackSourceFlow: Flow<YouTubePlaybackSourcePreference> =
+        settingFlow(AutoSettingsSchema.playback.youtubePlaybackSource)
+            .map(YouTubePlaybackSourcePreferencePolicy::fromStorage)
+
     val biliAudioQualityFlow: Flow<String> =
         dataStoreSettingFlow { it[SettingsKeys.BILI_AUDIO_QUALITY] ?: "high" }
 
@@ -646,6 +650,13 @@ class SettingsRepository(private val context: Context) {
     suspend fun setYouTubeAudioQuality(value: String) {
         context.dataStore.edit { it[SettingsKeys.YOUTUBE_AUDIO_QUALITY] = value }
         updatePlaybackPreferenceSnapshot(context) { it.copy(youtubeAudioQuality = value) }
+    }
+
+    suspend fun setYouTubePlaybackSource(source: YouTubePlaybackSourcePreference) {
+        setSetting(
+            setting = AutoSettingsSchema.playback.youtubePlaybackSource,
+            value = source.storageValue
+        )
     }
 
     suspend fun setBiliAudioQuality(value: String) {

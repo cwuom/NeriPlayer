@@ -19,6 +19,7 @@ import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.data.settings.PlaybackServiceIdleShutdownPreference
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
+import moe.ouom.neriplayer.data.settings.YouTubePlaybackSourcePreferencePolicy
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsBackupKeys
 import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsAlignment
 import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsAlpha
@@ -209,6 +210,9 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
         }
         sanitizeStringValue(strings, SettingsKeys.YOUTUBE_AUDIO_QUALITY.name, onAdjusted) {
             normalizeChoice(it, YOUTUBE_AUDIO_QUALITY_VALUES, DEFAULT_YOUTUBE_AUDIO_QUALITY)
+        }
+        sanitizeStringValue(strings, SettingsKeys.YOUTUBE_PLAYBACK_SOURCE.name, onAdjusted) {
+            YouTubePlaybackSourcePreferencePolicy.normalize(it)
         }
         sanitizeStringValue(strings, SettingsKeys.BILI_AUDIO_QUALITY.name, onAdjusted) {
             normalizeChoice(it, BILI_AUDIO_QUALITY_VALUES, DEFAULT_BILI_AUDIO_QUALITY)

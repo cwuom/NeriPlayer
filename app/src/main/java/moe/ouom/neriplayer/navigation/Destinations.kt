@@ -70,6 +70,12 @@ sealed class Destinations(val route: String, val labelResId: Int) {
     // B 站 UP 主详情路由
     data object BiliUploaderDetail : Destinations("bili_uploader_detail/{uploaderJson}", moe.ouom.neriplayer.R.string.bili_uploader_detail)
 
+    // YouTube Music 创作者详情路由
+    data object YouTubeMusicCreatorDetail : Destinations("youtube_music_creator_detail/{creatorJson}", moe.ouom.neriplayer.R.string.artist_detail)
+
+    // YouTube Music 播放列表或专辑详情路由
+    data object YouTubeMusicPlaylistDetail : Destinations("youtube_music_playlist_detail/{playlistJson}", moe.ouom.neriplayer.R.string.playlist_detail)
+
     // 本地歌单详情路由
     data object LocalPlaylistDetail : Destinations("local_playlist_detail/{playlistId}", moe.ouom.neriplayer.R.string.playlist_local_detail)
 

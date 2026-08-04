@@ -1669,7 +1669,23 @@ object AutoSettingsSchema {
             descriptionRes = R.string.settings_netease_local_source_fallback_desc
         )
 
-        @AutoSetting(order = 137)
+        @AutoSetting(
+            key = "youtube_playback_source",
+            type = SettingValueType.String,
+            defaultString = DEFAULT_YOUTUBE_PLAYBACK_SOURCE,
+            order = 137,
+            ui = SettingUiType.Custom,
+            normalizer = YouTubePlaybackSourcePreferencePolicy::class
+        )
+        val youtubePlaybackSource = autoStringSetting(
+            key = "youtube_playback_source",
+            defaultValue = DEFAULT_YOUTUBE_PLAYBACK_SOURCE,
+            titleRes = R.string.settings_youtube_playback_source,
+            descriptionRes = R.string.settings_youtube_playback_source_desc,
+            iconRes = R.drawable.ic_youtube
+        )
+
+        @AutoSetting(order = 138)
         val biliSponsorBlockEnabled = autoSwitchSetting(
             key = "bili_sponsor_block_enabled",
             defaultValue = false,

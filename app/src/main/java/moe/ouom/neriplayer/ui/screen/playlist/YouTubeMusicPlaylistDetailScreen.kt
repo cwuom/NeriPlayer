@@ -167,6 +167,16 @@ fun YouTubeMusicPlaylistDetailScreen(
         }
     )
     val ui by viewModel.uiState.collectAsState()
+    val hasRequestedPlaylistState = ui.playlist?.browseId == playlist.browseId
+    val visibleTracks = if (hasRequestedPlaylistState) ui.tracks else emptyList()
+    val requestedAllTracksLoaded = hasRequestedPlaylistState && ui.allTracksLoaded
+    val requestedError = ui.error.takeIf { hasRequestedPlaylistState }
+    val requestedTracksUnavailable = hasRequestedPlaylistState && ui.tracksUnavailable
+    val isRequestedPlaylistLoading = shouldShowYouTubeMusicPlaylistDetailLoading(
+        requestedBrowseId = playlist.browseId,
+        loadedBrowseId = ui.playlist?.browseId,
+        loading = ui.loading
+    )
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsState()
@@ -193,8 +203,8 @@ fun YouTubeMusicPlaylistDetailScreen(
     }
     fun clearSelection() { selectedKeys = emptySet() }
     fun selectAll() {
-        if (ui.allTracksLoaded) {
-            selectedKeys = ui.tracks.map { it.stableKey() }.toSet()
+        if (requestedAllTracksLoaded) {
+            selectedKeys = visibleTracks.map { it.stableKey() }.toSet()
         }
     }
     fun exitSelection() { selectionMode = false; clearSelection() }
@@ -266,7 +276,7 @@ fun YouTubeMusicPlaylistDetailScreen(
         }
     }
 
-    val resolvedPlaylist = ui.playlist ?: playlist
+    val resolvedPlaylist = ui.playlist?.takeIf { hasRequestedPlaylistState } ?: playlist
     val playlistChromeColor = rememberPlaylistModernHeroBackgroundColor(
         coverUrl = resolvedPlaylist.coverUrl,
         offlineMode = offlineMode
@@ -393,35 +403,36 @@ fun YouTubeMusicPlaylistDetailScreen(
     val isFavorite = remember(favorites, playlistFavoriteId) {
         favoriteRepo.isFavorite(playlistFavoriteId, "youtubeMusic")
     }
-    val resolvedTrackCount = resolvedPlaylist.trackCount.takeIf { it > 0 } ?: ui.tracks.size
+    val resolvedTrackCount = resolvedPlaylist.trackCount.takeIf { it > 0 } ?: visibleTracks.size
     val displayedTracks = rememberPlaylistSearchResults(
         query = searchQuery,
-        items = ui.tracks,
+        items = visibleTracks,
         tokens = { song -> song.playlistSearchValues(context) }
     )
     val currentIndex = displayedTracks.indexOfFirst { it.sameIdentityAs(currentSong) }
     val heroSubtitle = listOfNotNull(
+        resolvedPlaylist.creatorName.takeIf { it.isNotBlank() },
         resolvedPlaylist.subtitle.takeIf { it.isNotBlank() },
         stringResource(
             R.string.library_favorite_source_format,
             resolvedTrackCount,
             "YouTube Music"
         )
-    ).joinToString(" · ")
+    ).distinct().joinToString(" · ")
     fun playYouTubeMusicPlaylist(shuffle: Boolean) {
         val startIndex = resolvePlaylistPlaybackStartIndex(
-            songCount = ui.tracks.size,
+            songCount = visibleTracks.size,
             shuffleEnabled = shuffle,
-            randomIndex = if (ui.tracks.isEmpty()) 0 else Random.nextInt(ui.tracks.size)
+            randomIndex = if (visibleTracks.isEmpty()) 0 else Random.nextInt(visibleTracks.size)
         )
         if (startIndex < 0) return
         PlayerManager.setShuffle(shuffle)
-        onSongClick(ui.tracks, startIndex)
+        onSongClick(visibleTracks, startIndex)
     }
 
-    LaunchedEffect(isFavorite, resolvedPlaylist, ui.tracks, ui.allTracksLoaded) {
+    LaunchedEffect(isFavorite, resolvedPlaylist, visibleTracks, requestedAllTracksLoaded) {
         if (!isFavorite) return@LaunchedEffect
-        if (!ui.allTracksLoaded) return@LaunchedEffect
+        if (!requestedAllTracksLoaded) return@LaunchedEffect
         favoriteRepo.updateFavoriteMeta(
             id = playlistFavoriteId,
             name = resolvedPlaylist.title,
@@ -431,7 +442,7 @@ fun YouTubeMusicPlaylistDetailScreen(
             browseId = resolvedPlaylist.browseId,
             playlistId = resolvedPlaylist.playlistId,
             subtitle = resolvedPlaylist.subtitle,
-            songs = ui.tracks
+            songs = visibleTracks
         )
     }
 
@@ -489,7 +500,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                                     if (isFavorite) {
                                         favoriteRepo.removeFavorite(playlistFavoriteId, "youtubeMusic")
                                     } else {
-                                        if (!ui.allTracksLoaded) {
+                                        if (!requestedAllTracksLoaded) {
                                             showWaitForFullLoadMessage()
                                             return@launch
                                         }
@@ -502,7 +513,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                                             browseId = resolvedPlaylist.browseId,
                                             playlistId = resolvedPlaylist.playlistId,
                                             subtitle = resolvedPlaylist.subtitle,
-                                            songs = ui.tracks
+                                            songs = visibleTracks
                                         )
                                     }
                                 }
@@ -542,7 +553,8 @@ fun YouTubeMusicPlaylistDetailScreen(
                     )
                 )
             } else {
-                val allSelected = ui.allTracksLoaded && selectedKeys.size == ui.tracks.size && ui.tracks.isNotEmpty()
+                val allSelected = requestedAllTracksLoaded &&
+                    selectedKeys.size == visibleTracks.size && visibleTracks.isNotEmpty()
                 TopAppBar(
                     title = {
                         Text(
@@ -562,7 +574,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                         HapticIconButton(onClick = {
                             if (allSelected) {
                                 clearSelection()
-                            } else if (ui.allTracksLoaded) {
+                            } else if (requestedAllTracksLoaded) {
                                 selectAll()
                             } else {
                                 showWaitForFullLoadMessage()
@@ -591,7 +603,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                         HapticIconButton(
                             onClick = {
                                 if (selectedKeys.isNotEmpty()) {
-                                    val selectedSongs = ui.tracks.filter { it.stableKey() in selectedKeys }
+                                    val selectedSongs = visibleTracks.filter { it.stableKey() in selectedKeys }
                                     showDownloadManager = true
                                     GlobalDownloadManager.startBatchDownload(context, selectedSongs)
                                     exitSelection()
@@ -698,7 +710,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                             hasCustomBackground = hasCustomBackground
                         ) {
                                 PlaylistModernPlaybackActions(
-                                    songCount = ui.tracks.size,
+                                    songCount = visibleTracks.size,
                                     shuffleEnabled = shuffleEnabled,
                                     repeatMode = repeatMode,
                                     onPlayInOrder = { playYouTubeMusicPlaylist(shuffle = false) },
@@ -710,7 +722,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                                         PlayerManager.cycleRepeatMode()
                                     },
                                     onExportToLocalPlaylist = {
-                                        if (ui.allTracksLoaded) {
+                                        if (requestedAllTracksLoaded) {
                                             showExportAllSheet = true
                                         } else {
                                             showWaitForFullLoadMessage()
@@ -720,7 +732,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                         }
                     }
 
-                    if (!ui.allTracksLoaded && ui.tracks.isNotEmpty()) {
+                    if (!requestedAllTracksLoaded && visibleTracks.isNotEmpty()) {
                         item(key = "youtube_music_partial_loaded") {
                             PlaylistModernListItemSurface(
                                 coverUrl = resolvedPlaylist.coverUrl,
@@ -732,7 +744,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                     }
 
                     when {
-                        ui.loading && ui.tracks.isEmpty() -> {
+                        isRequestedPlaylistLoading && visibleTracks.isEmpty() -> {
                             item {
                                 PlaylistModernListItemSurface(
                                     coverUrl = resolvedPlaylist.coverUrl,
@@ -743,14 +755,21 @@ fun YouTubeMusicPlaylistDetailScreen(
                             }
                         }
 
-                        ui.error != null && ui.tracks.isEmpty() -> {
+                        (requestedError != null || requestedTracksUnavailable) &&
+                            visibleTracks.isEmpty() -> {
                             item {
                                 PlaylistModernListItemSurface(
                                     coverUrl = resolvedPlaylist.coverUrl,
                                     offlineMode = offlineMode
                                 ) {
                                     ErrorBlock(
-                                        message = ui.error.orEmpty(),
+                                        message = if (requestedTracksUnavailable) {
+                                            stringResource(
+                                                R.string.youtube_music_playlist_tracks_unavailable
+                                            )
+                                        } else {
+                                            requestedError.orEmpty()
+                                        },
                                         onRetry = viewModel::retry
                                     )
                                 }
@@ -806,11 +825,11 @@ fun YouTubeMusicPlaylistDetailScreen(
                                             if (selectionMode) {
                                                 toggleSelect(song.stableKey())
                                             } else {
-                                                val targetIndex = ui.tracks.indexOfFirst {
+                                                val targetIndex = visibleTracks.indexOfFirst {
                                                     it.sameIdentityAs(song)
                                                 }
                                                 if (targetIndex >= 0) {
-                                                    onSongClick(ui.tracks, targetIndex)
+                                                    onSongClick(visibleTracks, targetIndex)
                                                 }
                                             }
                                         },
@@ -840,7 +859,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                                 listState.animateScrollToItem(
                                     resolvePlaylistSongItemIndex(
                                         songIndex = currentIndex,
-                                        fixedItemCount = if (!ui.allTracksLoaded && ui.tracks.isNotEmpty()) {
+                                        fixedItemCount = if (!requestedAllTracksLoaded && visibleTracks.isNotEmpty()) {
                                             3
                                         } else {
                                             2
@@ -874,7 +893,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                 selectedCount = selectedKeys.size,
                 onDismissRequest = { showExportSheet = false },
                 onCreateAndExport = { name ->
-                    val songs = ui.tracks
+                    val songs = visibleTracks
                         .filter { selectedKeys.contains(it.stableKey()) }
                     scope.launchLocalPlaylistMutation(
                         operation = "createPlaylistFromYouTubeMusic",
@@ -891,7 +910,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                     }
                 },
                 onExportToPlaylist = { playlist ->
-                    val songs = ui.tracks
+                    val songs = visibleTracks
                         .filter { selectedKeys.contains(it.stableKey()) }
                     scope.launchLocalPlaylistMutation(
                         operation = "exportSongsFromYouTubeMusic",
@@ -918,10 +937,10 @@ fun YouTubeMusicPlaylistDetailScreen(
                 playlists = allPlaylists.filterNot {
                     LocalFilesPlaylist.isSystemPlaylist(it, context)
                 },
-                selectedCount = ui.tracks.size,
+                selectedCount = visibleTracks.size,
                 onDismissRequest = { showExportAllSheet = false },
                 onCreateAndExport = { name ->
-                    val songs = ui.tracks
+                    val songs = visibleTracks
                     scope.launchLocalPlaylistMutation(
                         operation = "createPlaylistFromYouTubeMusicAll",
                         onResult = { result ->
@@ -938,7 +957,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                     showExportAllSheet = false
                 },
                 onExportToPlaylist = { playlist ->
-                    val songs = ui.tracks
+                    val songs = visibleTracks
                     scope.launchLocalPlaylistMutation(
                         operation = "exportAllSongsFromYouTubeMusic",
                         onResult = { result ->
@@ -1049,6 +1068,12 @@ private fun ErrorBlock(
         }
     }
 }
+
+internal fun shouldShowYouTubeMusicPlaylistDetailLoading(
+    requestedBrowseId: String,
+    loadedBrowseId: String?,
+    loading: Boolean
+): Boolean = loading || loadedBrowseId != requestedBrowseId
 
 @Composable
 private fun EmptyBlock(text: String) {
