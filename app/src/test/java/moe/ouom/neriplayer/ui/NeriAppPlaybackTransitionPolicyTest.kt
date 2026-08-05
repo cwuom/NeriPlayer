@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class NeriAppPlaybackTransitionPolicyTest {
@@ -93,6 +94,37 @@ class NeriAppPlaybackTransitionPolicyTest {
                 previousVisualCoverUrl = "old-cover",
                 hasCurrentSong = true,
                 clearDelayElapsed = false
+            )
+        )
+    }
+
+    @Test
+    fun `cover seed is ignored until it belongs to the visual cover`() {
+        assertNull(
+            resolveActiveCoverSeedHex(
+                visualCoverUrl = "new-cover",
+                sampledCoverUrl = "old-cover",
+                sampledSeedHex = "112233"
+            )
+        )
+        assertEquals(
+            "445566",
+            resolveActiveCoverSeedHex(
+                visualCoverUrl = "new-cover",
+                sampledCoverUrl = "new-cover",
+                sampledSeedHex = "445566"
+            )
+        )
+    }
+
+    @Test
+    fun `cover seed follows the normalized cover cache key`() {
+        assertEquals(
+            "778899",
+            resolveActiveCoverSeedHex(
+                visualCoverUrl = "https://p1.music.126.net/cover.jpg?param=140y140",
+                sampledCoverUrl = "https://p2.music.126.net/cover.jpg?param=500y500",
+                sampledSeedHex = "778899"
             )
         )
     }

@@ -284,6 +284,7 @@ import moe.ouom.neriplayer.ui.component.sheet.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
+import moe.ouom.neriplayer.ui.theme.LocalNeriTargetColorScheme
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
@@ -1680,11 +1681,12 @@ fun NowPlayingScreen(
     val themeSeedColorHex by settingsRepo.themeSeedColorFlow.collectAsStateWithLifecycle(
         initialValue = ThemeDefaults.DEFAULT_SEED_COLOR_HEX
     )
+    val targetNowPlayingColorScheme = LocalNeriTargetColorScheme.current
     val targetNowPlayingActiveIconColor = resolveNowPlayingActiveIconColor(
-        accentColor = MaterialTheme.colorScheme.primary,
+        accentColor = targetNowPlayingColorScheme.primary,
         seedColor = resolveNowPlayingThemeSeedColor(themeSeedColorHex),
-        inactiveContentColor = MaterialTheme.colorScheme.onSurface,
-        backgroundColor = MaterialTheme.colorScheme.background
+        inactiveContentColor = targetNowPlayingColorScheme.onSurface,
+        backgroundColor = targetNowPlayingColorScheme.background
     )
     val nowPlayingActiveIconColor = rememberStableNowPlayingActiveContentColor(
         targetColor = targetNowPlayingActiveIconColor
@@ -2631,7 +2633,7 @@ fun NowPlayingScreen(
                         isPlaybackWaiting = isPlaybackWaiting,
                         progressInfoSegments = progressInfoSegments,
                         seekEnabled = playbackProgressSeekEnabled,
-                        activeContentColor = nowPlayingActiveIconColor,
+                        activeContentColor = targetNowPlayingActiveIconColor,
                         useWideLandscapeLayout = useWideLandscapeLayout,
                         onPreviewPositionChange = { previewPositionOverrideMs = it },
                         progressRowModifier = Modifier

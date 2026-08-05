@@ -257,6 +257,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.util.crash.AnrWatchdog
 import moe.ouom.neriplayer.util.media.CoverArtColorCache
+import moe.ouom.neriplayer.util.media.normalizeCoverArtColorCacheKey
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
 import moe.ouom.neriplayer.util.crash.NativeCrashHandler
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -1210,6 +1211,21 @@ private suspend fun awaitStableDraw(view: View) {
 
 private const val COVER_SEED_WARMUP_DELAY_MS = 180L
 
+private data class PlaybackCoverSeed(
+    val coverUrl: String,
+    val seedHex: String
+)
+
+internal fun resolveActiveCoverSeedHex(
+    visualCoverUrl: String?,
+    sampledCoverUrl: String?,
+    sampledSeedHex: String?
+): String? {
+    val visualCacheKey = normalizeCoverArtColorCacheKey(visualCoverUrl) ?: return null
+    val sampledCacheKey = normalizeCoverArtColorCacheKey(sampledCoverUrl) ?: return null
+    return sampledSeedHex?.takeIf { visualCacheKey == sampledCacheKey }
+}
+
 internal fun resolveCoverSeedWarmupDelayMillis(
     showNowPlaying: Boolean,
     dynamicColorEnabled: Boolean,
@@ -1680,7 +1696,7 @@ private fun NeriAppContent(
     }
 
     // 缓存当前封面的取色结果, 避免开关动态取色时先闪到默认种子色
-    var coverSeedHex by remember { mutableStateOf<String?>(null) }
+    var coverSeed by remember { mutableStateOf<PlaybackCoverSeed?>(null) }
     val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
     val displayCoverUrl = rememberSongDisplayCoverUrl(currentSong)
     val currentSongKey = remember(currentSong) { currentSong?.stableKey() }
@@ -1805,12 +1821,15 @@ private fun NeriAppContent(
 
     LaunchedEffect(playbackVisualCoverUrl, coverArtRefreshToken, showNowPlaying, dynamicColorEnabled, offlineMode) {
         if (playbackVisualCoverUrl.isNullOrBlank() || !dynamicColorEnabled) {
-            coverSeedHex = null
+            coverSeed = null
             return@LaunchedEffect
         }
         val cachedSample = CoverArtColorCache.peek(playbackVisualCoverUrl)
-        if (cachedSample != null) {
-            coverSeedHex = cachedSample.seedHex
+        coverSeed = cachedSample?.let { sample ->
+            PlaybackCoverSeed(
+                coverUrl = playbackVisualCoverUrl,
+                seedHex = sample.seedHex
+            )
         }
 
         if (showNowPlaying && isRemoteImageSource(playbackVisualCoverUrl)) {
@@ -1835,7 +1854,10 @@ private fun NeriAppContent(
         }
 
         CoverArtColorCache.preload(context, playbackVisualCoverUrl, offlineMode)?.let { sample ->
-            coverSeedHex = sample.seedHex
+            coverSeed = PlaybackCoverSeed(
+                coverUrl = playbackVisualCoverUrl,
+                seedHex = sample.seedHex
+            )
         }
     }
 
@@ -2221,7 +2243,11 @@ private fun NeriAppContent(
         return "local_playlist_detail/$id"
     }
 
-    val activeCoverSeedHex = if (playbackVisualCoverUrl == null) null else coverSeedHex
+    val activeCoverSeedHex = resolveActiveCoverSeedHex(
+        visualCoverUrl = playbackVisualCoverUrl,
+        sampledCoverUrl = coverSeed?.coverUrl,
+        sampledSeedHex = coverSeed?.seedHex
+    )
         val effectiveSeedHex = if (dynamicColorEnabled) {
             activeCoverSeedHex ?: themeSeedColor
         } else {
@@ -4243,7 +4269,6 @@ private fun NeriAppContent(
                         }
                     }
                     val currentCoverUrl = playbackVisualCoverUrl
-                    val activeCoverSeedHex = if (currentCoverUrl == null) null else coverSeedHex
                     val effectiveSeedHex = if (dynamicColorEnabled) {
                         activeCoverSeedHex ?: themeSeedColor
                     } else {

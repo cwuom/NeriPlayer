@@ -33,8 +33,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.graphics.toColorInt
@@ -45,6 +48,10 @@ import moe.ouom.neriplayer.data.settings.ThemeDefaults
 
 private val NeriTypography = Typography()
 private const val ThemeColorTransitionDurationMs = 420
+
+internal val LocalNeriTargetColorScheme = staticCompositionLocalOf<ColorScheme> {
+    lightColorScheme()
+}
 
 @Composable
 fun NeriTheme(
@@ -82,11 +89,13 @@ fun NeriTheme(
     }
     val colorScheme = animateColorScheme(targetColorScheme)
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = NeriTypography,
-        content = content
-    )
+    CompositionLocalProvider(LocalNeriTargetColorScheme provides targetColorScheme) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = NeriTypography,
+            content = content
+        )
+    }
 }
 
 @Composable
