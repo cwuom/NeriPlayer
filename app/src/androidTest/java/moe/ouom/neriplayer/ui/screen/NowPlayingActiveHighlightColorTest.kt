@@ -40,16 +40,16 @@ class NowPlayingActiveHighlightColorTest {
                 SideEffect { renderedColor = animatedColor }
             }
 
-            composeRule.mainClock.advanceTimeByFrame()
-            composeRule.waitForIdle()
+            advanceFrameAndAwaitIdle()
             composeRule.runOnIdle { assertEquals(oldColor, renderedColor) }
 
             composeRule.runOnIdle { targetColor.value = newColor }
+            advanceFrameAndAwaitIdle()
+            composeRule.runOnIdle { assertEquals(oldColor, renderedColor) }
             composeRule.mainClock.advanceTimeBy(
                 NowPlayingActiveContentColorStabilizationDelayMs.toLong() + 1L
             )
-            composeRule.mainClock.advanceTimeByFrame()
-            composeRule.waitForIdle()
+            advanceFrameAndAwaitIdle()
             composeRule.runOnIdle {
                 assertNotEquals(oldColor, renderedColor)
                 assertNotEquals(newColor, renderedColor)
@@ -82,24 +82,23 @@ class NowPlayingActiveHighlightColorTest {
                 SideEffect { renderedColor = stableColor }
             }
 
-            composeRule.mainClock.advanceTimeByFrame()
-            composeRule.waitForIdle()
+            advanceFrameAndAwaitIdle()
             composeRule.runOnIdle { assertEquals(oldColor, renderedColor) }
 
             composeRule.runOnIdle { targetColor.value = transientBlue }
-            composeRule.mainClock.advanceTimeByFrame()
-            composeRule.waitForIdle()
+            advanceFrameAndAwaitIdle()
             composeRule.runOnIdle {
                 assertEquals(oldColor, renderedColor)
                 assertNotEquals(transientBlue, renderedColor)
             }
 
             composeRule.runOnIdle { targetColor.value = finalColor }
+            advanceFrameAndAwaitIdle()
+            composeRule.runOnIdle { assertEquals(oldColor, renderedColor) }
             composeRule.mainClock.advanceTimeBy(
                 NowPlayingActiveContentColorStabilizationDelayMs.toLong() + 1L
             )
-            composeRule.mainClock.advanceTimeByFrame()
-            composeRule.waitForIdle()
+            advanceFrameAndAwaitIdle()
             composeRule.runOnIdle {
                 assertNotEquals(transientBlue, renderedColor)
                 assertNotEquals(finalColor, renderedColor)
@@ -113,5 +112,10 @@ class NowPlayingActiveHighlightColorTest {
         } finally {
             composeRule.mainClock.autoAdvance = autoAdvance
         }
+    }
+
+    private fun advanceFrameAndAwaitIdle() {
+        composeRule.mainClock.advanceTimeByFrame()
+        composeRule.waitForIdle()
     }
 }
