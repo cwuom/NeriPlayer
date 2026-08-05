@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -17,6 +18,29 @@ class ManagedDownloadNamingTest {
         )
 
         assertEquals("netease - 周杰伦 - 晴天", result)
+    }
+
+    @Test
+    fun `YouTube source wins over stale channel id while old filename stays discoverable`() {
+        val song = SongItem(
+            id = 1L,
+            name = "爱我别走",
+            artist = "张震岳",
+            album = "某张专辑",
+            albumId = 2L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = buildYouTubeMusicMediaUri("dQw4w9WgXcQ"),
+            channelId = "netease"
+        )
+
+        assertEquals(
+            "youtubeMusic - 张震岳 - 爱我别走",
+            renderManagedDownloadBaseName(song)
+        )
+        val candidates = candidateManagedDownloadBaseNames(song)
+        assertTrue(candidates.contains("youtubeMusic - 张震岳 - 爱我别走"))
+        assertTrue(candidates.contains("netease - 张震岳 - 爱我别走"))
     }
 
     @Test

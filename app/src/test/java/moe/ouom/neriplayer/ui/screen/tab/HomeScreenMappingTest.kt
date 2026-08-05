@@ -33,6 +33,17 @@ class HomeScreenMappingTest {
     }
 
     @Test
+    fun continueSectionRespectsDisabledCardSettingWhileUsageLoads() {
+        assertFalse(
+            shouldShowHomeContinueSection(
+                showContinueCard = false,
+                usageLoaded = false,
+                hasUsage = true
+            )
+        )
+    }
+
+    @Test
     fun toPlayableSongItem_keepsHomeItemDuration() {
         val song = YouTubeMusicHomeItem(
             title = "爱你",

@@ -9,14 +9,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import java.util.concurrent.ExecutionException
+import java.util.concurrent.TimeoutException
 import kotlinx.coroutines.CancellationException
 
 class YouTubeEjsChallengeSolverTest {
 
     @Test
-    fun ejsIsolateUses128MiBHeapLimitOnlyWhenSupported() {
+    fun ejsIsolateLetsTheProviderChooseItsBoundedDeviceHeapWhenSupported() {
         assertEquals(
-            128L * 1024L * 1024L,
+            0L,
             YOUTUBE_EJS_ISOLATE_MAX_HEAP_SIZE_BYTES
         )
         assertEquals(
@@ -27,6 +28,27 @@ class YouTubeEjsChallengeSolverTest {
             null,
             youtubeEjsIsolateMaxHeapSizeBytes(supportsExplicitHeapLimit = false)
         )
+    }
+
+    @Test
+    fun memoryLimitFailureGetsOneFreshSandboxRetryInsteadOfCooldown() {
+        val memoryLimitResult = YouTubeJsChallengeSolveResult(
+            status = YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED,
+            cause = ExecutionException(MemoryLimitExceededException("memory limit exceeded"))
+        )
+        val ordinaryResult = YouTubeJsChallengeSolveResult(
+            status = YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED,
+            cause = IllegalStateException("ordinary failure")
+        )
+
+        assertTrue(isYouTubeEjsMemoryLimitFailure(memoryLimitResult.cause))
+        assertTrue(shouldRetryYouTubeEjsSandboxAfterMemoryFailure(memoryLimitResult))
+        assertFalse(shouldRetryYouTubeEjsSandboxAfterMemoryFailure(ordinaryResult))
+    }
+
+    @Test
+    fun ejsPlayerScriptMemoryCacheKeepsOnlyTheActivePair() {
+        assertEquals(2, YOUTUBE_EJS_PLAYER_SCRIPT_MEMORY_CACHE_CAPACITY)
     }
 
     @Test
@@ -42,6 +64,21 @@ class YouTubeEjsChallengeSolverTest {
             )
         )
         assertFalse(shouldInvalidateYouTubeEjsSandbox(IllegalStateException("ordinary failure")))
+    }
+
+    @Test
+    fun timedOutEjsSessionsAreDiscardedBeforeTheNextChallenge() {
+        assertTrue(
+            shouldDiscardYouTubeEjsPlayerSession(
+                ExecutionException(TimeoutException("timed out"))
+            )
+        )
+        assertTrue(
+            shouldDiscardYouTubeEjsPlayerSession(
+                ExecutionException(MemoryLimitExceededException("memory limit exceeded"))
+            )
+        )
+        assertFalse(shouldDiscardYouTubeEjsPlayerSession(IllegalStateException("ordinary failure")))
     }
 
     @Test
@@ -66,6 +103,113 @@ class YouTubeEjsChallengeSolverTest {
             bootstrapScript.contains("sample === null || typeof sample === \"undefined\"")
         )
         assertTrue(bootstrapScript.contains("return this.toString();"))
+    }
+
+    @Test
+    fun playerSessionInitializationPreprocessesThePlayerOnlyOnce() {
+        val initializationScript = buildYouTubeEjsPlayerSessionInitializeScript("player_js_test")
+
+        assertTrue(initializationScript.contains("consumeNamedDataAsArrayBuffer(\"player_js_test\")"))
+        assertTrue(initializationScript.contains("output_preprocessed: true"))
+        assertTrue(initializationScript.contains("Function(\"_result\", _preprocessed.preprocessed_player)"))
+        assertTrue(initializationScript.contains("__neriPlayerEjsChallengeSession"))
+        assertTrue(initializationScript.contains("type: \"session-ready\""))
+    }
+
+    @Test
+    fun loadedPlayerSessionSolvesBothChallengesWithoutReloadingPlayerData() {
+        val solveScript = buildYouTubeEjsLoadedPlayerSolveScript(
+            encryptedSignature = "sig-challenge",
+            throttlingParameter = "n-challenge"
+        )
+
+        assertTrue(solveScript.contains("__neriPlayerEjsChallengeSession"))
+        assertTrue(solveScript.contains("\"type\":\"sig\""))
+        assertTrue(solveScript.contains("\"type\":\"n\""))
+        assertTrue(solveScript.contains("_solver(_challenge)"))
+        assertFalse(solveScript.contains("consumeNamedDataAsArrayBuffer"))
+        assertFalse(solveScript.contains("jsc("))
+    }
+
+    @Test
+    fun webViewFallbackDocumentLoadsOnlyBundledSolverAssets() {
+        val document = buildYouTubeEjsWebViewDocument("const player = '</script>';")
+
+        assertTrue(document.contains("/assets/youtube/yt.solver.lib.min.js"))
+        assertTrue(document.contains("/assets/youtube/yt.solver.core.min.js"))
+        assertTrue(document.contains("__neriPlayerEjsChallengeSession"))
+        assertTrue(document.contains("__neriPlayerEjsWebViewInitResult"))
+        assertTrue(document.contains("<\\/script>"))
+        assertFalse(document.contains("file:///"))
+    }
+
+    @Test
+    fun playerSessionReadyResponseRequiresAtLeastOneChallengeFunction() {
+        assertTrue(
+            isYouTubeEjsPlayerSessionReady(
+                """{"type":"session-ready","hasN":true,"hasSig":false}"""
+            )
+        )
+        assertFalse(
+            isYouTubeEjsPlayerSessionReady(
+                """{"type":"session-ready","hasN":false,"hasSig":false}"""
+            )
+        )
+        assertFalse(isYouTubeEjsPlayerSessionReady("not-json"))
+    }
+
+    @Test
+    fun completeChallengeCacheBypassesTheFallbackSession() {
+        val cached = cachedYouTubeEjsChallengeResult(
+            requestedSignature = "signature",
+            requestedThrottling = "throttling",
+            cachedSignature = "resolved-signature",
+            cachedThrottling = "resolved-throttling"
+        )
+        val incomplete = cachedYouTubeEjsChallengeResult(
+            requestedSignature = "signature",
+            requestedThrottling = "throttling",
+            cachedSignature = "resolved-signature",
+            cachedThrottling = null
+        )
+
+        assertEquals(YouTubeJsChallengeSolveStatus.SUCCESS, cached?.status)
+        assertEquals("resolved-signature", cached?.solution?.signature)
+        assertEquals("resolved-throttling", cached?.solution?.throttlingParameter)
+        assertEquals(null, incomplete)
+    }
+
+    @Test
+    fun playerSessionCacheReusesTheCurrentScriptAndClosesReplacedSessions() {
+        val closedSessions = mutableListOf<String>()
+        val cache = YouTubeEjsPlayerSessionCache<String> { closedSessions += it }
+        var creationCount = 0
+
+        val first = cache.withSession(
+            playerJsUrl = "https://player/a.js",
+            createSession = { "session-${++creationCount}" },
+            block = { it }
+        )
+        val reused = cache.withSession(
+            playerJsUrl = "https://player/a.js",
+            createSession = { "session-${++creationCount}" },
+            block = { it }
+        )
+        val replaced = cache.withSession(
+            playerJsUrl = "https://player/b.js",
+            createSession = { "session-${++creationCount}" },
+            block = { it }
+        )
+
+        assertEquals("session-1", first)
+        assertEquals("session-1", reused)
+        assertEquals("session-2", replaced)
+        assertEquals(2, creationCount)
+        assertEquals(listOf("session-1"), closedSessions)
+
+        cache.invalidate()
+
+        assertEquals(listOf("session-1", "session-2"), closedSessions)
     }
 
     @Test

@@ -3,10 +3,12 @@ package moe.ouom.neriplayer.core.download.naming
 import java.text.Normalizer
 import java.io.File
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
 
 internal const val DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE = "%source% - %artist% - %title%"
 internal const val LEGACY_DOWNLOAD_FILE_NAME_TEMPLATE = "%artist% - %title%"
 private const val MIN_MANAGED_DOWNLOAD_BASE_NAME_CODE_POINTS = 2
+private const val YOUTUBE_MUSIC_DOWNLOAD_SOURCE = "youtubeMusic"
 
 internal data class ParsedManagedDownloadFileName(
     val title: String? = null,
@@ -181,39 +183,40 @@ internal fun candidateManagedDownloadBaseNames(
 ): List<String> {
     val baseNames = linkedSetOf<String>()
     val effectiveTemplate = normalizeDownloadFileNameTemplate(activeTemplate)
-    baseNames.addRenderedManagedDownloadBaseNames(
-        title = song.customName ?: song.name,
-        artist = song.customArtist ?: song.artist,
-        album = song.album,
-        source = managedDownloadSource(song),
-        songId = song.id.toString(),
-        audioId = song.audioId.orEmpty(),
-        subAudioId = song.subAudioId.orEmpty(),
-        template = effectiveTemplate
-    )
-    baseNames.addRenderedManagedDownloadBaseNames(
-        title = song.name,
-        artist = song.artist,
-        album = song.album,
-        source = managedDownloadSource(song),
-        songId = song.id.toString(),
-        audioId = song.audioId.orEmpty(),
-        subAudioId = song.subAudioId.orEmpty(),
-        template = effectiveTemplate
-    )
-
     val originalName = song.originalName?.takeIf { it.isNotBlank() } ?: song.name
     val originalArtist = song.originalArtist?.takeIf { it.isNotBlank() } ?: song.artist
-    baseNames.addRenderedManagedDownloadBaseNames(
-        title = originalName,
-        artist = originalArtist,
-        album = song.album,
-        source = managedDownloadSource(song),
-        songId = song.id.toString(),
-        audioId = song.audioId.orEmpty(),
-        subAudioId = song.subAudioId.orEmpty(),
-        template = effectiveTemplate
-    )
+    managedDownloadSourceCandidates(song).forEach { source ->
+        baseNames.addRenderedManagedDownloadBaseNames(
+            title = song.customName ?: song.name,
+            artist = song.customArtist ?: song.artist,
+            album = song.album,
+            source = source,
+            songId = song.id.toString(),
+            audioId = song.audioId.orEmpty(),
+            subAudioId = song.subAudioId.orEmpty(),
+            template = effectiveTemplate
+        )
+        baseNames.addRenderedManagedDownloadBaseNames(
+            title = song.name,
+            artist = song.artist,
+            album = song.album,
+            source = source,
+            songId = song.id.toString(),
+            audioId = song.audioId.orEmpty(),
+            subAudioId = song.subAudioId.orEmpty(),
+            template = effectiveTemplate
+        )
+        baseNames.addRenderedManagedDownloadBaseNames(
+            title = originalName,
+            artist = originalArtist,
+            album = song.album,
+            source = source,
+            songId = song.id.toString(),
+            audioId = song.audioId.orEmpty(),
+            subAudioId = song.subAudioId.orEmpty(),
+            template = effectiveTemplate
+        )
+    }
 
     // Keep matching historical downloads created before custom templates were introduced.
     baseNames += sanitizeManagedDownloadFileName("${song.customArtist ?: song.artist} - ${song.customName ?: song.name}")
@@ -276,6 +279,21 @@ internal fun candidateManagedDownloadBaseNames(fileNameWithoutExtension: String)
 }
 
 private fun managedDownloadSource(song: SongItem): String {
+    return when {
+        isYouTubeMusicSong(song) -> YOUTUBE_MUSIC_DOWNLOAD_SOURCE
+        song.album.startsWith("bili", ignoreCase = true) -> "bilibili"
+        else -> song.channelId?.takeIf { it.isNotBlank() } ?: "netease"
+    }
+}
+
+private fun managedDownloadSourceCandidates(song: SongItem): List<String> {
+    return linkedSetOf(
+        managedDownloadSource(song),
+        legacyManagedDownloadSource(song)
+    ).toList()
+}
+
+private fun legacyManagedDownloadSource(song: SongItem): String {
     return song.channelId
         ?.takeIf { it.isNotBlank() }
         ?: when {
