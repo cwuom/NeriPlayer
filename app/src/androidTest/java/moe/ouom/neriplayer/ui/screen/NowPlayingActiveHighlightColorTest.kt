@@ -49,7 +49,7 @@ class NowPlayingActiveHighlightColorTest {
             composeRule.mainClock.advanceTimeBy(
                 NowPlayingActiveContentColorStabilizationDelayMs.toLong() + 1L
             )
-            advanceFrameAndAwaitIdle()
+            advanceUntilFirstInterpolatedColor()
             composeRule.runOnIdle {
                 assertNotEquals(oldColor, renderedColor)
                 assertNotEquals(newColor, renderedColor)
@@ -98,7 +98,7 @@ class NowPlayingActiveHighlightColorTest {
             composeRule.mainClock.advanceTimeBy(
                 NowPlayingActiveContentColorStabilizationDelayMs.toLong() + 1L
             )
-            advanceFrameAndAwaitIdle()
+            advanceUntilFirstInterpolatedColor()
             composeRule.runOnIdle {
                 assertNotEquals(transientBlue, renderedColor)
                 assertNotEquals(finalColor, renderedColor)
@@ -117,5 +117,10 @@ class NowPlayingActiveHighlightColorTest {
     private fun advanceFrameAndAwaitIdle() {
         composeRule.mainClock.advanceTimeByFrame()
         composeRule.waitForIdle()
+    }
+
+    private fun advanceUntilFirstInterpolatedColor() {
+        // one frame commits the target, one starts the animation, and one samples progress
+        repeat(3) { advanceFrameAndAwaitIdle() }
     }
 }
