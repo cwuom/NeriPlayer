@@ -63,6 +63,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -228,6 +229,7 @@ internal fun ThemeModeActionButton(
 ) {
     var centerInWindow by remember { mutableStateOf<Offset?>(null) }
     var revealStartRadiusPx by remember { mutableFloatStateOf(18f) }
+    val latestOnToggleRequest = rememberUpdatedState(onToggleRequest)
     val contentDescription = if (isDarkTheme) {
         stringResource(R.string.settings_theme_toggle_light)
     } else {
@@ -261,7 +263,7 @@ internal fun ThemeModeActionButton(
     ) {
         HapticIconButton(
             onClick = {
-                onToggleRequest(
+                latestOnToggleRequest.value(
                     centerInWindow ?: Offset.Zero,
                     revealStartRadiusPx
                 )

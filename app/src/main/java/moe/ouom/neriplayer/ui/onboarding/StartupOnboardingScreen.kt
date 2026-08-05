@@ -153,6 +153,7 @@ private enum class StartupStep {
 }
 
 private const val STARTUP_THEME_REVEAL_WATCHDOG_DELAY_MILLIS = 900L
+private const val STARTUP_THEME_REVEAL_CAPTURE_TIMEOUT_MILLIS = 500L
 
 @Composable
 fun StartupOnboardingScreen() {
@@ -203,7 +204,7 @@ fun StartupOnboardingScreen() {
         pendingForceDark = pendingForceDark
     )
     val isDarkTheme = effectiveThemeMode.resolveUseDark(systemDark)
-    val latestIsDarkTheme by rememberUpdatedState(isDarkTheme)
+    val latestIsDarkTheme = rememberUpdatedState(isDarkTheme)
 
     var inlineMessage by remember { mutableStateOf<String?>(null) }
     var loginSuccessTitle by remember { mutableStateOf<String?>(null) }
@@ -216,7 +217,6 @@ fun StartupOnboardingScreen() {
     var themeRevealCaptureInFlight by remember { mutableStateOf(false) }
     var themeRevealCaptureJob by remember { mutableStateOf<Job?>(null) }
     var themeRevealCaptureToken by remember { mutableIntStateOf(0) }
-    var themeModeWriteInFlight by remember { mutableStateOf(false) }
 
     var showNeteaseSheet by remember { mutableStateOf(false) }
     var showNeteaseConfirm by remember { mutableStateOf(false) }
@@ -404,7 +404,6 @@ fun StartupOnboardingScreen() {
         themeRevealCaptureJob?.cancel()
         themeRevealCaptureJob = null
         themeRevealCaptureInFlight = false
-        themeModeWriteInFlight = false
         pendingFollowSystemDark = null
         pendingForceDark = null
         clearThemeRevealVisualState()
@@ -427,10 +426,12 @@ fun StartupOnboardingScreen() {
             return
         }
 
-        val isDarkBeforeToggle = latestIsDarkTheme
+        val isDarkBeforeToggle = latestIsDarkTheme.value
         val nextDark = !isDarkBeforeToggle
         val captureToken = themeRevealCaptureToken + 1
         themeRevealCaptureToken = captureToken
+        themeRevealCaptureJob?.cancel()
+        themeRevealCaptureJob = null
         themeRevealCaptureInFlight = true
         val captureJob = scope.launch {
             var themeWriteStarted = false
@@ -438,12 +439,14 @@ fun StartupOnboardingScreen() {
             val captureView = activity?.window?.decorView?.rootView ?: rootView.rootView
             try {
                 awaitStartupStableDraw(captureView)
-                val snapshot = runCatching {
-                    captureStartupThemeRevealSnapshot(
-                        activity = activity,
-                        fallbackView = captureView
-                    )
-                }.getOrNull()
+                val snapshot = withTimeoutOrNull(STARTUP_THEME_REVEAL_CAPTURE_TIMEOUT_MILLIS) {
+                    runCatching {
+                        captureStartupThemeRevealSnapshot(
+                            activity = activity,
+                            fallbackView = captureView
+                        )
+                    }.getOrNull()
+                }
                 val lifecycleActive = lifecycleOwner.lifecycle.currentState
                     .isAtLeast(Lifecycle.State.STARTED)
                 val activityValid = activity == null ||
@@ -464,7 +467,6 @@ fun StartupOnboardingScreen() {
                 themeRevealCaptureInFlight = false
                 pendingFollowSystemDark = false
                 pendingForceDark = nextDark
-                themeModeWriteInFlight = true
                 themeWriteStarted = true
                 repo.setThemeMode(
                     followSystemDark = false,
@@ -480,7 +482,6 @@ fun StartupOnboardingScreen() {
                     }
                     themeRevealCaptureJob = null
                     themeRevealCaptureInFlight = false
-                    themeModeWriteInFlight = false
                 }
             }
         }
@@ -1614,7 +1615,16 @@ private suspend fun captureStartupThemeRevealSnapshot(
                 currentActivity.window,
                 bitmap,
                 { result ->
-                    continuation.resume(if (result == PixelCopy.SUCCESS) bitmap else null)
+                    if (continuation.isActive) {
+                        if (result == PixelCopy.SUCCESS) {
+                            continuation.resume(bitmap)
+                        } else {
+                            bitmap.recycle()
+                            continuation.resume(null)
+                        }
+                    } else {
+                        bitmap.recycle()
+                    }
                 },
                 Handler(Looper.getMainLooper())
             )
