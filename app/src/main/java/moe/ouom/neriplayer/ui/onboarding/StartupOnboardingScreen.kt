@@ -66,6 +66,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -97,6 +98,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -149,6 +152,8 @@ private enum class StartupStep {
     Personalize
 }
 
+private const val STARTUP_THEME_REVEAL_WATCHDOG_DELAY_MILLIS = 900L
+
 @Composable
 fun StartupOnboardingScreen() {
     val context = LocalContext.current
@@ -189,11 +194,16 @@ fun StartupOnboardingScreen() {
     val followSystemDark by repo.followSystemDarkFlow.collectAsStateWithLifecycle(initialValue = true)
     val forceDark by repo.forceDarkFlow.collectAsStateWithLifecycle(initialValue = false)
     val systemDark = isSystemInDarkTheme()
-    val isDarkTheme = when {
-        forceDark -> true
-        followSystemDark -> systemDark
-        else -> false
-    }
+    var pendingFollowSystemDark by remember { mutableStateOf<Boolean?>(null) }
+    var pendingForceDark by remember { mutableStateOf<Boolean?>(null) }
+    val effectiveThemeMode = resolveStartupOnboardingThemeMode(
+        storedFollowSystemDark = followSystemDark,
+        storedForceDark = forceDark,
+        pendingFollowSystemDark = pendingFollowSystemDark,
+        pendingForceDark = pendingForceDark
+    )
+    val isDarkTheme = effectiveThemeMode.resolveUseDark(systemDark)
+    val latestIsDarkTheme by rememberUpdatedState(isDarkTheme)
 
     var inlineMessage by remember { mutableStateOf<String?>(null) }
     var loginSuccessTitle by remember { mutableStateOf<String?>(null) }
@@ -204,6 +214,9 @@ fun StartupOnboardingScreen() {
     var themeRevealStartRadiusPx by remember { mutableFloatStateOf(0f) }
     var themeRevealFallbackColor by remember { mutableStateOf<ComposeColor?>(null) }
     var themeRevealCaptureInFlight by remember { mutableStateOf(false) }
+    var themeRevealCaptureJob by remember { mutableStateOf<Job?>(null) }
+    var themeRevealCaptureToken by remember { mutableIntStateOf(0) }
+    var themeModeWriteInFlight by remember { mutableStateOf(false) }
 
     var showNeteaseSheet by remember { mutableStateOf(false) }
     var showNeteaseConfirm by remember { mutableStateOf(false) }
@@ -220,6 +233,17 @@ fun StartupOnboardingScreen() {
     var youTubeSheetTab by rememberSaveable { mutableIntStateOf(0) }
     var showGitHubConfigDialog by remember { mutableStateOf(false) }
     var showClearGitHubConfigDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(followSystemDark, pendingFollowSystemDark) {
+        if (pendingFollowSystemDark != null && pendingFollowSystemDark == followSystemDark) {
+            pendingFollowSystemDark = null
+        }
+    }
+    LaunchedEffect(forceDark, pendingForceDark) {
+        if (pendingForceDark != null && pendingForceDark == forceDark) {
+            pendingForceDark = null
+        }
+    }
 
     val neteaseVm: NeteaseAuthViewModel = viewModel()
     val neteaseState by neteaseVm.uiState.collectAsStateWithLifecycle()
@@ -368,42 +392,112 @@ fun StartupOnboardingScreen() {
         stepIndex = (stepIndex + 1).coerceAtMost(steps.lastIndex)
     }
 
-    fun clearThemeRevealState() {
+    fun clearThemeRevealVisualState() {
         themeRevealSnapshot = null
         themeRevealOriginWindow = null
         themeRevealStartRadiusPx = 0f
         themeRevealFallbackColor = null
+    }
+
+    fun clearThemeRevealState() {
+        themeRevealCaptureToken += 1
+        themeRevealCaptureJob?.cancel()
+        themeRevealCaptureJob = null
         themeRevealCaptureInFlight = false
+        themeModeWriteInFlight = false
+        pendingFollowSystemDark = null
+        pendingForceDark = null
+        clearThemeRevealVisualState()
+    }
+
+    fun finishThemeReveal(captureToken: Int) {
+        if (themeRevealCaptureToken == captureToken) {
+            clearThemeRevealVisualState()
+        }
     }
 
     fun requestThemeToggle(originInWindow: Offset, startRadiusPx: Float) {
-        if (themeRevealCaptureInFlight || themeRevealOriginWindow != null) {
+        if (
+            shouldBlockStartupOnboardingThemeToggle(
+                captureInFlight = themeRevealCaptureInFlight,
+                revealActive = themeRevealOriginWindow != null &&
+                    themeRevealFallbackColor != null
+            )
+        ) {
             return
         }
 
-        val nextDark = !isDarkTheme
+        val isDarkBeforeToggle = latestIsDarkTheme
+        val nextDark = !isDarkBeforeToggle
+        val captureToken = themeRevealCaptureToken + 1
+        themeRevealCaptureToken = captureToken
         themeRevealCaptureInFlight = true
-        scope.launch {
+        val captureJob = scope.launch {
+            var themeWriteStarted = false
+            var themeWriteCompleted = false
             val captureView = activity?.window?.decorView?.rootView ?: rootView.rootView
-            awaitStartupStableDraw(captureView)
-            val snapshot = captureStartupThemeRevealSnapshot(
-                activity = activity,
-                fallbackView = captureView
-            )
-            themeRevealSnapshot = snapshot
-            themeRevealFallbackColor = if (isDarkTheme) {
-                ComposeColor(0xFF121212)
-            } else {
-                ComposeColor.White
+            try {
+                awaitStartupStableDraw(captureView)
+                val snapshot = runCatching {
+                    captureStartupThemeRevealSnapshot(
+                        activity = activity,
+                        fallbackView = captureView
+                    )
+                }.getOrNull()
+                val lifecycleActive = lifecycleOwner.lifecycle.currentState
+                    .isAtLeast(Lifecycle.State.STARTED)
+                val activityValid = activity == null ||
+                    (!activity.isFinishing && !activity.isDestroyed)
+                if (themeRevealCaptureToken != captureToken || !lifecycleActive || !activityValid) {
+                    return@launch
+                }
+
+                clearThemeRevealVisualState()
+                themeRevealSnapshot = snapshot
+                themeRevealFallbackColor = if (isDarkBeforeToggle) {
+                    ComposeColor(0xFF121212)
+                } else {
+                    ComposeColor.White
+                }
+                themeRevealOriginWindow = originInWindow
+                themeRevealStartRadiusPx = startRadiusPx.coerceAtLeast(1f)
+                themeRevealCaptureInFlight = false
+                pendingFollowSystemDark = false
+                pendingForceDark = nextDark
+                themeModeWriteInFlight = true
+                themeWriteStarted = true
+                repo.setThemeMode(
+                    followSystemDark = false,
+                    forceDark = nextDark
+                )
+                themeWriteCompleted = true
+            } finally {
+                if (themeRevealCaptureToken == captureToken) {
+                    if (themeWriteStarted && !themeWriteCompleted) {
+                        pendingFollowSystemDark = null
+                        pendingForceDark = null
+                        clearThemeRevealVisualState()
+                    }
+                    themeRevealCaptureJob = null
+                    themeRevealCaptureInFlight = false
+                    themeModeWriteInFlight = false
+                }
             }
-            themeRevealOriginWindow = originInWindow
-            themeRevealStartRadiusPx = startRadiusPx.coerceAtLeast(1f)
-            themeRevealCaptureInFlight = false
-            repo.setThemeMode(
-                followSystemDark = false,
-                forceDark = nextDark
-            )
         }
+        themeRevealCaptureJob = captureJob
+    }
+
+    val themeRevealActive = themeRevealOriginWindow != null && themeRevealFallbackColor != null
+    val activeThemeRevealToken = themeRevealCaptureToken
+    LaunchedEffect(themeRevealActive, activeThemeRevealToken) {
+        if (!themeRevealActive) {
+            return@LaunchedEffect
+        }
+        delay(STARTUP_THEME_REVEAL_WATCHDOG_DELAY_MILLIS)
+        finishThemeReveal(activeThemeRevealToken)
+    }
+    DisposableEffect(lifecycleOwner) {
+        onDispose { clearThemeRevealState() }
     }
 
     CompositionLocalProvider(LocalDensity provides previewDensity) {
@@ -728,7 +822,7 @@ fun StartupOnboardingScreen() {
                     startRadiusPx = themeRevealStartRadiusPx,
                     legacySnapshotDim = true,
                     durationMillis = 720,
-                    onFinished = ::clearThemeRevealState
+                    onFinished = { finishThemeReveal(activeThemeRevealToken) }
                 )
             }
         }

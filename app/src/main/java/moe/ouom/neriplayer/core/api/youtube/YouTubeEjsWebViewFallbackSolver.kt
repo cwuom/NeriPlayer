@@ -37,9 +37,9 @@ private const val YOUTUBE_EJS_WEBVIEW_PAGE_TIMEOUT_MS = 30_000L
 private const val YOUTUBE_EJS_WEBVIEW_EVALUATION_TIMEOUT_MS = 8_000L
 
 /**
- * The fallback runs the same EJS parser in a local-only WebView renderer after JavaScriptSandbox
- * has exhausted its process-wide heap. No account cookies, app bridge, file URLs, or network
- * requests are exposed to the player script.
+ * The fallback runs the same EJS parser in a local-only WebView renderer when JavaScriptSandbox
+ * is unavailable or has exhausted its process-wide heap. No account cookies, app bridge, file
+ * URLs, or network requests are exposed to the player script.
  */
 internal fun buildYouTubeEjsWebViewDocument(playerScript: String): String {
     val quotedPlayerScript = JSONObject.quote(playerScript).replace("</", "<\\/")

@@ -278,6 +278,22 @@ internal fun shouldRetryYouTubeEjsSandboxAfterMemoryFailure(
         isYouTubeEjsMemoryLimitFailure(result.cause)
 }
 
+internal fun shouldUseYouTubeEjsWebViewFallback(
+    result: YouTubeJsChallengeSolveResult
+): Boolean {
+    return when (result.status) {
+        YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_UNSUPPORTED,
+        YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_TEMPORARILY_DISABLED,
+        YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_CONNECTION_FAILED,
+        YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_TIMEOUT,
+        YouTubeJsChallengeSolveStatus.MISSING_SANDBOX_FEATURES -> true
+        YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED -> {
+            result.cause?.let(::shouldInvalidateYouTubeEjsSandbox) == true
+        }
+        else -> false
+    }
+}
+
 internal fun isYouTubeEjsPlayerSessionReady(responseJson: String): Boolean {
     val response = runCatching { JSONObject(responseJson) }.getOrNull() ?: return false
     return response.optString("type") == "session-ready" &&
@@ -398,6 +414,8 @@ internal class YouTubeEjsChallengeSolver(
     companion object {
         private const val LIB_ASSET_PATH = "youtube/yt.solver.lib.min.js"
         private const val CORE_ASSET_PATH = "youtube/yt.solver.core.min.js"
+        // a provider that cannot bind is not a 45-second playback prerequisite
+        private const val SANDBOX_CONNECTION_TIMEOUT_SECONDS = 3L
         private const val SCRIPT_TIMEOUT_SECONDS = 45L
         // 一条队列每首要缓存 sig 和 n 两条，容量按 32 算连一张歌单都装不下，
         // 旧条目被挤掉后同一首歌会反复重解
@@ -413,7 +431,7 @@ internal class YouTubeEjsChallengeSolver(
         private val sharedSolverLock = YouTubeJsSolveQueue()
 
         private fun obtainSharedSandbox(context: Context): JavaScriptSandbox {
-            return sharedSandboxHolder.obtain(context, SCRIPT_TIMEOUT_SECONDS)
+            return sharedSandboxHolder.obtain(context, SANDBOX_CONNECTION_TIMEOUT_SECONDS)
         }
 
         /** 沙箱失效时连同已加载的 player.js 一起丢弃，下次重新绑定 */
@@ -669,8 +687,8 @@ internal class YouTubeEjsChallengeSolver(
         } else {
             firstAttempt
         }
-        if (!shouldRetryYouTubeEjsSandboxAfterMemoryFailure(result) ||
-            resolvedPlayerJsUrl.isBlank()
+        if (resolvedPlayerJsUrl.isBlank() ||
+            !shouldUseYouTubeEjsWebViewFallback(result)
         ) {
             return result
         }
@@ -1051,7 +1069,14 @@ internal class YouTubeEjsChallengeSolver(
             return synchronized(lock) {
                 sandbox ?: JavaScriptSandbox
                     .createConnectedInstanceAsync(appContext)
-                    .get(timeoutSeconds, TimeUnit.SECONDS)
+                    .let { pendingSandbox ->
+                        try {
+                            pendingSandbox.get(timeoutSeconds, TimeUnit.SECONDS)
+                        } catch (error: Throwable) {
+                            pendingSandbox.cancel(true)
+                            throw error
+                        }
+                    }
                     .also { sandbox = it }
             }
         }

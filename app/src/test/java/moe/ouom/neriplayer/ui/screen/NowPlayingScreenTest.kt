@@ -260,6 +260,25 @@ class NowPlayingScreenTest {
     }
 
     @Test
+    fun `active icon color keeps colored accent hue instead of default seed blue`() {
+        val activeColor = resolveNowPlayingActiveIconColor(
+            accentColor = Color(0xFFE2B0C8),
+            seedColor = Color(0xFF0061A4),
+            inactiveContentColor = Color(0xFFF1EAF0),
+            backgroundColor = Color(0xFF171419)
+        )
+
+        assertTrue(activeColor.red > activeColor.blue)
+        assertTrue(
+            isNowPlayingActiveIconReadable(
+                activeColor = activeColor,
+                inactiveContentColor = Color(0xFFF1EAF0),
+                backgroundColor = Color(0xFF171419)
+            )
+        )
+    }
+
+    @Test
     fun `active icon color falls back when palette and seed are neutral`() {
         val inactiveContentColor = Color(0xFFECE7DC)
         val backgroundColor = Color(0xFF101A16)

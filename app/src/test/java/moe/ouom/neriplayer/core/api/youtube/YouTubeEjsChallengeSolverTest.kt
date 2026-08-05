@@ -47,6 +47,45 @@ class YouTubeEjsChallengeSolverTest {
     }
 
     @Test
+    fun unavailableSandboxStatesUseTheLocalWebViewFallback() {
+        val unavailableStatuses = listOf(
+            YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_UNSUPPORTED,
+            YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_TEMPORARILY_DISABLED,
+            YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_CONNECTION_FAILED,
+            YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_TIMEOUT,
+            YouTubeJsChallengeSolveStatus.MISSING_SANDBOX_FEATURES
+        )
+
+        unavailableStatuses.forEach { status ->
+            assertTrue(
+                shouldUseYouTubeEjsWebViewFallback(
+                    YouTubeJsChallengeSolveResult(status = status)
+                )
+            )
+        }
+    }
+
+    @Test
+    fun onlyTerminalSandboxEvaluationFailuresUseTheLocalWebViewFallback() {
+        val memoryFailure = YouTubeJsChallengeSolveResult(
+            status = YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED,
+            cause = ExecutionException(MemoryLimitExceededException("memory limit exceeded"))
+        )
+        val deadSandboxFailure = YouTubeJsChallengeSolveResult(
+            status = YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED,
+            cause = ExecutionException(SandboxDeadException("sandbox was dead"))
+        )
+        val ordinaryFailure = YouTubeJsChallengeSolveResult(
+            status = YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED,
+            cause = IllegalStateException("player parser failed")
+        )
+
+        assertTrue(shouldUseYouTubeEjsWebViewFallback(memoryFailure))
+        assertTrue(shouldUseYouTubeEjsWebViewFallback(deadSandboxFailure))
+        assertFalse(shouldUseYouTubeEjsWebViewFallback(ordinaryFailure))
+    }
+
+    @Test
     fun ejsPlayerScriptMemoryCacheKeepsOnlyTheActivePair() {
         assertEquals(2, YOUTUBE_EJS_PLAYER_SCRIPT_MEMORY_CACHE_CAPACITY)
     }

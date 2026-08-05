@@ -1,12 +1,25 @@
 package moe.ouom.neriplayer.ui.screen
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.graphics.toColorInt
+import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.sqrt
+
+internal const val NowPlayingActiveContentColorTransitionDurationMs = 220
+internal const val NowPlayingActiveContentColorStabilizationDelayMs = 72
 
 private const val NowPlayingActiveIconMinSaturation = 0.32f
 private const val NowPlayingActiveIconBoostedMinSaturation = 0.52f
@@ -20,6 +33,31 @@ private val NowPlayingActiveIconLightFallback = Color(0xFF0068B5)
 
 internal fun resolveNowPlayingThemeSeedColor(hex: String): Color {
     return Color(("#${ThemeDefaults.sanitizeSeedColorHex(hex)}").toColorInt())
+}
+
+@Composable
+internal fun animateNowPlayingActiveContentColor(targetColor: Color): Color {
+    val color by animateColorAsState(
+        targetValue = targetColor,
+        animationSpec = tween(
+            durationMillis = NowPlayingActiveContentColorTransitionDurationMs,
+            easing = FastOutSlowInEasing
+        ),
+        label = "now-playing-active-content-color"
+    )
+    return color
+}
+
+@Composable
+internal fun rememberStableNowPlayingActiveContentColor(targetColor: Color): Color {
+    var settledTargetColor by remember { mutableStateOf(targetColor) }
+
+    LaunchedEffect(targetColor) {
+        delay(NowPlayingActiveContentColorStabilizationDelayMs.toLong())
+        settledTargetColor = targetColor
+    }
+
+    return animateNowPlayingActiveContentColor(settledTargetColor)
 }
 
 internal fun resolveNowPlayingActiveIconColor(
@@ -38,7 +76,13 @@ internal fun resolveNowPlayingActiveIconColor(
         return safeAccent
     }
 
-    val source = listOf(safeSeed, safeAccent).maxBy { nowPlayingColorSaturation(it) }
+    val source = if (
+        nowPlayingColorSaturation(safeAccent) >= NowPlayingActiveIconMissingHueSaturation
+    ) {
+        safeAccent
+    } else {
+        safeSeed
+    }
     val boosted = boostNowPlayingActiveIconColor(source, safeBackground)
     if (isNowPlayingActiveIconReadable(boosted, safeInactive, safeBackground)) {
         return boosted

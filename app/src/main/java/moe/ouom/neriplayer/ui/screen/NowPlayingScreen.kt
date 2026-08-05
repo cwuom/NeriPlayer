@@ -1680,11 +1680,14 @@ fun NowPlayingScreen(
     val themeSeedColorHex by settingsRepo.themeSeedColorFlow.collectAsStateWithLifecycle(
         initialValue = ThemeDefaults.DEFAULT_SEED_COLOR_HEX
     )
-    val nowPlayingActiveIconColor = resolveNowPlayingActiveIconColor(
+    val targetNowPlayingActiveIconColor = resolveNowPlayingActiveIconColor(
         accentColor = MaterialTheme.colorScheme.primary,
         seedColor = resolveNowPlayingThemeSeedColor(themeSeedColorHex),
         inactiveContentColor = MaterialTheme.colorScheme.onSurface,
         backgroundColor = MaterialTheme.colorScheme.background
+    )
+    val nowPlayingActiveIconColor = rememberStableNowPlayingActiveContentColor(
+        targetColor = targetNowPlayingActiveIconColor
     )
     val listenTogetherSessionManager = remember { AppContainer.listenTogetherSessionManager }
     val listenTogetherSessionState by listenTogetherSessionManager.sessionState.collectAsStateWithLifecycle()
